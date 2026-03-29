@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "SNS Post to Save",
+  "version": "0.1.0",
+  "description": "ワンクリックでSNSの投稿をキャプチャして画像保存",
+  "permissions": ["activeTab", "scripting", "downloads", "storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "投稿を保存",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

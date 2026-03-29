@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SNS Post to Save Options</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7fbff;
+        --panel: #ffffff;
+        --border: #c9def5;
+        --text: #16324f;
+        --muted: #59708a;
+        --accent: #3b82f6;
+        --accent-soft: #e8f1ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        color: var(--muted);
+      }
+
+      .card {
+        margin-top: 24px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: 0 14px 32px rgba(59, 130, 246, 0.08);
+      }
+
+      .toggle {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+
+      .toggle input {
+        width: 20px;
+        height: 20px;
+        margin-top: 3px;
+        accent-color: var(--accent);
+      }
+
+      .toggle strong {
+        display: block;
+        font-size: 16px;
+      }
+
+      .subtle {
+        margin-top: 4px;
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .note {
+        padding: 14px 16px;
+        border-radius: 14px;
+      }
+
+      .note h2 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+
+      .note p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .note.good {
+        background: #edf9f1;
+      }
+
+      .note.caution {
+        background: #fff5e8;
+      }
+
+      .footer {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status {
+        min-height: 1.6em;
+        margin-top: 12px;
+        color: var(--accent);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>SNS Post to Save</h1>
+      <p class="lead">PNG には常にメタデータを埋め込みます。ここでは JSON を別ファイルでも保存するかを切り替えます。</p>
+
+      <section class="card">
+        <label class="toggle">
+          <input id="saveSidecarJson" type="checkbox">
+          <span>
+            <strong>PNG と一緒に JSON も保存する</strong>
+            <span class="subtle">既定ではオフです。オンにすると、同じ名前の `.json` も追加で保存します。</span>
+          </span>
+        </label>
+
+        <div class="grid">
+          <div class="note good">
+            <h2>利点</h2>
+            <p>テキストエディタやスクリプトから読みやすくなります。検索、集計、外部ツール連携もしやすいです。</p>
+          </div>
+          <div class="note caution">
+            <h2>注意点</h2>
+            <p>画像と JSON の 2 ファイル管理になります。移動や共有のときに JSON だけ別れる可能性があります。</p>
+          </div>
+        </div>
+
+        <div class="footer">単体で持ち運ぶ用途は PNG 埋め込みメタデータだけでも十分です。</div>
+        <div id="status" class="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>
