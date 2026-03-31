@@ -1,16 +1,60 @@
 # SNS Post to Save
 
-SNS の投稿をクリックして、そのまま PNG 画像として保存する Chrome 拡張です。
+**English** | [日本語](README.ja.md)
+
+A Chrome extension that lets you click an SNS post and save it as a PNG image together with metadata such as the post URL, handle name, user IDs, and post timestamp, so the post stays searchable later.
+
+## Usage
+
+1. Click the extension icon in the toolbar (or press `Alt+S`)
+2. Click the post you want to save
+3. The post is saved as a PNG with metadata to your downloads folder
+
+
+## Demo
+
+![Demo](docs/demo.gif)
 
 ## Features
 
-- X / Bluesky / Misskey の投稿を選択して画像保存
-- PNG の `iTXt` チャンクにメタデータを埋め込み
-- 必要なら同名の sidecar JSON も保存
+- Save posts from X, Bluesky, and Misskey as images
+- Use short filenames like `2026-03-29_08-20-15_x.com_screenname_postid.png`
+- Embed metadata into the PNG `iTXt` chunk
+- Optionally save a sidecar JSON file with the same base filename
+
+## Metadata Fields
+
+- `schema` — Data format version
+- `capturedAt` — When the image was saved
+- `platform` — Which SNS (`x` / `bluesky` / `misskey` etc.)
+- `pageTitle` — Browser tab title at save time
+- `pageUrl` — The page URL that was open
+- `postUrl` — The post URL (recorded even when saving from a feed)
+- `sourceHost` — Site hostname (`x.com`, `bsky.app` etc.)
+- `postId` — Post ID
+- `screenName` — Account handle (the `@name` part)
+- `userId` — Platform-specific user ID
+- `uid` — A more stable user identifier separate from the handle (e.g. Bluesky DID)
+- `postPublishedAt` — When the post was published
+- `extension.name` / `extension.version` — Name and version of the extension that saved the file
+
+## Where The Metadata Lives
+
+The metadata is inside the PNG itself, not in a separate database. This keeps the image portable even when you move it by itself.
+
+> **Note:** Uploading to social media or re-saving with an image editor may strip the metadata. Keep the original PNG to be safe.
+
+## JSON Option
+
+The `Also save JSON with PNG` option is off by default.
+
+- Benefit: Easier to read from scripts, editors, and external tools
+- Benefit: Metadata survives even if the image is re-saved or edited
+- Tradeoff: The image and metadata become two separate files to manage
 
 ## Metadata
 
-PNG には次の JSON を UTF-8 の `iTXt` チャンクとして埋め込みます。
+The PNG stores JSON metadata in a UTF-8 `iTXt` chunk with the keyword `sns-post-to-save`.
 
 ```json
 {
@@ -21,6 +65,11 @@ PNG には次の JSON を UTF-8 の `iTXt` チャンクとして埋め込みま�
   "pageUrl": "https://x.com/home",
   "postUrl": "https://x.com/user/status/123",
   "sourceHost": "x.com",
+  "postId": "123",
+  "screenName": "user",
+  "userId": null,
+  "uid": null,
+  "postPublishedAt": "2026-03-29T08:20:15.000Z",
   "extension": {
     "name": "SNS Post to Save",
     "version": "0.1.0"
@@ -28,9 +77,6 @@ PNG には次の JSON を UTF-8 の `iTXt` チャンクとして埋め込みま�
 }
 ```
 
-## JSON Option
+## Other Extensions
 
-オプション画面の `PNG と一緒に JSON も保存する` は既定でオフです。
-
-- 利点: テキストで扱いやすく、検索や外部ツール連携がしやすい
-- 注意点: 画像と JSON の 2 ファイル管理になる
+- [Reverse Playlist for YouTube](https://chromewebstore.google.com/detail/jhkeggdcdocibfplmbfebiokkbhgipkn)

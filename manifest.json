@@ -22,5 +22,13 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "activate": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "投稿の保存を開始"
+    }
   }
 }

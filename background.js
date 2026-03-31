@@ -28,7 +28,7 @@ const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 const TEXT_ENCODER = new TextEncoder();
 const CRC32_TABLE = createCrc32Table();
 
-chrome.action.onClicked.addListener(async (tab) => {
+async function activateOnTab(tab) {
   if (!tab.id || !/^https?:/i.test(tab.url || '')) {
     return;
   }
@@ -40,6 +40,19 @@ chrome.action.onClicked.addListener(async (tab) => {
     });
   } catch (error) {
     console.error('Failed to inject content script:', error);
+  }
+}
+
+chrome.action.onClicked.addListener(activateOnTab);
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'activate') {
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    activateOnTab(tab);
   }
 });
 
@@ -54,7 +67,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const tabId = sender.tab.id;
-  captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
+  captureAndSave(sender.tab, message.rect, message.postUrl, message.platform, message.postDetails)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => {
       console.error(error);
@@ -65,7 +78,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-async function captureAndSave(tab, rect, postUrl, platformId) {
+async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const captureInfo = getCaptureInfo(platformId, postUrl || tab.url);
   const capturedAt = new Date().toISOString();
   const options = await chrome.storage.sync.get(DEFAULT_OPTIONS);
@@ -74,7 +87,8 @@ async function captureAndSave(tab, rect, postUrl, platformId) {
     capturedAt,
     pageTitle: tab.title,
     pageUrl: tab.url,
-    postUrl
+    postUrl,
+    postDetails
   });
 
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
@@ -89,7 +103,7 @@ async function captureAndSave(tab, rect, postUrl, platformId) {
   }
 
   const pngDataUrl = await buildPngDataUrl(response.croppedDataUrl, metadata);
-  const baseFilename = buildBaseFilename(captureInfo.downloadPrefix, capturedAt);
+  const baseFilename = buildBaseFilename(captureInfo, metadata, capturedAt);
 
   await downloadDataUrl(pngDataUrl, `${DOWNLOAD_DIRECTORY}/${baseFilename}.png`);
 
@@ -122,17 +136,25 @@ async function buildPngDataUrl(croppedDataUrl, metadata) {
   return `data:image/png;base64,${uint8ArrayToBase64(enrichedPng)}`;
 }
 
-function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl }) {
+function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl, postDetails }) {
   const manifest = chrome.runtime.getManifest();
+  const normalizedPostDetails = normalizePostDetails(postDetails);
+  const resolvedPostUrl = sanitizeUrl(postUrl);
+  const resolvedPageUrl = sanitizeUrl(pageUrl);
 
   return {
     schema: 'sns-post-to-save/v1',
     capturedAt,
     platform: captureInfo.id,
     pageTitle: pageTitle || '',
-    pageUrl: pageUrl || '',
-    postUrl: postUrl || '',
-    sourceHost: getHostname(postUrl || pageUrl || ''),
+    pageUrl: resolvedPageUrl,
+    postUrl: resolvedPostUrl,
+    sourceHost: getHostname(resolvedPostUrl || resolvedPageUrl || ''),
+    postId: normalizedPostDetails.postId,
+    screenName: normalizedPostDetails.screenName,
+    userId: normalizedPostDetails.userId,
+    uid: normalizedPostDetails.uid,
+    postPublishedAt: normalizedPostDetails.postPublishedAt,
     extension: {
       name: manifest.name,
       version: manifest.version
@@ -159,10 +181,18 @@ function getPlatformConfigForUrl(url) {
   ) || null;
 }
 
-function buildBaseFilename(prefix, capturedAt) {
-  const date = capturedAt.slice(0, 10);
-  const time = capturedAt.slice(11, 23).replace(/[:.]/g, '-');
-  return `${prefix}_${date}_${time}`;
+function buildBaseFilename(captureInfo, metadata, capturedAt) {
+  const timestamp = formatFilenameTimestamp(metadata.postPublishedAt || capturedAt);
+  const host = sanitizeFilenameSegment(
+    metadata.sourceHost || getHostname(metadata.postUrl || metadata.pageUrl || '') || captureInfo.downloadPrefix,
+    48
+  );
+  const screenName = sanitizeFilenameSegment(
+    metadata.screenName || metadata.uid || metadata.userId || 'post',
+    40
+  );
+  const postId = sanitizeFilenameSegment(metadata.postId || 'capture', 64);
+  return [timestamp, host, screenName, postId].filter(Boolean).join('_');
 }
 
 function getHostname(url) {
@@ -175,6 +205,84 @@ function getHostname(url) {
 
 function buildJsonDataUrl(metadata) {
   return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(metadata, null, 2))}`;
+}
+
+function normalizePostDetails(postDetails) {
+  return {
+    postId: normalizeOptionalString(postDetails?.postId),
+    screenName: normalizeOptionalString(postDetails?.screenName),
+    userId: normalizeOptionalString(postDetails?.userId),
+    uid: normalizeOptionalString(postDetails?.uid),
+    postPublishedAt: normalizeOptionalIsoDate(postDetails?.postPublishedAt)
+  };
+}
+
+function normalizeOptionalString(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeOptionalIsoDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
+function sanitizeUrl(value) {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return new URL(value).href;
+  } catch {
+    return '';
+  }
+}
+
+function formatFilenameTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown-date';
+  }
+
+  return [
+    date.getFullYear(),
+    padNumber(date.getMonth() + 1),
+    padNumber(date.getDate())
+  ].join('-') + '_' + [
+    padNumber(date.getHours()),
+    padNumber(date.getMinutes()),
+    padNumber(date.getSeconds())
+  ].join('-');
+}
+
+function padNumber(value) {
+  return String(value).padStart(2, '0');
+}
+
+function sanitizeFilenameSegment(value, maxLength = 64) {
+  const safeValue = String(value || '')
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Za-z0-9._@-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-._@]+|[-._@]+$/g, '')
+    .slice(0, maxLength);
+
+  return safeValue || 'unknown';
 }
 
 function downloadDataUrl(url, filename) {

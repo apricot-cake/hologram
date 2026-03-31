@@ -13,6 +13,7 @@
 
   let isCleanedUp = false;
   let restoreCaptureState = null;
+  let savedScrollPosition = null;
 
   // === UI要素 ===
 
@@ -90,6 +91,7 @@
     if (!post) return;
 
     const postUrl = siteConfig.getPermalink(post);
+    const postDetails = siteConfig.getPostDetails?.(post, postUrl) || {};
 
     // イベントリスナー除去（クリックは1回だけ）
     document.removeEventListener('mousemove', onMouseMove, true);
@@ -99,6 +101,13 @@
     highlight.style.display = 'none';
     banner.style.display = 'none';
     restoreCaptureState = siteConfig.prepareForCapture?.(post) || null;
+
+    // 見切れていればスクロールしてビューポート内に収める
+    const preRect = getPostRect(post);
+    if (preRect.top < 0 || preRect.bottom > window.innerHeight) {
+      savedScrollPosition = { x: window.scrollX, y: window.scrollY };
+      post.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
 
     // 再描画を待ってからキャプチャ
     requestAnimationFrame(() => {
@@ -113,7 +122,8 @@
           type: 'captureAndSend',
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
-          platform: siteConfig.platform
+          platform: siteConfig.platform,
+          postDetails
         });
       });
     });
@@ -169,6 +179,12 @@
           0, 0, w, h
         );
         sendResponse({ croppedDataUrl: canvas.toDataURL('image/png') });
+
+        // スクロール位置を復元
+        if (savedScrollPosition) {
+          window.scrollTo({ left: savedScrollPosition.x, top: savedScrollPosition.y, behavior: 'instant' });
+          savedScrollPosition = null;
+        }
       };
       img.onerror = () => sendResponse(null);
       img.src = dataUrl;
@@ -215,14 +231,17 @@ function getSiteConfig() {
         }
       `,
       getPermalink(post) {
-        const link = post.querySelector('a[href*="/status/"]');
-        if (!link) return '';
-
-        try {
-          return new URL(link.href, location.origin).href;
-        } catch {
-          return '';
-        }
+        return getXPostLink(post)?.url || '';
+      },
+      getPostDetails(post, postUrl) {
+        const parsed = parseXPostLink(postUrl) || getXPostLink(post);
+        return {
+          postId: parsed?.postId || null,
+          screenName: parsed?.screenName || null,
+          userId: null,
+          uid: null,
+          postPublishedAt: getPostPublishedAt(post)
+        };
       },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureXNoHover', [
@@ -256,17 +275,18 @@ function getSiteConfig() {
         }
       `,
       getPermalink(post) {
-        const authorHandle = getBlueskyAuthorHandle(post);
-        const links = Array.from(post.querySelectorAll('a[href]'))
-          .map((link) => parseBlueskyPostLink(link.href))
-          .filter(Boolean);
-
-        if (!links.length) {
-          return '';
-        }
-
-        const primaryLink = links.find((link) => !authorHandle || link.handle === authorHandle);
-        return (primaryLink || links[0]).url;
+        return getBlueskyPostLink(post)?.url || '';
+      },
+      getPostDetails(post, postUrl) {
+        const postLink = parseBlueskyPostLink(postUrl) || getBlueskyPostLink(post);
+        const profile = getBlueskyProfileDetails(post);
+        return {
+          postId: postLink?.postId || null,
+          screenName: profile.screenName || postLink?.handle || null,
+          userId: null,
+          uid: profile.uid,
+          postPublishedAt: getPostPublishedAt(post)
+        };
       },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureBskyNoHover', [
@@ -304,6 +324,17 @@ function getSiteConfig() {
       getPermalink(post) {
         return getMisskeyPermalink(post);
       },
+      getPostDetails(post, postUrl) {
+        const noteLink = parseMisskeyNoteLink(postUrl) || getMisskeyTimeLink(post);
+        const authorProfile = getMisskeyAuthorProfile(post);
+        return {
+          postId: noteLink?.id || null,
+          screenName: authorProfile?.screenName || null,
+          userId: null,
+          uid: null,
+          postPublishedAt: getPostPublishedAt(post)
+        };
+      },
       getCaptureRect(post) {
         return getMisskeyCaptureRect(post);
       },
@@ -319,6 +350,56 @@ function getSiteConfig() {
   return null;
 }
 
+function getPostPublishedAt(post) {
+  const timeElement = post instanceof Element
+    ? post.querySelector('time[datetime], time')
+    : null;
+
+  const rawValue = timeElement?.getAttribute('datetime') || '';
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsed = new Date(rawValue);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function getXPostLink(post) {
+  const links = post instanceof Element
+    ? Array.from(post.querySelectorAll('a[href*="/status/"]'))
+    : [];
+
+  const preferredLink = links.find((link) => link.querySelector('time')) || links[0];
+  return preferredLink ? parseXPostLink(preferredLink.href) : null;
+}
+
+function parseXPostLink(href) {
+  try {
+    const url = new URL(href, location.origin);
+    let match = url.pathname.match(/^\/([^/]+)\/status\/([^/?#]+)/);
+    if (match) {
+      return {
+        url: url.href,
+        screenName: decodeURIComponent(match[1]),
+        postId: decodeURIComponent(match[2])
+      };
+    }
+
+    match = url.pathname.match(/^\/i\/web\/status\/([^/?#]+)/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      url: url.href,
+      screenName: null,
+      postId: decodeURIComponent(match[1])
+    };
+  } catch {
+    return null;
+  }
+}
+
 function hostnameMatches(host) {
   return location.hostname === host || location.hostname.endsWith(`.${host}`);
 }
@@ -327,6 +408,39 @@ function getBlueskyAuthorHandle(post) {
   const testId = post.getAttribute('data-testid') || '';
   const match = testId.match(/-by-(.+)$/);
   return match?.[1] || '';
+}
+
+function getBlueskyPostLink(post) {
+  const authorHandle = getBlueskyAuthorHandle(post);
+  const links = post instanceof Element
+    ? Array.from(post.querySelectorAll('a[href]'))
+      .map((link) => parseBlueskyPostLink(link.href))
+      .filter(Boolean)
+    : [];
+
+  if (!links.length) {
+    return null;
+  }
+
+  return links.find((link) => !authorHandle || link.handle === authorHandle) || links[0];
+}
+
+function getBlueskyProfileDetails(post) {
+  const links = post instanceof Element
+    ? Array.from(post.querySelectorAll('a[href]'))
+      .map((link) => parseBlueskyProfileLink(link.href))
+      .filter(Boolean)
+    : [];
+
+  const uidLink = links.find((link) => link.uid);
+  const screenName = getBlueskyAuthorHandle(post)
+    || links.find((link) => link.screenName)?.screenName
+    || null;
+
+  return {
+    screenName,
+    uid: uidLink?.uid || null
+  };
 }
 
 function parseBlueskyPostLink(href) {
@@ -339,7 +453,33 @@ function parseBlueskyPostLink(href) {
 
     return {
       url: url.href,
-      handle: decodeURIComponent(match[1])
+      handle: decodeURIComponent(match[1]),
+      postId: decodeURIComponent(match[2])
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseBlueskyProfileLink(href) {
+  try {
+    const url = new URL(href, location.origin);
+    const match = url.pathname.match(/^\/profile\/([^/?#]+)/);
+    if (!match) {
+      return null;
+    }
+
+    const value = decodeURIComponent(match[1]);
+    if (value.startsWith('did:')) {
+      return {
+        screenName: null,
+        uid: value
+      };
+    }
+
+    return {
+      screenName: value,
+      uid: null
     };
   } catch {
     return null;
@@ -447,6 +587,21 @@ function getMisskeyTimeLink(post) {
   return null;
 }
 
+function getMisskeyAuthorProfile(post) {
+  const links = post instanceof Element
+    ? Array.from(post.querySelectorAll('a[href]'))
+    : [];
+
+  for (const link of links) {
+    const parsed = parseMisskeyProfileLink(link.href);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 function parseMisskeyNoteLink(href) {
   try {
     const url = new URL(href, location.origin);
@@ -457,6 +612,23 @@ function parseMisskeyNoteLink(href) {
 
     return {
       id: decodeURIComponent(match[1]),
+      url: url.href
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseMisskeyProfileLink(href) {
+  try {
+    const url = new URL(href, location.origin);
+    const match = url.pathname.match(/^\/@([^/?#]+)\/?$/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      screenName: decodeURIComponent(match[1]),
       url: url.href
     };
   } catch {
