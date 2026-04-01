@@ -78,7 +78,3 @@ PNG には次の JSON を UTF-8 の `iTXt` チャンクとして埋め込みま�
   }
 }
 ```
-
-## その他の拡張機能
-
-- [Reverse Playlist for YouTube](https://chromewebstore.google.com/detail/jhkeggdcdocibfplmbfebiokkbhgipkn)
