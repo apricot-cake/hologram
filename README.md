@@ -48,9 +48,11 @@ The metadata is inside the PNG itself, not in a separate database. This keeps th
 
 The `Also save JSON with PNG` option is off by default.
 
-- Benefit: Easier to read from scripts, editors, and external tools
-- Benefit: Metadata survives even if the image is re-saved or edited
-- Tradeoff: The image and metadata become two separate files to manage
+- Benefit
+  - Easier to read from scripts, editors, and external tools
+  - Metadata survives even if the image is re-saved or edited
+- Tradeoff
+  - The image and metadata become two separate files to manage
 
 ## Metadata
 
@@ -76,7 +78,3 @@ The PNG stores JSON metadata in a UTF-8 `iTXt` chunk with the keyword `sns-post-
   }
 }
 ```
-
-## Other Extensions
-
-- [Reverse Playlist for YouTube](https://chromewebstore.google.com/detail/jhkeggdcdocibfplmbfebiokkbhgipkn)
