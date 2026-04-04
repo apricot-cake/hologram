@@ -8,9 +8,9 @@
     if (!img) return;
 
     const post = findPostElement(img);
-    if (!post) return;
-
-    const metadata = siteConfig.extractMetadata(post, img);
+    const metadata = post
+      ? siteConfig.extractMetadata(post, img)
+      : siteConfig.extractFallbackMetadata?.(img);
     if (!metadata) return;
 
     // 画像URLのバリエーションを収集（照合用）
@@ -98,6 +98,24 @@
             postText
           })
         };
+      },
+      // メディアグリッド等、article 要素がない場合のフォールバック
+      extractFallbackMetadata(img) {
+        const link = img.closest('a[href*="/status/"]');
+        const postLink = link ? parseXPostLink(link.href) : null;
+        if (!postLink) return null;
+
+        const screenName = postLink.screenName || getScreenNameFromUrl();
+
+        return {
+          title: buildTitle(screenName, null),
+          link: postLink.url,
+          annotation: buildAnnotation({
+            platform: 'X (Twitter)',
+            screenName,
+            postId: postLink.postId
+          })
+        };
       }
     };
   }
@@ -140,6 +158,14 @@
     return null;
   }
 
+  function getScreenNameFromUrl() {
+    const match = location.pathname.match(/^\/([^/]+)/);
+    if (match && !['home', 'explore', 'search', 'notifications', 'messages', 'i', 'settings'].includes(match[1])) {
+      return decodeURIComponent(match[1]);
+    }
+    return null;
+  }
+
   function getXPostText(post) {
     const textEl = post.querySelector('[data-testid="tweetText"]');
     return textEl?.textContent?.trim() || '';
@@ -170,6 +196,33 @@
             postId: postLink?.postId,
             publishedAt,
             postText
+          })
+        };
+      },
+      extractFallbackMetadata(img) {
+        // 検索結果等で feedItem がない場合、role="link" の祖先からリンクを探す
+        const container = img.closest('[role="link"]');
+        if (!container) return null;
+
+        const postLink = Array.from(container.querySelectorAll('a[href*="/post/"]'))
+          .map((a) => parseBlueskyPostLink(a.href))
+          .filter(Boolean)[0];
+
+        const profileLinks = Array.from(container.querySelectorAll('a[href*="/profile/"]'))
+          .map((a) => parseBlueskyProfileLink(a.href))
+          .filter(Boolean);
+
+        const screenName = profileLinks.find((p) => p.screenName)?.screenName || null;
+        const uid = profileLinks.find((p) => p.uid)?.uid || null;
+
+        return {
+          title: buildTitle(screenName, null),
+          link: postLink?.url || null,
+          annotation: buildAnnotation({
+            platform: 'Bluesky',
+            screenName,
+            uid,
+            postId: postLink?.postId
           })
         };
       }
