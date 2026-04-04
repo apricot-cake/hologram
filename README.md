@@ -9,21 +9,17 @@ A Chrome extension that automatically writes SNS post metadata (author info, pos
 
 ## Captured Data
 
-| Data | Timeline | Media Grid |
-|---|---|---|
-| Platform | o | o |
-| Display Name | o | o |
-| Author (@screenName) | o | o |
-| UID (X numeric ID / Bluesky DID) | o | o |
-| Post ID | o | o |
-| Image Index (n/m or n) | o | o |
-| Published | o | o |
-| Hashtags | o | o |
-| Alt Text | o | o |
-| Text | o | o |
-| Source URL | o | o |
-
-On X media grids, additional metadata is fetched via the Syndication API.
+- Platform
+- Display Name
+- Author (@screenName)
+- UID (X numeric ID / Bluesky DID)
+- Post ID
+- Image Index (e.g. 1/3)
+- Published
+- Hashtags
+- Alt Text
+- Text
+- Source URL
 
 ## How It Works
 
