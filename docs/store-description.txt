@@ -15,9 +15,9 @@ WHAT'S CAPTURED
 
 SEARCH YOUR SAVED POSTS
 Use Windows Explorer's search bar:
-- Search by content: コメント:keyword
-- Search by user: タグ:@handle
-- Filter by date range: 撮影日時:2026/04/01..2026/04/03
+- Search by content: comment:keyword
+- Search by user: tag:@handle
+- Filter by date range: datetaken:2026/04/01..2026/04/03
 
 PRIVACY
 No data is collected or transmitted to any server. Only read-only public API requests are made to Bluesky and Misskey to enrich metadata. All images are saved locally.
