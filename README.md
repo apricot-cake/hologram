@@ -1,6 +1,13 @@
 # Eagle Metadata Enhancer
 
-A Chrome extension that automatically writes SNS post metadata (author info, post details, etc.) into Eagle's annotation field when drag-saving images.
+A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
+
+When you drag-save an image to [Eagle](https://en.eagle.cool/) via the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
+
+## Requirements
+
+- [Eagle](https://en.eagle.cool/) desktop app (must be running)
+- [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) browser extension
 
 ## Supported Platforms
 
@@ -53,8 +60,7 @@ Text: Post text here
 2. Open `chrome://extensions/`
 3. Enable "Developer mode"
 4. Click "Load unpacked" and select this folder
-
-The Eagle desktop app must be running.
+5. Make sure the [Eagle](https://en.eagle.cool/) desktop app and [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) extension are installed
 
 ## File Structure
 
@@ -68,5 +74,5 @@ icons/              Placeholder icons
 
 ## Limitations
 
-- Eagle REST API `/api/item/update` does not support renaming items, so title info is placed in the first line of the annotation
+- [Eagle REST API](https://api.eagle.cool/) `/api/item/update` does not support renaming items, so title info is placed in the first line of the annotation
 - Tags are intentionally not written to preserve existing tag organization
