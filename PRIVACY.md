@@ -1,8 +1,8 @@
-# Privacy Policy — SNS Post to Save
+# Privacy Policy — Post Snap
 
 ## Data Collection
 
-SNS Post to Save does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to your device's downloads folder.
+Post Snap does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to your device's downloads folder.
 
 ## External API Requests
 
@@ -25,4 +25,4 @@ No data is stored in the browser's local storage, sync storage, or any external 
 
 ## Contact
 
-For questions or concerns, please open an issue at https://github.com/apricot-cake/sns-post-to-save/issues.
+For questions or concerns, please open an issue at https://github.com/apricot-cake/post-snap/issues.

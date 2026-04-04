@@ -20,7 +20,7 @@ const PLATFORM_CONFIGS = [
   }
 ];
 
-const DOWNLOAD_DIRECTORY = 'SNS Post to Save';
+const DOWNLOAD_DIRECTORY = 'Post Snap';
 const JPEG_QUALITY = 0.92;
 
 async function activateOnTab(tab) {

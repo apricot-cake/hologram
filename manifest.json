@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SNS Post to Save",
+  "name": "Post Snap",
   "version": "1.0.0",
   "description": "Capture SNS posts as images with searchable EXIF metadata",
   "permissions": ["activeTab", "scripting", "downloads"],

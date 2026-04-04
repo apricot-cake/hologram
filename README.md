@@ -1,4 +1,4 @@
-# SNS Post to Save
+# Post Snap
 
 A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Post text is embedded in the image file, so you can search saved posts by content directly in Windows Explorer — no special tools needed.
 
