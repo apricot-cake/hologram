@@ -1,37 +1,11 @@
 (() => {
-  const PROCESSED_ATTR = '__eagle-meta-done';
-
   const siteConfig = getSiteConfig();
   if (!siteConfig) return;
 
-  // 初回: 既存画像を処理
-  processAllImages();
-
-  // MutationObserver で動的追加を監視
-  const observer = new MutationObserver((mutations) => {
-    let hasNewNodes = false;
-    for (const mutation of mutations) {
-      if (mutation.addedNodes.length > 0) {
-        hasNewNodes = true;
-        break;
-      }
-    }
-    if (hasNewNodes) processAllImages();
-  });
-
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  // === メイン処理 ===
-
-  function processAllImages() {
-    const images = document.querySelectorAll('img:not([__eagle-meta-done])');
-    for (const img of images) {
-      processImage(img);
-    }
-  }
-
-  function processImage(img) {
-    img.setAttribute(PROCESSED_ATTR, '1');
+  // dragstart イベントを監視し、ドラッグされた画像のメタデータを background に送信
+  document.addEventListener('dragstart', (e) => {
+    const img = e.target.closest('img') || (e.target.tagName === 'IMG' ? e.target : null);
+    if (!img) return;
 
     const post = findPostElement(img);
     if (!post) return;
@@ -39,19 +13,18 @@
     const metadata = siteConfig.extractMetadata(post, img);
     if (!metadata) return;
 
-    if (metadata.title) {
-      img.setAttribute('eagle-title', metadata.title);
-    }
-    if (metadata.src) {
-      img.setAttribute('eagle-src', metadata.src);
-    }
-    if (metadata.link) {
-      img.setAttribute('eagle-link', metadata.link);
-    }
-    if (metadata.annotation) {
-      img.setAttribute('eagle-annotation', metadata.annotation);
-    }
-  }
+    // 画像URLのバリエーションを収集（照合用）
+    const imageUrls = collectImageUrls(img);
+
+    chrome.runtime.sendMessage({
+      type: 'imageDragged',
+      imageUrls,
+      pageUrl: location.href,
+      metadata
+    });
+  }, true);
+
+  // === 投稿検出 ===
 
   function findPostElement(img) {
     let el = img.parentElement;
@@ -60,6 +33,27 @@
       el = el.parentElement;
     }
     return null;
+  }
+
+  function collectImageUrls(img) {
+    const urls = new Set();
+    if (img.src) urls.add(img.src);
+    if (img.currentSrc) urls.add(img.currentSrc);
+
+    // 高解像度URLも追加
+    const highRes = getHighResImageUrl(img, siteConfig.platform);
+    if (highRes) urls.add(highRes);
+
+    // srcset からも収集
+    const srcset = img.getAttribute('srcset');
+    if (srcset) {
+      for (const entry of srcset.split(',')) {
+        const url = entry.trim().split(/\s+/)[0];
+        if (url) urls.add(url);
+      }
+    }
+
+    return [...urls];
   }
 
   // === サイト設定 ===
@@ -81,23 +75,24 @@
 
   function xConfig() {
     return {
+      platform: 'x',
       isPostElement(el) {
         return el.matches('article[data-testid="tweet"]');
       },
       extractMetadata(post, img) {
         const postLink = getXPostLink(post);
         const screenName = postLink?.screenName || null;
+        const uid = getXUserId(post);
         const publishedAt = getPostPublishedAt(post);
         const postText = getXPostText(post);
-        const highResSrc = getHighResImageUrl(img, 'x');
 
         return {
           title: buildTitle(screenName, postText),
-          src: highResSrc,
           link: postLink?.url || null,
           annotation: buildAnnotation({
             platform: 'X (Twitter)',
             screenName,
+            uid,
             postId: postLink?.postId,
             publishedAt,
             postText
@@ -130,6 +125,21 @@
     }
   }
 
+  function getXUserId(post) {
+    // ページコンテキスト経由で React fiber から user.id_str を取得
+    // content script は隔離環境のため、ページ側に注入した属性を読む
+    const uid = post.getAttribute('__x-user-id');
+    if (uid) return uid;
+
+    // フォールバック: data-testid="<userId>-follow" から取得
+    const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
+    if (followBtn) {
+      const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
+      if (match) return match[1];
+    }
+    return null;
+  }
+
   function getXPostText(post) {
     const textEl = post.querySelector('[data-testid="tweetText"]');
     return textEl?.textContent?.trim() || '';
@@ -139,6 +149,7 @@
 
   function blueskyConfig() {
     return {
+      platform: 'bluesky',
       isPostElement(el) {
         return el.matches('[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]');
       },
@@ -148,11 +159,9 @@
         const screenName = profile.screenName || postLink?.handle || null;
         const publishedAt = getPostPublishedAt(post);
         const postText = getBlueskyPostText(post);
-        const highResSrc = getHighResImageUrl(img, 'bluesky');
 
         return {
           title: buildTitle(screenName, postText),
-          src: highResSrc,
           link: postLink?.url || null,
           annotation: buildAnnotation({
             platform: 'Bluesky',
@@ -228,7 +237,6 @@
   }
 
   function getBlueskyPostText(post) {
-    // Blueskyの投稿テキストは複数のspanで構成される
     const textContainer = post.querySelector('[data-testid="postText"]');
     return textContainer?.textContent?.trim() || '';
   }
@@ -237,6 +245,7 @@
 
   function misskeyConfig() {
     return {
+      platform: 'misskey',
       isPostElement(el) {
         return el instanceof HTMLElement
           && el.matches('div[tabindex="0"]')
@@ -248,11 +257,9 @@
         const authorProfile = getMisskeyAuthorProfile(post);
         const publishedAt = getPostPublishedAt(post);
         const postText = getMisskeyPostText(post);
-        const highResSrc = getHighResImageUrl(img, 'misskey');
 
         return {
           title: buildTitle(authorProfile?.screenName, postText),
-          src: highResSrc,
           link: noteLink?.url || getMisskeyPermalink(post) || null,
           annotation: buildAnnotation({
             platform: 'Misskey',
@@ -322,7 +329,6 @@
   function getMisskeyPostText(post) {
     const article = post.querySelector('article');
     if (!article) return '';
-    // Misskeyのノートテキストはarticle内のmfm関連要素に入る
     const textNodes = article.querySelectorAll('.mfm-text, [class*="content"] p');
     if (textNodes.length) {
       return Array.from(textNodes).map((n) => n.textContent).join(' ').trim();
@@ -354,7 +360,6 @@
   function getHighResImageUrl(img, platform) {
     const src = img.src || '';
     if (platform === 'x') {
-      // X: ?format=jpg&name=small → name=orig
       if (src.includes('pbs.twimg.com/media/')) {
         const url = new URL(src);
         url.searchParams.set('name', 'orig');
@@ -362,7 +367,6 @@
       }
     }
     if (platform === 'bluesky') {
-      // Bluesky CDN: @jpeg等のサフィックスを除去して原寸取得
       if (src.includes('cdn.bsky.app')) {
         return src.replace(/@jpeg$/, '');
       }

@@ -1,8 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Eagle Metadata Enhancer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SNSの投稿者情報をEagleのメタデータとして自動注入",
+  "permissions": [],
+  "host_permissions": [
+    "http://localhost:41595/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -12,6 +19,15 @@
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": ["page-context.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "icons": {
