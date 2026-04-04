@@ -111,8 +111,12 @@
         const postLink = getXPostLink(post);
         const screenName = postLink?.screenName || null;
         const uid = getXUserId(post);
+        const displayName = getXDisplayName(post);
         const publishedAt = getPostPublishedAt(post);
         const postText = getXPostText(post);
+        const hashtags = getXHashtags(post);
+        const altText = img.alt || null;
+        const imageIndex = getXImageIndex(post, img);
 
         return {
           title: buildTitle(screenName, postText),
@@ -120,10 +124,14 @@
           annotation: buildAnnotation({
             platform: 'X (Twitter)',
             screenName,
+            displayName,
             uid,
             postId: postLink?.postId,
             publishedAt,
-            postText
+            postText,
+            hashtags,
+            altText,
+            imageIndex
           })
         };
       },
@@ -135,6 +143,7 @@
 
         const screenName = postLink.screenName || getScreenNameFromUrl();
         const uid = getXPageUserId();
+        const imageIndex = getXPhotoIndexFromUrl(link.href);
 
         return {
           title: buildTitle(screenName, null),
@@ -143,7 +152,8 @@
             platform: 'X (Twitter)',
             screenName,
             uid,
-            postId: postLink.postId
+            postId: postLink.postId,
+            imageIndex
           })
         };
       }
@@ -188,6 +198,16 @@
     return null;
   }
 
+  function getXPhotoIndexFromUrl(href) {
+    // /status/123/photo/2 → "2" (総数は不明なので番号のみ)
+    try {
+      const url = new URL(href, location.origin);
+      const match = url.pathname.match(/\/photo\/(\d+)/);
+      if (match) return match[1];
+    } catch {}
+    return null;
+  }
+
   function getXPageUserId() {
     // プロフィールページのフォローボタンからユーザーIDを取得
     const followBtn = document.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
@@ -204,6 +224,27 @@
       return decodeURIComponent(match[1]);
     }
     return null;
+  }
+
+  function getXDisplayName(post) {
+    const userNameEl = post.querySelector('[data-testid="User-Name"]');
+    const firstSpan = userNameEl?.querySelector('a span');
+    return firstSpan?.textContent?.trim() || null;
+  }
+
+  function getXHashtags(post) {
+    const textEl = post.querySelector('[data-testid="tweetText"]');
+    if (!textEl) return [];
+    const links = Array.from(textEl.querySelectorAll('a[href*="/hashtag/"]'));
+    return links.map((a) => a.textContent.trim()).filter(Boolean);
+  }
+
+  function getXImageIndex(post, img) {
+    const photos = Array.from(post.querySelectorAll('[data-testid="tweetPhoto"] img'));
+    if (photos.length <= 1) return null;
+    const index = photos.indexOf(img);
+    if (index === -1) return null;
+    return `${index + 1}/${photos.length}`;
   }
 
   function getXPostText(post) {
@@ -223,8 +264,11 @@
         const postLink = getBlueskyPostLink(post);
         const profile = getBlueskyProfileDetails(post);
         const screenName = profile.screenName || postLink?.handle || null;
+        const displayName = getBlueskyDisplayName(post);
         const publishedAt = getPostPublishedAt(post);
         const postText = getBlueskyPostText(post);
+        const altText = img.alt || null;
+        const imageIndex = getBlueskyImageIndex(post, img);
 
         return {
           title: buildTitle(screenName, postText),
@@ -232,10 +276,13 @@
           annotation: buildAnnotation({
             platform: 'Bluesky',
             screenName,
+            displayName,
             uid: profile.uid,
             postId: postLink?.postId,
             publishedAt,
-            postText
+            postText,
+            altText,
+            imageIndex
           }),
           _handle: !profile.uid ? screenName : null,
           _uid: profile.uid
@@ -331,6 +378,28 @@
     } catch {
       return null;
     }
+  }
+
+  function getBlueskyDisplayName(post) {
+    // Blueskyの表示名はプロフィールリンク内の最初のテキスト
+    const links = Array.from(post.querySelectorAll('a[href*="/profile/"]'));
+    for (const link of links) {
+      const text = link.textContent?.trim();
+      // ハンドル（@付きやdid:）ではなく表示名を探す
+      if (text && !text.startsWith('@') && !text.startsWith('did:') && !text.includes('.')) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  function getBlueskyImageIndex(post, img) {
+    const imgs = Array.from(post.querySelectorAll('img'))
+      .filter((i) => i.src?.includes('cdn.bsky.app') && !i.closest('[data-testid="userAvatarImage"]'));
+    if (imgs.length <= 1) return null;
+    const index = imgs.indexOf(img);
+    if (index === -1) return null;
+    return `${index + 1}/${imgs.length}`;
   }
 
   function getBlueskyPostText(post) {
@@ -482,13 +551,17 @@
     return null;
   }
 
-  function buildAnnotation({ platform, screenName, uid, postId, publishedAt, postText }) {
+  function buildAnnotation({ platform, screenName, displayName, uid, postId, publishedAt, postText, hashtags, altText, imageIndex }) {
     const lines = [];
     if (platform) lines.push(`Platform: ${platform}`);
+    if (displayName) lines.push(`Display Name: ${displayName}`);
     if (screenName) lines.push(`Author: @${screenName}`);
     if (uid) lines.push(`UID: ${uid}`);
     if (postId) lines.push(`Post ID: ${postId}`);
+    if (imageIndex) lines.push(`Image: ${imageIndex}`);
     if (publishedAt) lines.push(`Published: ${publishedAt}`);
+    if (hashtags?.length) lines.push(`Hashtags: ${hashtags.join(' ')}`);
+    if (altText && altText !== '画像' && altText !== 'Image') lines.push(`Alt: ${truncate(altText, 200)}`);
     if (postText) lines.push(`Text: ${truncate(postText, 200)}`);
     return lines.length ? lines.join('\n') : null;
   }
