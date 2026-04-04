@@ -1,78 +1,73 @@
 # SNS Post to Save
 
-A Chrome extension that lets you click an SNS post and save it as a PNG image together with metadata such as the post URL, handle name, user IDs, and post timestamp, so the post stays searchable later.
+A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Saved images are searchable and browsable directly in Windows Explorer without any special tools.
 
 ## Usage
 
 1. Click the extension icon in the toolbar (or press `Alt+S`)
 2. Click the post you want to save
-3. The post is saved as a PNG with metadata to your downloads folder
-
+3. The post is saved as a JPEG with EXIF metadata to your downloads folder
 
 ## Demo
 
 ![Demo](docs/demo.gif)
 
+## Supported Platforms
+
+- X (Twitter)
+- Bluesky
+- Misskey
+
 ## Features
 
-- Save posts from X, Bluesky, and Misskey as images
-- Use short filenames like `2026-03-29_08-20-15_x.com_screenname_postid.png`
-- Embed metadata into the PNG `iTXt` chunk
-- Optionally save a sidecar JSON file with the same base filename
+- Save posts as JPEG images with embedded EXIF metadata
+- View metadata in Windows Explorer's file properties (Details tab)
+- Search files by author, title, or other fields directly in Explorer
+- Extract post text, display name, screen name, and user ID from the page
+- Short filenames: `2026-04-04_09-14-38_x.com_m_Yz_12345.jpg`
+- Optionally save a sidecar JSON file
 
-## Metadata Fields
+## EXIF Metadata Mapping
 
-- `schema` — Data format version
-- `capturedAt` — When the image was saved
-- `platform` — Which SNS (`x` / `bluesky` / `misskey` etc.)
-- `pageTitle` — Browser tab title at save time
-- `pageUrl` — The page URL that was open
-- `postUrl` — The post URL (recorded even when saving from a feed)
-- `sourceHost` — Site hostname (`x.com`, `bsky.app` etc.)
-- `postId` — Post ID
-- `screenName` — Account handle (the `@name` part)
-- `userId` — Platform-specific user ID
-- `uid` — A more stable user identifier separate from the handle (e.g. Bluesky DID)
-- `postPublishedAt` — When the post was published
-- `extension.name` / `extension.version` — Name and version of the extension that saved the file
+The extension writes metadata to standard EXIF fields that Windows Explorer can display.
 
-## Where The Metadata Lives
+| Explorer property | EXIF field | Content |
+|---|---|---|
+| Title | XPTitle | Post URL |
+| Tags | XPKeywords | Platform, display name, screen name, user ID/UID |
+| Comment | XPComment | Post text |
+| Date taken | DateTimeOriginal | Post publish date (not capture date) |
+| Program name | Software | Extension name and version |
 
-The metadata is inside the PNG itself, not in a separate database. This keeps the image portable even when you move it by itself.
+> **Note:** "Date taken" shows the **post publish date**, not when the screenshot was captured. The file creation date reflects the capture time.
 
-> **Note:** Uploading to social media or re-saving with an image editor may strip the metadata. Keep the original PNG to be safe.
+## Sorting and Filtering by Post Date
+
+Files are named by post date (e.g. `2026-04-04.jpg`), so sorting by name equals sorting by post date.
+
+To filter by date range in Explorer, add the "Date taken" column:
+
+1. Switch to **Details** view
+2. Right-click any column header and select **More...**
+3. Check **Date taken** and click OK
+4. Click the column header to sort, or click its **▼** to filter by date range
+
+You can also type date range queries in the search bar: `撮影日時:2026/04/01..2026/04/03`
+
+## Extracted Metadata
+
+| Field | X | Bluesky | Misskey |
+|---|---|---|---|
+| Screen name | From post URL | From `data-testid` / profile link | From profile link |
+| Display name | `[data-testid="User-Name"]` | Profile link text | Profile link text |
+| User ID | React fiber / follow button | — | — |
+| UID | — | DID from profile link | — |
+| Post text | `[data-testid="tweetText"]` | `[data-testid="postText"]` | `.mfm` element |
+| Post date | `<time>` element | `<time>` element | `<time>` element |
 
 ## JSON Option
 
-The `Also save JSON with PNG` option is off by default.
+The **Also save JSON with JPEG** option is off by default. Enable it in the extension options page.
 
-- Benefit
-  - Easier to read from scripts, editors, and external tools
-  - Metadata survives even if the image is re-saved or edited
-- Tradeoff
-  - The image and metadata become two separate files to manage
-
-## Metadata
-
-The PNG stores JSON metadata in a UTF-8 `iTXt` chunk with the keyword `sns-post-to-save`.
-
-```json
-{
-  "schema": "sns-post-to-save/v1",
-  "capturedAt": "2026-03-29T12:34:56.789Z",
-  "platform": "x",
-  "pageTitle": "Home / X",
-  "pageUrl": "https://x.com/home",
-  "postUrl": "https://x.com/user/status/123",
-  "sourceHost": "x.com",
-  "postId": "123",
-  "screenName": "user",
-  "userId": null,
-  "uid": null,
-  "postPublishedAt": "2026-03-29T08:20:15.000Z",
-  "extension": {
-    "name": "SNS Post to Save",
-    "version": "0.1.0"
-  }
-}
-```
+- **Benefit**: Easier to read from scripts and external tools. Metadata survives if the image is re-saved.
+- **Tradeoff**: Two files to manage per post. The JSON may get separated when moving files.

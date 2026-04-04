@@ -178,7 +178,7 @@
           Math.round(rect.x * dpr), Math.round(rect.y * dpr), w, h,
           0, 0, w, h
         );
-        sendResponse({ croppedDataUrl: canvas.toDataURL('image/png') });
+        sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
 
         // スクロール位置を復元
         if (savedScrollPosition) {
@@ -238,8 +238,10 @@ function getSiteConfig() {
         return {
           postId: parsed?.postId || null,
           screenName: parsed?.screenName || null,
-          userId: null,
+          displayName: getXDisplayName(post),
+          userId: getXUserId(post),
           uid: null,
+          postText: getXPostText(post),
           postPublishedAt: getPostPublishedAt(post)
         };
       },
@@ -283,8 +285,10 @@ function getSiteConfig() {
         return {
           postId: postLink?.postId || null,
           screenName: profile.screenName || postLink?.handle || null,
+          displayName: getBlueskyDisplayName(post),
           userId: null,
           uid: profile.uid,
+          postText: getBlueskyPostText(post),
           postPublishedAt: getPostPublishedAt(post)
         };
       },
@@ -330,8 +334,10 @@ function getSiteConfig() {
         return {
           postId: noteLink?.id || null,
           screenName: authorProfile?.screenName || null,
+          displayName: getMisskeyDisplayName(post),
           userId: null,
           uid: null,
+          postText: getMisskeyPostText(post),
           postPublishedAt: getPostPublishedAt(post)
         };
       },
@@ -400,8 +406,53 @@ function parseXPostLink(href) {
   }
 }
 
+function getXPostText(post) {
+  const textEl = post.querySelector('[data-testid="tweetText"]');
+  return textEl?.textContent?.trim() || null;
+}
+
+function getXDisplayName(post) {
+  const userNameEl = post.querySelector('[data-testid="User-Name"]');
+  const firstSpan = userNameEl?.querySelector('a span');
+  return firstSpan?.textContent?.trim() || null;
+}
+
+function getXUserId(post) {
+  const uid = post.getAttribute('__x-user-id');
+  if (uid && /^\d+$/.test(uid)) {
+    return uid;
+  }
+
+  const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
+  if (followBtn) {
+    const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
 function hostnameMatches(host) {
   return location.hostname === host || location.hostname.endsWith(`.${host}`);
+}
+
+function getBlueskyPostText(post) {
+  const textEl = post.querySelector('[data-testid="postText"]');
+  return textEl?.textContent?.trim() || null;
+}
+
+function getBlueskyDisplayName(post) {
+  const links = Array.from(post.querySelectorAll('a[href*="/profile/"]'));
+  for (const link of links) {
+    const text = link.textContent?.trim();
+    if (text && !text.startsWith('@') && !text.startsWith('did:') && !text.includes('.')) {
+      return text;
+    }
+  }
+
+  return null;
 }
 
 function getBlueskyAuthorHandle(post) {
@@ -585,6 +636,40 @@ function getMisskeyTimeLink(post) {
   }
 
   return null;
+}
+
+function getMisskeyPostText(post) {
+  if (!(post instanceof Element)) {
+    return null;
+  }
+
+  const article = getMisskeyPrimaryArticle(post);
+  if (!article) {
+    return null;
+  }
+
+  const contentEl = article.querySelector('.mfm');
+  return contentEl?.textContent?.trim() || null;
+}
+
+function getMisskeyDisplayName(post) {
+  if (!(post instanceof Element)) {
+    return null;
+  }
+
+  const article = getMisskeyPrimaryArticle(post);
+  if (!article) {
+    return null;
+  }
+
+  const profileLink = article.querySelector('a[href^="/@"]');
+  if (!profileLink) {
+    return null;
+  }
+
+  const nameEl = profileLink.querySelector('span, b, strong') || profileLink;
+  const text = nameEl?.textContent?.trim();
+  return text && !text.startsWith('@') ? text : null;
 }
 
 function getMisskeyAuthorProfile(post) {

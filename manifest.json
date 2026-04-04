@@ -23,6 +23,14 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["page-context.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
+  ],
   "commands": {
     "activate": {
       "suggested_key": {
