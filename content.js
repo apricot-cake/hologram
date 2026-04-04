@@ -5,28 +5,33 @@
   // dragstart イベントを監視し、ドラッグされた画像のメタデータを background に送信
   document.addEventListener('dragstart', (e) => {
     const img = e.target.closest('img') || (e.target.tagName === 'IMG' ? e.target : null);
+    console.log('[Eagle Meta Content] dragstart', img ? 'img found' : 'no img', e.target.tagName);
     if (!img) return;
 
     const post = findPostElement(img);
     const metadata = post
       ? siteConfig.extractMetadata(post, img)
       : siteConfig.extractFallbackMetadata?.(img);
+    console.log('[Eagle Meta Content] post:', !!post, 'metadata:', !!metadata, metadata?.title);
     if (!metadata) return;
 
     const imageUrls = collectImageUrls(img);
 
-    // Bluesky: ハンドルからDIDを非同期解決してから送信
+    // まず即座にメッセージ送信（ポーリング開始を遅らせない）
+    // Bluesky: DID解決は並行して行い、annotationに後から追加
     if (siteConfig.platform === 'bluesky' && metadata._handle && !metadata._uid) {
+      console.log('[Eagle Meta Content] resolving DID for', metadata._handle);
       chrome.runtime.sendMessage(
         { type: 'resolveBlueskyDid', handle: metadata._handle },
         (response) => {
+          console.log('[Eagle Meta Content] DID resolved:', response?.did);
           if (response?.did) {
-            metadata.annotation = metadata.annotation.replace(
-              /\nPost ID:/,
-              `\nUID: ${response.did}\nPost ID:`
-            );
-            // annotationにPost IDがない場合（フォールバック等）
-            if (!metadata.annotation.includes('UID:')) {
+            if (metadata.annotation.includes('Post ID:')) {
+              metadata.annotation = metadata.annotation.replace(
+                /\nPost ID:/,
+                `\nUID: ${response.did}\nPost ID:`
+              );
+            } else {
               metadata.annotation += `\nUID: ${response.did}`;
             }
           }
