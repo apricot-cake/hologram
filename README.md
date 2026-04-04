@@ -1,5 +1,7 @@
 # Post Snap
 
+> Chrome Web Store review pending.
+
 A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Post text is embedded in the image file, so you can search saved posts by content directly in Windows Explorer — no special tools needed.
 
 ## Usage
@@ -44,14 +46,7 @@ The extension writes metadata to standard EXIF fields that Windows Explorer can 
 
 Files are named by post date (e.g. `2026-04-04.jpg`), so sorting by name equals sorting by post date.
 
-To filter by date range in Explorer, add the "Date taken" column:
-
-1. Switch to **Details** view
-2. Right-click any column header and select **More...**
-3. Check **Date taken** and click OK
-4. Click the column header to sort, or click its **▼** to filter by date range
-
-You can also type date range queries in the search bar: `撮影日時:2026/04/01..2026/04/03`
+To filter by date range, type in Explorer's search bar: `撮影日時:2026/04/01..2026/04/03`
 
 ## Extracted Metadata
 
