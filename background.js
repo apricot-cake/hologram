@@ -17,16 +17,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'imageDragged') {
-    log('[Eagle Meta] Drag detected, metadata:', message.metadata?.title);
-    pendingDrag = {
-      imageUrls: message.imageUrls,
-      pageUrl: message.pageUrl,
-      metadata: message.metadata,
-      timestamp: Date.now()
-    };
-    startPolling();
+    log('Drag detected, metadata:', message.metadata?.title);
+    handleImageDragged(message);
   }
 });
+
+async function handleImageDragged(message) {
+  let metadata = message.metadata;
+
+  // メディアグリッドのフォールバック: Syndication APIでツイート詳細を取得
+  if (metadata._enrichPostId) {
+    try {
+      const enriched = await fetchTweetDetails(metadata._enrichPostId, metadata._imageIndex);
+      if (enriched) {
+        metadata = { ...metadata, ...enriched };
+      }
+    } catch (e) {
+      log('Tweet enrichment failed:', e.message);
+    }
+  }
+
+  pendingDrag = {
+    imageUrls: message.imageUrls,
+    pageUrl: message.pageUrl,
+    metadata,
+    timestamp: Date.now()
+  };
+  startPolling();
+}
+
+async function fetchTweetDetails(postId, imageIndex) {
+  const res = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(postId)}&token=0`);
+  if (!res.ok) return null;
+  const data = await res.json();
+
+  const user = data.user;
+  const screenName = user?.screen_name || null;
+  const displayName = user?.name || null;
+  const uid = user?.id_str || null;
+  const publishedAt = data.created_at || null;
+  const rawText = data.text || '';
+  // t.co URLを除去してテキストをクリーン化
+  const postText = rawText.replace(/https?:\/\/t\.co\/\S+/g, '').trim();
+  const hashtags = data.entities?.hashtags?.map((h) => `#${h.text}`) || [];
+  const totalMedia = data.mediaDetails?.length || 0;
+  const altTexts = data.mediaDetails?.map((m) => m.ext_alt_text).filter(Boolean) || [];
+
+  // 画像番号を総数付きに更新
+  let fullImageIndex = imageIndex;
+  if (imageIndex && totalMedia > 1) {
+    fullImageIndex = `${imageIndex}/${totalMedia}`;
+  }
+
+  // altTextは画像番号に対応するものを取得
+  const imgNum = parseInt(imageIndex, 10);
+  const altText = (imgNum >= 1 && altTexts[imgNum - 1]) || altTexts[0] || null;
+
+  const sanitize = (v) => String(v).replace(/[\r\n]+/g, ' ').trim();
+  const truncate = (t, max) => t.length <= max ? t : t.slice(0, max - 1) + '…';
+
+  const lines = [];
+  lines.push(`Platform: ${sanitize('X (Twitter)')}`);
+  if (displayName) lines.push(`Display Name: ${sanitize(displayName)}`);
+  if (screenName) lines.push(`Author: @${sanitize(screenName)}`);
+  if (uid && /^\d+$/.test(uid)) lines.push(`UID: ${sanitize(uid)}`);
+  lines.push(`Post ID: ${sanitize(postId)}`);
+  if (fullImageIndex) lines.push(`Image: ${sanitize(fullImageIndex)}`);
+  if (publishedAt) lines.push(`Published: ${sanitize(publishedAt)}`);
+  if (hashtags.length) lines.push(`Hashtags: ${hashtags.map(sanitize).join(' ')}`);
+  if (altText && altText !== '画像' && altText !== 'Image') lines.push(`Alt: ${truncate(sanitize(altText), 200)}`);
+  if (postText) lines.push(`Text: ${truncate(sanitize(postText), 200)}`);
+
+  const title = screenName
+    ? (postText ? `@${screenName} - ${truncate(postText, 60)}` : `@${screenName}`)
+    : null;
+
+  return {
+    title,
+    annotation: lines.join('\n')
+  };
+}
 
 function startPolling() {
   stopPolling();

@@ -136,6 +136,7 @@
         };
       },
       // メディアグリッド等、article 要素がない場合のフォールバック
+      // _enrichPostId を設定し、background.js で Syndication API から詳細を取得
       extractFallbackMetadata(img) {
         const link = img.closest('a[href*="/status/"]');
         const postLink = link ? parseXPostLink(link.href) : null;
@@ -148,6 +149,8 @@
         return {
           title: buildTitle(screenName, null),
           link: postLink.url,
+          _enrichPostId: postLink.postId,
+          _imageIndex: imageIndex,
           annotation: buildAnnotation({
             platform: 'X (Twitter)',
             screenName,

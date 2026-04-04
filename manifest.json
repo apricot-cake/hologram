@@ -6,7 +6,8 @@
   "permissions": [],
   "host_permissions": [
     "http://localhost:41595/*",
-    "https://public.api.bsky.app/*"
+    "https://public.api.bsky.app/*",
+    "https://cdn.syndication.twimg.com/*"
   ],
   "background": {
     "service_worker": "background.js"
