@@ -240,11 +240,12 @@ function getSiteConfig() {
       },
       getPostDetails(post, postUrl) {
         const parsed = parseXPostLink(postUrl) || getXPostLink(post);
+        const isRetweet = !!post.querySelector('[data-testid="socialContext"]');
         return {
           postId: parsed?.postId || null,
           screenName: parsed?.screenName || null,
           displayName: getXDisplayName(post),
-          userId: getXUserId(post),
+          userId: isRetweet ? null : getXUserId(post),
           uid: null,
           postText: getXPostText(post),
           postPublishedAt: getPostPublishedAt(post)
