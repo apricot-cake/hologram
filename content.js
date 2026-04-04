@@ -13,16 +13,39 @@
       : siteConfig.extractFallbackMetadata?.(img);
     if (!metadata) return;
 
-    // 画像URLのバリエーションを収集（照合用）
     const imageUrls = collectImageUrls(img);
 
+    // Bluesky: ハンドルからDIDを非同期解決してから送信
+    if (siteConfig.platform === 'bluesky' && metadata._handle && !metadata._uid) {
+      chrome.runtime.sendMessage(
+        { type: 'resolveBlueskyDid', handle: metadata._handle },
+        (response) => {
+          if (response?.did) {
+            metadata.annotation = metadata.annotation.replace(
+              /\nPost ID:/,
+              `\nUID: ${response.did}\nPost ID:`
+            );
+            // annotationにPost IDがない場合（フォールバック等）
+            if (!metadata.annotation.includes('UID:')) {
+              metadata.annotation += `\nUID: ${response.did}`;
+            }
+          }
+          sendDragMessage(imageUrls, metadata);
+        }
+      );
+    } else {
+      sendDragMessage(imageUrls, metadata);
+    }
+  }, true);
+
+  function sendDragMessage(imageUrls, metadata) {
     chrome.runtime.sendMessage({
       type: 'imageDragged',
       imageUrls,
       pageUrl: location.href,
       metadata
     });
-  }, true);
+  }
 
   // === 投稿検出 ===
 
@@ -196,7 +219,9 @@
             postId: postLink?.postId,
             publishedAt,
             postText
-          })
+          }),
+          _handle: !profile.uid ? screenName : null,
+          _uid: profile.uid
         };
       },
       extractFallbackMetadata(img) {
@@ -223,7 +248,9 @@
             screenName,
             uid,
             postId: postLink?.postId
-          })
+          }),
+          _handle: !uid ? screenName : null,
+          _uid: uid
         };
       }
     };

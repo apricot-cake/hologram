@@ -5,7 +5,8 @@
   "description": "SNSの投稿者情報をEagleのメタデータとして自動注入",
   "permissions": [],
   "host_permissions": [
-    "http://localhost:41595/*"
+    "http://localhost:41595/*",
+    "https://public.api.bsky.app/*"
   ],
   "background": {
     "service_worker": "background.js"
