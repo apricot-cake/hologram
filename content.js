@@ -57,7 +57,11 @@
 
     let el = target instanceof Element ? target : target?.parentElement;
     while (el) {
-      if (el.matches?.(siteConfig.postSelector)) return el;
+      if (el.matches?.(siteConfig.postSelector)) {
+        if (!siteConfig.isPostElement || siteConfig.isPostElement(el)) {
+          return el;
+        }
+      }
       el = el.parentElement;
     }
     return null;
@@ -259,7 +263,11 @@ function getSiteConfig() {
   if (hostnameMatches('bsky.app')) {
     return {
       platform: 'bluesky',
-      postSelector: '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]',
+      postSelector: '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"], [role="link"]',
+      isPostElement(el) {
+        if (el.getAttribute('data-testid')) return true;
+        return el.getAttribute('role') === 'link' && !!el.querySelector('[data-testid="postText"], [data-testid="repostBtn"]');
+      },
       captureStyleText: `
         .__snsCaptureBskyNoHover,
         .__snsCaptureBskyNoHover * {
@@ -339,7 +347,7 @@ function getSiteConfig() {
           userId: null,
           uid: null,
           postText: getMisskeyPostText(post),
-          postPublishedAt: getPostPublishedAt(post)
+          postPublishedAt: getMisskeyPostPublishedAt(post)
         };
       },
       getCaptureRect(post) {
@@ -358,12 +366,25 @@ function getSiteConfig() {
 }
 
 function getPostPublishedAt(post) {
-  const timeElement = post instanceof Element
-    ? post.querySelector('time[datetime], time')
-    : null;
+  if (!(post instanceof Element)) {
+    return null;
+  }
 
-  const rawValue = timeElement?.getAttribute('datetime') || '';
+  const timeElement = post.querySelector('time[datetime], time');
+  const rawValue = timeElement?.getAttribute('datetime')
+    || timeElement?.getAttribute('title')
+    || '';
+
   if (!rawValue) {
+    const postLink = post.querySelector('a[href*="/post/"], a[href*="/status/"]');
+    const ariaLabel = postLink?.getAttribute('aria-label') || '';
+    if (ariaLabel) {
+      const normalized = ariaLabel.replace(/(\d+)年(\d+)月(\d+)日/, '$1/$2/$3');
+      const parsed = new Date(normalized);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString();
+      }
+    }
     return null;
   }
 
@@ -464,16 +485,21 @@ function getBlueskyDisplayName(post) {
   const links = Array.from(post.querySelectorAll('a[href*="/profile/"]'));
   for (const link of links) {
     const href = link.getAttribute('href') || '';
-    if (href.includes('/liked-by') || href.includes('/reposted-by')) {
+    if (href.includes('/liked-by') || href.includes('/reposted-by') || href.includes('/post/')) {
       continue;
     }
 
-    const children = Array.from(link.querySelectorAll('div, span, b, strong'));
-    for (const child of children) {
-      const text = child.textContent?.trim();
-      if (text && text === child.innerText?.trim()
+    const candidates = link.children.length
+      ? Array.from(link.querySelectorAll('div, span, b, strong'))
+      : [link];
+
+    for (const el of candidates) {
+      const text = el.textContent?.trim();
+      if (text && text.length > 1
+        && text === el.innerText?.trim()
         && !text.startsWith('@') && !text.startsWith('did:')
-        && !text.includes('.') && !/^\d/.test(text)) {
+        && !text.includes('.') && !/^\d/.test(text)
+        && !/リポスト|Reposted/i.test(text)) {
         return text;
       }
     }
@@ -665,6 +691,29 @@ function getMisskeyTimeLink(post) {
   return null;
 }
 
+function getMisskeyPostPublishedAt(post) {
+  if (!(post instanceof Element)) {
+    return null;
+  }
+
+  const article = getMisskeyPrimaryArticle(post);
+  if (!article) {
+    return getPostPublishedAt(post);
+  }
+
+  const container = getMisskeyContentContainer(article);
+  const timeElement = container.querySelector('time[datetime], time');
+  const rawValue = timeElement?.getAttribute('datetime')
+    || timeElement?.getAttribute('title')
+    || '';
+  if (!rawValue) {
+    return getPostPublishedAt(post);
+  }
+
+  const parsed = new Date(rawValue);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function getMisskeyPostText(post) {
   if (!(post instanceof Element)) {
     return null;
@@ -729,10 +778,20 @@ function getMisskeyDisplayName(post) {
 }
 
 function getMisskeyAuthorProfile(post) {
-  const links = post instanceof Element
-    ? Array.from(post.querySelectorAll('a[href]'))
-    : [];
+  if (!(post instanceof Element)) {
+    return null;
+  }
 
+  const article = getMisskeyPrimaryArticle(post);
+  if (!article) {
+    return null;
+  }
+
+  const container = getMisskeyContentContainer(article);
+  const header = container.querySelector('header');
+  const searchRoot = header || container;
+
+  const links = Array.from(searchRoot.querySelectorAll('a[href]'));
   for (const link of links) {
     const parsed = parseMisskeyProfileLink(link.href);
     if (parsed) {

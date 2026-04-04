@@ -80,9 +80,9 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
     postDetails.uid = await resolveBlueskyDid(postDetails.screenName);
   }
 
-  if (captureInfo.id === 'misskey' && postDetails?.screenName && !postDetails?.userId) {
+  if (captureInfo.id === 'misskey') {
     const host = getHostname(postUrl || tab.url);
-    postDetails.userId = await resolveMisskeyUserId(host, postDetails.screenName);
+    await enrichMisskeyPostDetails(host, postDetails, postUrl);
   }
 
   const metadata = buildMetadata({
@@ -142,30 +142,48 @@ async function resolveBlueskyDid(handle) {
   return null;
 }
 
-const misskeyUserIdCache = new Map();
+async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
+  if (!host || !postDetails) return;
 
-async function resolveMisskeyUserId(host, screenName) {
-  if (!host || !screenName) return null;
-  const key = `${host}:${screenName}`;
-  if (misskeyUserIdCache.has(key)) return misskeyUserIdCache.get(key);
-
-  try {
-    const res = await fetch(`https://${host}/api/users/show`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: screenName })
-    });
-    const data = await res.json();
-    const id = data.id || null;
-    if (id) {
-      misskeyUserIdCache.set(key, id);
-      return id;
+  const noteId = parseMisskeyNoteId(postUrl);
+  if (noteId) {
+    try {
+      const res = await fetch(`https://${host}/api/notes/show`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noteId })
+      });
+      const note = await res.json();
+      if (note.user) {
+        if (!postDetails.userId) {
+          postDetails.userId = note.user.id || null;
+        }
+        if (!postDetails.screenName) {
+          postDetails.screenName = note.user.username || null;
+        }
+        if (!postDetails.displayName) {
+          postDetails.displayName = note.user.name || null;
+        }
+      }
+      if (note.text) {
+        postDetails.postText = note.text;
+      }
+      if (note.createdAt) {
+        postDetails.postPublishedAt = note.createdAt;
+      }
+    } catch {
+      // API failure is not critical
     }
-  } catch {
-    // API failure is not critical
   }
+}
 
-  return null;
+function parseMisskeyNoteId(url) {
+  try {
+    const match = new URL(url).pathname.match(/^\/notes\/([^/?#]+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildJpegDataUrl(croppedDataUrl, metadata) {
