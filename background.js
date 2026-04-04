@@ -1,12 +1,12 @@
 const EAGLE_API = 'http://localhost:41595';
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 30000;
+const DEBUG = false;
+const log = (...args) => { if (DEBUG) console.log('[Eagle Meta]', ...args); };
 
 let pollTimer = null;
 let pollStartTime = 0;
-let pendingDrag = null; // { imageUrls: string[], pageUrl: string, metadata: object, timestamp: number }
-
-console.log('[Eagle Meta] Service worker loaded, version:', chrome.runtime.getManifest().version);
+let pendingDrag = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'resolveBlueskyDid') {
@@ -17,7 +17,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'imageDragged') {
-    console.log('[Eagle Meta] Drag detected, metadata:', message.metadata?.title);
+    log('[Eagle Meta] Drag detected, metadata:', message.metadata?.title);
     pendingDrag = {
       imageUrls: message.imageUrls,
       pageUrl: message.pageUrl,
@@ -48,7 +48,7 @@ async function poll() {
   }
 
   if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
-    console.log('[Eagle Meta] Polling timed out');
+    log('[Eagle Meta] Polling timed out');
     pendingDrag = null;
     stopPolling();
     return;
@@ -58,7 +58,7 @@ async function poll() {
     const items = await fetchRecentItems();
     const matched = findMatchingItem(items);
 
-    console.log('[Eagle Meta] Poll: found', items.length, 'items, pending urls:', pendingDrag?.imageUrls?.length, 'drag time:', pendingDrag?.timestamp);
+    log('[Eagle Meta] Poll: found', items.length, 'items, pending urls:', pendingDrag?.imageUrls?.length, 'drag time:', pendingDrag?.timestamp);
     if (matched) {
       const metadata = pendingDrag.metadata;
       const itemId = matched.id;
@@ -71,11 +71,11 @@ async function poll() {
         ? metadata.title + '\n\n' + (metadata.annotation || '')
         : metadata.annotation;
       await updateItemMetadata(itemId, { annotation, link: metadata.link });
-      console.log('[Eagle Meta] Updated item:', itemId, metadata.title);
+      log('[Eagle Meta] Updated item:', itemId, metadata.title);
       return;
     }
   } catch (e) {
-    console.warn('[Eagle Meta] Poll error:', e.message);
+    log('Poll error:', e.message);
   }
 
   pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
@@ -90,8 +90,11 @@ async function resolveBlueskyDid(handle) {
   const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
   const data = await res.json();
   const did = data.did || null;
-  if (did) blueskyDidCache.set(handle, did);
-  return did;
+  if (did && /^did:[a-z]+:.+/.test(did)) {
+    blueskyDidCache.set(handle, did);
+    return did;
+  }
+  return null;
 }
 
 async function fetchRecentItems() {
@@ -152,15 +155,17 @@ function urlMatches(eagleUrl, candidateUrl) {
       // パス完全一致（クエリパラメータ無視）
       if (a.pathname === b.pathname) return true;
 
-      // パス前方一致: Eagle の /status/123/photo/1 と metadata の /status/123 をマッチ
-      if (a.pathname.startsWith(b.pathname) || b.pathname.startsWith(a.pathname)) return true;
+      // パス境界での前方一致: /status/123 は /status/123/photo/1 にマッチするが
+      // /status/12 は /status/123 にマッチしない
+      const shorter = a.pathname.length <= b.pathname.length ? a.pathname : b.pathname;
+      const longer = a.pathname.length > b.pathname.length ? a.pathname : b.pathname;
+      if (longer.startsWith(shorter) && (longer[shorter.length] === '/' || shorter.endsWith('/'))) {
+        return true;
+      }
     }
   } catch {
-    // URL解析失敗時は文字列ベースにフォールバック
+    // URL解析失敗時はマッチなし
   }
-
-  // 一方が他方を含む（サムネイルURL vs フルURL等）
-  if (eagleUrl.includes(candidateUrl) || candidateUrl.includes(eagleUrl)) return true;
 
   return false;
 }

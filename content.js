@@ -1,18 +1,21 @@
 (() => {
+  const DEBUG = false;
+  const log = (...args) => { if (DEBUG) console.log('[Eagle Meta]', ...args); };
+
   const siteConfig = getSiteConfig();
   if (!siteConfig) return;
 
   // dragstart イベントを監視し、ドラッグされた画像のメタデータを background に送信
   document.addEventListener('dragstart', (e) => {
     const img = e.target.closest('img') || (e.target.tagName === 'IMG' ? e.target : null);
-    console.log('[Eagle Meta Content] dragstart', img ? 'img found' : 'no img', e.target.tagName);
+    log('[Eagle Meta Content] dragstart', img ? 'img found' : 'no img', e.target.tagName);
     if (!img) return;
 
     const post = findPostElement(img);
     const metadata = post
       ? siteConfig.extractMetadata(post, img)
       : siteConfig.extractFallbackMetadata?.(img);
-    console.log('[Eagle Meta Content] post:', !!post, 'metadata:', !!metadata, metadata?.title);
+    log('[Eagle Meta Content] post:', !!post, 'metadata:', !!metadata, metadata?.title);
     if (!metadata) return;
 
     const imageUrls = collectImageUrls(img);
@@ -20,11 +23,11 @@
     // まず即座にメッセージ送信（ポーリング開始を遅らせない）
     // Bluesky: DID解決は並行して行い、annotationに後から追加
     if (siteConfig.platform === 'bluesky' && metadata._handle && !metadata._uid) {
-      console.log('[Eagle Meta Content] resolving DID for', metadata._handle);
+      log('[Eagle Meta Content] resolving DID for', metadata._handle);
       chrome.runtime.sendMessage(
         { type: 'resolveBlueskyDid', handle: metadata._handle },
         (response) => {
-          console.log('[Eagle Meta Content] DID resolved:', response?.did);
+          log('[Eagle Meta Content] DID resolved:', response?.did);
           if (response?.did) {
             if (metadata.annotation.includes('Post ID:')) {
               metadata.annotation = metadata.annotation.replace(
@@ -92,9 +95,6 @@
     }
     if (hostnameMatches('bsky.app')) {
       return blueskyConfig();
-    }
-    if (looksLikeMisskey()) {
-      return misskeyConfig();
     }
     return null;
   }
@@ -187,7 +187,7 @@
     // ページコンテキスト経由で React fiber から user.id_str を取得
     // content script は隔離環境のため、ページ側に注入した属性を読む
     const uid = post.getAttribute('__x-user-id');
-    if (uid) return uid;
+    if (uid && /^\d+$/.test(uid)) return uid;
 
     // フォールバック: data-testid="<userId>-follow" から取得
     const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
@@ -407,112 +407,10 @@
     return textContainer?.textContent?.trim() || '';
   }
 
-  // --- Misskey ---
-
-  function misskeyConfig() {
-    return {
-      platform: 'misskey',
-      isPostElement(el) {
-        return el instanceof HTMLElement
-          && el.matches('div[tabindex="0"]')
-          && Boolean(el.querySelector('article'))
-          && Boolean(getMisskeyPermalink(el));
-      },
-      extractMetadata(post, img) {
-        const noteLink = getMisskeyTimeLink(post) || parseMisskeyNoteLink(getMisskeyPermalink(post));
-        const authorProfile = getMisskeyAuthorProfile(post);
-        const publishedAt = getPostPublishedAt(post);
-        const postText = getMisskeyPostText(post);
-
-        return {
-          title: buildTitle(authorProfile?.screenName, postText),
-          link: noteLink?.url || getMisskeyPermalink(post) || null,
-          annotation: buildAnnotation({
-            platform: 'Misskey',
-            screenName: authorProfile?.screenName,
-            postId: noteLink?.id,
-            publishedAt,
-            postText
-          })
-        };
-      }
-    };
-  }
-
-  function getMisskeyPermalink(post) {
-    const timeLink = getMisskeyTimeLink(post);
-    if (timeLink) return timeLink.url;
-
-    const links = Array.from(post.querySelectorAll('a[href]'));
-    for (const link of links) {
-      const parsed = parseMisskeyNoteLink(link.href);
-      if (parsed) return parsed.url;
-    }
-    return '';
-  }
-
-  function getMisskeyTimeLink(post) {
-    const links = Array.from(post.querySelectorAll('a[href]'));
-    for (const link of links) {
-      if (!link.querySelector('time')) continue;
-      const parsed = parseMisskeyNoteLink(link.href);
-      if (parsed) return parsed;
-    }
-    return null;
-  }
-
-  function parseMisskeyNoteLink(href) {
-    try {
-      const url = new URL(href, location.origin);
-      const match = url.pathname.match(/^\/notes\/([^/?#]+)\/?$/);
-      if (!match) return null;
-      return { id: decodeURIComponent(match[1]), url: url.href };
-    } catch {
-      return null;
-    }
-  }
-
-  function getMisskeyAuthorProfile(post) {
-    const links = Array.from(post.querySelectorAll('a[href]'));
-    for (const link of links) {
-      const parsed = parseMisskeyProfileLink(link.href);
-      if (parsed) return parsed;
-    }
-    return null;
-  }
-
-  function parseMisskeyProfileLink(href) {
-    try {
-      const url = new URL(href, location.origin);
-      const match = url.pathname.match(/^\/@([^/?#]+)\/?$/);
-      if (!match) return null;
-      return { screenName: decodeURIComponent(match[1]), url: url.href };
-    } catch {
-      return null;
-    }
-  }
-
-  function getMisskeyPostText(post) {
-    const article = post.querySelector('article');
-    if (!article) return '';
-    const textNodes = article.querySelectorAll('.mfm-text, [class*="content"] p');
-    if (textNodes.length) {
-      return Array.from(textNodes).map((n) => n.textContent).join(' ').trim();
-    }
-    return '';
-  }
-
   // === 共通ユーティリティ ===
 
   function hostnameMatches(host) {
     return location.hostname === host || location.hostname.endsWith(`.${host}`);
-  }
-
-  function looksLikeMisskey() {
-    const misskeyAccent = getComputedStyle(document.documentElement)
-      .getPropertyValue('--MI_THEME-accent')
-      .trim();
-    return Boolean(misskeyAccent && document.querySelector('div[tabindex="0"] a[href] time'));
   }
 
   function getPostPublishedAt(post) {
@@ -553,17 +451,22 @@
 
   function buildAnnotation({ platform, screenName, displayName, uid, postId, publishedAt, postText, hashtags, altText, imageIndex }) {
     const lines = [];
-    if (platform) lines.push(`Platform: ${platform}`);
-    if (displayName) lines.push(`Display Name: ${displayName}`);
-    if (screenName) lines.push(`Author: @${screenName}`);
-    if (uid) lines.push(`UID: ${uid}`);
-    if (postId) lines.push(`Post ID: ${postId}`);
-    if (imageIndex) lines.push(`Image: ${imageIndex}`);
-    if (publishedAt) lines.push(`Published: ${publishedAt}`);
-    if (hashtags?.length) lines.push(`Hashtags: ${hashtags.join(' ')}`);
-    if (altText && altText !== '画像' && altText !== 'Image') lines.push(`Alt: ${truncate(altText, 200)}`);
-    if (postText) lines.push(`Text: ${truncate(postText, 200)}`);
+    if (platform) lines.push(`Platform: ${sanitize(platform)}`);
+    if (displayName) lines.push(`Display Name: ${sanitize(displayName)}`);
+    if (screenName) lines.push(`Author: @${sanitize(screenName)}`);
+    if (uid) lines.push(`UID: ${sanitize(uid)}`);
+    if (postId) lines.push(`Post ID: ${sanitize(postId)}`);
+    if (imageIndex) lines.push(`Image: ${sanitize(imageIndex)}`);
+    if (publishedAt) lines.push(`Published: ${sanitize(publishedAt)}`);
+    if (hashtags?.length) lines.push(`Hashtags: ${hashtags.map(sanitize).join(' ')}`);
+    if (altText && altText !== '画像' && altText !== 'Image') lines.push(`Alt: ${truncate(sanitize(altText), 200)}`);
+    if (postText) lines.push(`Text: ${truncate(sanitize(postText), 200)}`);
     return lines.length ? lines.join('\n') : null;
+  }
+
+  function sanitize(value) {
+    // 改行を除去して偽フィールド注入を防止
+    return String(value).replace(/[\r\n]+/g, ' ').trim();
   }
 
   function truncate(text, maxLen) {
