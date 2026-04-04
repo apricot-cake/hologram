@@ -13,6 +13,7 @@ When you drag-save an image to [Eagle](https://en.eagle.cool/) via the official 
 
 - X (Twitter)
 - Bluesky
+- [misskey.io](https://misskey.io/)
 
 ## Captured Data
 

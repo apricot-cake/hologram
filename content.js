@@ -99,6 +99,9 @@
     if (hostnameMatches('bsky.app')) {
       return blueskyConfig();
     }
+    if (looksLikeMisskey()) {
+      return misskeyConfig();
+    }
     return null;
   }
 
@@ -411,6 +414,142 @@
   function getBlueskyPostText(post) {
     const textContainer = post.querySelector('[data-testid="postText"]');
     return textContainer?.textContent?.trim() || '';
+  }
+
+  // --- Misskey ---
+
+  function misskeyConfig() {
+    return {
+      platform: 'misskey',
+      isPostElement(el) {
+        return el instanceof HTMLElement
+          && el.matches('div[tabindex="0"]')
+          && Boolean(el.querySelector('article'))
+          && Boolean(getMisskeyPermalink(el));
+      },
+      extractMetadata(post, img) {
+        const noteLink = getMisskeyTimeLink(post) || parseMisskeyNoteLink(getMisskeyPermalink(post));
+        const authorProfile = getMisskeyAuthorProfile(post);
+        const displayName = getMisskeyDisplayName(post);
+        const publishedAt = getPostPublishedAt(post);
+        const postText = getMisskeyPostText(post);
+        const hashtags = getMisskeyHashtags(post);
+        const altText = img.alt || null;
+        const imageIndex = getMisskeyImageIndex(post, img);
+
+        return {
+          title: buildTitle(authorProfile?.screenName, postText),
+          link: noteLink?.url || getMisskeyPermalink(post) || null,
+          annotation: buildAnnotation({
+            platform: 'Misskey',
+            screenName: authorProfile?.screenName,
+            displayName,
+            postId: noteLink?.id,
+            publishedAt,
+            postText,
+            hashtags,
+            altText,
+            imageIndex
+          })
+        };
+      }
+    };
+  }
+
+  function getMisskeyPermalink(post) {
+    const timeLink = getMisskeyTimeLink(post);
+    if (timeLink) return timeLink.url;
+
+    const links = Array.from(post.querySelectorAll('a[href]'));
+    for (const link of links) {
+      const parsed = parseMisskeyNoteLink(link.href);
+      if (parsed) return parsed.url;
+    }
+    return '';
+  }
+
+  function getMisskeyTimeLink(post) {
+    const links = Array.from(post.querySelectorAll('a[href]'));
+    for (const link of links) {
+      if (!link.querySelector('time')) continue;
+      const parsed = parseMisskeyNoteLink(link.href);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
+  function parseMisskeyNoteLink(href) {
+    try {
+      const url = new URL(href, location.origin);
+      const match = url.pathname.match(/^\/notes\/([^/?#]+)\/?$/);
+      if (!match) return null;
+      return { id: decodeURIComponent(match[1]), url: url.href };
+    } catch {
+      return null;
+    }
+  }
+
+  function getMisskeyAuthorProfile(post) {
+    const links = Array.from(post.querySelectorAll('a[href]'));
+    for (const link of links) {
+      const parsed = parseMisskeyProfileLink(link.href);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
+  function parseMisskeyProfileLink(href) {
+    try {
+      const url = new URL(href, location.origin);
+      const match = url.pathname.match(/^\/@([^/?#]+)\/?$/);
+      if (!match) return null;
+      return { screenName: decodeURIComponent(match[1]), url: url.href };
+    } catch {
+      return null;
+    }
+  }
+
+  function getMisskeyDisplayName(post) {
+    const article = post.querySelector('article');
+    if (!article) return null;
+    // Misskeyの表示名はプロフィールリンク内の最初のテキスト要素
+    const profileLink = article.querySelector('a[href^="/@"]');
+    return profileLink?.textContent?.trim() || null;
+  }
+
+  function getMisskeyPostText(post) {
+    const article = post.querySelector('article');
+    if (!article) return '';
+    const textNodes = article.querySelectorAll('.mfm-text, [class*="content"] p');
+    if (textNodes.length) {
+      return Array.from(textNodes).map((n) => n.textContent).join(' ').trim();
+    }
+    return '';
+  }
+
+  function getMisskeyHashtags(post) {
+    const article = post.querySelector('article');
+    if (!article) return [];
+    const links = Array.from(article.querySelectorAll('a[href*="/tags/"]'));
+    return links.map((a) => a.textContent.trim()).filter(Boolean);
+  }
+
+  function getMisskeyImageIndex(post, img) {
+    const article = post.querySelector('article');
+    if (!article) return null;
+    const imgs = Array.from(article.querySelectorAll('img'))
+      .filter((i) => !i.closest('a[href^="/@"]')); // アバター画像を除外
+    if (imgs.length <= 1) return null;
+    const index = imgs.indexOf(img);
+    if (index === -1) return null;
+    return `${index + 1}/${imgs.length}`;
+  }
+
+  function looksLikeMisskey() {
+    const misskeyAccent = getComputedStyle(document.documentElement)
+      .getPropertyValue('--MI_THEME-accent')
+      .trim();
+    return Boolean(misskeyAccent && document.querySelector('div[tabindex="0"] a[href] time'));
   }
 
   // === 共通ユーティリティ ===

@@ -17,7 +17,8 @@
       "matches": [
         "https://x.com/*",
         "https://twitter.com/*",
-        "https://bsky.app/*"
+        "https://bsky.app/*",
+        "https://misskey.io/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
