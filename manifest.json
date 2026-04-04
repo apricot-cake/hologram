@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SNS Post to Save",
-  "version": "0.1.0",
-  "description": "ワンクリックでSNSの投稿をキャプチャして画像保存",
+  "version": "1.0.0",
+  "description": "Capture SNS posts as images with searchable EXIF metadata",
   "permissions": ["activeTab", "scripting", "downloads"],
   "icons": {
     "16": "icons/icon16.png",

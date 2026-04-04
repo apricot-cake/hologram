@@ -64,3 +64,6 @@ You can also type date range queries in the search bar: `撮影日時:2026/04/01
 | Post text | `[data-testid="tweetText"]` | `[data-testid="postText"]` | `.mfm` element |
 | Post date | `<time>` element | `<time>` element | `<time>` element |
 
+## Privacy
+
+See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
