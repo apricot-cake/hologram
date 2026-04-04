@@ -134,6 +134,7 @@
         if (!postLink) return null;
 
         const screenName = postLink.screenName || getScreenNameFromUrl();
+        const uid = getXPageUserId();
 
         return {
           title: buildTitle(screenName, null),
@@ -141,6 +142,7 @@
           annotation: buildAnnotation({
             platform: 'X (Twitter)',
             screenName,
+            uid,
             postId: postLink.postId
           })
         };
@@ -179,6 +181,16 @@
 
     // フォールバック: data-testid="<userId>-follow" から取得
     const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
+    if (followBtn) {
+      const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
+      if (match) return match[1];
+    }
+    return null;
+  }
+
+  function getXPageUserId() {
+    // プロフィールページのフォローボタンからユーザーIDを取得
+    const followBtn = document.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
     if (followBtn) {
       const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
       if (match) return match[1];
