@@ -1,6 +1,6 @@
 # SNS Post to Save
 
-A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Saved images are searchable and browsable directly in Windows Explorer without any special tools.
+A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Post text is embedded in the image file, so you can search saved posts by content directly in Windows Explorer — no special tools needed.
 
 ## Usage
 
@@ -21,11 +21,10 @@ A Chrome extension that captures SNS posts as JPEG images with EXIF metadata. Sa
 ## Features
 
 - Save posts as JPEG images with embedded EXIF metadata
-- View metadata in Windows Explorer's file properties (Details tab)
-- Search files by author, title, or other fields directly in Explorer
-- Extract post text, display name, screen name, and user ID from the page
-- Short filenames: `2026-04-04_09-14-38_x.com_m_Yz_12345.jpg`
-- Optionally save a sidecar JSON file
+- **Search saved posts by content** — post text is stored in the Comment field, searchable via `コメント:keyword` in Explorer
+- Search by user with `タグ:@handle` or `タグ:DisplayName`
+- View all metadata in Explorer's file properties (Details tab)
+- Filenames sorted by post date (e.g. `2026-04-04.jpg`)
 
 ## EXIF Metadata Mapping
 
@@ -65,9 +64,3 @@ You can also type date range queries in the search bar: `撮影日時:2026/04/01
 | Post text | `[data-testid="tweetText"]` | `[data-testid="postText"]` | `.mfm` element |
 | Post date | `<time>` element | `<time>` element | `<time>` element |
 
-## JSON Option
-
-The **Also save JSON with JPEG** option is off by default. Enable it in the extension options page.
-
-- **Benefit**: Easier to read from scripts and external tools. Metadata survives if the image is re-saved.
-- **Tradeoff**: Two files to manage per post. The JSON may get separated when moving files.

@@ -20,10 +20,6 @@ const PLATFORM_CONFIGS = [
   }
 ];
 
-const DEFAULT_OPTIONS = {
-  saveSidecarJson: false
-};
-
 const DOWNLOAD_DIRECTORY = 'SNS Post to Save';
 const JPEG_QUALITY = 0.92;
 
@@ -80,9 +76,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const captureInfo = getCaptureInfo(platformId, postUrl || tab.url);
   const capturedAt = new Date().toISOString();
-  const options = await chrome.storage.sync.get(DEFAULT_OPTIONS);
   if (captureInfo.id === 'bluesky' && postDetails?.screenName && !postDetails?.uid) {
     postDetails.uid = await resolveBlueskyDid(postDetails.screenName);
+  }
+
+  if (captureInfo.id === 'misskey' && postDetails?.screenName && !postDetails?.userId) {
+    const host = getHostname(postUrl || tab.url);
+    postDetails.userId = await resolveMisskeyUserId(host, postDetails.screenName);
   }
 
   const metadata = buildMetadata({
@@ -110,18 +110,7 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
 
   await downloadDataUrl(jpegDataUrl, `${DOWNLOAD_DIRECTORY}/${baseFilename}.jpg`);
 
-  if (options.saveSidecarJson) {
-    const jsonDataUrl = buildJsonDataUrl(metadata);
-    await downloadDataUrl(jsonDataUrl, `${DOWNLOAD_DIRECTORY}/${baseFilename}.json`);
-  }
-
-  notify(tab.id, true, {
-    savedJson: options.saveSidecarJson
-  });
-
-  return {
-    savedJson: options.saveSidecarJson
-  };
+  notify(tab.id, true);
 }
 
 function notify(tabId, success, extra = {}) {
@@ -145,6 +134,32 @@ async function resolveBlueskyDid(handle) {
     if (did && /^did:[a-z]+:.+/.test(did)) {
       blueskyDidCache.set(handle, did);
       return did;
+    }
+  } catch {
+    // API failure is not critical
+  }
+
+  return null;
+}
+
+const misskeyUserIdCache = new Map();
+
+async function resolveMisskeyUserId(host, screenName) {
+  if (!host || !screenName) return null;
+  const key = `${host}:${screenName}`;
+  if (misskeyUserIdCache.has(key)) return misskeyUserIdCache.get(key);
+
+  try {
+    const res = await fetch(`https://${host}/api/users/show`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: screenName })
+    });
+    const data = await res.json();
+    const id = data.id || null;
+    if (id) {
+      misskeyUserIdCache.set(key, id);
+      return id;
     }
   } catch {
     // API failure is not critical
@@ -288,10 +303,6 @@ function getHostname(url) {
   } catch {
     return '';
   }
-}
-
-function buildJsonDataUrl(metadata) {
-  return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(metadata, null, 2))}`;
 }
 
 function normalizePostDetails(postDetails) {

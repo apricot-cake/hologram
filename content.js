@@ -26,13 +26,14 @@
     pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
     transition: opacity 0.2s;
   `;
-  banner.textContent = '📸 保存する投稿をクリック（Escでキャンセル）';
+  banner.textContent = '保存する投稿をクリック（Escでキャンセル）';
   document.body.appendChild(banner);
 
   // ハイライト枠
   const highlight = document.createElement('div');
   highlight.style.cssText = `
     position: absolute; pointer-events: none; z-index: 2147483646;
+    box-sizing: border-box;
     border: 3px solid #1d9bf0; border-radius: 16px;
     background: rgba(29, 155, 240, 0.06);
     transition: top 0.08s, left 0.08s, width 0.08s, height 0.08s;
@@ -115,7 +116,7 @@
         const rect = getPostRect(post);
 
         banner.style.display = '';
-        banner.textContent = '⏳ 保存中…';
+        banner.textContent = '保存中...';
         banner.style.background = '#536471';
 
         chrome.runtime.sendMessage({
@@ -194,8 +195,8 @@
     // 結果通知
     if (msg.type === 'notify') {
       banner.textContent = msg.success
-        ? (msg.savedJson ? '✅ 画像とJSONを保存しました！' : '✅ 画像を保存しました！')
-        : '❌ 保存に失敗しました';
+        ? '画像を保存しました'
+        : '保存に失敗しました';
       banner.style.background = msg.success ? '#00ba7c' : '#f4212e';
       setTimeout(cleanup, 1500);
     }
@@ -277,10 +278,10 @@ function getSiteConfig() {
         }
       `,
       getPermalink(post) {
-        return getBlueskyPostLink(post)?.url || '';
+        return getBlueskyPostLink(post)?.url || parseBlueskyPostLink(location.href)?.url || '';
       },
       getPostDetails(post, postUrl) {
-        const postLink = parseBlueskyPostLink(postUrl) || getBlueskyPostLink(post);
+        const postLink = parseBlueskyPostLink(postUrl) || getBlueskyPostLink(post) || parseBlueskyPostLink(location.href);
         const profile = getBlueskyProfileDetails(post);
         return {
           postId: postLink?.postId || null,
@@ -440,15 +441,41 @@ function hostnameMatches(host) {
 
 function getBlueskyPostText(post) {
   const textEl = post.querySelector('[data-testid="postText"]');
-  return textEl?.textContent?.trim() || null;
+  if (textEl) {
+    return textEl.textContent?.trim() || null;
+  }
+
+  const candidates = post.querySelectorAll('div[dir="auto"]');
+  let longest = null;
+  for (const el of candidates) {
+    const text = el.textContent?.trim();
+    if (text && !el.querySelector('a') && (!longest || text.length > longest.length)) {
+      longest = text;
+    }
+  }
+  if (longest) {
+    return longest;
+  }
+
+  return null;
 }
 
 function getBlueskyDisplayName(post) {
   const links = Array.from(post.querySelectorAll('a[href*="/profile/"]'));
   for (const link of links) {
-    const text = link.textContent?.trim();
-    if (text && !text.startsWith('@') && !text.startsWith('did:') && !text.includes('.')) {
-      return text;
+    const href = link.getAttribute('href') || '';
+    if (href.includes('/liked-by') || href.includes('/reposted-by')) {
+      continue;
+    }
+
+    const children = Array.from(link.querySelectorAll('div, span, b, strong'));
+    for (const child of children) {
+      const text = child.textContent?.trim();
+      if (text && text === child.innerText?.trim()
+        && !text.startsWith('@') && !text.startsWith('did:')
+        && !text.includes('.') && !/^\d/.test(text)) {
+        return text;
+      }
     }
   }
 
@@ -497,13 +524,13 @@ function getBlueskyProfileDetails(post) {
 function parseBlueskyPostLink(href) {
   try {
     const url = new URL(href, location.origin);
-    const match = url.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/);
+    const match = url.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)\/?$/);
     if (!match) {
       return null;
     }
 
     return {
-      url: url.href,
+      url: `${url.origin}/profile/${match[1]}/post/${match[2]}`,
       handle: decodeURIComponent(match[1]),
       postId: decodeURIComponent(match[2])
     };
@@ -648,8 +675,32 @@ function getMisskeyPostText(post) {
     return null;
   }
 
-  const contentEl = article.querySelector('.mfm');
-  return contentEl?.textContent?.trim() || null;
+  const mfm = article.querySelector('.mfm');
+  if (mfm) {
+    return mfm.textContent?.trim() || null;
+  }
+
+  const container = getMisskeyContentContainer(article);
+  const header = container.querySelector('header');
+  const footer = container.querySelector('footer');
+  for (const child of container.children) {
+    if (child === header || child === footer || child.querySelector('header')) continue;
+    if (child.classList.contains('xlT1y')) continue;
+    const text = child.textContent?.trim();
+    if (text) return text;
+  }
+
+  return null;
+}
+
+function getMisskeyContentContainer(article) {
+  for (const child of article.children) {
+    if (child.tagName === 'DIV' && child.querySelector('header')) {
+      return child;
+    }
+  }
+
+  return article;
 }
 
 function getMisskeyDisplayName(post) {
@@ -662,14 +713,19 @@ function getMisskeyDisplayName(post) {
     return null;
   }
 
-  const profileLink = article.querySelector('a[href^="/@"]');
-  if (!profileLink) {
-    return null;
+  const container = getMisskeyContentContainer(article);
+  const header = container.querySelector('header');
+  const searchRoot = header || container;
+
+  const profileLinks = searchRoot.querySelectorAll('a[href^="/@"]');
+  for (const link of profileLinks) {
+    const text = link.textContent?.trim();
+    if (text && !text.startsWith('@')) {
+      return text;
+    }
   }
 
-  const nameEl = profileLink.querySelector('span, b, strong') || profileLink;
-  const text = nameEl?.textContent?.trim();
-  return text && !text.startsWith('@') ? text : null;
+  return null;
 }
 
 function getMisskeyAuthorProfile(post) {
