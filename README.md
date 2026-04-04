@@ -1,7 +1,5 @@
 # SNS Post to Save
 
-**English** | [日本語](README.ja.md)
-
 A Chrome extension that lets you click an SNS post and save it as a PNG image together with metadata such as the post URL, handle name, user IDs, and post timestamp, so the post stays searchable later.
 
 ## Usage
