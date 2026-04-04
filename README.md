@@ -1,75 +1,76 @@
 # Eagle Metadata Enhancer
 
-SNSの画像をEagleにドラッグ保存する際、投稿者情報などのメタデータをEagleのメモ欄に自動書き込みするChrome拡張機能。
+A Chrome extension that automatically writes SNS post metadata (author info, post details, etc.) into Eagle's annotation field when drag-saving images.
 
-## 対応プラットフォーム
+## Supported Platforms
 
 - X (Twitter)
 - Bluesky
 
-## 取得データ
+## Captured Data
 
-| データ | 通常タイムライン | メディアグリッド |
+| Data | Timeline | Media Grid |
 |---|---|---|
 | Platform | o | o |
-| Display Name | o | - |
+| Display Name | o | o |
 | Author (@screenName) | o | o |
-| UID (X数値ID / Bluesky DID) | o | o |
+| UID (X numeric ID / Bluesky DID) | o | o |
 | Post ID | o | o |
-| Image Index (n/m or n) | o | o (URLから) |
-| Published | o | - |
-| Hashtags | o | - |
-| Alt Text | o | - |
-| Text | o | - |
+| Image Index (n/m or n) | o | o |
+| Published | o | o |
+| Hashtags | o | o |
+| Alt Text | o | o |
+| Text | o | o |
 | Source URL | o | o |
 
-## 仕組み
+On X media grids, additional metadata is fetched via the Syndication API.
 
-1. Content scriptがページ上の画像の`dragstart`イベントを監視
-2. ドラッグされた画像の親投稿からメタデータを抽出
-3. Background scriptがEagle API (`localhost:41595`) をポーリングして新規アイテムを検知
-4. URL照合でマッチしたアイテムのメモ欄にメタデータを書き込み
+## How It Works
 
-ポーリングはドラッグ操作後のみ実行され（最大30秒）、常時のAPI呼び出しは発生しない。
+1. Content script listens for `dragstart` events on images
+2. Extracts metadata from the parent post element
+3. Background script polls the Eagle API (`localhost:41595`) to detect newly saved items
+4. Matches items by URL and writes metadata to the annotation field
 
-## メモ欄の出力例
+Polling only runs after a drag operation (up to 30 seconds) and does not make continuous API calls.
+
+## Annotation Output Example
 
 ```
-@username - 投稿テキスト
+@username - Post text here
 
 Platform: X (Twitter)
-Display Name: 表示名
+Display Name: Display Name
 Author: @username
 UID: 1234567890
 Post ID: 2040000000000000000
 Image: 1/3
 Published: 2026-04-04T12:00:00.000Z
-Hashtags: #イラスト #ファンアート
-Alt: 投稿者が設定した画像の説明
-Text: 投稿テキスト
+Hashtags: #illustration #fanart
+Alt: Image description set by the poster
+Text: Post text here
 ```
 
-## インストール
+## Installation
 
-1. このリポジトリをクローン
-2. `chrome://extensions/` を開く
-3. 「デベロッパーモード」をON
-4. 「パッケージ化されていない拡張機能を読み込む」でこのフォルダを選択
+1. Clone this repository
+2. Open `chrome://extensions/`
+3. Enable "Developer mode"
+4. Click "Load unpacked" and select this folder
 
-Eagleデスクトップアプリが起動している状態で使用する。
+The Eagle desktop app must be running.
 
-## ファイル構成
+## File Structure
 
 ```
 manifest.json       Manifest V3
-content.js          dragstartイベント監視 + メタデータ抽出
-background.js       Eagle APIポーリング + アイテム更新
-page-context.js     X用: ページコンテキストでReact fiberからUID取得
-icons/              プレースホルダーアイコン
+content.js          dragstart event listener + metadata extraction
+background.js       Eagle API polling + item update + X Syndication API
+page-context.js     X: extracts user ID from React fiber in page context
+icons/              Placeholder icons
 ```
 
-## 制限事項
+## Limitations
 
-- Eagle REST APIの`/api/item/update`はアイテム名の更新に非対応のため、タイトル情報はメモ欄の先頭行に記載
-- メディアグリッド表示ではDisplay Name, Published, Hashtags, Alt Text, Textは取得不可
-- タグへの書き込みは意図的に行わない（既存のタグ運用を保護するため）
+- Eagle REST API `/api/item/update` does not support renaming items, so title info is placed in the first line of the annotation
+- Tags are intentionally not written to preserve existing tag organization
