@@ -7,6 +7,7 @@
 
   // dragstart イベントを監視し、ドラッグされた画像のメタデータを background に送信
   document.addEventListener('dragstart', (e) => {
+    if (!chrome.runtime?.id) return; // 拡張コンテキスト無効化時のガード
     const img = e.target.closest('img') || (e.target.tagName === 'IMG' ? e.target : null);
     log('[Eagle Meta Content] dragstart', img ? 'img found' : 'no img', e.target.tagName);
     if (!img) return;
@@ -23,7 +24,8 @@
     // まず即座にメッセージ送信（ポーリング開始を遅らせない）
     // Bluesky: DID解決は並行して行い、annotationに後から追加
     if (siteConfig.platform === 'bluesky' && metadata._handle && !metadata._uid) {
-      log('[Eagle Meta Content] resolving DID for', metadata._handle);
+      log('resolving DID for', metadata._handle);
+      if (!chrome.runtime?.id) return;
       chrome.runtime.sendMessage(
         { type: 'resolveBlueskyDid', handle: metadata._handle },
         (response) => {
@@ -47,6 +49,7 @@
   }, true);
 
   function sendDragMessage(imageUrls, metadata) {
+    if (!chrome.runtime?.id) return; // 拡張コンテキスト無効化時のガード
     chrome.runtime.sendMessage({
       type: 'imageDragged',
       imageUrls,
