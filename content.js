@@ -1,4 +1,16 @@
 (() => {
+  const MSG = navigator.language.startsWith('ja') ? {
+    select: '保存する投稿をクリック（Escでキャンセル）',
+    saving: '保存中...',
+    saved: '画像を保存しました',
+    failed: '保存に失敗しました'
+  } : {
+    select: 'Click a post to save (Esc to cancel)',
+    saving: 'Saving...',
+    saved: 'Image saved',
+    failed: 'Save failed'
+  };
+
   const siteConfig = getSiteConfig();
   if (!siteConfig) {
     return;
@@ -26,7 +38,7 @@
     pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
     transition: opacity 0.2s;
   `;
-  banner.textContent = '保存する投稿をクリック（Escでキャンセル）';
+  banner.textContent = MSG.select;
   document.body.appendChild(banner);
 
   // ハイライト枠
@@ -120,7 +132,7 @@
         const rect = getPostRect(post);
 
         banner.style.display = '';
-        banner.textContent = '保存中...';
+        banner.textContent = MSG.saving;
         banner.style.background = '#536471';
 
         chrome.runtime.sendMessage({
@@ -198,9 +210,7 @@
 
     // 結果通知
     if (msg.type === 'notify') {
-      banner.textContent = msg.success
-        ? '画像を保存しました'
-        : '保存に失敗しました';
+      banner.textContent = msg.success ? MSG.saved : MSG.failed;
       banner.style.background = msg.success ? '#00ba7c' : '#f4212e';
       setTimeout(cleanup, 1500);
     }
