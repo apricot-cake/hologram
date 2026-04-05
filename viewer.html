@@ -154,6 +154,16 @@
     }
     .delete-btn:hover { background: rgba(244,33,46,0.8); }
     .post-card:hover .delete-btn { opacity: 1; }
+    .post-card.selected { outline: 3px solid #1d9bf0; outline-offset: -3px; }
+    .post-card .select-check {
+      position: absolute; top: 8px; left: 8px;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(255,255,255,0.85); border: 2px solid #ccc;
+      display: none; cursor: pointer; z-index: 1;
+      text-align: center; line-height: 20px; font-size: 14px; color: #1d9bf0;
+    }
+    .select-mode .select-check { display: block; }
+    .post-card.selected .select-check { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
 
     /* --- List view --- */
     .post-grid.list-view {
@@ -259,6 +269,22 @@
     }
     .confirm-box p { margin-bottom: 16px; font-size: 14px; }
     .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
+
+    /* --- Folder / Tags --- */
+    .folder-label { font-size: 11px; color: #888; margin-top: 4px; }
+    .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .tag-chip { font-size: 10px; background: #f0f0f0; border-radius: 10px; padding: 1px 8px; color: #666; }
+    .edit-btn {
+      position: absolute; top: 8px; right: 40px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      font-size: 14px; line-height: 28px; text-align: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .edit-btn:hover { background: rgba(29,155,240,0.8); }
+    .post-card:hover .edit-btn { opacity: 1; }
+    .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
   </style>
 </head>
 <body>
@@ -281,12 +307,20 @@
         <option value="likes-desc"></option>
         <option value="reposts-desc"></option>
         <option value="replies-desc"></option>
+        <option value="captured-desc"></option>
       </select>
       <div class="view-toggle">
         <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
         <button data-view="list" id="viewList" title="List">&#9776;</button>
       </div>
+      <button class="chip" id="selectModeBtn"></button>
       <span class="post-count" id="postCount"></span>
+    </div>
+    <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
+      <button class="chip" id="selectAllBtn"></button>
+      <span class="post-count" id="selectedCount"></span>
+      <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
+      <button class="chip" id="cancelSelectBtn"></button>
     </div>
     <div class="toolbar-row">
       <button class="chip active" data-platform="all" id="chipAll"></button>
@@ -298,15 +332,21 @@
       <span style="font-size:12px;color:#999;">〜</span>
       <input type="date" class="date-input" id="dateTo">
       <button class="chip" id="dateReset" style="display:none;">&times;</button>
+      <button class="chip" id="dateTypeToggle"></button>
       <div class="chip-divider"></div>
       <select class="engagement-select" id="engagementType">
         <option value="likes"></option>
         <option value="reposts"></option>
         <option value="replies"></option>
         <option value="bookmarks"></option>
+        <option value="views"></option>
       </select>
       <input type="number" class="engagement-input" id="engagementMin" min="0" placeholder="0">
       <span style="font-size:12px;color:#999;" id="engagementSuffix"></span>
+      <div class="chip-divider"></div>
+      <select class="engagement-select" id="folderFilter">
+        <option value="all"></option>
+      </select>
     </div>
     <div id="postGrid" class="post-grid"></div>
     <div id="emptyState" class="empty-state" style="display:none;"></div>
@@ -396,6 +436,28 @@
       <div class="confirm-actions">
         <button class="btn-outline" id="confirmCancel"></button>
         <button class="btn-danger" id="confirmOk"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit folder/tags overlay -->
+  <div class="confirm-overlay" id="editOverlay">
+    <div class="confirm-box" style="max-width:360px;">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:13px;font-weight:600;" id="editFolderLabel"></label>
+        <input type="text" id="editFolder" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;margin-top:4px;font-size:13px;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:13px;font-weight:600;" id="editTagsLabel"></label>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <input type="text" id="editTagInput" style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          <button class="btn-outline" id="editTagAdd" style="padding:6px 12px;"></button>
+        </div>
+        <div id="editTagsList" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"></div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn-outline" id="editCancel"></button>
+        <button class="btn-outline" id="editSave" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
       </div>
     </div>
   </div>

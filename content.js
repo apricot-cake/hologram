@@ -110,6 +110,9 @@
     const post = findPostElement(e.target);
     if (!post) return;
 
+    // page-context.js (MAIN world) に userId 抽出を強制実行させる
+    document.dispatchEvent(new CustomEvent('__postSnap_extractUserIds'));
+
     const postUrl = siteConfig.getPermalink(post);
     const postDetails = siteConfig.getPostDetails?.(post, postUrl) || {};
 
@@ -280,7 +283,12 @@ function getSiteConfig() {
           likeCount: getAriaCount(post, '[data-testid="like"], [data-testid="unlike"]'),
           repostCount: getAriaCount(post, '[data-testid="retweet"], [data-testid="unretweet"]'),
           replyCount: getAriaCount(post, '[data-testid="reply"]'),
-          bookmarkCount: getAriaCount(post, '[data-testid="bookmark"], [data-testid="removeBookmark"]')
+          bookmarkCount: getAriaCount(post, '[data-testid="bookmark"], [data-testid="removeBookmark"]'),
+          viewCount: getXViewCount(post),
+          mediaType: getMediaType(post),
+          lang: post.querySelector('[data-testid="tweetText"]')?.getAttribute('lang') || null,
+          isReply: isXReply(post),
+          quotedUrl: getQuotedUrl(post, 'x')
         };
       },
       prepareForCapture(post) {
@@ -334,7 +342,11 @@ function getSiteConfig() {
           likeCount: getAriaCount(post, '[data-testid="likeBtn"]') ?? getAdjacentCount(post, '[data-testid="likeBtn"]'),
           repostCount: getAriaCount(post, '[data-testid="repostBtn"]') ?? getAdjacentCount(post, '[data-testid="repostBtn"]'),
           replyCount: getAriaCount(post, '[data-testid="replyBtn"]'),
-          bookmarkCount: null
+          bookmarkCount: null,
+          mediaType: getMediaType(post),
+          lang: post.querySelector('[data-testid="postText"]')?.getAttribute('lang') || null,
+          isReply: !!post.querySelector('[data-testid="replyLine"]'),
+          quotedUrl: getQuotedUrl(post, 'bluesky')
         };
       },
       prepareForCapture(post) {
@@ -386,7 +398,10 @@ function getSiteConfig() {
           likeCount: null,
           repostCount: null,
           replyCount: null,
-          bookmarkCount: null
+          bookmarkCount: null,
+          mediaType: getMediaType(post),
+          isReply: !!getMisskeyPrimaryArticle(post)?.querySelector('a[href*="/notes/"] + span'),
+          quotedUrl: getQuotedUrl(post, 'misskey')
         };
       },
       getCaptureRect(post) {
@@ -476,6 +491,17 @@ function getXDisplayName(post) {
   const userNameEl = post.querySelector('[data-testid="User-Name"]');
   const firstSpan = userNameEl?.querySelector('a span');
   return firstSpan?.textContent?.trim() || null;
+}
+
+function getXViewCount(post) {
+  if (!(post instanceof Element)) return null;
+  const analyticsLink = post.querySelector('a[href*="/analytics"]');
+  if (analyticsLink) {
+    const label = analyticsLink.getAttribute('aria-label') || '';
+    const match = label.match(/(\d[\d,]*)/);
+    if (match) return parseInt(match[1].replace(/,/g, ''), 10);
+  }
+  return null;
 }
 
 function getXUserId(post) {
@@ -915,6 +941,70 @@ function getAdjacentCount(post, selector) {
   const text = parent.textContent?.trim();
   const match = text?.match(/(\d[\d,]*)/);
   return match ? parseInt(match[1].replace(/,/g, ''), 10) : null;
+}
+
+function isXReply(post) {
+  if (!(post instanceof Element)) return false;
+  const text = post.innerText || '';
+  return /^返信先[:：\s]|^Replying to\s/m.test(text);
+}
+
+function getMediaType(post) {
+  if (!(post instanceof Element)) return 'none';
+  if (post.querySelector('video, [data-testid="videoPlayer"], [data-testid="videoComponent"]')) return 'video';
+  if (post.querySelector('[data-testid="tweetPhoto"], [data-testid="postMedia"] img, img[src*="feed_thumbnail"], .xvRSv img, article img[src*="proxy"]')) return 'image';
+  if (post.querySelector('img[src*="tenor.com"], img[src*="giphy.com"]')) return 'gif';
+  // Generic fallback: any substantial image (not avatars/icons)
+  const imgs = post.querySelectorAll('img[src]');
+  for (const img of imgs) {
+    const src = img.src || '';
+    if (src.includes('profile_images') || src.includes('avatar') || src.includes('emoji')) continue;
+    const rect = img.getBoundingClientRect();
+    if (rect.width > 100 && rect.height > 100) return 'image';
+  }
+  return 'none';
+}
+
+function getQuotedUrl(post, platform) {
+  if (!(post instanceof Element)) return null;
+  if (platform === 'x') {
+    // X: quoted tweet appears as a card linking to another status
+    const links = post.querySelectorAll('a[href*="/status/"]');
+    for (const link of links) {
+      if (link.closest('[data-testid="User-Name"]')) continue;
+      if (link.querySelector('time')) continue;
+      const href = link.getAttribute('href') || '';
+      // Skip analytics, quotes, likes, retweets pages
+      if (/\/(analytics|quotes|likes|retweets|hidden)/.test(href)) continue;
+      if (/\/status\/\d+$/.test(href)) {
+        try { return new URL(href, location.origin).href; } catch { /* skip */ }
+      }
+    }
+  }
+  if (platform === 'bluesky') {
+    // Bluesky: embedded quote has a link to another post
+    const embeds = post.querySelectorAll('[data-testid="quotePost"] a[href*="/post/"], a[href*="/post/"]');
+    for (const link of embeds) {
+      const parsed = parseBlueskyPostLink(link.href);
+      if (parsed) {
+        const mainPostLink = parseBlueskyPostLink(post.querySelector('a[href*="/post/"]')?.href || '');
+        if (mainPostLink && parsed.postId !== mainPostLink.postId) return parsed.url;
+      }
+    }
+  }
+  if (platform === 'misskey') {
+    // Misskey: renote/quote has embedded note link
+    const article = getMisskeyPrimaryArticle(post);
+    if (!article) return null;
+    const nestedNotes = article.querySelectorAll('a[href*="/notes/"]');
+    const mainLink = getMisskeyTimeLink(post);
+    for (const link of nestedNotes) {
+      if (link.querySelector('time')) continue;
+      const parsed = parseMisskeyNoteLink(link.href);
+      if (parsed && mainLink && parsed.id !== mainLink.id) return parsed.url;
+    }
+  }
+  return null;
 }
 
 function prepareScopedCaptureState(className, elements) {

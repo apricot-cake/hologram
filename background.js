@@ -119,6 +119,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === 'deleteLocalFile') {
+    if (message.captureId) {
+      chrome.downloads.search({ filenameRegex: message.captureId }).then(items => {
+        for (const item of items) {
+          chrome.downloads.removeFile(item.id).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+    return false;
+  }
+
   if (message.type !== 'captureAndSend') {
     return false;
   }
@@ -148,6 +159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const captureInfo = getCaptureInfo(platformId, postUrl || tab.url);
   const capturedAt = new Date().toISOString();
+  const captureId = generateCaptureId();
 
   if (captureInfo.id === 'bluesky' && postDetails?.screenName && !postDetails?.userId) {
     postDetails.userId = await resolveBlueskyDid(postDetails.screenName);
@@ -164,6 +176,7 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const metadata = buildMetadata({
     captureInfo,
     capturedAt,
+    captureId,
     pageTitle: tab.title,
     pageUrl: tab.url,
     postUrl,
@@ -185,7 +198,7 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const baseFilename = buildBaseFilename(captureInfo, metadata, capturedAt);
   const settings = await getDownloadSettings();
 
-  await downloadDataUrl(jpegDataUrl, `${settings.directory}/images/${baseFilename}.jpg`, settings.saveAs);
+  await downloadDataUrl(jpegDataUrl, `${settings.directory}/${baseFilename}.jpg`, settings.saveAs);
 
   // Store post data in chrome.storage.local for the viewer
   await storePost(metadata, jpegDataUrl);
@@ -198,6 +211,7 @@ async function storePost(metadata, jpegDataUrl) {
     const result = await chrome.storage.local.get('posts');
     const posts = result.posts || [];
     posts.push({
+      captureId: metadata.captureId || null,
       url: metadata.postUrl,
       platform: metadata.platform,
       text: metadata.postText,
@@ -208,8 +222,15 @@ async function storePost(metadata, jpegDataUrl) {
       reposts: metadata.repostCount,
       replies: metadata.replyCount,
       bookmarks: metadata.bookmarkCount,
+      views: metadata.viewCount,
       date: metadata.postPublishedAt || metadata.capturedAt,
       capturedAt: metadata.capturedAt,
+      mediaType: metadata.mediaType || null,
+      lang: metadata.lang || null,
+      isReply: metadata.isReply || null,
+      quotedUrl: metadata.quotedUrl || null,
+      folder: metadata.folder || null,
+      tags: metadata.tags?.length ? metadata.tags : [],
       image: jpegDataUrl
     });
     await chrome.storage.local.set({ posts });
@@ -286,6 +307,9 @@ async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
         const total = Object.values(note.reactions).reduce((sum, n) => sum + n, 0);
         if (total > 0) postDetails.likeCount = total;
       }
+      if (note.lang && !postDetails.lang) {
+        postDetails.lang = note.lang;
+      }
     } catch {
       // API failure is not critical
     }
@@ -313,6 +337,7 @@ function buildExifObj(metadata) {
 
   // XPComment: all metadata as JSON
   const jsonData = {
+    captureId: metadata.captureId || null,
     url: metadata.postUrl || null,
     platform: metadata.platform || null,
     text: metadata.postText || null,
@@ -323,7 +348,15 @@ function buildExifObj(metadata) {
     reposts: metadata.repostCount,
     replies: metadata.replyCount,
     bookmarks: metadata.bookmarkCount,
-    date: metadata.postPublishedAt || null
+    views: metadata.viewCount,
+    date: metadata.postPublishedAt || null,
+    capturedAt: metadata.capturedAt || null,
+    mediaType: metadata.mediaType || null,
+    lang: metadata.lang || null,
+    isReply: metadata.isReply || null,
+    quotedUrl: metadata.quotedUrl || null,
+    folder: metadata.folder || null,
+    tags: metadata.tags?.length ? metadata.tags : null
   };
   zeroth[piexif.ImageIFD.XPComment] = encodeUCS2LE(JSON.stringify(jsonData));
 
@@ -370,20 +403,20 @@ function formatExifDateTime(isoString) {
   ].join(':');
 }
 
-function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl, postDetails }) {
+function buildMetadata({ captureInfo, capturedAt, captureId, pageTitle, pageUrl, postUrl, postDetails }) {
   const manifest = chrome.runtime.getManifest();
   const normalizedPostDetails = normalizePostDetails(postDetails);
   const resolvedPostUrl = sanitizeUrl(postUrl);
   const resolvedPageUrl = sanitizeUrl(pageUrl);
 
   return {
+    captureId,
     capturedAt,
     platform: captureInfo.id,
     pageTitle: pageTitle || '',
     pageUrl: resolvedPageUrl,
     postUrl: resolvedPostUrl,
     sourceHost: getHostname(resolvedPostUrl || resolvedPageUrl || ''),
-    postId: normalizedPostDetails.postId,
     screenName: normalizedPostDetails.screenName,
     displayName: normalizedPostDetails.displayName,
     postText: normalizedPostDetails.postText,
@@ -393,6 +426,13 @@ function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl, p
     repostCount: normalizedPostDetails.repostCount,
     replyCount: normalizedPostDetails.replyCount,
     bookmarkCount: normalizedPostDetails.bookmarkCount,
+    viewCount: normalizedPostDetails.viewCount,
+    mediaType: normalizedPostDetails.mediaType,
+    lang: normalizedPostDetails.lang,
+    isReply: normalizedPostDetails.isReply,
+    quotedUrl: normalizedPostDetails.quotedUrl,
+    folder: normalizedPostDetails.folder,
+    tags: normalizedPostDetails.tags,
     extension: {
       name: manifest.name,
       version: manifest.version
@@ -419,8 +459,13 @@ function getPlatformConfigForUrl(url) {
   ) || null;
 }
 
+function generateCaptureId() {
+  const hex = Math.floor(Math.random() * 0xFFFF).toString(16).padStart(4, '0');
+  return `${Date.now()}-${hex}`;
+}
+
 function buildBaseFilename(captureInfo, metadata, capturedAt) {
-  return formatFilenameDate(metadata.postPublishedAt || capturedAt);
+  return metadata.captureId || formatFilenameDate(metadata.postPublishedAt || capturedAt);
 }
 
 function getHostname(url) {
@@ -436,7 +481,6 @@ const MAX_TEXT_STRING = 10000;
 
 function normalizePostDetails(postDetails) {
   return {
-    postId: normalizeOptionalString(postDetails?.postId, MAX_SHORT_STRING),
     screenName: normalizeOptionalString(postDetails?.screenName, MAX_SHORT_STRING),
     displayName: normalizeOptionalString(postDetails?.displayName, MAX_SHORT_STRING),
     postText: normalizeOptionalString(postDetails?.postText, MAX_TEXT_STRING),
@@ -445,7 +489,14 @@ function normalizePostDetails(postDetails) {
     likeCount: normalizeOptionalCount(postDetails?.likeCount),
     repostCount: normalizeOptionalCount(postDetails?.repostCount),
     replyCount: normalizeOptionalCount(postDetails?.replyCount),
-    bookmarkCount: normalizeOptionalCount(postDetails?.bookmarkCount)
+    bookmarkCount: normalizeOptionalCount(postDetails?.bookmarkCount),
+    viewCount: normalizeOptionalCount(postDetails?.viewCount),
+    mediaType: normalizeOptionalString(postDetails?.mediaType, MAX_SHORT_STRING),
+    lang: normalizeOptionalString(postDetails?.lang, MAX_SHORT_STRING),
+    isReply: postDetails?.isReply === true ? true : null,
+    quotedUrl: normalizeOptionalString(postDetails?.quotedUrl, MAX_TEXT_STRING),
+    folder: normalizeOptionalString(postDetails?.folder, MAX_SHORT_STRING),
+    tags: Array.isArray(postDetails?.tags) ? postDetails.tags.map(t => String(t).slice(0, MAX_SHORT_STRING)).slice(0, 50) : []
   };
 }
 
@@ -524,7 +575,7 @@ function downloadDataUrl(url, filename, saveAs = false) {
         return;
       }
 
-      resolve();
+      resolve(downloadId);
     }
 
     function listener(delta) {

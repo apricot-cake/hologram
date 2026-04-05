@@ -301,8 +301,9 @@ def check_file(path):
 
     # Show JSON metadata for reference
     print(f"\n  JSON metadata:")
-    for key in ["url", "platform", "text", "displayName", "screenName", "userId",
-                "likes", "reposts", "replies", "bookmarks", "date"]:
+    for key in ["captureId", "url", "platform", "text", "displayName", "screenName", "userId",
+                "likes", "reposts", "replies", "bookmarks", "views", "date", "capturedAt",
+                "mediaType", "lang", "isReply", "quotedUrl", "folder", "tags"]:
         val = meta.get(key)
         if val is not None:
             val_str = str(val)[:70]

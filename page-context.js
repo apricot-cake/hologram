@@ -33,4 +33,9 @@
   extractUserIds();
   new MutationObserver(scheduleExtract)
     .observe(document.body, { childList: true, subtree: true });
+
+  // content.js (ISOLATED world) からのオンデマンド抽出リクエスト
+  document.addEventListener('__postSnap_extractUserIds', () => {
+    extractUserIds();
+  });
 })();

@@ -12,6 +12,7 @@
     sortLikes: 'いいね順',
     sortReposts: 'リポスト順',
     sortReplies: '返信順',
+    sortCaptured: 'キャプチャ日時順',
     filterAll: 'すべて',
     postCount: (n) => `${n} 件`,
     emptyTitle: '投稿がありません',
@@ -54,20 +55,39 @@
     importSkipped: (n, s) => `${n} 件インポート（${s} 件は既存のためスキップ）`,
     noData: 'エクスポートするデータがありません',
     importFailed: 'インポートに失敗しました',
-    engagementLikes: 'いいね',
-    engagementReposts: 'リポスト',
-    engagementReplies: '返信',
-    engagementBookmarks: 'ブックマーク',
+    engagementLikes: 'いいね（全SNS）',
+    engagementReposts: 'リポスト（全SNS）',
+    engagementReplies: '返信（全SNS）',
+    engagementBookmarks: 'ブックマーク（Xのみ）',
+    engagementViews: '閲覧数（Xのみ）',
     engagementSuffix: '以上',
+    selectMode: '選択',
+    selectAll: 'すべて選択',
+    deselectAll: '選択解除',
+    cancelSelect: 'キャンセル',
+    deleteSelected: '選択を削除',
+    selectedCount: (n) => `${n} 件選択中`,
+    confirmDeleteSelected: (n) => `${n} 件の投稿を削除しますか？`,
+    deletedN: (n) => `${n} 件削除しました`,
     confirmDeletePost: 'この投稿を削除しますか？',
     confirmSkip: '今後表示しない',
     deleted: '削除しました',
+    dateTypePost: '投稿日',
+    dateTypeCaptured: 'キャプチャ日',
     captured: (d) => `${d} にキャプチャ`,
     statsNote: 'エンゲージメントはキャプチャ時点の値です',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
-    bookmarks: (n) => n != null ? `${formatCount(n)}` : ''
+    bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
+    folderLabel: 'フォルダ',
+    tagsLabel: 'タグ',
+    addTag: '追加',
+    tagPlaceholder: 'タグを入力',
+    folderPlaceholder: 'フォルダ名',
+    noFolder: '未分類',
+    applyToSelected: '選択に適用',
+    folderFilter: 'フォルダ'
   } : {
     tabPosts: 'Posts',
     tabSettings: 'Settings',
@@ -77,6 +97,7 @@
     sortLikes: 'Most liked',
     sortReposts: 'Most reposted',
     sortReplies: 'Most replied',
+    sortCaptured: 'Captured date',
     filterAll: 'All',
     postCount: (n) => `${n} posts`,
     emptyTitle: 'No posts yet',
@@ -119,20 +140,39 @@
     importSkipped: (n, s) => `${n} imported (${s} skipped as duplicates)`,
     noData: 'No data to export',
     importFailed: 'Import failed',
-    engagementLikes: 'Likes',
-    engagementReposts: 'Reposts',
-    engagementReplies: 'Replies',
-    engagementBookmarks: 'Bookmarks',
+    engagementLikes: 'Likes (all)',
+    engagementReposts: 'Reposts (all)',
+    engagementReplies: 'Replies (all)',
+    engagementBookmarks: 'Bookmarks (X only)',
+    engagementViews: 'Views (X only)',
     engagementSuffix: 'or more',
+    selectMode: 'Select',
+    selectAll: 'Select all',
+    deselectAll: 'Deselect all',
+    cancelSelect: 'Cancel',
+    deleteSelected: 'Delete selected',
+    selectedCount: (n) => `${n} selected`,
+    confirmDeleteSelected: (n) => `Delete ${n} posts?`,
+    deletedN: (n) => `${n} posts deleted`,
     confirmDeletePost: 'Delete this post?',
     confirmSkip: 'Don\'t ask again',
     deleted: 'Deleted',
+    dateTypePost: 'Post date',
+    dateTypeCaptured: 'Captured',
     captured: (d) => `Captured ${d}`,
     statsNote: 'Engagement counts are from the time of capture',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
-    bookmarks: (n) => n != null ? `${formatCount(n)}` : ''
+    bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
+    folderLabel: 'Folder',
+    tagsLabel: 'Tags',
+    addTag: 'Add',
+    tagPlaceholder: 'Enter tag',
+    folderPlaceholder: 'Folder name',
+    noFolder: 'Unfiled',
+    applyToSelected: 'Apply to selected',
+    folderFilter: 'Folder'
   };
 
   // --- Apply i18n to static elements ---
@@ -178,12 +218,22 @@
   setText('confirmSkipText', MSG.confirmSkip);
   setText('engagementSuffix', MSG.engagementSuffix);
 
+  // Edit overlay i18n
+  setText('editFolderLabel', MSG.folderLabel);
+  setText('editTagsLabel', MSG.tagsLabel);
+  document.getElementById('editFolder').placeholder = MSG.folderPlaceholder;
+  document.getElementById('editTagInput').placeholder = MSG.tagPlaceholder;
+  document.getElementById('editTagAdd').textContent = MSG.addTag;
+  document.getElementById('editCancel').textContent = MSG.confirmCancel;
+  document.getElementById('editSave').textContent = MSG.save;
+
   // Engagement type select
   const engagementType = document.getElementById('engagementType');
   engagementType.options[0].textContent = MSG.engagementLikes;
   engagementType.options[1].textContent = MSG.engagementReposts;
   engagementType.options[2].textContent = MSG.engagementReplies;
   engagementType.options[3].textContent = MSG.engagementBookmarks;
+  engagementType.options[4].textContent = MSG.engagementViews;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -192,14 +242,18 @@
   sortSelect.options[2].textContent = MSG.sortLikes;
   sortSelect.options[3].textContent = MSG.sortReposts;
   sortSelect.options[4].textContent = MSG.sortReplies;
+  sortSelect.options[5].textContent = MSG.sortCaptured;
 
   // --- State ---
   let allPosts = [];
   let currentPlatform = 'all';
   let dateFrom = '';
   let dateTo = '';
+  let dateField = 'date'; // 'date' or 'capturedAt'
   let currentView = 'grid';
   let skipDeleteConfirm = false;
+  let selectMode = false;
+  const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
 
   // --- Tabs ---
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -229,7 +283,9 @@
       posts = posts.filter(p =>
         (p.text || '').toLowerCase().includes(query) ||
         (p.screenName || '').toLowerCase().includes(query) ||
-        (p.displayName || '').toLowerCase().includes(query)
+        (p.displayName || '').toLowerCase().includes(query) ||
+        (p.folder || '').toLowerCase().includes(query) ||
+        (p.tags || []).some(t => t.toLowerCase().includes(query))
       );
     }
 
@@ -239,17 +295,26 @@
 
     if (dateFrom) {
       const from = new Date(dateFrom + 'T00:00:00');
-      posts = posts.filter(p => p.date && new Date(p.date) >= from);
+      posts = posts.filter(p => p[dateField] && new Date(p[dateField]) >= from);
     }
     if (dateTo) {
       const to = new Date(dateTo + 'T23:59:59');
-      posts = posts.filter(p => p.date && new Date(p.date) <= to);
+      posts = posts.filter(p => p[dateField] && new Date(p[dateField]) <= to);
     }
 
     const engType = engagementType.value;
     const engMin = parseInt(document.getElementById('engagementMin').value, 10);
     if (engMin > 0) {
       posts = posts.filter(p => (p[engType] || 0) >= engMin);
+    }
+
+    const folderValue = document.getElementById('folderFilter').value;
+    if (folderValue !== 'all') {
+      if (folderValue === '__none') {
+        posts = posts.filter(p => !p.folder);
+      } else {
+        posts = posts.filter(p => p.folder === folderValue);
+      }
     }
 
     switch (sort) {
@@ -268,12 +333,26 @@
       case 'replies-desc':
         posts.sort((a, b) => (b.replies || 0) - (a.replies || 0));
         break;
+      case 'captured-desc':
+        posts.sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || ''));
+        break;
     }
 
     return posts;
   }
 
+  function updateFolderFilter() {
+    const select = document.getElementById('folderFilter');
+    const current = select.value;
+    const folders = [...new Set(allPosts.map(p => p.folder).filter(Boolean))].sort();
+    select.innerHTML = `<option value="all">${MSG.folderFilter}: ${MSG.filterAll}</option>` +
+      `<option value="__none">${MSG.noFolder}</option>` +
+      folders.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+    select.value = current || 'all';
+  }
+
   function renderPosts() {
+    updateFolderFilter();
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
@@ -315,7 +394,11 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
-      return `<div class="post-card" data-url="${escapeHtml(p.url || '')}" data-index="${i}">
+      const postKey = (p.url || '') + '|' + (p.capturedAt || '');
+      const isSelected = selectedSet.has(postKey);
+      return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeHtml(p.url || '')}" data-index="${i}" data-key="${escapeHtml(postKey)}">
+        <div class="select-check">${isSelected ? '✓' : ''}</div>
+        <button class="edit-btn" data-edit="${i}" title="Edit">✎</button>
         <button class="delete-btn" data-delete="${i}" title="Delete">&times;</button>
         ${p.image ? `<img src="${p.image}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
@@ -326,17 +409,47 @@
           ${textPreview ? `<div class="text">${textPreview}</div>` : ''}
           <div class="stats">${statsHtml}</div>
           <div class="date">${dateStr}</div>
+          ${p.folder ? `<div class="folder-label">\ud83d\udcc1 ${escapeHtml(p.folder)}</div>` : ''}
+          ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
           ${capturedStr ? `<div class="date date-captured">${capturedStr}</div>` : ''}
         </div>
       </div>`;
     }).join('');
   }
 
-  // Click on post card -> open original URL (but not on delete button)
+  // Edit button on card
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn')) return;
+    const btn = e.target.closest('.edit-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const idx = parseInt(btn.dataset.edit, 10);
+    const filtered = getFilteredPosts();
+    const post = filtered[idx];
+    if (!post) return;
+    openEditOverlay(post);
+  });
+
+  // Click on post card -> select or open URL
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
+
+    if (selectMode || e.target.closest('.select-check')) {
+      const key = card.dataset.key;
+      if (selectedSet.has(key)) {
+        selectedSet.delete(key);
+        card.classList.remove('selected');
+        card.querySelector('.select-check').textContent = '';
+      } else {
+        selectedSet.add(key);
+        card.classList.add('selected');
+        card.querySelector('.select-check').textContent = '✓';
+      }
+      updateSelectionBar();
+      return;
+    }
+
     const url = card.dataset.url;
     if (url) window.open(url, '_blank');
   });
@@ -365,6 +478,9 @@
   let pendingDeletePost = null;
 
   async function executeDeletePost(post) {
+    if (post.captureId) {
+      chrome.runtime.sendMessage({ type: 'deleteLocalFile', captureId: post.captureId });
+    }
     const idx = allPosts.findIndex(p => p.url === post.url && p.capturedAt === post.capturedAt);
     if (idx >= 0) {
       allPosts.splice(idx, 1);
@@ -373,6 +489,81 @@
       showToast(MSG.deleted);
     }
   }
+
+  // --- Edit overlay logic ---
+  let editingPost = null;
+  let editTags = [];
+
+  function openEditOverlay(post) {
+    editingPost = post;
+    editTags = [...(post.tags || [])];
+    document.getElementById('editFolder').value = post.folder || '';
+    document.getElementById('editTagInput').value = '';
+    renderEditTags();
+    document.getElementById('editOverlay').classList.add('show');
+  }
+
+  function renderEditTags() {
+    const container = document.getElementById('editTagsList');
+    container.innerHTML = editTags.map((t, i) =>
+      `<span class="tag-chip" style="cursor:pointer;" data-remove-tag="${i}">${escapeHtml(t)} \u00d7</span>`
+    ).join('');
+  }
+
+  document.getElementById('editTagsList').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-remove-tag]');
+    if (!chip) return;
+    editTags.splice(parseInt(chip.dataset.removeTag, 10), 1);
+    renderEditTags();
+  });
+
+  document.getElementById('editTagAdd').addEventListener('click', () => {
+    const input = document.getElementById('editTagInput');
+    const tag = input.value.trim();
+    if (tag && !editTags.includes(tag)) {
+      editTags.push(tag);
+      renderEditTags();
+    }
+    input.value = '';
+    input.focus();
+  });
+
+  document.getElementById('editTagInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('editTagAdd').click();
+    }
+  });
+
+  document.getElementById('editCancel').addEventListener('click', () => {
+    editingPost = null;
+    document.getElementById('editOverlay').classList.remove('show');
+  });
+
+  document.getElementById('editOverlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      editingPost = null;
+      e.currentTarget.classList.remove('show');
+    }
+  });
+
+  document.getElementById('editSave').addEventListener('click', async () => {
+    if (!editingPost) return;
+    const folder = document.getElementById('editFolder').value.trim() || null;
+    const tags = [...editTags];
+
+    // Update in allPosts
+    const idx = allPosts.findIndex(p => p.url === editingPost.url && p.capturedAt === editingPost.capturedAt);
+    if (idx >= 0) {
+      allPosts[idx].folder = folder;
+      allPosts[idx].tags = tags;
+      await chrome.storage.local.set({ posts: allPosts });
+      renderPosts();
+    }
+
+    editingPost = null;
+    document.getElementById('editOverlay').classList.remove('show');
+  });
 
   // Platform chip buttons
   document.querySelectorAll('.chip[data-platform]').forEach(chip => {
@@ -407,6 +598,85 @@
     renderPosts();
   });
 
+  const dateTypeToggle = document.getElementById('dateTypeToggle');
+  dateTypeToggle.textContent = MSG.dateTypePost;
+  dateTypeToggle.addEventListener('click', () => {
+    dateField = dateField === 'date' ? 'capturedAt' : 'date';
+    dateTypeToggle.textContent = dateField === 'date' ? MSG.dateTypePost : MSG.dateTypeCaptured;
+    dateTypeToggle.classList.toggle('active', dateField === 'capturedAt');
+    renderPosts();
+  });
+
+  // --- Selection mode ---
+  const selectModeBtn = document.getElementById('selectModeBtn');
+  const selectionBar = document.getElementById('selectionBar');
+  const selectAllBtn = document.getElementById('selectAllBtn');
+  const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+  const cancelSelectBtn = document.getElementById('cancelSelectBtn');
+  const selectedCountEl = document.getElementById('selectedCount');
+
+  selectModeBtn.textContent = MSG.selectMode;
+  selectAllBtn.textContent = MSG.selectAll;
+  deleteSelectedBtn.textContent = MSG.deleteSelected;
+  cancelSelectBtn.textContent = MSG.cancelSelect;
+
+  function enterSelectMode() {
+    selectMode = true;
+    selectedSet.clear();
+    document.getElementById('postGrid').classList.add('select-mode');
+    selectionBar.style.display = '';
+    selectModeBtn.classList.add('active');
+    updateSelectionBar();
+  }
+
+  function exitSelectMode() {
+    selectMode = false;
+    selectedSet.clear();
+    document.getElementById('postGrid').classList.remove('select-mode');
+    selectionBar.style.display = 'none';
+    selectModeBtn.classList.remove('active');
+    renderPosts();
+  }
+
+  function updateSelectionBar() {
+    const count = selectedSet.size;
+    selectedCountEl.textContent = MSG.selectedCount(count);
+    deleteSelectedBtn.disabled = count === 0;
+    const filtered = getFilteredPosts();
+    const allSelected = filtered.length > 0 && filtered.every(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+    selectAllBtn.textContent = allSelected ? MSG.deselectAll : MSG.selectAll;
+  }
+
+  selectModeBtn.addEventListener('click', () => {
+    if (selectMode) exitSelectMode();
+    else enterSelectMode();
+  });
+
+  cancelSelectBtn.addEventListener('click', exitSelectMode);
+
+  selectAllBtn.addEventListener('click', () => {
+    const filtered = getFilteredPosts();
+    const allSelected = filtered.every(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+    if (allSelected) {
+      selectedSet.clear();
+    } else {
+      filtered.forEach(p => selectedSet.add((p.url || '') + '|' + (p.capturedAt || '')));
+    }
+    renderPosts();
+    updateSelectionBar();
+  });
+
+  deleteSelectedBtn.addEventListener('click', () => {
+    if (selectedSet.size === 0) return;
+    pendingDeletePost = null;
+    document.getElementById('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
+    document.getElementById('confirmSkipLabel').style.display = 'none';
+    document.getElementById('confirmOverlay').classList.add('show');
+    pendingBulkDelete = true;
+  });
+
+  let pendingBulkDelete = false;
+
   // View toggle
   document.querySelectorAll('.view-toggle button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -435,11 +705,12 @@
     chrome.storage.local.set({ skipDeleteConfirm });
   });
 
-  // Search / sort / engagement events
+  // Search / sort / engagement / folder events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
   sortSelect.addEventListener('change', renderPosts);
   engagementType.addEventListener('change', renderPosts);
   document.getElementById('engagementMin').addEventListener('input', renderPosts);
+  document.getElementById('folderFilter').addEventListener('change', renderPosts);
 
   // --- Settings ---
   const dirInput = document.getElementById('downloadDir');
@@ -520,6 +791,8 @@
         bookmarks: p.bookmarks,
         date: p.date,
         capturedAt: p.capturedAt,
+        folder: p.folder || null,
+        tags: p.tags?.length ? p.tags : null,
         imageFile: `images/${filename}`
       });
     }
@@ -552,6 +825,8 @@
       bookmarks: p.bookmarks,
       date: p.date,
       capturedAt: p.capturedAt,
+      folder: p.folder || null,
+      tags: p.tags?.length ? p.tags : null,
       image: p.image
     }));
 
@@ -596,6 +871,8 @@
           bookmarks: exifData.bookmarks,
           date: exifData.date,
           capturedAt: new Date().toISOString(),
+          folder: exifData.folder || null,
+          tags: exifData.tags?.length ? exifData.tags : [],
           image: dataUrl
         });
         imported++;
@@ -656,6 +933,8 @@
           bookmarks: p.bookmarks,
           date: p.date,
           capturedAt: p.capturedAt || new Date().toISOString(),
+          folder: p.folder || null,
+          tags: p.tags?.length ? p.tags : [],
           image: p.image
         });
         imported++;
@@ -686,13 +965,29 @@
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
     pendingDeletePost = null;
+    pendingBulkDelete = false;
     document.getElementById('confirmOverlay').classList.remove('show');
   });
 
   document.getElementById('confirmOk').addEventListener('click', async () => {
     document.getElementById('confirmOverlay').classList.remove('show');
 
-    if (pendingDeletePost) {
+    if (pendingBulkDelete) {
+      // Bulk delete selected posts — also delete local files
+      allPosts.forEach(p => {
+        if (p.captureId && selectedSet.has((p.url || '') + '|' + (p.capturedAt || ''))) {
+          chrome.runtime.sendMessage({ type: 'deleteLocalFile', captureId: p.captureId });
+        }
+      });
+      const count = selectedSet.size;
+      allPosts = allPosts.filter(p => !selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+      await chrome.storage.local.set({ posts: allPosts });
+      selectedSet.clear();
+      pendingBulkDelete = false;
+      exitSelectMode();
+      renderPosts();
+      showToast(MSG.deletedN(count));
+    } else if (pendingDeletePost) {
       // Individual post delete
       if (document.getElementById('confirmSkip').checked) {
         skipDeleteConfirm = true;
@@ -713,6 +1008,7 @@
   document.getElementById('confirmOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       pendingDeletePost = null;
+      pendingBulkDelete = false;
       e.currentTarget.classList.remove('show');
     }
   });
