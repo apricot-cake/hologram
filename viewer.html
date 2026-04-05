@@ -8,10 +8,9 @@
     body {
       font: 14px/1.6 -apple-system, 'Segoe UI', sans-serif;
       background: #f5f5f5; color: #333;
-      padding: 24px 32px;
-      max-width: 960px;
-      margin: 0 auto;
+      padding: 24px 32px; overflow-x: hidden;
     }
+    #panelSettings { max-width: 720px; }
 
     /* --- Header --- */
     .header {
@@ -68,9 +67,6 @@
     }
     .chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
     .chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
-    .chip-divider {
-      width: 1px; height: 20px; background: #e0e0e0; margin: 0 4px;
-    }
     .date-input {
       padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
       font-size: 12px; color: #555; outline: none; cursor: pointer;
@@ -115,6 +111,17 @@
       width: 100%; display: block;
       max-height: 300px; object-fit: cover;
     }
+    .zoom-btn {
+      position: absolute; top: 8px; right: 72px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      font-size: 14px; line-height: 28px; text-align: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .zoom-btn { filter: grayscale(1) brightness(2); }
+    .zoom-btn:hover { background: rgba(100,100,100,0.7); }
+    .post-card:hover .zoom-btn { opacity: 1; }
     .post-meta {
       padding: 12px;
     }
@@ -134,8 +141,21 @@
     .post-meta .text {
       font-size: 13px; color: #555;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-      overflow: hidden; margin-bottom: 6px;
+      overflow: hidden; margin-bottom: 6px; cursor: pointer;
     }
+    .post-meta .text.expanded {
+      -webkit-line-clamp: unset; display: block;
+    }
+    .post-meta .text { position: relative; }
+    .text-hint {
+      position: absolute; bottom: 0; right: 0;
+      font-size: 10px; color: #999;
+      background: rgba(255,255,255,0.85); padding: 0 4px;
+      border-radius: 3px; pointer-events: none;
+      display: none;
+    }
+    .post-meta .text.truncated:hover .text-hint { display: block; }
+    .post-meta .text.expanded .text-hint { display: none; }
     .post-meta .stats {
       display: flex; gap: 12px; font-size: 12px; color: #999;
     }
@@ -255,6 +275,19 @@
     }
     .file-input-hidden { display: none; }
 
+    /* --- Image lightbox --- */
+    .lightbox-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85); z-index: 11000;
+      justify-content: center; align-items: center;
+      cursor: zoom-out;
+    }
+    .lightbox-overlay.show { display: flex; }
+    .lightbox-overlay img {
+      max-width: 95vw; max-height: 95vh; object-fit: contain;
+      border-radius: 4px;
+    }
+
     /* --- Delete confirm --- */
     .confirm-overlay {
       display: none; position: fixed; inset: 0;
@@ -270,8 +303,7 @@
     .confirm-box p { margin-bottom: 16px; font-size: 14px; }
     .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
 
-    /* --- Folder / Tags --- */
-    .folder-label { font-size: 11px; color: #888; margin-top: 4px; }
+    /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
     .tag-chip { font-size: 10px; background: #f0f0f0; border-radius: 10px; padding: 1px 8px; color: #666; }
     .edit-btn {
@@ -285,6 +317,103 @@
     .edit-btn:hover { background: rgba(29,155,240,0.8); }
     .post-card:hover .edit-btn { opacity: 1; }
     .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
+
+    /* --- Query field --- */
+    .query-field-row { margin-bottom: 12px; }
+    .query-field {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+      min-height: 36px; padding: 4px 8px;
+      border: 1px solid #ddd; border-radius: 8px; background: #fff;
+    }
+    .query-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+    .query-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #f0f4f8; border: 1px solid #d0d8e0; border-radius: 14px;
+      padding: 3px 10px; font-size: 12px; color: #333;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .query-chip:hover { background: #e0e8f0; border-color: #b0b8c0; }
+    .query-chip.qc-platform { background: #e8f4fd; border-color: #b0d4f1; }
+    .query-chip.qc-postType { background: #f0e8fd; border-color: #c8b0f1; }
+    .query-chip.qc-date { background: #e8fdf0; border-color: #b0f1c8; }
+    .query-chip.qc-engagement { background: #fdf0e8; border-color: #f1c8b0; }
+    .query-chip.qc-media { background: #e8f0fd; border-color: #b0c8f1; }
+    .query-add-btn {
+      background: none; border: 1px solid #ddd; border-radius: 50%;
+      width: 28px; height: 28px; font-size: 16px; line-height: 26px;
+      color: #999; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+    }
+    .query-add-btn:hover { border-color: #1d9bf0; color: #1d9bf0; }
+
+    /* --- Filter menus --- */
+    .qf-menu, .qf-submenu {
+      position: fixed; background: #fff; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15); padding: 4px 0;
+      z-index: 1000; min-width: 160px;
+    }
+    .qf-menu-item {
+      padding: 8px 16px; font-size: 13px; color: #333;
+      cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    }
+    .qf-menu-item:hover { background: #f5f5f5; }
+    .qf-menu-item .arrow { color: #999; font-size: 10px; }
+
+    /* --- Popovers --- */
+    .qf-popover {
+      position: fixed; background: #fff; border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18); padding: 16px;
+      z-index: 1001; min-width: 260px;
+    }
+    .qf-backdrop {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 999; background: transparent;
+    }
+
+    /* --- Sidebar layout --- */
+    .posts-layout {
+      display: flex; gap: 24px;
+    }
+    .filter-sidebar {
+      width: 220px; flex-shrink: 0;
+      position: sticky; top: 0; align-self: flex-start;
+      max-height: 100vh; overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .filter-sidebar input, .filter-sidebar select {
+      max-width: 100%; box-sizing: border-box;
+    }
+    .posts-main { flex: 1; min-width: 0; }
+
+    .sb-section {
+      background: #fff; border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .sb-title {
+      font-size: 11px; font-weight: 600; color: #888;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sb-chip {
+      background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 12px;
+      padding: 3px 10px; font-size: 11px; color: #555;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .sb-chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .sb-chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+
+    .sb-active-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      border-radius: 12px; padding: 2px 8px; font-size: 11px;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .sb-active-chip:hover { opacity: 0.7; }
+    .sb-active-chip.qc-platform { background: #e8f4fd; border: 1px solid #b0d4f1; color: #333; }
+    .sb-active-chip.qc-postType { background: #f0e8fd; border: 1px solid #c8b0f1; color: #333; }
+    .sb-active-chip.qc-date { background: #e8fdf0; border: 1px solid #b0f1c8; color: #333; }
+    .sb-active-chip.qc-engagement { background: #fdf0e8; border: 1px solid #f1c8b0; color: #333; }
+    .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
+    .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
   </style>
 </head>
 <body>
@@ -299,58 +428,106 @@
 
   <!-- Posts tab -->
   <div class="tab-panel active" id="panelPosts">
-    <div class="toolbar">
-      <input type="text" class="search-box" id="searchBox">
-      <select id="sortSelect">
-        <option value="date-desc"></option>
-        <option value="date-asc"></option>
-        <option value="likes-desc"></option>
-        <option value="reposts-desc"></option>
-        <option value="replies-desc"></option>
-        <option value="captured-desc"></option>
-      </select>
-      <div class="view-toggle">
-        <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
-        <button data-view="list" id="viewList" title="List">&#9776;</button>
-      </div>
-      <button class="chip" id="selectModeBtn"></button>
-      <span class="post-count" id="postCount"></span>
+    <div class="posts-layout">
+      <aside class="filter-sidebar" id="filterSidebar">
+        <!-- Active filters display -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbActiveTitle"></div>
+          <div class="sb-chips" id="queryChips"></div>
+        </div>
+
+        <!-- Platform -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbPlatformTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="x">X</button>
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="bluesky">Bluesky</button>
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="misskey">Misskey</button>
+          </div>
+        </div>
+
+        <!-- Post type -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbPostTypeTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="post" id="sbPost"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="reply" id="sbReply"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="quote" id="sbQuote"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="thread" id="sbThread"></button>
+          </div>
+        </div>
+
+        <!-- Media -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbMediaTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="media" data-filter-value="image" id="sbImage"></button>
+            <button class="sb-chip" data-filter-type="media" data-filter-value="video" id="sbVideo"></button>
+            <button class="sb-chip" data-filter-type="media" data-filter-value="gif" id="sbGif"></button>
+          </div>
+        </div>
+
+        <!-- Date -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbDateTitle"></div>
+          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding:2px 4px;border:1px solid #ddd;border-radius:6px;color:#555;background:#fff;outline:none;cursor:pointer;">
+            <option value="date" id="sbDateOptPost"></option>
+            <option value="capturedAt" id="sbDateOptCapture"></option>
+          </select>
+          <div style="display:flex;flex-direction:column;gap:2px;margin-top:8px;">
+            <label style="font-size:10px;color:#999;" id="sbDateFromLabel"></label>
+            <input type="date" class="date-input" id="sbDateFrom" style="width:75%;font-size:11px;">
+            <label style="font-size:10px;color:#999;margin-top:6px;" id="sbDateToLabel"></label>
+            <input type="date" class="date-input" id="sbDateTo" style="width:75%;font-size:11px;">
+          </div>
+        </div>
+
+        <!-- Engagement -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbEngTitle"></div>
+          <select class="engagement-select" id="sbEngType" style="width:100%;margin-bottom:6px;font-size:11px;"></select>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="flex:1;font-size:11px;">
+            <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;"></button>
+          </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbTagTitle"></div>
+          <div class="sb-chips" id="sbTagChips"></div>
+        </div>
+      </aside>
+
+      <main class="posts-main">
+        <div class="toolbar">
+          <input type="text" class="search-box" id="searchBox">
+          <select id="sortSelect">
+            <option value="date-desc"></option>
+            <option value="date-asc"></option>
+            <option value="likes-desc"></option>
+            <option value="reposts-desc"></option>
+            <option value="replies-desc"></option>
+            <option value="captured-desc"></option>
+          </select>
+          <div class="view-toggle">
+            <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
+            <button data-view="list" id="viewList" title="List">&#9776;</button>
+          </div>
+          <button class="chip" id="selectModeBtn"></button>
+          <span class="post-count" id="postCount"></span>
+        </div>
+        <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
+          <button class="chip" id="selectAllBtn"></button>
+          <span class="post-count" id="selectedCount"></span>
+          <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
+          <button class="chip" id="cancelSelectBtn"></button>
+        </div>
+        <div id="postGrid" class="post-grid"></div>
+        <div id="emptyState" class="empty-state" style="display:none;"></div>
+        <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
+      </main>
     </div>
-    <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
-      <button class="chip" id="selectAllBtn"></button>
-      <span class="post-count" id="selectedCount"></span>
-      <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
-      <button class="chip" id="cancelSelectBtn"></button>
-    </div>
-    <div class="toolbar-row">
-      <button class="chip active" data-platform="all" id="chipAll"></button>
-      <button class="chip" data-platform="x">X</button>
-      <button class="chip" data-platform="bluesky">Bluesky</button>
-      <button class="chip" data-platform="misskey">Misskey</button>
-      <div class="chip-divider"></div>
-      <input type="date" class="date-input" id="dateFrom">
-      <span style="font-size:12px;color:#999;">〜</span>
-      <input type="date" class="date-input" id="dateTo">
-      <button class="chip" id="dateReset" style="display:none;">&times;</button>
-      <button class="chip" id="dateTypeToggle"></button>
-      <div class="chip-divider"></div>
-      <select class="engagement-select" id="engagementType">
-        <option value="likes"></option>
-        <option value="reposts"></option>
-        <option value="replies"></option>
-        <option value="bookmarks"></option>
-        <option value="views"></option>
-      </select>
-      <input type="number" class="engagement-input" id="engagementMin" min="0" placeholder="0">
-      <span style="font-size:12px;color:#999;" id="engagementSuffix"></span>
-      <div class="chip-divider"></div>
-      <select class="engagement-select" id="folderFilter">
-        <option value="all"></option>
-      </select>
-    </div>
-    <div id="postGrid" class="post-grid"></div>
-    <div id="emptyState" class="empty-state" style="display:none;"></div>
-    <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
   </div>
 
   <!-- Settings tab -->
@@ -440,13 +617,14 @@
     </div>
   </div>
 
-  <!-- Edit folder/tags overlay -->
+  <!-- Image lightbox -->
+  <div class="lightbox-overlay" id="lightbox">
+    <img id="lightboxImg" src="" alt="">
+  </div>
+
+  <!-- Edit tags overlay -->
   <div class="confirm-overlay" id="editOverlay">
     <div class="confirm-box" style="max-width:360px;">
-      <div style="margin-bottom:12px;">
-        <label style="font-size:13px;font-weight:600;" id="editFolderLabel"></label>
-        <input type="text" id="editFolder" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;margin-top:4px;font-size:13px;">
-      </div>
       <div style="margin-bottom:12px;">
         <label style="font-size:13px;font-weight:600;" id="editTagsLabel"></label>
         <div style="display:flex;gap:6px;margin-top:4px;">
@@ -459,6 +637,37 @@
         <button class="btn-outline" id="editCancel"></button>
         <button class="btn-outline" id="editSave" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
       </div>
+    </div>
+  </div>
+
+  <!-- Date edit popover -->
+  <div class="qf-popover" id="qfDatePopover" style="display:none;">
+    <div style="margin-bottom:8px;">
+      <button class="chip" id="qfDateType"></button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="date" class="date-input" id="qfDateFrom">
+      <span style="font-size:12px;color:#999;">〜</span>
+      <input type="date" class="date-input" id="qfDateTo">
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
+      <button class="btn-outline" id="qfDateApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+    </div>
+  </div>
+
+  <!-- Engagement edit popover -->
+  <div class="qf-popover" id="qfEngPopover" style="display:none;">
+    <div style="margin-bottom:8px;">
+      <select class="engagement-select" id="qfEngType" style="width:100%;"></select>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="number" class="engagement-input" id="qfEngMin" min="0" placeholder="0" style="flex:1;">
+      <button class="chip" id="qfEngOp" style="min-width:40px;text-align:center;"></button>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
+      <button class="btn-outline" id="qfEngApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
     </div>
   </div>
 

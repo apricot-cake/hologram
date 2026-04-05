@@ -33,7 +33,7 @@
     hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
     shortcutTitle: 'キーボードショートカット',
     shortcutLink: 'ショートカットを変更',
-    hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア）',
+    hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア・設定）',
     dataTitle: 'データ',
     exportZip: 'ZIP エクスポート',
     exportHtml: 'HTML エクスポート',
@@ -65,7 +65,7 @@
     selectAll: 'すべて選択',
     deselectAll: '選択解除',
     cancelSelect: 'キャンセル',
-    deleteSelected: '選択を削除',
+    deleteSelected: '投稿を削除',
     selectedCount: (n) => `${n} 件選択中`,
     confirmDeleteSelected: (n) => `${n} 件の投稿を削除しますか？`,
     deletedN: (n) => `${n} 件削除しました`,
@@ -74,20 +74,46 @@
     deleted: '削除しました',
     dateTypePost: '投稿日',
     dateTypeCaptured: 'キャプチャ日',
+    clickToExpand: 'クリックで全文表示',
+    tipZoom: '拡大', tipEdit: '編集', tipDelete: '削除',
+    postedOn: (d) => `${d} に投稿`,
     captured: (d) => `${d} にキャプチャ`,
     statsNote: 'エンゲージメントはキャプチャ時点の値です',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
     bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
-    folderLabel: 'フォルダ',
     tagsLabel: 'タグ',
     addTag: '追加',
     tagPlaceholder: 'タグを入力',
-    folderPlaceholder: 'フォルダ名',
-    noFolder: '未分類',
     applyToSelected: '選択に適用',
-    folderFilter: 'フォルダ'
+    qfPlatform: 'プラットフォーム',
+    qfPostType: '投稿タイプ',
+    qfDate: '日付',
+    qfEngagement: 'エンゲージメント',
+    qfTag: 'タグ',
+    qfMedia: 'メディア',
+    qfPost: 'ポスト',
+    qfReply: 'リプライ',
+    qfQuote: '引用',
+    qfThread: 'セルフリプ',
+    qfImage: '画像',
+    qfVideo: '動画',
+    qfGif: 'GIF',
+    qfApply: '適用',
+    qfDelete: '削除',
+    qfDatePost: '投稿日',
+    qfDateCaptured: 'キャプチャ日',
+    qfDateFrom: '開始日',
+    qfDateTo: '終了日',
+    qfEngLikes: 'いいね（全SNS）',
+    qfEngReposts: 'リポスト（全SNS）',
+    qfEngReplies: '返信（全SNS）',
+    qfEngBookmarks: 'ブックマーク（Xのみ）',
+    qfEngViews: '閲覧数（Xのみ）',
+    qfEngSuffix: '以上',
+    qfEngGte: '以上',
+    qfEngLte: '以下'
   } : {
     tabPosts: 'Posts',
     tabSettings: 'Settings',
@@ -118,7 +144,7 @@
     hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
     shortcutTitle: 'Keyboard Shortcut',
     shortcutLink: 'Change keyboard shortcut',
-    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer)',
+    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer/settings)',
     dataTitle: 'Data',
     exportZip: 'Export ZIP',
     exportHtml: 'Export HTML',
@@ -150,7 +176,7 @@
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
     cancelSelect: 'Cancel',
-    deleteSelected: 'Delete selected',
+    deleteSelected: 'Delete posts',
     selectedCount: (n) => `${n} selected`,
     confirmDeleteSelected: (n) => `Delete ${n} posts?`,
     deletedN: (n) => `${n} posts deleted`,
@@ -159,20 +185,46 @@
     deleted: 'Deleted',
     dateTypePost: 'Post date',
     dateTypeCaptured: 'Captured',
+    clickToExpand: 'Click to expand',
+    tipZoom: 'Zoom', tipEdit: 'Edit', tipDelete: 'Delete',
+    postedOn: (d) => `Posted ${d}`,
     captured: (d) => `Captured ${d}`,
     statsNote: 'Engagement counts are from the time of capture',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
     bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
-    folderLabel: 'Folder',
     tagsLabel: 'Tags',
     addTag: 'Add',
     tagPlaceholder: 'Enter tag',
-    folderPlaceholder: 'Folder name',
-    noFolder: 'Unfiled',
     applyToSelected: 'Apply to selected',
-    folderFilter: 'Folder'
+    qfPlatform: 'Platform',
+    qfPostType: 'Post type',
+    qfDate: 'Date',
+    qfEngagement: 'Engagement',
+    qfTag: 'Tags',
+    qfMedia: 'Media',
+    qfPost: 'Post',
+    qfReply: 'Reply',
+    qfQuote: 'Quote',
+    qfThread: 'Self-reply',
+    qfImage: 'Image',
+    qfVideo: 'Video',
+    qfGif: 'GIF',
+    qfApply: 'Apply',
+    qfDelete: 'Delete',
+    qfDatePost: 'Post date',
+    qfDateCaptured: 'Captured',
+    qfDateFrom: 'From',
+    qfDateTo: 'To',
+    qfEngLikes: 'Likes (all)',
+    qfEngReposts: 'Reposts (all)',
+    qfEngReplies: 'Replies (all)',
+    qfEngBookmarks: 'Bookmarks (X only)',
+    qfEngViews: 'Views (X only)',
+    qfEngSuffix: 'or more',
+    qfEngGte: '≥',
+    qfEngLte: '≤'
   };
 
   // --- Apply i18n to static elements ---
@@ -214,26 +266,14 @@
   setText('confirmOk', MSG.confirmOk);
   setText('settingsStatus', MSG.saved);
   setText('statsNote', MSG.statsNote);
-  setText('chipAll', MSG.filterAll);
   setText('confirmSkipText', MSG.confirmSkip);
-  setText('engagementSuffix', MSG.engagementSuffix);
 
   // Edit overlay i18n
-  setText('editFolderLabel', MSG.folderLabel);
   setText('editTagsLabel', MSG.tagsLabel);
-  document.getElementById('editFolder').placeholder = MSG.folderPlaceholder;
   document.getElementById('editTagInput').placeholder = MSG.tagPlaceholder;
   document.getElementById('editTagAdd').textContent = MSG.addTag;
   document.getElementById('editCancel').textContent = MSG.confirmCancel;
   document.getElementById('editSave').textContent = MSG.save;
-
-  // Engagement type select
-  const engagementType = document.getElementById('engagementType');
-  engagementType.options[0].textContent = MSG.engagementLikes;
-  engagementType.options[1].textContent = MSG.engagementReposts;
-  engagementType.options[2].textContent = MSG.engagementReplies;
-  engagementType.options[3].textContent = MSG.engagementBookmarks;
-  engagementType.options[4].textContent = MSG.engagementViews;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -244,12 +284,401 @@
   sortSelect.options[4].textContent = MSG.sortReplies;
   sortSelect.options[5].textContent = MSG.sortCaptured;
 
+  // --- Query Field ---
+  const ENG_TYPE_LABELS = {
+    likes: MSG.qfEngLikes,
+    reposts: MSG.qfEngReposts,
+    replies: MSG.qfEngReplies,
+    bookmarks: MSG.qfEngBookmarks,
+    views: MSG.qfEngViews
+  };
+
+  function renderQueryChips() {
+    const container = document.getElementById('queryChips');
+    if (activeFilters.length === 0) {
+      container.innerHTML = `<span style="color:#999;font-size:12px;padding:2px 4px;">${MSG.filterAll}</span>`;
+      return;
+    }
+    container.innerHTML = activeFilters.map((f, i) => {
+      let label = '';
+      let cls = `qc-${f.type}`;
+      switch (f.type) {
+        case 'platform':
+          label = f.value === 'x' ? 'X' : f.value === 'bluesky' ? 'Bluesky' : 'Misskey';
+          break;
+        case 'postType':
+          label = f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
+          break;
+        case 'date': {
+          const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
+          const fromStr = f.from ? formatShortDate(f.from) : '';
+          const toStr = f.to ? formatShortDate(f.to) : '';
+          label = `${typeName}: ${fromStr}\u301C${toStr}`;
+          break;
+        }
+        case 'engagement':
+          label = `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '\u2264' : '\u2265'} ${formatCount(f.min)}`;
+          break;
+        case 'tag':
+          label = `#${f.value}`;
+          break;
+        case 'media':
+          label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
+          break;
+      }
+      return `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
+    }).join('');
+  }
+
+  function formatShortDate(dateStr) {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    const thisYear = new Date().getFullYear().toString();
+    return y === thisYear ? `${parseInt(m)}/${parseInt(d)}` : `${y}/${parseInt(m)}/${parseInt(d)}`;
+  }
+
+  function addFilter(filter) {
+    // Prevent exact duplicates
+    const isDup = activeFilters.some(f => {
+      if (f.type !== filter.type) return false;
+      if (filter.type === 'date' || filter.type === 'engagement') return false;
+      return f.value === filter.value;
+    });
+    if (isDup) return;
+    // For date: replace existing
+    if (filter.type === 'date') {
+      activeFilters = activeFilters.filter(f => f.type !== 'date');
+    }
+    activeFilters.push(filter);
+    renderQueryChips();
+    renderPosts();
+  }
+
+  function removeFilter(index) {
+    activeFilters.splice(index, 1);
+    renderQueryChips();
+    renderPosts();
+  }
+
+  // Chip click handler
+  document.getElementById('queryChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.sb-active-chip');
+    if (!chip) return;
+    const idx = parseInt(chip.dataset.filterIdx, 10);
+    const filter = activeFilters[idx];
+    if (!filter) return;
+
+    if (filter.type === 'date') {
+      openDatePopover(idx);
+    } else if (filter.type === 'engagement') {
+      openEngPopover(idx);
+    } else {
+      removeFilter(idx);
+    }
+  });
+
+  // Menu/popover backdrop
+  let qfBackdrop = null;
+
+  function closeAllMenus() {
+    document.getElementById('qfDatePopover').style.display = 'none';
+    document.getElementById('qfEngPopover').style.display = 'none';
+    if (qfBackdrop) { qfBackdrop.remove(); qfBackdrop = null; }
+  }
+
+  function createBackdrop() {
+    closeAllMenus();
+    qfBackdrop = document.createElement('div');
+    qfBackdrop.className = 'qf-backdrop';
+    qfBackdrop.addEventListener('click', closeAllMenus);
+    document.body.appendChild(qfBackdrop);
+  }
+
+  // Date popover
+  let editingDateIdx = null;
+
+  function openDatePopover(idx) {
+    createBackdrop();
+    editingDateIdx = idx;
+    const existing = idx != null ? activeFilters[idx] : null;
+    const popover = document.getElementById('qfDatePopover');
+    const anchor = document.getElementById('sbDateTitle');
+    const rect = anchor.getBoundingClientRect();
+
+    document.getElementById('qfDateFrom').value = existing?.from || '';
+    document.getElementById('qfDateTo').value = existing?.to || '';
+    const dateType = existing?.dateField || 'date';
+    const dateTypeBtn = document.getElementById('qfDateType');
+    dateTypeBtn.textContent = dateType === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
+    dateTypeBtn.dataset.field = dateType;
+    dateTypeBtn.classList.toggle('active', dateType === 'capturedAt');
+
+    document.getElementById('qfDateDelete').style.display = idx != null ? '' : 'none';
+    document.getElementById('qfDateDelete').textContent = MSG.qfDelete;
+    document.getElementById('qfDateApply').textContent = MSG.qfApply;
+
+    popover.style.display = 'block';
+    popover.style.top = (rect.bottom + 4) + 'px';
+    popover.style.left = (rect.left) + 'px';
+    popover.style.right = 'auto';
+  }
+
+  document.getElementById('qfDateType').addEventListener('click', function() {
+    const current = this.dataset.field;
+    const next = current === 'date' ? 'capturedAt' : 'date';
+    this.dataset.field = next;
+    this.textContent = next === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
+    this.classList.toggle('active', next === 'capturedAt');
+  });
+
+  document.getElementById('qfDateApply').addEventListener('click', () => {
+    const from = document.getElementById('qfDateFrom').value;
+    const to = document.getElementById('qfDateTo').value;
+    const dateField = document.getElementById('qfDateType').dataset.field;
+    if (!from && !to) { closeAllMenus(); return; }
+    if (editingDateIdx != null) {
+      activeFilters[editingDateIdx] = { type: 'date', dateField, from, to };
+    } else {
+      // Remove any existing date filter first
+      activeFilters = activeFilters.filter(f => f.type !== 'date');
+      activeFilters.push({ type: 'date', dateField, from, to });
+    }
+    closeAllMenus();
+    renderQueryChips();
+    renderPosts();
+  });
+
+  document.getElementById('qfDateDelete').addEventListener('click', () => {
+    if (editingDateIdx != null) {
+      removeFilter(editingDateIdx);
+    }
+    closeAllMenus();
+  });
+
+  // Engagement popover
+  let editingEngIdx = null;
+
+  function openEngPopover(idx) {
+    createBackdrop();
+    editingEngIdx = idx;
+    const existing = idx != null ? activeFilters[idx] : null;
+    const popover = document.getElementById('qfEngPopover');
+    const anchor = document.getElementById('sbEngTitle');
+    const rect = anchor.getBoundingClientRect();
+
+    const select = document.getElementById('qfEngType');
+    select.innerHTML = Object.entries(ENG_TYPE_LABELS).map(([k, v]) =>
+      `<option value="${k}">${escapeHtml(v)}</option>`
+    ).join('');
+    select.value = existing?.engType || 'likes';
+    document.getElementById('qfEngMin').value = existing?.min || '';
+    const opBtn = document.getElementById('qfEngOp');
+    const op = existing?.op || 'gte';
+    opBtn.textContent = op === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
+    opBtn.dataset.op = op;
+    opBtn.classList.toggle('active', op === 'lte');
+
+    document.getElementById('qfEngDelete').style.display = idx != null ? '' : 'none';
+    document.getElementById('qfEngDelete').textContent = MSG.qfDelete;
+    document.getElementById('qfEngApply').textContent = MSG.qfApply;
+
+    popover.style.display = 'block';
+    popover.style.top = (rect.bottom + 4) + 'px';
+    popover.style.left = (rect.left) + 'px';
+    popover.style.right = 'auto';
+  }
+
+  document.getElementById('qfEngOp').addEventListener('click', function() {
+    const next = this.dataset.op === 'gte' ? 'lte' : 'gte';
+    this.dataset.op = next;
+    this.textContent = next === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
+    this.classList.toggle('active', next === 'lte');
+  });
+
+  document.getElementById('qfEngApply').addEventListener('click', () => {
+    const engType = document.getElementById('qfEngType').value;
+    const min = parseInt(document.getElementById('qfEngMin').value, 10);
+    const op = document.getElementById('qfEngOp').dataset.op || 'gte';
+    if (!min || min <= 0) { closeAllMenus(); return; }
+    const filter = { type: 'engagement', engType, min, op };
+    if (editingEngIdx != null) {
+      activeFilters[editingEngIdx] = filter;
+    } else {
+      // Remove existing filter for same engType (prevent gte+lte on same type)
+      activeFilters = activeFilters.filter(f => !(f.type === 'engagement' && f.engType === engType));
+      activeFilters.push(filter);
+    }
+    closeAllMenus();
+    renderQueryChips();
+    renderPosts();
+  });
+
+  document.getElementById('qfEngDelete').addEventListener('click', () => {
+    if (editingEngIdx != null) {
+      removeFilter(editingEngIdx);
+    }
+    closeAllMenus();
+  });
+
+  // --- Sidebar filter controls ---
+
+  // Sidebar i18n
+  setText('sbActiveTitle', isJa ? 'アクティブフィルタ' : 'Active Filters');
+  setText('sbPlatformTitle', MSG.qfPlatform);
+  setText('sbPostTypeTitle', MSG.qfPostType);
+  setText('sbMediaTitle', MSG.qfMedia);
+  setText('sbDateTitle', MSG.qfDate);
+  setText('sbEngTitle', MSG.qfEngagement);
+  setText('sbTagTitle', MSG.qfTag);
+  setText('sbPost', MSG.qfPost);
+  setText('sbReply', MSG.qfReply);
+  setText('sbQuote', MSG.qfQuote);
+  setText('sbThread', MSG.qfThread);
+  setText('sbImage', MSG.qfImage);
+  setText('sbVideo', MSG.qfVideo);
+  setText('sbGif', MSG.qfGif);
+
+  // Sidebar chip toggle (platform, postType, media)
+  document.querySelectorAll('.sb-chip[data-filter-type]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const type = chip.dataset.filterType;
+      const value = chip.dataset.filterValue;
+      const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
+      if (existIdx >= 0) {
+        removeFilter(existIdx);
+      } else {
+        addFilter({ type, value });
+      }
+      updateSidebarState();
+    });
+  });
+
+  // Update sidebar chip active states
+  function updateSidebarState() {
+    document.querySelectorAll('.sb-chip[data-filter-type]').forEach(chip => {
+      const type = chip.dataset.filterType;
+      const value = chip.dataset.filterValue;
+      const isActive = activeFilters.some(f => f.type === type && f.value === value);
+      chip.classList.toggle('active', isActive);
+    });
+    // Sync sidebar date controls with active date filter
+    const dateFilter = activeFilters.find(f => f.type === 'date');
+    if (dateFilter) {
+      sbDateFrom.value = dateFilter.from || '';
+      sbDateTo.value = dateFilter.to || '';
+      sbDateFieldSel.value = dateFilter.dateField || 'date';
+    } else {
+      sbDateFrom.value = '';
+      sbDateTo.value = '';
+    }
+    // Sync sidebar engagement controls — show first engagement filter if any
+    const engFilter = activeFilters.find(f => f.type === 'engagement');
+    if (engFilter) {
+      sbEngType.value = engFilter.engType || 'likes';
+      sbEngMin.value = engFilter.min || '';
+      sbEngOp.dataset.op = engFilter.op || 'gte';
+      sbEngOp.textContent = engFilter.op === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
+      sbEngOp.classList.toggle('active', engFilter.op === 'lte');
+    } else {
+      sbEngMin.value = '';
+    }
+    updateSidebarTags();
+  }
+
+  // Sidebar date controls
+  const sbDateFieldSel = document.getElementById('sbDateField');
+  const sbDateFrom = document.getElementById('sbDateFrom');
+  const sbDateTo = document.getElementById('sbDateTo');
+
+  document.getElementById('sbDateOptPost').textContent = MSG.qfDatePost;
+  document.getElementById('sbDateOptCapture').textContent = MSG.qfDateCaptured;
+  document.getElementById('sbDateFromLabel').textContent = MSG.qfDateFrom;
+  document.getElementById('sbDateToLabel').textContent = MSG.qfDateTo;
+
+  sbDateFieldSel.addEventListener('change', applySidebarDateFilter);
+
+  sbDateFrom.addEventListener('change', applySidebarDateFilter);
+  sbDateTo.addEventListener('change', applySidebarDateFilter);
+
+  function applySidebarDateFilter() {
+    const from = sbDateFrom.value;
+    const to = sbDateTo.value;
+    const dateField = sbDateFieldSel.value;
+    // Remove existing date filter
+    activeFilters = activeFilters.filter(f => f.type !== 'date');
+    if (from || to) {
+      activeFilters.push({ type: 'date', dateField, from, to });
+    }
+    renderQueryChips();
+    renderPosts();
+    updateSidebarState();
+  }
+
+  // Sidebar engagement controls
+  const sbEngType = document.getElementById('sbEngType');
+  const sbEngMin = document.getElementById('sbEngMin');
+  const sbEngOp = document.getElementById('sbEngOp');
+
+  sbEngType.innerHTML = Object.entries(ENG_TYPE_LABELS).map(([k, v]) =>
+    `<option value="${k}">${escapeHtml(v)}</option>`
+  ).join('');
+  sbEngOp.textContent = MSG.qfEngGte;
+  sbEngOp.dataset.op = 'gte';
+
+  sbEngOp.addEventListener('click', function() {
+    const next = this.dataset.op === 'gte' ? 'lte' : 'gte';
+    this.dataset.op = next;
+    this.textContent = next === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
+    this.classList.toggle('active', next === 'lte');
+    applySidebarEngFilter();
+  });
+
+  sbEngType.addEventListener('change', applySidebarEngFilter);
+  sbEngMin.addEventListener('input', applySidebarEngFilter);
+
+  function applySidebarEngFilter() {
+    const engType = sbEngType.value;
+    const min = parseInt(sbEngMin.value, 10);
+    const op = sbEngOp.dataset.op;
+    // Remove existing filter for same engType
+    activeFilters = activeFilters.filter(f => !(f.type === 'engagement' && f.engType === engType));
+    if (min > 0) {
+      activeFilters.push({ type: 'engagement', engType, min, op });
+    }
+    renderQueryChips();
+    renderPosts();
+    updateSidebarState();
+  }
+
+  // Sidebar tag chips (dynamic)
+  function updateSidebarTags() {
+    const container = document.getElementById('sbTagChips');
+    const tags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
+    if (tags.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    const activeValues = activeFilters.filter(f => f.type === 'tag').map(f => f.value);
+    container.innerHTML = tags.map(t =>
+      `<button class="sb-chip${activeValues.includes(t) ? ' active' : ''}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}">${escapeHtml(t)}</button>`
+    ).join('');
+    container.querySelectorAll('.sb-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.filterValue;
+        const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
+        if (existIdx >= 0) {
+          removeFilter(existIdx);
+        } else {
+          addFilter({ type: 'tag', value });
+        }
+        updateSidebarState();
+      });
+    });
+  }
+
   // --- State ---
   let allPosts = [];
-  let currentPlatform = 'all';
-  let dateFrom = '';
-  let dateTo = '';
-  let dateField = 'date'; // 'date' or 'capturedAt'
+  let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'grid';
   let skipDeleteConfirm = false;
   let selectMode = false;
@@ -279,80 +708,93 @@
     const query = document.getElementById('searchBox').value.trim().toLowerCase();
     const sort = sortSelect.value;
 
+    // Text search (unchanged)
     if (query) {
       posts = posts.filter(p =>
         (p.text || '').toLowerCase().includes(query) ||
         (p.screenName || '').toLowerCase().includes(query) ||
         (p.displayName || '').toLowerCase().includes(query) ||
-        (p.folder || '').toLowerCase().includes(query) ||
         (p.tags || []).some(t => t.toLowerCase().includes(query))
       );
     }
 
-    if (currentPlatform !== 'all') {
-      posts = posts.filter(p => p.platform === currentPlatform);
+    // Group filters by type
+    const byType = {};
+    for (const f of activeFilters) {
+      (byType[f.type] = byType[f.type] || []).push(f);
     }
 
-    if (dateFrom) {
-      const from = new Date(dateFrom + 'T00:00:00');
-      posts = posts.filter(p => p[dateField] && new Date(p[dateField]) >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo + 'T23:59:59');
-      posts = posts.filter(p => p[dateField] && new Date(p[dateField]) <= to);
+    // Platform: OR within group
+    if (byType.platform) {
+      const values = byType.platform.map(f => f.value);
+      posts = posts.filter(p => values.includes(p.platform));
     }
 
-    const engType = engagementType.value;
-    const engMin = parseInt(document.getElementById('engagementMin').value, 10);
-    if (engMin > 0) {
-      posts = posts.filter(p => (p[engType] || 0) >= engMin);
+    // Post type: OR within group
+    if (byType.postType) {
+      const values = byType.postType.map(f => f.value);
+      posts = posts.filter(p =>
+        (values.includes('post') && !p.isReply && !p.isQuote && !p.isThread) ||
+        (values.includes('reply') && p.isReply) ||
+        (values.includes('quote') && p.isQuote) ||
+        (values.includes('thread') && p.isThread)
+      );
     }
 
-    const folderValue = document.getElementById('folderFilter').value;
-    if (folderValue !== 'all') {
-      if (folderValue === '__none') {
-        posts = posts.filter(p => !p.folder);
-      } else {
-        posts = posts.filter(p => p.folder === folderValue);
+    // Date: use first date filter
+    if (byType.date) {
+      const f = byType.date[0];
+      const field = f.dateField || 'date';
+      if (f.from) {
+        const from = new Date(f.from + 'T00:00:00');
+        posts = posts.filter(p => p[field] && new Date(p[field]) >= from);
+      }
+      if (f.to) {
+        const to = new Date(f.to + 'T23:59:59');
+        posts = posts.filter(p => p[field] && new Date(p[field]) <= to);
       }
     }
 
+    // Engagement: each filter applies independently (AND)
+    if (byType.engagement) {
+      for (const f of byType.engagement) {
+        if (f.min > 0) {
+          if (f.op === 'lte') {
+            posts = posts.filter(p => (p[f.engType] || 0) <= f.min);
+          } else {
+            posts = posts.filter(p => (p[f.engType] || 0) >= f.min);
+          }
+        }
+      }
+    }
+
+    // Tag: OR within group
+    if (byType.tag) {
+      const values = byType.tag.map(f => f.value);
+      posts = posts.filter(p => (p.tags || []).some(t => values.includes(t)));
+    }
+
+    // Media: OR within group
+    if (byType.media) {
+      const values = byType.media.map(f => f.value);
+      posts = posts.filter(p => values.includes(p.mediaType));
+    }
+
+    // Sort (unchanged)
     switch (sort) {
-      case 'date-desc':
-        posts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        break;
-      case 'date-asc':
-        posts.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-        break;
-      case 'likes-desc':
-        posts.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-        break;
-      case 'reposts-desc':
-        posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0));
-        break;
-      case 'replies-desc':
-        posts.sort((a, b) => (b.replies || 0) - (a.replies || 0));
-        break;
-      case 'captured-desc':
-        posts.sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || ''));
-        break;
+      case 'date-desc': posts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); break;
+      case 'date-asc': posts.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)); break;
+      case 'likes-desc': posts.sort((a, b) => (b.likes || 0) - (a.likes || 0)); break;
+      case 'reposts-desc': posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0)); break;
+      case 'replies-desc': posts.sort((a, b) => (b.replies || 0) - (a.replies || 0)); break;
+      case 'captured-desc': posts.sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || '')); break;
     }
 
     return posts;
   }
 
-  function updateFolderFilter() {
-    const select = document.getElementById('folderFilter');
-    const current = select.value;
-    const folders = [...new Set(allPosts.map(p => p.folder).filter(Boolean))].sort();
-    select.innerHTML = `<option value="all">${MSG.folderFilter}: ${MSG.filterAll}</option>` +
-      `<option value="__none">${MSG.noFolder}</option>` +
-      folders.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
-    select.value = current || 'all';
-  }
-
   function renderPosts() {
-    updateFolderFilter();
+    updateSidebarState();
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
@@ -388,7 +830,7 @@
         p.bookmarks != null ? `<span>\ud83d\udd16 ${MSG.bookmarks(p.bookmarks)}</span>` : ''
       ].filter(Boolean).join('');
 
-      const dateStr = p.date ? formatDate(p.date) : '';
+      const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
       const userName = p.displayName || p.screenName || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
@@ -398,24 +840,64 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeHtml(p.url || '')}" data-index="${i}" data-key="${escapeHtml(postKey)}">
         <div class="select-check">${isSelected ? '✓' : ''}</div>
-        <button class="edit-btn" data-edit="${i}" title="Edit">✎</button>
-        <button class="delete-btn" data-delete="${i}" title="Delete">&times;</button>
-        ${p.image ? `<img src="${p.image}" alt="" loading="lazy">` : ''}
+        <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}">✎</button>
+        <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
+        ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${p.image}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
             ${escapeHtml(userName)}${handle ? ` <span style="color:#999;font-weight:400">${escapeHtml(handle)}</span>` : ''}
           </div>
-          ${textPreview ? `<div class="text">${textPreview}</div>` : ''}
+          ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
           <div class="stats">${statsHtml}</div>
           <div class="date">${dateStr}</div>
-          ${p.folder ? `<div class="folder-label">\ud83d\udcc1 ${escapeHtml(p.folder)}</div>` : ''}
-          ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
           ${capturedStr ? `<div class="date date-captured">${capturedStr}</div>` : ''}
+          ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;
     }).join('');
+
+    // Mark truncated text elements
+    requestAnimationFrame(() => {
+      grid.querySelectorAll('.text').forEach(el => {
+        el.classList.toggle('truncated', el.scrollHeight > el.clientHeight);
+      });
+    });
   }
+
+  // Text expand/collapse on click
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const textEl = e.target.closest('.text');
+    if (textEl) {
+      e.stopPropagation();
+      textEl.classList.toggle('expanded');
+      if (textEl.classList.contains('expanded')) {
+        textEl.classList.remove('truncated');
+      } else {
+        requestAnimationFrame(() => {
+          textEl.classList.toggle('truncated', textEl.scrollHeight > textEl.clientHeight);
+        });
+      }
+    }
+  });
+
+  // Image lightbox via zoom button
+  const lightbox = document.getElementById('lightbox');
+  const lightboxImg = document.getElementById('lightboxImg');
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.zoom-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const card = btn.closest('.post-card');
+    const img = card?.querySelector('img');
+    if (!img) return;
+    lightboxImg.src = img.src;
+    lightbox.classList.add('show');
+  });
+  lightbox.addEventListener('click', () => {
+    lightbox.classList.remove('show');
+    lightboxImg.src = '';
+  });
 
   // Edit button on card
   document.getElementById('postGrid').addEventListener('click', (e) => {
@@ -431,7 +913,7 @@
 
   // Click on post card -> select or open URL
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
 
@@ -497,7 +979,6 @@
   function openEditOverlay(post) {
     editingPost = post;
     editTags = [...(post.tags || [])];
-    document.getElementById('editFolder').value = post.folder || '';
     document.getElementById('editTagInput').value = '';
     renderEditTags();
     document.getElementById('editOverlay').classList.add('show');
@@ -549,13 +1030,11 @@
 
   document.getElementById('editSave').addEventListener('click', async () => {
     if (!editingPost) return;
-    const folder = document.getElementById('editFolder').value.trim() || null;
     const tags = [...editTags];
 
     // Update in allPosts
     const idx = allPosts.findIndex(p => p.url === editingPost.url && p.capturedAt === editingPost.capturedAt);
     if (idx >= 0) {
-      allPosts[idx].folder = folder;
       allPosts[idx].tags = tags;
       await chrome.storage.local.set({ posts: allPosts });
       renderPosts();
@@ -565,47 +1044,6 @@
     document.getElementById('editOverlay').classList.remove('show');
   });
 
-  // Platform chip buttons
-  document.querySelectorAll('.chip[data-platform]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('.chip[data-platform]').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      currentPlatform = chip.dataset.platform;
-      renderPosts();
-    });
-  });
-
-  // Date range inputs
-  const dateResetBtn = document.getElementById('dateReset');
-  function updateDateResetVisibility() {
-    dateResetBtn.style.display = (dateFrom || dateTo) ? '' : 'none';
-  }
-  document.getElementById('dateFrom').addEventListener('change', (e) => {
-    dateFrom = e.target.value;
-    updateDateResetVisibility();
-    renderPosts();
-  });
-  document.getElementById('dateTo').addEventListener('change', (e) => {
-    dateTo = e.target.value;
-    updateDateResetVisibility();
-    renderPosts();
-  });
-  dateResetBtn.addEventListener('click', () => {
-    dateFrom = ''; dateTo = '';
-    document.getElementById('dateFrom').value = '';
-    document.getElementById('dateTo').value = '';
-    updateDateResetVisibility();
-    renderPosts();
-  });
-
-  const dateTypeToggle = document.getElementById('dateTypeToggle');
-  dateTypeToggle.textContent = MSG.dateTypePost;
-  dateTypeToggle.addEventListener('click', () => {
-    dateField = dateField === 'date' ? 'capturedAt' : 'date';
-    dateTypeToggle.textContent = dateField === 'date' ? MSG.dateTypePost : MSG.dateTypeCaptured;
-    dateTypeToggle.classList.toggle('active', dateField === 'capturedAt');
-    renderPosts();
-  });
 
   // --- Selection mode ---
   const selectModeBtn = document.getElementById('selectModeBtn');
@@ -705,12 +1143,9 @@
     chrome.storage.local.set({ skipDeleteConfirm });
   });
 
-  // Search / sort / engagement / folder events
+  // Search / sort events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
   sortSelect.addEventListener('change', renderPosts);
-  engagementType.addEventListener('change', renderPosts);
-  document.getElementById('engagementMin').addEventListener('input', renderPosts);
-  document.getElementById('folderFilter').addEventListener('change', renderPosts);
 
   // --- Settings ---
   const dirInput = document.getElementById('downloadDir');
@@ -789,9 +1224,11 @@
         reposts: p.reposts,
         replies: p.replies,
         bookmarks: p.bookmarks,
+        isReply: p.isReply || null,
+        isQuote: p.isQuote || null,
+        isThread: p.isThread || null,
         date: p.date,
         capturedAt: p.capturedAt,
-        folder: p.folder || null,
         tags: p.tags?.length ? p.tags : null,
         imageFile: `images/${filename}`
       });
@@ -823,9 +1260,11 @@
       reposts: p.reposts,
       replies: p.replies,
       bookmarks: p.bookmarks,
+      isReply: p.isReply || null,
+      isQuote: p.isQuote || null,
+      isThread: p.isThread || null,
       date: p.date,
       capturedAt: p.capturedAt,
-      folder: p.folder || null,
       tags: p.tags?.length ? p.tags : null,
       image: p.image
     }));
@@ -869,9 +1308,11 @@
           reposts: exifData.reposts,
           replies: exifData.replies,
           bookmarks: exifData.bookmarks,
+          isReply: exifData.isReply || null,
+          isQuote: exifData.isQuote || null,
+          isThread: exifData.isThread || null,
           date: exifData.date,
           capturedAt: new Date().toISOString(),
-          folder: exifData.folder || null,
           tags: exifData.tags?.length ? exifData.tags : [],
           image: dataUrl
         });
@@ -931,10 +1372,12 @@
           reposts: p.reposts,
           replies: p.replies,
           bookmarks: p.bookmarks,
+          isReply: p.isReply || null,
+          isQuote: p.isQuote || null,
+          isThread: p.isThread || null,
           date: p.date,
           capturedAt: p.capturedAt || new Date().toISOString(),
-          folder: p.folder || null,
-          tags: p.tags?.length ? p.tags : [],
+            tags: p.tags?.length ? p.tags : [],
           image: p.image
         });
         imported++;
@@ -1210,41 +1653,17 @@ render()
     const injectBtn = document.getElementById('injectDummy');
     if (debugSection && injectBtn) {
       debugSection.style.display = '';
-      injectBtn.textContent = isJa ? 'ダミーデータ投入（8件）' : 'Inject dummy data (8 posts)';
-      injectBtn.addEventListener('click', async () => {
-        function makeImg(hex, label) {
-          const c = document.createElement('canvas');
-          c.width = 400; c.height = 300;
-          const ctx = c.getContext('2d');
-          ctx.fillStyle = hex; ctx.fillRect(0, 0, 400, 300);
-          ctx.fillStyle = '#fff'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center';
-          ctx.fillText(label, 200, 160);
-          return c.toDataURL('image/jpeg', 0.8);
-        }
-        const dummy = [
-          { url:'https://x.com/test1/status/1', platform:'x', text:'TypeScriptの型パズル、解けた時の快感がすごい', displayName:'てすと太郎', screenName:'test1', userId:'111', likes:24853, reposts:3210, replies:142, bookmarks:891, date:'2026-04-04T10:30:00Z', capturedAt:'2026-04-04T12:00:00Z', image:makeImg('#14171a','X') },
-          { url:'https://x.com/test2/status/2', platform:'x', text:'Good morning! Coffee and code.', displayName:'Dev Jane', screenName:'test2', userId:'222', likes:5, reposts:0, replies:1, bookmarks:0, date:'2026-04-03T01:15:00Z', capturedAt:'2026-04-03T08:00:00Z', image:makeImg('#14171a','X') },
-          { url:'https://x.com/test3/status/3', platform:'x', text:'いいねゼロの投稿テスト', displayName:'サンプル花子', screenName:'test3', userId:'333', likes:0, reposts:0, replies:0, bookmarks:null, date:'2026-03-28T15:00:00Z', capturedAt:'2026-03-29T03:00:00Z', image:makeImg('#14171a','X') },
-          { url:'https://bsky.app/profile/d.bsky.social/post/a1', platform:'bluesky', text:'Blueskyの空は今日も青い 🦋✨ 分散SNSの未来を感じる', displayName:'あおぞら', screenName:'d.bsky.social', userId:'did:plc:dummy001', likes:347, reposts:28, replies:12, bookmarks:null, date:'2026-04-02T08:45:00Z', capturedAt:'2026-04-02T09:00:00Z', image:makeImg('#0085ff','Bluesky') },
-          { url:'https://bsky.app/profile/s.bsky.social/post/a2', platform:'bluesky', text:'This is a longer post to test text truncation. The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet consectetur adipiscing elit.', displayName:'Sky Tester', screenName:'s.bsky.social', userId:'did:plc:dummy002', likes:1, reposts:null, replies:0, bookmarks:null, date:'2026-03-20T22:00:00Z', capturedAt:'2026-03-21T06:30:00Z', image:makeImg('#0085ff','Bluesky') },
-          { url:'https://misskey.io/notes/n1', platform:'misskey', text:'Misskeyからこんにちは！リアクション楽しい :blobcat:', displayName:'みすきーテスト', screenName:'mktest', userId:'mk001', likes:89, reposts:5, replies:3, bookmarks:null, date:'2026-04-01T14:20:00Z', capturedAt:'2026-04-01T14:25:00Z', image:makeImg('#96d04a','Misskey') },
-          { url:'https://misskey.io/notes/n2', platform:'misskey', text:'MFMテスト ✨キラキラ✨', displayName:'ノート職人', screenName:'notemaster', userId:'mk002', likes:1502, reposts:201, replies:44, bookmarks:null, date:'2026-03-15T06:00:00Z', capturedAt:'2026-03-15T07:00:00Z', image:makeImg('#96d04a','Misskey') },
-          { url:'https://x.com/big/status/4', platform:'x', text:'100万いいね目指してます', displayName:'バズりたい', screenName:'big', userId:'444', likes:987654, reposts:123456, replies:45678, bookmarks:12345, date:'2026-04-05T00:00:00Z', capturedAt:'2026-04-05T01:00:00Z', image:makeImg('#14171a','X') },
-        ];
-        const result = await chrome.storage.local.get('posts');
-        const posts = result.posts || [];
-        let added = 0;
-        for (const d of dummy) {
-          if (!posts.find(p => p.url === d.url)) { posts.push(d); added++; }
-        }
-        await chrome.storage.local.set({ posts });
-        allPosts = posts;
-        renderPosts();
-        showToast(isJa ? `${added} 件追加` : `${added} posts added`);
+      injectBtn.textContent = isJa ? 'ダミーデータ投入（50件）' : 'Inject dummy data (50 posts)';
+      injectBtn.addEventListener('click', () => {
+        const s = document.createElement('script');
+        s.src = chrome.runtime.getURL('scripts/inject-dummy.js');
+        document.head.appendChild(s);
+        s.onload = () => s.remove();
       });
     }
   }
 
   // --- Init ---
+  renderQueryChips();
   loadPosts();
 })();

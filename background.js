@@ -228,8 +228,9 @@ async function storePost(metadata, jpegDataUrl) {
       mediaType: metadata.mediaType || null,
       lang: metadata.lang || null,
       isReply: metadata.isReply || null,
+      isQuote: metadata.isQuote || null,
+      isThread: metadata.isThread || null,
       quotedUrl: metadata.quotedUrl || null,
-      folder: metadata.folder || null,
       tags: metadata.tags?.length ? metadata.tags : [],
       image: jpegDataUrl
     });
@@ -354,8 +355,9 @@ function buildExifObj(metadata) {
     mediaType: metadata.mediaType || null,
     lang: metadata.lang || null,
     isReply: metadata.isReply || null,
+    isQuote: metadata.isQuote || null,
+    isThread: metadata.isThread || null,
     quotedUrl: metadata.quotedUrl || null,
-    folder: metadata.folder || null,
     tags: metadata.tags?.length ? metadata.tags : null
   };
   zeroth[piexif.ImageIFD.XPComment] = encodeUCS2LE(JSON.stringify(jsonData));
@@ -430,8 +432,9 @@ function buildMetadata({ captureInfo, capturedAt, captureId, pageTitle, pageUrl,
     mediaType: normalizedPostDetails.mediaType,
     lang: normalizedPostDetails.lang,
     isReply: normalizedPostDetails.isReply,
+    isQuote: normalizedPostDetails.isQuote,
+    isThread: normalizedPostDetails.isThread,
     quotedUrl: normalizedPostDetails.quotedUrl,
-    folder: normalizedPostDetails.folder,
     tags: normalizedPostDetails.tags,
     extension: {
       name: manifest.name,
@@ -494,8 +497,9 @@ function normalizePostDetails(postDetails) {
     mediaType: normalizeOptionalString(postDetails?.mediaType, MAX_SHORT_STRING),
     lang: normalizeOptionalString(postDetails?.lang, MAX_SHORT_STRING),
     isReply: postDetails?.isReply === true ? true : null,
+    isQuote: postDetails?.isQuote === true ? true : null,
+    isThread: postDetails?.isThread === true ? true : null,
     quotedUrl: normalizeOptionalString(postDetails?.quotedUrl, MAX_TEXT_STRING),
-    folder: normalizeOptionalString(postDetails?.folder, MAX_SHORT_STRING),
     tags: Array.isArray(postDetails?.tags) ? postDetails.tags.map(t => String(t).slice(0, MAX_SHORT_STRING)).slice(0, 50) : []
   };
 }

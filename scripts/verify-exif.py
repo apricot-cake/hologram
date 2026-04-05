@@ -303,7 +303,7 @@ def check_file(path):
     print(f"\n  JSON metadata:")
     for key in ["captureId", "url", "platform", "text", "displayName", "screenName", "userId",
                 "likes", "reposts", "replies", "bookmarks", "views", "date", "capturedAt",
-                "mediaType", "lang", "isReply", "quotedUrl", "folder", "tags"]:
+                "mediaType", "lang", "isReply", "isQuote", "isThread", "quotedUrl", "folder", "tags"]:
         val = meta.get(key)
         if val is not None:
             val_str = str(val)[:70]
@@ -317,15 +317,15 @@ def check_file(path):
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--recent":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-        files = sorted(glob.glob(os.path.join(SAVE_DIR, "images", "*.jpg")), key=os.path.getmtime, reverse=True)[:n]
+        files = sorted(glob.glob(os.path.join(SAVE_DIR, "*.jpg")) + glob.glob(os.path.join(SAVE_DIR, "images", "*.jpg")), key=os.path.getmtime, reverse=True)[:n]
         files.reverse()
     elif len(sys.argv) > 1:
         files = [sys.argv[1]]
     else:
-        files = sorted(glob.glob(os.path.join(SAVE_DIR, "images", "*.jpg")), key=os.path.getmtime, reverse=True)[:1]
+        files = sorted(glob.glob(os.path.join(SAVE_DIR, "*.jpg")) + glob.glob(os.path.join(SAVE_DIR, "images", "*.jpg")), key=os.path.getmtime, reverse=True)[:1]
 
     if not files:
-        print(f"No .jpg files found in {os.path.join(SAVE_DIR, 'images')}")
+        print(f"No .jpg files found in {SAVE_DIR}")
         return
 
     results = []

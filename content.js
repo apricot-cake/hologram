@@ -287,7 +287,9 @@ function getSiteConfig() {
           viewCount: getXViewCount(post),
           mediaType: getMediaType(post),
           lang: post.querySelector('[data-testid="tweetText"]')?.getAttribute('lang') || null,
-          isReply: isXReply(post),
+          isReply: isXReply(post) && !isXThread(post, postUrl),
+          isQuote: isXQuote(post),
+          isThread: isXThread(post, postUrl),
           quotedUrl: getQuotedUrl(post, 'x')
         };
       },
@@ -346,6 +348,8 @@ function getSiteConfig() {
           mediaType: getMediaType(post),
           lang: post.querySelector('[data-testid="postText"]')?.getAttribute('lang') || null,
           isReply: !!post.querySelector('[data-testid="replyLine"]'),
+          isQuote: !!post.querySelector('[data-testid="quotePost"]'),
+          isThread: false,
           quotedUrl: getQuotedUrl(post, 'bluesky')
         };
       },
@@ -401,6 +405,8 @@ function getSiteConfig() {
           bookmarkCount: null,
           mediaType: getMediaType(post),
           isReply: !!getMisskeyPrimaryArticle(post)?.querySelector('a[href*="/notes/"] + span'),
+          isQuote: isMisskeyQuote(post),
+          isThread: false,
           quotedUrl: getQuotedUrl(post, 'misskey')
         };
       },
@@ -947,6 +953,40 @@ function isXReply(post) {
   if (!(post instanceof Element)) return false;
   const text = post.innerText || '';
   return /^返信先[:：\s]|^Replying to\s/m.test(text);
+}
+
+function isXQuote(post) {
+  if (!(post instanceof Element)) return false;
+  const cards = post.querySelectorAll('[role="link"]');
+  for (const card of cards) {
+    if (card.closest('[data-testid="User-Name"]')) continue;
+    if (card.querySelector('[data-testid="tweetText"]') || card.querySelector('[data-testid="like"]')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isXThread(post, postUrl) {
+  if (!isXReply(post)) return false;
+  const parsed = parseXPostLink(postUrl) || getXPostLink(post);
+  if (!parsed?.screenName) return false;
+  const text = post.innerText || '';
+  const replyMatch = text.match(/^(?:返信先[:：\s]*|Replying to\s+)@(\S+)/m);
+  return !!(replyMatch && replyMatch[1].toLowerCase() === parsed.screenName.toLowerCase());
+}
+
+function isMisskeyQuote(post) {
+  const article = getMisskeyPrimaryArticle(post);
+  if (!article) return false;
+  const nestedNotes = article.querySelectorAll('a[href*="/notes/"]');
+  const mainLink = getMisskeyTimeLink(post);
+  for (const link of nestedNotes) {
+    if (link.querySelector('time')) continue;
+    const parsed = parseMisskeyNoteLink(link.href);
+    if (parsed && mainLink && parsed.id !== mainLink.id) return true;
+  }
+  return false;
 }
 
 function getMediaType(post) {
