@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Post Snap</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 14px/1.6 -apple-system, 'Segoe UI', sans-serif;
+      background: #f5f5f5; color: #333;
+      padding: 24px 32px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* --- Header --- */
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header-actions { display: flex; gap: 8px; }
+
+    /* --- Tabs --- */
+    .tabs {
+      display: flex; gap: 0; margin-bottom: 20px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      padding: 8px 16px; font-size: 14px; font-weight: 500;
+      color: #888; cursor: pointer; margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: #555; }
+    .tab-btn.active { color: #1d9bf0; border-bottom-color: #1d9bf0; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* --- Toolbar --- */
+    .toolbar {
+      display: flex; gap: 8px; align-items: center;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .search-box {
+      flex: 1; min-width: 200px;
+      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+    }
+    .search-box:focus { border-color: #1d9bf0; }
+    select {
+      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; background: #fff; outline: none; cursor: pointer;
+    }
+    .post-count {
+      font-size: 12px; color: #999;
+    }
+
+    /* --- Post grid --- */
+    .post-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .post-card {
+      background: #fff; border-radius: 8px; overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      cursor: pointer; transition: box-shadow 0.15s;
+    }
+    .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .post-card img {
+      width: 100%; display: block;
+      max-height: 300px; object-fit: cover;
+    }
+    .post-meta {
+      padding: 12px;
+    }
+    .post-meta .user {
+      font-weight: 600; font-size: 13px;
+      margin-bottom: 4px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .post-meta .user .platform-badge {
+      font-size: 10px; font-weight: 500;
+      padding: 1px 6px; border-radius: 3px;
+      color: #fff; text-transform: uppercase;
+    }
+    .platform-badge.x { background: #000; }
+    .platform-badge.bluesky { background: #0085ff; }
+    .platform-badge.misskey { background: #96d04a; color: #333; }
+    .post-meta .text {
+      font-size: 13px; color: #555;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+      overflow: hidden; margin-bottom: 6px;
+    }
+    .post-meta .stats {
+      display: flex; gap: 12px; font-size: 12px; color: #999;
+    }
+    .post-meta .date {
+      font-size: 11px; color: #bbb; margin-top: 4px;
+    }
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: #999;
+    }
+    .empty-state p { margin-bottom: 8px; }
+
+    /* --- Settings --- */
+    .section {
+      background: #fff; border-radius: 8px;
+      padding: 16px 20px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .section h2 {
+      font-size: 13px; font-weight: 600; color: #666;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid #ddd; border-radius: 6px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #1d9bf0; }
+    .hint { font-size: 12px; color: #999; margin-top: 6px; }
+    .actions { display: flex; align-items: center; margin-top: 16px; }
+    .link-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+
+    /* --- Buttons --- */
+    .btn {
+      background: #1d9bf0; color: #fff; border: none; border-radius: 6px;
+      padding: 8px 20px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn:hover { background: #1a8cd8; }
+    .btn-outline {
+      background: #fff; color: #333; border: 1px solid #ddd;
+      border-radius: 6px; padding: 7px 16px; font-size: 13px;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-outline:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .btn-danger {
+      background: #fff; color: #f4212e; border: 1px solid #f4212e;
+      border-radius: 6px; padding: 7px 16px; font-size: 13px;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-danger:hover { background: #fef2f2; }
+
+    .status-msg {
+      font-size: 13px; margin-left: 12px;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .status-msg.show { opacity: 1; }
+    a { color: #1d9bf0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* --- Data management --- */
+    .data-section {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    }
+    .data-hint {
+      width: 100%; font-size: 12px; color: #999; margin-top: 8px;
+    }
+    .file-input-hidden { display: none; }
+
+    /* --- Delete confirm --- */
+    .confirm-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 10000;
+      justify-content: center; align-items: center;
+    }
+    .confirm-overlay.show { display: flex; }
+    .confirm-box {
+      background: #fff; border-radius: 12px;
+      padding: 24px; max-width: 360px; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .confirm-box p { margin-bottom: 16px; font-size: 14px; }
+    .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Post Snap</h1>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
+    <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
+  </div>
+
+  <!-- Posts tab -->
+  <div class="tab-panel active" id="panelPosts">
+    <div class="toolbar">
+      <input type="text" class="search-box" id="searchBox">
+      <select id="sortSelect">
+        <option value="date-desc"></option>
+        <option value="date-asc"></option>
+        <option value="likes-desc"></option>
+        <option value="reposts-desc"></option>
+        <option value="replies-desc"></option>
+      </select>
+      <select id="platformFilter">
+        <option value="all"></option>
+        <option value="x">X</option>
+        <option value="bluesky">Bluesky</option>
+        <option value="misskey">Misskey</option>
+      </select>
+      <span class="post-count" id="postCount"></span>
+    </div>
+    <div id="postGrid" class="post-grid"></div>
+    <div id="emptyState" class="empty-state" style="display:none;"></div>
+  </div>
+
+  <!-- Settings tab -->
+  <div class="tab-panel" id="panelSettings">
+    <div class="section">
+      <h2 id="settingsDownloadTitle">Download</h2>
+      <label for="downloadDir" id="labelFolder"></label>
+      <input type="text" id="downloadDir" placeholder="Post Snap">
+      <div class="hint" id="hintFolder"></div>
+      <div style="margin-top: 16px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="saveAs">
+          <span id="labelSaveAs"></span>
+        </label>
+        <div class="hint" id="hintSaveAs"></div>
+      </div>
+      <div class="hint" style="margin-top: 12px;" id="hintBackup"></div>
+      <div class="actions">
+        <button class="btn" id="saveSettings"></button>
+        <span class="status-msg" id="settingsStatus"></span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsShortcutTitle">Keyboard Shortcut</h2>
+      <div class="link-row">
+        <a href="#" id="shortcutLink"></a>
+      </div>
+      <div class="hint" id="hintShortcut"></div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsDataTitle">Data</h2>
+      <div class="data-section">
+        <button class="btn-outline" id="exportZip"></button>
+        <button class="btn-outline" id="exportHtml"></button>
+        <button class="btn-outline" id="importImages"></button>
+        <button class="btn-outline" id="importHtml"></button>
+        <div class="data-hint" id="hintExport"></div>
+      </div>
+      <input type="file" id="importImagesInput" class="file-input-hidden" webkitdirectory>
+      <input type="file" id="importHtmlInput" class="file-input-hidden" accept=".html">
+    </div>
+
+    <div class="section">
+      <h2 id="settingsDangerTitle"></h2>
+      <button class="btn-danger" id="clearData"></button>
+    </div>
+
+    <div id="buildInfo" style="margin-top: 24px; font-size: 11px; color: #bbb; text-align: center;"></div>
+  </div>
+
+  <!-- Delete confirmation -->
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+      <p id="confirmMsg"></p>
+      <div class="confirm-actions">
+        <button class="btn-outline" id="confirmCancel"></button>
+        <button class="btn-danger" id="confirmOk"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/piexif.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

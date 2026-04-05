@@ -3,7 +3,7 @@
   "name": "Post Snap",
   "version": "1.0.0",
   "description": "Capture SNS posts as images with searchable EXIF metadata",
-  "permissions": ["activeTab", "scripting", "downloads"],
+  "permissions": ["activeTab", "scripting", "downloads", "storage", "unlimitedStorage"],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -16,6 +16,10 @@
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
     }
+  },
+  "options_ui": {
+    "page": "viewer.html",
+    "open_in_tab": true
   },
   "background": {
     "service_worker": "background.js"

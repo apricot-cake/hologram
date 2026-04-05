@@ -1,11 +1,11 @@
 (() => {
   const MSG = navigator.language.startsWith('ja') ? {
-    select: '保存する投稿をクリック（Escでキャンセル）',
+    select: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
     saving: '保存中...',
     saved: '画像を保存しました',
     failed: '保存に失敗しました'
   } : {
-    select: 'Click a post to save (Esc to cancel)',
+    select: 'Click a post to save (Esc to cancel / Right-click for settings)',
     saving: 'Saving...',
     saved: 'Image saved',
     failed: 'Save failed'
@@ -46,7 +46,7 @@
   highlight.style.cssText = `
     position: absolute; pointer-events: none; z-index: 2147483646;
     box-sizing: border-box;
-    border: 3px solid #1d9bf0; border-radius: 16px;
+    border: 3px solid #1d9bf0; border-radius: 4px;
     background: rgba(29, 155, 240, 0.06);
     transition: top 0.08s, left 0.08s, width 0.08s, height 0.08s;
     display: none;
@@ -113,6 +113,7 @@
     // イベントリスナー除去（クリックは1回だけ）
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
+    document.removeEventListener('contextmenu', onContextMenu, true);
 
     // ハイライト・バナーを一旦すべて非表示にしてからキャプチャ
     highlight.style.display = 'none';
@@ -146,6 +147,14 @@
     });
   }
 
+  function onContextMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    chrome.runtime.sendMessage({ type: 'openOptions' });
+    cleanup();
+  }
+
   function onKeyDown(e) {
     if (e.key === 'Escape') cleanup();
   }
@@ -158,6 +167,7 @@
 
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
+    document.removeEventListener('contextmenu', onContextMenu, true);
     document.removeEventListener('keydown', onKeyDown, true);
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
     restoreCaptureState?.();
@@ -218,9 +228,15 @@
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
+  // === ビルドハッシュをDOMに埋め込む（リロードチェック用） ===
+  chrome.runtime.sendMessage({ type: 'getBuildHash' }, (res) => {
+    if (res?.hash) document.documentElement.dataset.postSnapBuild = res.hash;
+  });
+
   // === リスナー登録 ===
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClick, true);
+  document.addEventListener('contextmenu', onContextMenu, true);
   document.addEventListener('keydown', onKeyDown, true);
 })();
 
@@ -256,9 +272,12 @@ function getSiteConfig() {
           screenName: parsed?.screenName || null,
           displayName: getXDisplayName(post),
           userId: isRetweet ? null : getXUserId(post),
-          uid: null,
           postText: getXPostText(post),
-          postPublishedAt: getPostPublishedAt(post)
+          postPublishedAt: getPostPublishedAt(post),
+          likeCount: getAriaCount(post, '[data-testid="like"], [data-testid="unlike"]'),
+          repostCount: getAriaCount(post, '[data-testid="retweet"], [data-testid="unretweet"]'),
+          replyCount: getAriaCount(post, '[data-testid="reply"]'),
+          bookmarkCount: getAriaCount(post, '[data-testid="bookmark"], [data-testid="removeBookmark"]')
         };
       },
       prepareForCapture(post) {
@@ -306,10 +325,13 @@ function getSiteConfig() {
           postId: postLink?.postId || null,
           screenName: profile.screenName || postLink?.handle || null,
           displayName: getBlueskyDisplayName(post),
-          userId: null,
-          uid: profile.uid,
+          userId: profile.uid,
           postText: getBlueskyPostText(post),
-          postPublishedAt: getPostPublishedAt(post)
+          postPublishedAt: getPostPublishedAt(post),
+          likeCount: getAriaCount(post, '[data-testid="likeBtn"]') ?? getAdjacentCount(post, '[data-testid="likeBtn"]'),
+          repostCount: getAriaCount(post, '[data-testid="repostBtn"]') ?? getAdjacentCount(post, '[data-testid="repostBtn"]'),
+          replyCount: getAriaCount(post, '[data-testid="replyBtn"]'),
+          bookmarkCount: null
         };
       },
       prepareForCapture(post) {
@@ -356,9 +378,12 @@ function getSiteConfig() {
           screenName: authorProfile?.screenName || null,
           displayName: getMisskeyDisplayName(post),
           userId: null,
-          uid: null,
           postText: getMisskeyPostText(post),
-          postPublishedAt: getMisskeyPostPublishedAt(post)
+          postPublishedAt: getMisskeyPostPublishedAt(post),
+          likeCount: null,
+          repostCount: null,
+          replyCount: null,
+          bookmarkCount: null
         };
       },
       getCaptureRect(post) {
@@ -863,6 +888,30 @@ function normalizeRect(rect) {
     right: rect?.right ?? (x + width),
     bottom: rect?.bottom ?? (y + height)
   };
+}
+
+function getAriaCount(post, selector) {
+  if (!(post instanceof Element)) return null;
+  const el = post.querySelector(selector);
+  if (!el) return null;
+  const label = el.getAttribute('aria-label') || '';
+  const match = label.match(/(\d[\d,]*)/);
+  if (match) return parseInt(match[1].replace(/,/g, ''), 10);
+  const text = el.textContent?.trim();
+  const textMatch = text?.match(/^(\d[\d,]*)$/);
+  if (textMatch) return parseInt(textMatch[1].replace(/,/g, ''), 10);
+  return null;
+}
+
+function getAdjacentCount(post, selector) {
+  if (!(post instanceof Element)) return null;
+  const el = post.querySelector(selector);
+  if (!el) return null;
+  const parent = el.closest('[role="button"]') || el.parentElement;
+  if (!parent) return null;
+  const text = parent.textContent?.trim();
+  const match = text?.match(/(\d[\d,]*)/);
+  return match ? parseInt(match[1].replace(/,/g, ''), 10) : null;
 }
 
 function prepareScopedCaptureState(className, elements) {

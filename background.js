@@ -1,5 +1,22 @@
 importScripts('vendor/piexif.js');
 
+const BUILD_FILES = ['background.js', 'content.js', 'manifest.json', 'viewer.html', 'viewer.js'];
+let buildHash = 'unknown';
+
+(async () => {
+  try {
+    let combined = '';
+    for (const f of BUILD_FILES) {
+      const res = await fetch(chrome.runtime.getURL(f));
+      combined += (await res.text()).replace(/\r\n/g, '\n');
+    }
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(combined));
+    buildHash = Array.from(new Uint8Array(buf)).slice(0, 4)
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log(`[Post Snap] Build: ${buildHash}`);
+  } catch { /* non-critical */ }
+})();
+
 const PLATFORM_CONFIGS = [
   {
     id: 'x',
@@ -20,8 +37,38 @@ const PLATFORM_CONFIGS = [
   }
 ];
 
-const DOWNLOAD_DIRECTORY = 'Post Snap';
+const DEFAULT_DOWNLOAD_DIRECTORY = 'Post Snap';
 const JPEG_QUALITY = 0.92;
+
+async function getDownloadSettings() {
+  try {
+    const result = await chrome.storage.local.get(['downloadDirectory', 'saveAs']);
+    let directory = result.downloadDirectory || DEFAULT_DOWNLOAD_DIRECTORY;
+    if (/[.]{2}|[/\\]/.test(directory)) {
+      directory = DEFAULT_DOWNLOAD_DIRECTORY;
+    }
+    return { directory, saveAs: !!result.saveAs };
+  } catch {
+    return { directory: DEFAULT_DOWNLOAD_DIRECTORY, saveAs: false };
+  }
+}
+
+function isAllowedSender(tabUrl, platformId) {
+  const hostname = getHostname(tabUrl);
+  if (!hostname) return false;
+
+  const config = getPlatformConfigById(platformId);
+  if (config?.hosts) {
+    return config.hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  }
+
+  // Misskey has no fixed host list — allow any https origin
+  if (platformId === 'misskey') {
+    return /^https:/i.test(tabUrl || '');
+  }
+
+  return false;
+}
 
 async function activateOnTab(tab) {
   if (!tab.id || !/^https?:/i.test(tab.url || '')) {
@@ -52,12 +99,27 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'openOptions') {
+    chrome.runtime.openOptionsPage();
+    return false;
+  }
+
+  if (message.type === 'getBuildHash') {
+    sendResponse({ hash: buildHash });
+    return false;
+  }
+
   if (message.type !== 'captureAndSend') {
     return false;
   }
 
   if (!sender.tab?.id) {
     sendResponse({ ok: false, error: 'Missing tab context' });
+    return false;
+  }
+
+  if (!isAllowedSender(sender.tab.url, message.platform)) {
+    sendResponse({ ok: false, error: 'Sender origin does not match platform' });
     return false;
   }
 
@@ -76,13 +138,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const captureInfo = getCaptureInfo(platformId, postUrl || tab.url);
   const capturedAt = new Date().toISOString();
-  if (captureInfo.id === 'bluesky' && postDetails?.screenName && !postDetails?.uid) {
-    postDetails.uid = await resolveBlueskyDid(postDetails.screenName);
+
+  if (captureInfo.id === 'bluesky' && postDetails?.screenName && !postDetails?.userId) {
+    postDetails.userId = await resolveBlueskyDid(postDetails.screenName);
   }
 
   if (captureInfo.id === 'misskey') {
     const host = getHostname(postUrl || tab.url);
-    await enrichMisskeyPostDetails(host, postDetails, postUrl);
+    const tabHost = getHostname(tab.url);
+    if (host && host === tabHost) {
+      await enrichMisskeyPostDetails(host, postDetails, postUrl);
+    }
   }
 
   const metadata = buildMetadata({
@@ -107,10 +173,39 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
 
   const jpegDataUrl = buildJpegDataUrl(response.croppedDataUrl, metadata);
   const baseFilename = buildBaseFilename(captureInfo, metadata, capturedAt);
+  const settings = await getDownloadSettings();
 
-  await downloadDataUrl(jpegDataUrl, `${DOWNLOAD_DIRECTORY}/${baseFilename}.jpg`);
+  await downloadDataUrl(jpegDataUrl, `${settings.directory}/images/${baseFilename}.jpg`, settings.saveAs);
+
+  // Store post data in chrome.storage.local for the viewer
+  await storePost(metadata, jpegDataUrl);
 
   notify(tab.id, true);
+}
+
+async function storePost(metadata, jpegDataUrl) {
+  try {
+    const result = await chrome.storage.local.get('posts');
+    const posts = result.posts || [];
+    posts.push({
+      url: metadata.postUrl,
+      platform: metadata.platform,
+      text: metadata.postText,
+      displayName: metadata.displayName,
+      screenName: metadata.screenName,
+      userId: metadata.userId,
+      likes: metadata.likeCount,
+      reposts: metadata.repostCount,
+      replies: metadata.replyCount,
+      bookmarks: metadata.bookmarkCount,
+      date: metadata.postPublishedAt || metadata.capturedAt,
+      capturedAt: metadata.capturedAt,
+      image: jpegDataUrl
+    });
+    await chrome.storage.local.set({ posts });
+  } catch (error) {
+    console.error('Failed to store post:', error);
+  }
 }
 
 function notify(tabId, success, extra = {}) {
@@ -171,6 +266,16 @@ async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
       if (note.createdAt) {
         postDetails.postPublishedAt = note.createdAt;
       }
+      if (note.renoteCount != null) {
+        postDetails.repostCount = note.renoteCount;
+      }
+      if (note.repliesCount != null) {
+        postDetails.replyCount = note.repliesCount;
+      }
+      if (note.reactions) {
+        const total = Object.values(note.reactions).reduce((sum, n) => sum + n, 0);
+        if (total > 0) postDetails.likeCount = total;
+      }
     } catch {
       // API failure is not critical
     }
@@ -196,42 +301,33 @@ function buildExifObj(metadata) {
   const zeroth = {};
   const exifIfd = {};
 
-  const screenName = metadata.screenName ? `@${metadata.screenName}` : '';
-  const displayName = metadata.displayName || '';
-  const platform = metadata.platform || '';
-  const postUrl = metadata.postUrl || '';
+  // XPComment: all metadata as JSON
+  const jsonData = {
+    url: metadata.postUrl || null,
+    platform: metadata.platform || null,
+    text: metadata.postText || null,
+    displayName: metadata.displayName || null,
+    screenName: metadata.screenName || null,
+    userId: metadata.userId || null,
+    likes: metadata.likeCount,
+    reposts: metadata.repostCount,
+    replies: metadata.replyCount,
+    bookmarks: metadata.bookmarkCount,
+    date: metadata.postPublishedAt || null
+  };
+  zeroth[piexif.ImageIFD.XPComment] = encodeUCS2LE(JSON.stringify(jsonData));
 
-  const tags = [];
-  if (displayName) tags.push(displayName);
-  if (screenName) tags.push(screenName);
-  if (metadata.userId) tags.push(metadata.userId);
-  if (metadata.uid) tags.push(metadata.uid);
-  if (tags.length) {
-    zeroth[piexif.ImageIFD.XPKeywords] = encodeUCS2LE(tags.join(';'));
-  }
-
-  if (postUrl) {
-    zeroth[piexif.ImageIFD.XPTitle] = encodeUCS2LE(postUrl);
-  }
-
-  if (metadata.postText) {
-    zeroth[piexif.ImageIFD.XPComment] = encodeUCS2LE(metadata.postText);
-  }
-
+  // DateTimeOriginal: post publish date (for Explorer date filtering)
   const dateSource = metadata.postPublishedAt || metadata.capturedAt;
   if (dateSource) {
     exifIfd[piexif.ExifIFD.DateTimeOriginal] = formatExifDateTime(dateSource);
   }
 
+  // Software: extension name + version + build hash
   const manifest = chrome.runtime.getManifest();
-  zeroth[piexif.ImageIFD.Software] = `${manifest.name} v${manifest.version}`;
-
+  zeroth[piexif.ImageIFD.Software] = `${manifest.name} v${manifest.version} [${buildHash}]`;
 
   return { '0th': zeroth, 'Exif': exifIfd };
-}
-
-function toAscii(str) {
-  return str.replace(/[^\x20-\x7e]/g, '?');
 }
 
 function encodeUCS2LE(str) {
@@ -271,7 +367,6 @@ function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl, p
   const resolvedPageUrl = sanitizeUrl(pageUrl);
 
   return {
-    schema: 'sns-post-to-save/v1',
     capturedAt,
     platform: captureInfo.id,
     pageTitle: pageTitle || '',
@@ -283,8 +378,11 @@ function buildMetadata({ captureInfo, capturedAt, pageTitle, pageUrl, postUrl, p
     displayName: normalizedPostDetails.displayName,
     postText: normalizedPostDetails.postText,
     userId: normalizedPostDetails.userId,
-    uid: normalizedPostDetails.uid,
     postPublishedAt: normalizedPostDetails.postPublishedAt,
+    likeCount: normalizedPostDetails.likeCount,
+    repostCount: normalizedPostDetails.repostCount,
+    replyCount: normalizedPostDetails.replyCount,
+    bookmarkCount: normalizedPostDetails.bookmarkCount,
     extension: {
       name: manifest.name,
       version: manifest.version
@@ -323,25 +421,37 @@ function getHostname(url) {
   }
 }
 
+const MAX_SHORT_STRING = 256;
+const MAX_TEXT_STRING = 10000;
+
 function normalizePostDetails(postDetails) {
   return {
-    postId: normalizeOptionalString(postDetails?.postId),
-    screenName: normalizeOptionalString(postDetails?.screenName),
-    displayName: normalizeOptionalString(postDetails?.displayName),
-    postText: normalizeOptionalString(postDetails?.postText),
-    userId: normalizeOptionalString(postDetails?.userId),
-    uid: normalizeOptionalString(postDetails?.uid),
-    postPublishedAt: normalizeOptionalIsoDate(postDetails?.postPublishedAt)
+    postId: normalizeOptionalString(postDetails?.postId, MAX_SHORT_STRING),
+    screenName: normalizeOptionalString(postDetails?.screenName, MAX_SHORT_STRING),
+    displayName: normalizeOptionalString(postDetails?.displayName, MAX_SHORT_STRING),
+    postText: normalizeOptionalString(postDetails?.postText, MAX_TEXT_STRING),
+    userId: normalizeOptionalString(postDetails?.userId, MAX_SHORT_STRING),
+    postPublishedAt: normalizeOptionalIsoDate(postDetails?.postPublishedAt),
+    likeCount: normalizeOptionalCount(postDetails?.likeCount),
+    repostCount: normalizeOptionalCount(postDetails?.repostCount),
+    replyCount: normalizeOptionalCount(postDetails?.replyCount),
+    bookmarkCount: normalizeOptionalCount(postDetails?.bookmarkCount)
   };
 }
 
-function normalizeOptionalString(value) {
+function normalizeOptionalString(value, maxLength = MAX_TEXT_STRING) {
   if (value === null || value === undefined) {
     return null;
   }
 
-  const normalized = String(value).trim();
+  const normalized = String(value).trim().slice(0, maxLength);
   return normalized ? normalized : null;
+}
+
+function normalizeOptionalCount(value) {
+  if (value === null || value === undefined) return null;
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? Math.floor(num) : null;
 }
 
 function normalizeOptionalIsoDate(value) {
@@ -386,7 +496,7 @@ function padNumber(value) {
   return String(value).padStart(2, '0');
 }
 
-function downloadDataUrl(url, filename) {
+function downloadDataUrl(url, filename, saveAs = false) {
   return new Promise((resolve, reject) => {
     let downloadId = null;
     let settled = false;
@@ -428,7 +538,7 @@ function downloadDataUrl(url, filename) {
         url,
         filename,
         conflictAction: 'uniquify',
-        saveAs: false
+        saveAs
       },
       (createdDownloadId) => {
         if (chrome.runtime.lastError || !createdDownloadId) {
