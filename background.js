@@ -108,6 +108,76 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// --- Auto-capture completion tracking ---
+let captureResolve = null;
+
+function waitForNextCapture(timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    captureResolve = resolve;
+    setTimeout(() => {
+      if (captureResolve === resolve) {
+        captureResolve = null;
+        resolve({ error: 'timeout' });
+      }
+    }, timeoutMs);
+  });
+}
+
+function signalCaptureComplete(metadata) {
+  if (captureResolve) {
+    captureResolve(metadata);
+    captureResolve = null;
+  }
+}
+
+async function handleAutoCapture({ url, tabId: existingTabId, waitMs = 2000 }) {
+  let tab;
+  let createdTab = false;
+
+  if (existingTabId) {
+    tab = await chrome.tabs.get(existingTabId);
+    await chrome.tabs.update(tab.id, { url, active: true });
+  } else {
+    tab = await chrome.tabs.create({ url, active: true });
+    createdTab = true;
+  }
+
+  // Wait for page load
+  await new Promise((resolve) => {
+    function listener(tabId, info) {
+      if (tabId === tab.id && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+
+  // Wait for dynamic content to render
+  await new Promise(r => setTimeout(r, waitMs));
+
+  // Inject content.js
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['content.js']
+  });
+  await new Promise(r => setTimeout(r, 500));
+
+  // Trigger auto-capture
+  const triggerResult = await chrome.tabs.sendMessage(tab.id, { type: 'triggerAutoCapture' });
+  if (!triggerResult?.ok) {
+    return { ok: false, error: triggerResult?.error || 'trigger failed', url };
+  }
+
+  // Wait for capture to complete
+  const metadata = await waitForNextCapture();
+  if (metadata?.error === 'timeout') {
+    return { ok: false, error: 'capture timeout', url };
+  }
+
+  return { ok: true, url, metadata };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'openOptions') {
     chrome.runtime.openOptionsPage();
@@ -128,6 +198,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }).catch(() => {});
     }
     return false;
+  }
+
+  if (message.type === 'autoCapture') {
+    handleAutoCapture(message)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ ok: false, error: err?.message }));
+    return true;
+  }
+
+  if (message.type === 'runAutoTestSuite') {
+    (async () => {
+      const results = [];
+      for (const test of message.tests || []) {
+        const result = await handleAutoCapture({ url: test.url, waitMs: test.waitMs || 2000 });
+        results.push({ id: test.id, ...result });
+      }
+      sendResponse({ ok: true, results });
+    })().catch(err => sendResponse({ ok: false, error: err?.message }));
+    return true;
   }
 
   if (message.type !== 'captureAndSend') {
@@ -207,6 +296,7 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   await writeCaptureLog(metadata);
 
   notify(tab.id, true);
+  signalCaptureComplete(metadata);
 }
 
 async function storePost(metadata, jpegDataUrl) {

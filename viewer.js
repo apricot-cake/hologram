@@ -1720,6 +1720,85 @@ render()
         URL.revokeObjectURL(url);
         showToast(isJa ? '検証結果を保存しました' : 'Verification saved');
       });
+
+      // Auto Test runner
+      const autoTestUrlsEl = document.getElementById('autoTestUrls');
+      const runAutoTestBtn = document.getElementById('runAutoTest');
+      const autoTestStatus = document.getElementById('autoTestStatus');
+      const autoTestResultEl = document.getElementById('autoTestResult');
+
+      // Load saved test URLs
+      chrome.storage.local.get('autoTestUrls', (r) => {
+        if (r.autoTestUrls) autoTestUrlsEl.value = r.autoTestUrls;
+      });
+      autoTestUrlsEl.addEventListener('change', () => {
+        chrome.storage.local.set({ autoTestUrls: autoTestUrlsEl.value });
+      });
+
+      runAutoTestBtn.addEventListener('click', async () => {
+        const lines = autoTestUrlsEl.value.trim().split('\n').filter(l => l.trim());
+        const tests = lines.map(line => {
+          const match = line.match(/^(\S+)\s+(https?:\/\/\S+)/);
+          if (!match) return null;
+          return { id: match[1], url: match[2] };
+        }).filter(Boolean);
+
+        if (!tests.length) {
+          autoTestStatus.textContent = 'No valid test URLs.';
+          return;
+        }
+
+        // Save URLs
+        chrome.storage.local.set({ autoTestUrls: autoTestUrlsEl.value });
+
+        runAutoTestBtn.disabled = true;
+        autoTestResultEl.style.display = 'block';
+        autoTestResultEl.textContent = '';
+        const results = [];
+
+        for (let i = 0; i < tests.length; i++) {
+          const test = tests[i];
+          autoTestStatus.textContent = `Running ${i + 1}/${tests.length}: ${test.id}...`;
+
+          try {
+            const result = await chrome.runtime.sendMessage({
+              type: 'autoCapture',
+              url: test.url,
+              waitMs: test.url.includes('misskey') ? 3000 : 2000
+            });
+
+            const line = result.ok
+              ? `[OK] ${test.id}: ${formatAutoTestResult(result.metadata)}`
+              : `[NG] ${test.id}: ${result.error}`;
+            results.push(line);
+          } catch (err) {
+            results.push(`[NG] ${test.id}: ${err.message}`);
+          }
+
+          autoTestResultEl.textContent = results.join('\n');
+        }
+
+        autoTestStatus.textContent = `Done: ${results.filter(r => r.startsWith('[OK]')).length}/${tests.length} passed`;
+        runAutoTestBtn.disabled = false;
+
+        // Save results to file
+        const text = results.join('\n');
+        const dataUrl = 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(text)));
+        await chrome.downloads.download({ url: dataUrl, filename: 'post-snap-auto-test.txt', conflictAction: 'overwrite' });
+      });
+
+      function formatAutoTestResult(m) {
+        if (!m) return '(no metadata)';
+        const fields = [m.platform, m.screenName, m.postText?.substring(0, 40)].filter(Boolean);
+        const flags = [];
+        if (m.isReply) flags.push('reply');
+        if (m.isQuote) flags.push('quote');
+        if (m.isThread) flags.push('self-reply');
+        if (m.mediaType && m.mediaType !== 'none') flags.push(m.mediaType);
+        if (m.lang) flags.push(m.lang);
+        const engagement = `L:${m.likeCount ?? '?'} R:${m.repostCount ?? '?'} C:${m.replyCount ?? '?'}`;
+        return [fields.join(' / '), engagement, flags.length ? `[${flags.join(',')}]` : ''].filter(Boolean).join(' | ');
+      }
     }
   }
 

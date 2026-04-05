@@ -102,14 +102,7 @@
     }
   }
 
-  function onClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-
-    const post = findPostElement(e.target);
-    if (!post) return;
-
+  function capturePost(post) {
     // page-context.js (MAIN world) に userId 抽出を強制実行させる
     document.dispatchEvent(new CustomEvent('__postSnap_extractUserIds'));
 
@@ -151,6 +144,16 @@
         });
       });
     });
+  }
+
+  function onClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const post = findPostElement(e.target);
+    if (!post) return;
+    capturePost(post);
   }
 
   function onContextMenu(e) {
@@ -224,12 +227,43 @@
       return true; // 非同期レスポンス
     }
 
+    // 自動キャプチャ
+    if (msg.type === 'triggerAutoCapture') {
+      const post = findFirstPost();
+      if (!post) {
+        sendResponse({ ok: false, error: 'No post found' });
+        return;
+      }
+      capturePost(post);
+      sendResponse({ ok: true, triggered: true });
+      return;
+    }
+
     // 結果通知
     if (msg.type === 'notify') {
       banner.textContent = msg.success ? MSG.saved : MSG.failed;
       banner.style.background = msg.success ? '#00ba7c' : '#f4212e';
       setTimeout(cleanup, 1500);
     }
+  }
+
+  function findFirstPost() {
+    if (typeof siteConfig.findPostElement === 'function') {
+      // Misskey: walk candidates
+      const candidates = document.querySelectorAll('div[tabindex="0"]');
+      for (const el of candidates) {
+        const post = siteConfig.findPostElement(el);
+        if (post) return post;
+      }
+      return null;
+    }
+    const all = document.querySelectorAll(siteConfig.postSelector);
+    for (const el of all) {
+      if (!siteConfig.isPostElement || siteConfig.isPostElement(el)) {
+        return el;
+      }
+    }
+    return null;
   }
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
