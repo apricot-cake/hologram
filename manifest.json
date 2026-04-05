@@ -38,6 +38,18 @@
         "default": "Alt+S"
       },
       "description": "投稿の保存を開始"
+    },
+    "open-viewer": {
+      "suggested_key": {
+        "default": "Alt+V"
+      },
+      "description": "ビューアを開く"
+    },
+    "reload-extension": {
+      "suggested_key": {
+        "default": "Alt+R"
+      },
+      "description": "拡張機能をリロード（開発用）"
     }
   }
 }

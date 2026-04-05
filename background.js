@@ -88,6 +88,16 @@ async function activateOnTab(tab) {
 chrome.action.onClicked.addListener(activateOnTab);
 
 chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'open-viewer') {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  if (command === 'reload-extension' && !('update_url' in chrome.runtime.getManifest())) {
+    chrome.runtime.reload();
+    return;
+  }
+
   if (command !== 'activate') {
     return;
   }

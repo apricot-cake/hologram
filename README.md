@@ -10,7 +10,7 @@ A Chrome extension that captures SNS posts as JPEG images with searchable metada
 2. Click the post you want to save
 3. The post is saved as a JPEG to your downloads folder, and added to the viewer
 
-Open the viewer from the extension's options page (right-click the icon > Options) to browse, search, and export your saved posts.
+Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, search, and export your saved posts.
 
 ## Demo
 
@@ -78,6 +78,15 @@ EXIF metadata can be stripped in certain situations:
 - Re-uploading to social media platforms
 - Image conversion by some cloud storage services
 - Editing with Windows Photos app
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Alt+S` | Start capture mode |
+| `Alt+V` | Open viewer |
+
+Shortcuts can be customized in `chrome://extensions/shortcuts` (or `edge://extensions/shortcuts`).
 
 ## Privacy
 

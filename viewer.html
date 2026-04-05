@@ -40,7 +40,11 @@
     /* --- Toolbar --- */
     .toolbar {
       display: flex; gap: 8px; align-items: center;
-      margin-bottom: 16px; flex-wrap: wrap;
+      margin-bottom: 8px; flex-wrap: wrap;
+    }
+    .toolbar-row {
+      display: flex; gap: 6px; align-items: center;
+      margin-bottom: 12px; flex-wrap: wrap;
     }
     .search-box {
       flex: 1; min-width: 200px;
@@ -56,6 +60,44 @@
       font-size: 12px; color: #999;
     }
 
+    /* --- Chip buttons --- */
+    .chip {
+      background: #fff; border: 1px solid #ddd; border-radius: 16px;
+      padding: 4px 14px; font-size: 13px; color: #555;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .chip-divider {
+      width: 1px; height: 20px; background: #e0e0e0; margin: 0 4px;
+    }
+    .date-input {
+      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; outline: none; cursor: pointer;
+    }
+    .date-input:focus { border-color: #1d9bf0; }
+    .engagement-select {
+      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; background: #fff; outline: none; cursor: pointer;
+    }
+    .engagement-input {
+      width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; outline: none;
+    }
+    .engagement-input:focus { border-color: #1d9bf0; }
+
+    /* --- View toggle --- */
+    .view-toggle {
+      display: flex; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;
+    }
+    .view-toggle button {
+      background: #fff; border: none; padding: 6px 10px;
+      cursor: pointer; color: #888; font-size: 14px; line-height: 1;
+      transition: all 0.15s;
+    }
+    .view-toggle button:not(:last-child) { border-right: 1px solid #ddd; }
+    .view-toggle button.active { background: #1d9bf0; color: #fff; }
+
     /* --- Post grid --- */
     .post-grid {
       display: grid;
@@ -66,6 +108,7 @@
       background: #fff; border-radius: 8px; overflow: hidden;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       cursor: pointer; transition: box-shadow 0.15s;
+      position: relative;
     }
     .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
     .post-card img {
@@ -99,6 +142,45 @@
     .post-meta .date {
       font-size: 11px; color: #bbb; margin-top: 4px;
     }
+
+    /* --- Delete button on card --- */
+    .delete-btn {
+      position: absolute; top: 8px; right: 8px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      font-size: 16px; line-height: 28px; text-align: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .delete-btn:hover { background: rgba(244,33,46,0.8); }
+    .post-card:hover .delete-btn { opacity: 1; }
+
+    /* --- List view --- */
+    .post-grid.list-view {
+      display: flex; flex-direction: column; gap: 4px;
+      grid-template-columns: unset;
+    }
+    .post-grid.list-view .post-card {
+      display: flex; flex-direction: row; border-radius: 6px;
+      overflow: hidden;
+    }
+    .post-grid.list-view .post-card img {
+      width: 80px; height: 64px; min-width: 80px;
+      object-fit: cover; max-height: unset;
+    }
+    .post-grid.list-view .post-meta {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 12px; flex: 1; min-width: 0;
+    }
+    .post-grid.list-view .post-meta .user { margin-bottom: 0; white-space: nowrap; }
+    .post-grid.list-view .post-meta .text {
+      -webkit-line-clamp: 1; margin-bottom: 0; flex: 1; min-width: 0;
+    }
+    .post-grid.list-view .post-meta .stats { white-space: nowrap; }
+    .post-grid.list-view .post-meta .date { white-space: nowrap; margin-top: 0; margin-left: auto; }
+    .post-grid.list-view .post-meta .date-captured { display: none; }
+    .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
+
     .empty-state {
       text-align: center; padding: 60px 20px; color: #999;
     }
@@ -200,16 +282,35 @@
         <option value="reposts-desc"></option>
         <option value="replies-desc"></option>
       </select>
-      <select id="platformFilter">
-        <option value="all"></option>
-        <option value="x">X</option>
-        <option value="bluesky">Bluesky</option>
-        <option value="misskey">Misskey</option>
-      </select>
+      <div class="view-toggle">
+        <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
+        <button data-view="list" id="viewList" title="List">&#9776;</button>
+      </div>
       <span class="post-count" id="postCount"></span>
+    </div>
+    <div class="toolbar-row">
+      <button class="chip active" data-platform="all" id="chipAll"></button>
+      <button class="chip" data-platform="x">X</button>
+      <button class="chip" data-platform="bluesky">Bluesky</button>
+      <button class="chip" data-platform="misskey">Misskey</button>
+      <div class="chip-divider"></div>
+      <input type="date" class="date-input" id="dateFrom">
+      <span style="font-size:12px;color:#999;">〜</span>
+      <input type="date" class="date-input" id="dateTo">
+      <button class="chip" id="dateReset" style="display:none;">&times;</button>
+      <div class="chip-divider"></div>
+      <select class="engagement-select" id="engagementType">
+        <option value="likes"></option>
+        <option value="reposts"></option>
+        <option value="replies"></option>
+        <option value="bookmarks"></option>
+      </select>
+      <input type="number" class="engagement-input" id="engagementMin" min="0" placeholder="0">
+      <span style="font-size:12px;color:#999;" id="engagementSuffix"></span>
     </div>
     <div id="postGrid" class="post-grid"></div>
     <div id="emptyState" class="empty-state" style="display:none;"></div>
+    <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
   </div>
 
   <!-- Settings tab -->
@@ -231,6 +332,16 @@
         <button class="btn" id="saveSettings"></button>
         <span class="status-msg" id="settingsStatus"></span>
       </div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsLangTitle">Language</h2>
+      <select id="langSelect" style="width:100%;">
+        <option value="auto" id="langAuto"></option>
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
+      <div class="hint" id="hintLang"></div>
     </div>
 
     <div class="section">
@@ -256,7 +367,19 @@
 
     <div class="section">
       <h2 id="settingsDangerTitle"></h2>
+      <div style="margin-bottom: 12px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="resetDeleteConfirm">
+          <span id="labelResetDeleteConfirm"></span>
+        </label>
+        <div class="hint" id="hintResetDeleteConfirm"></div>
+      </div>
       <button class="btn-danger" id="clearData"></button>
+    </div>
+
+    <div class="section" id="debugSection" style="display:none;">
+      <h2>Debug</h2>
+      <button class="btn-outline" id="injectDummy"></button>
     </div>
 
     <div id="buildInfo" style="margin-top: 24px; font-size: 11px; color: #bbb; text-align: center;"></div>
@@ -266,6 +389,10 @@
   <div class="confirm-overlay" id="confirmOverlay">
     <div class="confirm-box">
       <p id="confirmMsg"></p>
+      <label id="confirmSkipLabel" style="display:none; font-size:12px; color:#888; margin-bottom:12px; cursor:pointer; justify-content:center; align-items:center; gap:6px;">
+        <input type="checkbox" id="confirmSkip">
+        <span id="confirmSkipText"></span>
+      </label>
       <div class="confirm-actions">
         <button class="btn-outline" id="confirmCancel"></button>
         <button class="btn-danger" id="confirmOk"></button>

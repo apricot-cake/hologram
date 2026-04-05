@@ -1,5 +1,8 @@
-(() => {
-  const MSG = navigator.language.startsWith('ja') ? {
+(async () => {
+  const langResult = await chrome.storage.local.get('language');
+  const lang = langResult.language || 'auto';
+  const isJa = lang === 'auto' ? navigator.language.startsWith('ja') : lang === 'ja';
+  const MSG = isJa ? {
     select: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
     saving: '保存中...',
     saved: '画像を保存しました',

@@ -1,6 +1,8 @@
-(() => {
+(async () => {
   // --- i18n ---
-  const isJa = navigator.language.startsWith('ja');
+  const langResult = await chrome.storage.local.get('language');
+  const lang = langResult.language || 'auto';
+  const isJa = lang === 'auto' ? navigator.language.startsWith('ja') : lang === 'ja';
   const MSG = isJa ? {
     tabPosts: '投稿',
     tabSettings: '設定',
@@ -25,9 +27,12 @@
     save: '保存',
     saved: '保存しました',
     invalidFolder: '無効なフォルダ名',
+    langTitle: '言語',
+    langAuto: '自動（ブラウザ設定に従う）',
+    hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
     shortcutTitle: 'キーボードショートカット',
     shortcutLink: 'ショートカットを変更',
-    hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S',
+    hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア）',
     dataTitle: 'データ',
     exportZip: 'ZIP エクスポート',
     exportHtml: 'HTML エクスポート',
@@ -35,6 +40,8 @@
     importHtml: 'HTML から復元',
     hintExport: 'ZIP: データ取り出し用（画像 + メタデータJSON）。HTML: ブラウザで閲覧用（検索UI付き）。',
     dangerTitle: '危険な操作',
+    labelResetDeleteConfirm: '投稿削除時に確認を表示する',
+    hintResetDeleteConfirm: '「今後表示しない」を選んだ場合にここで戻せます',
     clearData: '全データを削除',
     confirmClear: '保存済みの投稿データをすべて削除しますか？この操作は元に戻せません。ダウンロード済みの画像ファイルは削除されません。',
     confirmOk: '削除する',
@@ -47,6 +54,16 @@
     importSkipped: (n, s) => `${n} 件インポート（${s} 件は既存のためスキップ）`,
     noData: 'エクスポートするデータがありません',
     importFailed: 'インポートに失敗しました',
+    engagementLikes: 'いいね',
+    engagementReposts: 'リポスト',
+    engagementReplies: '返信',
+    engagementBookmarks: 'ブックマーク',
+    engagementSuffix: '以上',
+    confirmDeletePost: 'この投稿を削除しますか？',
+    confirmSkip: '今後表示しない',
+    deleted: '削除しました',
+    captured: (d) => `${d} にキャプチャ`,
+    statsNote: 'エンゲージメントはキャプチャ時点の値です',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
@@ -75,9 +92,12 @@
     save: 'Save',
     saved: 'Saved',
     invalidFolder: 'Invalid folder name',
+    langTitle: 'Language',
+    langAuto: 'Auto (follow browser setting)',
+    hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
     shortcutTitle: 'Keyboard Shortcut',
     shortcutLink: 'Change keyboard shortcut',
-    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S',
+    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer)',
     dataTitle: 'Data',
     exportZip: 'Export ZIP',
     exportHtml: 'Export HTML',
@@ -85,6 +105,8 @@
     importHtml: 'Import from HTML',
     hintExport: 'ZIP: for data extraction (images + metadata JSON). HTML: for viewing in browser (with search UI).',
     dangerTitle: 'Danger Zone',
+    labelResetDeleteConfirm: 'Show confirmation when deleting posts',
+    hintResetDeleteConfirm: 'Re-enables the confirmation dialog if you chose "Don\'t ask again"',
     clearData: 'Delete all data',
     confirmClear: 'Delete all saved post data? This cannot be undone. Downloaded image files will not be affected.',
     confirmOk: 'Delete',
@@ -97,6 +119,16 @@
     importSkipped: (n, s) => `${n} imported (${s} skipped as duplicates)`,
     noData: 'No data to export',
     importFailed: 'Import failed',
+    engagementLikes: 'Likes',
+    engagementReposts: 'Reposts',
+    engagementReplies: 'Replies',
+    engagementBookmarks: 'Bookmarks',
+    engagementSuffix: 'or more',
+    confirmDeletePost: 'Delete this post?',
+    confirmSkip: 'Don\'t ask again',
+    deleted: 'Deleted',
+    captured: (d) => `Captured ${d}`,
+    statsNote: 'Engagement counts are from the time of capture',
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
@@ -117,6 +149,14 @@
   setText('hintSaveAs', MSG.hintSaveAs);
   setText('hintBackup', MSG.hintBackup);
   setText('saveSettings', MSG.save);
+  setText('settingsLangTitle', MSG.langTitle);
+  setText('langAuto', MSG.langAuto);
+  setText('hintLang', MSG.hintLang);
+  document.getElementById('langSelect').value = lang;
+  document.getElementById('langSelect').addEventListener('change', async (e) => {
+    await chrome.storage.local.set({ language: e.target.value });
+    location.reload();
+  });
   setText('settingsShortcutTitle', MSG.shortcutTitle);
   setText('shortcutLink', MSG.shortcutLink);
   setText('hintShortcut', MSG.hintShortcut);
@@ -127,10 +167,23 @@
   setText('importHtml', MSG.importHtml);
   setText('hintExport', MSG.hintExport);
   setText('settingsDangerTitle', MSG.dangerTitle);
+  setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
+  setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
   setText('clearData', MSG.clearData);
   setText('confirmCancel', MSG.confirmCancel);
   setText('confirmOk', MSG.confirmOk);
   setText('settingsStatus', MSG.saved);
+  setText('statsNote', MSG.statsNote);
+  setText('chipAll', MSG.filterAll);
+  setText('confirmSkipText', MSG.confirmSkip);
+  setText('engagementSuffix', MSG.engagementSuffix);
+
+  // Engagement type select
+  const engagementType = document.getElementById('engagementType');
+  engagementType.options[0].textContent = MSG.engagementLikes;
+  engagementType.options[1].textContent = MSG.engagementReposts;
+  engagementType.options[2].textContent = MSG.engagementReplies;
+  engagementType.options[3].textContent = MSG.engagementBookmarks;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -140,12 +193,13 @@
   sortSelect.options[3].textContent = MSG.sortReposts;
   sortSelect.options[4].textContent = MSG.sortReplies;
 
-  // Platform filter
-  const platformFilter = document.getElementById('platformFilter');
-  platformFilter.options[0].textContent = MSG.filterAll;
-
   // --- State ---
   let allPosts = [];
+  let currentPlatform = 'all';
+  let dateFrom = '';
+  let dateTo = '';
+  let currentView = 'grid';
+  let skipDeleteConfirm = false;
 
   // --- Tabs ---
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -169,7 +223,6 @@
   function getFilteredPosts() {
     let posts = [...allPosts];
     const query = document.getElementById('searchBox').value.trim().toLowerCase();
-    const platform = platformFilter.value;
     const sort = sortSelect.value;
 
     if (query) {
@@ -180,8 +233,23 @@
       );
     }
 
-    if (platform !== 'all') {
-      posts = posts.filter(p => p.platform === platform);
+    if (currentPlatform !== 'all') {
+      posts = posts.filter(p => p.platform === currentPlatform);
+    }
+
+    if (dateFrom) {
+      const from = new Date(dateFrom + 'T00:00:00');
+      posts = posts.filter(p => p.date && new Date(p.date) >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + 'T23:59:59');
+      posts = posts.filter(p => p.date && new Date(p.date) <= to);
+    }
+
+    const engType = engagementType.value;
+    const engMin = parseInt(document.getElementById('engagementMin').value, 10);
+    if (engMin > 0) {
+      posts = posts.filter(p => (p[engType] || 0) >= engMin);
     }
 
     switch (sort) {
@@ -214,10 +282,12 @@
 
     countEl.textContent = MSG.postCount(posts.length);
 
+    const noteEl = document.getElementById('statsNote');
     if (posts.length === 0) {
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
+      if (noteEl) noteEl.style.display = 'none';
       if (allPosts.length === 0 && !query) {
         empty.innerHTML = `<p><strong>${MSG.emptyTitle}</strong></p><p>${MSG.emptyDesc}</p>`;
       } else {
@@ -226,8 +296,10 @@
       return;
     }
 
-    grid.style.display = 'grid';
+    grid.style.display = currentView === 'list' ? 'flex' : 'grid';
+    grid.classList.toggle('list-view', currentView === 'list');
     empty.style.display = 'none';
+    if (noteEl) noteEl.style.display = 'block';
 
     grid.innerHTML = posts.map((p, i) => {
       const statsHtml = [
@@ -238,11 +310,13 @@
       ].filter(Boolean).join('');
 
       const dateStr = p.date ? formatDate(p.date) : '';
+      const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
       const userName = p.displayName || p.screenName || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
       return `<div class="post-card" data-url="${escapeHtml(p.url || '')}" data-index="${i}">
+        <button class="delete-btn" data-delete="${i}" title="Delete">&times;</button>
         ${p.image ? `<img src="${p.image}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
           <div class="user">
@@ -252,23 +326,120 @@
           ${textPreview ? `<div class="text">${textPreview}</div>` : ''}
           <div class="stats">${statsHtml}</div>
           <div class="date">${dateStr}</div>
+          ${capturedStr ? `<div class="date date-captured">${capturedStr}</div>` : ''}
         </div>
       </div>`;
     }).join('');
   }
 
-  // Click on post card -> open original URL
+  // Click on post card -> open original URL (but not on delete button)
   document.getElementById('postGrid').addEventListener('click', (e) => {
+    if (e.target.closest('.delete-btn')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
     const url = card.dataset.url;
     if (url) window.open(url, '_blank');
   });
 
-  // Search / sort / filter events
+  // Delete button on card
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.delete-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const idx = parseInt(btn.dataset.delete, 10);
+    const filtered = getFilteredPosts();
+    const post = filtered[idx];
+    if (!post) return;
+
+    if (skipDeleteConfirm) {
+      executeDeletePost(post);
+    } else {
+      pendingDeletePost = post;
+      document.getElementById('confirmMsg').textContent = MSG.confirmDeletePost;
+      document.getElementById('confirmSkipLabel').style.display = 'flex';
+      document.getElementById('confirmSkip').checked = false;
+      document.getElementById('confirmOverlay').classList.add('show');
+    }
+  });
+
+  let pendingDeletePost = null;
+
+  async function executeDeletePost(post) {
+    const idx = allPosts.findIndex(p => p.url === post.url && p.capturedAt === post.capturedAt);
+    if (idx >= 0) {
+      allPosts.splice(idx, 1);
+      await chrome.storage.local.set({ posts: allPosts });
+      renderPosts();
+      showToast(MSG.deleted);
+    }
+  }
+
+  // Platform chip buttons
+  document.querySelectorAll('.chip[data-platform]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip[data-platform]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentPlatform = chip.dataset.platform;
+      renderPosts();
+    });
+  });
+
+  // Date range inputs
+  const dateResetBtn = document.getElementById('dateReset');
+  function updateDateResetVisibility() {
+    dateResetBtn.style.display = (dateFrom || dateTo) ? '' : 'none';
+  }
+  document.getElementById('dateFrom').addEventListener('change', (e) => {
+    dateFrom = e.target.value;
+    updateDateResetVisibility();
+    renderPosts();
+  });
+  document.getElementById('dateTo').addEventListener('change', (e) => {
+    dateTo = e.target.value;
+    updateDateResetVisibility();
+    renderPosts();
+  });
+  dateResetBtn.addEventListener('click', () => {
+    dateFrom = ''; dateTo = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    updateDateResetVisibility();
+    renderPosts();
+  });
+
+  // View toggle
+  document.querySelectorAll('.view-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentView = btn.dataset.view;
+      chrome.storage.local.set({ viewMode: currentView });
+      renderPosts();
+    });
+  });
+
+  // Load saved view mode and skipDeleteConfirm
+  const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
+  chrome.storage.local.get(['viewMode', 'skipDeleteConfirm'], (result) => {
+    if (result.viewMode === 'list') {
+      currentView = 'list';
+      document.getElementById('viewGrid').classList.remove('active');
+      document.getElementById('viewList').classList.add('active');
+    }
+    skipDeleteConfirm = !!result.skipDeleteConfirm;
+    resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
+  });
+
+  resetDeleteConfirmCheckbox.addEventListener('change', () => {
+    skipDeleteConfirm = !resetDeleteConfirmCheckbox.checked;
+    chrome.storage.local.set({ skipDeleteConfirm });
+  });
+
+  // Search / sort / engagement events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
   sortSelect.addEventListener('change', renderPosts);
-  platformFilter.addEventListener('change', renderPosts);
+  engagementType.addEventListener('change', renderPosts);
+  document.getElementById('engagementMin').addEventListener('input', renderPosts);
 
   // --- Settings ---
   const dirInput = document.getElementById('downloadDir');
@@ -507,25 +678,41 @@
 
   // --- Clear data ---
   document.getElementById('clearData').addEventListener('click', () => {
+    pendingDeletePost = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmClear;
+    document.getElementById('confirmSkipLabel').style.display = 'none';
     document.getElementById('confirmOverlay').classList.add('show');
   });
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
+    pendingDeletePost = null;
     document.getElementById('confirmOverlay').classList.remove('show');
   });
 
   document.getElementById('confirmOk').addEventListener('click', async () => {
     document.getElementById('confirmOverlay').classList.remove('show');
-    await chrome.storage.local.remove('posts');
-    allPosts = [];
-    renderPosts();
-    showToast(MSG.cleared);
+
+    if (pendingDeletePost) {
+      // Individual post delete
+      if (document.getElementById('confirmSkip').checked) {
+        skipDeleteConfirm = true;
+        chrome.storage.local.set({ skipDeleteConfirm: true });
+      }
+      await executeDeletePost(pendingDeletePost);
+      pendingDeletePost = null;
+    } else {
+      // Clear all data
+      await chrome.storage.local.remove('posts');
+      allPosts = [];
+      renderPosts();
+      showToast(MSG.cleared);
+    }
   });
 
   // Close overlay on background click
   document.getElementById('confirmOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
+      pendingDeletePost = null;
       e.currentTarget.classList.remove('show');
     }
   });
@@ -719,6 +906,47 @@ render()
     toast.style.opacity = '1';
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+  }
+
+  // --- Debug: dummy data (unpacked extension only) ---
+  if (!('update_url' in chrome.runtime.getManifest())) {
+    const debugSection = document.getElementById('debugSection');
+    const injectBtn = document.getElementById('injectDummy');
+    if (debugSection && injectBtn) {
+      debugSection.style.display = '';
+      injectBtn.textContent = isJa ? 'ダミーデータ投入（8件）' : 'Inject dummy data (8 posts)';
+      injectBtn.addEventListener('click', async () => {
+        function makeImg(hex, label) {
+          const c = document.createElement('canvas');
+          c.width = 400; c.height = 300;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = hex; ctx.fillRect(0, 0, 400, 300);
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(label, 200, 160);
+          return c.toDataURL('image/jpeg', 0.8);
+        }
+        const dummy = [
+          { url:'https://x.com/test1/status/1', platform:'x', text:'TypeScriptの型パズル、解けた時の快感がすごい', displayName:'てすと太郎', screenName:'test1', userId:'111', likes:24853, reposts:3210, replies:142, bookmarks:891, date:'2026-04-04T10:30:00Z', capturedAt:'2026-04-04T12:00:00Z', image:makeImg('#14171a','X') },
+          { url:'https://x.com/test2/status/2', platform:'x', text:'Good morning! Coffee and code.', displayName:'Dev Jane', screenName:'test2', userId:'222', likes:5, reposts:0, replies:1, bookmarks:0, date:'2026-04-03T01:15:00Z', capturedAt:'2026-04-03T08:00:00Z', image:makeImg('#14171a','X') },
+          { url:'https://x.com/test3/status/3', platform:'x', text:'いいねゼロの投稿テスト', displayName:'サンプル花子', screenName:'test3', userId:'333', likes:0, reposts:0, replies:0, bookmarks:null, date:'2026-03-28T15:00:00Z', capturedAt:'2026-03-29T03:00:00Z', image:makeImg('#14171a','X') },
+          { url:'https://bsky.app/profile/d.bsky.social/post/a1', platform:'bluesky', text:'Blueskyの空は今日も青い 🦋✨ 分散SNSの未来を感じる', displayName:'あおぞら', screenName:'d.bsky.social', userId:'did:plc:dummy001', likes:347, reposts:28, replies:12, bookmarks:null, date:'2026-04-02T08:45:00Z', capturedAt:'2026-04-02T09:00:00Z', image:makeImg('#0085ff','Bluesky') },
+          { url:'https://bsky.app/profile/s.bsky.social/post/a2', platform:'bluesky', text:'This is a longer post to test text truncation. The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet consectetur adipiscing elit.', displayName:'Sky Tester', screenName:'s.bsky.social', userId:'did:plc:dummy002', likes:1, reposts:null, replies:0, bookmarks:null, date:'2026-03-20T22:00:00Z', capturedAt:'2026-03-21T06:30:00Z', image:makeImg('#0085ff','Bluesky') },
+          { url:'https://misskey.io/notes/n1', platform:'misskey', text:'Misskeyからこんにちは！リアクション楽しい :blobcat:', displayName:'みすきーテスト', screenName:'mktest', userId:'mk001', likes:89, reposts:5, replies:3, bookmarks:null, date:'2026-04-01T14:20:00Z', capturedAt:'2026-04-01T14:25:00Z', image:makeImg('#96d04a','Misskey') },
+          { url:'https://misskey.io/notes/n2', platform:'misskey', text:'MFMテスト ✨キラキラ✨', displayName:'ノート職人', screenName:'notemaster', userId:'mk002', likes:1502, reposts:201, replies:44, bookmarks:null, date:'2026-03-15T06:00:00Z', capturedAt:'2026-03-15T07:00:00Z', image:makeImg('#96d04a','Misskey') },
+          { url:'https://x.com/big/status/4', platform:'x', text:'100万いいね目指してます', displayName:'バズりたい', screenName:'big', userId:'444', likes:987654, reposts:123456, replies:45678, bookmarks:12345, date:'2026-04-05T00:00:00Z', capturedAt:'2026-04-05T01:00:00Z', image:makeImg('#14171a','X') },
+        ];
+        const result = await chrome.storage.local.get('posts');
+        const posts = result.posts || [];
+        let added = 0;
+        for (const d of dummy) {
+          if (!posts.find(p => p.url === d.url)) { posts.push(d); added++; }
+        }
+        await chrome.storage.local.set({ posts });
+        allPosts = posts;
+        renderPosts();
+        showToast(isJa ? `${added} 件追加` : `${added} posts added`);
+      });
+    }
   }
 
   // --- Init ---
