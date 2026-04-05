@@ -346,7 +346,8 @@ function getSiteConfig() {
           replyCount: getAriaCount(post, '[data-testid="replyBtn"]'),
           bookmarkCount: null,
           mediaType: getMediaType(post),
-          lang: post.querySelector('[data-testid="postText"]')?.getAttribute('lang') || null,
+          lang: post.querySelector('[data-testid="postText"]')?.getAttribute('lang')
+            || post.querySelector('div[dir="auto"][lang]')?.getAttribute('lang') || null,
           isReply: !!post.querySelector('[data-testid="replyLine"]'),
           isQuote: !!post.querySelector('[data-testid="quotePost"]'),
           isThread: false,
@@ -445,6 +446,14 @@ function getPostPublishedAt(post) {
         return parsed.toISOString();
       }
     }
+    // Bluesky: date may appear as text "YYYY/MM/DD HH:MM" in div[dir="auto"]
+    for (const el of post.querySelectorAll('div[dir="auto"]')) {
+      const m = el.textContent?.trim().match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
+      if (m) {
+        const parsed = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00`);
+        if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+      }
+    }
     return null;
   }
 
@@ -537,19 +546,23 @@ function getBlueskyPostText(post) {
     return textEl.textContent?.trim() || null;
   }
 
+  // Bluesky removed data-testid="postText". Find text from div[dir="auto"] candidates.
+  const skipPatterns = /^(@[\w.-]+|フォロー|Follow|誰でも返信可能|Thread reply|返信$|\d{4}\/\d{2}\/\d{2}|\d+ (リポスト|いいね|保存|repost|like|bookmark))/i;
   const candidates = post.querySelectorAll('div[dir="auto"]');
-  let longest = null;
+  let best = null;
   for (const el of candidates) {
     const text = el.textContent?.trim();
-    if (text && !el.querySelector('a') && (!longest || text.length > longest.length)) {
-      longest = text;
+    if (!text) continue;
+    // Skip UI elements: buttons, links with testid, very short generic text
+    if (el.closest('button, [data-testid="followBtn"]')) continue;
+    if (el.parentElement?.tagName === 'BUTTON') continue;
+    if (el.parentElement?.tagName === 'A') continue;
+    if (skipPatterns.test(text)) continue;
+    if (!best || text.length > best.length) {
+      best = text;
     }
   }
-  if (longest) {
-    return longest;
-  }
-
-  return null;
+  return best || null;
 }
 
 function getBlueskyDisplayName(post) {

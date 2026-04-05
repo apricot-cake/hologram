@@ -161,8 +161,8 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   const capturedAt = new Date().toISOString();
   const captureId = generateCaptureId();
 
-  if (captureInfo.id === 'bluesky' && postDetails?.screenName && !postDetails?.userId) {
-    postDetails.userId = await resolveBlueskyDid(postDetails.screenName);
+  if (captureInfo.id === 'bluesky' && postDetails) {
+    await enrichBlueskyPostDetails(postDetails);
   }
 
   if (captureInfo.id === 'misskey') {
@@ -203,6 +203,9 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   // Store post data in chrome.storage.local for the viewer
   await storePost(metadata, jpegDataUrl);
 
+  // Debug: write capture log
+  await writeCaptureLog(metadata);
+
   notify(tab.id, true);
 }
 
@@ -240,6 +243,50 @@ async function storePost(metadata, jpegDataUrl) {
   }
 }
 
+async function writeCaptureLog(metadata) {
+  try {
+    const fields = [
+      ['captureId', metadata.captureId],
+      ['url', metadata.postUrl],
+      ['platform', metadata.platform],
+      ['displayName', metadata.displayName],
+      ['screenName', metadata.screenName],
+      ['userId', metadata.userId],
+      ['text', (metadata.postText || '').substring(0, 120)],
+      ['likes', metadata.likeCount],
+      ['reposts', metadata.repostCount],
+      ['replies', metadata.replyCount],
+      ['bookmarks', metadata.bookmarkCount],
+      ['views', metadata.viewCount],
+      ['date', metadata.postPublishedAt],
+      ['capturedAt', metadata.capturedAt],
+      ['mediaType', metadata.mediaType],
+      ['lang', metadata.lang],
+      ['isReply', metadata.isReply],
+      ['isQuote', metadata.isQuote],
+      ['isThread', metadata.isThread],
+      ['quotedUrl', metadata.quotedUrl],
+    ];
+    const warnings = [];
+    if (!metadata.postUrl) warnings.push('WARN: url is empty');
+    if (!metadata.platform) warnings.push('WARN: platform is empty');
+    if (!metadata.displayName && !metadata.screenName) warnings.push('WARN: no user info');
+    if (metadata.likeCount == null && metadata.repostCount == null) warnings.push('WARN: no engagement data');
+    if (!metadata.postPublishedAt) warnings.push('WARN: date is empty');
+    if (!metadata.captureId) warnings.push('WARN: captureId is empty');
+
+    const lines = fields.map(([k, v]) => `${k}: ${v ?? '(null)'}`);
+    if (warnings.length) lines.push('', '--- Warnings ---', ...warnings);
+    else lines.push('', '--- OK ---');
+
+    const text = lines.join('\n');
+    const dataUrl = 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(text)));
+    await chrome.downloads.download({ url: dataUrl, filename: 'post-snap-capture-log.txt', conflictAction: 'overwrite' });
+  } catch (e) {
+    console.error('Failed to write capture log:', e);
+  }
+}
+
 function notify(tabId, success, extra = {}) {
   chrome.tabs.sendMessage(tabId, {
     type: 'notify',
@@ -269,6 +316,36 @@ async function resolveBlueskyDid(handle) {
   return null;
 }
 
+async function enrichBlueskyPostDetails(postDetails) {
+  if (!postDetails) return;
+  const handle = postDetails.screenName;
+  const rkey = postDetails.postId;
+
+  // Resolve DID (also sets userId)
+  const did = await resolveBlueskyDid(handle);
+  if (did) postDetails.userId = did;
+  if (!did || !rkey) return;
+
+  try {
+    const uri = `at://${did}/app.bsky.feed.post/${rkey}`;
+    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
+    const data = await res.json();
+    const post = data?.thread?.post;
+    if (!post) return;
+
+    if (post.record?.text) postDetails.postText = post.record.text;
+    if (post.record?.createdAt) postDetails.postPublishedAt = post.record.createdAt;
+    if (post.likeCount != null) postDetails.likeCount = post.likeCount;
+    if (post.repostCount != null) postDetails.repostCount = post.repostCount;
+    if (post.replyCount != null) postDetails.replyCount = post.replyCount;
+    if (post.author?.displayName) postDetails.displayName = post.author.displayName;
+    if (post.author?.handle) postDetails.screenName = post.author.handle;
+    if (post.record?.langs?.length) postDetails.lang = post.record.langs[0];
+  } catch {
+    // API failure is not critical — DOM data remains as fallback
+  }
+}
+
 async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
   if (!host || !postDetails) return;
 
@@ -282,15 +359,9 @@ async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
       });
       const note = await res.json();
       if (note.user) {
-        if (!postDetails.userId) {
-          postDetails.userId = note.user.id || null;
-        }
-        if (!postDetails.screenName) {
-          postDetails.screenName = note.user.username || null;
-        }
-        if (!postDetails.displayName) {
-          postDetails.displayName = note.user.name || null;
-        }
+        if (note.user.id) postDetails.userId = note.user.id;
+        if (note.user.username) postDetails.screenName = note.user.username;
+        if (note.user.name) postDetails.displayName = note.user.name;
       }
       if (note.text) {
         postDetails.postText = note.text;
@@ -308,7 +379,7 @@ async function enrichMisskeyPostDetails(host, postDetails, postUrl) {
         const total = Object.values(note.reactions).reduce((sum, n) => sum + n, 0);
         if (total > 0) postDetails.likeCount = total;
       }
-      if (note.lang && !postDetails.lang) {
+      if (note.lang) {
         postDetails.lang = note.lang;
       }
     } catch {

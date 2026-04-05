@@ -1660,6 +1660,66 @@ render()
         document.head.appendChild(s);
         s.onload = () => s.remove();
       });
+
+      // Verify latest capture
+      const verifyBtn = document.getElementById('verifyLatest');
+      const verifyResult = document.getElementById('verifyResult');
+      verifyBtn.addEventListener('click', async () => {
+        const result = await chrome.storage.local.get('posts');
+        const posts = result.posts || [];
+        if (posts.length === 0) {
+          verifyResult.style.display = 'block';
+          verifyResult.textContent = 'No posts found.';
+          return;
+        }
+        const p = posts[posts.length - 1];
+        const fields = [
+          ['url', p.url],
+          ['platform', p.platform],
+          ['displayName', p.displayName],
+          ['screenName', p.screenName],
+          ['userId', p.userId],
+          ['text', p.text?.substring(0, 120) + (p.text?.length > 120 ? '...' : '')],
+          ['likes', p.likes],
+          ['reposts', p.reposts],
+          ['replies', p.replies],
+          ['bookmarks', p.bookmarks],
+          ['views', p.views],
+          ['date', p.date],
+          ['capturedAt', p.capturedAt],
+          ['captureId', p.captureId],
+          ['mediaType', p.mediaType],
+          ['lang', p.lang],
+          ['isReply', p.isReply],
+          ['isQuote', p.isQuote],
+          ['isThread', p.isThread],
+          ['quotedUrl', p.quotedUrl],
+          ['tags', JSON.stringify(p.tags)],
+          ['hasImage', !!p.image],
+        ];
+        const warnings = [];
+        if (!p.url) warnings.push('WARN: url is empty');
+        if (!p.platform) warnings.push('WARN: platform is empty');
+        if (!p.displayName && !p.screenName) warnings.push('WARN: no user info');
+        if (p.likes == null && p.reposts == null) warnings.push('WARN: no engagement data');
+        if (!p.date) warnings.push('WARN: date is empty');
+        if (!p.captureId) warnings.push('WARN: captureId is empty');
+        if (!p.image) warnings.push('WARN: no image data');
+
+        const lines = fields.map(([k, v]) => `${k}: ${v ?? '(null)'}`);
+        if (warnings.length) lines.push('', '--- Warnings ---', ...warnings);
+        else lines.push('', '✓ All fields look good');
+
+        const text = lines.join('\n');
+        verifyResult.style.display = 'block';
+        verifyResult.textContent = text;
+        // Save to local file
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        await chrome.downloads.download({ url, filename: 'post-snap-verify.txt', conflictAction: 'overwrite' });
+        URL.revokeObjectURL(url);
+        showToast(isJa ? '検証結果を保存しました' : 'Verification saved');
+      });
     }
   }
 
