@@ -13,7 +13,7 @@ import os
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-BUILD_FILES = ["background.js", "content.js", "manifest.json", "options.html", "options.js"]
+BUILD_FILES = ["background.js", "content.js", "manifest.json", "viewer.html", "viewer.js"]
 
 
 def compute_hash():

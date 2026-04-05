@@ -277,7 +277,7 @@ function getSiteConfig() {
           postId: parsed?.postId || null,
           screenName: parsed?.screenName || null,
           displayName: getXDisplayName(post),
-          userId: isRetweet ? null : getXUserId(post),
+          userId: getXUserId(post),
           postText: getXPostText(post),
           postPublishedAt: getPostPublishedAt(post),
           likeCount: getAriaCount(post, '[data-testid="like"], [data-testid="unlike"]'),
@@ -520,16 +520,26 @@ function getXViewCount(post) {
 }
 
 function getXUserId(post) {
+  // Check article directly
   const uid = post.getAttribute('__x-user-id');
   if (uid && /^\d+$/.test(uid)) {
     return uid;
   }
 
+  // Follow/unfollow button testid contains userId
   const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
   if (followBtn) {
     const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
-    if (match) {
-      return match[1];
+    if (match) return match[1];
+  }
+
+  // Fallback: scan all articles for matching screenName
+  const screenName = getXPostLink(post)?.screenName || parseXPostLink(location.href)?.screenName;
+  const articlesWithUid = document.querySelectorAll('article[data-testid="tweet"][__x-user-id]');
+  if (screenName) {
+    for (const article of articlesWithUid) {
+      const link = article.querySelector(`a[href*="/${screenName}" i]`);
+      if (link) return article.getAttribute('__x-user-id');
     }
   }
 
@@ -964,8 +974,16 @@ function getAdjacentCount(post, selector) {
 
 function isXReply(post) {
   if (!(post instanceof Element)) return false;
+  // Timeline: "返信先" / "Replying to" text in article
   const text = post.innerText || '';
-  return /^返信先[:：\s]|^Replying to\s/m.test(text);
+  if (/^返信先[:：\s]|^Replying to\s/m.test(text)) return true;
+  // Individual post page: focused post has full date format, parent articles above it
+  if (/\d{1,2}:\d{2}\s*·\s*\d{4}年|\d{1,2}:\d{2}\s[AP]M\s*·\s*[A-Z][a-z]{2}\s/.test(text)) {
+    const articles = document.querySelectorAll('article[data-testid="tweet"]');
+    const idx = [...articles].indexOf(post);
+    if (idx > 0) return true;
+  }
+  return false;
 }
 
 function isXQuote(post) {
@@ -984,9 +1002,22 @@ function isXThread(post, postUrl) {
   if (!isXReply(post)) return false;
   const parsed = parseXPostLink(postUrl) || getXPostLink(post);
   if (!parsed?.screenName) return false;
+  // Timeline: "返信先 @handle" text match
   const text = post.innerText || '';
   const replyMatch = text.match(/^(?:返信先[:：\s]*|Replying to\s+)@(\S+)/m);
-  return !!(replyMatch && replyMatch[1].toLowerCase() === parsed.screenName.toLowerCase());
+  if (replyMatch) return replyMatch[1].toLowerCase() === parsed.screenName.toLowerCase();
+  // Individual post page: compare with parent article's screenName
+  const articles = document.querySelectorAll('article[data-testid="tweet"]');
+  const idx = [...articles].indexOf(post);
+  if (idx > 0) {
+    const parentArticle = articles[idx - 1];
+    const parentLink = parentArticle?.querySelector('a[href*="/status/"]');
+    const parentParsed = parentLink ? parseXPostLink(parentLink.href) : null;
+    if (parentParsed?.screenName) {
+      return parentParsed.screenName.toLowerCase() === parsed.screenName.toLowerCase();
+    }
+  }
+  return false;
 }
 
 function isMisskeyQuote(post) {
