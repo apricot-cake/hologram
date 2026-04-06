@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Bash(git commit:*)",
+            "prompt": "You are a security reviewer for a Chrome extension (Manifest V3). Run `git diff --cached` to see the staged changes, then review for:\n1. Hardcoded secrets, API keys, or credentials\n2. Sensitive file paths or personal information leaking into committed files\n3. Files that should be in .gitignore (.claude/, test outputs, .env, credentials)\n4. XSS vulnerabilities in HTML/JS (innerHTML with unsanitized input, eval, document.write)\n5. Insecure CSP or overly broad permissions in manifest.json\n6. Unsafe message passing (missing origin checks, trusting external messages)\n7. Data exfiltration risks (fetch/XMLHttpRequest to unexpected domains)\n\nIf any critical issue is found, BLOCK the commit and explain. If everything looks safe, ALLOW it.",
+            "statusMessage": "Security review..."
+          }
+        ]
+      }
+    ]
+  }
+}
