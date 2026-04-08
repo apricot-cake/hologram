@@ -4,15 +4,15 @@
 
 > Chrome Web Store review pending.
 
-A Chrome extension that captures SNS posts and lets you browse, search, and tag them later from a built-in viewer.
+Capture posts from X, Bluesky, and Misskey, then browse and search them later in a built-in viewer.
 
 ## Usage
 
-1. Click the extension icon in the toolbar (or press `Alt+S`)
+1. Click the toolbar icon (or press `Alt+S`)
 2. Click the post you want to save
-3. The post is saved as a JPEG to your downloads folder, and added to the viewer
+3. It's saved as a JPEG and added to the viewer
 
-Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, search, filter, and export your saved posts.
+Open the viewer with `Alt+V` (or right-click the icon > Options).
 
 ## Demo
 
@@ -24,20 +24,16 @@ Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, sear
 - Bluesky
 - Misskey
 
-## Features
+## What you can do
 
-- Save posts as JPEG images you can keep forever
-- Find a saved post later by text, user, date, engagement, or your own tags
-- Tag and bulk-delete posts from the built-in viewer
-- Export everything as a ZIP or a single HTML file you can open offline
+- Save posts as JPEGs
+- Search by text, user, date, engagement, or tags
+- Tag posts and bulk-delete them
+- Export to ZIP or a standalone HTML file
 
-## Your Data, Your Files
+## About the saved files
 
-Saved posts live in the viewer, but every capture is also written to your `Downloads/Post Snap/` folder as a JPEG with the post info embedded in the file. That means:
-
-- You always have a copy on disk, outside the browser
-- If you uninstall the extension or move to another machine, you can drop the images back in to restore everything
-- The JPEGs work in any image viewer — Post Snap is just a nicer way to look at them
+Captures go into `Downloads/Post Snap/` as regular JPEGs with the post info embedded. The viewer keeps its own database, but the JPEGs are there as a backup: if you uninstall the extension or move to a new machine, you can import the images and get everything back.
 
 ## Keyboard Shortcuts
 
