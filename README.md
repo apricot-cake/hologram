@@ -4,7 +4,7 @@
 
 A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
 
-When you drag-save an image to [Eagle](https://en.eagle.cool/) via the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
+When you save an image through the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
 
 ## Requirements
 

@@ -4,7 +4,7 @@
 
 [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) と併用して、保存した画像に SNS 投稿のメタデータを自動で付与するコンパニオン拡張機能です。
 
-公式拡張経由で画像を [Eagle](https://jp.eagle.cool/) にドラッグ保存すると、投稿者情報・投稿詳細などのメタデータを Eagle のアノテーション欄に書き込みます。
+公式拡張で画像を保存すると、投稿者情報・投稿詳細などのメタデータを [Eagle](https://jp.eagle.cool/) のアノテーション欄に書き込みます。
 
 ## 動作要件
 
