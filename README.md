@@ -1,6 +1,6 @@
 # Post Snap
 
-[English](README.md) | [日本語](README.ja.md)
+**English** | [日本語](README.ja.md)
 
 > Chrome Web Store review pending.
 
