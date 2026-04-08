@@ -2,8 +2,6 @@
 
 [English](README.md) | **日本語**
 
-> **免責事項:** 本拡張機能は非公式の第三者製です。Eagle の開発元との提携・承認・所有関係は一切ありません。「Eagle」および「Eagle for Chrome」は各権利者の商標です。
-
 [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) と併用して、保存した画像に SNS 投稿のメタデータを自動で付与するコンパニオン拡張機能です。
 
 公式拡張で画像を保存すると、投稿者情報・投稿詳細などのメタデータを [Eagle](https://jp.eagle.cool/) のアノテーション欄に書き込みます。
@@ -83,3 +81,7 @@ icons/              アイコン
 
 - [Eagle REST API](https://api.eagle.cool/) の `/api/item/update` はアイテムのリネームに対応していないため、タイトル情報はアノテーションの 1 行目に配置しています
 - 既存のタグ整理を壊さないよう、タグの書き込みは意図的に行っていません
+
+## 免責事項
+
+本拡張機能は非公式の第三者製です。Eagle の開発元との提携・承認・所有関係は一切ありません。「Eagle」および「Eagle for Chrome」は各権利者の商標です。

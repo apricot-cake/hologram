@@ -2,8 +2,6 @@
 
 **English** | [日本語](README.ja.md)
 
-> **Disclaimer:** This is an unofficial third-party extension. It is not affiliated with, endorsed by, or owned by the developers of Eagle. "Eagle" and "Eagle for Chrome" are trademarks of their respective owners.
-
 A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
 
 When you save an image through the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
@@ -83,3 +81,7 @@ icons/              Placeholder icons
 
 - [Eagle REST API](https://api.eagle.cool/) `/api/item/update` does not support renaming items, so title info is placed in the first line of the annotation
 - Tags are intentionally not written to preserve existing tag organization
+
+## Disclaimer
+
+This is an unofficial third-party extension. It is not affiliated with, endorsed by, or owned by the developers of Eagle. "Eagle" and "Eagle for Chrome" are trademarks of their respective owners.
