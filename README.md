@@ -19,34 +19,7 @@ When you save an image through the official extension, this extension writes aut
 
 ## Captured Data
 
-- Platform
-- Display Name
-- Author (@screenName)
-- UID (X numeric ID / Bluesky DID)
-- Post ID
-- Image Index (e.g. 1/3)
-- Published
-- Hashtags
-- Alt Text
-- Text
-- Source URL
-
-## Use Cases
-
-- **Find posts by author** — Eagle's search lets you filter saved images by `@screenName` or display name once metadata is written into the annotation field.
-- **Reverse lookup** — When you want to know who posted an image you saved earlier, the annotation gives you the original poster, post URL, and timestamp at a glance.
-- **Works with Eagle's semantic search** — Recent versions of Eagle support semantic search over annotations, so the captured post text and alt text become searchable in natural language.
-
-## How It Works
-
-1. Content script listens for `dragstart` events on images
-2. Extracts metadata from the parent post element
-3. Background script polls the Eagle API (`localhost:41595`) to detect newly saved items
-4. Matches items by URL and writes metadata to the annotation field
-
-Polling only runs after a drag operation (up to 30 seconds) and does not make continuous API calls.
-
-## Annotation Output Example
+The following fields are written to the Eagle annotation field:
 
 ```
 @username - Post text here
@@ -62,6 +35,23 @@ Hashtags: #illustration #fanart
 Alt: Image description set by the poster
 Text: Post text here
 ```
+
+UID is the X numeric ID or Bluesky DID. Image shows the index when a post contains multiple images (e.g. 1/3).
+
+## Use Cases
+
+- **Find posts by author** — Eagle's search lets you filter saved images by `@screenName` or display name once metadata is written into the annotation field.
+- **Reverse lookup** — When you want to know who posted an image you saved earlier, the annotation gives you the original poster, post URL, and timestamp at a glance.
+- **Works with Eagle's semantic search** — Recent versions of Eagle support semantic search over annotations, so the captured post text and alt text become searchable in natural language.
+
+## How It Works
+
+1. Content script listens for `dragstart` events on images
+2. Extracts metadata from the parent post element
+3. Background script polls the Eagle API (`localhost:41595`) to detect newly saved items
+4. Matches items by URL and writes metadata to the annotation field
+
+Polling only runs after a drag operation (up to 30 seconds) and does not make continuous API calls.
 
 ## Installation
 
