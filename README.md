@@ -95,17 +95,6 @@ EXIF metadata can be stripped in certain situations:
 
 Shortcuts can be customized in `chrome://extensions/shortcuts` (or `edge://extensions/shortcuts`).
 
-## Supported Languages
-
-The viewer UI and on-page banner support the following languages:
-
-- English
-- 日本語 (Japanese)
-
-The display language follows your browser locale by default. You can override it from the viewer's **Settings** tab (Auto / English / 日本語).
-
-The Chrome Web Store listing (extension name and description) is also localized in both languages and switches automatically based on your browser's language setting.
-
 ## Privacy
 
 See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
