@@ -1,17 +1,12 @@
 (async () => {
-  const langResult = await chrome.storage.local.get('language');
-  const lang = langResult.language || 'auto';
-  const isJa = lang === 'auto' ? navigator.language.startsWith('ja') : lang === 'ja';
-  const MSG = isJa ? {
-    select: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
-    saving: '保存中...',
-    saved: '画像を保存しました',
-    failed: '保存に失敗しました'
-  } : {
-    select: 'Click a post to save (Esc to cancel / Right-click for settings)',
-    saving: 'Saving...',
-    saved: 'Image saved',
-    failed: 'Save failed'
+  // --- i18n ---
+  // i18n.js is injected alongside this script (see background.js → executeScript).
+  const { getMessage } = await window.postSnapI18n;
+  const MSG = {
+    select: getMessage('bannerSelect'),
+    saving: getMessage('bannerSaving'),
+    saved: getMessage('bannerSaved'),
+    failed: getMessage('bannerFailed')
   };
 
   const siteConfig = getSiteConfig();
@@ -227,17 +222,6 @@
       return true; // 非同期レスポンス
     }
 
-    // 自動キャプチャ
-    if (msg.type === 'triggerAutoCapture') {
-      const post = findFirstPost();
-      if (!post) {
-        sendResponse({ ok: false, error: 'No post found' });
-        return;
-      }
-      capturePost(post);
-      sendResponse({ ok: true, triggered: true });
-      return;
-    }
 
     // 結果通知
     if (msg.type === 'notify') {
@@ -247,24 +231,6 @@
     }
   }
 
-  function findFirstPost() {
-    if (typeof siteConfig.findPostElement === 'function') {
-      // Misskey: walk candidates
-      const candidates = document.querySelectorAll('div[tabindex="0"]');
-      for (const el of candidates) {
-        const post = siteConfig.findPostElement(el);
-        if (post) return post;
-      }
-      return null;
-    }
-    const all = document.querySelectorAll(siteConfig.postSelector);
-    for (const el of all) {
-      if (!siteConfig.isPostElement || siteConfig.isPostElement(el)) {
-        return el;
-      }
-    }
-    return null;
-  }
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 

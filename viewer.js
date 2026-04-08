@@ -1,230 +1,149 @@
 (async () => {
   // --- i18n ---
-  const langResult = await chrome.storage.local.get('language');
-  const lang = langResult.language || 'auto';
-  const isJa = lang === 'auto' ? navigator.language.startsWith('ja') : lang === 'ja';
-  const MSG = isJa ? {
-    tabPosts: '投稿',
-    tabSettings: '設定',
-    searchPlaceholder: 'テキスト・ユーザー名で検索',
-    sortDateDesc: '新しい順',
-    sortDateAsc: '古い順',
-    sortLikes: 'いいね順',
-    sortReposts: 'リポスト順',
-    sortReplies: '返信順',
-    sortCaptured: 'キャプチャ日時順',
-    filterAll: 'すべて',
-    postCount: (n) => `${n} 件`,
-    emptyTitle: '投稿がありません',
-    emptyDesc: 'SNSで投稿を保存すると、ここに表示されます。',
-    emptySearchTitle: '見つかりませんでした',
-    emptySearchDesc: '検索条件を変更してください。',
-    downloadTitle: 'ダウンロード',
-    labelFolder: '保存フォルダ名',
-    hintFolder: 'ダウンロードフォルダ内のサブフォルダ',
-    labelSaveAs: '毎回保存先を確認する',
-    hintSaveAs: 'キャプチャごとに「名前を付けて保存」ダイアログを表示',
-    hintBackup: 'ダウンロードフォルダへの画像保存は、拡張機能を削除した場合でもデータを復元するためのバックアップです。',
-    save: '保存',
-    saved: '保存しました',
-    invalidFolder: '無効なフォルダ名',
-    langTitle: '言語',
-    langAuto: '自動（ブラウザ設定に従う）',
-    hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
-    shortcutTitle: 'キーボードショートカット',
-    shortcutLink: 'ショートカットを変更',
-    hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア・設定）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
-    dataTitle: 'データ',
-    exportZip: 'ZIP エクスポート',
-    exportHtml: 'HTML エクスポート',
-    importImages: 'フォルダから復元',
-    importHtml: 'HTML から復元',
-    hintExport: 'ZIP: データ取り出し用（画像 + メタデータJSON）。HTML: ブラウザで閲覧用（検索UI付き）。',
-    dangerTitle: '危険な操作',
-    labelResetDeleteConfirm: '投稿削除時に確認を表示する',
-    hintResetDeleteConfirm: '「今後表示しない」を選んだ場合にここで戻せます',
-    clearData: '全データを削除',
-    confirmClear: '保存済みの投稿データをすべて削除しますか？この操作は元に戻せません。ダウンロード済みの画像ファイルは削除されません。',
-    confirmOk: '削除する',
-    confirmCancel: 'キャンセル',
-    cleared: 'データを削除しました',
-    exporting: 'エクスポート中...',
-    exported: 'エクスポートしました',
-    importing: 'インポート中...',
-    imported: (n) => `${n} 件インポートしました`,
-    importSkipped: (n, s) => `${n} 件インポート（${s} 件は既存のためスキップ）`,
-    noData: 'エクスポートするデータがありません',
-    importFailed: 'インポートに失敗しました',
-    engagementLikes: 'いいね（全SNS）',
-    engagementReposts: 'リポスト（全SNS）',
-    engagementReplies: '返信（全SNS）',
-    engagementBookmarks: 'ブックマーク（Xのみ）',
-    engagementViews: '閲覧数（Xのみ）',
-    engagementSuffix: '以上',
-    selectMode: '選択',
-    selectAll: 'すべて選択',
-    deselectAll: '選択解除',
-    cancelSelect: 'キャンセル',
-    deleteSelected: '投稿を削除',
-    selectedCount: (n) => `${n} 件選択中`,
-    confirmDeleteSelected: (n) => `${n} 件の投稿を削除しますか？`,
-    deletedN: (n) => `${n} 件削除しました`,
-    confirmDeletePost: 'この投稿を削除しますか？',
-    confirmSkip: '今後表示しない',
-    deleted: '削除しました',
-    dateTypePost: '投稿日',
-    dateTypeCaptured: 'キャプチャ日',
-    clickToExpand: 'クリックで全文表示',
-    tipZoom: '拡大', tipEdit: '編集', tipDelete: '削除',
-    postedOn: (d) => `${d} に投稿`,
-    captured: (d) => `${d} にキャプチャ`,
-    statsNote: 'エンゲージメントはキャプチャ時点の値です',
+  // Messages live in i18n.js (loaded before this script via viewer.html).
+  // Manifest-level strings come from _locales/*/messages.json via Chrome.
+  const { lang, getMessage } = await window.postSnapI18n;
+  const _s = (key) => getMessage(key);
+  const _f1 = (key) => (a) => getMessage(key, [a]);
+  const _f2 = (key) => (a, b) => getMessage(key, [a, b]);
+  // Back-compat shim so existing call sites (MSG.key / MSG.key(args)) keep working.
+  // Static keys are pre-resolved strings; interpolated keys are bound functions.
+  const MSG = {
+    // tabs / search / sort
+    tabPosts: _s('tabPosts'),
+    tabSettings: _s('tabSettings'),
+    searchPlaceholder: _s('searchPlaceholder'),
+    sortDateDesc: _s('sortDateDesc'),
+    sortDateAsc: _s('sortDateAsc'),
+    sortLikes: _s('sortLikes'),
+    sortReposts: _s('sortReposts'),
+    sortReplies: _s('sortReplies'),
+    sortCaptured: _s('sortCaptured'),
+    filterAll: _s('filterAll'),
+    postCount: _f1('postCount'),
+
+    // empty states
+    emptyTitle: _s('emptyTitle'),
+    emptyDesc: _s('emptyDesc'),
+    emptySearchTitle: _s('emptySearchTitle'),
+    emptySearchDesc: _s('emptySearchDesc'),
+
+    // settings > download
+    downloadTitle: _s('downloadTitle'),
+    labelFolder: _s('labelFolder'),
+    hintFolder: _s('hintFolder'),
+    labelSaveAs: _s('labelSaveAs'),
+    hintSaveAs: _s('hintSaveAs'),
+    hintBackup: _s('hintBackup'),
+    save: _s('save'),
+    saved: _s('saved'),
+    invalidFolder: _s('invalidFolder'),
+
+    // settings > language / shortcut
+    langTitle: _s('langTitle'),
+    langAuto: _s('langAuto'),
+    hintLang: _s('hintLang'),
+    shortcutTitle: _s('shortcutTitle'),
+    shortcutLink: _s('shortcutLink'),
+    hintShortcut: _s('hintShortcut'),
+
+    // settings > data / danger
+    dataTitle: _s('dataTitle'),
+    exportZip: _s('exportZip'),
+    exportHtml: _s('exportHtml'),
+    importImages: _s('importImages'),
+    importHtml: _s('importHtml'),
+    hintExport: _s('hintExport'),
+    dangerTitle: _s('dangerTitle'),
+    labelResetDeleteConfirm: _s('labelResetDeleteConfirm'),
+    hintResetDeleteConfirm: _s('hintResetDeleteConfirm'),
+    clearData: _s('clearData'),
+    confirmClear: _s('confirmClear'),
+    confirmOk: _s('confirmOk'),
+    confirmCancel: _s('confirmCancel'),
+    cleared: _s('cleared'),
+
+    // export/import toasts
+    exporting: _s('exporting'),
+    exported: _s('exported'),
+    importing: _s('importing'),
+    imported: _f1('imported'),
+    importSkipped: _f2('importSkipped'),
+    noData: _s('noData'),
+    importFailed: _s('importFailed'),
+
+    // engagement labels
+    engagementLikes: _s('engagementLikes'),
+    engagementReposts: _s('engagementReposts'),
+    engagementReplies: _s('engagementReplies'),
+    engagementBookmarks: _s('engagementBookmarks'),
+    engagementViews: _s('engagementViews'),
+    engagementSuffix: _s('engagementSuffix'),
+
+    // selection mode
+    selectMode: _s('selectMode'),
+    selectAll: _s('selectAll'),
+    deselectAll: _s('deselectAll'),
+    cancelSelect: _s('cancelSelect'),
+    deleteSelected: _s('deleteSelected'),
+    selectedCount: _f1('selectedCount'),
+    confirmDeleteSelected: _f1('confirmDeleteSelected'),
+    deletedN: _f1('deletedN'),
+    confirmDeletePost: _s('confirmDeletePost'),
+    confirmSkip: _s('confirmSkip'),
+    deleted: _s('deleted'),
+
+    // post card
+    dateTypePost: _s('dateTypePost'),
+    dateTypeCaptured: _s('dateTypeCaptured'),
+    clickToExpand: _s('clickToExpand'),
+    tipZoom: _s('tipZoom'),
+    tipEdit: _s('tipEdit'),
+    tipDelete: _s('tipDelete'),
+    postedOn: _f1('postedOn'),
+    captured: _f1('captured'),
+    statsNote: _s('statsNote'),
+
+    // stats formatters (pure formatting, no translation)
     likes: (n) => n != null ? `${formatCount(n)}` : '',
     reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
     replies: (n) => n != null ? `${formatCount(n)}` : '',
     bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
-    tagsLabel: 'タグ',
-    addTag: '追加',
-    tagPlaceholder: 'タグを入力',
-    applyToSelected: '選択に適用',
-    qfPlatform: 'プラットフォーム',
-    qfPostType: '投稿タイプ',
-    qfDate: '日付',
-    qfEngagement: 'エンゲージメント',
-    qfTag: 'タグ',
-    qfMedia: 'メディア',
-    qfPost: 'ポスト',
-    qfReply: 'リプライ',
-    qfQuote: '引用',
-    qfThread: 'セルフリプ',
-    qfImage: '画像',
-    qfVideo: '動画',
-    qfGif: 'GIF',
-    qfApply: '適用',
-    qfDelete: '削除',
-    qfDatePost: '投稿日',
-    qfDateCaptured: 'キャプチャ日',
-    qfDateFrom: '開始日',
-    qfDateTo: '終了日',
-    qfEngLikes: 'いいね（全SNS）',
-    qfEngReposts: 'リポスト（全SNS）',
-    qfEngReplies: '返信（全SNS）',
-    qfEngBookmarks: 'ブックマーク（Xのみ）',
-    qfEngViews: '閲覧数（Xのみ）',
-    qfEngSuffix: '以上',
-    qfEngGte: '以上',
-    qfEngLte: '以下'
-  } : {
-    tabPosts: 'Posts',
-    tabSettings: 'Settings',
-    searchPlaceholder: 'Search by text or username',
-    sortDateDesc: 'Newest first',
-    sortDateAsc: 'Oldest first',
-    sortLikes: 'Most liked',
-    sortReposts: 'Most reposted',
-    sortReplies: 'Most replied',
-    sortCaptured: 'Captured date',
-    filterAll: 'All',
-    postCount: (n) => `${n} posts`,
-    emptyTitle: 'No posts yet',
-    emptyDesc: 'Save a post from SNS and it will appear here.',
-    emptySearchTitle: 'No results found',
-    emptySearchDesc: 'Try changing your search terms.',
-    downloadTitle: 'Download',
-    labelFolder: 'Save folder name',
-    hintFolder: 'Subfolder inside your Downloads directory',
-    labelSaveAs: 'Ask where to save each time',
-    hintSaveAs: 'Shows a "Save As" dialog for every capture',
-    hintBackup: 'Images saved to the download folder serve as a backup to restore data even if the extension is removed.',
-    save: 'Save',
-    saved: 'Saved',
-    invalidFolder: 'Invalid folder name',
-    langTitle: 'Language',
-    langAuto: 'Auto (follow browser setting)',
-    hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
-    shortcutTitle: 'Keyboard Shortcut',
-    shortcutLink: 'Change keyboard shortcut',
-    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer/settings). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
-    dataTitle: 'Data',
-    exportZip: 'Export ZIP',
-    exportHtml: 'Export HTML',
-    importImages: 'Import from folder',
-    importHtml: 'Import from HTML',
-    hintExport: 'ZIP: for data extraction (images + metadata JSON). HTML: for viewing in browser (with search UI).',
-    dangerTitle: 'Danger Zone',
-    labelResetDeleteConfirm: 'Show confirmation when deleting posts',
-    hintResetDeleteConfirm: 'Re-enables the confirmation dialog if you chose "Don\'t ask again"',
-    clearData: 'Delete all data',
-    confirmClear: 'Delete all saved post data? This cannot be undone. Downloaded image files will not be affected.',
-    confirmOk: 'Delete',
-    confirmCancel: 'Cancel',
-    cleared: 'Data deleted',
-    exporting: 'Exporting...',
-    exported: 'Exported',
-    importing: 'Importing...',
-    imported: (n) => `${n} posts imported`,
-    importSkipped: (n, s) => `${n} imported (${s} skipped as duplicates)`,
-    noData: 'No data to export',
-    importFailed: 'Import failed',
-    engagementLikes: 'Likes (all)',
-    engagementReposts: 'Reposts (all)',
-    engagementReplies: 'Replies (all)',
-    engagementBookmarks: 'Bookmarks (X only)',
-    engagementViews: 'Views (X only)',
-    engagementSuffix: 'or more',
-    selectMode: 'Select',
-    selectAll: 'Select all',
-    deselectAll: 'Deselect all',
-    cancelSelect: 'Cancel',
-    deleteSelected: 'Delete posts',
-    selectedCount: (n) => `${n} selected`,
-    confirmDeleteSelected: (n) => `Delete ${n} posts?`,
-    deletedN: (n) => `${n} posts deleted`,
-    confirmDeletePost: 'Delete this post?',
-    confirmSkip: 'Don\'t ask again',
-    deleted: 'Deleted',
-    dateTypePost: 'Post date',
-    dateTypeCaptured: 'Captured',
-    clickToExpand: 'Click to expand',
-    tipZoom: 'Zoom', tipEdit: 'Edit', tipDelete: 'Delete',
-    postedOn: (d) => `Posted ${d}`,
-    captured: (d) => `Captured ${d}`,
-    statsNote: 'Engagement counts are from the time of capture',
-    likes: (n) => n != null ? `${formatCount(n)}` : '',
-    reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
-    replies: (n) => n != null ? `${formatCount(n)}` : '',
-    bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
-    tagsLabel: 'Tags',
-    addTag: 'Add',
-    tagPlaceholder: 'Enter tag',
-    applyToSelected: 'Apply to selected',
-    qfPlatform: 'Platform',
-    qfPostType: 'Post type',
-    qfDate: 'Date',
-    qfEngagement: 'Engagement',
-    qfTag: 'Tags',
-    qfMedia: 'Media',
-    qfPost: 'Post',
-    qfReply: 'Reply',
-    qfQuote: 'Quote',
-    qfThread: 'Self-reply',
-    qfImage: 'Image',
-    qfVideo: 'Video',
-    qfGif: 'GIF',
-    qfApply: 'Apply',
-    qfDelete: 'Delete',
-    qfDatePost: 'Post date',
-    qfDateCaptured: 'Captured',
-    qfDateFrom: 'From',
-    qfDateTo: 'To',
-    qfEngLikes: 'Likes (all)',
-    qfEngReposts: 'Reposts (all)',
-    qfEngReplies: 'Replies (all)',
-    qfEngBookmarks: 'Bookmarks (X only)',
-    qfEngViews: 'Views (X only)',
-    qfEngSuffix: 'or more',
-    qfEngGte: '≥',
-    qfEngLte: '≤'
+
+    // edit overlay
+    tagsLabel: _s('tagsLabel'),
+    addTag: _s('addTag'),
+    tagPlaceholder: _s('tagPlaceholder'),
+    applyToSelected: _s('applyToSelected'),
+
+    // query/sidebar filters
+    qfPlatform: _s('qfPlatform'),
+    qfPostType: _s('qfPostType'),
+    qfDate: _s('qfDate'),
+    qfEngagement: _s('qfEngagement'),
+    qfTag: _s('qfTag'),
+    qfMedia: _s('qfMedia'),
+    qfPost: _s('qfPost'),
+    qfReply: _s('qfReply'),
+    qfQuote: _s('qfQuote'),
+    qfThread: _s('qfThread'),
+    qfImage: _s('qfImage'),
+    qfVideo: _s('qfVideo'),
+    qfGif: _s('qfGif'),
+    qfApply: _s('qfApply'),
+    qfDelete: _s('qfDelete'),
+    qfDatePost: _s('qfDatePost'),
+    qfDateCaptured: _s('qfDateCaptured'),
+    qfDateFrom: _s('qfDateFrom'),
+    qfDateTo: _s('qfDateTo'),
+    qfEngLikes: _s('qfEngLikes'),
+    qfEngReposts: _s('qfEngReposts'),
+    qfEngReplies: _s('qfEngReplies'),
+    qfEngBookmarks: _s('qfEngBookmarks'),
+    qfEngViews: _s('qfEngViews'),
+    qfEngSuffix: _s('qfEngSuffix'),
+    qfEngGte: _s('qfEngGte'),
+    qfEngLte: _s('qfEngLte')
   };
 
   // --- Apply i18n to static elements ---
@@ -523,7 +442,7 @@
   // --- Sidebar filter controls ---
 
   // Sidebar i18n
-  setText('sbActiveTitle', isJa ? 'アクティブフィルタ' : 'Active Filters');
+  setText('sbActiveTitle', getMessage('sbActiveTitle'));
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbPostTypeTitle', MSG.qfPostType);
   setText('sbMediaTitle', MSG.qfMedia);
@@ -1653,7 +1572,7 @@ render()
     const injectBtn = document.getElementById('injectDummy');
     if (debugSection && injectBtn) {
       debugSection.style.display = '';
-      injectBtn.textContent = isJa ? 'ダミーデータ投入（50件）' : 'Inject dummy data (50 posts)';
+      injectBtn.textContent = getMessage('debugInjectDummy');
       injectBtn.addEventListener('click', () => {
         const s = document.createElement('script');
         s.src = chrome.runtime.getURL('scripts/inject-dummy.js');
@@ -1718,87 +1637,9 @@ render()
         const url = URL.createObjectURL(blob);
         await chrome.downloads.download({ url, filename: 'post-snap-verify.txt', conflictAction: 'overwrite' });
         URL.revokeObjectURL(url);
-        showToast(isJa ? '検証結果を保存しました' : 'Verification saved');
+        showToast(getMessage('debugVerifySaved'));
       });
 
-      // Auto Test runner
-      const autoTestUrlsEl = document.getElementById('autoTestUrls');
-      const runAutoTestBtn = document.getElementById('runAutoTest');
-      const autoTestStatus = document.getElementById('autoTestStatus');
-      const autoTestResultEl = document.getElementById('autoTestResult');
-
-      // Load saved test URLs
-      chrome.storage.local.get('autoTestUrls', (r) => {
-        if (r.autoTestUrls) autoTestUrlsEl.value = r.autoTestUrls;
-      });
-      autoTestUrlsEl.addEventListener('change', () => {
-        chrome.storage.local.set({ autoTestUrls: autoTestUrlsEl.value });
-      });
-
-      runAutoTestBtn.addEventListener('click', async () => {
-        const lines = autoTestUrlsEl.value.trim().split('\n').filter(l => l.trim());
-        const tests = lines.map(line => {
-          const match = line.match(/^(\S+)\s+(https?:\/\/\S+)/);
-          if (!match) return null;
-          return { id: match[1], url: match[2] };
-        }).filter(Boolean);
-
-        if (!tests.length) {
-          autoTestStatus.textContent = 'No valid test URLs.';
-          return;
-        }
-
-        // Save URLs
-        chrome.storage.local.set({ autoTestUrls: autoTestUrlsEl.value });
-
-        runAutoTestBtn.disabled = true;
-        autoTestResultEl.style.display = 'block';
-        autoTestResultEl.textContent = '';
-        const results = [];
-
-        for (let i = 0; i < tests.length; i++) {
-          const test = tests[i];
-          autoTestStatus.textContent = `Running ${i + 1}/${tests.length}: ${test.id}...`;
-
-          try {
-            const result = await chrome.runtime.sendMessage({
-              type: 'autoCapture',
-              url: test.url,
-              waitMs: test.url.includes('misskey') ? 3000 : 2000
-            });
-
-            const line = result.ok
-              ? `[OK] ${test.id}: ${formatAutoTestResult(result.metadata)}`
-              : `[NG] ${test.id}: ${result.error}`;
-            results.push(line);
-          } catch (err) {
-            results.push(`[NG] ${test.id}: ${err.message}`);
-          }
-
-          autoTestResultEl.textContent = results.join('\n');
-        }
-
-        autoTestStatus.textContent = `Done: ${results.filter(r => r.startsWith('[OK]')).length}/${tests.length} passed`;
-        runAutoTestBtn.disabled = false;
-
-        // Save results to file
-        const text = results.join('\n');
-        const dataUrl = 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(text)));
-        await chrome.downloads.download({ url: dataUrl, filename: 'post-snap-auto-test.txt', conflictAction: 'overwrite' });
-      });
-
-      function formatAutoTestResult(m) {
-        if (!m) return '(no metadata)';
-        const fields = [m.platform, m.screenName, m.postText?.substring(0, 40)].filter(Boolean);
-        const flags = [];
-        if (m.isReply) flags.push('reply');
-        if (m.isQuote) flags.push('quote');
-        if (m.isThread) flags.push('self-reply');
-        if (m.mediaType && m.mediaType !== 'none') flags.push(m.mediaType);
-        if (m.lang) flags.push(m.lang);
-        const engagement = `L:${m.likeCount ?? '?'} R:${m.repostCount ?? '?'} C:${m.replyCount ?? '?'}`;
-        return [fields.join(' / '), engagement, flags.length ? `[${flags.join(',')}]` : ''].filter(Boolean).join(' | ');
-      }
     }
   }
 

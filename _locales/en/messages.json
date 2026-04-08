@@ -1,0 +1,26 @@
+{
+  "extName": {
+    "message": "Post Snap",
+    "description": "Extension name shown in Web Store and browser"
+  },
+  "extDesc": {
+    "message": "Capture SNS posts as images with searchable EXIF metadata",
+    "description": "Extension description shown in Web Store"
+  },
+  "actionTitle": {
+    "message": "Save post",
+    "description": "Toolbar button tooltip"
+  },
+  "cmdActivate": {
+    "message": "Start capturing a post",
+    "description": "Keyboard command description (Alt+S)"
+  },
+  "cmdOpenViewer": {
+    "message": "Open viewer",
+    "description": "Keyboard command description (Alt+V)"
+  },
+  "cmdReloadExtension": {
+    "message": "Reload extension (dev)",
+    "description": "Keyboard command description (Alt+R, dev only)"
+  }
+}

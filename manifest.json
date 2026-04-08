@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Post Snap",
+  "name": "__MSG_extName__",
   "version": "1.0.0",
-  "description": "Capture SNS posts as images with searchable EXIF metadata",
+  "description": "__MSG_extDesc__",
+  "default_locale": "en",
   "permissions": ["activeTab", "scripting", "downloads", "storage", "unlimitedStorage"],
   "icons": {
     "16": "icons/icon16.png",
@@ -11,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "投稿を保存",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
@@ -37,19 +38,19 @@
       "suggested_key": {
         "default": "Alt+S"
       },
-      "description": "投稿の保存を開始"
+      "description": "__MSG_cmdActivate__"
     },
     "open-viewer": {
       "suggested_key": {
         "default": "Alt+V"
       },
-      "description": "ビューアを開く"
+      "description": "__MSG_cmdOpenViewer__"
     },
     "reload-extension": {
       "suggested_key": {
         "default": "Alt+R"
       },
-      "description": "拡張機能をリロード（開発用）"
+      "description": "__MSG_cmdReloadExtension__"
     }
   }
 }

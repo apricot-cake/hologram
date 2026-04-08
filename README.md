@@ -1,8 +1,10 @@
 # Post Snap
 
+[English](README.md) | [日本語](README.ja.md)
+
 > Chrome Web Store review pending.
 
-A Chrome extension that captures SNS posts as JPEG images with searchable metadata. Saved posts can be browsed, searched, and exported from the built-in viewer.
+A Chrome extension that captures SNS posts as JPEG images with searchable EXIF metadata. Saved posts can be browsed, searched, filtered, tagged, and exported from a built-in viewer.
 
 ## Usage
 
@@ -10,7 +12,7 @@ A Chrome extension that captures SNS posts as JPEG images with searchable metada
 2. Click the post you want to save
 3. The post is saved as a JPEG to your downloads folder, and added to the viewer
 
-Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, search, and export your saved posts.
+Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, search, filter, and export your saved posts.
 
 ## Demo
 
@@ -22,12 +24,28 @@ Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, sear
 - Bluesky
 - Misskey
 
+## Supported Languages
+
+The viewer UI and on-page banner support the following languages:
+
+- English
+- 日本語 (Japanese)
+
+The display language follows your browser locale by default. You can override it from the viewer's **Settings** tab (Auto / English / 日本語).
+
+The Chrome Web Store listing (extension name and description) is also localized in both languages and switches automatically based on your browser's language setting.
+
 ## Features
 
-- Save posts as JPEG images with embedded EXIF metadata
-- **Built-in viewer** — browse, search, sort, and filter saved posts by text, username, platform, and engagement
-- **Export** — ZIP (images + metadata JSON) or self-contained HTML with search UI
-- **Import** — restore data from exported images (EXIF) or exported HTML
+- **Capture** — Save posts as JPEG images with embedded EXIF metadata
+- **Built-in viewer** — Browse, search, sort, and filter saved posts
+- **Sidebar filters** — Filter by platform, post type (post / reply / quote / self-reply), media (image / video / GIF), date range, engagement (likes / reposts / replies / bookmarks / views), and tags
+- **Tagging** — Add custom tags to any saved post for organization
+- **Card / List view** — Toggle between grid and list layouts
+- **Image lightbox** — Click the zoom button on a card to view the full image
+- **Bulk selection** — Select multiple posts to delete in one action
+- **Export** — ZIP (images + metadata JSON) or self-contained HTML with built-in search UI
+- **Import** — Restore data from exported images (EXIF), folders of JPEGs, or exported HTML
 - Filenames sorted by post date (e.g. `images/2026-04-04.jpg`)
 
 ## File Structure

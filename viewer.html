@@ -599,15 +599,6 @@
       <button class="btn-outline" id="injectDummy"></button>
       <button class="btn-outline" id="verifyLatest" style="margin-left:8px;">最新キャプチャを検証</button>
       <pre id="verifyResult" style="margin-top:12px;font-size:11px;background:#f8f8f8;padding:12px;border-radius:6px;white-space:pre-wrap;display:none;"></pre>
-      <div style="margin-top:16px;border-top:1px solid #eee;padding-top:12px;">
-        <h3 style="font-size:13px;margin:0 0 8px;">Auto Test</h3>
-        <textarea id="autoTestUrls" rows="6" style="width:100%;font-size:11px;font-family:monospace;padding:8px;border:1px solid #ddd;border-radius:6px;resize:vertical;" placeholder="A-1b https://x.com/user/status/123&#10;A-2b https://bsky.app/profile/user/post/abc"></textarea>
-        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-          <button class="btn-outline" id="runAutoTest">Run</button>
-          <span id="autoTestStatus" style="font-size:11px;color:#666;"></span>
-        </div>
-        <pre id="autoTestResult" style="margin-top:12px;font-size:11px;background:#f8f8f8;padding:12px;border-radius:6px;white-space:pre-wrap;display:none;max-height:400px;overflow:auto;"></pre>
-      </div>
     </div>
 
     <div id="buildInfo" style="margin-top: 24px; font-size: 11px; color: #bbb; text-align: center;"></div>
@@ -684,6 +675,7 @@
 
   <script src="vendor/piexif.js"></script>
   <script src="vendor/jszip.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="viewer.js"></script>
 </body>
 </html>

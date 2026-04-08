@@ -23,6 +23,10 @@ Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャ�
 - `Alt+V` — ビューアを開く
 - `Alt+R` — 拡張リロード（開発用、ストア版では非表示）
 
+## ストア版リリース時の注意
+
+- `manifest.json` の `reload-extension` コマンドを削除する
+
 ## ビューア機能
 
 - プラットフォームフィルタ（チップボタン）
@@ -37,6 +41,32 @@ Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャ�
 ## i18n
 
 ビューアとコンテンツバナーは日英対応。`chrome.storage.local` の `language` キーで制御（auto/ja/en）。
+
+## テスト
+
+- テストケース定義: `scripts/test-plan.md`
+- テスト進捗記録: `scripts/test-progress.md`
+
+### 手順（キャプチャテスト）
+
+1. claude が in chrome でテスト対象ページを開く
+2. ユーザーが Alt+S → 投稿クリック
+3. claude が `~/Downloads/post-snap-capture-log.txt` を読んで検証
+4. 結果を `scripts/test-progress.md` に記録
+5. 次のテストケースに進む
+
+### 注意
+
+- テスト済みのケースを再テストしない（`test-progress.md` を必ず確認）
+- 1つの投稿で複数のケースをカバーできる場合はまとめて記録（例: A-1b と A-1h）
+
+## TODO (リリース前)
+
+- [ ] ストア版ビルド: 開発用コードを除去する
+  - `manifest.json`: `reload-extension` コマンド削除
+  - `background.js`: `writeCaptureLog()`, `reload-extension` の onCommand 分岐を削除
+  - `viewer.html`: `debugSection` 全体を削除
+  - `viewer.js`: DEBUG セクション（inject-dummy, verify）のコードを削除
 
 ## TODO (将来対応)
 

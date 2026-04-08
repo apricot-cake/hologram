@@ -1,0 +1,26 @@
+{
+  "extName": {
+    "message": "Post Snap",
+    "description": "Extension name shown in Web Store and browser"
+  },
+  "extDesc": {
+    "message": "SNS投稿を画像としてキャプチャし、検索可能なEXIFメタデータ付きで保存",
+    "description": "Extension description shown in Web Store"
+  },
+  "actionTitle": {
+    "message": "投稿を保存",
+    "description": "Toolbar button tooltip"
+  },
+  "cmdActivate": {
+    "message": "投稿の保存を開始",
+    "description": "Keyboard command description (Alt+S)"
+  },
+  "cmdOpenViewer": {
+    "message": "ビューアを開く",
+    "description": "Keyboard command description (Alt+V)"
+  },
+  "cmdReloadExtension": {
+    "message": "拡張機能をリロード（開発用）",
+    "description": "Keyboard command description (Alt+R, dev only)"
+  }
+}

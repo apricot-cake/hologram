@@ -1,0 +1,314 @@
+// Shared i18n helper for viewer and content scripts.
+// Manifest-level strings (name, description, action title, command descriptions)
+// are handled by Chrome's native i18n via _locales/*/messages.json. The UI
+// strings below are embedded here so content scripts (which cannot fetch
+// _locales/ files reliably) get them without extra network round-trips.
+//
+// Consumers do: const { getMessage, lang, resolved } = await window.postSnapI18n;
+// then call getMessage('key', [sub1, sub2]).
+// Note: this file may be re-executed by chrome.scripting.executeScript on every
+// Alt+S press. We intentionally reassign window.postSnapI18n each time so
+// language changes made in the viewer take effect on the next capture.
+(function () {
+  const MESSAGES = {
+    ja: {
+      // viewer: tabs / search / sort
+      tabPosts: '投稿',
+      tabSettings: '設定',
+      searchPlaceholder: 'テキスト・ユーザー名で検索',
+      sortDateDesc: '新しい順',
+      sortDateAsc: '古い順',
+      sortLikes: 'いいね順',
+      sortReposts: 'リポスト順',
+      sortReplies: '返信順',
+      sortCaptured: 'キャプチャ日時順',
+      filterAll: 'すべて',
+      postCount: '$1 件',
+
+      // viewer: empty states
+      emptyTitle: '投稿がありません',
+      emptyDesc: 'SNSで投稿を保存すると、ここに表示されます。',
+      emptySearchTitle: '見つかりませんでした',
+      emptySearchDesc: '検索条件を変更してください。',
+
+      // viewer: settings > download
+      downloadTitle: 'ダウンロード',
+      labelFolder: '保存フォルダ名',
+      hintFolder: 'ダウンロードフォルダ内のサブフォルダ',
+      labelSaveAs: '毎回保存先を確認する',
+      hintSaveAs: 'キャプチャごとに「名前を付けて保存」ダイアログを表示',
+      hintBackup: 'ダウンロードフォルダへの画像保存は、拡張機能を削除した場合でもデータを復元するためのバックアップです。',
+      save: '保存',
+      saved: '保存しました',
+      invalidFolder: '無効なフォルダ名',
+
+      // viewer: settings > language / shortcut
+      langTitle: '言語',
+      langAuto: '自動（ブラウザ設定に従う）',
+      hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
+      shortcutTitle: 'キーボードショートカット',
+      shortcutLink: 'ショートカットを変更',
+      hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア・設定）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
+
+      // viewer: settings > data / danger
+      dataTitle: 'データ',
+      exportZip: 'ZIP エクスポート',
+      exportHtml: 'HTML エクスポート',
+      importImages: 'フォルダから復元',
+      importHtml: 'HTML から復元',
+      hintExport: 'ZIP: データ取り出し用（画像 + メタデータJSON）。HTML: ブラウザで閲覧用（検索UI付き）。',
+      dangerTitle: '危険な操作',
+      labelResetDeleteConfirm: '投稿削除時に確認を表示する',
+      hintResetDeleteConfirm: '「今後表示しない」を選んだ場合にここで戻せます',
+      clearData: '全データを削除',
+      confirmClear: '保存済みの投稿データをすべて削除しますか？この操作は元に戻せません。ダウンロード済みの画像ファイルは削除されません。',
+      confirmOk: '削除する',
+      confirmCancel: 'キャンセル',
+      cleared: 'データを削除しました',
+
+      // viewer: export / import toasts
+      exporting: 'エクスポート中...',
+      exported: 'エクスポートしました',
+      importing: 'インポート中...',
+      imported: '$1 件インポートしました',
+      importSkipped: '$1 件インポート（$2 件は既存のためスキップ）',
+      noData: 'エクスポートするデータがありません',
+      importFailed: 'インポートに失敗しました',
+
+      // viewer: engagement labels (legacy, still referenced)
+      engagementLikes: 'いいね（全SNS）',
+      engagementReposts: 'リポスト（全SNS）',
+      engagementReplies: '返信（全SNS）',
+      engagementBookmarks: 'ブックマーク（Xのみ）',
+      engagementViews: '閲覧数（Xのみ）',
+      engagementSuffix: '以上',
+
+      // viewer: selection mode
+      selectMode: '選択',
+      selectAll: 'すべて選択',
+      deselectAll: '選択解除',
+      cancelSelect: 'キャンセル',
+      deleteSelected: '投稿を削除',
+      selectedCount: '$1 件選択中',
+      confirmDeleteSelected: '$1 件の投稿を削除しますか？',
+      deletedN: '$1 件削除しました',
+      confirmDeletePost: 'この投稿を削除しますか？',
+      confirmSkip: '今後表示しない',
+      deleted: '削除しました',
+
+      // viewer: post card
+      dateTypePost: '投稿日',
+      dateTypeCaptured: 'キャプチャ日',
+      clickToExpand: 'クリックで全文表示',
+      tipZoom: '拡大',
+      tipEdit: '編集',
+      tipDelete: '削除',
+      postedOn: '$1 に投稿',
+      captured: '$1 にキャプチャ',
+      statsNote: 'エンゲージメントはキャプチャ時点の値です',
+
+      // viewer: edit overlay
+      tagsLabel: 'タグ',
+      addTag: '追加',
+      tagPlaceholder: 'タグを入力',
+      applyToSelected: '選択に適用',
+
+      // viewer: query/sidebar filters
+      qfPlatform: 'プラットフォーム',
+      qfPostType: '投稿タイプ',
+      qfDate: '日付',
+      qfEngagement: 'エンゲージメント',
+      qfTag: 'タグ',
+      qfMedia: 'メディア',
+      qfPost: 'ポスト',
+      qfReply: 'リプライ',
+      qfQuote: '引用',
+      qfThread: 'セルフリプ',
+      qfImage: '画像',
+      qfVideo: '動画',
+      qfGif: 'GIF',
+      qfApply: '適用',
+      qfDelete: '削除',
+      qfDatePost: '投稿日',
+      qfDateCaptured: 'キャプチャ日',
+      qfDateFrom: '開始日',
+      qfDateTo: '終了日',
+      qfEngLikes: 'いいね（全SNS）',
+      qfEngReposts: 'リポスト（全SNS）',
+      qfEngReplies: '返信（全SNS）',
+      qfEngBookmarks: 'ブックマーク（Xのみ）',
+      qfEngViews: '閲覧数（Xのみ）',
+      qfEngSuffix: '以上',
+      qfEngGte: '以上',
+      qfEngLte: '以下',
+      sbActiveTitle: 'アクティブフィルタ',
+
+      // viewer: debug section (unpacked only)
+      debugInjectDummy: 'ダミーデータ投入（50件）',
+      debugVerifySaved: '検証結果を保存しました',
+
+      // content.js banner
+      bannerSelect: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
+      bannerSaving: '保存中...',
+      bannerSaved: '画像を保存しました',
+      bannerFailed: '保存に失敗しました'
+    },
+
+    en: {
+      tabPosts: 'Posts',
+      tabSettings: 'Settings',
+      searchPlaceholder: 'Search by text or username',
+      sortDateDesc: 'Newest first',
+      sortDateAsc: 'Oldest first',
+      sortLikes: 'Most liked',
+      sortReposts: 'Most reposted',
+      sortReplies: 'Most replied',
+      sortCaptured: 'Captured date',
+      filterAll: 'All',
+      postCount: '$1 posts',
+
+      emptyTitle: 'No posts yet',
+      emptyDesc: 'Save a post from SNS and it will appear here.',
+      emptySearchTitle: 'No results found',
+      emptySearchDesc: 'Try changing your search terms.',
+
+      downloadTitle: 'Download',
+      labelFolder: 'Save folder name',
+      hintFolder: 'Subfolder inside your Downloads directory',
+      labelSaveAs: 'Ask where to save each time',
+      hintSaveAs: 'Shows a "Save As" dialog for every capture',
+      hintBackup: 'Images saved to the download folder serve as a backup to restore data even if the extension is removed.',
+      save: 'Save',
+      saved: 'Saved',
+      invalidFolder: 'Invalid folder name',
+
+      langTitle: 'Language',
+      langAuto: 'Auto (follow browser setting)',
+      hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
+      shortcutTitle: 'Keyboard Shortcut',
+      shortcutLink: 'Change keyboard shortcut',
+      hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer/settings). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
+
+      dataTitle: 'Data',
+      exportZip: 'Export ZIP',
+      exportHtml: 'Export HTML',
+      importImages: 'Import from folder',
+      importHtml: 'Import from HTML',
+      hintExport: 'ZIP: for data extraction (images + metadata JSON). HTML: for viewing in browser (with search UI).',
+      dangerTitle: 'Danger Zone',
+      labelResetDeleteConfirm: 'Show confirmation when deleting posts',
+      hintResetDeleteConfirm: 'Re-enables the confirmation dialog if you chose "Don\'t ask again"',
+      clearData: 'Delete all data',
+      confirmClear: 'Delete all saved post data? This cannot be undone. Downloaded image files will not be affected.',
+      confirmOk: 'Delete',
+      confirmCancel: 'Cancel',
+      cleared: 'Data deleted',
+
+      exporting: 'Exporting...',
+      exported: 'Exported',
+      importing: 'Importing...',
+      imported: '$1 posts imported',
+      importSkipped: '$1 imported ($2 skipped as duplicates)',
+      noData: 'No data to export',
+      importFailed: 'Import failed',
+
+      engagementLikes: 'Likes (all)',
+      engagementReposts: 'Reposts (all)',
+      engagementReplies: 'Replies (all)',
+      engagementBookmarks: 'Bookmarks (X only)',
+      engagementViews: 'Views (X only)',
+      engagementSuffix: 'or more',
+
+      selectMode: 'Select',
+      selectAll: 'Select all',
+      deselectAll: 'Deselect all',
+      cancelSelect: 'Cancel',
+      deleteSelected: 'Delete posts',
+      selectedCount: '$1 selected',
+      confirmDeleteSelected: 'Delete $1 posts?',
+      deletedN: '$1 posts deleted',
+      confirmDeletePost: 'Delete this post?',
+      confirmSkip: 'Don\'t ask again',
+      deleted: 'Deleted',
+
+      dateTypePost: 'Post date',
+      dateTypeCaptured: 'Captured',
+      clickToExpand: 'Click to expand',
+      tipZoom: 'Zoom',
+      tipEdit: 'Edit',
+      tipDelete: 'Delete',
+      postedOn: 'Posted $1',
+      captured: 'Captured $1',
+      statsNote: 'Engagement counts are from the time of capture',
+
+      tagsLabel: 'Tags',
+      addTag: 'Add',
+      tagPlaceholder: 'Enter tag',
+      applyToSelected: 'Apply to selected',
+
+      qfPlatform: 'Platform',
+      qfPostType: 'Post type',
+      qfDate: 'Date',
+      qfEngagement: 'Engagement',
+      qfTag: 'Tags',
+      qfMedia: 'Media',
+      qfPost: 'Post',
+      qfReply: 'Reply',
+      qfQuote: 'Quote',
+      qfThread: 'Self-reply',
+      qfImage: 'Image',
+      qfVideo: 'Video',
+      qfGif: 'GIF',
+      qfApply: 'Apply',
+      qfDelete: 'Delete',
+      qfDatePost: 'Post date',
+      qfDateCaptured: 'Captured',
+      qfDateFrom: 'From',
+      qfDateTo: 'To',
+      qfEngLikes: 'Likes (all)',
+      qfEngReposts: 'Reposts (all)',
+      qfEngReplies: 'Replies (all)',
+      qfEngBookmarks: 'Bookmarks (X only)',
+      qfEngViews: 'Views (X only)',
+      qfEngSuffix: 'or more',
+      qfEngGte: '\u2265',
+      qfEngLte: '\u2264',
+      sbActiveTitle: 'Active Filters',
+
+      debugInjectDummy: 'Inject dummy data (50 posts)',
+      debugVerifySaved: 'Verification saved',
+
+      bannerSelect: 'Click a post to save (Esc to cancel / Right-click for settings)',
+      bannerSaving: 'Saving...',
+      bannerSaved: 'Image saved',
+      bannerFailed: 'Save failed'
+    }
+  };
+
+  window.postSnapI18n = (async () => {
+    let lang = 'auto';
+    try {
+      const result = await chrome.storage.local.get('language');
+      lang = result.language || 'auto';
+    } catch {
+      // storage may be unavailable in some contexts; fall back to auto
+    }
+    const resolved = lang === 'auto'
+      ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en')
+      : (lang === 'ja' ? 'ja' : 'en');
+    const table = MESSAGES[resolved] || MESSAGES.en;
+
+    const getMessage = (key, subs) => {
+      let text = table[key];
+      if (text == null) return key;
+      if (subs && subs.length) {
+        for (let i = 0; i < subs.length; i++) {
+          text = text.split('$' + (i + 1)).join(subs[i] == null ? '' : String(subs[i]));
+        }
+      }
+      return text;
+    };
+
+    return { lang, resolved, getMessage };
+  })();
+})();
