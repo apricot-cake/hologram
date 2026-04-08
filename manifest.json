@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Eagle Metadata Enhancer",
+  "name": "Eagle Info+",
   "version": "0.2.0",
   "description": "SNSの投稿者情報をEagleのメタデータとして自動注入",
   "permissions": [],

@@ -2,7 +2,7 @@ const EAGLE_API = 'http://localhost:41595';
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 30000;
 const DEBUG = false;
-const log = (...args) => { if (DEBUG) console.log('[Eagle Meta]', ...args); };
+const log = (...args) => { if (DEBUG) console.log('[Eagle Info+]', ...args); };
 
 let pollTimer = null;
 let pollStartTime = 0;
@@ -118,7 +118,7 @@ async function poll() {
   }
 
   if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
-    log('[Eagle Meta] Polling timed out');
+    log('[Eagle Info+] Polling timed out');
     pendingDrag = null;
     stopPolling();
     return;
@@ -128,7 +128,7 @@ async function poll() {
     const items = await fetchRecentItems();
     const matched = findMatchingItem(items);
 
-    log('[Eagle Meta] Poll: found', items.length, 'items, pending urls:', pendingDrag?.imageUrls?.length, 'drag time:', pendingDrag?.timestamp);
+    log('[Eagle Info+] Poll: found', items.length, 'items, pending urls:', pendingDrag?.imageUrls?.length, 'drag time:', pendingDrag?.timestamp);
     if (matched) {
       const metadata = pendingDrag.metadata;
       const itemId = matched.id;
@@ -141,7 +141,7 @@ async function poll() {
         ? metadata.title + '\n\n' + (metadata.annotation || '')
         : metadata.annotation;
       await updateItemMetadata(itemId, { annotation, link: metadata.link });
-      log('[Eagle Meta] Updated item:', itemId, metadata.title);
+      log('[Eagle Info+] Updated item:', itemId, metadata.title);
       return;
     }
   } catch (e) {

@@ -1,4 +1,6 @@
-# Eagle Metadata Enhancer
+# Eagle Info+
+
+**English** | [日本語](README.ja.md)
 
 A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
 

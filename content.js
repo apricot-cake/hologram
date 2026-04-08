@@ -1,22 +1,37 @@
 (() => {
   const DEBUG = false;
-  const log = (...args) => { if (DEBUG) console.log('[Eagle Meta]', ...args); };
+  const log = (...args) => { if (DEBUG) console.log('[Eagle Info+]', ...args); };
 
   const siteConfig = getSiteConfig();
   if (!siteConfig) return;
+
+  // Misskey: 画像のdraggableが無効化されているので強制有効化
+  if (siteConfig.platform === 'misskey') {
+    enableDraggableImages();
+    new MutationObserver(enableDraggableImages)
+      .observe(document.body, { childList: true, subtree: true });
+  }
+
+  function enableDraggableImages() {
+    for (const img of document.querySelectorAll('img:not([draggable="true"])')) {
+      if (img.width > 50 || !img.complete) {
+        img.draggable = true;
+      }
+    }
+  }
 
   // dragstart イベントを監視し、ドラッグされた画像のメタデータを background に送信
   document.addEventListener('dragstart', (e) => {
     if (!chrome.runtime?.id) return; // 拡張コンテキスト無効化時のガード
     const img = e.target.closest('img') || (e.target.tagName === 'IMG' ? e.target : null);
-    log('[Eagle Meta Content] dragstart', img ? 'img found' : 'no img', e.target.tagName);
+    log('[Eagle Info+] dragstart', img ? 'img found' : 'no img', e.target.tagName);
     if (!img) return;
 
     const post = findPostElement(img);
     const metadata = post
       ? siteConfig.extractMetadata(post, img)
       : siteConfig.extractFallbackMetadata?.(img);
-    log('[Eagle Meta Content] post:', !!post, 'metadata:', !!metadata, metadata?.title);
+    log('[Eagle Info+] post:', !!post, 'metadata:', !!metadata, metadata?.title);
     if (!metadata) return;
 
     const imageUrls = collectImageUrls(img);
@@ -29,7 +44,7 @@
       chrome.runtime.sendMessage(
         { type: 'resolveBlueskyDid', handle: metadata._handle },
         (response) => {
-          log('[Eagle Meta Content] DID resolved:', response?.did);
+          log('[Eagle Info+] DID resolved:', response?.did);
           if (response?.did) {
             if (metadata.annotation.includes('Post ID:')) {
               metadata.annotation = metadata.annotation.replace(
