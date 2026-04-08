@@ -2,6 +2,8 @@
 
 [English](README.md) | **日本語**
 
+> **免責事項:** 本拡張機能は非公式の第三者製です。Eagle の開発元との提携・承認・所有関係は一切ありません。「Eagle」および「Eagle for Chrome」は各権利者の商標です。
+
 [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) と併用して、保存した画像に SNS 投稿のメタデータを自動で付与するコンパニオン拡張機能です。
 
 公式拡張で画像を保存すると、投稿者情報・投稿詳細などのメタデータを [Eagle](https://jp.eagle.cool/) のアノテーション欄に書き込みます。
@@ -31,6 +33,12 @@
 - 本文
 - ソース URL
 
+## 活用例
+
+- **投稿者で検索** — アノテーション欄に書き込まれた `@screenName` や表示名を Eagle の検索で絞り込めば、保存済みの画像から特定の投稿者の作品をまとめて参照できます。
+- **逆引き** — 後から「この画像は誰の投稿だったか」を調べたいときも、アノテーションを開けば投稿者・元 URL・日時を一目で確認できます。
+- **Eagle のセマンティック検索と相性◎** — 最近の Eagle はアノテーションに対するセマンティック検索に対応しているため、取得した本文や Alt テキストを自然言語で検索できます。
+
 ## 仕組み
 
 1. コンテンツスクリプトが画像の `dragstart` イベントを監視
@@ -59,11 +67,7 @@ Text: 投稿本文
 
 ## インストール
 
-1. このリポジトリをクローン
-2. `chrome://extensions/` を開く
-3. 「デベロッパーモード」を有効化
-4. 「パッケージ化されていない拡張機能を読み込む」をクリックしてこのフォルダを選択
-5. [Eagle](https://jp.eagle.cool/) デスクトップアプリと [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張がインストール済みであることを確認
+Chrome ウェブストアでの公開を準備中です。公開後はウェブストアからインストールし、[Eagle](https://jp.eagle.cool/) デスクトップアプリと [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張も併せて導入してください。
 
 ## ファイル構成
 

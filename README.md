@@ -2,6 +2,8 @@
 
 **English** | [日本語](README.ja.md)
 
+> **Disclaimer:** This is an unofficial third-party extension. It is not affiliated with, endorsed by, or owned by the developers of Eagle. "Eagle" and "Eagle for Chrome" are trademarks of their respective owners.
+
 A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
 
 When you save an image through the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
@@ -31,6 +33,12 @@ When you save an image through the official extension, this extension writes aut
 - Text
 - Source URL
 
+## Use Cases
+
+- **Find posts by author** — Eagle's search lets you filter saved images by `@screenName` or display name once metadata is written into the annotation field.
+- **Reverse lookup** — When you want to know who posted an image you saved earlier, the annotation gives you the original poster, post URL, and timestamp at a glance.
+- **Works with Eagle's semantic search** — Recent versions of Eagle support semantic search over annotations, so the captured post text and alt text become searchable in natural language.
+
 ## How It Works
 
 1. Content script listens for `dragstart` events on images
@@ -59,11 +67,7 @@ Text: Post text here
 
 ## Installation
 
-1. Clone this repository
-2. Open `chrome://extensions/`
-3. Enable "Developer mode"
-4. Click "Load unpacked" and select this folder
-5. Make sure the [Eagle](https://en.eagle.cool/) desktop app and [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) extension are installed
+Chrome Web Store listing is in preparation. Once published, install from the Web Store and make sure the [Eagle](https://en.eagle.cool/) desktop app and [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) extension are also installed.
 
 ## File Structure
 
