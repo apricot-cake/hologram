@@ -26,16 +26,10 @@ Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, sear
 
 ## Features
 
-- **Capture** — Save posts as JPEG images with embedded EXIF metadata
-- **Built-in viewer** — Browse, search, sort, and filter saved posts
-- **Sidebar filters** — Filter by platform, post type (post / reply / quote / self-reply), media (image / video / GIF), date range, engagement (likes / reposts / replies / bookmarks / views), and tags
-- **Tagging** — Add custom tags to any saved post for organization
-- **Card / List view** — Toggle between grid and list layouts
-- **Image lightbox** — Click the zoom button on a card to view the full image
-- **Bulk selection** — Select multiple posts to delete in one action
-- **Export** — ZIP (images + metadata JSON) or self-contained HTML with built-in search UI
-- **Import** — Restore data from exported images (EXIF), folders of JPEGs, or exported HTML
-- Filenames sorted by post date (e.g. `images/2026-04-04.jpg`)
+- Save posts as JPEG images you can keep forever
+- Find a saved post later by text, user, date, engagement, or your own tags
+- Tag and bulk-delete posts from the built-in viewer
+- Export everything as a ZIP or a single HTML file you can open offline
 
 ## File Structure
 
