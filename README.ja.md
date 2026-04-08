@@ -44,33 +44,9 @@ UID は X の数値 ID または Bluesky の DID です。Image は投稿に複�
 - **逆引き** — 後から「この画像は誰の投稿だったか」を調べたいときも、アノテーションを開けば投稿者・元 URL・日時を一目で確認できます。
 - **Eagle のセマンティック検索と相性◎** — 最近の Eagle はアノテーションに対するセマンティック検索に対応しているため、取得した本文や Alt テキストを自然言語で検索できます。
 
-## 仕組み
-
-1. コンテンツスクリプトが画像の `dragstart` イベントを監視
-2. 親の投稿要素からメタデータを抽出
-3. バックグラウンドスクリプトが Eagle API (`localhost:41595`) をポーリングして新規保存アイテムを検出
-4. URL でアイテムを照合し、アノテーション欄にメタデータを書き込み
-
-ポーリングはドラッグ操作の後最大 30 秒のみ動作し、常時 API を叩くことはありません。
-
 ## インストール
 
 Chrome ウェブストアでの公開を準備中です。公開後はウェブストアからインストールし、[Eagle](https://jp.eagle.cool/) デスクトップアプリと [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張も併せて導入してください。
-
-## ファイル構成
-
-```
-manifest.json       Manifest V3
-content.js          dragstart イベントのリスナー + メタデータ抽出
-background.js       Eagle API ポーリング + アイテム更新 + X Syndication API
-page-context.js     X: ページコンテキストの React fiber からユーザー ID を抽出
-icons/              アイコン
-```
-
-## 制限事項
-
-- [Eagle REST API](https://api.eagle.cool/) の `/api/item/update` はアイテムのリネームに対応していないため、タイトル情報はアノテーションの 1 行目に配置しています
-- 既存のタグ整理を壊さないよう、タグの書き込みは意図的に行っていません
 
 ## 免責事項
 
