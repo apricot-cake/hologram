@@ -4,7 +4,7 @@
 
 > Chrome Web Store review pending.
 
-A Chrome extension that captures SNS posts as JPEG images with searchable EXIF metadata. Saved posts can be browsed, searched, filtered, tagged, and exported from a built-in viewer.
+A Chrome extension that captures SNS posts and lets you browse, search, and tag them later from a built-in viewer.
 
 ## Usage
 
@@ -31,54 +31,13 @@ Open the viewer with `Alt+V` (or right-click the icon > Options) to browse, sear
 - Tag and bulk-delete posts from the built-in viewer
 - Export everything as a ZIP or a single HTML file you can open offline
 
-## File Structure
+## Your Data, Your Files
 
-```
-Downloads/Post Snap/
-  images/
-    2026-04-04.jpg       <- JPEG with EXIF metadata
-    2026-04-04 (1).jpg
-```
+Saved posts live in the viewer, but every capture is also written to your `Downloads/Post Snap/` folder as a JPEG with the post info embedded in the file. That means:
 
-Images saved to the download folder serve as a backup. Even if the extension is removed, you can restore data by importing the image files.
-
-## EXIF Metadata
-
-Post metadata is stored as JSON in the EXIF XPComment field. This is readable in Explorer's file properties (Details tab > Comment).
-
-| EXIF field | Content |
-|---|---|
-| XPComment | JSON with post URL, platform, text, user info, engagement counts, date |
-| DateTimeOriginal | Post publish date |
-| Software | Extension name, version, and build hash |
-
-XPComment JSON example:
-```json
-{
-  "url": "https://x.com/user/status/123",
-  "platform": "x",
-  "text": "Post text",
-  "displayName": "User",
-  "screenName": "user",
-  "userId": "123456",
-  "likes": 783,
-  "reposts": 72,
-  "replies": 4,
-  "bookmarks": 128,
-  "date": "2026-04-05T12:34:56Z"
-}
-```
-
-> **Note:** "Date taken" shows the **post publish date**, not when the screenshot was captured.
-
-### EXIF data may be lost
-
-EXIF metadata can be stripped in certain situations:
-
-- Editing and re-saving with image editors (Paint, Photoshop, etc.)
-- Re-uploading to social media platforms
-- Image conversion by some cloud storage services
-- Editing with Windows Photos app
+- You always have a copy on disk, outside the browser
+- If you uninstall the extension or move to another machine, you can drop the images back in to restore everything
+- The JPEGs work in any image viewer — Post Snap is just a nicer way to look at them
 
 ## Keyboard Shortcuts
 
