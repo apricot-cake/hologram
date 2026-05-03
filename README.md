@@ -36,7 +36,7 @@ UID は X なら数値 ID、Bluesky なら DID、pixiv ならユーザー ID。I
 
 ## 必要なもの
 
-- [Eagle](https://jp.eagle.cool/) デスクトップアプリ (起動しておくこと)
+- [Eagle](https://jp.eagle.cool/) デスクトップアプリ
 - [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張
 
 ## 入れ方
