@@ -1,53 +1,60 @@
 # Eagle Info+
 
-**English** | [日本語](README.ja.md)
+[Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) で保存した画像に SNS 投稿のメタデータを自動付与する自分用 Chrome 拡張。
 
-A companion extension for [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) that automatically enriches saved images with SNS post metadata.
+## 構成
 
-When you save an image through the official extension, this extension writes author info, post details, and other metadata into Eagle's annotation field.
+- `manifest.json` — MV3。content script は X / Bluesky のみ
+- `content.js` — `dragstart` で投稿パーマリンクと画像 URL を抽出して background へ送るだけ
+- `background.js` — Syndication API / getPostThread API を叩いて annotation を組み立て、Eagle ローカル API (`localhost:41595`) をポーリングして該当アイテムに付与
 
-## Requirements
+DOM スクレイピングは最小限 (パーマリンクアンカー検出のみ)。表示名・本文・UID 等は全てプラットフォーム公式 API から取得する。
 
-- [Eagle](https://en.eagle.cool/) desktop app (must be running)
-- [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) browser extension
+## 対応プラットフォーム
 
-## Supported Platforms
+- X (Twitter) — `https://cdn.syndication.twimg.com/tweet-result?id=<id>&token=0`
+- Bluesky — `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=at://<handle>/app.bsky.feed.post/<rkey>&depth=0`
+- pixiv — `https://www.pixiv.net/ajax/illust/<id>` (公式サイト frontend が叩く非ドキュメントだが安定。`credentials: 'include'` でログイン中なら R-18 もアクセス可)
 
-- X (Twitter)
-- Bluesky
-- [misskey.io](https://misskey.io/)
-
-## Captured Data
-
-The following fields are written to the Eagle annotation field:
+## annotation フォーマット
 
 ```
-@username - Post text here
+@username - 投稿本文先頭
 
 Platform: X (Twitter)
-Display Name: Display Name
+Display Name: 表示名
 Author: @username
-UID: 1234567890
+UID: 1234567890                  # X は numeric id_str / Bluesky は did:plc:...
 Post ID: 2040000000000000000
-Image: 1/3
+Image: 1/3                        # 複数画像時のみ
 Published: 2026-04-04T12:00:00.000Z
 Hashtags: #illustration #fanart
-Alt: Image description set by the poster
-Text: Post text here
+Alt: 投稿者が設定した画像の説明
+Text: 投稿本文
 ```
 
-UID is the X numeric ID or Bluesky DID. Image shows the index when a post contains multiple images (e.g. 1/3).
+## インストール (ローカル開発)
 
-## Use Cases
+1. `chrome://extensions/` でデベロッパーモード ON
+2. 「パッケージ化されていない拡張機能を読み込む」→ このフォルダ選択
+3. コード変更後はカードの ↻ で再読み込み
 
-- **Find posts by author** — Eagle's search lets you filter saved images by `@screenName` or display name once metadata is written into the annotation field.
-- **Reverse lookup** — When you want to know who posted an image you saved earlier, the annotation gives you the original poster, post URL, and timestamp at a glance.
-- **Works with Eagle's semantic search** — Recent versions of Eagle support semantic search over annotations, so the captured post text and alt text become searchable in natural language.
+## 動作要件
 
-## Installation
+- [Eagle](https://jp.eagle.cool/) デスクトップアプリ起動中
+- [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張インストール済み
 
-Chrome Web Store listing is in preparation. Once published, install from the Web Store and make sure the [Eagle](https://en.eagle.cool/) desktop app and [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) extension are also installed.
+## デバッグ
 
-## Disclaimer
+- background のログ: `chrome://extensions/` → Eagle Info+ → **service worker** リンクで DevTools
+- 詳細ログ: `background.js` と `content.js` の `DEBUG = false` を `true` に
+- API リクエスト確認: service worker DevTools の Network タブ (フィルタ `cdn` で X / `bsky` で Bluesky / `pixiv` で pixiv)
+- Eagle 側の保存結果: `<library>/images/<itemId>.info/metadata.json` を直接読む
 
-This is an unofficial third-party extension. It is not affiliated with, endorsed by, or owned by the developers of Eagle. "Eagle" and "Eagle for Chrome" are trademarks of their respective owners.
+## テスト
+
+[test-matrix.md](test-matrix.md) 参照。
+
+## TODO
+
+[CLAUDE.md](CLAUDE.md) 参照。

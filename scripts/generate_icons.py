@@ -1,4 +1,4 @@
-"""Generate Eagle Info+ icons: Eagle-blue gradient ring (post-snap style)."""
+"""Generate Eagle Info+ icons: Eagle-blue gradient ring."""
 from PIL import Image
 import math
 import os

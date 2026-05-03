@@ -7,7 +7,8 @@
   "host_permissions": [
     "http://localhost:41595/*",
     "https://public.api.bsky.app/*",
-    "https://cdn.syndication.twimg.com/*"
+    "https://cdn.syndication.twimg.com/*",
+    "https://www.pixiv.net/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,19 +19,10 @@
         "https://x.com/*",
         "https://twitter.com/*",
         "https://bsky.app/*",
-        "https://misskey.io/*"
+        "https://www.pixiv.net/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://x.com/*",
-        "https://twitter.com/*"
-      ],
-      "js": ["page-context.js"],
-      "run_at": "document_idle",
-      "world": "MAIN"
     }
   ],
   "icons": {
