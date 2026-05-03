@@ -1,16 +1,16 @@
 # Eagle Info+
 
-[Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) と併用して、ドラッグ保存した画像に **SNS 投稿のメタデータを自動付与** する Chrome 拡張です。投稿者・投稿本文・ハッシュタグ・公開日時・代替テキスト等を [Eagle](https://jp.eagle.cool/) のアノテーション欄に書き込みます。
+[Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) でドラッグ保存した画像に、SNS の投稿者情報や本文を [Eagle](https://jp.eagle.cool/) のアノテーション欄に書き込む拡張です。
 
-## 対応プラットフォーム
+## 対応サイト
 
 - X (Twitter)
 - Bluesky
-- pixiv (R-18 含む / ログイン中)
+- pixiv (ログイン中なら R-18 も)
 
-## 取得できる情報
+## 書き込まれる内容
 
-Eagle のアノテーション欄に下記が書き込まれます (取得できた項目のみ):
+取れた項目だけ追記します。例:
 
 ```
 @username - 投稿本文先頭
@@ -18,41 +18,41 @@ Eagle のアノテーション欄に下記が書き込まれます (取得でき
 Platform: X (Twitter)
 Display Name: 表示名
 Author: @username
-UID: 1234567890                  # X は数値 id_str / Bluesky は did:plc:... / pixiv は user id
+UID: 1234567890
 Post ID: 2040000000000000000
-Image: 1/3                        # 複数画像時のみ
+Image: 1/3
 Published: 2026-04-04T12:00:00.000Z
 Hashtags: #illustration #fanart
 Alt: 投稿者が設定した画像の説明
 Text: 投稿本文
-Description: pixiv のキャプション (pixiv のみ)
+Description: pixiv のキャプション
 ```
 
-## 活用例
+UID は X なら数値 ID、Bluesky なら DID、pixiv ならユーザー ID。Image は複数画像投稿のときだけ付きます。
 
-- **投稿者で検索** — Eagle の検索で `@screenName` や表示名を絞り込めば、保存済み画像から特定の投稿者の作品をまとめて閲覧できます
-- **逆引き** — 後から「この画像は誰の投稿か」を調べたい時、アノテーションに投稿者・元 URL・公開日時が残っています
-- **Eagle のセマンティック検索と相性◎** — 取得した本文・Alt テキストを自然言語で横断検索できます
+## こんなときに便利
 
-## 動作要件
+Eagle の検索で `@screenName` を入れれば、保存済み画像から特定の投稿者の作品だけ抜き出せます。後から「この画像どこで拾ったっけ」となったとき、アノテーションを見れば投稿者と元 URL がそのまま残っています。最近の Eagle はアノテーションのセマンティック検索に対応しているので、本文や Alt テキストを自然言語で検索できるのもおすすめポイント。
 
-- [Eagle](https://jp.eagle.cool/) デスクトップアプリ (起動している必要あり)
+## 必要なもの
+
+- [Eagle](https://jp.eagle.cool/) デスクトップアプリ (起動しておくこと)
 - [Eagle for Chrome](https://chromewebstore.google.com/detail/eagle-for-chrome/lieogkinebikhdchceieedcigeafdkid) 拡張
 
-## インストール
+## 入れ方
 
-Chrome ウェブストアでは未公開です。ローカルで読み込んで使用してください:
+ウェブストアには出していません。ローカルで読み込んでください。
 
 1. このリポジトリを clone またはダウンロード
 2. `chrome://extensions/` を開いてデベロッパーモードを ON
-3. 「パッケージ化されていない拡張機能を読み込む」→ このフォルダを選択
+3. 「パッケージ化されていない拡張機能を読み込む」でこのフォルダを選択
 
 ## 仕組み
 
-ドラッグした画像から投稿パーマリンク URL を取得し、各プラットフォームの公開系 API から投稿メタデータを取得 → Eagle ローカル API (`localhost:41595`) 経由で保存済みアイテムにアノテーションを追記します。DOM スクレイピングは投稿 ID 抽出の最小限のみで、サイトのレイアウト変更に強い設計です。
+ドラッグした画像から投稿パーマリンクの URL を拾って、各サイトの公開系 API で投稿の詳細を取得し、Eagle のローカル API (`localhost:41595`) に保存済みのアイテムを探してアノテーションを書き加えます。DOM の読み取りは投稿 ID を取るところだけで、サイトのレイアウトが変わってもあまり壊れません。
 
-## 免責事項
+## 免責
 
-本拡張は非公式の第三者製です。Eagle の開発元との提携・承認・所有関係はありません。「Eagle」「Eagle for Chrome」は各権利者の商標です。
+非公式の個人製拡張です。Eagle の開発元とは無関係。「Eagle」「Eagle for Chrome」は各権利者の商標です。
 
-各プラットフォームの API 利用は利用規約の範囲内で個人のメタデータ整理用途を想定しています。スクレイピング・大量取得用途には使用しないでください。
+各サイトの API は個人のメタデータ整理用途を想定して使っています。クロール用途や大量取得には使わないでください。
