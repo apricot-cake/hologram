@@ -109,13 +109,13 @@ async function fetchPixivIllust({ postId }) {
 function buildMetadata(platform, identity, post, imageUrls) {
   const fields = post
     ? extractFields(platform, identity, post, imageUrls)
-    : { screenName: identity.screenName, postId: identity.postId };
+    : { screenName: identity.screenName };
 
   return {
-    title: buildTitle(fields.screenName, fields.postText),
     link: identity.link,
     annotation: buildAnnotation({
       platform: platformLabel(platform),
+      isPixiv: platform === 'pixiv',
       ...fields
     })
   };
@@ -136,8 +136,6 @@ function extractXFields(identity, data, imageUrls) {
   const user = data.user || {};
   const screenName = user.screen_name || identity.screenName || null;
   const displayName = user.name || null;
-  const uid = user.id_str && /^\d+$/.test(user.id_str) ? user.id_str : null;
-  const publishedAt = data.created_at || null;
   const rawText = data.text || '';
   const postText = rawText.replace(/https?:\/\/t\.co\/\S+/g, '').trim();
   const hashtags = (data.entities?.hashtags || []).map((h) => `#${h.text}`);
@@ -156,9 +154,6 @@ function extractXFields(identity, data, imageUrls) {
   return {
     screenName,
     displayName,
-    uid,
-    postId: identity.postId,
-    publishedAt,
     postText,
     hashtags,
     altText,
@@ -185,8 +180,6 @@ function extractBlueskyFields(identity, post, imageUrls) {
   const record = post?.record || {};
   const screenName = author.handle || identity.screenName || null;
   const displayName = author.displayName || null;
-  const uid = author.did || null;
-  const publishedAt = record.createdAt || null;
   const postText = record.text || '';
   const hashtags = (record.facets || [])
     .flatMap((f) => f.features || [])
@@ -203,9 +196,6 @@ function extractBlueskyFields(identity, post, imageUrls) {
   return {
     screenName,
     displayName,
-    uid,
-    postId: identity.postId,
-    publishedAt,
     postText,
     hashtags,
     altText,
@@ -230,14 +220,10 @@ function findBlueskyImageIndex(images, imageUrls) {
 }
 
 function extractPixivFields(identity, illust, imageUrls) {
-  const screenName = illust.userAccount || null;
+  const screenName = illust.userId || null;
   const displayName = illust.userName || null;
-  const uid = illust.userId || null;
-  const publishedAt = illust.uploadDate || illust.createDate || null;
   const postText = illust.illustTitle || '';
-  const description = stripHtml(illust.illustComment || '');
   const hashtags = (illust.tags?.tags || []).map((t) => `#${t.tag}`);
-  const altText = illust.alt || null;
   const total = illust.pageCount || 0;
   const matchedIdx = findPixivImageIndex(imageUrls);
   const imageIndex = total > 1 && matchedIdx != null
@@ -247,13 +233,8 @@ function extractPixivFields(identity, illust, imageUrls) {
   return {
     screenName,
     displayName,
-    uid,
-    postId: identity.postId,
-    publishedAt,
     postText,
-    description,
     hashtags,
-    altText,
     imageIndex
   };
 }
@@ -267,43 +248,21 @@ function findPixivImageIndex(imageUrls) {
   return null;
 }
 
-function stripHtml(html) {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .trim();
-}
-
 // === annotation 文字列構築 ===
 
-function buildTitle(screenName, postText) {
-  const maxLen = 60;
-  const name = screenName ? `@${screenName}` : '';
-  const text = postText ? truncate(postText, maxLen) : '';
-  if (name && text) return `${name} - ${text}`;
-  if (name) return name;
-  if (text) return text;
-  return null;
-}
-
-function buildAnnotation({ platform, screenName, displayName, uid, postId, publishedAt, postText, description, hashtags, altText, imageIndex }) {
+function buildAnnotation({ platform, isPixiv, screenName, displayName, postText, hashtags, altText, imageIndex }) {
   const lines = [];
   if (platform) lines.push(`Platform: ${sanitize(platform)}`);
   if (displayName) lines.push(`Display Name: ${sanitize(displayName)}`);
   if (screenName) lines.push(`Author: @${sanitize(screenName)}`);
-  if (uid) lines.push(`UID: ${sanitize(uid)}`);
-  if (postId) lines.push(`Post ID: ${sanitize(postId)}`);
   if (imageIndex) lines.push(`Image: ${sanitize(imageIndex)}`);
-  if (publishedAt) lines.push(`Published: ${sanitize(publishedAt)}`);
   if (hashtags?.length) lines.push(`Hashtags: ${hashtags.map(sanitize).join(' ')}`);
-  if (altText && altText !== '画像' && altText !== 'Image') lines.push(`Alt: ${truncate(sanitize(altText), 200)}`);
-  if (postText) lines.push(`Text: ${truncate(sanitize(postText), 200)}`);
-  if (description) lines.push(`Description: ${truncate(sanitize(description), 200)}`);
+  if (!isPixiv && altText && altText !== '画像' && altText !== 'Image') {
+    lines.push(`Alt: ${truncate(sanitize(altText), 200)}`);
+  }
+  if (postText) {
+    lines.push(`${isPixiv ? 'Title' : 'Text'}: ${truncate(sanitize(postText), 200)}`);
+  }
   return lines.length ? lines.join('\n') : null;
 }
 
@@ -354,12 +313,11 @@ async function poll() {
       pendingDrag = null;
       stopPolling();
 
-      // Eagle REST API は name の更新をサポートしないため、タイトルは annotation 先頭に含める
-      const annotation = metadata.title
-        ? metadata.title + '\n\n' + (metadata.annotation || '')
-        : metadata.annotation;
-      await updateItemMetadata(itemId, { annotation, link: metadata.link });
-      log('Updated item:', itemId, metadata.title);
+      await updateItemMetadata(itemId, {
+        annotation: metadata.annotation,
+        link: metadata.link
+      });
+      log('Updated item:', itemId);
       return;
     }
   } catch (e) {

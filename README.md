@@ -10,25 +10,19 @@
 
 ## 書き込まれる内容
 
-取れた項目だけ追記します。例:
+取れた項目だけ追記します。例 (X / Bluesky):
 
 ```
-@username - 投稿本文先頭
-
 Platform: X (Twitter)
 Display Name: 表示名
 Author: @username
-UID: 1234567890
-Post ID: 2040000000000000000
 Image: 1/3
-Published: 2026-04-04T12:00:00.000Z
 Hashtags: #illustration #fanart
 Alt: 投稿者が設定した画像の説明
 Text: 投稿本文
-Description: pixiv のキャプション
 ```
 
-UID は X なら数値 ID、Bluesky なら DID、pixiv ならユーザー ID。Image は複数画像投稿のときだけ付きます。
+pixiv のときは `Text:` の代わりに `Title:` (作品タイトル) が入り、`Alt:` は出ません。Image は複数画像投稿のときだけ付きます。
 
 ## 使い道
 
