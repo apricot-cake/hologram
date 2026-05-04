@@ -162,6 +162,46 @@ test('query: filter + sort by likes desc', () => {
   }
 });
 
+test('query: likesPercentile sorts cross-platform by within-platform rank', () => {
+  const { dir, store } = mkstore();
+  try {
+    // X 3 件 (likes 100/50/10), pixiv 2 件 (likes 5000/100), Bluesky 1 件 (likes 30)
+    store.upsert('x-top', { platform: 'x', likes: 100 });
+    store.upsert('x-mid', { platform: 'x', likes: 50 });
+    store.upsert('x-bot', { platform: 'x', likes: 10 });
+    store.upsert('p-top', { platform: 'pixiv', likes: 5000 });
+    store.upsert('p-bot', { platform: 'pixiv', likes: 100 });
+    store.upsert('b-only', { platform: 'bluesky', likes: 30 });
+
+    const result = store.query({}, { field: 'likesPercentile', order: 'desc' });
+
+    // 各 platform の top が percentile 1.0 で先頭の 3 件 (順序は platform 間で不定なので集合比較)
+    const top3 = new Set(result.slice(0, 3).map(r => r.id));
+    assert.deepEqual(top3, new Set(['x-top', 'p-top', 'b-only']));
+
+    // 中位は X mid (X 内 percentile 0.5) と pixiv bot (pixiv 内 percentile 0.0) と...
+    // n=3 で X bot は最下 (0.0)、n=2 で pixiv bot も最下 (0.0)、n=1 で b-only は top (1.0)
+    // 順序確認: 上位 1.0, 1.0, 1.0, 中位 0.5 (x-mid), 下位 0.0 (x-bot, p-bot)
+    assert.equal(result[3].id, 'x-mid');
+    const last2 = new Set([result[4].id, result[5].id]);
+    assert.deepEqual(last2, new Set(['x-bot', 'p-bot']));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('query: likesPercentile with single item returns it', () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('only', { platform: 'x', likes: 42 });
+    const result = store.query({}, { field: 'likesPercentile' });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, 'only');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('query: missing numeric field treated as -Infinity in sort', () => {
   const { dir, store } = mkstore();
   try {

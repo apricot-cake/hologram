@@ -86,11 +86,30 @@ export class EngagementStore {
 
     if (sort) {
       const { field, order = 'desc' } = sort;
-      arr.sort((a, b) => {
-        const av = a[field] ?? -Infinity;
-        const bv = b[field] ?? -Infinity;
-        return order === 'desc' ? bv - av : av - bv;
-      });
+      if (field === 'likesPercentile') {
+        // platform 内で likes 順ランク → 0〜1 の percentile を全 platform 共通 score に。
+        // 各 platform の top が同じ高さで並ぶので、likes 数の絶対値が違う SNS を横断的に比較できる。
+        const groups = new Map();
+        for (const it of arr) {
+          const p = it.platform || '_';
+          if (!groups.has(p)) groups.set(p, []);
+          groups.get(p).push(it);
+        }
+        for (const g of groups.values()) {
+          g.sort((a, b) => (b.likes ?? -Infinity) - (a.likes ?? -Infinity));
+          const n = g.length;
+          g.forEach((it, i) => {
+            it._likesPercentile = n > 1 ? 1 - i / (n - 1) : 1;
+          });
+        }
+        arr.sort((a, b) => (order === 'desc' ? 1 : -1) * (b._likesPercentile - a._likesPercentile));
+      } else {
+        arr.sort((a, b) => {
+          const av = a[field] ?? -Infinity;
+          const bv = b[field] ?? -Infinity;
+          return order === 'desc' ? bv - av : av - bv;
+        });
+      }
     }
     return arr;
   }
