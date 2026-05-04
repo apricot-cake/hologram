@@ -60,7 +60,7 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 | Status | 意味 | リトライ |
 |---|---|---|
 | `synced` | SNS API から engagement (likes 等) を取得済み。**Engagement Browser の主用途** | 再フェッチで最新化可 |
-| `parsed` (waiting fetch) | Info+ の annotation を parse できたが engagement 未取得。Sync 直後の中間状態 | Fetch engagement で `synced` に昇格 |
+| `parsed` | Info+ の annotation を parse できたが engagement 未取得。Sync 直後の中間状態 | Fetch engagement で `synced` に昇格 |
 | `error` | SNS API が想定外エラー (5xx / ネットワーク / JSON parse 失敗 等) を返した | retry で復活する可能性あり。`errorMessage` がカードの tooltip に出る |
 | `deleted` | SNS 側で投稿削除済み (404 等)。最終フェッチ時の engagement は **温存される** (historical snapshot として参照可能) | retry しても無駄 |
 | `private` | アクセス権なし (X 鍵垢の 401/403、pixiv R-18 ログアウト時の error body 等) | ログイン直せば retry で復活可能 |
