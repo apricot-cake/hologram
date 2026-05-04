@@ -35,6 +35,7 @@
   <h2 style="font-size: 14px; margin-top: 24px;">Sync</h2>
   <div class="row">
     <button id="sync-btn" style="padding: 6px 12px; cursor: pointer;">Sync from Eagle</button>
+    <button id="engagement-btn" style="padding: 6px 12px; cursor: pointer; margin-left: 8px;">Fetch engagement</button>
     <span id="sync-status" style="margin-left: 12px; color: #888;"></span>
   </div>
   <pre id="sync-stats" style="margin-top: 12px;">(未同期)</pre>
@@ -124,7 +125,31 @@
         }
       };
 
+      const runEngagement = async () => {
+        if (!store) return;
+        const btn = document.getElementById('engagement-btn');
+        const status = document.getElementById('sync-status');
+        btn.disabled = true;
+        status.textContent = 'fetching engagement…';
+        try {
+          const { syncEngagement } = await import('../shared/sync-engagement.js');
+          const result = await syncEngagement({
+            store,
+            fetch: window.fetch.bind(window),
+            log: (msg) => console.log('[engagement]', msg)
+          });
+          status.textContent = `engagement: ${result.okCount} ok, ${result.errCount} err, ${result.skipCount} skip (${result.elapsedMs}ms)`;
+          renderStats();
+        } catch (e) {
+          status.textContent = 'error: ' + e.message;
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
       document.getElementById('sync-btn').addEventListener('click', runSync);
+      document.getElementById('engagement-btn').addEventListener('click', runEngagement);
 
       eagle.onPluginCreate(async (plugin) => {
         let libraryPath = '(unknown)';
