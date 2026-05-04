@@ -4,96 +4,196 @@
   <meta charset="utf-8">
   <title>Engagement Browser</title>
   <style>
+    :root {
+      --bg: #1e1e1e;
+      --bg2: #2a2a2a;
+      --fg: #e0e0e0;
+      --muted: #888;
+      --accent: #4a9eff;
+      --border: #3a3a3a;
+    }
+    * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 0;
-      padding: 24px;
-      background: #1e1e1e;
-      color: #e0e0e0;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 13px;
     }
-    h1 { margin-top: 0; font-size: 18px; }
-    pre {
-      background: #2a2a2a;
-      padding: 12px;
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #252525;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .toolbar button {
+      padding: 6px 12px;
+      background: var(--bg2);
+      color: var(--fg);
+      border: 1px solid var(--border);
       border-radius: 4px;
-      overflow: auto;
+      cursor: pointer;
       font-size: 12px;
-      line-height: 1.5;
     }
-    .row { margin: 8px 0; }
-    .label { color: #888; display: inline-block; width: 160px; }
+    .toolbar button:hover { background: #333; }
+    .toolbar button:disabled { opacity: 0.5; cursor: default; }
+    .toolbar .status { color: var(--muted); margin-left: auto; font-size: 12px; }
+
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #222;
+      flex-wrap: wrap;
+    }
+    .filters label { color: var(--muted); font-size: 12px; }
+    .filters select, .filters input {
+      background: var(--bg2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    .filters input[type=number] { width: 80px; }
+    .filters .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+      padding: 16px;
+    }
+    .card {
+      position: relative;
+      aspect-ratio: 1;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.05s, border-color 0.1s;
+    }
+    .card:hover { border-color: var(--accent); transform: scale(1.02); }
+    .card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .card .badges {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      right: 6px;
+      display: flex;
+      gap: 4px;
+      pointer-events: none;
+    }
+    .badge {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge.x { background: rgba(0, 0, 0, 0.85); }
+    .badge.bluesky { background: rgba(0, 133, 255, 0.85); }
+    .badge.pixiv { background: rgba(0, 150, 250, 0.85); }
+    .card .stats {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 8px;
+      background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+      color: #fff;
+      font-size: 11px;
+      pointer-events: none;
+    }
+    .card .stats .author {
+      color: #ccc;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card .stats .nums {
+      display: flex;
+      gap: 8px;
+    }
+    .card .stats .nums .n { font-weight: 600; }
+
+    .empty {
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .footer {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      background: #222;
+      color: var(--muted);
+      font-size: 11px;
+      display: flex;
+      gap: 16px;
+    }
   </style>
 </head>
 <body>
-  <h1>Engagement Browser — Hello World</h1>
-
-  <div class="row"><span class="label">eagle global:</span><span id="eagle-available"></span></div>
-  <div class="row"><span class="label">Library path:</span><span id="library-path"></span></div>
-  <div class="row"><span class="label">Item count:</span><span id="item-count"></span></div>
-  <div class="row"><span class="label">Plugin info:</span><span id="plugin-info"></span></div>
-
-  <h2 style="font-size: 14px; margin-top: 24px;">Sync</h2>
-  <div class="row">
-    <button id="sync-btn" style="padding: 6px 12px; cursor: pointer;">Sync from Eagle</button>
-    <button id="engagement-btn" style="padding: 6px 12px; cursor: pointer; margin-left: 8px;">Fetch engagement</button>
-    <span id="sync-status" style="margin-left: 12px; color: #888;"></span>
+  <div class="toolbar">
+    <button id="sync-btn">Sync from Eagle</button>
+    <button id="engagement-btn">Fetch engagement</button>
+    <span class="status" id="status"></span>
   </div>
-  <pre id="sync-stats" style="margin-top: 12px;">(未同期)</pre>
 
-  <h2 style="font-size: 14px; margin-top: 24px;">Sample item</h2>
-  <pre id="sample-item">loading…</pre>
+  <div class="filters">
+    <label>Platform <select id="filter-platform">
+      <option value="">all</option>
+      <option value="x">X</option>
+      <option value="bluesky">Bluesky</option>
+      <option value="pixiv">pixiv</option>
+    </select></label>
+    <label>Min likes <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
+    <label>Min views <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
+    <label>Sort <select id="sort-field">
+      <option value="likes">Likes ↓</option>
+      <option value="views">Views ↓</option>
+      <option value="reposts">Reposts ↓</option>
+      <option value="bookmarks">Bookmarks ↓</option>
+      <option value="modifiedAt">Recently modified ↓</option>
+    </select></label>
+    <span class="count" id="result-count"></span>
+  </div>
+
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty" style="display: none;"></div>
+
+  <div class="footer">
+    <span id="library-path">—</span>
+    <span id="store-stats">—</span>
+  </div>
 
   <script>
-    const set = (id, value) => document.getElementById(id).textContent = value;
+    const $ = (id) => document.getElementById(id);
+    const setStatus = (text) => { $('status').textContent = text; };
+
+    let store = null;
 
     if (typeof eagle === 'undefined') {
-      set('eagle-available', '✗ eagle global not found');
+      setStatus('✗ eagle global not found');
     } else {
-      set('eagle-available', '✓ available');
-
-      const fmtItem = (item) => {
-        if (!item) return '(none)';
-        return [
-          `id:           ${item.id}`,
-          `name:         ${item.name}`,
-          `ext:          ${item.ext}`,
-          `url:          ${item.url}`,
-          `tags:         ${(item.tags || []).join(', ')}`,
-          `modifiedAt:   ${item.modifiedAt}`,
-          `importedAt:   ${item.importedAt}`,
-          ``,
-          `annotation:`,
-          item.annotation || '(none)'
-        ].join('\n');
-      };
-
-      let store = null;
-
-      const renderStats = () => {
-        if (!store) {
-          document.getElementById('sync-stats').textContent = '(未同期)';
-          return;
-        }
-        const items = Object.values(store.data.items);
-        const byPlatform = {};
-        const byStatus = {};
-        for (const it of items) {
-          byPlatform[it.platform || '(none)'] = (byPlatform[it.platform || '(none)'] || 0) + 1;
-          byStatus[it.status || '(none)'] = (byStatus[it.status || '(none)'] || 0) + 1;
-        }
-        const lines = [
-          `Total in store:  ${items.length}`,
-          `Last sync:       ${store.data.lastSync ? new Date(store.data.lastSync).toLocaleString() : '(never)'}`,
-          ``,
-          `By platform:`,
-          ...Object.entries(byPlatform).sort((a, b) => b[1] - a[1]).map(([k, v]) => `  ${k.padEnd(18)} ${v}`),
-          ``,
-          `By status:`,
-          ...Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([k, v]) => `  ${k.padEnd(18)} ${v}`)
-        ];
-        document.getElementById('sync-stats').textContent = lines.join('\n');
-      };
-
       const initStore = async (libraryPath) => {
         const fs = require('fs');
         const path = require('path');
@@ -102,23 +202,134 @@
         store.load();
       };
 
+      const renderFooter = () => {
+        if (!store) return;
+        const items = Object.values(store.data.items);
+        const synced = items.filter(it => it.status === 'synced').length;
+        const last = store.data.lastSync ? new Date(store.data.lastSync).toLocaleString() : 'never';
+        $('store-stats').textContent = `total ${items.length} | synced ${synced} | last ${last}`;
+      };
+
+      const fmtNum = (n) => {
+        if (n == null) return '—';
+        if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
+        return String(n);
+      };
+
+      const buildCard = (it) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.id = it.id;
+        card.title = it.text || it.title || it.name || '';
+
+        if (it.thumbnailURL) {
+          const img = document.createElement('img');
+          img.src = it.thumbnailURL;
+          img.loading = 'lazy';
+          img.alt = '';
+          card.appendChild(img);
+        }
+
+        const badges = document.createElement('div');
+        badges.className = 'badges';
+        if (it.platform) {
+          const b = document.createElement('span');
+          b.className = `badge ${it.platform}`;
+          b.textContent = it.platform;
+          badges.appendChild(b);
+        }
+        card.appendChild(badges);
+
+        const stats = document.createElement('div');
+        stats.className = 'stats';
+
+        const author = document.createElement('div');
+        author.className = 'author';
+        author.textContent = it.displayName
+          ? `${it.displayName} (@${it.author || ''})`
+          : (it.author ? `@${it.author}` : '');
+        stats.appendChild(author);
+
+        const nums = document.createElement('div');
+        nums.className = 'nums';
+        const numEntries = [];
+        if (it.likes != null) numEntries.push(`♥ ${fmtNum(it.likes)}`);
+        if (it.views != null) numEntries.push(`👁 ${fmtNum(it.views)}`);
+        if (it.reposts != null) numEntries.push(`⇄ ${fmtNum(it.reposts)}`);
+        if (it.bookmarks != null) numEntries.push(`★ ${fmtNum(it.bookmarks)}`);
+        for (const text of numEntries) {
+          const n = document.createElement('span');
+          n.className = 'n';
+          n.textContent = text;
+          nums.appendChild(n);
+        }
+        stats.appendChild(nums);
+        card.appendChild(stats);
+
+        return card;
+      };
+
+      const renderGrid = () => {
+        if (!store) return;
+        const filters = {
+          platform: $('filter-platform').value || undefined,
+          minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined,
+          minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined,
+          status: 'synced'
+        };
+        const sort = { field: $('sort-field').value, order: 'desc' };
+
+        const results = store.query(filters, sort);
+        $('result-count').textContent = `${results.length} items`;
+
+        const grid = $('grid');
+        const empty = $('empty');
+        grid.replaceChildren();
+
+        if (results.length === 0) {
+          empty.style.display = 'block';
+          empty.textContent = store.data.lastSync
+            ? '条件に合うアイテムがありません。フィルタを緩めるか Fetch engagement を実行してください。'
+            : 'Eagle にアイテムがありません。Sync from Eagle を押してください。';
+          return;
+        }
+        empty.style.display = 'none';
+
+        const frag = document.createDocumentFragment();
+        for (const it of results) frag.appendChild(buildCard(it));
+        grid.appendChild(frag);
+      };
+
+      const onCardClick = async (e) => {
+        const card = e.target.closest('.card');
+        if (!card) return;
+        const id = card.dataset.id;
+        if (!id) return;
+        try {
+          await eagle.item.select([id]);
+          await eagle.window.show();
+        } catch (err) {
+          console.error('select/show failed:', err);
+        }
+      };
+
       const runSync = async () => {
         if (!store) return;
-        const btn = document.getElementById('sync-btn');
-        const status = document.getElementById('sync-status');
+        const btn = $('sync-btn');
         btn.disabled = true;
-        status.textContent = 'syncing…';
+        setStatus('syncing…');
         try {
           const { syncFromEagle } = await import('../shared/sync-eagle.js');
-          const result = await syncFromEagle({
+          const r = await syncFromEagle({
             eagleItem: eagle.item,
             store,
             log: (msg) => console.log('[sync]', msg)
           });
-          status.textContent = `+${result.newCount} ~${result.changedCount} -${result.deletedCount} upserted=${result.upsertedCount} (${result.elapsedMs}ms)`;
-          renderStats();
+          setStatus(`sync: +${r.newCount} ~${r.changedCount} -${r.deletedCount} upserted=${r.upsertedCount} (${r.elapsedMs}ms)`);
+          renderFooter();
+          renderGrid();
         } catch (e) {
-          status.textContent = 'error: ' + e.message;
+          setStatus('sync error: ' + e.message);
           console.error(e);
         } finally {
           btn.disabled = false;
@@ -127,87 +338,45 @@
 
       const runEngagement = async () => {
         if (!store) return;
-        const btn = document.getElementById('engagement-btn');
-        const status = document.getElementById('sync-status');
+        const btn = $('engagement-btn');
         btn.disabled = true;
-        status.textContent = 'fetching engagement…';
+        setStatus('fetching engagement…');
         try {
           const { syncEngagement } = await import('../shared/sync-engagement.js');
-          const result = await syncEngagement({
+          const r = await syncEngagement({
             store,
             fetch: window.fetch.bind(window),
             log: (msg) => console.log('[engagement]', msg)
           });
-          status.textContent = `engagement: ${result.okCount} ok, ${result.errCount} err, ${result.skipCount} skip (${result.elapsedMs}ms)`;
-          renderStats();
+          setStatus(`engagement: ${r.okCount} ok / ${r.errCount} err / ${r.skipCount} skip (${r.elapsedMs}ms)`);
+          renderFooter();
+          renderGrid();
         } catch (e) {
-          status.textContent = 'error: ' + e.message;
+          setStatus('engagement error: ' + e.message);
           console.error(e);
         } finally {
           btn.disabled = false;
         }
       };
 
-      document.getElementById('sync-btn').addEventListener('click', runSync);
-      document.getElementById('engagement-btn').addEventListener('click', runEngagement);
+      $('sync-btn').addEventListener('click', runSync);
+      $('engagement-btn').addEventListener('click', runEngagement);
+      $('grid').addEventListener('click', onCardClick);
+      ['filter-platform', 'filter-min-likes', 'filter-min-views', 'sort-field']
+        .forEach(id => $(id).addEventListener('input', renderGrid));
 
       eagle.onPluginCreate(async (plugin) => {
-        let libraryPath = '(unknown)';
         try {
           const lib = await eagle.library.info();
-          libraryPath = lib?.path || '(unknown)';
-          set('library-path', libraryPath);
+          $('library-path').textContent = lib?.path || '(unknown)';
+          await initStore(lib.path);
+          renderFooter();
+          renderGrid();
+          setStatus('ready');
         } catch (e) {
-          set('library-path', 'error: ' + e.message);
+          setStatus('init error: ' + e.message);
+          console.error(e);
         }
-
-        if (libraryPath !== '(unknown)') {
-          try {
-            await initStore(libraryPath);
-            renderStats();
-          } catch (e) {
-            document.getElementById('sync-stats').textContent = 'store init failed: ' + e.message;
-            console.error(e);
-          }
-        }
-
-        try {
-          const total = await eagle.item.countAll();
-          set('item-count', String(total));
-        } catch (e) {
-          set('item-count', 'error: ' + e.message);
-        }
-
-        try {
-          const selected = await eagle.item.getSelected();
-          document.getElementById('sample-item').textContent = selected?.length
-            ? `Selected: ${selected.length}\n\n${fmtItem(selected[0])}`
-            : '(Eagle 側でアイテムを選択するとここに表示されます)';
-        } catch (e) {
-          document.getElementById('sample-item').textContent = 'error: ' + e.message;
-        }
-
-        try {
-          set('plugin-info', JSON.stringify({
-            name: plugin?.manifest?.name,
-            version: plugin?.manifest?.version,
-            appVersion: eagle.app?.version,
-            locale: eagle.app?.locale
-          }));
-        } catch (e) {
-          set('plugin-info', 'error: ' + e.message);
-        }
-
-        eagle.onPluginShow?.(async () => {
-          try {
-            const selected = await eagle.item.getSelected();
-            document.getElementById('sample-item').textContent = selected?.length
-              ? `Selected: ${selected.length}\n\n${fmtItem(selected[0])}`
-              : '(Eagle 側でアイテムを選択するとここに表示されます)';
-          } catch (e) {
-            document.getElementById('sample-item').textContent = 'error: ' + e.message;
-          }
-        });
       });
     }
   </script>

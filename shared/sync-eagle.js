@@ -51,6 +51,10 @@ function buildRecord(item, parsed) {
   return {
     modifiedAt: item.modifiedAt,
     url: item.url || null,
+    // UI 表示用 (Eagle Item から直接)
+    name: item.name || null,
+    thumbnailURL: item.thumbnailURL || null,
+    ext: item.ext || null,
     // annotation 由来 (人間情報)
     platform: parsed?.platform || null,
     platformLabel: parsed?.platformLabel || null,
