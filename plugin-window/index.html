@@ -66,6 +66,46 @@
     .filters input[type=number] { width: 80px; }
     .filters .count { margin-left: auto; color: var(--muted); font-size: 12px; }
 
+    .filters .with-info { position: relative; }
+    .info-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0 2px;
+      margin-left: 2px;
+    }
+    .info-btn:hover { color: var(--accent); }
+    .popover {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 20;
+      background: #2c2c2c;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      min-width: 480px;
+      max-width: 640px;
+    }
+    .popover[hidden] { display: none; }
+    .popover table {
+      border-collapse: collapse;
+      font-size: 12px;
+      width: 100%;
+    }
+    .popover th, .popover td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .popover th { color: var(--muted); font-weight: normal; font-size: 11px; }
+    .popover td:first-child { white-space: nowrap; color: var(--accent); }
+    .popover td:last-child { color: var(--muted); white-space: nowrap; font-size: 11px; }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -160,6 +200,7 @@
   <div class="toolbar">
     <button id="sync-btn">Sync from Eagle</button>
     <button id="engagement-btn">Fetch engagement</button>
+    <button id="cancel-btn" style="display: none;">Cancel</button>
     <span class="status" id="status"></span>
   </div>
 
@@ -170,14 +211,29 @@
       <option value="bluesky">Bluesky</option>
       <option value="pixiv">pixiv</option>
     </select></label>
-    <label>Status <select id="filter-status">
+    <label class="with-info">Status <select id="filter-status">
       <option value="synced">synced</option>
       <option value="parsed">parsed (waiting fetch)</option>
       <option value="error">error</option>
       <option value="deleted">deleted</option>
       <option value="private">private</option>
       <option value="no-annotation">no-annotation</option>
-    </select></label>
+    </select>
+    <button id="status-info-btn" type="button" class="info-btn" aria-label="What do these statuses mean?">ⓘ</button>
+    <div id="status-info-popover" class="popover" hidden>
+      <table>
+        <thead><tr><th>Status</th><th>Meaning</th><th>Retry</th></tr></thead>
+        <tbody>
+          <tr><td><b>synced</b></td><td>Engagement fetched from SNS API. Main view.</td><td>re-fetch refreshes</td></tr>
+          <tr><td><b>parsed</b></td><td>Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.</td><td>Fetch engagement promotes to synced</td></tr>
+          <tr><td><b>error</b></td><td>SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.</td><td>retry may recover</td></tr>
+          <tr><td><b>deleted</b></td><td>Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.</td><td>no point</td></tr>
+          <tr><td><b>private</b></td><td>Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).</td><td>fix login then retry</td></tr>
+          <tr><td><b>no-annotation</b></td><td>No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).</td><td>backfill (planned)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    </label>
     <label>Min likes <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
     <label>Min views <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
     <label>Sort <select id="sort-field">
@@ -358,19 +414,29 @@
         }
       };
 
+      let currentAbort = null;
+
       const runEngagement = async () => {
         if (!store) return;
         const btn = $('engagement-btn');
+        const cancelBtn = $('cancel-btn');
+        currentAbort = new AbortController();
         btn.disabled = true;
+        cancelBtn.style.display = '';
         setStatus('fetching engagement…');
         try {
           const { syncEngagement } = await import('../shared/sync-engagement.js');
           const r = await syncEngagement({
             store,
             fetch: window.fetch.bind(window),
+            signal: currentAbort.signal,
+            onProgress: ({ done, total }) => {
+              setStatus(`fetching engagement… ${done}/${total}`);
+            },
             log: (msg) => console.log('[engagement]', msg)
           });
-          setStatus(`engagement: ${r.okCount} ok / ${r.errCount} err / ${r.skipCount} skip (${r.elapsedMs}ms)`);
+          const tag = r.cancelled ? 'cancelled' : 'engagement';
+          setStatus(`${tag}: ${r.okCount} ok / ${r.errCount} err / ${r.skipCount} skip (${r.elapsedMs}ms)`);
           renderFooter();
           renderGrid();
         } catch (e) {
@@ -378,14 +444,34 @@
           console.error(e);
         } finally {
           btn.disabled = false;
+          cancelBtn.style.display = 'none';
+          currentAbort = null;
         }
+      };
+
+      const onCancel = () => {
+        if (currentAbort) currentAbort.abort();
       };
 
       $('sync-btn').addEventListener('click', runSync);
       $('engagement-btn').addEventListener('click', runEngagement);
+      $('cancel-btn').addEventListener('click', onCancel);
       $('grid').addEventListener('click', onCardClick);
       ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
         .forEach(id => $(id).addEventListener('input', renderGrid));
+
+      // Status info ポップオーバー
+      const infoBtn = $('status-info-btn');
+      const popover = $('status-info-popover');
+      infoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        popover.hidden = !popover.hidden;
+      });
+      document.addEventListener('click', (e) => {
+        if (!popover.hidden && !popover.contains(e.target) && e.target !== infoBtn) {
+          popover.hidden = true;
+        }
+      });
 
       eagle.onPluginCreate(async (plugin) => {
         try {

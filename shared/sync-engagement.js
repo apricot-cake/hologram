@@ -10,7 +10,7 @@ import {
   fetchPixivEngagement
 } from './sns-api-client.js';
 
-export async function syncEngagement({ store, fetch, log = () => {}, filter = {} }) {
+export async function syncEngagement({ store, fetch, log = () => {}, filter = {}, signal, onProgress } = {}) {
   const t0 = Date.now();
 
   // 対象: status='parsed' (annotation 解析済みで engagement 未取得) または 'synced' (再フェッチ)
@@ -26,8 +26,17 @@ export async function syncEngagement({ store, fetch, log = () => {}, filter = {}
   let okCount = 0;
   let errCount = 0;
   let skipCount = 0;
+  let cancelled = false;
 
-  for (const [id, record] of targets) {
+  for (let i = 0; i < targets.length; i++) {
+    if (signal?.aborted) {
+      cancelled = true;
+      break;
+    }
+
+    const [id, record] = targets[i];
+    onProgress?.({ done: i, total: targets.length, currentId: id });
+
     const parsed = parsePostUrl(record.url);
     if (!parsed) {
       skipCount++;
@@ -61,6 +70,8 @@ export async function syncEngagement({ store, fetch, log = () => {}, filter = {}
     }
   }
 
+  // 完了 (中断含む) で final progress を通知
+  onProgress?.({ done: okCount + errCount + skipCount, total: targets.length });
   store.save();
 
   return {
@@ -68,6 +79,7 @@ export async function syncEngagement({ store, fetch, log = () => {}, filter = {}
     okCount,
     errCount,
     skipCount,
+    cancelled,
     elapsedMs: Date.now() - t0
   };
 }

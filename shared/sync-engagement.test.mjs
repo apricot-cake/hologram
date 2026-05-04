@@ -121,6 +121,45 @@ test('syncEngagement: filter.platform restricts targets', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('syncEngagement: AbortSignal cancels mid-run, partial results saved', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 5; i++) {
+      store.upsert(`a${i}`, { status: 'parsed', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    const ac = new AbortController();
+    let calls = 0;
+    const fetch = async () => {
+      calls++;
+      if (calls === 2) ac.abort();
+      return mockJson({ favorite_count: calls * 10, conversation_count: 0 });
+    };
+    const r = await syncEngagement({ store, fetch, signal: ac.signal });
+    assert.equal(r.cancelled, true);
+    assert.ok(r.okCount >= 1 && r.okCount < 5, `partial okCount: ${r.okCount}`);
+    // 既に upsert された分は store に残ってる
+    assert.equal(store.get('a0').status, 'synced');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: onProgress is called per item', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/1' });
+    store.upsert('b', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/2' });
+    const events = [];
+    const fetch = async () => mockJson({ favorite_count: 1, conversation_count: 0 });
+    await syncEngagement({
+      store, fetch,
+      onProgress: (p) => events.push(p)
+    });
+    // 2 件処理 → done=0 (item a 直前), done=1 (item b 直前), done=2 (final)
+    assert.ok(events.length >= 2, `events count: ${events.length}`);
+    assert.equal(events[0].total, 2);
+    assert.equal(events[events.length - 1].done, 2);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('syncEngagement: unparseable URL → skip', async () => {
   const { dir, store } = mkstore();
   try {
