@@ -112,18 +112,33 @@
   // --- pixiv ---
   function pixivConfig() {
     const ARTWORK_PATH = /^\/(?:[a-z]+\/)?artworks\/(\d+)/;
+    // pximg URL のファイル名: <postId>_p<N>_<size>.<ext>
+    const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
     return {
       platform: 'pixiv',
       extractIdentity(img) {
-        // 1. 祖先 anchor から取得 (ユーザーページ・検索結果・推薦などから drag)
-        const link = img.closest('a[href*="/artworks/"]')
-          || findAncestorContainerLink(img, 'a[href*="/artworks/"]');
         let postId = null;
-        if (link) {
-          const parsed = parseUrlPath(link.href, ARTWORK_PATH);
-          if (parsed) postId = parsed.match[1];
+
+        // 1. 画像 URL から postId 抽出 (最優先)。
+        //    pximg URL には作品 ID が直接含まれてるので DOM 探索より確実。
+        //    ユーザーページ・検索結果でドラッグしても正しい作品を一意に特定できる。
+        for (const src of [img.src, img.currentSrc]) {
+          if (!src) continue;
+          const m = src.match(PXIMG_FILENAME);
+          if (m) { postId = m[1]; break; }
         }
-        // 2. それでも無ければ作品ページに居る前提で location.pathname から
+
+        // 2. 画像 URL に postId が無い場合のみ DOM を見る (data: URI 等の防御)
+        if (!postId) {
+          const link = img.closest('a[href*="/artworks/"]')
+            || findAncestorContainerLink(img, 'a[href*="/artworks/"]');
+          if (link) {
+            const parsed = parseUrlPath(link.href, ARTWORK_PATH);
+            if (parsed) postId = parsed.match[1];
+          }
+        }
+
+        // 3. それでも無ければ作品ページに居る前提で location.pathname から
         if (!postId) {
           const m = location.pathname.match(ARTWORK_PATH);
           if (m) postId = m[1];
@@ -140,15 +155,43 @@
 
   // === ヘルパ ===
 
-  // closest() で見つからないとき、画像の祖先 container 内から条件に合う最初のリンクを探す
+  // closest() で見つからない (img と link が祖先関係でない) ときに、
+  // 画像と DOM 距離が最も近い候補リンクを返す。
+  //
+  // 過去の実装は document order の最初を返してたため、X タイムラインや pixiv の
+  // ユーザーページのように同じ祖先内に複数の候補が並ぶレイアウトで、ページ最上部の
+  // (= 最新の) 別投稿のリンクを誤って拾う不具合があった。
   function findAncestorContainerLink(img, selector) {
     let el = img.parentElement;
     while (el && el !== document.body) {
-      const link = el.querySelector(selector);
-      if (link) return link;
+      const candidates = el.querySelectorAll(selector);
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1) {
+        // この階層に複数ある = 上に行きすぎた。img と最も近いものを選ぶ。
+        let best = null;
+        let bestDist = Infinity;
+        for (const link of candidates) {
+          const d = treeDistance(img, link);
+          if (d < bestDist) { bestDist = d; best = link; }
+        }
+        return best;
+      }
       el = el.parentElement;
     }
     return null;
+  }
+
+  // 2 ノード間の DOM ツリー距離 (LCA を経由したエッジ数)。
+  function treeDistance(a, b) {
+    const ancestorsA = [];
+    for (let n = a; n; n = n.parentElement) ancestorsA.push(n);
+    const indexInA = new Map(ancestorsA.map((n, i) => [n, i]));
+    let depthB = 0;
+    for (let n = b; n; n = n.parentElement) {
+      if (indexInA.has(n)) return indexInA.get(n) + depthB;
+      depthB++;
+    }
+    return Infinity;
   }
 
   function parseUrlPath(href, pathRegex) {
