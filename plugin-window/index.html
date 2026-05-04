@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Engagement Browser</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #1e1e1e;
+      color: #e0e0e0;
+    }
+    h1 { margin-top: 0; font-size: 18px; }
+    pre {
+      background: #2a2a2a;
+      padding: 12px;
+      border-radius: 4px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .row { margin: 8px 0; }
+    .label { color: #888; display: inline-block; width: 160px; }
+  </style>
+</head>
+<body>
+  <h1>Engagement Browser — Hello World</h1>
+
+  <div class="row"><span class="label">eagle global:</span><span id="eagle-available"></span></div>
+  <div class="row"><span class="label">Library path:</span><span id="library-path"></span></div>
+  <div class="row"><span class="label">Item count:</span><span id="item-count"></span></div>
+  <div class="row"><span class="label">Plugin info:</span><span id="plugin-info"></span></div>
+
+  <h2 style="font-size: 14px; margin-top: 24px;">Sync</h2>
+  <div class="row">
+    <button id="sync-btn" style="padding: 6px 12px; cursor: pointer;">Sync from Eagle</button>
+    <span id="sync-status" style="margin-left: 12px; color: #888;"></span>
+  </div>
+  <pre id="sync-stats" style="margin-top: 12px;">(未同期)</pre>
+
+  <h2 style="font-size: 14px; margin-top: 24px;">Sample item</h2>
+  <pre id="sample-item">loading…</pre>
+
+  <script>
+    const set = (id, value) => document.getElementById(id).textContent = value;
+
+    if (typeof eagle === 'undefined') {
+      set('eagle-available', '✗ eagle global not found');
+    } else {
+      set('eagle-available', '✓ available');
+
+      const fmtItem = (item) => {
+        if (!item) return '(none)';
+        return [
+          `id:           ${item.id}`,
+          `name:         ${item.name}`,
+          `ext:          ${item.ext}`,
+          `url:          ${item.url}`,
+          `tags:         ${(item.tags || []).join(', ')}`,
+          `modifiedAt:   ${item.modifiedAt}`,
+          `importedAt:   ${item.importedAt}`,
+          ``,
+          `annotation:`,
+          item.annotation || '(none)'
+        ].join('\n');
+      };
+
+      let store = null;
+
+      const renderStats = () => {
+        if (!store) {
+          document.getElementById('sync-stats').textContent = '(未同期)';
+          return;
+        }
+        const items = Object.values(store.data.items);
+        const byPlatform = {};
+        const byStatus = {};
+        for (const it of items) {
+          byPlatform[it.platform || '(none)'] = (byPlatform[it.platform || '(none)'] || 0) + 1;
+          byStatus[it.status || '(none)'] = (byStatus[it.status || '(none)'] || 0) + 1;
+        }
+        const lines = [
+          `Total in store:  ${items.length}`,
+          `Last sync:       ${store.data.lastSync ? new Date(store.data.lastSync).toLocaleString() : '(never)'}`,
+          ``,
+          `By platform:`,
+          ...Object.entries(byPlatform).sort((a, b) => b[1] - a[1]).map(([k, v]) => `  ${k.padEnd(18)} ${v}`),
+          ``,
+          `By status:`,
+          ...Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([k, v]) => `  ${k.padEnd(18)} ${v}`)
+        ];
+        document.getElementById('sync-stats').textContent = lines.join('\n');
+      };
+
+      const initStore = async (libraryPath) => {
+        const fs = require('fs');
+        const path = require('path');
+        const { EngagementStore } = await import('../shared/engagement-store.js');
+        store = new EngagementStore({ libraryPath, fs, path });
+        store.load();
+      };
+
+      const runSync = async () => {
+        if (!store) return;
+        const btn = document.getElementById('sync-btn');
+        const status = document.getElementById('sync-status');
+        btn.disabled = true;
+        status.textContent = 'syncing…';
+        try {
+          const { syncFromEagle } = await import('../shared/sync-eagle.js');
+          const result = await syncFromEagle({
+            eagleItem: eagle.item,
+            store,
+            log: (msg) => console.log('[sync]', msg)
+          });
+          status.textContent = `+${result.newCount} ~${result.changedCount} -${result.deletedCount} upserted=${result.upsertedCount} (${result.elapsedMs}ms)`;
+          renderStats();
+        } catch (e) {
+          status.textContent = 'error: ' + e.message;
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      document.getElementById('sync-btn').addEventListener('click', runSync);
+
+      eagle.onPluginCreate(async (plugin) => {
+        let libraryPath = '(unknown)';
+        try {
+          const lib = await eagle.library.info();
+          libraryPath = lib?.path || '(unknown)';
+          set('library-path', libraryPath);
+        } catch (e) {
+          set('library-path', 'error: ' + e.message);
+        }
+
+        if (libraryPath !== '(unknown)') {
+          try {
+            await initStore(libraryPath);
+            renderStats();
+          } catch (e) {
+            document.getElementById('sync-stats').textContent = 'store init failed: ' + e.message;
+            console.error(e);
+          }
+        }
+
+        try {
+          const total = await eagle.item.countAll();
+          set('item-count', String(total));
+        } catch (e) {
+          set('item-count', 'error: ' + e.message);
+        }
+
+        try {
+          const selected = await eagle.item.getSelected();
+          document.getElementById('sample-item').textContent = selected?.length
+            ? `Selected: ${selected.length}\n\n${fmtItem(selected[0])}`
+            : '(Eagle 側でアイテムを選択するとここに表示されます)';
+        } catch (e) {
+          document.getElementById('sample-item').textContent = 'error: ' + e.message;
+        }
+
+        try {
+          set('plugin-info', JSON.stringify({
+            name: plugin?.manifest?.name,
+            version: plugin?.manifest?.version,
+            appVersion: eagle.app?.version,
+            locale: eagle.app?.locale
+          }));
+        } catch (e) {
+          set('plugin-info', 'error: ' + e.message);
+        }
+
+        eagle.onPluginShow?.(async () => {
+          try {
+            const selected = await eagle.item.getSelected();
+            document.getElementById('sample-item').textContent = selected?.length
+              ? `Selected: ${selected.length}\n\n${fmtItem(selected[0])}`
+              : '(Eagle 側でアイテムを選択するとここに表示されます)';
+          } catch (e) {
+            document.getElementById('sample-item').textContent = 'error: ' + e.message;
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>

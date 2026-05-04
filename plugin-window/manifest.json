@@ -1,0 +1,15 @@
+{
+  "id": "eagle-info-plus-engagement-browser",
+  "version": "0.0.1",
+  "name": "Engagement Browser",
+  "logo": "/logo.png",
+  "keywords": ["engagement", "sns", "filter"],
+  "devTools": true,
+  "main": {
+    "url": "index.html",
+    "width": 1024,
+    "height": 720,
+    "minWidth": 640,
+    "minHeight": 480
+  }
+}
