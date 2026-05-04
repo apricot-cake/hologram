@@ -110,6 +110,11 @@
     .badge.x { background: rgba(0, 0, 0, 0.85); }
     .badge.bluesky { background: rgba(0, 133, 255, 0.85); }
     .badge.pixiv { background: rgba(0, 150, 250, 0.85); }
+    .badge.status-error { background: rgba(220, 53, 69, 0.9); }
+    .badge.status-deleted { background: rgba(108, 117, 125, 0.9); }
+    .badge.status-private { background: rgba(255, 193, 7, 0.9); color: #000; }
+    .badge.status-parsed { background: rgba(74, 158, 255, 0.85); }
+    .badge.status-no-annotation { background: rgba(80, 80, 80, 0.85); }
     .card .stats {
       position: absolute;
       bottom: 0;
@@ -164,6 +169,14 @@
       <option value="x">X</option>
       <option value="bluesky">Bluesky</option>
       <option value="pixiv">pixiv</option>
+    </select></label>
+    <label>Status <select id="filter-status">
+      <option value="synced">synced</option>
+      <option value="parsed">parsed (waiting fetch)</option>
+      <option value="error">error</option>
+      <option value="deleted">deleted</option>
+      <option value="private">private</option>
+      <option value="no-annotation">no-annotation</option>
     </select></label>
     <label>Min likes <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
     <label>Min views <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
@@ -225,6 +238,8 @@
           img.src = it.thumbnailURL;
           img.loading = 'lazy';
           img.alt = '';
+          // Eagle が thumbnail を生成してない (非画像/破損) ケースで黙って隠す
+          img.onerror = () => { img.style.display = 'none'; };
           card.appendChild(img);
         }
 
@@ -235,6 +250,14 @@
           b.className = `badge ${it.platform}`;
           b.textContent = it.platform;
           badges.appendChild(b);
+        }
+        // status バッジ: synced 以外 (要対応 / エラー / 削除済み等) を可視化
+        if (it.status && it.status !== 'synced') {
+          const sb = document.createElement('span');
+          sb.className = `badge status-${it.status}`;
+          sb.textContent = it.status;
+          if (it.errorMessage) sb.title = it.errorMessage;
+          badges.appendChild(sb);
         }
         card.appendChild(badges);
 
@@ -269,11 +292,12 @@
 
       const renderGrid = () => {
         if (!store) return;
+        const statusValue = $('filter-status').value;
         const filters = {
           platform: $('filter-platform').value || undefined,
           minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined,
           minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined,
-          status: 'synced'
+          status: statusValue || undefined
         };
         const sort = { field: $('sort-field').value, order: 'desc' };
 
@@ -360,7 +384,7 @@
       $('sync-btn').addEventListener('click', runSync);
       $('engagement-btn').addEventListener('click', runEngagement);
       $('grid').addEventListener('click', onCardClick);
-      ['filter-platform', 'filter-min-likes', 'filter-min-views', 'sort-field']
+      ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
         .forEach(id => $(id).addEventListener('input', renderGrid));
 
       eagle.onPluginCreate(async (plugin) => {

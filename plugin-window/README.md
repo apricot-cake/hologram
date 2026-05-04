@@ -50,7 +50,23 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 ## Filter
 
 - `Platform`: `x` / `bluesky` / `pixiv` で絞り込み
+- `Status`: 下記参照
 - `Min likes` / `Min views`: 各値以上の record のみ表示
+
+## Status
+
+各 record は以下のいずれかの status を持つ。Status フィルタで切り替えて確認する。
+
+| Status | 意味 | リトライ |
+|---|---|---|
+| `synced` | SNS API から engagement (likes 等) を取得済み。**Engagement Browser の主用途** | 再フェッチで最新化可 |
+| `parsed` (waiting fetch) | Info+ の annotation を parse できたが engagement 未取得。Sync 直後の中間状態 | Fetch engagement で `synced` に昇格 |
+| `error` | SNS API が想定外エラー (5xx / ネットワーク / JSON parse 失敗 等) を返した | retry で復活する可能性あり。`errorMessage` がカードの tooltip に出る |
+| `deleted` | SNS 側で投稿削除済み (404 等)。最終フェッチ時の engagement は **温存される** (historical snapshot として参照可能) | retry しても無駄 |
+| `private` | アクセス権なし (X 鍵垢の 401/403、pixiv R-18 ログアウト時の error body 等) | ログイン直せば retry で復活可能 |
+| `no-annotation` | Info+ の annotation がない (Phase 1 以前の保存、対応外サイトドラッグ 等) | バックフィル機能 (今後実装) で処理候補 |
+
+`deleted` / `private` でも engagement の数値フィールドは上書きしない (空 object を upsert するため)。「削除前最後のスナップショット」として読める。
 
 ## ボタン
 
