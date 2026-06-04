@@ -1,4 +1,4 @@
-const BUILD_FILES = ['background.js', 'content.js', 'i18n.js', 'manifest.json', 'viewer.html', 'viewer.js'];
+const BUILD_FILES = ['background.js', 'content.js', 'i18n.js', 'manifest.json'];
 let buildHash = 'unknown';
 
 (async () => {
@@ -72,11 +72,6 @@ async function activateOnTab(tab) {
 chrome.action.onClicked.addListener(activateOnTab);
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'open-viewer') {
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
   if (command === 'reload-extension' && !('update_url' in chrome.runtime.getManifest())) {
     chrome.runtime.reload();
     return;
@@ -94,11 +89,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'openOptions') {
-    chrome.runtime.openOptionsPage();
-    return false;
-  }
-
   if (message.type === 'getBuildHash') {
     sendResponse({ hash: buildHash });
     return false;

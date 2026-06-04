@@ -42,6 +42,11 @@
       saved: '保存しました',
       invalidFolder: '無効なフォルダ名',
 
+      // settings > save folder (app)
+      saveFolderTitle: '保存先フォルダ',
+      chooseFolder: 'フォルダを選択',
+      hintSaveFolder: 'キャプチャした画像とメタデータの保存先。変更すると次回キャプチャ分から新しい場所に保存されます。',
+
       // viewer: settings > language / shortcut
       langTitle: '言語',
       langAuto: '自動（ブラウザ設定に従う）',
@@ -61,7 +66,7 @@
       labelResetDeleteConfirm: '投稿削除時に確認を表示する',
       hintResetDeleteConfirm: '「今後表示しない」を選んだ場合にここで戻せます',
       clearData: '全データを削除',
-      confirmClear: '保存済みの投稿データをすべて削除しますか？この操作は元に戻せません。ダウンロード済みの画像ファイルは削除されません。',
+      confirmClear: '保存先フォルダ内のすべての投稿（画像とメタデータ）を削除しますか？この操作は元に戻せません。',
       confirmOk: '削除する',
       confirmCancel: 'キャンセル',
       cleared: 'データを削除しました',
@@ -148,7 +153,7 @@
       debugVerifySaved: '検証結果を保存しました',
 
       // content.js banner
-      bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
+      bannerSelect: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
       bannerSaving: '保存中...',
       bannerSaved: '画像を保存しました',
       bannerFailed: '保存に失敗しました'
@@ -182,6 +187,11 @@
       saved: 'Saved',
       invalidFolder: 'Invalid folder name',
 
+      // settings > save folder (app)
+      saveFolderTitle: 'Save folder',
+      chooseFolder: 'Choose folder',
+      hintSaveFolder: 'Where captured images and metadata are stored. Changing it affects future captures.',
+
       langTitle: 'Language',
       langAuto: 'Auto (follow browser setting)',
       hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
@@ -199,7 +209,7 @@
       labelResetDeleteConfirm: 'Show confirmation when deleting posts',
       hintResetDeleteConfirm: 'Re-enables the confirmation dialog if you chose "Don\'t ask again"',
       clearData: 'Delete all data',
-      confirmClear: 'Delete all saved post data? This cannot be undone. Downloaded image files will not be affected.',
+      confirmClear: 'Delete every post (image and metadata) in the save folder? This cannot be undone.',
       confirmOk: 'Delete',
       confirmCancel: 'Cancel',
       cleared: 'Data deleted',
@@ -278,7 +288,7 @@
       debugInjectDummy: 'Inject dummy data (50 posts)',
       debugVerifySaved: 'Verification saved',
 
-      bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
+      bannerSelect: 'Click a post to save (Esc to cancel / Right-click for settings)',
       bannerSaving: 'Saving...',
       bannerSaved: 'Image saved',
       bannerFailed: 'Save failed'
@@ -288,10 +298,10 @@
   window.postSnapI18n = (async () => {
     let lang = 'auto';
     try {
-      const result = await chrome.storage.local.get('language');
-      lang = result.language || 'auto';
+      const prefs = await window.postSnap.getPrefs();
+      lang = prefs.language || 'auto';
     } catch {
-      // storage may be unavailable in some contexts; fall back to auto
+      // prefs unavailable — fall back to auto
     }
     const resolved = lang === 'auto'
       ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en')

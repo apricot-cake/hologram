@@ -155,7 +155,6 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    chrome.runtime.sendMessage({ type: 'openOptions' });
     cleanup();
   }
 

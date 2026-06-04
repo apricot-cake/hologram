@@ -38,6 +38,9 @@
     save: _s('save'),
     saved: _s('saved'),
     invalidFolder: _s('invalidFolder'),
+    saveFolderTitle: _s('saveFolderTitle'),
+    chooseFolder: _s('chooseFolder'),
+    hintSaveFolder: _s('hintSaveFolder'),
 
     // settings > language / shortcut
     langTitle: _s('langTitle'),
@@ -153,19 +156,15 @@
   setText('tabPosts', MSG.tabPosts);
   setText('tabSettings', MSG.tabSettings);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
-  setText('settingsDownloadTitle', MSG.downloadTitle);
-  setText('labelFolder', MSG.labelFolder);
-  setText('hintFolder', MSG.hintFolder);
-  setText('labelSaveAs', MSG.labelSaveAs);
-  setText('hintSaveAs', MSG.hintSaveAs);
-  setText('hintBackup', MSG.hintBackup);
-  setText('saveSettings', MSG.save);
+  setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
+  setText('chooseFolderBtn', MSG.chooseFolder);
+  setText('hintSaveFolder', MSG.hintSaveFolder);
   setText('settingsLangTitle', MSG.langTitle);
   setText('langAuto', MSG.langAuto);
   setText('hintLang', MSG.hintLang);
   document.getElementById('langSelect').value = lang;
   document.getElementById('langSelect').addEventListener('change', async (e) => {
-    await chrome.storage.local.set({ language: e.target.value });
+    await window.postSnap.setPref('language', e.target.value);
     location.reload();
   });
   setText('settingsShortcutTitle', MSG.shortcutTitle);
@@ -615,10 +614,13 @@
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
+  // --- Image source (served from the save folder via the psimg:// protocol) ---
+  const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
+
   // --- Load posts ---
   async function loadPosts() {
-    const result = await chrome.storage.local.get('posts');
-    allPosts = result.posts || [];
+    const { posts } = await window.postSnap.listPosts();
+    allPosts = posts || [];
     renderPosts();
   }
 
@@ -761,7 +763,7 @@
         <div class="select-check">${isSelected ? '✓' : ''}</div>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}">✎</button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
-        ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${p.image}" alt="" loading="lazy">` : ''}
+        ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
@@ -852,7 +854,7 @@
     }
 
     const url = card.dataset.url;
-    if (url) window.open(url, '_blank');
+    if (url) window.postSnap.openExternal(url);
   });
 
   // Delete button on card
@@ -879,16 +881,11 @@
   let pendingDeletePost = null;
 
   async function executeDeletePost(post) {
-    if (post.captureId) {
-      chrome.runtime.sendMessage({ type: 'deleteLocalFile', captureId: post.captureId });
-    }
-    const idx = allPosts.findIndex(p => p.url === post.url && p.capturedAt === post.capturedAt);
-    if (idx >= 0) {
-      allPosts.splice(idx, 1);
-      await chrome.storage.local.set({ posts: allPosts });
-      renderPosts();
-      showToast(MSG.deleted);
-    }
+    await window.postSnap.deletePost(post.image);
+    const idx = allPosts.findIndex(p => p.captureId === post.captureId);
+    if (idx >= 0) allPosts.splice(idx, 1);
+    renderPosts();
+    showToast(MSG.deleted);
   }
 
   // --- Edit overlay logic ---
@@ -951,11 +948,11 @@
     if (!editingPost) return;
     const tags = [...editTags];
 
-    // Update in allPosts
-    const idx = allPosts.findIndex(p => p.url === editingPost.url && p.capturedAt === editingPost.capturedAt);
+    // Persist to the sidecar, then update in memory
+    await window.postSnap.updateTags(editingPost.image, tags);
+    const idx = allPosts.findIndex(p => p.captureId === editingPost.captureId);
     if (idx >= 0) {
       allPosts[idx].tags = tags;
-      await chrome.storage.local.set({ posts: allPosts });
       renderPosts();
     }
 
@@ -1040,74 +1037,43 @@
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
-      chrome.storage.local.set({ viewMode: currentView });
+      window.postSnap.setPref('viewMode', currentView);
       renderPosts();
     });
   });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
-  chrome.storage.local.get(['viewMode', 'skipDeleteConfirm'], (result) => {
-    if (result.viewMode === 'list') {
+  window.postSnap.getPrefs().then((prefs) => {
+    if (prefs.viewMode === 'list') {
       currentView = 'list';
       document.getElementById('viewGrid').classList.remove('active');
       document.getElementById('viewList').classList.add('active');
+      renderPosts();
     }
-    skipDeleteConfirm = !!result.skipDeleteConfirm;
+    skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
   });
 
   resetDeleteConfirmCheckbox.addEventListener('change', () => {
     skipDeleteConfirm = !resetDeleteConfirmCheckbox.checked;
-    chrome.storage.local.set({ skipDeleteConfirm });
+    window.postSnap.setPref('skipDeleteConfirm', skipDeleteConfirm);
   });
 
   // Search / sort events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
   sortSelect.addEventListener('change', renderPosts);
 
-  // --- Settings ---
-  const dirInput = document.getElementById('downloadDir');
-  const saveAsCheckbox = document.getElementById('saveAs');
-  const settingsStatus = document.getElementById('settingsStatus');
-
-  chrome.storage.local.get(['downloadDirectory', 'saveAs'], (result) => {
-    dirInput.value = result.downloadDirectory || '';
-    saveAsCheckbox.checked = !!result.saveAs;
+  // --- Settings: save folder ---
+  const saveFolderPath = document.getElementById('saveFolderPath');
+  window.postSnap.getConfig().then((cfg) => {
+    if (saveFolderPath) saveFolderPath.textContent = cfg.saveFolder || '';
   });
 
-  document.getElementById('saveSettings').addEventListener('click', () => {
-    const value = dirInput.value.trim();
-    if (value && /[.]{2}|[/\\]/.test(value)) {
-      settingsStatus.textContent = MSG.invalidFolder;
-      settingsStatus.style.color = '#f4212e';
-      settingsStatus.classList.add('show');
-      setTimeout(() => {
-        settingsStatus.classList.remove('show');
-        settingsStatus.style.color = '';
-        settingsStatus.textContent = MSG.saved;
-      }, 2000);
-      return;
-    }
-    chrome.storage.local.set({
-      downloadDirectory: value || '',
-      saveAs: saveAsCheckbox.checked
-    }, () => {
-      settingsStatus.textContent = MSG.saved;
-      settingsStatus.classList.add('show');
-      setTimeout(() => settingsStatus.classList.remove('show'), 1500);
-    });
-  });
-
-  document.getElementById('shortcutLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-  });
-
-  // Build hash
-  chrome.runtime.sendMessage({ type: 'getBuildHash' }, (res) => {
-    const el = document.getElementById('buildInfo');
-    if (el) el.textContent = `Build: ${res?.hash || 'unknown'}`;
+  document.getElementById('chooseFolderBtn').addEventListener('click', async () => {
+    const { saveFolder } = await window.postSnap.pickSaveFolder();
+    if (saveFolderPath) saveFolderPath.textContent = saveFolder || '';
+    loadPosts();
   });
 
   // --- Export ZIP ---
@@ -1126,7 +1092,8 @@
       const filename = `${buildFilename(p, i)}.jpg`;
 
       if (p.image) {
-        const base64 = p.image.split(',')[1];
+        const dataUrl = await window.postSnap.imageDataUrl(p.image);
+        const base64 = dataUrl ? dataUrl.split(',')[1] : '';
         if (base64) {
           zip.file(`images/${filename}`, base64, { base64: true });
         }
@@ -1155,9 +1122,9 @@
 
     zip.file('metadata.json', JSON.stringify(metadata, null, 2));
 
-    const blob = await zip.generateAsync({ type: 'blob' });
-    downloadBlob(blob, `post-snap-export-${formatExportDate()}.zip`);
-    showToast(MSG.exported);
+    const bytes = await zip.generateAsync({ type: 'uint8array' });
+    const res = await window.postSnap.exportSave(`post-snap-export-${formatExportDate()}.zip`, bytes);
+    if (res.saved) showToast(MSG.exported);
   });
 
   // --- Export HTML ---
@@ -1168,88 +1135,34 @@
     }
     showToast(MSG.exporting);
 
-    const postsData = allPosts.map(p => ({
-      url: p.url,
-      platform: p.platform,
-      text: p.text,
-      displayName: p.displayName,
-      screenName: p.screenName,
-      userId: p.userId,
-      likes: p.likes,
-      reposts: p.reposts,
-      replies: p.replies,
-      bookmarks: p.bookmarks,
-      isReply: p.isReply || null,
-      isQuote: p.isQuote || null,
-      isThread: p.isThread || null,
-      date: p.date,
-      capturedAt: p.capturedAt,
-      tags: p.tags?.length ? p.tags : null,
-      image: p.image
-    }));
+    const postsData = [];
+    for (const p of allPosts) {
+      const image = p.image ? await window.postSnap.imageDataUrl(p.image) : null;
+      postsData.push({
+        url: p.url,
+        platform: p.platform,
+        text: p.text,
+        displayName: p.displayName,
+        screenName: p.screenName,
+        userId: p.userId,
+        likes: p.likes,
+        reposts: p.reposts,
+        replies: p.replies,
+        bookmarks: p.bookmarks,
+        isReply: p.isReply || null,
+        isQuote: p.isQuote || null,
+        isThread: p.isThread || null,
+        date: p.date,
+        capturedAt: p.capturedAt,
+        tags: p.tags?.length ? p.tags : null,
+        image
+      });
+    }
 
     const html = buildExportHtml(postsData);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    downloadBlob(blob, `post-snap-export-${formatExportDate()}.html`);
-    showToast(MSG.exported);
-  });
-
-  // --- Import from images ---
-  document.getElementById('importImages').addEventListener('click', () => {
-    document.getElementById('importImagesInput').click();
-  });
-
-  document.getElementById('importImagesInput').addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files).filter(f => /\.jpe?g$/i.test(f.name));
-    if (files.length === 0) return;
-    showToast(MSG.importing);
-
-    let imported = 0;
-    let skipped = 0;
-
-    for (const file of files) {
-      try {
-        const dataUrl = await readFileAsDataUrl(file);
-        const exifData = readExifJson(dataUrl);
-        if (!exifData) continue;
-
-        const existing = allPosts.find(p => p.url === exifData.url);
-        if (existing) { skipped++; continue; }
-
-        allPosts.push({
-          url: exifData.url,
-          platform: exifData.platform,
-          text: exifData.text,
-          displayName: exifData.displayName,
-          screenName: exifData.screenName,
-          userId: exifData.userId,
-          likes: exifData.likes,
-          reposts: exifData.reposts,
-          replies: exifData.replies,
-          bookmarks: exifData.bookmarks,
-          isReply: exifData.isReply || null,
-          isQuote: exifData.isQuote || null,
-          isThread: exifData.isThread || null,
-          date: exifData.date,
-          capturedAt: new Date().toISOString(),
-          tags: exifData.tags?.length ? exifData.tags : [],
-          image: dataUrl
-        });
-        imported++;
-      } catch {
-        // skip invalid files
-      }
-    }
-
-    await chrome.storage.local.set({ posts: allPosts });
-    renderPosts();
-    e.target.value = '';
-
-    if (skipped > 0) {
-      showToast(MSG.importSkipped(imported, skipped));
-    } else {
-      showToast(MSG.imported(imported));
-    }
+    const bytes = new TextEncoder().encode(html);
+    const res = await window.postSnap.exportSave(`post-snap-export-${formatExportDate()}.html`, bytes);
+    if (res.saved) showToast(MSG.exported);
   });
 
   // --- Import from HTML ---
@@ -1274,36 +1187,8 @@
       }
 
       const postsData = JSON.parse(scriptEl.textContent);
-      let imported = 0;
-      let skipped = 0;
-
-      for (const p of postsData) {
-        const existing = allPosts.find(ep => ep.url === p.url);
-        if (existing) { skipped++; continue; }
-        allPosts.push({
-          url: p.url,
-          platform: p.platform,
-          text: p.text,
-          displayName: p.displayName,
-          screenName: p.screenName,
-          userId: p.userId,
-          likes: p.likes,
-          reposts: p.reposts,
-          replies: p.replies,
-          bookmarks: p.bookmarks,
-          isReply: p.isReply || null,
-          isQuote: p.isQuote || null,
-          isThread: p.isThread || null,
-          date: p.date,
-          capturedAt: p.capturedAt || new Date().toISOString(),
-            tags: p.tags?.length ? p.tags : [],
-          image: p.image
-        });
-        imported++;
-      }
-
-      await chrome.storage.local.set({ posts: allPosts });
-      renderPosts();
+      const { imported, skipped } = await window.postSnap.importPosts(postsData);
+      await loadPosts();
       e.target.value = '';
 
       if (skipped > 0) {
@@ -1335,31 +1220,28 @@
     document.getElementById('confirmOverlay').classList.remove('show');
 
     if (pendingBulkDelete) {
-      // Bulk delete selected posts — also delete local files
-      allPosts.forEach(p => {
-        if (p.captureId && selectedSet.has((p.url || '') + '|' + (p.capturedAt || ''))) {
-          chrome.runtime.sendMessage({ type: 'deleteLocalFile', captureId: p.captureId });
-        }
-      });
-      const count = selectedSet.size;
-      allPosts = allPosts.filter(p => !selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
-      await chrome.storage.local.set({ posts: allPosts });
+      // Bulk delete selected posts — remove the files on disk
+      const toDelete = allPosts.filter(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+      const count = toDelete.length;
+      for (const p of toDelete) {
+        await window.postSnap.deletePost(p.image);
+      }
       selectedSet.clear();
       pendingBulkDelete = false;
       exitSelectMode();
-      renderPosts();
+      await loadPosts();
       showToast(MSG.deletedN(count));
     } else if (pendingDeletePost) {
       // Individual post delete
       if (document.getElementById('confirmSkip').checked) {
         skipDeleteConfirm = true;
-        chrome.storage.local.set({ skipDeleteConfirm: true });
+        window.postSnap.setPref('skipDeleteConfirm', true);
       }
       await executeDeletePost(pendingDeletePost);
       pendingDeletePost = null;
     } else {
-      // Clear all data
-      await chrome.storage.local.remove('posts');
+      // Clear all data (deletes every image + sidecar in the save folder)
+      await window.postSnap.clearAll();
       allPosts = [];
       renderPosts();
       showToast(MSG.cleared);
@@ -1374,29 +1256,6 @@
       e.currentTarget.classList.remove('show');
     }
   });
-
-  // --- EXIF reading ---
-  function readExifJson(dataUrl) {
-    try {
-      const exifObj = piexif.load(dataUrl);
-      const xpComment = exifObj['0th']?.[piexif.ImageIFD.XPComment];
-      if (!xpComment || !Array.isArray(xpComment)) return null;
-      const jsonStr = decodeUCS2LE(xpComment);
-      return JSON.parse(jsonStr);
-    } catch {
-      return null;
-    }
-  }
-
-  function decodeUCS2LE(bytes) {
-    let str = '';
-    for (let i = 0; i + 1 < bytes.length; i += 2) {
-      const code = bytes[i] | (bytes[i + 1] << 8);
-      if (code === 0) break;
-      str += String.fromCharCode(code);
-    }
-    return str;
-  }
 
   // --- Export HTML builder ---
   function buildExportHtml(postsData) {
@@ -1525,15 +1384,6 @@ render()
     return div.innerHTML;
   }
 
-  function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
   function readFileAsText(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1541,15 +1391,6 @@ render()
       reader.onerror = reject;
       reader.readAsText(file);
     });
-  }
-
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function showToast(msg) {
@@ -1564,83 +1405,6 @@ render()
     toast.style.opacity = '1';
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-  }
-
-  // --- Debug: dummy data (unpacked extension only) ---
-  if (!('update_url' in chrome.runtime.getManifest())) {
-    const debugSection = document.getElementById('debugSection');
-    const injectBtn = document.getElementById('injectDummy');
-    if (debugSection && injectBtn) {
-      debugSection.style.display = '';
-      injectBtn.textContent = getMessage('debugInjectDummy');
-      injectBtn.addEventListener('click', () => {
-        const s = document.createElement('script');
-        s.src = chrome.runtime.getURL('scripts/inject-dummy.js');
-        document.head.appendChild(s);
-        s.onload = () => s.remove();
-      });
-
-      // Verify latest capture
-      const verifyBtn = document.getElementById('verifyLatest');
-      const verifyResult = document.getElementById('verifyResult');
-      verifyBtn.addEventListener('click', async () => {
-        const result = await chrome.storage.local.get('posts');
-        const posts = result.posts || [];
-        if (posts.length === 0) {
-          verifyResult.style.display = 'block';
-          verifyResult.textContent = 'No posts found.';
-          return;
-        }
-        const p = posts[posts.length - 1];
-        const fields = [
-          ['url', p.url],
-          ['platform', p.platform],
-          ['displayName', p.displayName],
-          ['screenName', p.screenName],
-          ['userId', p.userId],
-          ['text', p.text?.substring(0, 120) + (p.text?.length > 120 ? '...' : '')],
-          ['likes', p.likes],
-          ['reposts', p.reposts],
-          ['replies', p.replies],
-          ['bookmarks', p.bookmarks],
-          ['views', p.views],
-          ['date', p.date],
-          ['capturedAt', p.capturedAt],
-          ['captureId', p.captureId],
-          ['mediaType', p.mediaType],
-          ['lang', p.lang],
-          ['isReply', p.isReply],
-          ['isQuote', p.isQuote],
-          ['isThread', p.isThread],
-          ['quotedUrl', p.quotedUrl],
-          ['tags', JSON.stringify(p.tags)],
-          ['hasImage', !!p.image],
-        ];
-        const warnings = [];
-        if (!p.url) warnings.push('WARN: url is empty');
-        if (!p.platform) warnings.push('WARN: platform is empty');
-        if (!p.displayName && !p.screenName) warnings.push('WARN: no user info');
-        if (p.likes == null && p.reposts == null) warnings.push('WARN: no engagement data');
-        if (!p.date) warnings.push('WARN: date is empty');
-        if (!p.captureId) warnings.push('WARN: captureId is empty');
-        if (!p.image) warnings.push('WARN: no image data');
-
-        const lines = fields.map(([k, v]) => `${k}: ${v ?? '(null)'}`);
-        if (warnings.length) lines.push('', '--- Warnings ---', ...warnings);
-        else lines.push('', '✓ All fields look good');
-
-        const text = lines.join('\n');
-        verifyResult.style.display = 'block';
-        verifyResult.textContent = text;
-        // Save to local file
-        const blob = new Blob([text], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        await chrome.downloads.download({ url, filename: 'post-snap-verify.txt', conflictAction: 'overwrite' });
-        URL.revokeObjectURL(url);
-        showToast(getMessage('debugVerifySaved'));
-      });
-
-    }
   }
 
   // --- Init ---

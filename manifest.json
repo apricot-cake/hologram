@@ -18,10 +18,6 @@
       "32": "icons/icon32.png"
     }
   },
-  "options_ui": {
-    "page": "viewer.html",
-    "open_in_tab": true
-  },
   "background": {
     "service_worker": "background.js"
   },
@@ -39,12 +35,6 @@
         "default": "Alt+S"
       },
       "description": "__MSG_cmdActivate__"
-    },
-    "open-viewer": {
-      "suggested_key": {
-        "default": "Alt+V"
-      },
-      "description": "__MSG_cmdOpenViewer__"
     },
     "reload-extension": {
       "suggested_key": {
