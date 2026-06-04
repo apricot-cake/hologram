@@ -10,7 +10,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseAnnotation } from '../shared/annotation-parser.js';
 
-const libraryPath = process.argv[2] || 'C:\\Users\\apricot\\個人\\絵\\資料.library';
+const libraryPath = process.argv[2];
+if (!libraryPath) {
+  console.error('Usage: node scripts/find-pixiv-mismatches.mjs <library-path>');
+  console.error('  例: node scripts/find-pixiv-mismatches.mjs "C:\\Users\\<name>\\...\\<lib>.library"');
+  process.exit(1);
+}
 const imagesDir = path.join(libraryPath, 'images');
 
 if (!fs.existsSync(imagesDir)) {
