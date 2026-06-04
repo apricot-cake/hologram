@@ -73,6 +73,14 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 - `Sync from Eagle`: ライブラリ全件と store を diff し、変更分の annotation を再 parse。getIdsWithModifiedAt → batched (200) getByIds → upsert
 - `Fetch engagement`: status=parsed/synced の record に対して各 SNS API を叩き、likes 等を埋める
 
+`Fetch engagement` は platform ごとにレート制限する。X は未認証の Syndication API を叩くため 1 並列 / 1.5 秒間隔に絞り、Bluesky / pixiv は 4 並列で流す。platform 同士は並行に走る (X が間隔を空けて流れる裏で Bluesky / pixiv が並列で進む)。Cancel は dispatch 済みのリクエストが完了してから止まる (X の間隔待ち中なら最大 1.5 秒)。
+
+`Fetch engagement` の左の `scope` セレクタで対象範囲を選ぶ:
+
+- `all parsed/synced`: status=parsed/synced の全 record (デフォルト)
+- `current filter`: グリッドに現在表示中のアイテムのみ。Platform / Status / Min likes / Min views フィルタがそのまま効く (プラットフォーム別フェッチはこれで賄う)
+- `stale > N days`: engagement が N 日以上前、または未取得 (parsed) の record のみ。日数は隣の入力で指定
+
 ## 起動時
 
 `plugin-create` で store を load、即座に grid 描画 (cache-based startup)。Sync は手動。

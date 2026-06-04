@@ -43,6 +43,16 @@
     }
     .toolbar button:hover { background: #333; }
     .toolbar button:disabled { opacity: 0.5; cursor: default; }
+    .toolbar .scope { color: var(--muted); font-size: 12px; }
+    .toolbar select, .toolbar input {
+      background: var(--bg2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    .toolbar input[type=number] { width: 56px; }
     .toolbar .status { color: var(--muted); margin-left: auto; font-size: 12px; }
 
     .filters {
@@ -200,6 +210,12 @@
   <div class="toolbar">
     <button id="sync-btn">Sync from Eagle</button>
     <button id="engagement-btn">Fetch engagement</button>
+    <label class="scope">scope <select id="engagement-scope">
+      <option value="all">all parsed/synced</option>
+      <option value="current">current filter</option>
+      <option value="stale">stale &gt; N days</option>
+    </select></label>
+    <input id="engagement-stale-days" type="number" min="1" value="7" title="日数" style="display: none;">
     <button id="cancel-btn" style="display: none;">Cancel</button>
     <span class="status" id="status"></span>
   </div>
@@ -346,15 +362,19 @@
         return card;
       };
 
-      const renderGrid = () => {
-        if (!store) return;
+      const readGridFilters = () => {
         const statusValue = $('filter-status').value;
-        const filters = {
+        return {
           platform: $('filter-platform').value || undefined,
           minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined,
           minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined,
           status: statusValue || undefined
         };
+      };
+
+      const renderGrid = () => {
+        if (!store) return;
+        const filters = readGridFilters();
         const sort = { field: $('sort-field').value, order: 'desc' };
 
         const results = store.query(filters, sort);
@@ -416,6 +436,21 @@
 
       let currentAbort = null;
 
+      // Fetch engagement のスコープを toolbar の select から組み立てる。
+      //   all     — 全 parsed/synced
+      //   current — グリッドの現在のフィルタで表示中のアイテムのみ (platform 別もこれで賄える)
+      //   stale   — engagement が N 日以上前 or 未取得のもの
+      const buildScopeFilter = () => {
+        const scope = $('engagement-scope').value;
+        if (scope === 'current') {
+          return { ids: store.query(readGridFilters()).map((it) => it.id) };
+        }
+        if (scope === 'stale') {
+          return { staleDays: Number($('engagement-stale-days').value) || 0 };
+        }
+        return {};
+      };
+
       const runEngagement = async () => {
         if (!store) return;
         const btn = $('engagement-btn');
@@ -425,11 +460,13 @@
         cancelBtn.style.display = '';
         setStatus('fetching engagement…');
         try {
-          const { syncEngagement } = await import('../shared/sync-engagement.js');
+          const { syncEngagement, DEFAULT_RATE_LIMIT } = await import('../shared/sync-engagement.js');
           const r = await syncEngagement({
             store,
             fetch: window.fetch.bind(window),
             signal: currentAbort.signal,
+            rateLimit: DEFAULT_RATE_LIMIT,
+            filter: buildScopeFilter(),
             onProgress: ({ done, total }) => {
               setStatus(`fetching engagement… ${done}/${total}`);
             },
@@ -459,6 +496,12 @@
       $('grid').addEventListener('click', onCardClick);
       ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
         .forEach(id => $(id).addEventListener('input', renderGrid));
+
+      // stale スコープのときだけ日数 input を出す
+      $('engagement-scope').addEventListener('change', () => {
+        $('engagement-stale-days').style.display =
+          $('engagement-scope').value === 'stale' ? '' : 'none';
+      });
 
       // Status info ポップオーバー
       const infoBtn = $('status-info-btn');

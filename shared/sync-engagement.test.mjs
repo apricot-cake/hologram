@@ -171,6 +171,125 @@ test('syncEngagement: unparseable URL → skip', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// --- スコープ選択 ---
+
+test('syncEngagement: filter.ids whitelists targets (current-filter scope)', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('keep', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/1' });
+    store.upsert('drop', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/2' });
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 1, conversation_count: 0 }); };
+    const r = await syncEngagement({ store, fetch, filter: { ids: ['keep'] } });
+    assert.equal(r.targetCount, 1);
+    assert.equal(calls, 1);
+    assert.equal(store.get('keep').status, 'synced');
+    assert.equal(store.get('drop').status, 'parsed'); // 手付かず
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: filter.staleDays targets only old / never-fetched records', async () => {
+  const { dir, store } = mkstore();
+  try {
+    const nowMs = 1_000_000_000_000;
+    const DAY = 86400000;
+    // 10 日前に取得済み (stale) / 1 日前に取得済み (fresh) / 未取得 (parsed)
+    store.upsert('stale', { status: 'synced', platform: 'x', url: 'https://x.com/u/status/1', engagementSyncedAt: nowMs - 10 * DAY });
+    store.upsert('fresh', { status: 'synced', platform: 'x', url: 'https://x.com/u/status/2', engagementSyncedAt: nowMs - 1 * DAY });
+    store.upsert('never', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/3' });
+    const fetched = [];
+    const fetch = async (url) => { fetched.push(url); return mockJson({ favorite_count: 1, conversation_count: 0 }); };
+    const r = await syncEngagement({ store, fetch, filter: { staleDays: 7 }, now: () => nowMs });
+    // stale (10d > 7d) と never (未取得) が対象、fresh (1d) は除外
+    assert.equal(r.targetCount, 2);
+    assert.equal(fetched.length, 2);
+    assert.ok(fetched.some((u) => u.includes('id=1')) && fetched.some((u) => u.includes('id=3')));
+    assert.ok(!fetched.some((u) => u.includes('id=2')));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- レート制限 ---
+
+test('syncEngagement: minIntervalMs spaces out request starts (X)', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 3; i++) {
+      store.upsert(`x${i}`, { status: 'parsed', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    // フェイククロック: sleep が時計を進める。実時間ゼロで間隔を検証できる。
+    let clock = 0;
+    const sleeps = [];
+    const sleep = (ms) => { sleeps.push(ms); clock += ms; return Promise.resolve(); };
+    const now = () => clock;
+    const fetch = async () => mockJson({ favorite_count: 1, conversation_count: 0 });
+
+    const r = await syncEngagement({
+      store, fetch, sleep, now,
+      rateLimit: { x: { concurrency: 1, minIntervalMs: 1500 } }
+    });
+
+    assert.equal(r.okCount, 3);
+    // 3 リクエスト → 1 件目は即時、2/3 件目の前に 1500ms ずつ待つ
+    assert.equal(sleeps.length, 2);
+    assert.ok(sleeps.every((ms) => ms === 1500), `sleeps: ${sleeps}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: concurrency caps simultaneous in-flight requests', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 5; i++) {
+      store.upsert(`b${i}`, {
+        status: 'parsed', platform: 'bluesky',
+        url: `https://bsky.app/profile/u.bsky.social/post/${i}`
+      });
+    }
+    let inFlight = 0, maxInFlight = 0;
+    const fetch = async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5)); // 重ねるための実遅延
+      inFlight--;
+      return mockJson({ thread: { post: { likeCount: 1 } } });
+    };
+
+    const r = await syncEngagement({
+      store, fetch,
+      rateLimit: { bluesky: { concurrency: 4, minIntervalMs: 0 } }
+    });
+
+    assert.equal(r.okCount, 5);
+    assert.equal(maxInFlight, 4, `maxInFlight: ${maxInFlight}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: different platforms run concurrently', async () => {
+  const { dir, store } = mkstore();
+  try {
+    // X は 1 並列に絞っても、別 platform (pixiv) は同時に走り出せる
+    store.upsert('x0', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/0' });
+    store.upsert('p0', { status: 'parsed', platform: 'pixiv', url: 'https://www.pixiv.net/artworks/0' });
+    let inFlight = 0, maxInFlight = 0;
+    const fetch = async (url) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return url.includes('pixiv')
+        ? mockJson({ error: false, body: { likeCount: 1 } })
+        : mockJson({ favorite_count: 1, conversation_count: 0 });
+    };
+
+    const r = await syncEngagement({
+      store, fetch,
+      rateLimit: { x: { concurrency: 1, minIntervalMs: 1500 }, pixiv: { concurrency: 4, minIntervalMs: 0 } }
+    });
+
+    assert.equal(r.okCount, 2);
+    assert.equal(maxInFlight, 2, `maxInFlight: ${maxInFlight}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 let pass = 0, fail = 0;
 for (const t of tests) {
   try {

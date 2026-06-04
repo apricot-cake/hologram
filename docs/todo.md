@@ -159,8 +159,8 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 
 - [ ] 一括リフレッシュ (一部 done)
   - [x] 進捗テキスト + cancel ボタン (`AbortSignal` + `onProgress`)
-  - [ ] スコープ選択 (全件 / N 日経過 / プラットフォーム別 / 現在のフィルタ)
-  - [ ] レート制限 (X: 1 並列 1〜2 秒間隔、Bluesky / pixiv: 3〜5 並列)
+  - [x] スコープ選択 (`syncEngagement` の `filter`: `staleDays` / `ids` / `platform` を AND。UI の Scope = all / current filter / stale。プラットフォーム別は「current filter」+ グリッドの Platform フィルタで賄う)
+  - [x] レート制限 (`syncEngagement` の `rateLimit` パラメータ。platform ごとに concurrency + minIntervalMs。`DEFAULT_RATE_LIMIT` = X: 1 並列 / 1.5 秒間隔、Bluesky / pixiv: 4 並列。platform 同士は並行)
   - [ ] resume 用フラグ (中断時に最後に処理した item_id を記録)
 - [ ] バックフィル機能
   - 既存ライブラリ内の SNS URL 持ちアイテムを順次取得して engagement 埋め
