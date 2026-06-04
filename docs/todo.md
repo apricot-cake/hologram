@@ -220,7 +220,7 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 
 ## リポジトリ整理 (要手動対応)
 
-- [ ] `eagle-info-plus-private` リポを削除する (開発メモは本リポ `docs/` に統合済み)
+- [x] `eagle-info-plus-private` リポを削除する (開発メモは本リポ `docs/` に統合済み)
   - GitHub → 当該リポ → Settings → 一番下 Danger Zone → Delete this repository
   - **前提**: メインリポの統合 PR をマージしてから削除する (マージ前に消すと統合元が失われる)
   - private リポにはサニタイズ**前**の実値 (個人パス・実件数) が残っているので、残したいなら削除前に clone して退避
