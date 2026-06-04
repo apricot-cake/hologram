@@ -4,7 +4,8 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
-> - **Phase 2（未着手）**: ビューア全機能を Electron へ移植、拡張内ビューア（`viewer.html/js`）撤去、`vendor/piexif.js` 削除、ドキュメント/ストア説明の全面更新。
+> - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
+> - **残（任意）**: 配布パッケージング（electron-builder 等）、スクリーンショット/デモ差し替え、`reload-extension`(Alt+R) のストア版除去。
 > 詳細プラン: `~/.claude/plans/playful-kindling-duckling.md`
 
 ## 対応プラットフォーム
@@ -19,10 +20,9 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - `background.js` — Service Worker。タブキャプチャ → クロップ → Native Messaging でブリッジへ送信（EXIF/storage は廃止済み）
 - `content.js` — コンテンツスクリプト。投稿選択UI、DOM解析、メタデータ抽出、クロップ
 - `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
-- `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録
-- `viewer.html` / `viewer.js` — 旧ビューア（拡張オプションページ）。**Phase 2 で `app/` へ移管予定の残置物**
-- `vendor/jszip.min.js` — ZIPエクスポート用（Phase 2 で `app/` へ）。`vendor/piexif.js` は EXIF廃止により Phase 2 で削除
-- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-bridge.js` / `test-app-render.js`（ブリッジ/アプリのスモークテスト）
+- `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`（`index.html`・`viewer.js`・`i18n.js`）、`vendor/jszip.min.js`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録。画像は `psimg://` プロトコルで遅延読込
+- `i18n.js`（ルート）— content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js` を使用）
+- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-bridge.js`/`test-app-render.js`/`test-app-ipc.js`（ブリッジ/アプリ/IPCのスモークテスト）、`make-icons.js`（アイコン生成）
 
 ## キーボードショートカット
 
@@ -39,15 +39,16 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - プラットフォームフィルタ（チップボタン）
 - 日付範囲フィルタ（from/to）
 - エンゲージメントフィルタ（種類選択+最低値）
-- カード/リスト表示切替（storage保存）
-- 投稿の個別削除（確認スキップ可）
+- カード/リスト表示切替（config保存）
+- 投稿の個別削除・一括削除（確認スキップ可）
 - 言語切替（auto/ja/en）
+- 保存先フォルダの選択
 - エクスポート: ZIP（画像+JSON）、HTML（検索UI付き）
-- インポート: 画像ファイル、フォルダ、HTMLから復元
+- インポート: エクスポートHTMLから復元
 
 ## i18n
 
-ビューアとコンテンツバナーは日英対応。`chrome.storage.local` の `language` キーで制御（auto/ja/en）。
+アプリ（`app/renderer/i18n.js`）は config.json の `language` で制御（auto/ja/en）。content.js のバナーは拡張側 `i18n.js` で日英対応（auto はブラウザ言語に追従）。
 
 ## テスト
 
@@ -71,17 +72,16 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 - [ ] ストア版ビルド: 開発用コードを除去する
   - `manifest.json`: `reload-extension` コマンド削除
-  - `background.js`: `reload-extension` の onCommand 分岐を削除（`writeCaptureLog()` は削除済み）
-  - `viewer.html`: `debugSection` 全体を削除
-  - `viewer.js`: DEBUG セクション（inject-dummy, verify）のコードを削除
+  - `background.js`: `reload-extension` の onCommand 分岐、`buildHash`/`getBuildHash`（リロード検出用）を削除
+  - （`writeCaptureLog()`・拡張内ビューア・`debugSection` は撤去済み）
 
 ## TODO (将来対応)
 
-- [~] デスクトップアプリ（Electron + Native Messaging）← **進行中**（上部「アーキテクチャ移行」参照）
+- [x] デスクトップアプリ（Electron + Native Messaging）— Phase 1/2 完了（上部「アーキテクチャ移行」参照）
   - [x] 拡張をキャプチャ専用化（Native Messaging送信）
   - [x] メタデータはサイドカーJSON（SQLite不採用：Electronでのネイティブ依存回避）+ ファイルシステムに画像保存
-  - [x] 最小ビューア（Electron）
-  - [ ] ビューア全機能の移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
+  - [x] ビューア全機能の Electron 移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
+  - [ ] 配布パッケージング（electron-builder 等）
   - [ ] 添付画像の原寸保存・表示
 - [ ] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [ ] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）

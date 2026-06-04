@@ -1,23 +1,22 @@
-Save SNS posts as JPEG images with embedded EXIF metadata. Post text is stored in the image file, so you can search saved posts by content directly in Windows Explorer — no special tools needed.
+Capture posts from X (Twitter), Bluesky, and Misskey as JPEG images, and browse them in a companion desktop app.
 
-Supports X (Twitter), Bluesky, and Misskey.
+Click the extension icon or press Alt+S, then click a post — it is saved to a folder you choose, together with its text, author, date, and engagement counts. The desktop app lets you search, filter (by platform, date, engagement, tags), tag posts, and export.
 
 HOW IT WORKS
 1. Click the extension icon or press Alt+S
 2. Click the post you want to save
-3. The post is saved as a JPEG with EXIF metadata
+3. The post is saved to your chosen folder as a JPEG plus a small JSON metadata file
+4. Open the desktop app to browse, search, and manage your captures
 
 WHAT'S CAPTURED
-- Post text → Comment field (searchable in Explorer)
-- Post URL → Title field
-- Display name, screen name, user ID → Tags field
-- Post date → Date taken field
+- The post as a JPEG image
+- Text, author (display name / handle), and post date
+- Engagement counts at the time of capture
+- Tags you add yourself
 
-SEARCH YOUR SAVED POSTS
-Use Windows Explorer's search bar:
-- Search by content: comment:keyword
-- Search by user: tag:@handle
-- Filter by date range: datetaken:2026/04/01..2026/04/03
+EXPORT & RESTORE
+- Export to ZIP (images + metadata) or a standalone HTML page
+- Restore by importing an exported HTML file
 
 PRIVACY
-No data is collected or transmitted to any server. Only read-only public API requests are made to Bluesky and Misskey to enrich metadata. All images are saved locally.
+No data is collected or transmitted to any server. Only read-only public API requests are made to Bluesky and Misskey to enrich metadata. Everything is saved locally to a folder you choose.

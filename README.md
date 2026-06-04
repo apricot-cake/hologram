@@ -2,21 +2,20 @@
 
 **English** | [日本語](README.ja.md)
 
-> Chrome Web Store review pending.
+Capture posts from X, Bluesky, and Misskey, and browse them later in a desktop viewer.
 
-Capture posts from X, Bluesky, and Misskey, then browse and search them later in a built-in viewer.
+Post Snap has two parts:
 
-## Usage
+- a **Chrome extension** that captures the post you click as a JPEG, and
+- a **desktop app** (Electron) that stores captures in a folder you choose and lets you search, filter, tag, and export them.
 
-1. Click the toolbar icon (or press `Alt+S`)
-2. Click the post you want to save
-3. It's saved as a JPEG and added to the viewer
+## How it works
 
-Open the viewer with `Alt+V` (or right-click the icon > Options).
+1. Press `Alt+S` (or click the toolbar icon) and click the post you want to save.
+2. The capture is written to your chosen folder as `<id>.jpg` plus a `<id>.json` sidecar holding the post's text, author, date, and engagement counts.
+3. Open the desktop app to browse, search, filter, tag, and export.
 
-## Demo
-
-![Demo](docs/demo.gif)
+No browser storage, no EXIF — the image and its metadata sit side by side as plain files you own and can move or back up freely.
 
 ## Supported Platforms
 
@@ -26,24 +25,20 @@ Open the viewer with `Alt+V` (or right-click the icon > Options).
 
 ## What you can do
 
-- Save posts as JPEGs
+- Save posts to a folder you pick
 - Search by text, user, date, engagement, or tags
 - Tag posts and bulk-delete them
-- Export to ZIP or a standalone HTML file
+- Export to ZIP (images + metadata) or a standalone HTML file
+- Restore by importing an exported HTML file
 
-## About the saved files
+## Setup (development)
 
-Captures go into `Downloads/Post Snap/` as regular JPEGs with the post info embedded. The viewer keeps its own database, but the JPEGs are there as a backup: if you uninstall the extension or move to a new machine, you can import the images and get everything back.
+The desktop app isn't packaged yet — run it from source:
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Alt+S` | Start capture mode |
-| `Alt+V` | Open viewer |
-
-Shortcuts can be customized in `chrome://extensions/shortcuts` (or `edge://extensions/shortcuts`).
+1. `cd app && npm install && npm start` — on first launch it registers the capture helper. Use **Save folder** in Settings to choose where captures go.
+2. Load the extension: `chrome://extensions` → enable Developer mode → **Load unpacked** → select this folder. Copy the shown extension ID into the app's **Extension ID** field.
+3. Capture with `Alt+S` (assign the shortcut at `chrome://extensions/shortcuts` if it isn't bound).
 
 ## Privacy
 
-See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
+See [PRIVACY.md](PRIVACY.md). Nothing is sent to any server; everything stays in your local folder.
