@@ -165,6 +165,29 @@
     .badge.status-private { background: rgba(255, 193, 7, 0.9); color: #000; }
     .badge.status-parsed { background: rgba(74, 158, 255, 0.85); }
     .badge.status-no-annotation { background: rgba(80, 80, 80, 0.85); }
+    .card .open-window-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 3;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.1s, background 0.1s;
+    }
+    .card:hover .open-window-btn { opacity: 1; }
+    .card .open-window-btn:hover { background: var(--accent); }
     .card .stats {
       position: absolute;
       bottom: 0;
@@ -403,6 +426,14 @@
         }
         card.appendChild(badges);
 
+        // 別ウィンドウで開くオーバーレイボタン (ホバーで右上に表示)
+        const openBtn = document.createElement('button');
+        openBtn.className = 'open-window-btn';
+        openBtn.textContent = '❐';
+        openBtn.title = '別ウィンドウで開く';
+        openBtn.setAttribute('aria-label', '別ウィンドウで開く');
+        card.appendChild(openBtn);
+
         const stats = document.createElement('div');
         stats.className = 'stats';
 
@@ -473,9 +504,16 @@
         if (!card) return;
         const id = card.dataset.id;
         if (!id) return;
+        // 通常クリックはメインウィンドウで表示、オーバーレイの ❐ は別ウィンドウで開く
+        const newWindow = !!e.target.closest('.open-window-btn');
         try {
-          // クリックで Eagle 側に該当画像を開く (別ウィンドウにしたい場合は { window: true })
-          await eagle.item.open(id);
+          await eagle.item.open(id, { window: newWindow });
+          // メインウィンドウ表示時は Eagle 本体を前面化する (別ウィンドウは自前で前面に出る)。
+          // eagle.app.show は Eagle 4.0 build18+。無ければ前面化はスキップ。
+          if (!newWindow) {
+            if (typeof eagle.app?.show === 'function') await eagle.app.show();
+            else console.warn('eagle.app.show unavailable (needs Eagle 4.0 build18+)');
+          }
         } catch (err) {
           console.error('item.open failed:', err);
         }
