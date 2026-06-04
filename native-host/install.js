@@ -135,6 +135,22 @@ function install({ exe = process.execPath, runAsNode = false, extensionId } = {}
   return { launcher, manifest, configDir: configDir(), extensionId: id };
 }
 
+// Rewrite only the manifest's allowed_origins, preserving the existing launcher
+// (so we never clobber a working launcher with one that points at a non-ASCII
+// exe path). Falls back to a full install if no manifest exists yet.
+function updateAllowedOrigin(extensionId) {
+  const mp = manifestPath();
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  } catch {
+    return install({ extensionId });
+  }
+  manifest.allowed_origins = extensionId ? [`chrome-extension://${extensionId}/`] : [];
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf8');
+  return { manifest: mp, extensionId };
+}
+
 function uninstall() {
   if (process.platform === 'win32') {
     for (const key of windowsRegistryKeys()) {
@@ -163,7 +179,7 @@ function uninstall() {
   }
 }
 
-module.exports = { install, uninstall, readExtensionId, HOST_NAME, BRIDGE_PATH, launcherPath, manifestPath };
+module.exports = { install, uninstall, updateAllowedOrigin, readExtensionId, HOST_NAME, BRIDGE_PATH, launcherPath, manifestPath };
 
 if (require.main === module) {
   if (process.argv[2] === 'uninstall') {

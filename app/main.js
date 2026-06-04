@@ -72,8 +72,11 @@ function listPosts() {
 // --- Native host registration (idempotent, on each launch) ---
 function ensureHostRegistered() {
   try {
-    // In Electron, process.execPath is the Electron binary; run the bridge via
-    // it in Node mode so end users don't need a separate Node install.
+    // Don't clobber an existing registration: the launcher may have been written
+    // with a node binary on an ASCII path, whereas process.execPath here is the
+    // Electron binary (possibly under a non-ASCII path that cmd.exe would mangle
+    // in a .bat). Only do a full install when nothing is registered yet.
+    if (fs.existsSync(installer.manifestPath())) return;
     installer.install({ exe: process.execPath, runAsNode: true });
   } catch (err) {
     console.error('Failed to register native messaging host:', err);
@@ -115,7 +118,16 @@ ipcMain.handle('set-extension-id', (_event, id) => {
   const cfg = readConfig();
   cfg.extensionId = (typeof id === 'string' ? id.trim() : '');
   writeConfig(cfg);
-  ensureHostRegistered(); // re-write the host manifest with the new allowed origin
+  try {
+    // Update only the manifest's allowed origin; keep the existing launcher.
+    if (fs.existsSync(installer.manifestPath())) {
+      installer.updateAllowedOrigin(cfg.extensionId);
+    } else {
+      installer.install({ exe: process.execPath, runAsNode: true, extensionId: cfg.extensionId });
+    }
+  } catch (err) {
+    console.error('Failed to update native host origin:', err);
+  }
   return { extensionId: cfg.extensionId };
 });
 
