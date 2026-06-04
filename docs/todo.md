@@ -215,3 +215,13 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - Window Plugin 側で旧バージョン parser を残す (モノレポなので Info+ 変更と原子的に PR できる)
   - ルート README にフォーマット変更履歴を集約
 - [ ] extension/ も shared/ から import するようにリファクタ (現状 extension は自己完結、Phase 1 のロジックが shared/sns-api-client.js と重複してる)
+
+---
+
+## リポジトリ整理 (要手動対応)
+
+- [ ] `eagle-info-plus-private` リポを削除する (開発メモは本リポ `docs/` に統合済み)
+  - GitHub → 当該リポ → Settings → 一番下 Danger Zone → Delete this repository
+  - **前提**: メインリポの統合 PR をマージしてから削除する (マージ前に消すと統合元が失われる)
+  - private リポにはサニタイズ**前**の実値 (個人パス・実件数) が残っているので、残したいなら削除前に clone して退避
+  - 削除に抵抗があれば Archive (読み取り専用で凍結) でも可
