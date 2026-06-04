@@ -274,7 +274,57 @@
     const $ = (id) => document.getElementById(id);
     const setStatus = (text) => { $('status').textContent = text; };
 
+    // === デバッグログ (ファイル出力) ===
+    // Eagle 内は Electron + nodeIntegration なので fs で書ける。console と未捕捉エラーを
+    // バッファしてファイルへ吐き、コンソールを毎回コピペせず外部から読めるようにする。
+    // 出力先: <repo>/.debug/engagement-browser-debug.log (plugin.path の親 = repo)。
+    // plugin.path が取れなければ <library>/plugin-data/ にフォールバック。
+    const DEBUG_LOG = (() => {
+      const buf = [];
+      const MAX = 800;
+      let fs = null, logPath = null, flushTimer = null;
+      const fmt = (a) => {
+        if (a instanceof Error) return a.stack || a.message;
+        if (a && typeof a === 'object') { try { return JSON.stringify(a); } catch { return String(a); } }
+        return String(a);
+      };
+      const flush = () => {
+        if (!fs || !logPath || flushTimer) return;
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          try { fs.writeFileSync(logPath, buf.join('\n') + '\n'); } catch {}
+        }, 150);
+      };
+      const push = (level, args) => {
+        buf.push(`[${new Date().toISOString()}] ${level} ${args.map(fmt).join(' ')}`);
+        if (buf.length > MAX) buf.shift();
+        flush();
+      };
+      for (const level of ['log', 'warn', 'error']) {
+        const orig = console[level].bind(console);
+        console[level] = (...args) => { push(level.toUpperCase(), args); orig(...args); };
+      }
+      window.addEventListener('error', (e) => push('UNCAUGHT', [e.message, `${e.filename}:${e.lineno}`]));
+      window.addEventListener('unhandledrejection', (e) => push('REJECT', [e.reason]));
+      return {
+        init(pluginPath, libraryPath) {
+          try {
+            fs = require('fs');
+            const path = require('path');
+            const dir = pluginPath
+              ? path.join(pluginPath, '..', '.debug')
+              : path.join(libraryPath, 'plugin-data');
+            fs.mkdirSync(dir, { recursive: true });
+            logPath = path.join(dir, 'engagement-browser-debug.log');
+            flush();
+            return logPath;
+          } catch (e) { return null; }
+        }
+      };
+    })();
+
     let store = null;
+    let currentLibraryPath = null;
 
     if (typeof eagle === 'undefined') {
       setStatus('✗ eagle global not found');
@@ -282,6 +332,7 @@
       const initStore = async (libraryPath) => {
         const fs = require('fs');
         const path = require('path');
+        currentLibraryPath = libraryPath;
         const { EngagementStore } = await import('../shared/engagement-store.js');
         store = new EngagementStore({ libraryPath, fs, path });
         store.load();
@@ -301,6 +352,23 @@
         return String(n);
       };
 
+      // 保存済み thumbnailURL は絶対パス。PC 移行等で旧ライブラリ位置を指していても、相対部分
+      // (images/<id>.info/<file>) を抽出して現在のライブラリパスから file URL を組み直す。
+      // 相対部分はライブラリ移動でも不変なので、これで再 sync 不要に stale パスを吸収できる。
+      const thumbnailSrc = (it) => {
+        if (!it.thumbnailURL) return null;
+        if (!currentLibraryPath) return it.thumbnailURL;
+        try {
+          const m = decodeURIComponent(it.thumbnailURL).match(/\/(images\/[^/]+\.info\/[^/]+)$/);
+          if (!m) return it.thumbnailURL;
+          const path = require('path');
+          const { pathToFileURL } = require('url');
+          return pathToFileURL(path.join(currentLibraryPath, m[1])).href;
+        } catch {
+          return it.thumbnailURL;
+        }
+      };
+
       const buildCard = (it) => {
         const card = document.createElement('div');
         card.className = 'card';
@@ -309,7 +377,7 @@
 
         if (it.thumbnailURL) {
           const img = document.createElement('img');
-          img.src = it.thumbnailURL;
+          img.src = thumbnailSrc(it);
           img.loading = 'lazy';
           img.alt = '';
           // Eagle が thumbnail を生成してない (非画像/破損) ケースで黙って隠す
@@ -544,14 +612,33 @@
         }
       });
 
+      // 起動時診断: サムネ未表示などの調査用に、環境と store / 生 Eagle item の素性をログへ。
+      // Item インスタンスは非列挙 (JSON.stringify で {}) なので property は明示プローブする。
+      // 起動時に環境と store の概況をログへ (console/error のファイル捕捉は DEBUG_LOG が担当)。
+      const logDiagnostics = (lib) => {
+        try {
+          const items = Object.values(store.data.items);
+          const synced = items.filter(it => it.status === 'synced').length;
+          console.log('[diag] env', {
+            eagle: eagle.app?.version, node: process.versions?.node,
+            electron: process.versions?.electron, platform: process.platform
+          });
+          console.log('[diag] library', lib?.path);
+          console.log('[diag] store items', items.length, 'synced', synced, 'lastSync', store.data.lastSync);
+        } catch (e) { console.error('[diag] failed', e); }
+      };
+
       eagle.onPluginCreate(async (plugin) => {
         try {
           const lib = await eagle.library.info();
           $('library-path').textContent = lib?.path || '(unknown)';
+          const logPath = DEBUG_LOG.init(plugin?.path, lib?.path);
+          console.log('[debug] log file →', logPath);
           await initStore(lib.path);
           renderFooter();
           renderGrid();
           updateResumeButton();
+          logDiagnostics(lib);
           setStatus('ready');
         } catch (e) {
           setStatus('init error: ' + e.message);

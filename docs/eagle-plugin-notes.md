@@ -43,6 +43,12 @@ Phase 2 の同期キーには **`modifiedAt`** を使う (todo.md の `last_sync
 ### pixiv non-R-18 は cookie 不要
 `/ajax/illust/<id>` はログインなしでも 200 + 実 engagement を返す (実機 7 件で確認)。R-18 のときの挙動は未確認 — 仮説: 非ログインだと `error: true` ボディで `private` 扱いになるはず。
 
+### Item の `thumbnailURL` / `fileURL` は絶対パス — ライブラリ移動で stale る
+`item.thumbnailURL` `fileURL` `filePath` `thumbnailPath` はすべて**現在のライブラリ位置を含む絶対パス** (`file:///.../<lib>.library/images/<id>.info/<file>`)。これをサイドカー DB にキャッシュすると、PC 移行などでライブラリフォルダが移動した後に**古いパスを指したまま**になり、`<img src>` が `net::ERR_FILE_NOT_FOUND` で表示できない (実機: 約 9000 件中 8983 件が旧パスのまま黙って真っ黒になった)。`modifiedAt` 差分 sync は中身が変わらない item を再取得しないので、移動後も大半が旧パスで残り続ける。
+
+- 対策: 絶対パスをそのまま使わず、相対部分 (`images/<id>.info/<file>` — 移動で不変) を抽出して現在のライブラリパスから組み直す。file URL 化は `require('url').pathToFileURL` が encode 込みで安全 (日本語・スペース・`—` 等を含むファイル名でも壊れない)。
+- file:// プロトコル自体は Eagle plugin renderer で問題なく読める (現ライブラリ由来の thumbnail は OK、旧パスのみ FAILED)。CORS や local resource ブロックではない。
+
 ---
 
 ## 環境メモ

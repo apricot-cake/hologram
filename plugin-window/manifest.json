@@ -4,7 +4,7 @@
   "name": "Engagement Browser",
   "logo": "/logo.png",
   "keywords": ["engagement", "sns", "filter"],
-  "devTools": true,
+  "devTools": false,
   "main": {
     "url": "index.html",
     "width": 1024,

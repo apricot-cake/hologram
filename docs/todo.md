@@ -216,6 +216,24 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - Window Plugin 側で旧バージョン parser を残す (モノレポなので Info+ 変更と原子的に PR できる)
   - ルート README にフォーマット変更履歴を集約
 - [ ] extension/ も shared/ から import するようにリファクタ (現状 extension は自己完結、Phase 1 のロジックが shared/sns-api-client.js と重複してる)
+- [ ] thumbnail を sidecar に絶対パスでなく**ライブラリ相対**で保存 (現状は描画時に相対部分を正規表現抽出して現ライブラリで解決し、PC 移行の stale パスを吸収。`buildRecord` に libraryPath を渡して相対保存すれば描画時の抽出が不要になる。詳細は eagle-plugin-notes.md「thumbnailURL は絶対パス」)
+
+---
+
+## 追加アイデア (未整理 — 2026-06-04 追加)
+
+### 対話的タグ付与プラグイン
+- モーダル / ウィザード UI で、**タググループごとに**「(タググループ名) のタグを付けますか?」と順に質問する
+- 「はい」ならそのグループに含まれるタグ一覧を表示 → 選んで付与
+- これを全タググループ分くり返す
+- 選択中の画像 (アイテム) に対して実行できる Eagle プラグインとして実装
+- 要調査: Eagle Plugin API でタググループ一覧 / グループ内タグを取得できるか (`eagle.tag` / `eagle.tagGroup` 系の有無)。plugin type は inspector / window / 別か
+
+### リンク付き画像の annotation 一括バックフィル
+- Eagle 公式拡張 (Eagle for Chrome) 経由で `url` が自動付与された画像のうち、**Info+ の annotation をまだ取得していないもの**を一括で書き込む
+- Phase 3 の engagement Backfill (status=no-annotation) とは別物: あちらは engagement 数値、こちらは **annotation (platform / author / text / hashtags / alt の人間情報)** を埋める
+- 実質 `extension/background.js` の `fetchPost` + `buildAnnotation` を、ライブラリ既存アイテムの `url` に対して後追い実行する経路
+- Phase 5 の「extension/ も shared/ から import するリファクタ」と合流させると重複なく書ける (annotation 構築ロジックを shared に寄せてから両方で使う)
 
 ---
 
