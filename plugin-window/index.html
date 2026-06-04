@@ -474,10 +474,10 @@
         const id = card.dataset.id;
         if (!id) return;
         try {
-          await eagle.item.select([id]);
-          await eagle.window.show();
+          // クリックで Eagle 側に該当画像を開く (別ウィンドウにしたい場合は { window: true })
+          await eagle.item.open(id);
         } catch (err) {
-          console.error('select/show failed:', err);
+          console.error('item.open failed:', err);
         }
       };
 
