@@ -216,6 +216,8 @@
       <option value="stale">stale &gt; N days</option>
     </select></label>
     <input id="engagement-stale-days" type="number" min="1" value="7" title="日数" style="display: none;">
+    <button id="backfill-btn" title="annotation 無しだが SNS URL を持つ既存アイテムの engagement を埋める">Backfill</button>
+    <button id="resume-btn" style="display: none;" title="前回 cancel した続きを処理">Resume</button>
     <button id="cancel-btn" style="display: none;">Cancel</button>
     <span class="status" id="status"></span>
   </div>
@@ -451,12 +453,25 @@
         return {};
       };
 
-      const runEngagement = async () => {
+      // 前回 cancel で取り残した件数を Resume ボタンに反映 (store.data.engagementResume)
+      const updateResumeButton = () => {
+        const n = store?.data?.engagementResume?.ids?.length || 0;
+        const btn = $('resume-btn');
+        btn.textContent = `Resume (${n})`;
+        btn.style.display = n > 0 ? '' : 'none';
+      };
+
+      // filterOverride を渡すと scope セレクタを無視してその filter で実行する (Resume 用)
+      const runEngagement = async (filterOverride) => {
         if (!store) return;
         const btn = $('engagement-btn');
+        const resumeBtn = $('resume-btn');
+        const backfillBtn = $('backfill-btn');
         const cancelBtn = $('cancel-btn');
         currentAbort = new AbortController();
         btn.disabled = true;
+        resumeBtn.disabled = true;
+        backfillBtn.disabled = true;
         cancelBtn.style.display = '';
         setStatus('fetching engagement…');
         try {
@@ -466,13 +481,13 @@
             fetch: window.fetch.bind(window),
             signal: currentAbort.signal,
             rateLimit: DEFAULT_RATE_LIMIT,
-            filter: buildScopeFilter(),
+            filter: filterOverride || buildScopeFilter(),
             onProgress: ({ done, total }) => {
               setStatus(`fetching engagement… ${done}/${total}`);
             },
             log: (msg) => console.log('[engagement]', msg)
           });
-          const tag = r.cancelled ? 'cancelled' : 'engagement';
+          const tag = r.cancelled ? `cancelled (${r.remainingIds.length} left)` : 'engagement';
           setStatus(`${tag}: ${r.okCount} ok / ${r.errCount} err / ${r.skipCount} skip (${r.elapsedMs}ms)`);
           renderFooter();
           renderGrid();
@@ -481,17 +496,30 @@
           console.error(e);
         } finally {
           btn.disabled = false;
+          resumeBtn.disabled = false;
+          backfillBtn.disabled = false;
           cancelBtn.style.display = 'none';
           currentAbort = null;
+          updateResumeButton();
         }
       };
+
+      const onResume = () => {
+        const ids = store?.data?.engagementResume?.ids;
+        if (ids?.length) runEngagement({ ids });
+      };
+
+      // annotation 無しだが SNS URL を持つ既存アイテムを engagement で埋める
+      const onBackfill = () => runEngagement({ statuses: ['no-annotation'] });
 
       const onCancel = () => {
         if (currentAbort) currentAbort.abort();
       };
 
       $('sync-btn').addEventListener('click', runSync);
-      $('engagement-btn').addEventListener('click', runEngagement);
+      $('engagement-btn').addEventListener('click', () => runEngagement());
+      $('resume-btn').addEventListener('click', onResume);
+      $('backfill-btn').addEventListener('click', onBackfill);
       $('cancel-btn').addEventListener('click', onCancel);
       $('grid').addEventListener('click', onCardClick);
       ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
@@ -523,6 +551,7 @@
           await initStore(lib.path);
           renderFooter();
           renderGrid();
+          updateResumeButton();
           setStatus('ready');
         } catch (e) {
           setStatus('init error: ' + e.message);

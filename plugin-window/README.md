@@ -64,7 +64,7 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 | `error` | SNS API が想定外エラー (5xx / ネットワーク / JSON parse 失敗 等) を返した | retry で復活する可能性あり。`errorMessage` がカードの tooltip に出る |
 | `deleted` | SNS 側で投稿削除済み (404 等)。最終フェッチ時の engagement は **温存される** (historical snapshot として参照可能) | retry しても無駄 |
 | `private` | アクセス権なし (X 鍵垢の 401/403、pixiv R-18 ログアウト時の error body 等) | ログイン直せば retry で復活可能 |
-| `no-annotation` | Info+ の annotation がない (Phase 1 以前の保存、対応外サイトドラッグ 等) | バックフィル機能 (今後実装) で処理候補 |
+| `no-annotation` | Info+ の annotation がない (Phase 1 以前の保存、対応外サイトドラッグ 等) | `Backfill` で SNS URL を持つものは engagement 取得対象になる |
 
 `deleted` / `private` でも engagement の数値フィールドは上書きしない (空 object を upsert するため)。「削除前最後のスナップショット」として読める。
 
@@ -72,6 +72,7 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 
 - `Sync from Eagle`: ライブラリ全件と store を diff し、変更分の annotation を再 parse。getIdsWithModifiedAt → batched (200) getByIds → upsert
 - `Fetch engagement`: status=parsed/synced の record に対して各 SNS API を叩き、likes 等を埋める
+- `Backfill`: annotation 無し (status=no-annotation) だが SNS の post URL を持つアイテムの engagement を埋める。取得は URL だけで成立するので annotation 不要。成功すると status=synced に昇格し platform も URL 由来で埋まる。rate limit / Cancel / Resume は `Fetch engagement` と共通
 
 `Fetch engagement` は platform ごとにレート制限する。X は未認証の Syndication API を叩くため 1 並列 / 1.5 秒間隔に絞り、Bluesky / pixiv は 4 並列で流す。platform 同士は並行に走る (X が間隔を空けて流れる裏で Bluesky / pixiv が並列で進む)。Cancel は dispatch 済みのリクエストが完了してから止まる (X の間隔待ち中なら最大 1.5 秒)。
 
@@ -80,6 +81,8 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 - `all parsed/synced`: status=parsed/synced の全 record (デフォルト)
 - `current filter`: グリッドに現在表示中のアイテムのみ。Platform / Status / Min likes / Min views フィルタがそのまま効く (プラットフォーム別フェッチはこれで賄う)
 - `stale > N days`: engagement が N 日以上前、または未取得 (parsed) の record のみ。日数は隣の入力で指定
+
+`Fetch engagement` を Cancel すると、未処理だったアイテムが store に記録され、`Resume (N)` ボタンが出る。押すとその残り N 件だけを処理する。完走するとボタンは消える。プラグインを開き直しても記録は残る (サイドカー DB に保存されるため)。
 
 ## 起動時
 

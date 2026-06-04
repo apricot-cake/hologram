@@ -208,6 +208,38 @@ test('syncEngagement: filter.staleDays targets only old / never-fetched records'
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// --- バックフィル (no-annotation 取り込み) ---
+
+test('syncEngagement: backfill processes no-annotation items when statuses includes it', async () => {
+  const { dir, store } = mkstore();
+  try {
+    // annotation 無しだが SNS の post URL は持つ (Eagle for Chrome の素ドラッグ等)
+    store.upsert('n', { status: 'no-annotation', url: 'https://x.com/foo/status/1' });
+    store.upsert('p', { status: 'parsed', platform: 'x', url: 'https://x.com/foo/status/2' });
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 9, conversation_count: 1 }); };
+    const r = await syncEngagement({ store, fetch, filter: { statuses: ['no-annotation'] } });
+    // no-annotation のみ対象、parsed は対象外
+    assert.equal(r.targetCount, 1);
+    assert.equal(calls, 1);
+    const rec = store.get('n');
+    assert.equal(rec.status, 'synced');
+    assert.equal(rec.likes, 9);
+    assert.equal(rec.platform, 'x'); // URL 由来で platform が埋まる
+    assert.equal(store.get('p').status, 'parsed'); // 手付かず
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: no-annotation is excluded by default', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('n', { status: 'no-annotation', url: 'https://x.com/foo/status/1' });
+    const fetch = async () => { throw new Error('should not be called'); };
+    const r = await syncEngagement({ store, fetch });
+    assert.equal(r.targetCount, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- レート制限 ---
 
 test('syncEngagement: minIntervalMs spaces out request starts (X)', async () => {
@@ -287,6 +319,52 @@ test('syncEngagement: different platforms run concurrently', async () => {
 
     assert.equal(r.okCount, 2);
     assert.equal(maxInFlight, 2, `maxInFlight: ${maxInFlight}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- resume ---
+
+test('syncEngagement: cancel records remaining ids, resume finishes them', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 5; i++) {
+      store.upsert(`a${i}`, { status: 'parsed', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    const ac = new AbortController();
+    let calls = 0;
+    const fetch1 = async () => {
+      calls++;
+      if (calls === 2) ac.abort();
+      return mockJson({ favorite_count: 1, conversation_count: 0 });
+    };
+    const r1 = await syncEngagement({ store, fetch: fetch1, signal: ac.signal });
+    assert.equal(r1.cancelled, true);
+    // 取り残しが result と store の両方に記録される
+    assert.ok(r1.remainingIds.length > 0 && r1.remainingIds.length < 5, `remaining: ${r1.remainingIds}`);
+    assert.deepEqual(store.data.engagementResume.ids, r1.remainingIds);
+
+    // 再開: 記録された ids だけを対象に処理 → 完走で resume 状態が消える
+    const resumeIds = store.data.engagementResume.ids;
+    let calls2 = 0;
+    const fetch2 = async () => { calls2++; return mockJson({ favorite_count: 7, conversation_count: 0 }); };
+    const r2 = await syncEngagement({ store, fetch: fetch2, filter: { ids: resumeIds } });
+    assert.equal(r2.targetCount, resumeIds.length);
+    assert.equal(calls2, resumeIds.length);
+    assert.equal(r2.remainingIds.length, 0);
+    assert.equal(store.data.engagementResume, undefined);
+    // 全 5 件が最終的に synced
+    for (let i = 0; i < 5; i++) assert.equal(store.get(`a${i}`).status, 'synced');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: full completion leaves no resume state', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/1' });
+    const fetch = async () => mockJson({ favorite_count: 1, conversation_count: 0 });
+    const r = await syncEngagement({ store, fetch });
+    assert.equal(r.remainingIds.length, 0);
+    assert.equal(store.data.engagementResume, undefined);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

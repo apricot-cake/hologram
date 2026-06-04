@@ -161,10 +161,11 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - [x] 進捗テキスト + cancel ボタン (`AbortSignal` + `onProgress`)
   - [x] スコープ選択 (`syncEngagement` の `filter`: `staleDays` / `ids` / `platform` を AND。UI の Scope = all / current filter / stale。プラットフォーム別は「current filter」+ グリッドの Platform フィルタで賄う)
   - [x] レート制限 (`syncEngagement` の `rateLimit` パラメータ。platform ごとに concurrency + minIntervalMs。`DEFAULT_RATE_LIMIT` = X: 1 並列 / 1.5 秒間隔、Bluesky / pixiv: 4 並列。platform 同士は並行)
-  - [ ] resume 用フラグ (中断時に最後に処理した item_id を記録)
-- [ ] バックフィル機能
+  - [x] resume 用フラグ (cancel 時に未処理ターゲット id を `store.data.engagementResume.ids` に永続化。`Resume` ボタンで `filter: { ids }` で再開、完走でクリア。「最後の id」でなく残り id 集合を記録するので並列・多 platform でも正確。graceful cancel が対象 — store.save は run 末尾の 1 回)
+- [x] バックフィル機能
   - 既存ライブラリ内の SNS URL 持ちアイテムを順次取得して engagement 埋め
   - cancel + rate limit が前提なので「一括リフレッシュ」の運用機能を先に整える
+  - 実装: `syncEngagement` の `filter.statuses` で対象 status を差し替え (backfill = `['no-annotation']`)。`Backfill` ボタンが `runEngagement({ statuses: ['no-annotation'] })` を呼ぶだけで rate limit / cancel / resume を全て再利用。engagement 取得は URL だけで済むので annotation 不要。取得成功で status=synced に昇格し、platform は URL 由来で埋める
 - [x] エラー状態管理
   - [x] `status` に `deleted` / `private` / `error` を記録してスキップ続行
   - [x] Status フィルタ + status バッジ + ⓘ popover で説明

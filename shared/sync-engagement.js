@@ -51,21 +51,25 @@ export async function syncEngagement({
 } = {}) {
   const t0 = now();
 
-  // 対象: status='parsed' (annotation 解析済みで engagement 未取得) または 'synced' (再フェッチ)
-  let targets = Object.entries(store.data.items)
-    .filter(([_, v]) => v.status === 'parsed' || v.status === 'synced')
-    .filter(([_, v]) => v.url);
-
-  // スコープ絞り込み (全て AND)。詳細は todo.md の Phase 3「スコープ選択」。
-  //   platform  — 指定 platform のみ
-  //   ids        — 指定 id の whitelist (UI の「現在のフィルタ」= グリッド表示中の id)
-  //   staleDays  — engagement が N 日以上前、または未取得 (status='parsed') の record のみ
-  if (filter.platform) {
-    targets = targets.filter(([_, v]) => v.platform === filter.platform);
-  }
+  // 対象の基本集合 (url を持つ record)。
+  //   通常: status='parsed' (engagement 未取得) / 'synced' (再フェッチ) を対象。
+  //   filter.statuses で対象 status を差し替え可 (backfill は ['no-annotation'])。
+  //   filter.ids 指定時は status を問わない whitelist (resume / current-filter スコープ)。
+  //     → backfill を cancel→resume しても no-annotation のまま処理を続けられる。
+  let targets = Object.entries(store.data.items).filter(([_, v]) => v.url);
   if (filter.ids) {
     const allow = new Set(filter.ids);
     targets = targets.filter(([id]) => allow.has(id));
+  } else {
+    const eligible = new Set(filter.statuses || ['parsed', 'synced']);
+    targets = targets.filter(([_, v]) => eligible.has(v.status));
+  }
+
+  // 追加スコープ (AND)。詳細は todo.md の Phase 3「スコープ選択」。
+  //   platform  — 指定 platform のみ
+  //   staleDays — engagement が N 日以上前、または未取得の record のみ
+  if (filter.platform) {
+    targets = targets.filter(([_, v]) => v.platform === filter.platform);
   }
   if (filter.staleDays != null) {
     const cutoff = now() - filter.staleDays * 86400000;
@@ -92,6 +96,7 @@ export async function syncEngagement({
   }
 
   const aborted = () => signal?.aborted === true;
+  const processedIds = new Set();
   const reportProgress = (currentId) => {
     onProgress?.({ done: okCount + errCount + skipCount, total, currentId });
   };
@@ -103,6 +108,7 @@ export async function syncEngagement({
       const result = await FETCHERS[parsed.platform]({ ...parsed, fetch });
       store.upsert(id, {
         ...result.engagement,
+        platform: parsed.platform, // backfill (no-annotation) でも platform バッジ/フィルタが効くよう URL 由来で埋める
         status: result.status,
         engagementSyncedAt: now()
       });
@@ -113,6 +119,7 @@ export async function syncEngagement({
       errCount++;
       log(`  ${id} (${parsed.platform}) error: ${e.message}`);
     }
+    processedIds.add(id);
     reportProgress(id);
   };
 
@@ -125,6 +132,17 @@ export async function syncEngagement({
 
   const cancelled = aborted();
 
+  // resume: cancel で取り残したターゲット id を store に記録し、次回 filter.ids で再開できるように。
+  // 完走 (または残ゼロ) なら resume 状態を消す。store.save は run 末尾の 1 回なので graceful
+  // cancel が対象 (hard crash 中の未保存分は別途)。
+  const queuedIds = [...queues.values()].flat().map((e) => e.id);
+  const remainingIds = cancelled ? queuedIds.filter((id) => !processedIds.has(id)) : [];
+  if (remainingIds.length) {
+    store.data.engagementResume = { ids: remainingIds, savedAt: now() };
+  } else {
+    delete store.data.engagementResume;
+  }
+
   // 完了 (中断含む) で final progress を通知
   onProgress?.({ done: okCount + errCount + skipCount, total });
   store.save();
@@ -135,6 +153,7 @@ export async function syncEngagement({
     errCount,
     skipCount,
     cancelled,
+    remainingIds,
     elapsedMs: now() - t0
   };
 }
