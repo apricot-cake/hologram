@@ -157,7 +157,7 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 
 ## Phase 3: 運用機能 (Window Plugin)
 
-- [ ] 一括リフレッシュ (一部 done)
+- [x] 一括リフレッシュ
   - [x] 進捗テキスト + cancel ボタン (`AbortSignal` + `onProgress`)
   - [x] スコープ選択 (`syncEngagement` の `filter`: `staleDays` / `ids` / `platform` を AND。UI の Scope = all / current filter / stale。プラットフォーム別は「current filter」+ グリッドの Platform フィルタで賄う)
   - [x] レート制限 (`syncEngagement` の `rateLimit` パラメータ。platform ごとに concurrency + minIntervalMs。`DEFAULT_RATE_LIMIT` = X: 1 並列 / 1.5 秒間隔、Bluesky / pixiv: 4 並列。platform 同士は並行)
