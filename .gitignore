@@ -1,1 +1,6 @@
 .claude/settings.local.json
+node_modules/
+app/node_modules/
+app/dist/
+app/.smoke-shot.png
+__pycache__/

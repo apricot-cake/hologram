@@ -4,7 +4,7 @@
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
-    "message": "SNS投稿を画像としてキャプチャし、検索可能なEXIFメタデータ付きで保存",
+    "message": "X・Bluesky・Misskeyの投稿を画像としてキャプチャし、デスクトップアプリで閲覧・検索",
     "description": "Extension description shown in Web Store"
   },
   "actionTitle": {

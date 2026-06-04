@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src psimg: data:; style-src 'unsafe-inline' 'self';">
+<title>Post Snap</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px/1.5 -apple-system, 'Segoe UI', system-ui, sans-serif; background: #0f1419; color: #e7e9ea; }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; background: #16202a; border-bottom: 1px solid #2f3b47;
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  .folder { flex: 1; font-size: 12px; color: #8b98a5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    border: 1px solid #536471; background: transparent; color: #e7e9ea; transition: background .15s;
+  }
+  button:hover { background: #1d2832; }
+  button.primary { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+  button.primary:hover { background: #1a8cd8; }
+  main { padding: 20px; }
+  .count { font-size: 12px; color: #8b98a5; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .card {
+    background: #16202a; border: 1px solid #2f3b47; border-radius: 12px; overflow: hidden;
+    cursor: pointer; transition: border-color .15s, transform .05s;
+  }
+  .card:hover { border-color: #1d9bf0; }
+  .card:active { transform: scale(.997); }
+  .card img { width: 100%; display: block; max-height: 320px; object-fit: cover; background: #0a0e12; }
+  .meta { padding: 12px; }
+  .user { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+  .handle { color: #8b98a5; font-weight: 400; }
+  .badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 4px; color: #fff; text-transform: uppercase; }
+  .badge.x { background: #000; border: 1px solid #536471; }
+  .badge.bluesky { background: #0085ff; }
+  .badge.misskey { background: #86b300; }
+  .text { font-size: 13px; color: #cfd9e0; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word;
+          display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .stats { display: flex; gap: 14px; font-size: 12px; color: #8b98a5; }
+  .date { font-size: 11px; color: #5c6b79; margin-top: 6px; }
+  .empty { text-align: center; padding: 80px 20px; color: #8b98a5; }
+  .empty h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #cfd9e0; }
+  .empty p { margin-bottom: 18px; }
+  .setup { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #11181f; border-bottom: 1px solid #2f3b47; }
+  .setup label { font-size: 12px; color: #8b98a5; white-space: nowrap; }
+  .setup input { flex: 0 1 360px; font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                 border: 1px solid #2f3b47; background: #0f1419; color: #e7e9ea; outline: none; }
+  .setup input:focus { border-color: #1d9bf0; }
+  .setup-hint { font-size: 11px; color: #5c6b79; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Post Snap</h1>
+    <span class="folder" id="folderLabel"></span>
+    <button id="reloadBtn">再読み込み</button>
+    <button id="folderBtn" class="primary">保存先を選択</button>
+  </header>
+  <div class="setup">
+    <label for="extId">拡張ID</label>
+    <input type="text" id="extId" spellcheck="false" placeholder="chrome://extensions で確認したIDを貼り付け（キャプチャ受信に必要）">
+    <span class="setup-hint" id="extIdHint"></span>
+  </div>
+  <main>
+    <div class="count" id="count"></div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" style="display:none;"></div>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

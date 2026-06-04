@@ -1,6 +1,11 @@
 # Post Snap
 
-Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャし、EXIFメタデータ（JSON）付きで保存。ビルトインビューアで検索・フィルタ・エクスポート。
+SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするChrome拡張（Manifest V3）と、保存・閲覧を担うデスクトップアプリ（Electron）。
+
+> **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
+> - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
+> - **Phase 2（未着手）**: ビューア全機能を Electron へ移植、拡張内ビューア（`viewer.html/js`）撤去、`vendor/piexif.js` 削除、ドキュメント/ストア説明の全面更新。
+> 詳細プラン: `~/.claude/plans/playful-kindling-duckling.md`
 
 ## 対応プラットフォーム
 
@@ -10,12 +15,14 @@ Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャ�
 
 ## 構成
 
-- `manifest.json` — 拡張設定、権限、キーボードショートカット
-- `background.js` — Service Worker。キャプチャ処理、EXIF書き込み、storage管理
-- `content.js` — コンテンツスクリプト。投稿選択UI、DOM解析、メタデータ抽出
-- `viewer.html` / `viewer.js` — ビューア（検索・ソート・フィルタ・エクスポートZIP/HTML・インポート・設定）
-- `vendor/jszip.min.js` — ZIPエクスポート用ライブラリ
-- `scripts/inject-dummy.js` — 開発用ダミーデータ
+- `manifest.json` — 拡張設定、権限（`nativeMessaging`）、キーボードショートカット
+- `background.js` — Service Worker。タブキャプチャ → クロップ → Native Messaging でブリッジへ送信（EXIF/storage は廃止済み）
+- `content.js` — コンテンツスクリプト。投稿選択UI、DOM解析、メタデータ抽出、クロップ
+- `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
+- `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録
+- `viewer.html` / `viewer.js` — 旧ビューア（拡張オプションページ）。**Phase 2 で `app/` へ移管予定の残置物**
+- `vendor/jszip.min.js` — ZIPエクスポート用（Phase 2 で `app/` へ）。`vendor/piexif.js` は EXIF廃止により Phase 2 で削除
+- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-bridge.js` / `test-app-render.js`（ブリッジ/アプリのスモークテスト）
 
 ## キーボードショートカット
 
@@ -51,7 +58,7 @@ Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャ�
 
 1. claude が in chrome でテスト対象ページを開く
 2. ユーザーが Alt+S → 投稿クリック
-3. claude が `~/Downloads/post-snap-capture-log.txt` を読んで検証
+3. claude が検証: 保存先フォルダの `<id>.jpg`+`<id>.json` 生成を確認し、`python scripts/verify-store.py --recent N` でAPI照合（補助で `~/Downloads/post-snap-capture-log.txt` も参照可）
 4. 結果を `scripts/test-progress.md` に記録
 5. 次のテストケースに進む
 
@@ -70,11 +77,12 @@ Chrome拡張（Manifest V3）。SNS投稿をJPEG画像としてキャプチャ�
 
 ## TODO (将来対応)
 
-- [ ] デスクトップアプリ（Electron + Native Messaging）
-  - 拡張機能はデータ取得・送信のみに軽量化
-  - アプリ側でローカルDB（SQLite）+ ファイルシステムに画像保存
-  - 添付画像の原寸保存・表示
-  - ビューアUIは現行viewer.html/jsを流用
+- [~] デスクトップアプリ（Electron + Native Messaging）← **進行中**（上部「アーキテクチャ移行」参照）
+  - [x] 拡張をキャプチャ専用化（Native Messaging送信）
+  - [x] メタデータはサイドカーJSON（SQLite不採用：Electronでのネイティブ依存回避）+ ファイルシステムに画像保存
+  - [x] 最小ビューア（Electron）
+  - [ ] ビューア全機能の移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
+  - [ ] 添付画像の原寸保存・表示
 - [ ] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [ ] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
 - [ ] Threads 対応（Meta製、日本で1300万ユーザー。X の代替として成長中）

@@ -1,0 +1,14 @@
+{
+  "name": "post-snap-app",
+  "version": "1.0.0",
+  "description": "Post Snap desktop viewer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "register-host": "node ../native-host/install.js",
+    "unregister-host": "node ../native-host/install.js uninstall"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

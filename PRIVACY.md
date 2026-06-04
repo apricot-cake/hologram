@@ -2,7 +2,7 @@
 
 ## Data Collection
 
-Post Snap does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to your device's downloads folder.
+Post Snap does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to a folder you choose on your device.
 
 ## External API Requests
 
@@ -17,11 +17,11 @@ No authentication tokens, cookies, or personal information are included in these
 
 - **activeTab** — Access the current tab only when you activate the extension.
 - **scripting** — Inject the post selection UI into the current page.
-- **downloads** — Save captured images to your downloads folder.
+- **nativeMessaging** — Hand each capture to the Post Snap desktop app on your device, which writes the image and its metadata to the folder you chose.
 
 ## Data Storage
 
-No data is stored in the browser's local storage, sync storage, or any external server. Saved images reside only in your local downloads folder.
+Captured posts are **not** stored in the browser. Each capture is written to your chosen folder as an image (`<id>.jpg`) plus a metadata sidecar (`<id>.json`) by a local companion app on your device. Only lightweight UI preferences (such as the display language) are kept in the browser's local storage. Nothing is stored in sync storage or sent to any external server.
 
 ## Contact
 

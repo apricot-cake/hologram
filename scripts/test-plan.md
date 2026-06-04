@@ -2,35 +2,32 @@
 
 繰り返し利用可能なテストケース集。新機能追加時はケースを追加する。
 
+> **Phase 1 アーキテクチャ**: キャプチャは EXIF / chrome.storage を使わず、Native Messaging ブリッジ経由で保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー）を書き出す。閲覧は Electron アプリ（`app/`）。下記 **C/D/E/F（ビューア・設定・エクスポート/インポート・削除）は旧 chrome.storage ビューア前提のため、Phase 2（Electron アプリへの全機能移植）で再定義する**。
+
 ## 事前準備（毎回）
 
-```
-python scripts/check-reload.py
-```
-
-表示されたハッシュを控える。拡張とテスト対象ページをリロード済みであること。
+- Electron アプリ（`cd app && npm start`）で保存先フォルダと拡張IDを設定済みであること（初回起動で Native Messaging host が登録される）。
+- 拡張とテスト対象ページをリロード済みであること（リロード検出: `python scripts/check-reload.py`）。
 
 ## テスト後の一括検証（毎回）
 
 ```
-python scripts/verify-exif.py --recent N
+python scripts/verify-store.py --recent N
 ```
 
-保存した全画像の EXIF（XPComment JSON）+ ビルドハッシュを自動照合。
+保存フォルダの `<id>.json` サイドカー（メタデータ）と `<id>.jpg`（ペア画像の存在）を、Bluesky / Misskey の公開APIと自動照合。
 
 ---
 
 ## 共通確認項目（全キャプチャテスト共通）
 
-各キャプチャ後に以下を確認。verify-exif.py が自動チェックする項目は [auto] と記載。
+各キャプチャ後に以下を確認。verify-store.py が自動チェックする項目は [auto] と記載。
 
-- [auto] buildHash が check-reload.py の値と一致
-- [auto] JSON 内の screenName, displayName, text, date
-- [auto] JSON 内の likes, reposts, replies, bookmarks
-- [auto] JSON 内の captureId, capturedAt
-- [auto] JSON 内の mediaType, lang, isReply, isQuote, isThread
-- [ ] ファイル名が `{captureId}.jpg`（Post Snap/ 配下）
-- [ ] capture-log.txt: 各フィールドが期待値と一致
+- [auto] サイドカー内の screenName, displayName, userId, text, date（API照合。X は screenName のみ）
+- [auto] サイドカー内の likes, reposts, replies（API照合・件数は変動許容）
+- [auto] `<captureId>.jpg` と `<captureId>.json` のペアが保存先フォルダに生成
+- [ ] サイドカー内の captureId, capturedAt, mediaType, lang, isReply, isQuote, isThread（参考表示・手動確認）
+- [ ] capture-log.txt（開発用ログ・Downloads）: 各フィールドが期待値と一致
 
 ---
 

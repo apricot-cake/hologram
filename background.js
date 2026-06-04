@@ -1,5 +1,3 @@
-importScripts('vendor/piexif.js');
-
 const BUILD_FILES = ['background.js', 'content.js', 'i18n.js', 'manifest.json', 'viewer.html', 'viewer.js'];
 let buildHash = 'unknown';
 
@@ -37,21 +35,7 @@ const PLATFORM_CONFIGS = [
   }
 ];
 
-const DEFAULT_DOWNLOAD_DIRECTORY = 'Post Snap';
-const JPEG_QUALITY = 0.92;
-
-async function getDownloadSettings() {
-  try {
-    const result = await chrome.storage.local.get(['downloadDirectory', 'saveAs']);
-    let directory = result.downloadDirectory || DEFAULT_DOWNLOAD_DIRECTORY;
-    if (/[.]{2}|[/\\]/.test(directory)) {
-      directory = DEFAULT_DOWNLOAD_DIRECTORY;
-    }
-    return { directory, saveAs: !!result.saveAs };
-  } catch {
-    return { directory: DEFAULT_DOWNLOAD_DIRECTORY, saveAs: false };
-  }
-}
+const NATIVE_HOST = 'com.postsnap.host';
 
 function isAllowedSender(tabUrl, platformId) {
   const hostname = getHostname(tabUrl);
@@ -196,14 +180,12 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
     throw new Error('Cropping failed');
   }
 
-  const jpegDataUrl = buildJpegDataUrl(response.croppedDataUrl, metadata);
-  const baseFilename = buildBaseFilename(captureInfo, metadata, capturedAt);
-  const settings = await getDownloadSettings();
+  // No EXIF: the cropped JPEG is sent as-is. All metadata travels in a
+  // sidecar JSON written next to the image by the native host.
+  const jpegBase64 = response.croppedDataUrl.split(',')[1];
+  const record = buildSidecarRecord(metadata);
 
-  await downloadDataUrl(jpegDataUrl, `${settings.directory}/${baseFilename}.jpg`, settings.saveAs);
-
-  // Store post data in chrome.storage.local for the viewer
-  await storePost(metadata, jpegDataUrl);
+  await sendToBridge(captureId, jpegBase64, record);
 
   // Debug: write capture log
   await writeCaptureLog(metadata);
@@ -211,38 +193,72 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
   notify(tab.id, true);
 }
 
-async function storePost(metadata, jpegDataUrl) {
-  try {
-    const result = await chrome.storage.local.get('posts');
-    const posts = result.posts || [];
-    posts.push({
-      captureId: metadata.captureId || null,
-      url: metadata.postUrl,
-      platform: metadata.platform,
-      text: metadata.postText,
-      displayName: metadata.displayName,
-      screenName: metadata.screenName,
-      userId: metadata.userId,
-      likes: metadata.likeCount,
-      reposts: metadata.repostCount,
-      replies: metadata.replyCount,
-      bookmarks: metadata.bookmarkCount,
-      views: metadata.viewCount,
-      date: metadata.postPublishedAt || metadata.capturedAt,
-      capturedAt: metadata.capturedAt,
-      mediaType: metadata.mediaType || null,
-      lang: metadata.lang || null,
-      isReply: metadata.isReply || null,
-      isQuote: metadata.isQuote || null,
-      isThread: metadata.isThread || null,
-      quotedUrl: metadata.quotedUrl || null,
-      tags: metadata.tags?.length ? metadata.tags : [],
-      image: jpegDataUrl
+function buildSidecarRecord(metadata) {
+  return {
+    captureId: metadata.captureId || null,
+    image: metadata.captureId ? `${metadata.captureId}.jpg` : null,
+    url: metadata.postUrl,
+    platform: metadata.platform,
+    text: metadata.postText,
+    displayName: metadata.displayName,
+    screenName: metadata.screenName,
+    userId: metadata.userId,
+    likes: metadata.likeCount,
+    reposts: metadata.repostCount,
+    replies: metadata.replyCount,
+    bookmarks: metadata.bookmarkCount,
+    views: metadata.viewCount,
+    date: metadata.postPublishedAt || metadata.capturedAt,
+    capturedAt: metadata.capturedAt,
+    mediaType: metadata.mediaType || null,
+    lang: metadata.lang || null,
+    isReply: metadata.isReply || null,
+    isQuote: metadata.isQuote || null,
+    isThread: metadata.isThread || null,
+    quotedUrl: metadata.quotedUrl || null,
+    tags: metadata.tags?.length ? metadata.tags : []
+  };
+}
+
+// Send the captured image + metadata to the native messaging host, which
+// writes <captureId>.jpg and <captureId>.json into the user's save folder.
+// The host is short-lived: Chrome spawns it per connection, so this works
+// even when the desktop app is not running.
+function sendToBridge(captureId, jpegBase64, record) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    let port = null;
+
+    function finish(error, result) {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      try { port?.disconnect(); } catch { /* already disconnected */ }
+      if (error) reject(error);
+      else resolve(result);
+    }
+
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST);
+    } catch (error) {
+      reject(new Error(`Native host unavailable: ${error?.message || error}`));
+      return;
+    }
+
+    timer = setTimeout(() => finish(new Error('Native host timed out')), 30000);
+
+    port.onMessage.addListener((msg) => {
+      if (msg?.ok) finish(null, msg);
+      else finish(new Error(msg?.error || 'Native host returned an error'));
     });
-    await chrome.storage.local.set({ posts });
-  } catch (error) {
-    console.error('Failed to store post:', error);
-  }
+
+    port.onDisconnect.addListener(() => {
+      finish(new Error(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
+    });
+
+    port.postMessage({ type: 'save', captureId, image: jpegBase64, metadata: record });
+  });
 }
 
 async function writeCaptureLog(metadata) {
@@ -399,85 +415,6 @@ function parseMisskeyNoteId(url) {
   }
 }
 
-function buildJpegDataUrl(croppedDataUrl, metadata) {
-  const exifObj = buildExifObj(metadata);
-  const exifBytes = piexif.dump(exifObj);
-  return piexif.insert(exifBytes, croppedDataUrl);
-}
-
-function buildExifObj(metadata) {
-  const zeroth = {};
-  const exifIfd = {};
-
-  // XPComment: all metadata as JSON
-  const jsonData = {
-    captureId: metadata.captureId || null,
-    url: metadata.postUrl || null,
-    platform: metadata.platform || null,
-    text: metadata.postText || null,
-    displayName: metadata.displayName || null,
-    screenName: metadata.screenName || null,
-    userId: metadata.userId || null,
-    likes: metadata.likeCount,
-    reposts: metadata.repostCount,
-    replies: metadata.replyCount,
-    bookmarks: metadata.bookmarkCount,
-    views: metadata.viewCount,
-    date: metadata.postPublishedAt || null,
-    capturedAt: metadata.capturedAt || null,
-    mediaType: metadata.mediaType || null,
-    lang: metadata.lang || null,
-    isReply: metadata.isReply || null,
-    isQuote: metadata.isQuote || null,
-    isThread: metadata.isThread || null,
-    quotedUrl: metadata.quotedUrl || null,
-    tags: metadata.tags?.length ? metadata.tags : null
-  };
-  zeroth[piexif.ImageIFD.XPComment] = encodeUCS2LE(JSON.stringify(jsonData));
-
-  // DateTimeOriginal: post publish date (for Explorer date filtering)
-  const dateSource = metadata.postPublishedAt || metadata.capturedAt;
-  if (dateSource) {
-    exifIfd[piexif.ExifIFD.DateTimeOriginal] = formatExifDateTime(dateSource);
-  }
-
-  // Software: extension name + version + build hash
-  const manifest = chrome.runtime.getManifest();
-  zeroth[piexif.ImageIFD.Software] = `${manifest.name} v${manifest.version} [${buildHash}]`;
-
-  return { '0th': zeroth, 'Exif': exifIfd };
-}
-
-function encodeUCS2LE(str) {
-  const bytes = [];
-
-  for (let i = 0; i < str.length; i += 1) {
-    const code = str.charCodeAt(i);
-    bytes.push(code & 0xff);
-    bytes.push((code >> 8) & 0xff);
-  }
-
-  bytes.push(0, 0);
-  return bytes;
-}
-
-function formatExifDateTime(isoString) {
-  const date = new Date(isoString);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  return [
-    date.getFullYear(),
-    padNumber(date.getMonth() + 1),
-    padNumber(date.getDate())
-  ].join(':') + ' ' + [
-    padNumber(date.getHours()),
-    padNumber(date.getMinutes()),
-    padNumber(date.getSeconds())
-  ].join(':');
-}
-
 function buildMetadata({ captureInfo, capturedAt, captureId, pageTitle, pageUrl, postUrl, postDetails }) {
   const manifest = chrome.runtime.getManifest();
   const normalizedPostDetails = normalizePostDetails(postDetails);
@@ -538,10 +475,6 @@ function getPlatformConfigForUrl(url) {
 function generateCaptureId() {
   const hex = Math.floor(Math.random() * 0xFFFF).toString(16).padStart(4, '0');
   return `${Date.now()}-${hex}`;
-}
-
-function buildBaseFilename(captureInfo, metadata, capturedAt) {
-  return metadata.captureId || formatFilenameDate(metadata.postPublishedAt || capturedAt);
 }
 
 function getHostname(url) {
@@ -617,75 +550,3 @@ function sanitizeUrl(value) {
   }
 }
 
-function formatFilenameDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return 'unknown-date';
-  }
-
-  return [
-    date.getFullYear(),
-    padNumber(date.getMonth() + 1),
-    padNumber(date.getDate())
-  ].join('-');
-}
-
-function padNumber(value) {
-  return String(value).padStart(2, '0');
-}
-
-function downloadDataUrl(url, filename, saveAs = false) {
-  return new Promise((resolve, reject) => {
-    let downloadId = null;
-    let settled = false;
-
-    function finish(error) {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      chrome.downloads.onChanged.removeListener(listener);
-
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve(downloadId);
-    }
-
-    function listener(delta) {
-      if (delta.id !== downloadId) {
-        return;
-      }
-
-      if (delta.state?.current === 'complete') {
-        finish();
-        return;
-      }
-
-      if (delta.state?.current === 'interrupted' || delta.error?.current) {
-        finish(new Error(delta.error?.current || 'Download interrupted'));
-      }
-    }
-
-    chrome.downloads.onChanged.addListener(listener);
-    chrome.downloads.download(
-      {
-        url,
-        filename,
-        conflictAction: 'uniquify',
-        saveAs
-      },
-      (createdDownloadId) => {
-        if (chrome.runtime.lastError || !createdDownloadId) {
-          finish(new Error(chrome.runtime.lastError?.message || 'Download failed'));
-          return;
-        }
-
-        downloadId = createdDownloadId;
-      }
-    );
-  });
-}
