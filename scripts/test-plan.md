@@ -27,7 +27,6 @@ python scripts/verify-store.py --recent N
 - [auto] サイドカー内の likes, reposts, replies（API照合・件数は変動許容）
 - [auto] `<captureId>.jpg` と `<captureId>.json` のペアが保存先フォルダに生成
 - [ ] サイドカー内の captureId, capturedAt, mediaType, lang, isReply, isQuote, isThread（参考表示・手動確認）
-- [ ] capture-log.txt（開発用ログ・Downloads）: 各フィールドが期待値と一致
 
 ---
 

@@ -58,7 +58,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 1. claude が in chrome でテスト対象ページを開く
 2. ユーザーが Alt+S → 投稿クリック
-3. claude が検証: 保存先フォルダの `<id>.jpg`+`<id>.json` 生成を確認し、`python scripts/verify-store.py --recent N` でAPI照合（補助で `~/Downloads/post-snap-capture-log.txt` も参照可）
+3. claude が検証: 保存先フォルダの `<id>.jpg`+`<id>.json` 生成を確認し、`python scripts/verify-store.py --recent N` でAPI照合
 4. 結果を `scripts/test-progress.md` に記録
 5. 次のテストケースに進む
 
@@ -71,7 +71,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 - [ ] ストア版ビルド: 開発用コードを除去する
   - `manifest.json`: `reload-extension` コマンド削除
-  - `background.js`: `writeCaptureLog()`, `reload-extension` の onCommand 分岐を削除
+  - `background.js`: `reload-extension` の onCommand 分岐を削除（`writeCaptureLog()` は削除済み）
   - `viewer.html`: `debugSection` 全体を削除
   - `viewer.js`: DEBUG セクション（inject-dummy, verify）のコードを削除
 

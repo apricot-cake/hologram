@@ -104,17 +104,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message.type === 'deleteLocalFile') {
-    if (message.captureId) {
-      chrome.downloads.search({ filenameRegex: message.captureId }).then(items => {
-        for (const item of items) {
-          chrome.downloads.removeFile(item.id).catch(() => {});
-        }
-      }).catch(() => {});
-    }
-    return false;
-  }
-
 
   if (message.type !== 'captureAndSend') {
     return false;
@@ -187,9 +176,6 @@ async function captureAndSave(tab, rect, postUrl, platformId, postDetails) {
 
   await sendToBridge(captureId, jpegBase64, record);
 
-  // Debug: write capture log
-  await writeCaptureLog(metadata);
-
   notify(tab.id, true);
 }
 
@@ -259,50 +245,6 @@ function sendToBridge(captureId, jpegBase64, record) {
 
     port.postMessage({ type: 'save', captureId, image: jpegBase64, metadata: record });
   });
-}
-
-async function writeCaptureLog(metadata) {
-  try {
-    const fields = [
-      ['captureId', metadata.captureId],
-      ['url', metadata.postUrl],
-      ['platform', metadata.platform],
-      ['displayName', metadata.displayName],
-      ['screenName', metadata.screenName],
-      ['userId', metadata.userId],
-      ['text', (metadata.postText || '').substring(0, 120)],
-      ['likes', metadata.likeCount],
-      ['reposts', metadata.repostCount],
-      ['replies', metadata.replyCount],
-      ['bookmarks', metadata.bookmarkCount],
-      ['views', metadata.viewCount],
-      ['date', metadata.postPublishedAt],
-      ['capturedAt', metadata.capturedAt],
-      ['mediaType', metadata.mediaType],
-      ['lang', metadata.lang],
-      ['isReply', metadata.isReply],
-      ['isQuote', metadata.isQuote],
-      ['isThread', metadata.isThread],
-      ['quotedUrl', metadata.quotedUrl],
-    ];
-    const warnings = [];
-    if (!metadata.postUrl) warnings.push('WARN: url is empty');
-    if (!metadata.platform) warnings.push('WARN: platform is empty');
-    if (!metadata.displayName && !metadata.screenName) warnings.push('WARN: no user info');
-    if (metadata.likeCount == null && metadata.repostCount == null) warnings.push('WARN: no engagement data');
-    if (!metadata.postPublishedAt) warnings.push('WARN: date is empty');
-    if (!metadata.captureId) warnings.push('WARN: captureId is empty');
-
-    const lines = fields.map(([k, v]) => `${k}: ${v ?? '(null)'}`);
-    if (warnings.length) lines.push('', '--- Warnings ---', ...warnings);
-    else lines.push('', '--- OK ---');
-
-    const text = lines.join('\n');
-    const dataUrl = 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(text)));
-    await chrome.downloads.download({ url: dataUrl, filename: 'post-snap-capture-log.txt', conflictAction: 'overwrite' });
-  } catch (e) {
-    console.error('Failed to write capture log:', e);
-  }
 }
 
 function notify(tabId, success, extra = {}) {

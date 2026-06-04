@@ -19,6 +19,19 @@ const { configDir } = require('./paths');
 
 const HOST_NAME = 'com.postsnap.host';
 const BRIDGE_PATH = path.join(__dirname, 'bridge.js');
+const PATHS_PATH = path.join(__dirname, 'paths.js');
+
+// Copy the bridge into the (ASCII) config dir and run it from there. The repo
+// may live under a non-ASCII path (e.g. Japanese folders); cmd.exe reads .bat
+// files in the OEM code page and would mangle a non-ASCII path, so the launcher
+// must reference an ASCII location only. Re-run install after editing bridge.js.
+function deployBridge() {
+  fs.mkdirSync(configDir(), { recursive: true });
+  const destBridge = path.join(configDir(), 'bridge.js');
+  fs.copyFileSync(BRIDGE_PATH, destBridge);
+  fs.copyFileSync(PATHS_PATH, path.join(configDir(), 'paths.js'));
+  return destBridge;
+}
 
 // The unpacked extension's ID (path-derived, shown in chrome://extensions).
 // Stored in config.json by the app so we never commit a key to the repo.
@@ -42,19 +55,19 @@ function manifestPath() {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
-function writeLauncher({ exe, runAsNode }) {
+function writeLauncher({ exe, runAsNode, bridgePath }) {
   fs.mkdirSync(configDir(), { recursive: true });
   const p = launcherPath();
 
   if (process.platform === 'win32') {
     const lines = ['@echo off'];
     if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
-    lines.push(`"${exe}" "${BRIDGE_PATH}" %*`);
+    lines.push(`"${exe}" "${bridgePath}" %*`);
     fs.writeFileSync(p, lines.join('\r\n') + '\r\n', 'utf8');
   } else {
     const lines = ['#!/bin/sh'];
     if (runAsNode) lines.push('export ELECTRON_RUN_AS_NODE=1');
-    lines.push(`exec "${exe}" "${BRIDGE_PATH}" "$@"`);
+    lines.push(`exec "${exe}" "${bridgePath}" "$@"`);
     fs.writeFileSync(p, lines.join('\n') + '\n', { mode: 0o755 });
   }
   return p;
@@ -100,7 +113,8 @@ function unixManifestDirs() {
 
 function install({ exe = process.execPath, runAsNode = false, extensionId } = {}) {
   const id = extensionId || readExtensionId();
-  const launcher = writeLauncher({ exe, runAsNode });
+  const bridgePath = deployBridge();
+  const launcher = writeLauncher({ exe, runAsNode, bridgePath });
   const manifest = writeManifest(launcher, id);
 
   if (process.platform === 'win32') {
@@ -137,6 +151,14 @@ function uninstall() {
       } catch {
         // Not present — fine.
       }
+    }
+  }
+
+  for (const f of ['bridge.js', 'paths.js']) {
+    try {
+      fs.unlinkSync(path.join(configDir(), f));
+    } catch {
+      // Not present — fine.
     }
   }
 }
