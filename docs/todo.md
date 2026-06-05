@@ -248,6 +248,20 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 
 ---
 
+## 既知の不具合 — X 複数画像投稿
+
+実例: `status/2054933525628108825` (4枚) で観察。
+
+- **画像ごとに url がバラバラ** (`/photo/2` `/photo/3` `/photo/4` `/analytics`) → 同一投稿なのにグループ化できない
+  - 原因: content.js が拾う status アンカーが /analytics リンクのことがあり、旧コードは `/photo|/video` 末尾しか除去しなかった
+  - 対策【済】: content.js で素の permalink `<origin>/<user>/status/<id>` に正規化 (今後の保存分)。**既存データは plugin-window 側で postKey (`parsePostUrl` の platform:postId) 基準グループ化で吸収**
+- **N 枚中 1 枚しか annotation が付かない**【未解決】
+  - 原因: Info+ の `pendingDrag` 単一スロット + 連続ドラッグ競合 (test-matrix C7)。複数画像を続けて保存すると 1 件しか処理されない
+- **Image 番号が誤る** (1 枚目なのに `Image: 4/4`)【未解決・要 repro】
+  - 原因候補: `findXImageIndex` の media マッチ、または content.js のアンカー誤検出で画像コンテキストがズレる
+
+---
+
 ## リポジトリ整理 (要手動対応)
 
 - [x] `eagle-info-plus-private` リポを削除する (開発メモは本リポ `docs/` に統合済み)

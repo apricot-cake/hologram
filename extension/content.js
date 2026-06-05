@@ -81,10 +81,16 @@
         const parsed = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
         if (!parsed) return null;
         const [, screenName, postId] = parsed.match;
+        const sn = decodeURIComponent(screenName);
+        const pid = decodeURIComponent(postId);
+        // 素の permalink を組み立てる。アンカーが /photo/N や /analytics でも postId は同じなので、
+        // 末尾を引きずらず常に <origin>/<user>/status/<id> に正規化する (同一投稿で url が揃う)。
+        let origin = 'https://x.com';
+        try { origin = new URL(parsed.url).origin; } catch {}
         return {
-          screenName: decodeURIComponent(screenName),
-          postId: decodeURIComponent(postId),
-          link: stripPathTail(parsed.url, /\/photo\/\d+$|\/video\/\d+$/)
+          screenName: sn,
+          postId: pid,
+          link: `${origin}/${sn}/status/${pid}`
         };
       }
     };
@@ -202,16 +208,6 @@
       return { match, url: url.href };
     } catch {
       return null;
-    }
-  }
-
-  function stripPathTail(href, tailRegex) {
-    try {
-      const url = new URL(href);
-      url.pathname = url.pathname.replace(tailRegex, '');
-      return url.href;
-    } catch {
-      return href;
     }
   }
 })();
