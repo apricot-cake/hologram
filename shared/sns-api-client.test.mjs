@@ -68,13 +68,22 @@ const mockJsonResponse = (body, status = 200) => ({
   async json() { return body; }
 });
 
-test('fetchXEngagement: 200 で synced + likes/replies', async () => {
+test('fetchXEngagement: 200 で synced + likes/replies + meta', async () => {
   const fetch = mockFetch([
-    mockJsonResponse({ favorite_count: 42, conversation_count: 5 })
+    mockJsonResponse({
+      favorite_count: 42, conversation_count: 5,
+      user: { name: 'Foo', screen_name: 'foo' },
+      text: 'hello https://t.co/abc',
+      entities: { hashtags: [{ text: 'art' }] }
+    })
   ]);
   const result = await fetchXEngagement({ postId: '123', fetch });
   assert.equal(result.status, 'synced');
   assert.deepEqual(result.engagement, { likes: 42, replies: 5 });
+  assert.equal(result.meta.displayName, 'Foo');
+  assert.equal(result.meta.author, 'foo');
+  assert.equal(result.meta.text, 'hello'); // t.co 除去
+  assert.deepEqual(result.meta.hashtags, ['art']);
 });
 
 test('fetchXEngagement: 404 で deleted', async () => {
@@ -110,15 +119,25 @@ test('fetchXEngagement: 429 はレート制限として throw (rateLimited フ�
 
 // === fetchBlueskyEngagement ===
 
-test('fetchBlueskyEngagement: 200 で全 engagement', async () => {
+test('fetchBlueskyEngagement: 200 で全 engagement + meta', async () => {
   const fetch = mockFetch([mockJsonResponse({
     thread: {
-      post: { likeCount: 10, repostCount: 2, replyCount: 3, quoteCount: 1 }
+      post: {
+        likeCount: 10, repostCount: 2, replyCount: 3, quoteCount: 1,
+        author: { displayName: 'Foo', handle: 'foo.bsky.social' },
+        record: {
+          text: 'hi',
+          facets: [{ features: [{ $type: 'app.bsky.richtext.facet#tag', tag: 'art' }] }]
+        }
+      }
     }
   })]);
   const result = await fetchBlueskyEngagement({ handle: 'foo.bsky.social', postId: 'abc', fetch });
   assert.equal(result.status, 'synced');
   assert.deepEqual(result.engagement, { likes: 10, reposts: 2, replies: 3, quotes: 1 });
+  assert.equal(result.meta.author, 'foo.bsky.social');
+  assert.equal(result.meta.text, 'hi');
+  assert.deepEqual(result.meta.hashtags, ['art']);
 });
 
 test('fetchBlueskyEngagement: 400/404 で deleted', async () => {
@@ -137,14 +156,22 @@ test('fetchBlueskyEngagement: post 不在で deleted', async () => {
 
 // === fetchPixivEngagement ===
 
-test('fetchPixivEngagement: 200 で likes/views/bookmarks/replies', async () => {
+test('fetchPixivEngagement: 200 で likes/views/bookmarks/replies + meta', async () => {
   const fetch = mockFetch([mockJsonResponse({
     error: false,
-    body: { likeCount: 100, commentCount: 5, viewCount: 5000, bookmarkCount: 200 }
+    body: {
+      likeCount: 100, commentCount: 5, viewCount: 5000, bookmarkCount: 200,
+      userName: 'Foo', userId: '99', illustTitle: 'My Art',
+      tags: { tags: [{ tag: 'オリジナル' }] }
+    }
   })]);
   const result = await fetchPixivEngagement({ postId: '42', fetch });
   assert.equal(result.status, 'synced');
   assert.deepEqual(result.engagement, { likes: 100, replies: 5, views: 5000, bookmarks: 200 });
+  assert.equal(result.meta.displayName, 'Foo');
+  assert.equal(result.meta.author, '99');
+  assert.equal(result.meta.title, 'My Art');
+  assert.deepEqual(result.meta.hashtags, ['オリジナル']);
 });
 
 test('fetchPixivEngagement: 200 + error:true で private', async () => {

@@ -319,6 +319,41 @@ test('syncEngagement: items sharing a post are fetched once and all upserted', a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('syncEngagement: link-only item gets author/text/hashtags filled from the response', async () => {
+  const { dir, store } = mkstore();
+  try {
+    // annotation 無し (作者・本文なし) の項目。取得すると同じレスポンスから人間情報も埋まる
+    store.upsert('n', { status: 'no-annotation', url: 'https://x.com/foo/status/1' });
+    const fetch = async () => mockJson({
+      favorite_count: 9, conversation_count: 1,
+      user: { name: 'Foo', screen_name: 'foo' },
+      text: 'hello', entities: { hashtags: [{ text: 'tag' }] }
+    });
+    await syncEngagement({ store, fetch, filter: { statuses: ['no-annotation'] } });
+    const rec = store.get('n');
+    assert.equal(rec.status, 'synced');
+    assert.equal(rec.likes, 9);
+    assert.equal(rec.displayName, 'Foo');
+    assert.equal(rec.author, 'foo');
+    assert.equal(rec.text, 'hello');
+    assert.deepEqual(rec.hashtags, ['tag']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: limit caps total posts fetched this run', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 5; i++) {
+      store.upsert(`a${i}`, { status: 'parsed', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 1, conversation_count: 0 }); };
+    const r = await syncEngagement({ store, fetch, limit: 2 });
+    assert.equal(calls, 2);
+    assert.equal(r.okCount, 2);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- 日次上限 ---
 
 test('syncEngagement: dailyLimit caps requests per day and carries the rest over', async () => {

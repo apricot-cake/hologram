@@ -54,6 +54,7 @@ export async function syncEngagement({
   onConfirm,        // async (countsByPlatform) => boolean。false で取得せず終了 (大量時の確認用)
   rateLimit = {},
   dailyLimit = {},  // { x: N } 等。1 日あたりの取得リクエスト上限。超過分は翌日へ繰り越し
+  limit,            // この 1 回で取得する投稿数の上限 (platform 横断の合計)。テスト取得用
   sleep = defaultSleep,
   now = Date.now
 } = {}) {
@@ -139,6 +140,16 @@ export async function syncEngagement({
     }
   }
 
+  // この 1 回の取得を limit 投稿まで (platform 横断の合計) に制限。テスト取得用。
+  if (limit != null) {
+    let remaining = Math.max(0, limit);
+    for (const platform of [...queues.keys()]) {
+      const entries = queues.get(platform);
+      if (entries.length > remaining) queues.set(platform, entries.slice(0, remaining));
+      remaining -= queues.get(platform).length;
+    }
+  }
+
   // 大量時の事前確認 (UI 側で X が多い時に確認ダイアログを出す等)。false なら何もせず終了。
   if (onConfirm) {
     const counts = {};
@@ -166,6 +177,7 @@ export async function syncEngagement({
       for (const id of ids) {
         store.upsert(id, {
           ...result.engagement,
+          ...(result.meta || {}), // 同じレスポンス由来の人間情報 (作者・本文・タイトル・タグ)。リンクだけの項目も埋まる
           platform: parsed.platform, // backfill (no-annotation) でも platform バッジ/フィルタが効くよう URL 由来で埋める
           status: result.status,
           engagementSyncedAt: now()
