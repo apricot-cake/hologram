@@ -1446,6 +1446,12 @@ render()
   }
 
   // --- Init ---
+  if (window.postSnap.onPostsChanged) {
+    window.postSnap.onPostsChanged(async () => {
+      await loadPosts();
+      if (document.getElementById('panelTags').classList.contains('active')) renderHashtags();
+    });
+  }
   renderQueryChips();
   loadPosts();
 })();

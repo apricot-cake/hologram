@@ -47,6 +47,31 @@ function getSaveFolder() {
   return (typeof folder === 'string' && folder.trim()) ? folder : null;
 }
 
+// Watch the save folder and tell the renderer to refresh when files change
+// (e.g. a new capture arrives, or dummy data is injected). Debounced because a
+// single capture writes both a .jpg and a .json.
+let folderWatcher = null;
+let watchDebounce = null;
+function watchSaveFolder() {
+  if (folderWatcher) {
+    try { folderWatcher.close(); } catch { /* already closed */ }
+    folderWatcher = null;
+  }
+  const folder = getSaveFolder();
+  if (!folder) return;
+  try {
+    folderWatcher = fs.watch(folder, (_event, filename) => {
+      if (filename && !/\.(jpe?g|json)$/i.test(filename)) return;
+      clearTimeout(watchDebounce);
+      watchDebounce = setTimeout(() => {
+        if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
+      }, 400);
+    });
+  } catch (err) {
+    console.error('Failed to watch save folder:', err);
+  }
+}
+
 // --- Posts (scan sidecars) ---
 function listPosts() {
   const folder = getSaveFolder();
@@ -146,6 +171,7 @@ ipcMain.handle('pick-save-folder', async () => {
   const cfg = readConfig();
   cfg.saveFolder = res.filePaths[0];
   writeConfig(cfg);
+  watchSaveFolder();
   return { saveFolder: cfg.saveFolder };
 });
 
@@ -334,6 +360,7 @@ app.whenReady().then(() => {
   if (!SMOKE) ensureHostRegistered();
   registerImageProtocol();
   createWindow(!SMOKE);
+  watchSaveFolder();
 
   if (SMOKE) {
     const shot = process.env.POSTSNAP_SMOKE_SHOT;

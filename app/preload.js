@@ -15,5 +15,6 @@ contextBridge.exposeInMainWorld('postSnap', {
   updateTags: (image, tags) => ipcRenderer.invoke('update-tags', image, tags),
   importPosts: (posts) => ipcRenderer.invoke('import-posts', posts),
   clearAll: () => ipcRenderer.invoke('clear-all'),
-  exportSave: (filename, bytes) => ipcRenderer.invoke('export-save', filename, bytes)
+  exportSave: (filename, bytes) => ipcRenderer.invoke('export-save', filename, bytes),
+  onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb)
 });
