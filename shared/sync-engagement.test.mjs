@@ -296,6 +296,29 @@ test('syncEngagement: onConfirm receives per-platform counts', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// --- 重複排除 (同一投稿は 1 fetch) ---
+
+test('syncEngagement: items sharing a post are fetched once and all upserted', async () => {
+  const { dir, store } = mkstore();
+  try {
+    // 同じツイート (status/123) の 3 ページ。url は /photo/N でバラけているが postId は同じ
+    store.upsert('a0', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/123/photo/1' });
+    store.upsert('a1', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/123/photo/2' });
+    store.upsert('a2', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/123/analytics' });
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 7, conversation_count: 1 }); };
+    const r = await syncEngagement({ store, fetch, dailyLimit: { x: 1 } });
+    assert.equal(calls, 1);                 // 1 投稿 = 1 fetch
+    assert.equal(r.okCount, 3);             // 3 アイテム全部に適用
+    assert.equal(store.data.dailyFetch.counts.x, 1); // 日次カウントは投稿数 (= 1)
+    assert.equal(r.dailyLimited, false);    // 1 投稿なので上限 1 に収まる
+    for (const id of ['a0', 'a1', 'a2']) {
+      assert.equal(store.get(id).likes, 7);
+      assert.equal(store.get(id).status, 'synced');
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- 日次上限 ---
 
 test('syncEngagement: dailyLimit caps requests per day and carries the rest over', async () => {

@@ -107,15 +107,25 @@ export async function syncEngagement({
   };
 
   // platform ごとにキューへ振り分け。parse できない / 非対応 platform は即 skip。
-  const queues = new Map(); // platform -> [{ id, parsed }]
+  // 同じ投稿 (platform:postId) を共有する複数アイテムは 1 エントリにまとめ、fetch を 1 回で
+  // 済ませて同グループ全員に適用する (多ページ投稿で X リクエストを節約)。
+  const queues = new Map(); // platform -> [{ parsed, ids: [] }]
+  const postIndex = new Map(); // `${platform}:${postId}` -> entry
   for (const [id, record] of targets) {
     const parsed = parsePostUrl(record.url);
     if (!parsed || !FETCHERS[parsed.platform]) {
       skipCount++;
       continue;
     }
-    if (!queues.has(parsed.platform)) queues.set(parsed.platform, []);
-    queues.get(parsed.platform).push({ id, parsed });
+    const k = `${parsed.platform}:${parsed.postId}`;
+    let entry = postIndex.get(k);
+    if (!entry) {
+      entry = { parsed, ids: [] };
+      postIndex.set(k, entry);
+      if (!queues.has(parsed.platform)) queues.set(parsed.platform, []);
+      queues.get(parsed.platform).push(entry);
+    }
+    entry.ids.push(id);
   }
 
   // 日次上限に合わせて各 platform のキューを切り詰める。溢れた分はキューに入れない
@@ -148,37 +158,40 @@ export async function syncEngagement({
 
   reportProgress(); // 初期表示 (skip 済み分のみ反映された状態)
 
-  const processOne = async ({ id, parsed }) => {
-    daily.counts[parsed.platform] = (daily.counts[parsed.platform] || 0) + 1; // 日次カウント +1 (リクエスト発行)
+  // 1 投稿 = 1 fetch。結果を ids 全員に適用する。日次カウントは「リクエスト数 = 投稿数」で +1。
+  const processPost = async ({ parsed, ids }) => {
+    daily.counts[parsed.platform] = (daily.counts[parsed.platform] || 0) + 1;
     try {
       const result = await FETCHERS[parsed.platform]({ ...parsed, fetch });
-      store.upsert(id, {
-        ...result.engagement,
-        platform: parsed.platform, // backfill (no-annotation) でも platform バッジ/フィルタが効くよう URL 由来で埋める
-        status: result.status,
-        engagementSyncedAt: now()
-      });
-      okCount++;
-      log(`  ${id} (${parsed.platform}) ${result.status} ${JSON.stringify(result.engagement)}`);
+      for (const id of ids) {
+        store.upsert(id, {
+          ...result.engagement,
+          platform: parsed.platform, // backfill (no-annotation) でも platform バッジ/フィルタが効くよう URL 由来で埋める
+          status: result.status,
+          engagementSyncedAt: now()
+        });
+      }
+      okCount += ids.length;
+      log(`  ${parsed.platform}:${parsed.postId} ×${ids.length} ${result.status} ${JSON.stringify(result.engagement)}`);
     } catch (e) {
       // レート制限は error 印を付けず run を止める。未処理のまま残し再開可能にする。
       if (e.rateLimited) {
         rateLimited = true;
-        log(`  ${id} (${parsed.platform}) rate limited → stop`);
+        log(`  ${parsed.platform}:${parsed.postId} rate limited → stop`);
         return;
       }
-      store.upsert(id, { status: 'error', errorMessage: e.message });
-      errCount++;
-      log(`  ${id} (${parsed.platform}) error: ${e.message}`);
+      for (const id of ids) store.upsert(id, { status: 'error', errorMessage: e.message });
+      errCount += ids.length;
+      log(`  ${parsed.platform}:${parsed.postId} ×${ids.length} error: ${e.message}`);
     }
-    processedIds.add(id);
-    reportProgress(id);
+    for (const id of ids) processedIds.add(id);
+    reportProgress();
   };
 
   // platform 同士は並行に走らせる (X を間隔空けて流す裏で Bluesky / pixiv が並列で進む)。
   await Promise.all(
     [...queues.entries()].map(([platform, entries]) =>
-      runPool(entries, rateLimit[platform] || NO_THROTTLE, { processOne, aborted, sleep, now })
+      runPool(entries, rateLimit[platform] || NO_THROTTLE, { processOne: processPost, aborted, sleep, now })
     )
   );
 
@@ -187,7 +200,7 @@ export async function syncEngagement({
 
   // resume: 中断 (cancel または rate limit) で取り残した id を store に記録し、次回 filter.ids で
   // 再開できるように。完走 (または残ゼロ) なら resume 状態を消す。store.save は run 末尾の 1 回。
-  const queuedIds = [...queues.values()].flat().map((e) => e.id);
+  const queuedIds = [...queues.values()].flat().flatMap((e) => e.ids);
   const remainingIds = interrupted ? queuedIds.filter((id) => !processedIds.has(id)) : [];
   if (remainingIds.length) {
     store.data.engagementResume = { ids: remainingIds, savedAt: now() };
