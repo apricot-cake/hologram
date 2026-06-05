@@ -25,7 +25,7 @@ function resolveFolder() {
   return path.join(os.homedir(), 'PostSnap');
 }
 
-const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300' };
+const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon: '#6364ff' };
 
 // type: post | reply | quote | thread ; media: image | video | gif | none
 const POSTS = [
@@ -63,13 +63,18 @@ const POSTS = [
   { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'image', lang: 'ja', displayName: 'カメラ部', screenName: 'camera', userId: 'mk010', likes: 3400, reposts: 420, replies: 60, tags: ['写真'], text: '夕焼けが綺麗だった #写真 #photography' },
   { platform: 'misskey', host: 'misskey.io', type: 'reply', media: 'image', lang: 'ja', displayName: 'もぐもぐ', screenName: 'mogu', userId: 'mk011', likes: 6, reposts: 0, replies: 1, tags: [], text: 'おいしそう' },
   { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'none', lang: 'en', displayName: 'EN user', screenName: 'enuser', userId: 'mk012', likes: 40, reposts: 3, replies: 2, tags: [], text: 'testing misskey from english locale #english' },
-  { platform: 'misskey', host: 'nijimiss.moe', type: 'post', media: 'video', lang: 'ja', displayName: 'ゲーマー', screenName: 'gamer_mk', userId: 'nj003', likes: 780, reposts: 120, replies: 30, tags: ['ゲーム'], text: '今日のプレイ動画 #ゲーム' }
+  { platform: 'misskey', host: 'nijimiss.moe', type: 'post', media: 'video', lang: 'ja', displayName: 'ゲーマー', screenName: 'gamer_mk', userId: 'nj003', likes: 780, reposts: 120, replies: 30, tags: ['ゲーム'], text: '今日のプレイ動画 #ゲーム' },
+
+  // --- Mastodon ---
+  { platform: 'mastodon', host: 'mastodon.social', type: 'post', media: 'image', lang: 'en', displayName: 'Mastodon User', screenName: 'mastodonuser', userId: 'm001', likes: 412, reposts: 88, replies: 14, tags: ['fediverse'], text: 'loving the open social web #mastodon #fediverse' },
+  { platform: 'mastodon', host: 'mstdn.jp', type: 'reply', media: 'none', lang: 'ja', displayName: 'ますとどん太郎', screenName: 'mstdntaro', userId: 'm002', likes: 23, reposts: 2, replies: 5, tags: [], text: 'mstdn.jp から返信テスト #マストドン' }
 ];
 
 function postUrl(p, i) {
   const id = 1000 + i;
   if (p.platform === 'x') return `https://x.com/${p.screenName}/status/20622285024${id}`;
   if (p.platform === 'bluesky') return `https://bsky.app/profile/${p.screenName}/post/3k${id}`;
+  if (p.platform === 'mastodon') return `https://${p.host}/@${p.screenName}/1100000000000${id}`;
   return `https://${p.host}/notes/dummy${id}`;
 }
 
@@ -87,7 +92,7 @@ app.whenReady().then(async () => {
     const p = POSTS[i];
     const id = `dummy-${String(i + 1).padStart(4, '0')}`;
     const color = COLORS[p.platform] || '#555';
-    const label = p.platform === 'x' ? 'X' : p.platform === 'bluesky' ? 'Bluesky' : 'Misskey';
+    const label = p.platform === 'x' ? 'X' : p.platform === 'bluesky' ? 'Bluesky' : p.platform === 'misskey' ? 'Misskey' : 'Mastodon';
     const sub = `#${i + 1} · ${p.media}`;
 
     const dataUrl = await win.webContents.executeJavaScript(

@@ -24,6 +24,11 @@ function parsePostUrl(url) {
   if ((host === 'x.com' || host === 'twitter.com') && (m = u.pathname.match(/\/status\/(\d+)/))) {
     return { platform: 'x', id: m[1], screenName: (u.pathname.match(/^\/([^/]+)\/status/) || [])[1] || null };
   }
+  // Mastodon web URL: /@user/<numericId> (id starts with a digit; excludes
+  // profile sub-pages like /@user/media). Must come before the Misskey /notes/.
+  if ((m = u.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) {
+    return { platform: 'mastodon', host, id: decodeURIComponent(m[1]) };
+  }
   if ((m = u.pathname.match(/^\/notes\/([^/?#]+)/))) {
     return { platform: 'misskey', host, noteId: m[1] };
   }
@@ -215,12 +220,72 @@ async function fetchMisskeyNote(parsed, url) {
   return rec;
 }
 
+// --- Mastodon (official public REST API) ---
+function htmlToText(html) {
+  if (!html) return null;
+  let s = String(html)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p>/gi, '\n\n')
+    .replace(/<\/?p>/gi, '')
+    .replace(/<[^>]+>/g, '');
+  s = s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+  return s.trim() || null;
+}
+
+function mastodonMediaType(atts) {
+  const t = atts && atts[0] && atts[0].type;
+  if (t === 'video') return 'video';
+  if (t === 'gifv') return 'gif';
+  if (t === 'image') return 'image';
+  return null;
+}
+
+async function fetchMastodonStatus(parsed, url) {
+  const rec = emptyRecord(url, 'mastodon');
+  try {
+    const res = await fetch(`https://${parsed.host}/api/v1/statuses/${parsed.id}`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return rec;
+    const s = await res.json();
+    rec.url = s.url || url;
+    rec.text = htmlToText(s.content);
+    rec.date = toIso(s.created_at);
+    if (s.account) {
+      rec.displayName = s.account.display_name || s.account.username || null;
+      rec.screenName = s.account.acct || s.account.username || null;
+      rec.userId = s.account.id || null;
+    }
+    rec.likes = s.favourites_count ?? null;
+    rec.reposts = s.reblogs_count ?? null;
+    rec.replies = s.replies_count ?? null;
+    rec.lang = s.language || null;
+    rec.mediaType = mastodonMediaType(s.media_attachments);
+    if (s.in_reply_to_id) {
+      rec.isReply = true;
+      if (s.account && s.in_reply_to_account_id && s.in_reply_to_account_id === s.account.id) {
+        rec.isThread = true;
+        rec.isReply = null;
+      }
+    }
+    // Mastodon core has no quotes; some forks expose `quote`.
+    if (s.quote && (s.quote.url || s.quote.uri)) {
+      rec.isQuote = true;
+      rec.quotedUrl = s.quote.url || s.quote.uri;
+    }
+  } catch {
+    // keep partial
+  }
+  return rec;
+}
+
 async function fetchPostMetadata(url) {
   const parsed = parsePostUrl(url);
   if (!parsed) return emptyRecord(url, null);
   if (parsed.platform === 'x') return fetchXTweet(parsed, url);
   if (parsed.platform === 'bluesky') return fetchBlueskyPost(parsed, url);
   if (parsed.platform === 'misskey') return fetchMisskeyNote(parsed, url);
+  if (parsed.platform === 'mastodon') return fetchMastodonStatus(parsed, url);
   return emptyRecord(url, parsed.platform);
 }
 

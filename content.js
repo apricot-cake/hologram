@@ -352,6 +352,37 @@ function getSiteConfig() {
     };
   }
 
+  if (looksLikeMastodon()) {
+    return {
+      platform: 'mastodon',
+      captureStyleText: `
+        .__snsCaptureMastodonNoHover,
+        .__snsCaptureMastodonNoHover * {
+          pointer-events: none !important;
+          transition: none !important;
+        }
+
+        .__snsCaptureMastodonNoHover,
+        .__snsCaptureMastodonNoHover:hover,
+        .__snsCaptureMastodonNoHover .status,
+        .__snsCaptureMastodonNoHover .status:hover {
+          background-color: transparent !important;
+        }
+      `,
+      findPostElement(target) {
+        return findMastodonPostElement(target);
+      },
+      getPermalink(post) {
+        return getMastodonStatusLink(post)?.url
+          || parseMastodonStatusLink(location.href)?.url
+          || '';
+      },
+      prepareForCapture(post) {
+        return prepareScopedCaptureState('__snsCaptureMastodonNoHover', [post, post.parentElement]);
+      }
+    };
+  }
+
   return null;
 }
 
@@ -568,6 +599,46 @@ function normalizeRect(rect) {
     right: rect?.right ?? (x + width),
     bottom: rect?.bottom ?? (y + height)
   };
+}
+
+function looksLikeMastodon() {
+  return Boolean(document.querySelector('#mastodon'))
+    || document.querySelector('meta[name="application-name"]')?.getAttribute('content') === 'Mastodon';
+}
+
+function parseMastodonStatusLink(href) {
+  try {
+    const url = new URL(href, location.origin);
+    if (url.hostname !== location.hostname) return null; // only this instance's statuses
+    const match = url.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/);
+    if (!match) return null;
+    return { id: decodeURIComponent(match[1]), url: `${url.origin}${url.pathname}` };
+  } catch {
+    return null;
+  }
+}
+
+function getMastodonStatusLink(post) {
+  if (!(post instanceof Element)) return null;
+  const timeLink = post.querySelector('a[class*="relative-time"], a[class*="detailed-status__datetime"]');
+  let parsed = timeLink ? parseMastodonStatusLink(timeLink.getAttribute('href') || '') : null;
+  if (parsed) return parsed;
+  for (const link of post.querySelectorAll('a[href]')) {
+    parsed = parseMastodonStatusLink(link.getAttribute('href') || '');
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function findMastodonPostElement(target) {
+  let el = target instanceof Element ? target : target?.parentElement;
+  while (el) {
+    if (el.matches?.('.status__wrapper, .status, .detailed-status, article') && getMastodonStatusLink(el)) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
 }
 
 function prepareScopedCaptureState(className, elements) {

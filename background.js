@@ -35,7 +35,7 @@ function isAllowedSender(tabUrl, platformId) {
   if (!hostname) return false;
   const hosts = PLATFORM_HOSTS[platformId];
   if (hosts) return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-  if (platformId === 'misskey') return /^https:/i.test(tabUrl || '');
+  if (platformId === 'misskey' || platformId === 'mastodon') return /^https:/i.test(tabUrl || '');
   return false;
 }
 

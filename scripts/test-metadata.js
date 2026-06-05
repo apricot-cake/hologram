@@ -36,6 +36,15 @@ async function recentMisskeyUrl() {
   return note ? `https://misskey.io/notes/${note.id}` : null;
 }
 
+async function recentMastodonUrl() {
+  // public timeline needs auth on some instances; use a known public account.
+  const acc = await (await fetch('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron')).json();
+  if (!acc || !acc.id) return null;
+  const st = await (await fetch(`https://mastodon.social/api/v1/accounts/${acc.id}/statuses?limit=5`)).json();
+  const s = Array.isArray(st) ? st.find((x) => x && x.url && x.account) : null;
+  return s ? s.url : null;
+}
+
 (async () => {
   let pass = true;
 
@@ -60,6 +69,15 @@ async function recentMisskeyUrl() {
       if (!(m.screenName && m.date)) { pass = false; console.log('  Misskey FAIL'); }
     } else { console.log('Misskey: no recent note found (skip)'); }
   } catch (e) { console.log('Misskey ERR', e.message); }
+
+  try {
+    const aurl = await recentMastodonUrl();
+    if (aurl) {
+      const a = await fetchPostMetadata(aurl);
+      show('Mastodon (' + aurl + ')', a);
+      if (!(a.platform === 'mastodon' && a.screenName && a.date && a.userId)) { pass = false; console.log('  Mastodon FAIL'); }
+    } else { console.log('Mastodon: no recent status (skip)'); }
+  } catch (e) { console.log('Mastodon ERR', e.message); }
 
   console.log('\n' + (pass ? 'METADATA_TEST_PASS' : 'METADATA_TEST_FAIL'));
   process.exit(pass ? 0 : 1);

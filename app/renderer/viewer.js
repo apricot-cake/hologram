@@ -226,7 +226,7 @@
       let cls = `qc-${f.type}`;
       switch (f.type) {
         case 'platform':
-          label = f.value === 'x' ? 'X' : f.value === 'bluesky' ? 'Bluesky' : 'Misskey';
+          label = f.value === 'x' ? 'X' : f.value === 'bluesky' ? 'Bluesky' : f.value === 'misskey' ? 'Misskey' : 'Mastodon';
           break;
         case 'postType':
           label = f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
@@ -1362,7 +1362,7 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 .meta{padding:12px}
 .meta .user{font-weight:600;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .badge{font-size:10px;font-weight:500;padding:1px 6px;border-radius:3px;color:#fff;text-transform:uppercase}
-.badge.x{background:#000}.badge.bluesky{background:#0085ff}.badge.misskey{background:#96d04a;color:#333}
+.badge.x{background:#000}.badge.bluesky{background:#0085ff}.badge.misskey{background:#96d04a;color:#333}.badge.mastodon{background:#6364ff}
 .meta .text{font-size:13px;color:#555;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px}
 .meta .stats{display:flex;gap:12px;font-size:12px;color:#999}
 .meta .date{font-size:11px;color:#bbb;margin-top:4px}
