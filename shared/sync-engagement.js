@@ -30,11 +30,17 @@ const NO_THROTTLE = { concurrency: 1, minIntervalMs: 0 };
 //   X       — 未認証 Syndication API。1 並列で 1.5 秒間隔を空ける
 //   Bluesky — public AppView。4 並列、間隔なし
 //   pixiv   — ajax/illust。4 並列、間隔なし
+// X は非公式 syndication CDN で公開レート制限が無いため保守的に。間隔 + jitter で
+// 一定パターンを避ける。本当の安全は 429 検知での停止 (下記) と総量を抑えること。
 export const DEFAULT_RATE_LIMIT = {
-  x: { concurrency: 1, minIntervalMs: 1500 },
+  x: { concurrency: 1, minIntervalMs: 2500, jitterMs: 1000 },
   bluesky: { concurrency: 4, minIntervalMs: 0 },
   pixiv: { concurrency: 4, minIntervalMs: 0 }
 };
+
+// 1 日あたりの取得リクエスト数の上限 (platform 別)。総量を抑える保険。X のみ既定でキャップ。
+// store.data.dailyFetch に日別カウントを永続化し、日付が変われば自動リセット。
+export const DEFAULT_DAILY_LIMIT = { x: 500 };
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -45,7 +51,9 @@ export async function syncEngagement({
   filter = {},
   signal,
   onProgress,
+  onConfirm,        // async (countsByPlatform) => boolean。false で取得せず終了 (大量時の確認用)
   rateLimit = {},
+  dailyLimit = {},  // { x: N } 等。1 日あたりの取得リクエスト上限。超過分は翌日へ繰り越し
   sleep = defaultSleep,
   now = Date.now
 } = {}) {
@@ -83,6 +91,21 @@ export async function syncEngagement({
   let errCount = 0;
   let skipCount = 0;
 
+  // 日次上限の残量。store.data.dailyFetch に日別カウントを持ち、日付が変われば 0 に戻す。
+  // 日付はローカル暦日 (端末の深夜 0 時でリセット)。
+  const _d = new Date(now());
+  const _pad = (n) => String(n).padStart(2, '0');
+  const todayKey = `${_d.getFullYear()}-${_pad(_d.getMonth() + 1)}-${_pad(_d.getDate())}`;
+  let daily = store.data.dailyFetch;
+  if (!daily || daily.date !== todayKey) {
+    daily = { date: todayKey, counts: {} };
+    store.data.dailyFetch = daily;
+  }
+  const remainingBudget = (p) => {
+    const cap = dailyLimit[p];
+    return cap == null ? Infinity : Math.max(0, cap - (daily.counts[p] || 0));
+  };
+
   // platform ごとにキューへ振り分け。parse できない / 非対応 platform は即 skip。
   const queues = new Map(); // platform -> [{ id, parsed }]
   for (const [id, record] of targets) {
@@ -95,7 +118,29 @@ export async function syncEngagement({
     queues.get(parsed.platform).push({ id, parsed });
   }
 
-  const aborted = () => signal?.aborted === true;
+  // 日次上限に合わせて各 platform のキューを切り詰める。溢れた分はキューに入れない
+  // (= no-annotation のまま残る) ので、翌日 (上限リセット後) に押せば続きが取れる。
+  let dailyLimited = false;
+  for (const [platform, entries] of queues) {
+    const budget = remainingBudget(platform);
+    if (entries.length > budget) {
+      queues.set(platform, entries.slice(0, budget));
+      dailyLimited = true;
+    }
+  }
+
+  // 大量時の事前確認 (UI 側で X が多い時に確認ダイアログを出す等)。false なら何もせず終了。
+  if (onConfirm) {
+    const counts = {};
+    for (const [p, entries] of queues) counts[p] = entries.length;
+    const proceed = await onConfirm(counts);
+    if (!proceed) {
+      return { targetCount: total, okCount: 0, errCount: 0, skipCount, cancelled: true, rateLimited: false, dailyLimited, remainingIds: [], elapsedMs: now() - t0 };
+    }
+  }
+
+  let rateLimited = false; // 429 を踏んだら true にして run を止める
+  const aborted = () => signal?.aborted === true || rateLimited;
   const processedIds = new Set();
   const reportProgress = (currentId) => {
     onProgress?.({ done: okCount + errCount + skipCount, total, currentId });
@@ -104,6 +149,7 @@ export async function syncEngagement({
   reportProgress(); // 初期表示 (skip 済み分のみ反映された状態)
 
   const processOne = async ({ id, parsed }) => {
+    daily.counts[parsed.platform] = (daily.counts[parsed.platform] || 0) + 1; // 日次カウント +1 (リクエスト発行)
     try {
       const result = await FETCHERS[parsed.platform]({ ...parsed, fetch });
       store.upsert(id, {
@@ -115,6 +161,12 @@ export async function syncEngagement({
       okCount++;
       log(`  ${id} (${parsed.platform}) ${result.status} ${JSON.stringify(result.engagement)}`);
     } catch (e) {
+      // レート制限は error 印を付けず run を止める。未処理のまま残し再開可能にする。
+      if (e.rateLimited) {
+        rateLimited = true;
+        log(`  ${id} (${parsed.platform}) rate limited → stop`);
+        return;
+      }
       store.upsert(id, { status: 'error', errorMessage: e.message });
       errCount++;
       log(`  ${id} (${parsed.platform}) error: ${e.message}`);
@@ -130,13 +182,13 @@ export async function syncEngagement({
     )
   );
 
-  const cancelled = aborted();
+  const cancelled = signal?.aborted === true; // ユーザー cancel
+  const interrupted = cancelled || rateLimited;
 
-  // resume: cancel で取り残したターゲット id を store に記録し、次回 filter.ids で再開できるように。
-  // 完走 (または残ゼロ) なら resume 状態を消す。store.save は run 末尾の 1 回なので graceful
-  // cancel が対象 (hard crash 中の未保存分は別途)。
+  // resume: 中断 (cancel または rate limit) で取り残した id を store に記録し、次回 filter.ids で
+  // 再開できるように。完走 (または残ゼロ) なら resume 状態を消す。store.save は run 末尾の 1 回。
   const queuedIds = [...queues.values()].flat().map((e) => e.id);
-  const remainingIds = cancelled ? queuedIds.filter((id) => !processedIds.has(id)) : [];
+  const remainingIds = interrupted ? queuedIds.filter((id) => !processedIds.has(id)) : [];
   if (remainingIds.length) {
     store.data.engagementResume = { ids: remainingIds, savedAt: now() };
   } else {
@@ -153,6 +205,8 @@ export async function syncEngagement({
     errCount,
     skipCount,
     cancelled,
+    rateLimited,
+    dailyLimited,
     remainingIds,
     elapsedMs: now() - t0
   };
@@ -164,6 +218,7 @@ export async function syncEngagement({
 async function runPool(entries, cfg, { processOne, aborted, sleep, now }) {
   const concurrency = Math.max(1, cfg.concurrency || 1);
   const minIntervalMs = cfg.minIntervalMs || 0;
+  const jitterMs = cfg.jitterMs || 0; // 0〜jitterMs を間隔に上乗せ (一定パターン回避)。テストは 0。
 
   let cursor = 0;
   let nextStartAt = 0; // この時刻以降に次のリクエストを開始してよい (pool 共有)
@@ -176,7 +231,8 @@ async function runPool(entries, cfg, { processOne, aborted, sleep, now }) {
       if (minIntervalMs > 0) {
         const t = now();
         const wait = nextStartAt - t;
-        nextStartAt = Math.max(t, nextStartAt) + minIntervalMs;
+        const jitter = jitterMs > 0 ? Math.random() * jitterMs : 0;
+        nextStartAt = Math.max(t, nextStartAt) + minIntervalMs + jitter;
         if (wait > 0) await sleep(wait);
         if (aborted()) return; // 間隔待ちの間に cancel された
       }

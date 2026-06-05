@@ -28,10 +28,19 @@ export function parsePostUrl(url) {
 //   status: 'synced' | 'deleted' | 'private' | 'error'
 //   engagement: { likes, reposts, replies, quotes, views, bookmarks } の取れた分
 
+// 429 (および X 旧来の 420) はレート制限シグナル。専用フラグ付きで投げ、
+// 呼び出し側 (sync-engagement) が run を止められるようにする。error 印は付けない。
+function rateLimitError(label, status) {
+  const e = new Error(`${label} rate limited (${status})`);
+  e.rateLimited = true;
+  return e;
+}
+
 export async function fetchXEngagement({ postId, fetch }) {
   const res = await fetch(
     `https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(postId)}&token=0`
   );
+  if (res.status === 429 || res.status === 420) throw rateLimitError('X', res.status);
   if (res.status === 404) return { status: 'deleted', engagement: {} };
   if (res.status === 401 || res.status === 403) return { status: 'private', engagement: {} };
   if (!res.ok) throw new Error(`X Syndication API ${res.status}`);
@@ -51,6 +60,7 @@ export async function fetchBlueskyEngagement({ handle, postId, fetch }) {
   const res = await fetch(
     `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`
   );
+  if (res.status === 429) throw rateLimitError('Bluesky', res.status);
   if (res.status === 400 || res.status === 404) return { status: 'deleted', engagement: {} };
   if (!res.ok) throw new Error(`Bluesky API ${res.status}`);
   const data = await res.json();
@@ -73,6 +83,7 @@ export async function fetchPixivEngagement({ postId, fetch }) {
     `https://www.pixiv.net/ajax/illust/${encodeURIComponent(postId)}`,
     { credentials: 'include' }
   );
+  if (res.status === 429) throw rateLimitError('pixiv', res.status);
   if (res.status === 404) return { status: 'deleted', engagement: {} };
   if (!res.ok) throw new Error(`pixiv API ${res.status}`);
   const data = await res.json();

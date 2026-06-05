@@ -240,6 +240,99 @@ test('syncEngagement: no-annotation is excluded by default', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// --- 429 / 確認 ---
+
+test('syncEngagement: 429 stops the run, item left unprocessed, rateLimited=true', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 4; i++) {
+      store.upsert(`x${i}`, { status: 'parsed', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    let calls = 0;
+    const fetch = async () => {
+      calls++;
+      if (calls === 2) return mockJson(null, 429); // 2 件目で 429
+      return mockJson({ favorite_count: 1, conversation_count: 0 });
+    };
+    const r = await syncEngagement({ store, fetch });
+    assert.equal(r.rateLimited, true);
+    assert.ok(r.okCount >= 1 && r.okCount < 4, `okCount: ${r.okCount}`);
+    assert.equal(r.errCount, 0); // 429 は error 印を付けない
+    // 429 を踏んだ item と未処理 item は parsed のまま (error 化しない)
+    const stillParsed = ['x0', 'x1', 'x2', 'x3'].filter((id) => store.get(id).status === 'parsed');
+    assert.ok(stillParsed.length >= 1, `still parsed: ${stillParsed}`);
+    // 取り残しが resume に記録される
+    assert.ok(store.data.engagementResume.ids.length >= 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: onConfirm=false skips fetching entirely', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/1' });
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 1, conversation_count: 0 }); };
+    const r = await syncEngagement({ store, fetch, onConfirm: async () => false });
+    assert.equal(calls, 0);
+    assert.equal(r.okCount, 0);
+    assert.equal(r.cancelled, true);
+    assert.equal(store.get('a').status, 'parsed'); // 手付かず
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: onConfirm receives per-platform counts', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('x1', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/1' });
+    store.upsert('x2', { status: 'parsed', platform: 'x', url: 'https://x.com/u/status/2' });
+    store.upsert('p1', { status: 'parsed', platform: 'pixiv', url: 'https://www.pixiv.net/artworks/1' });
+    let seen = null;
+    const fetch = async (url) => url.includes('pixiv')
+      ? mockJson({ error: false, body: { likeCount: 1 } })
+      : mockJson({ favorite_count: 1, conversation_count: 0 });
+    await syncEngagement({ store, fetch, onConfirm: async (counts) => { seen = counts; return true; } });
+    assert.equal(seen.x, 2);
+    assert.equal(seen.pixiv, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- 日次上限 ---
+
+test('syncEngagement: dailyLimit caps requests per day and carries the rest over', async () => {
+  const { dir, store } = mkstore();
+  try {
+    for (let i = 0; i < 3; i++) {
+      store.upsert(`x${i}`, { status: 'no-annotation', platform: 'x', url: `https://x.com/u/status/${i}` });
+    }
+    const DAY = new Date('2026-06-04T00:00:00Z').getTime();
+    let calls = 0;
+    const fetch = async () => { calls++; return mockJson({ favorite_count: 1, conversation_count: 0 }); };
+
+    const NO_ANNO = { statuses: ['no-annotation'] };
+
+    // 1 回目: 上限 2 → 2 件だけ取得、1 件繰り越し
+    const r1 = await syncEngagement({ store, fetch, filter: NO_ANNO, dailyLimit: { x: 2 }, now: () => DAY });
+    assert.equal(calls, 2);
+    assert.equal(r1.dailyLimited, true);
+    assert.equal(store.data.dailyFetch.counts.x, 2);
+    const left = ['x0', 'x1', 'x2'].filter((id) => store.get(id).status === 'no-annotation');
+    assert.equal(left.length, 1);
+
+    // 同日 2 回目: 残量 0 → 取得 0
+    const r2 = await syncEngagement({ store, fetch, filter: NO_ANNO, dailyLimit: { x: 2 }, now: () => DAY });
+    assert.equal(calls, 2); // 増えない
+    assert.equal(r2.dailyLimited, true);
+
+    // 翌日: カウントがリセットされ残り 1 件を取得 (日付文字列は端末 TZ 依存なので件数で確認)
+    const dayBefore = store.data.dailyFetch.date;
+    const NEXT = DAY + 86400000;
+    const r3 = await syncEngagement({ store, fetch, filter: NO_ANNO, dailyLimit: { x: 2 }, now: () => NEXT });
+    assert.equal(calls, 3);
+    assert.notEqual(store.data.dailyFetch.date, dayBefore); // 日付が進んだ
+    assert.equal(store.data.dailyFetch.counts.x, 1);        // カウントがリセットされた
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- レート制限 ---
 
 test('syncEngagement: minIntervalMs spaces out request starts (X)', async () => {
