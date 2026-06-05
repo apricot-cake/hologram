@@ -22,7 +22,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
 - `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`（`index.html`・`viewer.js`・`i18n.js`）、`vendor/jszip.min.js`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録。画像は `psimg://` プロトコルで遅延読込
 - `i18n.js`（ルート）— content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js` を使用）
-- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-bridge.js`/`test-app-render.js`/`test-app-ipc.js`（ブリッジ/アプリ/IPCのスモークテスト）、`make-icons.js`（アイコン生成）
+- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-bridge.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`（ブリッジ/アプリ/IPC/ハッシュタグのスモークテスト）、`make-icons.js`（アイコン生成）
 
 ## キーボードショートカット
 
@@ -46,6 +46,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 ## ビューア機能
 
 - プラットフォームフィルタ（チップボタン）
+- ハッシュタグ一覧タブ（本文の #タグ を抽出・頻度順表示、クリックで絞り込み）
 - 日付範囲フィルタ（from/to）
 - エンゲージメントフィルタ（種類選択+最低値）
 - カード/リスト表示切替（config保存）
@@ -92,7 +93,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
   - [x] ビューア全機能の Electron 移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
   - [ ] 配布パッケージング（electron-builder 等）
   - [ ] 添付画像の原寸保存・表示
-- [ ] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
+- [x] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [ ] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
 - [ ] Threads 対応（Meta製、日本で1300万ユーザー。X の代替として成長中）
 - [ ] Mastodon 対応（ActivityPub 系。Misskey と同じプロトコルだが DOM 構造が異なる）

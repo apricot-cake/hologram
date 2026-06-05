@@ -11,6 +11,8 @@
   const MSG = {
     // tabs / search / sort
     tabPosts: _s('tabPosts'),
+    tabTags: _s('tabTags'),
+    emptyHashtags: _s('emptyHashtags'),
     tabSettings: _s('tabSettings'),
     searchPlaceholder: _s('searchPlaceholder'),
     sortDateDesc: _s('sortDateDesc'),
@@ -154,6 +156,7 @@
   const setAttr = (id, attr, val) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, val); };
 
   setText('tabPosts', MSG.tabPosts);
+  setText('tabTags', MSG.tabTags);
   setText('tabSettings', MSG.tabSettings);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
@@ -609,10 +612,45 @@
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(`panel${capitalize(btn.dataset.tab)}`).classList.add('active');
+      if (btn.dataset.tab === 'tags') renderHashtags();
     });
   });
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  // --- Hashtags (extracted from post text) ---
+  function extractHashtags(text) {
+    return text ? (text.match(/#[\p{L}\p{N}_]+/gu) || []) : [];
+  }
+
+  function renderHashtags() {
+    const container = document.getElementById('hashtagList');
+    const counts = new Map();
+    for (const p of allPosts) {
+      const seen = new Set();
+      for (const tag of extractHashtags(p.text)) {
+        if (seen.has(tag)) continue;
+        seen.add(tag);
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      }
+    }
+    const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (!entries.length) {
+      container.innerHTML = `<div class="hashtag-empty">${MSG.emptyHashtags}</div>`;
+      return;
+    }
+    container.innerHTML = entries.map(([tag, n]) =>
+      `<button class="hashtag-chip" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<span class="ht-count">${n}</span></button>`
+    ).join('');
+  }
+
+  document.getElementById('hashtagList').addEventListener('click', (e) => {
+    const chip = e.target.closest('.hashtag-chip');
+    if (!chip) return;
+    document.querySelector('.tab-btn[data-tab="posts"]').click();
+    document.getElementById('searchBox').value = chip.dataset.tag;
+    renderPosts();
+  });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');

@@ -14,6 +14,8 @@
     ja: {
       // viewer: tabs / search / sort
       tabPosts: '投稿',
+      tabTags: 'ハッシュタグ',
+      emptyHashtags: 'ハッシュタグがありません',
       tabSettings: '設定',
       searchPlaceholder: 'テキスト・ユーザー名で検索',
       sortDateDesc: '新しい順',
@@ -161,6 +163,8 @@
 
     en: {
       tabPosts: 'Posts',
+      tabTags: 'Hashtags',
+      emptyHashtags: 'No hashtags yet',
       tabSettings: 'Settings',
       searchPlaceholder: 'Search by text or username',
       sortDateDesc: 'Newest first',
