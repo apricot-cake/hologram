@@ -172,6 +172,16 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - [x] エラー時 `errorMessage` をカード tooltip に表示
   - エラー一覧専用画面ではなく、Status フィルタ で `error` を選ぶ形で代替
 
+### 後日の UI 簡素化・X 保護 (上の scope/Backfill/Resume ボタンは廃止)
+
+ユーザビリティの指摘で**ツールバーは「エンゲージメントを取得」ボタン1つ**に整理した。**shared 側 (`syncEngagement`) は scope/staleDays/ids/statuses を引き続きサポート**しているが、UI からは公開していない (将来また出すのは容易)。現行 UI:
+
+- 同期は起動時に自動実行 (Sync ボタン廃止)
+- ボタンは「まだ一度も取得していない・URL を持つアイテム」= `filter: { statuses: ['no-annotation', 'parsed'] }` を取得。取得済み (synced) は触らない。実行中は「中止」トグル。中断分は status 据え置きで次回自然に再開 (Resume ボタン廃止)
+- バックフィル (no-annotation) は上の対象に内包 (専用ボタン廃止)
+- X 保護を強化: 間隔 2.5〜3.5 秒 (jitter)、**429/420 で run 停止** (error 印を付けず未処理のまま残す)、**日次上限** `DEFAULT_DAILY_LIMIT = {x:500}` (`store.data.dailyFetch` に永続化・ローカル暦日でリセット・超過は翌日繰り越し)、X 200 件超は実行前に確認ダイアログ
+- 詳細は plugin-window/README.md
+
 ---
 
 ## Phase 4: Inspector Plugin

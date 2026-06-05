@@ -410,7 +410,7 @@
         mError: 'SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.', rError: 'retry may recover',
         mDeleted: 'Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.', rDeleted: 'no point',
         mPrivate: 'Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).', rPrivate: 'fix login then retry',
-        mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Pick the "no-annotation (URL only)" target to fetch these',
+        mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Fetched by the Fetch engagement button if it has an SNS URL',
         openWindowTitle: 'Open in a new window',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching engagement…', fetchingProgress: 'fetching engagement… {0}/{1}',
         syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
@@ -442,7 +442,7 @@
         mError: 'SNS の API が想定外のエラー（5xx・通信・JSON 解析失敗など）を返した。エラー内容はカードにマウスを乗せると表示。', rError: 'リトライで直る場合がある',
         mDeleted: 'SNS 側で投稿が削除済み（404 など）。最後に取得したエンゲージメントは記録として残す。', rDeleted: '再取得しても無駄',
         mPrivate: 'アクセス権なし（X の鍵アカウント、pixiv の R-18 を未ログインで開いた場合など）。', rPrivate: 'ログインし直せば取得できる',
-        mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: '対象を「情報なし（URLのみ）」にすると取得できる',
+        mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: 'SNS の URL があれば「エンゲージメントを取得」で取得される',
         openWindowTitle: '別ウィンドウで開く',
         ready: '準備完了', syncing: '同期中…', fetching: 'エンゲージメント取得中…', fetchingProgress: 'エンゲージメント取得中… {0}/{1}',
         syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
@@ -688,8 +688,9 @@
       });
 
       // 実行中はボタンが「中止」に変わる (別ボタンにしない)。実行中の再クリックで cancel。
-      // 対象は status='no-annotation' (アノテーション無しで SNS の URL だけ持つ未取得アイテム)。
-      // 取得済みは触らず、中断しても未処理は no-annotation のまま残るので次に押せば自然に続く。
+      // 対象は「まだ一度も engagement を取得していない・SNS URL を持つアイテム」=
+      // status が no-annotation (URL のみ) と parsed (Info+ 注釈あり) の両方。取得済み (synced) は
+      // 触らない。中断しても未処理はその status のまま残るので、次に押せば自然に続く。
       const runEngagement = async () => {
         if (!store || currentAbort) return;
         const btn = $('engagement-btn');
@@ -705,7 +706,7 @@
             signal: currentAbort.signal,
             rateLimit: DEFAULT_RATE_LIMIT,
             dailyLimit: DEFAULT_DAILY_LIMIT,
-            filter: { statuses: ['no-annotation'] },
+            filter: { statuses: ['no-annotation', 'parsed'] },
             onConfirm: async (counts) => {
               const x = counts.x || 0;
               return x <= X_CONFIRM_THRESHOLD ? true : confirmDialog(t('confirmLargeX', x));
