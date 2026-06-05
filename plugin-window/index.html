@@ -44,6 +44,10 @@
     .toolbar button:hover { background: #333; }
     .toolbar button:disabled { opacity: 0.5; cursor: default; }
     .toolbar .scope { color: var(--muted); font-size: 12px; }
+    #engagement-btn { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+    #engagement-btn:hover { background: #3a8eef; }
+    #engagement-btn.running { background: #c0392b; border-color: #c0392b; }
+    #engagement-btn.running:hover { background: #a93226; }
     .toolbar select, .toolbar input {
       background: var(--bg2);
       color: var(--fg);
@@ -227,60 +231,83 @@
       display: flex;
       gap: 16px;
     }
+
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .confirm-overlay[hidden] { display: none; }
+    .confirm-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 440px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+    .confirm-msg { margin-bottom: 16px; line-height: 1.7; font-size: 13px; }
+    .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .confirm-actions button {
+      padding: 6px 16px;
+      background: var(--bg2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .confirm-actions button:hover { background: #333; }
+    #confirm-ok { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+    #confirm-ok:hover { background: #3a8eef; }
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <button id="sync-btn">Sync from Eagle</button>
-    <button id="engagement-btn">Fetch engagement</button>
-    <label class="scope">scope <select id="engagement-scope">
-      <option value="all">all parsed/synced</option>
-      <option value="current">current filter</option>
-      <option value="stale">stale &gt; N days</option>
-    </select></label>
-    <input id="engagement-stale-days" type="number" min="1" value="7" title="日数" style="display: none;">
-    <button id="backfill-btn" title="annotation 無しだが SNS URL を持つ既存アイテムの engagement を埋める">Backfill</button>
-    <button id="resume-btn" style="display: none;" title="前回 cancel した続きを処理">Resume</button>
-    <button id="cancel-btn" style="display: none;">Cancel</button>
+    <button id="engagement-btn" data-i18n="fetch">Fetch engagement</button>
     <span class="status" id="status"></span>
   </div>
 
   <div class="filters">
-    <label>Platform <select id="filter-platform">
-      <option value="">all</option>
+    <label><span data-i18n="platformLabel">Platform</span> <select id="filter-platform">
+      <option value="" data-i18n="optAll">all</option>
       <option value="x">X</option>
       <option value="bluesky">Bluesky</option>
       <option value="pixiv">pixiv</option>
     </select></label>
-    <label class="with-info">Status <select id="filter-status">
-      <option value="synced">synced</option>
-      <option value="parsed">parsed</option>
-      <option value="error">error</option>
-      <option value="deleted">deleted</option>
-      <option value="private">private</option>
-      <option value="no-annotation">no-annotation</option>
+    <label class="with-info"><span data-i18n="statusLabel">Status</span> <select id="filter-status">
+      <option value="synced" data-i18n="stSynced">synced</option>
+      <option value="parsed" data-i18n="stParsed">parsed</option>
+      <option value="error" data-i18n="stError">error</option>
+      <option value="deleted" data-i18n="stDeleted">deleted</option>
+      <option value="private" data-i18n="stPrivate">private</option>
+      <option value="no-annotation" data-i18n="stNoAnno">no-annotation</option>
     </select>
-    <button id="status-info-btn" type="button" class="info-btn" aria-label="What do these statuses mean?">ⓘ</button>
+    <button id="status-info-btn" type="button" class="info-btn" data-i18n-aria="statusInfoAria" aria-label="What do these statuses mean?">ⓘ</button>
     <div id="status-info-popover" class="popover" hidden>
       <table>
-        <thead><tr><th>Status</th><th>Meaning</th><th>Retry</th></tr></thead>
+        <thead><tr><th data-i18n="colStatus">Status</th><th data-i18n="colMeaning">Meaning</th><th data-i18n="colRetry">Retry</th></tr></thead>
         <tbody>
-          <tr><td><b>synced</b></td><td>Engagement fetched from SNS API. Main view.</td><td>re-fetch refreshes</td></tr>
-          <tr><td><b>parsed</b></td><td>Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.</td><td>Fetch engagement promotes to synced</td></tr>
-          <tr><td><b>error</b></td><td>SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.</td><td>retry may recover</td></tr>
-          <tr><td><b>deleted</b></td><td>Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.</td><td>no point</td></tr>
-          <tr><td><b>private</b></td><td>Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).</td><td>fix login then retry</td></tr>
-          <tr><td><b>no-annotation</b></td><td>No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).</td><td>backfill (planned)</td></tr>
+          <tr><td><b data-i18n="stSynced">synced</b></td><td data-i18n="mSynced">Engagement fetched from SNS API. Main view.</td><td data-i18n="rSynced">re-fetch refreshes</td></tr>
+          <tr><td><b data-i18n="stParsed">parsed</b></td><td data-i18n="mParsed">Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.</td><td data-i18n="rParsed">Fetch engagement promotes to synced</td></tr>
+          <tr><td><b data-i18n="stError">error</b></td><td data-i18n="mError">SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.</td><td data-i18n="rError">retry may recover</td></tr>
+          <tr><td><b data-i18n="stDeleted">deleted</b></td><td data-i18n="mDeleted">Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.</td><td data-i18n="rDeleted">no point</td></tr>
+          <tr><td><b data-i18n="stPrivate">private</b></td><td data-i18n="mPrivate">Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).</td><td data-i18n="rPrivate">fix login then retry</td></tr>
+          <tr><td><b data-i18n="stNoAnno">no-annotation</b></td><td data-i18n="mNoAnno">No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).</td><td data-i18n="rNoAnno">Backfill picks up ones with an SNS URL</td></tr>
         </tbody>
       </table>
     </div>
     </label>
-    <label>Min likes <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
-    <label>Min views <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
-    <label>Sort <select id="sort-field">
-      <option value="likesPercentile">Likes ↓ (ranked)</option>
-      <option value="likes">Likes ↓ (raw)</option>
-      <option value="modifiedAt">Recently modified ↓</option>
+    <label><span data-i18n="minLikes">Min likes</span> <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
+    <label><span data-i18n="minViews">Min views</span> <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
+    <label><span data-i18n="sortLabel">Sort</span> <select id="sort-field">
+      <option value="likesPercentile" data-i18n="sortRanked">Likes ↓ (ranked)</option>
+      <option value="likes" data-i18n="sortRaw">Likes ↓ (raw)</option>
+      <option value="modifiedAt" data-i18n="sortModified">Recently modified ↓</option>
     </select></label>
     <span class="count" id="result-count"></span>
   </div>
@@ -291,6 +318,16 @@
   <div class="footer">
     <span id="library-path">—</span>
     <span id="store-stats">—</span>
+  </div>
+
+  <div id="confirm-overlay" class="confirm-overlay" hidden>
+    <div class="confirm-box">
+      <div id="confirm-msg" class="confirm-msg"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" data-i18n="confirmNo">Cancel</button>
+        <button id="confirm-ok" data-i18n="confirmYes">OK</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -346,11 +383,104 @@
       };
     })();
 
+    // === i18n ===
+    // Eagle のロケールで en / ja を自動切替 (ja で始まれば日本語)。静的要素は data-i18n /
+    // data-i18n-title / data-i18n-aria 属性、動的文字列は t(key, ...args) を使う ({0} 置換)。
+    const LANG = (() => {
+      let loc = '';
+      try { loc = (typeof eagle !== 'undefined' && eagle.app && eagle.app.locale) || navigator.language || ''; } catch {}
+      return String(loc).toLowerCase().startsWith('ja') ? 'ja' : 'en';
+    })();
+    const I18N = {
+      en: {
+        sync: 'Sync from Eagle', fetch: 'Fetch engagement', backfill: 'Backfill',
+        backfillTitle: 'Fill engagement for existing items that have an SNS URL but no Info+ annotation',
+        resume: 'Resume ({0})', resumeTitle: 'Process the items left over from the last cancel',
+        cancel: 'Cancel', stop: 'Stop',
+        scopeLabel: 'Target', scopeAll: 'all parsed/synced', scopeCurrent: 'current filter', scopeStale: 'stale > N days',
+        scopeBackfill: 'no-annotation (URL only)', scopeResume: 'resume left-over ({0})',
+        staleDaysTitle: 'days',
+        platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
+        minLikes: 'Min likes', minViews: 'Min views',
+        sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortModified: 'Recently modified ↓',
+        colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
+        stSynced: 'synced', stParsed: 'parsed', stError: 'error', stDeleted: 'deleted', stPrivate: 'private', stNoAnno: 'no-annotation',
+        mSynced: 'Engagement fetched from SNS API. Main view.', rSynced: 're-fetch refreshes',
+        mParsed: 'Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.', rParsed: 'Fetch engagement promotes to synced',
+        mError: 'SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.', rError: 'retry may recover',
+        mDeleted: 'Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.', rDeleted: 'no point',
+        mPrivate: 'Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).', rPrivate: 'fix login then retry',
+        mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Pick the "no-annotation (URL only)" target to fetch these',
+        openWindowTitle: 'Open in a new window',
+        ready: 'ready', syncing: 'syncing…', fetching: 'fetching engagement…', fetchingProgress: 'fetching engagement… {0}/{1}',
+        syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
+        engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)',
+        engRateLimited: 'X rate-limited, stopped. {0} left — try again later.',
+        engDailyLimit: 'Daily cap reached (X: {1}/day). {0} fetched this run. Resume another day.',
+        confirmYes: 'OK', confirmNo: 'Cancel',
+        confirmLargeX: 'Fetch engagement for {0} X posts? X uses an unofficial API, so large batches may get rate-limited or blocked. Splitting across sessions is safer. Continue?',
+        errSync: 'sync error: {0}', errEngagement: 'engagement error: {0}', errInit: 'init error: {0}', errNoEagle: '✗ eagle global not found',
+        resultCount: '{0} items', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
+        emptyFiltered: 'No items match the filter. Loosen the filters or run Fetch engagement.',
+        emptyNoSync: 'No items in Eagle.'
+      },
+      ja: {
+        sync: 'Eagle から同期', fetch: 'エンゲージメントを取得', backfill: 'バックフィル',
+        backfillTitle: 'アノテーション無しだが SNS の URL を持つ既存アイテムのエンゲージメントを取得する',
+        resume: '再開 ({0})', resumeTitle: '前回キャンセルした分の続きを処理',
+        cancel: 'キャンセル', stop: '中止',
+        scopeLabel: '対象', scopeAll: 'すべて（解析・取得済み）', scopeCurrent: '現在のフィルタ', scopeStale: 'N 日以上前',
+        scopeBackfill: '情報なし（URLのみ）', scopeResume: '中断した続き ({0})',
+        staleDaysTitle: '日数',
+        platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
+        minLikes: 'いいね下限', minViews: '表示回数下限',
+        sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortModified: '更新日時 ↓',
+        colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
+        stSynced: '取得済み', stParsed: '解析済み', stError: 'エラー', stDeleted: '削除済み', stPrivate: '非公開', stNoAnno: '情報なし',
+        mSynced: 'SNS の API からエンゲージメント（いいね等）を取得済み。主にこの状態を見る。', rSynced: '再取得で最新化できる',
+        mParsed: 'Info+ のアノテーションは解析済みだが、エンゲージメント未取得。同期直後の中間状態。', rParsed: '「エンゲージメントを取得」で取得済みになる',
+        mError: 'SNS の API が想定外のエラー（5xx・通信・JSON 解析失敗など）を返した。エラー内容はカードにマウスを乗せると表示。', rError: 'リトライで直る場合がある',
+        mDeleted: 'SNS 側で投稿が削除済み（404 など）。最後に取得したエンゲージメントは記録として残す。', rDeleted: '再取得しても無駄',
+        mPrivate: 'アクセス権なし（X の鍵アカウント、pixiv の R-18 を未ログインで開いた場合など）。', rPrivate: 'ログインし直せば取得できる',
+        mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: '対象を「情報なし（URLのみ）」にすると取得できる',
+        openWindowTitle: '別ウィンドウで開く',
+        ready: '準備完了', syncing: '同期中…', fetching: 'エンゲージメント取得中…', fetchingProgress: 'エンゲージメント取得中… {0}/{1}',
+        syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
+        engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）',
+        engRateLimited: 'X にレート制限されたため中止しました。残り {0} 件は時間を置いて再実行してください。',
+        engDailyLimit: '今日の取得上限（X: {1}件/日）に達しました。今回 {0} 件取得。残りは日を改めて。',
+        confirmYes: '実行', confirmNo: 'やめる',
+        confirmLargeX: 'X の投稿 {0} 件を取得します。X は非公式 API のため、大量取得はレート制限やブロックの恐れがあります（日を分けると安全）。続けますか？',
+        errSync: '同期エラー: {0}', errEngagement: 'エンゲージメント取得エラー: {0}', errInit: '初期化エラー: {0}', errNoEagle: '✗ Eagle 内で開いてください',
+        resultCount: '{0} 件', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
+        emptyFiltered: '条件に合うアイテムがありません。フィルタを緩めるか「エンゲージメントを取得」を実行してください。',
+        emptyNoSync: 'Eagle にアイテムがありません。'
+      }
+    };
+    const t = (key, ...args) => {
+      const dict = I18N[LANG] || I18N.en;
+      let s = dict[key] != null ? dict[key] : (I18N.en[key] != null ? I18N.en[key] : key);
+      args.forEach((a, i) => { s = s.split('{' + i + '}').join(String(a)); });
+      return s;
+    };
+    // status の内部キー (英語) → 表示ラベル。値は英語のまま、表示だけ locale 化する。
+    const STATUS_LABEL_KEY = {
+      synced: 'stSynced', parsed: 'stParsed', error: 'stError',
+      deleted: 'stDeleted', private: 'stPrivate', 'no-annotation': 'stNoAnno'
+    };
+    const tStatus = (s) => STATUS_LABEL_KEY[s] ? t(STATUS_LABEL_KEY[s]) : s;
+    const applyI18n = () => {
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+      document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+    };
+    applyI18n();
+
     let store = null;
     let currentLibraryPath = null;
 
     if (typeof eagle === 'undefined') {
-      setStatus('✗ eagle global not found');
+      setStatus(t('errNoEagle'));
     } else {
       const initStore = async (libraryPath) => {
         const fs = require('fs');
@@ -365,8 +495,8 @@
         if (!store) return;
         const items = Object.values(store.data.items);
         const synced = items.filter(it => it.status === 'synced').length;
-        const last = store.data.lastSync ? new Date(store.data.lastSync).toLocaleString() : 'never';
-        $('store-stats').textContent = `total ${items.length} | synced ${synced} | last ${last}`;
+        const last = store.data.lastSync ? new Date(store.data.lastSync).toLocaleString() : t('never');
+        $('store-stats').textContent = t('storeStats', items.length, synced, last);
       };
 
       const fmtNum = (n) => {
@@ -420,7 +550,7 @@
         if (it.status && it.status !== 'synced') {
           const sb = document.createElement('span');
           sb.className = `badge status-${it.status}`;
-          sb.textContent = it.status;
+          sb.textContent = tStatus(it.status);
           if (it.errorMessage) sb.title = it.errorMessage;
           badges.appendChild(sb);
         }
@@ -430,8 +560,8 @@
         const openBtn = document.createElement('button');
         openBtn.className = 'open-window-btn';
         openBtn.textContent = '❐';
-        openBtn.title = '別ウィンドウで開く';
-        openBtn.setAttribute('aria-label', '別ウィンドウで開く');
+        openBtn.title = t('openWindowTitle');
+        openBtn.setAttribute('aria-label', t('openWindowTitle'));
         card.appendChild(openBtn);
 
         const stats = document.createElement('div');
@@ -479,7 +609,7 @@
         const sort = { field: $('sort-field').value, order: 'desc' };
 
         const results = store.query(filters, sort);
-        $('result-count').textContent = `${results.length} items`;
+        $('result-count').textContent = t('resultCount', results.length);
 
         const grid = $('grid');
         const empty = $('empty');
@@ -487,9 +617,7 @@
 
         if (results.length === 0) {
           empty.style.display = 'block';
-          empty.textContent = store.data.lastSync
-            ? '条件に合うアイテムがありません。フィルタを緩めるか Fetch engagement を実行してください。'
-            : 'Eagle にアイテムがありません。Sync from Eagle を押してください。';
+          empty.textContent = t(store.data.lastSync ? 'emptyFiltered' : 'emptyNoSync');
           return;
         }
         empty.style.display = 'none';
@@ -519,11 +647,10 @@
         }
       };
 
+      // 同期は起動時に自動実行する (専用ボタンは廃止)。ライブラリ全件と store を差分同期。
       const runSync = async () => {
         if (!store) return;
-        const btn = $('sync-btn');
-        btn.disabled = true;
-        setStatus('syncing…');
+        setStatus(t('syncing'));
         try {
           const { syncFromEagle } = await import('../shared/sync-eagle.js');
           const r = await syncFromEagle({
@@ -531,111 +658,93 @@
             store,
             log: (msg) => console.log('[sync]', msg)
           });
-          setStatus(`sync: +${r.newCount} ~${r.changedCount} -${r.deletedCount} upserted=${r.upsertedCount} (${r.elapsedMs}ms)`);
+          setStatus(t('syncResult', r.newCount, r.changedCount, r.deletedCount, r.upsertedCount, r.elapsedMs));
           renderFooter();
           renderGrid();
         } catch (e) {
-          setStatus('sync error: ' + e.message);
+          setStatus(t('errSync', e.message));
           console.error(e);
-        } finally {
-          btn.disabled = false;
         }
       };
 
       let currentAbort = null;
 
-      // Fetch engagement のスコープを toolbar の select から組み立てる。
-      //   all     — 全 parsed/synced
-      //   current — グリッドの現在のフィルタで表示中のアイテムのみ (platform 別もこれで賄える)
-      //   stale   — engagement が N 日以上前 or 未取得のもの
-      const buildScopeFilter = () => {
-        const scope = $('engagement-scope').value;
-        if (scope === 'current') {
-          return { ids: store.query(readGridFilters()).map((it) => it.id) };
-        }
-        if (scope === 'stale') {
-          return { staleDays: Number($('engagement-stale-days').value) || 0 };
-        }
-        return {};
-      };
+      // X が多い時に実行前確認を出す閾値 (これ以下は黙って実行)
+      const X_CONFIRM_THRESHOLD = 200;
 
-      // 前回 cancel で取り残した件数を Resume ボタンに反映 (store.data.engagementResume)
-      const updateResumeButton = () => {
-        const n = store?.data?.engagementResume?.ids?.length || 0;
-        const btn = $('resume-btn');
-        btn.textContent = `Resume (${n})`;
-        btn.style.display = n > 0 ? '' : 'none';
-      };
+      // 簡易確認ダイアログ (window.confirm は Electron で挙動が不安定なので自前)。
+      const confirmDialog = (msg) => new Promise((resolve) => {
+        const overlay = $('confirm-overlay');
+        $('confirm-msg').textContent = msg;
+        overlay.hidden = false;
+        const done = (v) => {
+          overlay.hidden = true;
+          $('confirm-ok').onclick = null;
+          $('confirm-cancel').onclick = null;
+          resolve(v);
+        };
+        $('confirm-ok').onclick = () => done(true);
+        $('confirm-cancel').onclick = () => done(false);
+      });
 
-      // filterOverride を渡すと scope セレクタを無視してその filter で実行する (Resume 用)
-      const runEngagement = async (filterOverride) => {
-        if (!store) return;
+      // 実行中はボタンが「中止」に変わる (別ボタンにしない)。実行中の再クリックで cancel。
+      // 対象は status='no-annotation' (アノテーション無しで SNS の URL だけ持つ未取得アイテム)。
+      // 取得済みは触らず、中断しても未処理は no-annotation のまま残るので次に押せば自然に続く。
+      const runEngagement = async () => {
+        if (!store || currentAbort) return;
         const btn = $('engagement-btn');
-        const resumeBtn = $('resume-btn');
-        const backfillBtn = $('backfill-btn');
-        const cancelBtn = $('cancel-btn');
         currentAbort = new AbortController();
-        btn.disabled = true;
-        resumeBtn.disabled = true;
-        backfillBtn.disabled = true;
-        cancelBtn.style.display = '';
-        setStatus('fetching engagement…');
+        btn.textContent = t('stop');
+        btn.classList.add('running');
+        setStatus(t('fetching'));
         try {
-          const { syncEngagement, DEFAULT_RATE_LIMIT } = await import('../shared/sync-engagement.js');
+          const { syncEngagement, DEFAULT_RATE_LIMIT, DEFAULT_DAILY_LIMIT } = await import('../shared/sync-engagement.js');
           const r = await syncEngagement({
             store,
             fetch: window.fetch.bind(window),
             signal: currentAbort.signal,
             rateLimit: DEFAULT_RATE_LIMIT,
-            filter: filterOverride || buildScopeFilter(),
+            dailyLimit: DEFAULT_DAILY_LIMIT,
+            filter: { statuses: ['no-annotation'] },
+            onConfirm: async (counts) => {
+              const x = counts.x || 0;
+              return x <= X_CONFIRM_THRESHOLD ? true : confirmDialog(t('confirmLargeX', x));
+            },
             onProgress: ({ done, total }) => {
-              setStatus(`fetching engagement… ${done}/${total}`);
+              setStatus(t('fetchingProgress', done, total));
             },
             log: (msg) => console.log('[engagement]', msg)
           });
-          const tag = r.cancelled ? `cancelled (${r.remainingIds.length} left)` : 'engagement';
-          setStatus(`${tag}: ${r.okCount} ok / ${r.errCount} err / ${r.skipCount} skip (${r.elapsedMs}ms)`);
+          if (r.rateLimited) {
+            setStatus(t('engRateLimited', r.remainingIds.length));
+          } else if (r.dailyLimited) {
+            setStatus(t('engDailyLimit', r.okCount, DEFAULT_DAILY_LIMIT.x));
+          } else if (r.targetCount === 0) {
+            setStatus(t('engNothing'));
+          } else {
+            const tag = r.cancelled ? t('engCancelled', r.remainingIds.length) : t('engTag');
+            setStatus(t('engResult', tag, r.okCount, r.errCount, r.skipCount, r.elapsedMs));
+          }
           renderFooter();
           renderGrid();
         } catch (e) {
-          setStatus('engagement error: ' + e.message);
+          setStatus(t('errEngagement', e.message));
           console.error(e);
         } finally {
-          btn.disabled = false;
-          resumeBtn.disabled = false;
-          backfillBtn.disabled = false;
-          cancelBtn.style.display = 'none';
+          btn.textContent = t('fetch');
+          btn.classList.remove('running');
           currentAbort = null;
-          updateResumeButton();
         }
       };
 
-      const onResume = () => {
-        const ids = store?.data?.engagementResume?.ids;
-        if (ids?.length) runEngagement({ ids });
-      };
-
-      // annotation 無しだが SNS URL を持つ既存アイテムを engagement で埋める
-      const onBackfill = () => runEngagement({ statuses: ['no-annotation'] });
-
-      const onCancel = () => {
+      // 同じボタンで実行 / 中止を兼ねる
+      $('engagement-btn').addEventListener('click', () => {
         if (currentAbort) currentAbort.abort();
-      };
-
-      $('sync-btn').addEventListener('click', runSync);
-      $('engagement-btn').addEventListener('click', () => runEngagement());
-      $('resume-btn').addEventListener('click', onResume);
-      $('backfill-btn').addEventListener('click', onBackfill);
-      $('cancel-btn').addEventListener('click', onCancel);
+        else runEngagement();
+      });
       $('grid').addEventListener('click', onCardClick);
       ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
         .forEach(id => $(id).addEventListener('input', renderGrid));
-
-      // stale スコープのときだけ日数 input を出す
-      $('engagement-scope').addEventListener('change', () => {
-        $('engagement-stale-days').style.display =
-          $('engagement-scope').value === 'stale' ? '' : 'none';
-      });
 
       // Status info ポップオーバー
       const infoBtn = $('status-info-btn');
@@ -650,8 +759,6 @@
         }
       });
 
-      // 起動時診断: サムネ未表示などの調査用に、環境と store / 生 Eagle item の素性をログへ。
-      // Item インスタンスは非列挙 (JSON.stringify で {}) なので property は明示プローブする。
       // 起動時に環境と store の概況をログへ (console/error のファイル捕捉は DEBUG_LOG が担当)。
       const logDiagnostics = (lib) => {
         try {
@@ -674,12 +781,11 @@
           console.log('[debug] log file →', logPath);
           await initStore(lib.path);
           renderFooter();
-          renderGrid();
-          updateResumeButton();
+          renderGrid();             // キャッシュから即描画
           logDiagnostics(lib);
-          setStatus('ready');
+          await runSync();          // 開いた時に自動同期 (差分のみ、ミリ秒) → 再描画
         } catch (e) {
-          setStatus('init error: ' + e.message);
+          setStatus(t('errInit', e.message));
           console.error(e);
         }
       });

@@ -203,11 +203,12 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - サポート連絡先用意
   - pixiv R-18 取得部分のポリシー確認 (まずローカル運用で安定化、判断ペンディング)
 - [ ] ホットキー対応 (`Ctrl+Shift+E` 等、Window Plugin の manifest.shortcut)
-- [ ] 日本語対応 (UI 文字列の i18n)
-  - manifest.json に `fallbackLanguage` `languages` を設定
-  - plugin-window のラベル (Toolbar / Filter / Status / Sort / Footer) を locale 切り替え対応
-  - エラーメッセージ・empty state も対象
-  - manifest 自体の `name` `description` も locale 別に
+- [x] 日本語対応 (UI 文字列の i18n) — *UI 文字列のみ完了。manifest 系は未*
+  - [x] plugin-window のラベル (Toolbar / Filter / Status / Sort / Footer) を locale 切り替え対応
+  - [x] エラーメッセージ・empty state・ツールチップ・Status popover も対象
+  - 実装: index.html にインライン i18n 辞書 (en/ja) + `eagle.app.locale` 自動判定 (`ja*`→ja)。静的要素は `data-i18n` / `data-i18n-title` / `data-i18n-aria`、動的は `t(key, ...args)` ({0} 置換)。Eagle の i18n フレームワークには依存しない自己完結方式
+  - [ ] manifest.json の `languages` / `fallbackLanguage`、manifest 自体の `name` `description` の locale 別化 (未対応。Eagle の manifest i18n 形式の確認が必要)
+  - 備考: status 値 (synced/parsed 等) と platform 名 (X/Bluesky/pixiv) はバッジと一致させるため翻訳せず英語のまま
 - [ ] 派生指標
   - エンゲージメント率 (likes / views)
   - 期間内増加率
