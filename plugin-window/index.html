@@ -312,6 +312,7 @@
     <label><span data-i18n="sortLabel">Sort</span> <select id="sort-field">
       <option value="likesPercentile" data-i18n="sortRanked">Likes ↓ (ranked)</option>
       <option value="likes" data-i18n="sortRaw">Likes ↓ (raw)</option>
+      <option value="engagementSyncedAt" data-i18n="sortFetched">Recently fetched ↓</option>
       <option value="modifiedAt" data-i18n="sortModified">Recently modified ↓</option>
     </select></label>
     <label><input type="checkbox" id="filter-multi"> <span data-i18n="multiOnly">multi-image only</span></label>
@@ -408,7 +409,7 @@
         staleDaysTitle: 'days',
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
         minLikes: 'Min likes', minViews: 'Min views', multiOnly: 'multi-image only',
-        sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortModified: 'Recently modified ↓',
+        sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortFetched: 'Recently fetched ↓', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
         mFull: 'Post metadata (engagement numbers + author/text) fetched.',
@@ -423,7 +424,7 @@
         mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Fetched by the Fetch engagement button if it has an SNS URL',
         openWindowTitle: 'Open in a new window',
         deleteTitle: 'Delete (to Eagle trash)', deleteConfirm: 'Move {0} item(s) to Eagle’s trash? (recoverable)',
-        testFetchTitle: 'Fetch only a few (5) to test — does not count against the daily cap',
+        testFetchTitle: 'Fetch only a few (5) to test — runs even if the daily cap is reached',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching metadata…', fetchingProgress: 'fetching metadata… {0}/{1}',
         syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
         engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)',
@@ -446,7 +447,7 @@
         staleDaysTitle: '日数',
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
         minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
-        sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortModified: '更新日時 ↓',
+        sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
         bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクなし',
         mFull: '投稿のメタデータ（いいね等の数値・作者・本文）を取得済み。',
@@ -461,7 +462,7 @@
         mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: 'SNS の URL があれば「エンゲージメントを取得」で取得される',
         openWindowTitle: '別ウィンドウで開く',
         deleteTitle: '削除（Eagle のゴミ箱へ）', deleteConfirm: '{0} 件を Eagle のゴミ箱へ移動しますか？（復元可）',
-        testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限を消費しません',
+        testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限に到達していても実行できます',
         ready: '準備完了', syncing: '同期中…', fetching: 'メタデータ取得中…', fetchingProgress: 'メタデータ取得中… {0}/{1}',
         syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
         engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）',
