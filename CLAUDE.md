@@ -5,7 +5,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
 > - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
-> - **残（任意）**: 配布パッケージング（electron-builder 等）、スクリーンショット/デモ差し替え、`reload-extension`(Alt+R) のストア版除去。
+> - **残（任意）**: 配布パッケージング（electron-builder 設定済み・下記「アプリのビルド/配布」参照）、スクリーンショット/デモ差し替え、`reload-extension`(Alt+R) のストア版除去。
 > 詳細プラン: `~/.claude/plans/playful-kindling-duckling.md`
 
 ## 対応プラットフォーム
@@ -29,6 +29,15 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - `Alt+S` — キャプチャモード開始
 - `Alt+V` — ビューアを開く
 - `Alt+R` — 拡張リロード（開発用、ストア版では非表示）
+
+## アプリのビルド/配布
+
+- 開発実行: `cd app && npm install && npm start`
+- 配布物生成: `cd app && npm run dist`（electron-builder, win/nsis）
+  - 出力 `app/dist/win-unpacked/` — スタンドアロン。`Post Snap.exe` を直接実行可。ASCIIパスへ置けば native-host のランチャもASCIIになり日本語パス問題が解消。
+  - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Post Snap Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
+  - `native-host/` は `extraResources` で `resources/native-host` に同梱。`app/main.js` が `app.isPackaged` でパス解決（dev=`../native-host`）。
+  - アイコンは `scripts/make-icons.js`（256px基準で `icons/icon{16,32,48,128,256}.png` 生成。win ビルドは `icon256.png`）。
 
 ## ストア版リリース時の注意
 

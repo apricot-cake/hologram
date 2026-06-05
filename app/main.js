@@ -4,8 +4,13 @@ const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electr
 const fs = require('fs');
 const path = require('path');
 
-const { configDir } = require('../native-host/paths');
-const installer = require('../native-host/install');
+// native-host/ lives outside app/. In dev it's a sibling dir; when packaged it
+// is bundled as an extraResource under resources/native-host.
+const nativeHostDir = app.isPackaged
+  ? path.join(process.resourcesPath, 'native-host')
+  : path.join(__dirname, '..', 'native-host');
+const { configDir } = require(path.join(nativeHostDir, 'paths'));
+const installer = require(path.join(nativeHostDir, 'install'));
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.

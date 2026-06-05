@@ -14,7 +14,11 @@ const path = require('path');
 
 const STOP1 = '#7c3aed'; // purple (top-left)
 const STOP2 = '#1d9bf0'; // blue (bottom-right)
-const SIZE = 128;
+const SIZE = 256; // render at 256 (Windows packaging needs >=256), downscale for the rest
+const SIZES = [256, 128, 48, 32, 16];
+
+const cx = SIZE / 2, r = SIZE * 0.375, lw = SIZE * 0.109;
+const g0 = SIZE * 0.14, g1 = SIZE * 0.86;
 
 const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;padding:0;width:${SIZE}px;height:${SIZE}px;background:transparent;overflow:hidden}
@@ -23,14 +27,13 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
 <canvas id="c" width="${SIZE}" height="${SIZE}"></canvas>
 <script>
   const x = document.getElementById('c').getContext('2d');
-  const cx = 64, cy = 64, r = 48, lw = 14;
-  const g = x.createLinearGradient(18, 18, 110, 110);
+  const g = x.createLinearGradient(${g0}, ${g0}, ${g1}, ${g1});
   g.addColorStop(0, '${STOP1}');
   g.addColorStop(1, '${STOP2}');
-  x.lineWidth = lw;
+  x.lineWidth = ${lw};
   x.strokeStyle = g;
   x.beginPath();
-  x.arc(cx, cy, r, 0, Math.PI * 2);
+  x.arc(${cx}, ${cx}, ${r}, 0, Math.PI * 2);
   x.stroke();
   document.title = 'done';
 </script></body></html>`;
@@ -55,7 +58,7 @@ app.whenReady().then(async () => {
   const img = await win.webContents.capturePage();
   const outDir = path.join(__dirname, '..', 'icons');
 
-  for (const s of [128, 48, 32, 16]) {
+  for (const s of SIZES) {
     const out = s === SIZE ? img : img.resize({ width: s, height: s, quality: 'best' });
     fs.writeFileSync(path.join(outDir, `icon${s}.png`), out.toPNG());
     console.log(`wrote icon${s}.png`);
