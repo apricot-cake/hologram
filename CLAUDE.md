@@ -33,6 +33,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 ## アプリのビルド/配布
 
 - 開発実行: `cd app && npm install && npm start`
+- **開発ルール**: アプリのコード変更を反映するときは、確認を取らずにアプリを再起動して反映する（単一インスタンスのため `Get-Process electron | Where Path -like '*post-snap*' | Stop-Process -Force` で停止 → 起動し直す）。
 - 配布物生成: `cd app && npm run dist`（electron-builder, win/nsis）
   - 出力 `app/dist/win-unpacked/` — スタンドアロン。`Post Snap.exe` を直接実行可。ASCIIパスへ置けば native-host のランチャもASCIIになり日本語パス問題が解消。
   - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Post Snap Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。
