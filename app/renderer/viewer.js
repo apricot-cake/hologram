@@ -128,6 +128,7 @@
     qfEngagement: _s('qfEngagement'),
     qfTag: _s('qfTag'),
     qfMedia: _s('qfMedia'),
+    qfInstance: _s('qfInstance'),
     qfPost: _s('qfPost'),
     qfReply: _s('qfReply'),
     qfQuote: _s('qfQuote'),
@@ -245,6 +246,9 @@
           break;
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
+          break;
+        case 'instance':
+          label = f.value;
           break;
       }
       return `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
@@ -446,6 +450,7 @@
   // Sidebar i18n
   setText('sbActiveTitle', getMessage('sbActiveTitle'));
   setText('sbPlatformTitle', MSG.qfPlatform);
+  setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
   setText('sbMediaTitle', MSG.qfMedia);
   setText('sbDateTitle', MSG.qfDate);
@@ -467,6 +472,11 @@
       const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
       if (existIdx >= 0) {
         removeFilter(existIdx);
+        if (type === 'platform' && value === 'misskey') {
+          activeFilters = activeFilters.filter(f => f.type !== 'instance');
+          renderQueryChips();
+          renderPosts();
+        }
       } else {
         addFilter({ type, value });
       }
@@ -504,6 +514,7 @@
       sbEngMin.value = '';
     }
     updateSidebarTags();
+    updateSidebarInstances();
   }
 
   // Sidebar date controls
@@ -597,6 +608,32 @@
     });
   }
 
+  // Sidebar: Misskey instances (expands under the Platform section when Misskey is selected)
+  function updateSidebarInstances() {
+    const wrap = document.getElementById('sbInstanceWrap');
+    const container = document.getElementById('sbInstanceChips');
+    const misskeyActive = activeFilters.some(f => f.type === 'platform' && f.value === 'misskey');
+    const instances = [...new Set(allPosts.filter(p => p.platform === 'misskey').map(p => hostOf(p.url)).filter(Boolean))].sort();
+    if (!misskeyActive || instances.length === 0) {
+      wrap.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+    wrap.style.display = '';
+    const activeValues = activeFilters.filter(f => f.type === 'instance').map(f => f.value);
+    container.innerHTML = instances.map(h =>
+      `<button class="sb-chip${activeValues.includes(h) ? ' active' : ''}" data-filter-type="instance" data-filter-value="${escapeHtml(h)}">${escapeHtml(h)}</button>`
+    ).join('');
+    container.querySelectorAll('.sb-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.filterValue;
+        const idx = activeFilters.findIndex(f => f.type === 'instance' && f.value === value);
+        if (idx >= 0) removeFilter(idx); else addFilter({ type: 'instance', value });
+        updateSidebarState();
+      });
+    });
+  }
+
   // --- State ---
   let allPosts = [];
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
@@ -654,6 +691,7 @@
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
+  const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
 
   // --- Load posts ---
   async function loadPosts() {
@@ -687,6 +725,12 @@
     if (byType.platform) {
       const values = byType.platform.map(f => f.value);
       posts = posts.filter(p => values.includes(p.platform));
+    }
+
+    // Instance (Misskey): OR within group
+    if (byType.instance) {
+      const hosts = byType.instance.map(f => f.value);
+      posts = posts.filter(p => p.platform === 'misskey' && hosts.includes(hostOf(p.url)));
     }
 
     // Post type: OR within group

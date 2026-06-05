@@ -429,6 +429,7 @@
   .hashtag-chip:hover { background: #e8f5fe; border-color: #1d9bf0; }
   .hashtag-chip .ht-count { font-size: 11px; color: #999; background: #f0f0f0; padding: 1px 7px; border-radius: 999px; }
   .hashtag-empty { color: #999; padding: 40px 8px; }
+  .sb-subtitle { font-size: 11px; color: #8b98a5; margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -459,6 +460,10 @@
             <button class="sb-chip" data-filter-type="platform" data-filter-value="x">X</button>
             <button class="sb-chip" data-filter-type="platform" data-filter-value="bluesky">Bluesky</button>
             <button class="sb-chip" data-filter-type="platform" data-filter-value="misskey">Misskey</button>
+          </div>
+          <div id="sbInstanceWrap" style="display:none; margin-top:8px;">
+            <div class="sb-subtitle" id="sbInstanceTitle"></div>
+            <div class="sb-chips" id="sbInstanceChips"></div>
           </div>
         </div>
 
