@@ -356,7 +356,24 @@ function createWindow(show = true) {
 // and quits once the renderer has loaded. Run with POSTSNAP_SMOKE=1.
 const SMOKE = process.env.POSTSNAP_SMOKE === '1';
 
-app.whenReady().then(() => {
+// Single instance: a second launch focuses the existing window instead of
+// opening a duplicate (which would fight over the shared userData/cache).
+// Skipped under SMOKE so isolated headless test runs never block each other.
+const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  if (!SMOKE) {
+    app.on('second-instance', () => {
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+    });
+  }
+
+  app.whenReady().then(() => {
   if (!SMOKE) ensureHostRegistered();
   registerImageProtocol();
   createWindow(!SMOKE);
@@ -393,7 +410,8 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
