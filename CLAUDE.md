@@ -100,6 +100,6 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - [x] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [x] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
 - [ ] Mastodon 対応（公開REST API `/api/v1/statuses/:id` あり＝**安定API方針に合致**。metadata.js に追加、content.js は URL抽出のみ）
-- [-] Threads 対応（安定した公開APIが無く DOM依存のため、**「安定API由来のみ」方針では対象外**）
 
+> **不採用: Threads** — 安定した公開APIが無く DOM依存のため、「安定API由来のみ」方針に反するので対応しない（決定済み）。
 > **データ取得方針**: メタデータは安定した公式/公開APIからのみ取得し、DOMスクレイピングはしない（壊れやすいため）。content.js は投稿の特定とパーマリンク抽出だけ。X は公式APIが無く `cdn.syndication.twimg.com`（非公式・要host_permissions）で代替（リポスト/ブックマーク/閲覧数は取得不可）。
