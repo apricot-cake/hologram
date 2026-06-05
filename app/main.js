@@ -407,6 +407,10 @@ if (!gotSingleInstanceLock) {
     return;
   }
 
+  // Start minimized when launched on the user's behalf (env-gated; a normal
+  // user launch still opens a focused window).
+  if (process.env.POSTSNAP_START_MINIMIZED === '1' && win) win.minimize();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
