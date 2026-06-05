@@ -169,6 +169,9 @@
     .badge.status-private { background: rgba(255, 193, 7, 0.9); color: #000; }
     .badge.status-parsed { background: rgba(74, 158, 255, 0.85); }
     .badge.status-no-annotation { background: rgba(80, 80, 80, 0.85); }
+    .badge.bucket-partial { background: rgba(255, 193, 7, 0.9); color: #000; }
+    .badge.bucket-nolink { background: rgba(80, 80, 80, 0.85); }
+    .badge.count { background: rgba(0, 0, 0, 0.8); }
     .card .open-window-btn {
       position: absolute;
       top: 6px;
@@ -280,24 +283,19 @@
       <option value="pixiv">pixiv</option>
     </select></label>
     <label class="with-info"><span data-i18n="statusLabel">Status</span> <select id="filter-status">
-      <option value="synced" data-i18n="stSynced">synced</option>
-      <option value="parsed" data-i18n="stParsed">parsed</option>
-      <option value="error" data-i18n="stError">error</option>
-      <option value="deleted" data-i18n="stDeleted">deleted</option>
-      <option value="private" data-i18n="stPrivate">private</option>
-      <option value="no-annotation" data-i18n="stNoAnno">no-annotation</option>
+      <option value="" data-i18n="optAll">all</option>
+      <option value="full" data-i18n="bFull">fetched</option>
+      <option value="partial" data-i18n="bPartial">not fetched</option>
+      <option value="nolink" data-i18n="bNolink">link only</option>
     </select>
     <button id="status-info-btn" type="button" class="info-btn" data-i18n-aria="statusInfoAria" aria-label="What do these statuses mean?">ⓘ</button>
     <div id="status-info-popover" class="popover" hidden>
       <table>
-        <thead><tr><th data-i18n="colStatus">Status</th><th data-i18n="colMeaning">Meaning</th><th data-i18n="colRetry">Retry</th></tr></thead>
+        <thead><tr><th data-i18n="colStatus">Status</th><th data-i18n="colMeaning">Meaning</th></tr></thead>
         <tbody>
-          <tr><td><b data-i18n="stSynced">synced</b></td><td data-i18n="mSynced">Engagement fetched from SNS API. Main view.</td><td data-i18n="rSynced">re-fetch refreshes</td></tr>
-          <tr><td><b data-i18n="stParsed">parsed</b></td><td data-i18n="mParsed">Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.</td><td data-i18n="rParsed">Fetch engagement promotes to synced</td></tr>
-          <tr><td><b data-i18n="stError">error</b></td><td data-i18n="mError">SNS API returned an unexpected error (5xx / network / JSON parse). errorMessage is on the card tooltip.</td><td data-i18n="rError">retry may recover</td></tr>
-          <tr><td><b data-i18n="stDeleted">deleted</b></td><td data-i18n="mDeleted">Post deleted on the SNS side (404 etc.). Last known engagement is preserved as a historical snapshot.</td><td data-i18n="rDeleted">no point</td></tr>
-          <tr><td><b data-i18n="stPrivate">private</b></td><td data-i18n="mPrivate">Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).</td><td data-i18n="rPrivate">fix login then retry</td></tr>
-          <tr><td><b data-i18n="stNoAnno">no-annotation</b></td><td data-i18n="mNoAnno">No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).</td><td data-i18n="rNoAnno">Backfill picks up ones with an SNS URL</td></tr>
+          <tr><td><b data-i18n="bFull">fetched</b></td><td data-i18n="mFull">Engagement (likes etc.) fetched from the SNS API.</td></tr>
+          <tr><td><b data-i18n="bPartial">not fetched</b></td><td data-i18n="mPartial">Has a link but engagement not fetched yet (incl. error / deleted / private). The button fetches these.</td></tr>
+          <tr><td><b data-i18n="bNolink">link only</b></td><td data-i18n="mNolink">No Info+ info. Fetched only if it has an SNS post URL.</td></tr>
         </tbody>
       </table>
     </div>
@@ -309,6 +307,7 @@
       <option value="likes" data-i18n="sortRaw">Likes ↓ (raw)</option>
       <option value="modifiedAt" data-i18n="sortModified">Recently modified ↓</option>
     </select></label>
+    <label><input type="checkbox" id="filter-multi"> <span data-i18n="multiOnly">multi-image only</span></label>
     <span class="count" id="result-count"></span>
   </div>
 
@@ -401,9 +400,13 @@
         scopeBackfill: 'no-annotation (URL only)', scopeResume: 'resume left-over ({0})',
         staleDaysTitle: 'days',
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
-        minLikes: 'Min likes', minViews: 'Min views',
+        minLikes: 'Min likes', minViews: 'Min views', multiOnly: 'multi-image only',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
+        bFull: 'fetched', bPartial: 'not fetched', bNolink: 'link only',
+        mFull: 'Engagement (likes etc.) fetched from the SNS API.',
+        mPartial: 'Has a link but engagement not fetched yet (incl. error / deleted / private). The button fetches these.',
+        mNolink: 'No Info+ info. Fetched only if it has an SNS post URL.',
         stSynced: 'synced', stParsed: 'parsed', stError: 'error', stDeleted: 'deleted', stPrivate: 'private', stNoAnno: 'no-annotation',
         mSynced: 'Engagement fetched from SNS API. Main view.', rSynced: 're-fetch refreshes',
         mParsed: 'Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.', rParsed: 'Fetch engagement promotes to synced',
@@ -420,7 +423,7 @@
         confirmYes: 'OK', confirmNo: 'Cancel',
         confirmLargeX: 'Fetch engagement for {0} X posts? X uses an unofficial API, so large batches may get rate-limited or blocked. Splitting across sessions is safer. Continue?',
         errSync: 'sync error: {0}', errEngagement: 'engagement error: {0}', errInit: 'init error: {0}', errNoEagle: '✗ eagle global not found',
-        resultCount: '{0} items', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
+        resultCount: '{0} posts', groupCount: '{0} images (same post)', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
         emptyFiltered: 'No items match the filter. Loosen the filters or run Fetch engagement.',
         emptyNoSync: 'No items in Eagle.'
       },
@@ -433,9 +436,13 @@
         scopeBackfill: '情報なし（URLのみ）', scopeResume: '中断した続き ({0})',
         staleDaysTitle: '日数',
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
-        minLikes: 'いいね下限', minViews: '表示回数下限',
+        minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
+        bFull: 'フル取得', bPartial: '未取得', bNolink: 'リンクなし',
+        mFull: 'SNS API からエンゲージメント（いいね等）を取得済み。',
+        mPartial: 'リンクはあるが engagement 未取得（エラー / 削除済み / 非公開 もここに含む）。ボタンで取得対象。',
+        mNolink: 'Info+ の情報なし。SNS の投稿 URL があるものだけ取得対象。',
         stSynced: '取得済み', stParsed: '解析済み', stError: 'エラー', stDeleted: '削除済み', stPrivate: '非公開', stNoAnno: '情報なし',
         mSynced: 'SNS の API からエンゲージメント（いいね等）を取得済み。主にこの状態を見る。', rSynced: '再取得で最新化できる',
         mParsed: 'Info+ のアノテーションは解析済みだが、エンゲージメント未取得。同期直後の中間状態。', rParsed: '「エンゲージメントを取得」で取得済みになる',
@@ -452,7 +459,7 @@
         confirmYes: '実行', confirmNo: 'やめる',
         confirmLargeX: 'X の投稿 {0} 件を取得します。X は非公式 API のため、大量取得はレート制限やブロックの恐れがあります（日を分けると安全）。続けますか？',
         errSync: '同期エラー: {0}', errEngagement: 'エンゲージメント取得エラー: {0}', errInit: '初期化エラー: {0}', errNoEagle: '✗ Eagle 内で開いてください',
-        resultCount: '{0} 件', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
+        resultCount: '{0} 投稿', groupCount: '{0} 枚（同じ投稿）', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
         emptyFiltered: '条件に合うアイテムがありません。フィルタを緩めるか「エンゲージメントを取得」を実行してください。',
         emptyNoSync: 'Eagle にアイテムがありません。'
       }
@@ -463,12 +470,18 @@
       args.forEach((a, i) => { s = s.split('{' + i + '}').join(String(a)); });
       return s;
     };
-    // status の内部キー (英語) → 表示ラベル。値は英語のまま、表示だけ locale 化する。
-    const STATUS_LABEL_KEY = {
-      synced: 'stSynced', parsed: 'stParsed', error: 'stError',
-      deleted: 'stDeleted', private: 'stPrivate', 'no-annotation': 'stNoAnno'
+    // status を 3 表示分類に集約。エラー/削除済み/非公開は「未取得 (そうでない)」に吸収。
+    //   full    = synced (engagement あり)
+    //   partial = parsed / error / deleted / private (リンクはあるが engagement なし)
+    //   nolink  = no-annotation (Info+ 情報なし)
+    const STATUS_BUCKET = {
+      synced: 'full',
+      parsed: 'partial', error: 'partial', deleted: 'partial', private: 'partial',
+      'no-annotation': 'nolink'
     };
-    const tStatus = (s) => STATUS_LABEL_KEY[s] ? t(STATUS_LABEL_KEY[s]) : s;
+    const bucketOf = (status) => STATUS_BUCKET[status] || 'partial';
+    const BUCKET_KEY = { full: 'bFull', partial: 'bPartial', nolink: 'bNolink' };
+    const tBucket = (status) => t(BUCKET_KEY[bucketOf(status)]);
     const applyI18n = () => {
       document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
       document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
@@ -478,6 +491,7 @@
 
     let store = null;
     let currentLibraryPath = null;
+    let parsePostUrl = null; // shared から遅延 import (グループ化の投稿キー算出に使う)
 
     if (typeof eagle === 'undefined') {
       setStatus(t('errNoEagle'));
@@ -489,6 +503,15 @@
         const { EngagementStore } = await import('../shared/engagement-store.js');
         store = new EngagementStore({ libraryPath, fs, path });
         store.load();
+        ({ parsePostUrl } = await import('../shared/sns-api-client.js'));
+      };
+
+      // 投稿の一意キー。url を正規化 (/photo/N, /analytics 等を吸収) して platform:postId に。
+      // parse できない url は url そのまま、url 無しは null (= 単独表示)。
+      const postKey = (url) => {
+        if (!url) return null;
+        const p = parsePostUrl ? parsePostUrl(url) : null;
+        return p ? `${p.platform}:${p.postId}` : url;
       };
 
       const renderFooter = () => {
@@ -522,10 +545,15 @@
         }
       };
 
-      const buildCard = (it) => {
+      // group = 同じ投稿 (同じ url) のアイテム配列。代表 (group[0]) のサムネ/情報を表示し、
+      // 2 件以上なら ×N バッジを付ける。クリック時に全ページを選択できるよう全 id を持たせる。
+      const buildCard = (group) => {
+        const it = group[0];
+        const count = group.length;
         const card = document.createElement('div');
         card.className = 'card';
         card.dataset.id = it.id;
+        card.dataset.ids = group.map((g) => g.id).join(',');
         card.title = it.text || it.title || it.name || '';
 
         if (it.thumbnailURL) {
@@ -546,11 +574,20 @@
           b.textContent = it.platform;
           badges.appendChild(b);
         }
-        // status バッジ: synced 以外 (要対応 / エラー / 削除済み等) を可視化
-        if (it.status && it.status !== 'synced') {
+        // 多ページ投稿: ×N バッジ (同じ投稿のページ数)
+        if (count > 1) {
+          const cb = document.createElement('span');
+          cb.className = 'badge count';
+          cb.textContent = '×' + count;
+          cb.title = t('groupCount', count);
+          badges.appendChild(cb);
+        }
+        // 分類バッジ: フル取得 以外 (未取得 / リンクなし) を可視化
+        const bucket = bucketOf(it.status);
+        if (bucket !== 'full') {
           const sb = document.createElement('span');
-          sb.className = `badge status-${it.status}`;
-          sb.textContent = tStatus(it.status);
+          sb.className = `badge bucket-${bucket}`;
+          sb.textContent = tBucket(it.status);
           if (it.errorMessage) sb.title = it.errorMessage;
           badges.appendChild(sb);
         }
@@ -594,13 +631,40 @@
       };
 
       const readGridFilters = () => {
-        const statusValue = $('filter-status').value;
         return {
           platform: $('filter-platform').value || undefined,
           minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined,
-          minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined,
-          status: statusValue || undefined
+          minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined
         };
+      };
+
+      // フィルタ/ソート/複数画像トグルの状態を localStorage に保持 (開き直しても復元)。
+      const UI_STATE_KEY = 'eb-ui-state';
+      const saveUiState = () => {
+        try {
+          localStorage.setItem(UI_STATE_KEY, JSON.stringify({
+            platform: $('filter-platform').value,
+            status: $('filter-status').value,
+            minLikes: $('filter-min-likes').value,
+            minViews: $('filter-min-views').value,
+            sort: $('sort-field').value,
+            multi: $('filter-multi').checked
+          }));
+        } catch {}
+      };
+      const restoreUiState = () => {
+        try {
+          const s = JSON.parse(localStorage.getItem(UI_STATE_KEY) || '{}');
+          if (s.platform != null) $('filter-platform').value = s.platform;
+          // 保存値が新分類 (''/full/partial/nolink) なら復元、旧値や未保存はデフォルト full
+          // (初回に「すべて」で全件描画して重くなるのを避ける)。
+          const validStatus = ['', 'full', 'partial', 'nolink'];
+          $('filter-status').value = validStatus.includes(s.status) ? s.status : 'full';
+          if (s.minLikes != null) $('filter-min-likes').value = s.minLikes;
+          if (s.minViews != null) $('filter-min-views').value = s.minViews;
+          if (s.sort != null) $('sort-field').value = s.sort;
+          if (s.multi != null) $('filter-multi').checked = s.multi;
+        } catch {}
       };
 
       const renderGrid = () => {
@@ -608,14 +672,32 @@
         const filters = readGridFilters();
         const sort = { field: $('sort-field').value, order: 'desc' };
 
-        const results = store.query(filters, sort);
-        $('result-count').textContent = t('resultCount', results.length);
+        let results = store.query(filters, sort);
+        // ステータス分類フィルタ (full / partial / nolink)。空 = すべて。
+        const bucket = $('filter-status').value;
+        if (bucket) results = results.filter((it) => bucketOf(it.status) === bucket);
+
+        // 同じ投稿 (postKey: platform:postId) を 1 グループに束ねる。url 無し/未parse は単独。
+        // 並び順は最初の出現位置を維持 (同一投稿は engagement が同じなのでソート上も隣接する)。
+        let groups = [];
+        const byKey = new Map();
+        for (const it of results) {
+          const key = postKey(it.url);
+          if (key != null && byKey.has(key)) { byKey.get(key).push(it); continue; }
+          const g = [it];
+          groups.push(g);
+          if (key != null) byKey.set(key, g);
+        }
+        // 複数画像のみ表示 (2 枚以上のグループに絞る)
+        if ($('filter-multi').checked) groups = groups.filter((g) => g.length > 1);
+
+        $('result-count').textContent = t('resultCount', groups.length);
 
         const grid = $('grid');
         const empty = $('empty');
         grid.replaceChildren();
 
-        if (results.length === 0) {
+        if (groups.length === 0) {
           empty.style.display = 'block';
           empty.textContent = t(store.data.lastSync ? 'emptyFiltered' : 'emptyNoSync');
           return;
@@ -623,24 +705,31 @@
         empty.style.display = 'none';
 
         const frag = document.createDocumentFragment();
-        for (const it of results) frag.appendChild(buildCard(it));
+        for (const g of groups) frag.appendChild(buildCard(g));
         grid.appendChild(frag);
       };
 
       const onCardClick = async (e) => {
         const card = e.target.closest('.card');
         if (!card) return;
-        const id = card.dataset.id;
-        if (!id) return;
-        // 通常クリックはメインウィンドウで表示、オーバーレイの ❐ は別ウィンドウで開く
-        const newWindow = !!e.target.closest('.open-window-btn');
+        const ids = (card.dataset.ids || card.dataset.id || '').split(',').filter(Boolean);
+        if (!ids.length) return;
+        const bringToFront = async () => {
+          if (typeof eagle.app?.show === 'function') await eagle.app.show();
+          else console.warn('eagle.app.show unavailable (needs Eagle 4.0 build18+)');
+        };
         try {
-          await eagle.item.open(id, { window: newWindow });
-          // メインウィンドウ表示時は Eagle 本体を前面化する (別ウィンドウは自前で前面に出る)。
-          // eagle.app.show は Eagle 4.0 build18+。無ければ前面化はスキップ。
-          if (!newWindow) {
-            if (typeof eagle.app?.show === 'function') await eagle.app.show();
-            else console.warn('eagle.app.show unavailable (needs Eagle 4.0 build18+)');
+          if (e.target.closest('.open-window-btn')) {
+            // ❐: 代表ページを別ウィンドウで開く
+            await eagle.item.open(ids[0], { window: true });
+          } else if (ids.length > 1) {
+            // 多ページ投稿: 全ページを選択してメインウィンドウを前面化
+            await eagle.item.select(ids);
+            await bringToFront();
+          } else {
+            // 単独: 該当アイテムを開いて前面化
+            await eagle.item.open(ids[0]);
+            await bringToFront();
           }
         } catch (err) {
           console.error('item.open failed:', err);
@@ -744,8 +833,9 @@
         else runEngagement();
       });
       $('grid').addEventListener('click', onCardClick);
-      ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field']
-        .forEach(id => $(id).addEventListener('input', renderGrid));
+      const onFilterChange = () => { saveUiState(); renderGrid(); };
+      ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field', 'filter-multi']
+        .forEach(id => $(id).addEventListener('input', onFilterChange));
 
       // Status info ポップオーバー
       const infoBtn = $('status-info-btn');
@@ -804,6 +894,7 @@
           const logPath = DEBUG_LOG.init(plugin?.path, lib?.path);
           console.log('[debug] log file →', logPath);
           await initStore(lib.path);
+          restoreUiState();         // 前回のフィルタ/ソートを復元
           renderFooter();
           renderGrid();             // キャッシュから即描画
           logDiagnostics(lib);
