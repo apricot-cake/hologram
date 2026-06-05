@@ -1,3 +1,5 @@
+日本語 | [English](README.en.md)
+
 # Eagle Info+
 
 [Eagle](https://jp.eagle.cool/) ライブラリと SNS をつなぐツール群。Chrome 拡張で SNS 投稿の人間情報を Eagle annotation に書き、Eagle Window Plugin で engagement (likes 等) をフィルタ・ソートして閲覧できる。
