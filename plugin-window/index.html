@@ -172,11 +172,18 @@
     .badge.bucket-partial { background: rgba(255, 193, 7, 0.9); color: #000; }
     .badge.bucket-nolink { background: rgba(80, 80, 80, 0.85); }
     .badge.count { background: rgba(0, 0, 0, 0.8); }
-    .card .open-window-btn {
+    .card .card-actions {
       position: absolute;
       top: 6px;
       right: 6px;
       z-index: 3;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    .card:hover .card-actions { opacity: 1; }
+    .card .act-btn {
       width: 24px;
       height: 24px;
       padding: 0;
@@ -190,11 +197,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      opacity: 0;
-      transition: opacity 0.1s, background 0.1s;
+      transition: background 0.1s;
     }
-    .card:hover .open-window-btn { opacity: 1; }
     .card .open-window-btn:hover { background: var(--accent); }
+    .card .delete-btn:hover { background: #c0392b; }
     .card .stats {
       position: absolute;
       bottom: 0;
@@ -403,9 +409,9 @@
         minLikes: 'Min likes', minViews: 'Min views', multiOnly: 'multi-image only',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
-        bFull: 'fetched', bPartial: 'not fetched', bNolink: 'link only',
-        mFull: 'Engagement (likes etc.) fetched from the SNS API.',
-        mPartial: 'Has a link but engagement not fetched yet (incl. error / deleted / private). The button fetches these.',
+        bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
+        mFull: 'All items in the post have engagement fetched.',
+        mPartial: 'The post has item(s) not fetched yet (incl. error / deleted / private, or a mix). The button fetches them.',
         mNolink: 'No Info+ info. Fetched only if it has an SNS post URL.',
         stSynced: 'synced', stParsed: 'parsed', stError: 'error', stDeleted: 'deleted', stPrivate: 'private', stNoAnno: 'no-annotation',
         mSynced: 'Engagement fetched from SNS API. Main view.', rSynced: 're-fetch refreshes',
@@ -415,6 +421,7 @@
         mPrivate: 'Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).', rPrivate: 'fix login then retry',
         mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Fetched by the Fetch engagement button if it has an SNS URL',
         openWindowTitle: 'Open in a new window',
+        deleteTitle: 'Delete (to Eagle trash)', deleteConfirm: 'Move {0} item(s) to Eagle’s trash? (recoverable)',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching engagement…', fetchingProgress: 'fetching engagement… {0}/{1}',
         syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
         engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)',
@@ -439,9 +446,9 @@
         minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
-        bFull: 'フル取得', bPartial: '未取得', bNolink: 'リンクなし',
-        mFull: 'SNS API からエンゲージメント（いいね等）を取得済み。',
-        mPartial: 'リンクはあるが engagement 未取得（エラー / 削除済み / 非公開 もここに含む）。ボタンで取得対象。',
+        bFull: 'フル取得', bPartial: '未取得項目あり', bNolink: 'リンクなし',
+        mFull: '投稿内の全アイテムが engagement 取得済み。',
+        mPartial: '投稿に未取得のアイテムがある（エラー / 削除済み / 非公開 や混在も含む）。ボタンで取得対象。',
         mNolink: 'Info+ の情報なし。SNS の投稿 URL があるものだけ取得対象。',
         stSynced: '取得済み', stParsed: '解析済み', stError: 'エラー', stDeleted: '削除済み', stPrivate: '非公開', stNoAnno: '情報なし',
         mSynced: 'SNS の API からエンゲージメント（いいね等）を取得済み。主にこの状態を見る。', rSynced: '再取得で最新化できる',
@@ -451,6 +458,7 @@
         mPrivate: 'アクセス権なし（X の鍵アカウント、pixiv の R-18 を未ログインで開いた場合など）。', rPrivate: 'ログインし直せば取得できる',
         mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: 'SNS の URL があれば「エンゲージメントを取得」で取得される',
         openWindowTitle: '別ウィンドウで開く',
+        deleteTitle: '削除（Eagle のゴミ箱へ）', deleteConfirm: '{0} 件を Eagle のゴミ箱へ移動しますか？（復元可）',
         ready: '準備完了', syncing: '同期中…', fetching: 'エンゲージメント取得中…', fetchingProgress: 'エンゲージメント取得中… {0}/{1}',
         syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
         engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）',
@@ -481,7 +489,11 @@
     };
     const bucketOf = (status) => STATUS_BUCKET[status] || 'partial';
     const BUCKET_KEY = { full: 'bFull', partial: 'bPartial', nolink: 'bNolink' };
-    const tBucket = (status) => t(BUCKET_KEY[bucketOf(status)]);
+    // グループ (投稿) 単位の分類。全アイテムが同分類ならそれ、混在 (一部だけ未取得 等) なら partial。
+    const groupBucket = (group) => {
+      const set = new Set(group.map((it) => bucketOf(it.status)));
+      return set.size === 1 ? [...set][0] : 'partial';
+    };
     const applyI18n = () => {
       document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
       document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
@@ -582,24 +594,34 @@
           cb.title = t('groupCount', count);
           badges.appendChild(cb);
         }
-        // 分類バッジ: フル取得 以外 (未取得 / リンクなし) を可視化
-        const bucket = bucketOf(it.status);
+        // 分類バッジ (グループ単位): フル取得 以外 (未取得項目あり / リンクなし) を可視化
+        const bucket = groupBucket(group);
         if (bucket !== 'full') {
           const sb = document.createElement('span');
           sb.className = `badge bucket-${bucket}`;
-          sb.textContent = tBucket(it.status);
-          if (it.errorMessage) sb.title = it.errorMessage;
+          sb.textContent = t(BUCKET_KEY[bucket]);
+          const errMsg = group.find((g) => g.errorMessage)?.errorMessage;
+          if (errMsg) sb.title = errMsg;
           badges.appendChild(sb);
         }
         card.appendChild(badges);
 
-        // 別ウィンドウで開くオーバーレイボタン (ホバーで右上に表示)
+        // オーバーレイ操作 (ホバーで右上): 別ウィンドウで開く / 削除 (ゴミ箱へ)
+        const actions = document.createElement('div');
+        actions.className = 'card-actions';
         const openBtn = document.createElement('button');
-        openBtn.className = 'open-window-btn';
+        openBtn.className = 'act-btn open-window-btn';
         openBtn.textContent = '❐';
         openBtn.title = t('openWindowTitle');
         openBtn.setAttribute('aria-label', t('openWindowTitle'));
-        card.appendChild(openBtn);
+        actions.appendChild(openBtn);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'act-btn delete-btn';
+        delBtn.textContent = '🗑';
+        delBtn.title = t('deleteTitle');
+        delBtn.setAttribute('aria-label', t('deleteTitle'));
+        actions.appendChild(delBtn);
+        card.appendChild(actions);
 
         const stats = document.createElement('div');
         stats.className = 'stats';
@@ -672,10 +694,7 @@
         const filters = readGridFilters();
         const sort = { field: $('sort-field').value, order: 'desc' };
 
-        let results = store.query(filters, sort);
-        // ステータス分類フィルタ (full / partial / nolink)。空 = すべて。
-        const bucket = $('filter-status').value;
-        if (bucket) results = results.filter((it) => bucketOf(it.status) === bucket);
+        const results = store.query(filters, sort);
 
         // 同じ投稿 (postKey: platform:postId) を 1 グループに束ねる。url 無し/未parse は単独。
         // 並び順は最初の出現位置を維持 (同一投稿は engagement が同じなのでソート上も隣接する)。
@@ -688,6 +707,9 @@
           groups.push(g);
           if (key != null) byKey.set(key, g);
         }
+        // ステータス分類フィルタ (グループ単位)。空 = すべて。
+        const wantBucket = $('filter-status').value;
+        if (wantBucket) groups = groups.filter((g) => groupBucket(g) === wantBucket);
         // 複数画像のみ表示 (2 枚以上のグループに絞る)
         if ($('filter-multi').checked) groups = groups.filter((g) => g.length > 1);
 
@@ -714,6 +736,25 @@
         if (!card) return;
         const ids = (card.dataset.ids || card.dataset.id || '').split(',').filter(Boolean);
         if (!ids.length) return;
+
+        // 🗑 削除: グループ全ページを Eagle のゴミ箱へ (復元可)。確認ダイアログあり。
+        if (e.target.closest('.delete-btn')) {
+          if (!(await confirmDialog(t('deleteConfirm', ids.length)))) return;
+          try {
+            const items = await eagle.item.getByIds(ids);
+            for (const it of items) {
+              try { await it.moveToTrash(); } catch (err) { console.error('moveToTrash failed:', err); }
+            }
+            for (const id of ids) store.delete(id);
+            store.save();
+            renderFooter();
+            renderGrid();
+          } catch (err) {
+            console.error('delete failed:', err);
+          }
+          return;
+        }
+
         const bringToFront = async () => {
           if (typeof eagle.app?.show === 'function') await eagle.app.show();
           else console.warn('eagle.app.show unavailable (needs Eagle 4.0 build18+)');
@@ -886,12 +927,17 @@
         } catch (e) { console.error('[diag] failed', e); }
       };
 
-      eagle.onPluginCreate(async (plugin) => {
-        setupLiveReload(plugin?.path); // dev: 以降ファイル編集で自動リロード
+      // init は二重起動を防ぐ (onPluginCreate と DOMContentLoaded フォールバックの両方から呼ばれる)。
+      let inited = false;
+      const init = async () => {
+        if (inited) return;
+        inited = true;
+        const pluginPath = eagle.plugin?.path;
+        setupLiveReload(pluginPath); // dev: 以降ファイル編集で自動リロード
         try {
           const lib = await eagle.library.info();
           $('library-path').textContent = lib?.path || '(unknown)';
-          const logPath = DEBUG_LOG.init(plugin?.path, lib?.path);
+          const logPath = DEBUG_LOG.init(pluginPath, lib?.path);
           console.log('[debug] log file →', logPath);
           await initStore(lib.path);
           restoreUiState();         // 前回のフィルタ/ソートを復元
@@ -903,7 +949,16 @@
           setStatus(t('errInit', e.message));
           console.error(e);
         }
-      });
+      };
+
+      // 通常は onPluginCreate で起動。ただし live-reload の location.reload() 後に
+      // onPluginCreate が再発火しないことがあるため、eagle が居れば DOMContentLoaded でも init。
+      eagle.onPluginCreate(() => init());
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
+      } else {
+        setTimeout(init, 300);
+      }
     }
   </script>
 </body>
