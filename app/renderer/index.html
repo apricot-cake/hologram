@@ -186,30 +186,38 @@
     .select-mode .select-check { display: block; }
     .post-card.selected .select-check { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
 
-    /* --- List view --- */
+    /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
       display: flex; flex-direction: column; gap: 4px;
       grid-template-columns: unset;
     }
     .post-grid.list-view .post-card {
       display: flex; flex-direction: row; border-radius: 6px;
-      overflow: hidden;
+      overflow: hidden; align-items: stretch;
     }
     .post-grid.list-view .post-card img {
-      width: 80px; height: 64px; min-width: 80px;
-      object-fit: cover; max-height: unset;
+      width: 88px; min-width: 88px; align-self: stretch;
+      height: auto; max-height: 110px; object-fit: cover;
     }
     .post-grid.list-view .post-meta {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 12px; flex: 1; min-width: 0;
+      display: flex; flex-wrap: wrap; align-items: baseline;
+      gap: 3px 10px; padding: 9px 14px; flex: 1; min-width: 0;
     }
-    .post-grid.list-view .post-meta .user { margin-bottom: 0; white-space: nowrap; }
+    /* text is the hero: full width, up to 2 lines, darker and a touch larger */
     .post-grid.list-view .post-meta .text {
-      -webkit-line-clamp: 1; margin-bottom: 0; flex: 1; min-width: 0;
+      order: 0; flex-basis: 100%; width: 100%;
+      -webkit-line-clamp: 2; margin-bottom: 2px;
+      font-size: 14px; line-height: 1.45; color: #0f1419;
     }
-    .post-grid.list-view .post-meta .stats { white-space: nowrap; }
-    .post-grid.list-view .post-meta .date { white-space: nowrap; margin-top: 0; margin-left: auto; }
+    /* secondary line: user · stats · date, small and muted */
+    .post-grid.list-view .post-meta .user {
+      order: 1; margin-bottom: 0; white-space: nowrap;
+      font-size: 12px; font-weight: 500; color: #536471;
+    }
+    .post-grid.list-view .post-meta .stats { order: 2; white-space: nowrap; font-size: 11px; }
+    .post-grid.list-view .post-meta .date { order: 3; white-space: nowrap; margin-top: 0; margin-left: auto; }
     .post-grid.list-view .post-meta .date-captured { display: none; }
+    .post-grid.list-view .post-meta .tags-label { display: none; }
     .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
 
     .empty-state {
