@@ -760,6 +760,28 @@
         }
       });
 
+      // dev: プラグイン / shared のファイル変更を監視して自動リロード (手動の開き直しを不要に)。
+      // nodeIntegration の fs.watch で plugin-window と shared を見る。配布時は LIVE_RELOAD=false に。
+      const LIVE_RELOAD = true;
+      const setupLiveReload = (pluginPath) => {
+        if (!LIVE_RELOAD || !pluginPath) return;
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const dirs = [pluginPath, path.join(pluginPath, '..', 'shared')];
+          let pending = null;
+          const onChange = (evt, filename) => {
+            if (filename && !/\.(html|js|css)$/.test(filename)) return; // コード以外は無視
+            clearTimeout(pending);
+            pending = setTimeout(() => location.reload(), 200);
+          };
+          for (const d of dirs) {
+            try { fs.watch(d, { recursive: false }, onChange); } catch {}
+          }
+          console.log('[live-reload] watching', dirs.join(' , '));
+        } catch (e) { console.warn('[live-reload] setup failed', e && e.message); }
+      };
+
       // 起動時に環境と store の概況をログへ (console/error のファイル捕捉は DEBUG_LOG が担当)。
       const logDiagnostics = (lib) => {
         try {
@@ -775,6 +797,7 @@
       };
 
       eagle.onPluginCreate(async (plugin) => {
+        setupLiveReload(plugin?.path); // dev: 以降ファイル編集で自動リロード
         try {
           const lib = await eagle.library.info();
           $('library-path').textContent = lib?.path || '(unknown)';

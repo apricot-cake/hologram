@@ -49,6 +49,12 @@ Phase 2 の同期キーには **`modifiedAt`** を使う (todo.md の `last_sync
 - 対策: 絶対パスをそのまま使わず、相対部分 (`images/<id>.info/<file>` — 移動で不変) を抽出して現在のライブラリパスから組み直す。file URL 化は `require('url').pathToFileURL` が encode 込みで安全 (日本語・スペース・`—` 等を含むファイル名でも壊れない)。
 - file:// プロトコル自体は Eagle plugin renderer で問題なく読める (現ライブラリ由来の thumbnail は OK、旧パスのみ FAILED)。CORS や local resource ブロックではない。
 
+### `location.reload()` で `onPluginCreate` が再発火する (hot-reload 可)
+プラグイン renderer で `location.reload()` すると、再読込後に `eagle.onPluginCreate` が**もう一度呼ばれる** (実機確認)。これを利用して、nodeIntegration の `fs.watch` で plugin ディレクトリと `shared/` を監視し `.html/.js` 変更で `location.reload()` する dev 用 live-reload が成立する (手動の開き直し不要)。
+
+- 注意: ログ等の書き込み先を監視対象に含めると**リロードループ**になる。出力は監視外 (`.debug/` = repo 直下、plugin-window の外) に置く。
+- `eagle.plugin.path` (= onPluginCreate の引数 `plugin.path`) が plugin ディレクトリ。`shared/` はその親の下。
+
 ---
 
 ## 環境メモ
