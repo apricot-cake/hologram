@@ -98,11 +98,9 @@
   }
 
   function capturePost(post) {
-    // page-context.js (MAIN world) に userId 抽出を強制実行させる
-    document.dispatchEvent(new CustomEvent('__postSnap_extractUserIds'));
-
+    // Metadata is fetched from the platform API in the background from this URL.
+    // The page is only used to identify the clicked post and its permalink.
     const postUrl = siteConfig.getPermalink(post);
-    const postDetails = siteConfig.getPostDetails?.(post, postUrl) || {};
 
     // イベントリスナー除去（クリックは1回だけ）
     document.removeEventListener('mousemove', onMouseMove, true);
@@ -134,8 +132,7 @@
           type: 'captureAndSend',
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
-          platform: siteConfig.platform,
-          postDetails
+          platform: siteConfig.platform
         });
       });
     });
@@ -269,29 +266,6 @@ function getSiteConfig() {
       getPermalink(post) {
         return getXPostLink(post)?.url || '';
       },
-      getPostDetails(post, postUrl) {
-        const parsed = parseXPostLink(postUrl) || getXPostLink(post);
-        const isRetweet = !!post.querySelector('[data-testid="socialContext"]');
-        return {
-          postId: parsed?.postId || null,
-          screenName: parsed?.screenName || null,
-          displayName: getXDisplayName(post),
-          userId: getXUserId(post),
-          postText: getXPostText(post),
-          postPublishedAt: getPostPublishedAt(post),
-          likeCount: getAriaCount(post, '[data-testid="like"], [data-testid="unlike"]'),
-          repostCount: getAriaCount(post, '[data-testid="retweet"], [data-testid="unretweet"]'),
-          replyCount: getAriaCount(post, '[data-testid="reply"]'),
-          bookmarkCount: getAriaCount(post, '[data-testid="bookmark"], [data-testid="removeBookmark"]'),
-          viewCount: getXViewCount(post),
-          mediaType: getMediaType(post),
-          lang: post.querySelector('[data-testid="tweetText"]')?.getAttribute('lang') || null,
-          isReply: isXReply(post) && !isXThread(post, postUrl),
-          isQuote: isXQuote(post),
-          isThread: isXThread(post, postUrl),
-          quotedUrl: getQuotedUrl(post, 'x')
-        };
-      },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureXNoHover', [
           post,
@@ -330,29 +304,6 @@ function getSiteConfig() {
       getPermalink(post) {
         return getBlueskyPostLink(post)?.url || parseBlueskyPostLink(location.href)?.url || '';
       },
-      getPostDetails(post, postUrl) {
-        const postLink = parseBlueskyPostLink(postUrl) || getBlueskyPostLink(post) || parseBlueskyPostLink(location.href);
-        const profile = getBlueskyProfileDetails(post);
-        return {
-          postId: postLink?.postId || null,
-          screenName: profile.screenName || postLink?.handle || null,
-          displayName: getBlueskyDisplayName(post),
-          userId: profile.uid,
-          postText: getBlueskyPostText(post),
-          postPublishedAt: getPostPublishedAt(post),
-          likeCount: getAriaCount(post, '[data-testid="likeBtn"]') ?? getAdjacentCount(post, '[data-testid="likeBtn"]'),
-          repostCount: getAriaCount(post, '[data-testid="repostBtn"]') ?? getAdjacentCount(post, '[data-testid="repostBtn"]'),
-          replyCount: getAriaCount(post, '[data-testid="replyBtn"]'),
-          bookmarkCount: null,
-          mediaType: getMediaType(post),
-          lang: post.querySelector('[data-testid="postText"]')?.getAttribute('lang')
-            || post.querySelector('div[dir="auto"][lang]')?.getAttribute('lang') || null,
-          isReply: !!post.querySelector('[data-testid="replyLine"]'),
-          isQuote: !!post.querySelector('[data-testid="quotePost"]'),
-          isThread: false,
-          quotedUrl: getQuotedUrl(post, 'bluesky')
-        };
-      },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureBskyNoHover', [
           post,
@@ -388,27 +339,6 @@ function getSiteConfig() {
       },
       getPermalink(post) {
         return getMisskeyPermalink(post);
-      },
-      getPostDetails(post, postUrl) {
-        const noteLink = parseMisskeyNoteLink(postUrl) || getMisskeyTimeLink(post);
-        const authorProfile = getMisskeyAuthorProfile(post);
-        return {
-          postId: noteLink?.id || null,
-          screenName: authorProfile?.screenName || null,
-          displayName: getMisskeyDisplayName(post),
-          userId: null,
-          postText: getMisskeyPostText(post),
-          postPublishedAt: getMisskeyPostPublishedAt(post),
-          likeCount: null,
-          repostCount: null,
-          replyCount: null,
-          bookmarkCount: null,
-          mediaType: getMediaType(post),
-          isReply: !!getMisskeyPrimaryArticle(post)?.querySelector('a[href*="/notes/"] + span'),
-          isQuote: isMisskeyQuote(post),
-          isThread: false,
-          quotedUrl: getQuotedUrl(post, 'misskey')
-        };
       },
       getCaptureRect(post) {
         return getMisskeyCaptureRect(post);
