@@ -96,6 +96,18 @@ test('fetchXEngagement: その他エラーは throw', async () => {
   await assert.rejects(fetchXEngagement({ postId: '123', fetch }), /500/);
 });
 
+test('fetchXEngagement: TweetTombstone は deleted (削除/凍結/非公開等で利用不可)', async () => {
+  const fetch = mockFetch([mockJsonResponse({ __typename: 'TweetTombstone', tombstone: { text: {} } })]);
+  const result = await fetchXEngagement({ postId: '123', fetch });
+  assert.equal(result.status, 'deleted');
+  assert.deepEqual(result.engagement, {});
+});
+
+test('fetchXEngagement: 429 はレート制限として throw (rateLimited フラグ付き)', async () => {
+  const fetch = mockFetch([mockJsonResponse(null, 429)]);
+  await assert.rejects(fetchXEngagement({ postId: '123', fetch }), (e) => e.rateLimited === true);
+});
+
 // === fetchBlueskyEngagement ===
 
 test('fetchBlueskyEngagement: 200 で全 engagement', async () => {

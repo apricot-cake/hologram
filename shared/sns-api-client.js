@@ -45,6 +45,11 @@ export async function fetchXEngagement({ postId, fetch }) {
   if (res.status === 401 || res.status === 403) return { status: 'private', engagement: {} };
   if (!res.ok) throw new Error(`X Syndication API ${res.status}`);
   const data = await res.json();
+  // 削除/凍結/非公開/センシティブ等で利用不可のツイートは tombstone を返す (200 だが engagement なし)。
+  // synced+null にせず deleted (利用不可) として扱う。
+  if (data.__typename === 'TweetTombstone' || data.tombstone) {
+    return { status: 'deleted', engagement: {} };
+  }
   return {
     status: 'synced',
     engagement: {
