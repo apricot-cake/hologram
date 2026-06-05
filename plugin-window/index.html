@@ -277,7 +277,8 @@
 </head>
 <body>
   <div class="toolbar">
-    <button id="engagement-btn" data-i18n="fetch">Fetch engagement</button>
+    <button id="engagement-btn" data-i18n="fetch">Fetch metadata</button>
+    <button id="test-btn" data-i18n="testFetch" data-i18n-title="testFetchTitle" title="Fetch a few to test">Test fetch</button>
     <span class="status" id="status"></span>
   </div>
 
@@ -398,7 +399,7 @@
     })();
     const I18N = {
       en: {
-        sync: 'Sync from Eagle', fetch: 'Fetch engagement', backfill: 'Backfill',
+        sync: 'Sync from Eagle', fetch: 'Fetch metadata', testFetch: 'Test fetch', backfill: 'Backfill',
         backfillTitle: 'Fill engagement for existing items that have an SNS URL but no Info+ annotation',
         resume: 'Resume ({0})', resumeTitle: 'Process the items left over from the last cancel',
         cancel: 'Cancel', stop: 'Stop',
@@ -410,7 +411,7 @@
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
-        mFull: 'All items in the post have engagement fetched.',
+        mFull: 'Post metadata (engagement numbers + author/text) fetched.',
         mPartial: 'The post has item(s) not fetched yet (incl. error / deleted / private, or a mix). The button fetches them.',
         mNolink: 'No Info+ info. Fetched only if it has an SNS post URL.',
         stSynced: 'synced', stParsed: 'parsed', stError: 'error', stDeleted: 'deleted', stPrivate: 'private', stNoAnno: 'no-annotation',
@@ -422,20 +423,21 @@
         mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Fetched by the Fetch engagement button if it has an SNS URL',
         openWindowTitle: 'Open in a new window',
         deleteTitle: 'Delete (to Eagle trash)', deleteConfirm: 'Move {0} item(s) to Eagle’s trash? (recoverable)',
-        ready: 'ready', syncing: 'syncing…', fetching: 'fetching engagement…', fetchingProgress: 'fetching engagement… {0}/{1}',
+        testFetchTitle: 'Fetch only a few (5) to test — does not count against the daily cap',
+        ready: 'ready', syncing: 'syncing…', fetching: 'fetching metadata…', fetchingProgress: 'fetching metadata… {0}/{1}',
         syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
         engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)',
         engRateLimited: 'X rate-limited, stopped. {0} left — try again later.',
         engDailyLimit: 'Daily cap reached (X: {1}/day). {0} fetched this run. Resume another day.',
         confirmYes: 'OK', confirmNo: 'Cancel',
-        confirmLargeX: 'Fetch engagement for {0} X posts? X uses an unofficial API, so large batches may get rate-limited or blocked. Splitting across sessions is safer. Continue?',
-        errSync: 'sync error: {0}', errEngagement: 'engagement error: {0}', errInit: 'init error: {0}', errNoEagle: '✗ eagle global not found',
+        confirmLargeX: 'Fetch metadata for {0} X posts? X uses an unofficial API, so large batches may get rate-limited or blocked. Splitting across sessions is safer. Continue?',
+        errSync: 'sync error: {0}', errEngagement: 'metadata error: {0}', errInit: 'init error: {0}', errNoEagle: '✗ eagle global not found',
         resultCount: '{0} posts', groupCount: '{0} images (same post)', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
         emptyFiltered: 'No items match the filter. Loosen the filters or run Fetch engagement.',
         emptyNoSync: 'No items in Eagle.'
       },
       ja: {
-        sync: 'Eagle から同期', fetch: 'エンゲージメントを取得', backfill: 'バックフィル',
+        sync: 'Eagle から同期', fetch: 'メタデータ取得', testFetch: 'テスト取得', backfill: 'バックフィル',
         backfillTitle: 'アノテーション無しだが SNS の URL を持つ既存アイテムのエンゲージメントを取得する',
         resume: '再開 ({0})', resumeTitle: '前回キャンセルした分の続きを処理',
         cancel: 'キャンセル', stop: '中止',
@@ -447,7 +449,7 @@
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
         bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクなし',
-        mFull: '投稿内の全アイテムが engagement 取得済み。',
+        mFull: '投稿のメタデータ（いいね等の数値・作者・本文）を取得済み。',
         mPartial: '投稿に未取得のアイテムがある（エラー / 削除済み / 非公開 や混在も含む）。ボタンで取得対象。',
         mNolink: 'Info+ の情報なし。SNS の投稿 URL があるものだけ取得対象。',
         stSynced: '取得済み', stParsed: '解析済み', stError: 'エラー', stDeleted: '削除済み', stPrivate: '非公開', stNoAnno: '情報なし',
@@ -459,14 +461,15 @@
         mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: 'SNS の URL があれば「エンゲージメントを取得」で取得される',
         openWindowTitle: '別ウィンドウで開く',
         deleteTitle: '削除（Eagle のゴミ箱へ）', deleteConfirm: '{0} 件を Eagle のゴミ箱へ移動しますか？（復元可）',
-        ready: '準備完了', syncing: '同期中…', fetching: 'エンゲージメント取得中…', fetchingProgress: 'エンゲージメント取得中… {0}/{1}',
+        testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限を消費しません',
+        ready: '準備完了', syncing: '同期中…', fetching: 'メタデータ取得中…', fetchingProgress: 'メタデータ取得中… {0}/{1}',
         syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
         engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）',
         engRateLimited: 'X にレート制限されたため中止しました。残り {0} 件は時間を置いて再実行してください。',
         engDailyLimit: '今日の取得上限（X: {1}件/日）に達しました。今回 {0} 件取得。残りは日を改めて。',
         confirmYes: '実行', confirmNo: 'やめる',
         confirmLargeX: 'X の投稿 {0} 件を取得します。X は非公式 API のため、大量取得はレート制限やブロックの恐れがあります（日を分けると安全）。続けますか？',
-        errSync: '同期エラー: {0}', errEngagement: 'エンゲージメント取得エラー: {0}', errInit: '初期化エラー: {0}', errNoEagle: '✗ Eagle 内で開いてください',
+        errSync: '同期エラー: {0}', errEngagement: 'メタデータ取得エラー: {0}', errInit: '初期化エラー: {0}', errNoEagle: '✗ Eagle 内で開いてください',
         resultCount: '{0} 投稿', groupCount: '{0} 枚（同じ投稿）', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
         emptyFiltered: '条件に合うアイテムがありません。フィルタを緩めるか「エンゲージメントを取得」を実行してください。',
         emptyNoSync: 'Eagle にアイテムがありません。'
@@ -821,12 +824,15 @@
       // 対象は「まだ一度も engagement を取得していない・SNS URL を持つアイテム」=
       // status が no-annotation (URL のみ) と parsed (Info+ 注釈あり) の両方。取得済み (synced) は
       // 触らない。中断しても未処理はその status のまま残るので、次に押せば自然に続く。
-      const runEngagement = async () => {
+      // opts.limit: この回の取得を N 投稿に制限 (テスト用)。opts.dailyLimit: 日次上限の上書き。
+      const runEngagement = async (opts = {}) => {
         if (!store || currentAbort) return;
         const btn = $('engagement-btn');
+        const testBtn = $('test-btn');
         currentAbort = new AbortController();
         btn.textContent = t('stop');
         btn.classList.add('running');
+        testBtn.disabled = true;
         setStatus(t('fetching'));
         try {
           const { syncEngagement, DEFAULT_RATE_LIMIT, DEFAULT_DAILY_LIMIT } = await import('../shared/sync-engagement.js');
@@ -835,7 +841,8 @@
             fetch: window.fetch.bind(window),
             signal: currentAbort.signal,
             rateLimit: DEFAULT_RATE_LIMIT,
-            dailyLimit: DEFAULT_DAILY_LIMIT,
+            dailyLimit: opts.dailyLimit ?? DEFAULT_DAILY_LIMIT,
+            limit: opts.limit,
             filter: { statuses: ['no-annotation', 'parsed'] },
             onConfirm: async (counts) => {
               const x = counts.x || 0;
@@ -864,6 +871,7 @@
         } finally {
           btn.textContent = t('fetch');
           btn.classList.remove('running');
+          testBtn.disabled = false;
           currentAbort = null;
         }
       };
@@ -873,6 +881,8 @@
         if (currentAbort) currentAbort.abort();
         else runEngagement();
       });
+      // テスト取得: 少数 (5 投稿) だけ・日次上限を消費せず動作確認
+      $('test-btn').addEventListener('click', () => runEngagement({ limit: 5, dailyLimit: {} }));
       $('grid').addEventListener('click', onCardClick);
       const onFilterChange = () => { saveUiState(); renderGrid(); };
       ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field', 'filter-multi']
