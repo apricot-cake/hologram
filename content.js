@@ -355,41 +355,6 @@ function getSiteConfig() {
   return null;
 }
 
-function getPostPublishedAt(post) {
-  if (!(post instanceof Element)) {
-    return null;
-  }
-
-  const timeElement = post.querySelector('time[datetime], time');
-  const rawValue = timeElement?.getAttribute('datetime')
-    || timeElement?.getAttribute('title')
-    || '';
-
-  if (!rawValue) {
-    const postLink = post.querySelector('a[href*="/post/"], a[href*="/status/"]');
-    const ariaLabel = postLink?.getAttribute('aria-label') || '';
-    if (ariaLabel) {
-      const normalized = ariaLabel.replace(/(\d+)年(\d+)月(\d+)日/, '$1/$2/$3');
-      const parsed = new Date(normalized);
-      if (!Number.isNaN(parsed.getTime())) {
-        return parsed.toISOString();
-      }
-    }
-    // Bluesky: date may appear as text "YYYY/MM/DD HH:MM" in div[dir="auto"]
-    for (const el of post.querySelectorAll('div[dir="auto"]')) {
-      const m = el.textContent?.trim().match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
-      if (m) {
-        const parsed = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00`);
-        if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
-      }
-    }
-    return null;
-  }
-
-  const parsed = new Date(rawValue);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
 function getXPostLink(post) {
   const links = post instanceof Element
     ? Array.from(post.querySelectorAll('a[href*="/status/"]'))
@@ -426,109 +391,8 @@ function parseXPostLink(href) {
   }
 }
 
-function getXPostText(post) {
-  const textEl = post.querySelector('[data-testid="tweetText"]');
-  return textEl?.textContent?.trim() || null;
-}
-
-function getXDisplayName(post) {
-  const userNameEl = post.querySelector('[data-testid="User-Name"]');
-  const firstSpan = userNameEl?.querySelector('a span');
-  return firstSpan?.textContent?.trim() || null;
-}
-
-function getXViewCount(post) {
-  if (!(post instanceof Element)) return null;
-  const analyticsLink = post.querySelector('a[href*="/analytics"]');
-  if (analyticsLink) {
-    const label = analyticsLink.getAttribute('aria-label') || '';
-    const match = label.match(/(\d[\d,]*)/);
-    if (match) return parseInt(match[1].replace(/,/g, ''), 10);
-  }
-  return null;
-}
-
-function getXUserId(post) {
-  // Check article directly
-  const uid = post.getAttribute('__x-user-id');
-  if (uid && /^\d+$/.test(uid)) {
-    return uid;
-  }
-
-  // Follow/unfollow button testid contains userId
-  const followBtn = post.querySelector('[data-testid$="-follow"], [data-testid$="-unfollow"]');
-  if (followBtn) {
-    const match = followBtn.getAttribute('data-testid').match(/^(\d+)-/);
-    if (match) return match[1];
-  }
-
-  // Fallback: scan all articles for matching screenName
-  const screenName = getXPostLink(post)?.screenName || parseXPostLink(location.href)?.screenName;
-  const articlesWithUid = document.querySelectorAll('article[data-testid="tweet"][__x-user-id]');
-  if (screenName) {
-    for (const article of articlesWithUid) {
-      const link = article.querySelector(`a[href*="/${screenName}" i]`);
-      if (link) return article.getAttribute('__x-user-id');
-    }
-  }
-
-  return null;
-}
-
 function hostnameMatches(host) {
   return location.hostname === host || location.hostname.endsWith(`.${host}`);
-}
-
-function getBlueskyPostText(post) {
-  const textEl = post.querySelector('[data-testid="postText"]');
-  if (textEl) {
-    return textEl.textContent?.trim() || null;
-  }
-
-  // Bluesky removed data-testid="postText". Find text from div[dir="auto"] candidates.
-  const skipPatterns = /^(@[\w.-]+|フォロー|Follow|誰でも返信可能|Thread reply|返信$|\d{4}\/\d{2}\/\d{2}|\d+ (リポスト|いいね|保存|repost|like|bookmark))/i;
-  const candidates = post.querySelectorAll('div[dir="auto"]');
-  let best = null;
-  for (const el of candidates) {
-    const text = el.textContent?.trim();
-    if (!text) continue;
-    // Skip UI elements: buttons, links with testid, very short generic text
-    if (el.closest('button, [data-testid="followBtn"]')) continue;
-    if (el.parentElement?.tagName === 'BUTTON') continue;
-    if (el.parentElement?.tagName === 'A') continue;
-    if (skipPatterns.test(text)) continue;
-    if (!best || text.length > best.length) {
-      best = text;
-    }
-  }
-  return best || null;
-}
-
-function getBlueskyDisplayName(post) {
-  const links = Array.from(post.querySelectorAll('a[href*="/profile/"]'));
-  for (const link of links) {
-    const href = link.getAttribute('href') || '';
-    if (href.includes('/liked-by') || href.includes('/reposted-by') || href.includes('/post/')) {
-      continue;
-    }
-
-    const candidates = link.children.length
-      ? Array.from(link.querySelectorAll('div, span, b, strong'))
-      : [link];
-
-    for (const el of candidates) {
-      const text = el.textContent?.trim();
-      if (text && text.length > 1
-        && text === el.innerText?.trim()
-        && !text.startsWith('@') && !text.startsWith('did:')
-        && !text.includes('.') && !/^\d/.test(text)
-        && !/リポスト|Reposted/i.test(text)) {
-        return text;
-      }
-    }
-  }
-
-  return null;
 }
 
 function getBlueskyAuthorHandle(post) {
@@ -552,24 +416,6 @@ function getBlueskyPostLink(post) {
   return links.find((link) => !authorHandle || link.handle === authorHandle) || links[0];
 }
 
-function getBlueskyProfileDetails(post) {
-  const links = post instanceof Element
-    ? Array.from(post.querySelectorAll('a[href]'))
-      .map((link) => parseBlueskyProfileLink(link.href))
-      .filter(Boolean)
-    : [];
-
-  const uidLink = links.find((link) => link.uid);
-  const screenName = getBlueskyAuthorHandle(post)
-    || links.find((link) => link.screenName)?.screenName
-    || null;
-
-  return {
-    screenName,
-    uid: uidLink?.uid || null
-  };
-}
-
 function parseBlueskyPostLink(href) {
   try {
     const url = new URL(href, location.origin);
@@ -582,31 +428,6 @@ function parseBlueskyPostLink(href) {
       url: `${url.origin}/profile/${match[1]}/post/${match[2]}`,
       handle: decodeURIComponent(match[1]),
       postId: decodeURIComponent(match[2])
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseBlueskyProfileLink(href) {
-  try {
-    const url = new URL(href, location.origin);
-    const match = url.pathname.match(/^\/profile\/([^/?#]+)/);
-    if (!match) {
-      return null;
-    }
-
-    const value = decodeURIComponent(match[1]);
-    if (value.startsWith('did:')) {
-      return {
-        screenName: null,
-        uid: value
-      };
-    }
-
-    return {
-      screenName: value,
-      uid: null
     };
   } catch {
     return null;
@@ -714,117 +535,6 @@ function getMisskeyTimeLink(post) {
   return null;
 }
 
-function getMisskeyPostPublishedAt(post) {
-  if (!(post instanceof Element)) {
-    return null;
-  }
-
-  const article = getMisskeyPrimaryArticle(post);
-  if (!article) {
-    return getPostPublishedAt(post);
-  }
-
-  const container = getMisskeyContentContainer(article);
-  const timeElement = container.querySelector('time[datetime], time');
-  const rawValue = timeElement?.getAttribute('datetime')
-    || timeElement?.getAttribute('title')
-    || '';
-  if (!rawValue) {
-    return getPostPublishedAt(post);
-  }
-
-  const parsed = new Date(rawValue);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
-function getMisskeyPostText(post) {
-  if (!(post instanceof Element)) {
-    return null;
-  }
-
-  const article = getMisskeyPrimaryArticle(post);
-  if (!article) {
-    return null;
-  }
-
-  const mfm = article.querySelector('.mfm');
-  if (mfm) {
-    return mfm.textContent?.trim() || null;
-  }
-
-  const container = getMisskeyContentContainer(article);
-  const header = container.querySelector('header');
-  const footer = container.querySelector('footer');
-  for (const child of container.children) {
-    if (child === header || child === footer || child.querySelector('header')) continue;
-    if (child.classList.contains('xlT1y')) continue;
-    const text = child.textContent?.trim();
-    if (text) return text;
-  }
-
-  return null;
-}
-
-function getMisskeyContentContainer(article) {
-  for (const child of article.children) {
-    if (child.tagName === 'DIV' && child.querySelector('header')) {
-      return child;
-    }
-  }
-
-  return article;
-}
-
-function getMisskeyDisplayName(post) {
-  if (!(post instanceof Element)) {
-    return null;
-  }
-
-  const article = getMisskeyPrimaryArticle(post);
-  if (!article) {
-    return null;
-  }
-
-  const container = getMisskeyContentContainer(article);
-  const header = container.querySelector('header');
-  const searchRoot = header || container;
-
-  const profileLinks = searchRoot.querySelectorAll('a[href^="/@"]');
-  for (const link of profileLinks) {
-    const text = link.textContent?.trim();
-    if (text && !text.startsWith('@')) {
-      return text;
-    }
-  }
-
-  return null;
-}
-
-function getMisskeyAuthorProfile(post) {
-  if (!(post instanceof Element)) {
-    return null;
-  }
-
-  const article = getMisskeyPrimaryArticle(post);
-  if (!article) {
-    return null;
-  }
-
-  const container = getMisskeyContentContainer(article);
-  const header = container.querySelector('header');
-  const searchRoot = header || container;
-
-  const links = Array.from(searchRoot.querySelectorAll('a[href]'));
-  for (const link of links) {
-    const parsed = parseMisskeyProfileLink(link.href);
-    if (parsed) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
 function parseMisskeyNoteLink(href) {
   try {
     const url = new URL(href, location.origin);
@@ -835,23 +545,6 @@ function parseMisskeyNoteLink(href) {
 
     return {
       id: decodeURIComponent(match[1]),
-      url: url.href
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseMisskeyProfileLink(href) {
-  try {
-    const url = new URL(href, location.origin);
-    const match = url.pathname.match(/^\/@([^/?#]+)\/?$/);
-    if (!match) {
-      return null;
-    }
-
-    return {
-      screenName: decodeURIComponent(match[1]),
       url: url.href
     };
   } catch {
@@ -875,149 +568,6 @@ function normalizeRect(rect) {
     right: rect?.right ?? (x + width),
     bottom: rect?.bottom ?? (y + height)
   };
-}
-
-function getAriaCount(post, selector) {
-  if (!(post instanceof Element)) return null;
-  const el = post.querySelector(selector);
-  if (!el) return null;
-  const label = el.getAttribute('aria-label') || '';
-  const match = label.match(/(\d[\d,]*)/);
-  if (match) return parseInt(match[1].replace(/,/g, ''), 10);
-  const text = el.textContent?.trim();
-  const textMatch = text?.match(/^(\d[\d,]*)$/);
-  if (textMatch) return parseInt(textMatch[1].replace(/,/g, ''), 10);
-  return null;
-}
-
-function getAdjacentCount(post, selector) {
-  if (!(post instanceof Element)) return null;
-  const el = post.querySelector(selector);
-  if (!el) return null;
-  const parent = el.closest('[role="button"]') || el.parentElement;
-  if (!parent) return null;
-  const text = parent.textContent?.trim();
-  const match = text?.match(/(\d[\d,]*)/);
-  return match ? parseInt(match[1].replace(/,/g, ''), 10) : null;
-}
-
-function isXReply(post) {
-  if (!(post instanceof Element)) return false;
-  // Timeline: "返信先" / "Replying to" text in article
-  const text = post.innerText || '';
-  if (/^返信先[:：\s]|^Replying to\s/m.test(text)) return true;
-  // Individual post page: focused post has full date format, parent articles above it
-  if (/\d{1,2}:\d{2}\s*·\s*\d{4}年|\d{1,2}:\d{2}\s[AP]M\s*·\s*[A-Z][a-z]{2}\s/.test(text)) {
-    const articles = document.querySelectorAll('article[data-testid="tweet"]');
-    const idx = [...articles].indexOf(post);
-    if (idx > 0) return true;
-  }
-  return false;
-}
-
-function isXQuote(post) {
-  if (!(post instanceof Element)) return false;
-  const cards = post.querySelectorAll('[role="link"]');
-  for (const card of cards) {
-    if (card.closest('[data-testid="User-Name"]')) continue;
-    if (card.querySelector('[data-testid="tweetText"]') || card.querySelector('[data-testid="like"]')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isXThread(post, postUrl) {
-  if (!isXReply(post)) return false;
-  const parsed = parseXPostLink(postUrl) || getXPostLink(post);
-  if (!parsed?.screenName) return false;
-  // Timeline: "返信先 @handle" text match
-  const text = post.innerText || '';
-  const replyMatch = text.match(/^(?:返信先[:：\s]*|Replying to\s+)@(\S+)/m);
-  if (replyMatch) return replyMatch[1].toLowerCase() === parsed.screenName.toLowerCase();
-  // Individual post page: compare with parent article's screenName
-  const articles = document.querySelectorAll('article[data-testid="tweet"]');
-  const idx = [...articles].indexOf(post);
-  if (idx > 0) {
-    const parentArticle = articles[idx - 1];
-    const parentLink = parentArticle?.querySelector('a[href*="/status/"]');
-    const parentParsed = parentLink ? parseXPostLink(parentLink.href) : null;
-    if (parentParsed?.screenName) {
-      return parentParsed.screenName.toLowerCase() === parsed.screenName.toLowerCase();
-    }
-  }
-  return false;
-}
-
-function isMisskeyQuote(post) {
-  const article = getMisskeyPrimaryArticle(post);
-  if (!article) return false;
-  const nestedNotes = article.querySelectorAll('a[href*="/notes/"]');
-  const mainLink = getMisskeyTimeLink(post);
-  for (const link of nestedNotes) {
-    if (link.querySelector('time')) continue;
-    const parsed = parseMisskeyNoteLink(link.href);
-    if (parsed && mainLink && parsed.id !== mainLink.id) return true;
-  }
-  return false;
-}
-
-function getMediaType(post) {
-  if (!(post instanceof Element)) return 'none';
-  if (post.querySelector('video, [data-testid="videoPlayer"], [data-testid="videoComponent"]')) return 'video';
-  if (post.querySelector('[data-testid="tweetPhoto"], [data-testid="postMedia"] img, img[src*="feed_thumbnail"], .xvRSv img, article img[src*="proxy"]')) return 'image';
-  if (post.querySelector('img[src*="tenor.com"], img[src*="giphy.com"]')) return 'gif';
-  // Generic fallback: any substantial image (not avatars/icons)
-  const imgs = post.querySelectorAll('img[src]');
-  for (const img of imgs) {
-    const src = img.src || '';
-    if (src.includes('profile_images') || src.includes('avatar') || src.includes('emoji')) continue;
-    const rect = img.getBoundingClientRect();
-    if (rect.width > 100 && rect.height > 100) return 'image';
-  }
-  return 'none';
-}
-
-function getQuotedUrl(post, platform) {
-  if (!(post instanceof Element)) return null;
-  if (platform === 'x') {
-    // X: quoted tweet appears as a card linking to another status
-    const links = post.querySelectorAll('a[href*="/status/"]');
-    for (const link of links) {
-      if (link.closest('[data-testid="User-Name"]')) continue;
-      if (link.querySelector('time')) continue;
-      const href = link.getAttribute('href') || '';
-      // Skip analytics, quotes, likes, retweets pages
-      if (/\/(analytics|quotes|likes|retweets|hidden)/.test(href)) continue;
-      if (/\/status\/\d+$/.test(href)) {
-        try { return new URL(href, location.origin).href; } catch { /* skip */ }
-      }
-    }
-  }
-  if (platform === 'bluesky') {
-    // Bluesky: embedded quote has a link to another post
-    const embeds = post.querySelectorAll('[data-testid="quotePost"] a[href*="/post/"], a[href*="/post/"]');
-    for (const link of embeds) {
-      const parsed = parseBlueskyPostLink(link.href);
-      if (parsed) {
-        const mainPostLink = parseBlueskyPostLink(post.querySelector('a[href*="/post/"]')?.href || '');
-        if (mainPostLink && parsed.postId !== mainPostLink.postId) return parsed.url;
-      }
-    }
-  }
-  if (platform === 'misskey') {
-    // Misskey: renote/quote has embedded note link
-    const article = getMisskeyPrimaryArticle(post);
-    if (!article) return null;
-    const nestedNotes = article.querySelectorAll('a[href*="/notes/"]');
-    const mainLink = getMisskeyTimeLink(post);
-    for (const link of nestedNotes) {
-      if (link.querySelector('time')) continue;
-      const parsed = parseMisskeyNoteLink(link.href);
-      if (parsed && mainLink && parsed.id !== mainLink.id) return parsed.url;
-    }
-  }
-  return null;
 }
 
 function prepareScopedCaptureState(className, elements) {
