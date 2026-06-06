@@ -78,6 +78,7 @@
       font-size: 12px;
     }
     .filters input[type=number] { width: 80px; }
+    .filters .search-input { width: 160px; }
     .filters .count { margin-left: auto; color: var(--muted); font-size: 12px; }
 
     .filters .with-info { position: relative; }
@@ -135,6 +136,11 @@
       overflow: hidden;
       cursor: pointer;
       transition: transform 0.05s, border-color 0.1s;
+      /* 数千カード規模での描画コスト削減: 画面外カードのレイアウト/描画/画像デコードを
+         ブラウザがスキップする。contain-intrinsic-size で未描画時の概算サイズを与え
+         スクロールバーが暴れないようにする (グリッドセルは ~180px 正方)。 */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 180px; /* auto = 一度描画した実寸を記憶し、再スキップ時のスクロール暴れを防ぐ */
     }
     .card:hover { border-color: var(--accent); transform: scale(1.02); }
     .card img {
@@ -199,6 +205,7 @@
       justify-content: center;
       transition: background 0.1s;
     }
+    .card .detail-btn:hover { background: var(--accent); }
     .card .open-window-btn:hover { background: var(--accent); }
     .card .delete-btn:hover { background: #c0392b; }
     .card .stats {
@@ -273,6 +280,94 @@
     .confirm-actions button:hover { background: #333; }
     #confirm-ok { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
     #confirm-ok:hover { background: #3a8eef; }
+
+    .detail-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .detail-overlay[hidden] { display: none; }
+    .detail-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 640px;
+      width: 100%;
+      max-height: 85vh;
+      overflow: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+    .detail-box h3 { margin: 0 0 2px; font-size: 14px; }
+    .detail-box .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+    .detail-images { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .detail-images .di {
+      width: 110px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      background: var(--bg);
+    }
+    .detail-images .di:hover { border-color: var(--accent); }
+    .detail-meta { font-size: 12px; line-height: 1.7; }
+    .detail-meta .row { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; }
+    .detail-meta .k { color: var(--muted); min-width: 76px; flex-shrink: 0; }
+    .detail-meta .v { flex: 1; word-break: break-all; white-space: pre-wrap; }
+    .detail-close { margin-top: 14px; text-align: right; }
+    .detail-close button {
+      padding: 6px 16px;
+      background: var(--bg2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .detail-close button:hover { background: #333; }
+
+    .viewer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      background: rgba(0, 0, 0, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .viewer-overlay[hidden] { display: none; }
+    .viewer-img { max-width: 78vw; max-height: 92vh; object-fit: contain; cursor: pointer; }
+    .viewer-nav {
+      flex-shrink: 0;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 26px;
+      cursor: pointer;
+    }
+    .viewer-nav:hover { background: rgba(255, 255, 255, 0.28); }
+    .viewer-nav:disabled { opacity: 0.25; cursor: default; }
+    .viewer-index {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
   </style>
 </head>
 <body>
@@ -283,6 +378,14 @@
   </div>
 
   <div class="filters">
+    <label><span data-i18n="searchLabel">Search</span> <select id="search-field">
+      <option value="all" data-i18n="searchAll">all</option>
+      <option value="displayName" data-i18n="searchDisplayName">Display Name</option>
+      <option value="author" data-i18n="searchAuthor">Author</option>
+      <option value="hashtags" data-i18n="searchHashtags">Hashtags</option>
+      <option value="text" data-i18n="searchText">Text</option>
+    </select>
+    <input id="search-text" type="search" class="search-input" data-i18n-placeholder="searchPlaceholder" placeholder="keyword"></label>
     <label><span data-i18n="platformLabel">Platform</span> <select id="filter-platform">
       <option value="" data-i18n="optAll">all</option>
       <option value="x">X</option>
@@ -337,6 +440,17 @@
     </div>
   </div>
 
+  <div id="detail-overlay" class="detail-overlay" hidden>
+    <div class="detail-box" id="detail-box"></div>
+  </div>
+
+  <div id="viewer-overlay" class="viewer-overlay" hidden>
+    <button id="viewer-prev" class="viewer-nav" aria-label="prev">◀</button>
+    <img id="viewer-img" class="viewer-img" alt="">
+    <button id="viewer-next" class="viewer-nav" aria-label="next">▶</button>
+    <div id="viewer-index" class="viewer-index"></div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const setStatus = (text) => { $('status').textContent = text; };
@@ -371,21 +485,45 @@
         const orig = console[level].bind(console);
         console[level] = (...args) => { push(level.toUpperCase(), args); orig(...args); };
       }
-      window.addEventListener('error', (e) => push('UNCAUGHT', [e.message, `${e.filename}:${e.lineno}`]));
-      window.addEventListener('unhandledrejection', (e) => push('REJECT', [e.reason]));
+      window.addEventListener('error', (e) => push('UNCAUGHT', [e.message, `${e.filename}:${e.lineno}:${e.colno}`, e.error && e.error.stack]));
+      window.addEventListener('unhandledrejection', (e) => push('REJECT', [e.reason && e.reason.stack || e.reason]));
+      // 即時自己初期化: eagle / init を待たずに window.location からログ先を導出して書き始める。
+      // これで「reopen でファイルが再読込されたか (boot 行)」「init より前で落ちていないか (UNCAUGHT 行)」
+      // が必ずファイルに残る。従来は logPath 確定が init 内だったため init 前の例外が記録できず盲目だった。
+      const deriveDir = () => {
+        try {
+          const path = require('path');
+          // 最優先: eagle.plugin.path (Eagle が確実に正しい実パスをくれる。読込時点で既に存在する)。
+          if (typeof eagle !== 'undefined' && eagle.plugin && eagle.plugin.path) {
+            return path.join(eagle.plugin.path, '..', '.debug');
+          }
+          // フォールバック: window.location。Eagle は file:// でなく eagleplugin:// スキームで、
+          // pathname が "//C:/…" のように先頭スラッシュ過多になるため、まとめて除去してから扱う。
+          let p = decodeURIComponent(new URL('.', window.location.href).pathname);
+          p = p.replace(/^\/+/, '');               // "//C:/…" / "/C:/…" → "C:/…"
+          if (!/^[A-Za-z]:/.test(p)) p = '/' + p;  // 非 Windows の絶対パスは / を戻す
+          return path.join(p, '..', '.debug');
+        } catch { return null; }
+      };
+      const setPath = (dir) => {
+        try {
+          fs = fs || require('fs');
+          const path = require('path');
+          fs.mkdirSync(dir, { recursive: true });
+          logPath = path.join(dir, 'engagement-browser-debug.log');
+          flush();
+          return logPath;
+        } catch { return null; }
+      };
+      const selfDir = deriveDir();
+      if (selfDir) setPath(selfDir);
+      push('LOG', ['[boot] script loaded', window.location.href]);
       return {
         init(pluginPath, libraryPath) {
-          try {
-            fs = require('fs');
-            const path = require('path');
-            const dir = pluginPath
-              ? path.join(pluginPath, '..', '.debug')
-              : path.join(libraryPath, 'plugin-data');
-            fs.mkdirSync(dir, { recursive: true });
-            logPath = path.join(dir, 'engagement-browser-debug.log');
-            flush();
-            return logPath;
-          } catch (e) { return null; }
+          const dir = pluginPath
+            ? (() => { try { return require('path').join(pluginPath, '..', '.debug'); } catch { return null; } })()
+            : (() => { try { return require('path').join(libraryPath, 'plugin-data'); } catch { return null; } })();
+          return (dir && setPath(dir)) || logPath;
         }
       };
     })();
@@ -407,6 +545,7 @@
         scopeLabel: 'Target', scopeAll: 'all parsed/synced', scopeCurrent: 'current filter', scopeStale: 'stale > N days',
         scopeBackfill: 'no-annotation (URL only)', scopeResume: 'resume left-over ({0})',
         staleDaysTitle: 'days',
+        searchLabel: 'Search', searchAll: 'all fields', searchDisplayName: 'Display Name', searchAuthor: 'Author', searchHashtags: 'Hashtags', searchText: 'Text/Title', searchPlaceholder: 'keyword',
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
         minLikes: 'Min likes', minViews: 'Min views', multiOnly: 'multi-image only',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortFetched: 'Recently fetched ↓', sortModified: 'Recently modified ↓',
@@ -423,6 +562,8 @@
         mPrivate: 'Access denied (X locked account 401/403, pixiv R-18 logged-out, ...).', rPrivate: 'fix login then retry',
         mNoAnno: 'No Info+ annotation (saved before Phase 1, or dragged from an unsupported site).', rNoAnno: 'Fetched by the Fetch engagement button if it has an SNS URL',
         openWindowTitle: 'Open in a new window',
+        detailTitle: 'Details', dOpen: 'Open in Eagle', dEngagement: 'Engagement', dText: 'Text', dTags: 'Tags',
+        dImages: 'Images', dFetched: 'Fetched', dModified: 'Modified', dClose: 'Close',
         deleteTitle: 'Delete (to Eagle trash)', deleteConfirm: 'Move {0} item(s) to Eagle’s trash? (recoverable)',
         testFetchTitle: 'Fetch only a few (5) to test — runs even if the daily cap is reached',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching metadata…', fetchingProgress: 'fetching metadata… {0}/{1}',
@@ -445,6 +586,7 @@
         scopeLabel: '対象', scopeAll: 'すべて（解析・取得済み）', scopeCurrent: '現在のフィルタ', scopeStale: 'N 日以上前',
         scopeBackfill: '情報なし（URLのみ）', scopeResume: '中断した続き ({0})',
         staleDaysTitle: '日数',
+        searchLabel: '検索', searchAll: '全フィールド', searchDisplayName: '表示名', searchAuthor: 'Author', searchHashtags: 'ハッシュタグ', searchText: '本文・作品名', searchPlaceholder: 'キーワード',
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
         minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
@@ -461,6 +603,8 @@
         mPrivate: 'アクセス権なし（X の鍵アカウント、pixiv の R-18 を未ログインで開いた場合など）。', rPrivate: 'ログインし直せば取得できる',
         mNoAnno: 'Info+ のアノテーションが無い（拡張の導入前に保存、対応外サイトからの保存など）。', rNoAnno: 'SNS の URL があれば「エンゲージメントを取得」で取得される',
         openWindowTitle: '別ウィンドウで開く',
+        detailTitle: '詳細', dOpen: 'Eagle で開く', dEngagement: '反応', dText: '本文', dTags: 'タグ',
+        dImages: '画像数', dFetched: '取得日時', dModified: '更新日時', dClose: '閉じる',
         deleteTitle: '削除（Eagle のゴミ箱へ）', deleteConfirm: '{0} 件を Eagle のゴミ箱へ移動しますか？（復元可）',
         testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限に到達していても実行できます',
         ready: '準備完了', syncing: '同期中…', fetching: 'メタデータ取得中…', fetchingProgress: 'メタデータ取得中… {0}/{1}',
@@ -502,6 +646,7 @@
       document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
       document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
       document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
     };
     applyI18n();
 
@@ -509,9 +654,13 @@
     let currentLibraryPath = null;
     let parsePostUrl = null; // shared から遅延 import (グループ化の投稿キー算出に使う)
 
-    if (typeof eagle === 'undefined') {
-      setStatus(t('errNoEagle'));
-    } else {
+    // 注意: eagle はプラグイン読込直後にはまだ注入されていないことがある。
+    // 旧コードはここで `if (eagle 未定義) errNoEagle / else { 全部 }` と分岐しており、
+    // 未注入の瞬間に読み込まれると errNoEagle を出して終了し二度と復帰しなかった
+    // (= 「ちょくちょく真っ暗」の主因。kickInit リトライも else 内なので動けなかった)。
+    // → 分岐で諦めるのをやめ、定義は常に行う。eagle へのアクセスは init / 各ハンドラ内のみで、
+    //   kickInit が eagle が生えるまでポーリングして init する。未注入が続けば最後に errNoEagle。
+    {
       const initStore = async (libraryPath) => {
         const fs = require('fs');
         const path = require('path');
@@ -610,9 +759,15 @@
         }
         card.appendChild(badges);
 
-        // オーバーレイ操作 (ホバーで右上): 別ウィンドウで開く / 削除 (ゴミ箱へ)
+        // オーバーレイ操作 (ホバーで右上): 詳細 / 別ウィンドウで開く / 削除 (ゴミ箱へ)
         const actions = document.createElement('div');
         actions.className = 'card-actions';
+        const infoBtn = document.createElement('button');
+        infoBtn.className = 'act-btn detail-btn';
+        infoBtn.textContent = 'ⓘ';
+        infoBtn.title = t('detailTitle');
+        infoBtn.setAttribute('aria-label', t('detailTitle'));
+        actions.appendChild(infoBtn);
         const openBtn = document.createElement('button');
         openBtn.className = 'act-btn open-window-btn';
         openBtn.textContent = '❐';
@@ -664,6 +819,24 @@
         };
       };
 
+      // アノテーション内容のテキスト検索。同一投稿の各ページは同じメタを持つのでグループ代表で判定する。
+      const readSearch = () => ({ field: $('search-field').value || 'all', text: ($('search-text').value || '').trim().toLowerCase() });
+      const searchFieldText = (rec, field) => {
+        // ハッシュタグは store では # 抜き保存。"#tag" でも "tag" でも当たるよう両形を含める。
+        const tags = (rec.hashtags || []).map((x) => '#' + x + ' ' + x).join(' ');
+        // author は @ 抜き保存。"@handle" でも "handle" でも当たるよう両形を含める。
+        const author = rec.author ? rec.author + ' @' + rec.author : '';
+        switch (field) {
+          case 'displayName': return rec.displayName || '';
+          case 'author': return author;
+          case 'hashtags': return tags;
+          case 'text': return [rec.text, rec.title].filter(Boolean).join(' ');
+          case 'all':
+          default: return [rec.displayName, author, tags, rec.text, rec.title].filter(Boolean).join(' ');
+        }
+      };
+      const matchSearch = (rec, field, q) => !q || searchFieldText(rec, field).toLowerCase().includes(q);
+
       // フィルタ/ソート/複数画像トグルの状態を localStorage に保持 (開き直しても復元)。
       const UI_STATE_KEY = 'eb-ui-state';
       const saveUiState = () => {
@@ -674,7 +847,9 @@
             minLikes: $('filter-min-likes').value,
             minViews: $('filter-min-views').value,
             sort: $('sort-field').value,
-            multi: $('filter-multi').checked
+            multi: $('filter-multi').checked,
+            searchField: $('search-field').value,
+            searchText: $('search-text').value
           }));
         } catch {}
       };
@@ -690,6 +865,8 @@
           if (s.minViews != null) $('filter-min-views').value = s.minViews;
           if (s.sort != null) $('sort-field').value = s.sort;
           if (s.multi != null) $('filter-multi').checked = s.multi;
+          if (s.searchField != null) $('search-field').value = s.searchField;
+          if (s.searchText != null) $('search-text').value = s.searchText;
         } catch {}
       };
 
@@ -716,6 +893,9 @@
         if (wantBucket) groups = groups.filter((g) => groupBucket(g) === wantBucket);
         // 複数画像のみ表示 (2 枚以上のグループに絞る)
         if ($('filter-multi').checked) groups = groups.filter((g) => g.length > 1);
+        // アノテーション内容のテキスト検索 (代表ページで判定)
+        const search = readSearch();
+        if (search.text) groups = groups.filter((g) => matchSearch(g[0], search.field, search.text));
 
         $('result-count').textContent = t('resultCount', groups.length);
 
@@ -733,6 +913,106 @@
         const frag = document.createDocumentFragment();
         for (const g of groups) frag.appendChild(buildCard(g));
         grid.appendChild(frag);
+      };
+
+      const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString() : '—');
+
+      // 任意のアイテム(群)のメタデータ詳細モーダル。グループはメンバー画像も展開し、画像クリックで
+      // Eagle で開く (ジャンプ)。
+      const showDetail = (ids) => {
+        const recs = ids.map((id) => ({ id, ...(store.get(id) || {}) }));
+        if (!recs.length) return;
+        const r = recs[0];
+        const box = $('detail-box');
+        box.replaceChildren();
+
+        const h = document.createElement('h3');
+        h.textContent = r.displayName
+          ? `${r.displayName} (@${r.author || ''})`
+          : (r.author ? `@${r.author}` : (r.name || '—'));
+        box.appendChild(h);
+        const sub = document.createElement('div');
+        sub.className = 'sub';
+        sub.textContent = `${r.platform || '—'} · ${t(BUCKET_KEY[groupBucket(recs)])}`;
+        box.appendChild(sub);
+
+        const imgs = document.createElement('div');
+        imgs.className = 'detail-images';
+        for (const rec of recs) {
+          const im = document.createElement('img');
+          im.className = 'di';
+          im.src = thumbnailSrc(rec);
+          im.loading = 'lazy';
+          im.title = t('dOpen');
+          im.onerror = () => { im.style.display = 'none'; };
+          im.onclick = async () => {
+            try {
+              await eagle.item.open(rec.id);
+              if (typeof eagle.app?.show === 'function') await eagle.app.show();
+            } catch (e) { console.error('item.open failed:', e); }
+          };
+          imgs.appendChild(im);
+        }
+        box.appendChild(imgs);
+
+        const meta = document.createElement('div');
+        meta.className = 'detail-meta';
+        const row = (k, v) => {
+          if (v == null || v === '') return;
+          const d = document.createElement('div'); d.className = 'row';
+          const kk = document.createElement('span'); kk.className = 'k'; kk.textContent = k;
+          const vv = document.createElement('span'); vv.className = 'v'; vv.textContent = String(v);
+          d.appendChild(kk); d.appendChild(vv); meta.appendChild(d);
+        };
+        const eng = [];
+        if (r.likes != null) eng.push(`♥ ${r.likes}`);
+        if (r.views != null) eng.push(`👁 ${r.views}`);
+        if (r.reposts != null) eng.push(`⇄ ${r.reposts}`);
+        if (r.replies != null) eng.push(`💬 ${r.replies}`);
+        if (r.quotes != null) eng.push(`❞ ${r.quotes}`);
+        if (r.bookmarks != null) eng.push(`★ ${r.bookmarks}`);
+        if (eng.length) row(t('dEngagement'), eng.join('   '));
+        row(t('dText'), r.text || r.title);
+        if (r.hashtags && r.hashtags.length) row(t('dTags'), r.hashtags.map((x) => '#' + x).join(' '));
+        if (recs.length > 1) row(t('dImages'), String(recs.length));
+        row('URL', r.url);
+        if (r.engagementSyncedAt) row(t('dFetched'), fmtDate(r.engagementSyncedAt));
+        row(t('dModified'), fmtDate(r.modifiedAt));
+        box.appendChild(meta);
+
+        const cl = document.createElement('div');
+        cl.className = 'detail-close';
+        const cb = document.createElement('button');
+        cb.textContent = t('dClose');
+        cb.onclick = () => { $('detail-overlay').hidden = true; };
+        cl.appendChild(cb);
+        box.appendChild(cl);
+
+        $('detail-overlay').hidden = false;
+      };
+
+      // グループ(投稿)を大きな画像で左右めくり閲覧するビューア (4P 漫画など)。
+      // フル画像は getByIds の fileURL を使う (store のサムネは小さい)。getByIds は現ライブラリ基準で
+      // fileURL を返すので stale しない。
+      let viewerItems = []; // [{ url, id }] — 画像クリックで Eagle に飛ぶため id も保持
+      let viewerIdx = 0;
+      const renderViewer = () => {
+        if (!viewerItems.length) return;
+        $('viewer-img').src = viewerItems[viewerIdx].url;
+        $('viewer-index').textContent = `${viewerIdx + 1} / ${viewerItems.length}`;
+        $('viewer-prev').disabled = viewerIdx <= 0;
+        $('viewer-next').disabled = viewerIdx >= viewerItems.length - 1;
+      };
+      const showViewer = async (ids) => {
+        let items = [];
+        try { items = await eagle.item.getByIds(ids); } catch (e) { console.error('getByIds failed:', e); }
+        // getByIds は要求順を保証しないので、ids 順 (グループ/dataset 順) に並べ直してから表示する
+        const byId = new Map(items.map((it) => [it.id, it]));
+        viewerItems = ids.map((id) => byId.get(id)).filter((it) => it && it.fileURL).map((it) => ({ url: it.fileURL, id: it.id }));
+        if (!viewerItems.length) return;
+        viewerIdx = 0;
+        renderViewer();
+        $('viewer-overlay').hidden = false;
       };
 
       const onCardClick = async (e) => {
@@ -759,6 +1039,9 @@
           return;
         }
 
+        // ⓘ 詳細ボタン → プラグイン内で詳細モーダル
+        if (e.target.closest('.detail-btn')) { showDetail(ids); return; }
+
         const bringToFront = async () => {
           if (typeof eagle.app?.show === 'function') await eagle.app.show();
           else console.warn('eagle.app.show unavailable (needs Eagle 4.0 build18+)');
@@ -768,11 +1051,10 @@
             // ❐: 代表ページを別ウィンドウで開く
             await eagle.item.open(ids[0], { window: true });
           } else if (ids.length > 1) {
-            // 多ページ投稿: 全ページを選択してメインウィンドウを前面化
-            await eagle.item.select(ids);
-            await bringToFront();
+            // グループ本体 → プラグイン内で大きな画像ビューア (左右めくり)。Eagle では開かない
+            await showViewer(ids);
           } else {
-            // 単独: 該当アイテムを開いて前面化
+            // 単独カード本体 → Eagle で開く (ジャンプ + 前面化)
             await eagle.item.open(ids[0]);
             await bringToFront();
           }
@@ -885,9 +1167,47 @@
       // テスト取得: 少数 (5 投稿) だけ・日次上限を消費せず動作確認
       $('test-btn').addEventListener('click', () => runEngagement({ limit: 5, dailyLimit: {} }));
       $('grid').addEventListener('click', onCardClick);
+      // 詳細モーダル: 背景クリック / Esc で閉じる
+      $('detail-overlay').addEventListener('click', (e) => {
+        if (e.target === $('detail-overlay')) $('detail-overlay').hidden = true;
+      });
+      // 画像ビューア: ◀▶ / 背景クリック / Esc / ←→ キー
+      $('viewer-prev').addEventListener('click', () => { if (viewerIdx > 0) { viewerIdx--; renderViewer(); } });
+      $('viewer-next').addEventListener('click', () => { if (viewerIdx < viewerItems.length - 1) { viewerIdx++; renderViewer(); } });
+      // 画像をクリック → その表示中ページを Eagle で開く + Eagle を前面化
+      $('viewer-img').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const cur = viewerItems[viewerIdx];
+        if (!cur) return;
+        try {
+          await eagle.item.open(cur.id);
+          if (typeof eagle.app?.show === 'function') await eagle.app.show();
+        } catch (err) { console.error('viewer open failed:', err); }
+      });
+      $('viewer-overlay').addEventListener('click', (e) => {
+        if (e.target === $('viewer-overlay')) $('viewer-overlay').hidden = true;
+      });
+      document.addEventListener('keydown', (e) => {
+        if (!$('viewer-overlay').hidden) {
+          if (e.key === 'Escape') $('viewer-overlay').hidden = true;
+          else if (e.key === 'ArrowLeft' && viewerIdx > 0) { viewerIdx--; renderViewer(); }
+          else if (e.key === 'ArrowRight' && viewerIdx < viewerItems.length - 1) { viewerIdx++; renderViewer(); }
+        } else if (e.key === 'Escape' && !$('detail-overlay').hidden) {
+          $('detail-overlay').hidden = true;
+        }
+      });
       const onFilterChange = () => { saveUiState(); renderGrid(); };
-      ['filter-platform', 'filter-status', 'filter-min-likes', 'filter-min-views', 'sort-field', 'filter-multi']
+      // テキスト/数値入力はキー入力ごとに全件 renderGrid すると重い (9000 件規模)。
+      // 打ち終わりに 1 回だけ走るようデバウンスする。セレクト/チェックボックスは即時で良い。
+      let filterDebounce = null;
+      const onFilterChangeDebounced = () => {
+        clearTimeout(filterDebounce);
+        filterDebounce = setTimeout(onFilterChange, 180);
+      };
+      ['filter-platform', 'filter-status', 'sort-field', 'filter-multi', 'search-field']
         .forEach(id => $(id).addEventListener('input', onFilterChange));
+      ['filter-min-likes', 'filter-min-views', 'search-text']
+        .forEach(id => $(id).addEventListener('input', onFilterChangeDebounced));
 
       // Status info ポップオーバー
       const infoBtn = $('status-info-btn');
@@ -938,15 +1258,23 @@
         } catch (e) { console.error('[diag] failed', e); }
       };
 
-      // init は二重起動を防ぐ (onPluginCreate と DOMContentLoaded フォールバックの両方から呼ばれる)。
-      let inited = false;
-      const init = async () => {
-        if (inited) return;
-        inited = true;
-        const pluginPath = eagle.plugin?.path;
-        setupLiveReload(pluginPath); // dev: 以降ファイル編集で自動リロード
+      // === 起動 (Eagle ライフサイクル準拠) ===
+      // 実機で判明した重要な制約: eagle.library.info() 等の eagle API は plugin-create イベントが
+      // 発火した後でないと使えない (それ以前に呼ぶと "This method can only be used after the
+      // plugin-create event is triggered" で reject/ハングする)。
+      // 旧コードはスクリプト読込直後に即 init を呼び (kickInit)、plugin-create 前に API を早撃ちして
+      // 詰んでいた。しかも init は await 前に inited=true を立てるため、後から onPluginCreate が来ても
+      // 弾かれ二度と復帰しなかった ← これが「真っ暗」の真因。
+      // → init は plugin-create 後のイベントからのみ起動する。二重起動は inited/initRunning でガード。
+      let inited = false, initRunning = false;
+      const init = async (trigger) => {
+        if (inited || initRunning) return;
+        initRunning = true;
+        console.log('[init] start via ' + trigger);
         try {
-          const lib = await eagle.library.info();
+          const lib = await eagle.library.info(); // plugin-create 後なのでここで使える
+          const pluginPath = eagle.plugin?.path;
+          setupLiveReload(pluginPath); // dev: 以降ファイル編集で自動リロード
           $('library-path').textContent = lib?.path || '(unknown)';
           const logPath = DEBUG_LOG.init(pluginPath, lib?.path);
           console.log('[debug] log file →', logPath);
@@ -954,22 +1282,29 @@
           restoreUiState();         // 前回のフィルタ/ソートを復元
           renderFooter();
           renderGrid();             // キャッシュから即描画
+          inited = true;            // グリッド描画まで成功 = 起動成功とみなす。ここより前で throw した場合は
+                                    // inited は false のままなので、次の onPluginShow 等で再試行できる (真っ暗で詰まない)
           logDiagnostics(lib);
+          console.log('[init] rendered; running sync…');
           await runSync();          // 開いた時に自動同期 (差分のみ、ミリ秒) → 再描画
+          console.log('[init] done');
         } catch (e) {
           setStatus(t('errInit', e.message));
-          console.error(e);
+          console.error('[init] failed', e);
+        } finally {
+          initRunning = false; // 失敗時は再試行できるよう必ず戻す (成功時は inited で弾かれる)
         }
       };
 
-      // 通常は onPluginCreate で起動。ただし live-reload の location.reload() 後に
-      // onPluginCreate が再発火しないことがあるため、eagle が居れば DOMContentLoaded でも init。
-      eagle.onPluginCreate(() => init());
-      if (document.readyState === 'loading') {
-        window.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
-      } else {
-        setTimeout(init, 300);
-      }
+      // plugin-create 後に発火する各ライフサイクルイベントで init を試みる (init が二重起動をガード)。
+      // onPluginShow も拾うので「閉じて開き直し (再表示)」でも復帰する。dev の live-reload
+      // (location.reload) 後も、これらのいずれかが再発火すれば復帰する。
+      ['onPluginCreate', 'onPluginRun', 'onPluginShow'].forEach((name) => {
+        try {
+          if (typeof eagle !== 'undefined' && typeof eagle[name] === 'function') eagle[name](() => init(name));
+        } catch (e) { console.warn('[init] bind ' + name + ' failed', e && e.message); }
+      });
+      console.log('[boot] lifecycle handlers bound (onPluginCreate/Run/Show)');
     }
   </script>
 </body>

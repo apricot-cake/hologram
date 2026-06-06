@@ -54,6 +54,28 @@ Phase 2 の同期キーには **`modifiedAt`** を使う (todo.md の `last_sync
 
 - 注意: ログ等の書き込み先を監視対象に含めると**リロードループ**になる。出力は監視外 (`.debug/` = repo 直下、plugin-window の外) に置く。
 - `eagle.plugin.path` (= onPluginCreate の引数 `plugin.path`) が plugin ディレクトリ。`shared/` はその親の下。
+- ただし reload で再発火するのは **plugin-create イベント**であって、API メソッドが即使えるわけではない (下記)。init は必ずイベント駆動にすること。保険として `onPluginCreate` だけでなく `onPluginRun` / `onPluginShow` も bind しておくと、再表示 (閉じて開き直し) でも確実に復帰する。
+
+### `eagle.*` API メソッドは `plugin-create` イベント後でないと使えない（最重要・実機で判明）
+`eagle.library.info()` `eagle.item.*` などのデータ API は、**`plugin-create` 発火前に呼ぶと reject される**。実機メッセージ:
+`This method can only be used after the \`plugin-create\` event is triggered.`
+await していても解決せずハングする場合があり、UI は真っ暗のまま残る。
+
+- `eagle` グローバル自体は inline `<script>` 実行時点で**既に注入されている** (`typeof eagle === 'object'`)。**未準備なのは「eagle」ではなく「plugin-create イベント」**。「eagle が undefined だから生えるまでポーリング」という発想は誤り (実際にこれで遠回りした)。
+- よって初期化 (`eagle.library.info()` を呼ぶ処理) は**必ず `onPluginCreate` / `onPluginRun` / `onPluginShow` から駆動**する。module 読込直後に即 init して API を早撃ちしてはいけない。
+- **真っ暗を招いた NG パターン** (実機で再発):
+  - スクリプト最上位で `if (typeof eagle === 'undefined') {…} else { 全処理 }` と分岐し、未準備の一瞬に読まれると諦めて二度と復帰しない (リトライ無し)
+  - plugin-create を待たず `init()` を即時/ポーリング呼び出しして `eagle.library.info()` を早撃ち → reject/ハング
+  - `init()` 内で await (initStore / 描画) 完了**前**に `inited = true` を立てる → 途中で throw すると以降のライフサイクルイベントが `if (inited) return` で全部弾かれ、リロードなしには復帰不能
+- **正しい型**: init はイベント駆動。多重/同時起動は `inited` + `initRunning` でガード。**`inited` はグリッド描画が成功した後に立てる** (それ以前で throw したら false のまま → 次の onPluginShow 等で再試行できる)。
+
+### プラグインページは `eagleplugin://` スキームで読み込まれる（`file://` ではない）
+`window.location.href` の例:
+`eagleplugin://<plugin-id>//C:/Users/<name>/…/plugin-window/index.html?theme=DARK&locale=ja_JP`
+
+- pathname が `//C:/…` と**先頭スラッシュ過多**になり、ここから OS パスを組むと `\\C:\…` のような不正パスになって `fs.mkdirSync`/`writeFileSync` が `UNKNOWN` で失敗する。
+- **ファイルパスは `window.location` から導出せず、`eagle.plugin.path` を使う**。正しい OS パス (`C:\Users\<name>\…\plugin-window`) を返し、しかも plugin-create 前 (module 読込時点) でも読める — ゲートされた API メソッドではなく単なるプロパティ参照のため。
+- この罠でデバッグログが壊れたパスに書かれて出力されず、原因究明が大幅に遅れた。ログ先は `eagle.plugin.path` から `../.debug` を作るのが堅い。
 
 ---
 
