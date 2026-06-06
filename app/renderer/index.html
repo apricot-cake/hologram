@@ -427,6 +427,11 @@
       margin-bottom: 6px;
     }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sb-tag-filter {
+      width: 100%; margin-bottom: 6px; padding: 5px 8px;
+      border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none;
+    }
+    .sb-tag-filter:focus { border-color: #1d9bf0; }
     .sb-chip {
       background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 12px;
       padding: 3px 10px; font-size: 11px; color: #555;
@@ -448,6 +453,12 @@
     .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
     .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
   #panelTags { max-width: 960px; }
+  .ht-search {
+    width: 100%; max-width: 360px; display: block; margin-bottom: 8px;
+    padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 14px; outline: none; transition: border-color 0.15s;
+  }
+  .ht-search:focus { border-color: #1d9bf0; }
   .hashtag-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
   .hashtag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 999px; background: #fff; color: #1d9bf0; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
   .hashtag-chip:hover { background: #e8f5fe; border-color: #1d9bf0; }
@@ -537,6 +548,7 @@
         <!-- Tags -->
         <div class="sb-section">
           <div class="sb-title" id="sbTagTitle"></div>
+          <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
       </aside>
@@ -574,6 +586,7 @@
 
   <!-- Hashtags tab -->
   <div class="tab-panel" id="panelTags">
+    <input type="text" class="ht-search" id="hashtagSearch">
     <div id="hashtagList" class="hashtag-list"></div>
   </div>
 

@@ -15,6 +15,8 @@
     emptyHashtags: _s('emptyHashtags'),
     tabSettings: _s('tabSettings'),
     searchPlaceholder: _s('searchPlaceholder'),
+    searchHashtags: _s('searchHashtags'),
+    searchTags: _s('searchTags'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -154,6 +156,8 @@
   setText('tabTags', MSG.tabTags);
   setText('tabSettings', MSG.tabSettings);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
+  setAttr('hashtagSearch', 'placeholder', MSG.searchHashtags);
+  setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
   setText('chooseFolderBtn', MSG.chooseFolder);
   setText('hintSaveFolder', MSG.hintSaveFolder);
@@ -579,11 +583,16 @@
   // Sidebar tag chips (dynamic)
   function updateSidebarTags() {
     const container = document.getElementById('sbTagChips');
-    const tags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
-    if (tags.length === 0) {
+    const searchInput = document.getElementById('sbTagSearch');
+    const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
+    // Show the filter input only once the list is long enough to benefit.
+    searchInput.style.display = allTags.length > 6 ? '' : 'none';
+    if (allTags.length === 0) {
       container.innerHTML = '';
       return;
     }
+    const filter = (searchInput.value || '').trim().toLowerCase();
+    const tags = filter ? allTags.filter(t => t.toLowerCase().includes(filter)) : allTags;
     const activeValues = activeFilters.filter(f => f.type === 'tag').map(f => f.value);
     container.innerHTML = tags.map(t =>
       `<button class="sb-chip${activeValues.includes(t) ? ' active' : ''}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}">${escapeHtml(t)}</button>`
@@ -665,9 +674,11 @@
         counts.set(tag, (counts.get(tag) || 0) + 1);
       }
     }
-    const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    let entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const filter = (document.getElementById('hashtagSearch').value || '').trim().toLowerCase();
+    if (filter) entries = entries.filter(([tag]) => tag.toLowerCase().includes(filter));
     if (!entries.length) {
-      container.innerHTML = `<div class="hashtag-empty">${MSG.emptyHashtags}</div>`;
+      container.innerHTML = `<div class="hashtag-empty">${filter ? MSG.emptySearchTitle : MSG.emptyHashtags}</div>`;
       return;
     }
     container.innerHTML = entries.map(([tag, n]) =>
@@ -682,6 +693,10 @@
     document.getElementById('searchBox').value = chip.dataset.tag;
     renderPosts();
   });
+
+  // Live filter for the hashtag-tab list and the sidebar tag chips.
+  document.getElementById('hashtagSearch').addEventListener('input', renderHashtags);
+  document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
