@@ -431,7 +431,7 @@
   </div>
 
   <div id="confirm-overlay" class="confirm-overlay" hidden>
-    <div class="confirm-box">
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-msg">
       <div id="confirm-msg" class="confirm-msg"></div>
       <div class="confirm-actions">
         <button id="confirm-cancel" data-i18n="confirmNo">Cancel</button>
@@ -441,13 +441,13 @@
   </div>
 
   <div id="detail-overlay" class="detail-overlay" hidden>
-    <div class="detail-box" id="detail-box"></div>
+    <div class="detail-box" id="detail-box" role="dialog" aria-modal="true" data-i18n-aria="detailAria" tabindex="-1"></div>
   </div>
 
-  <div id="viewer-overlay" class="viewer-overlay" hidden>
-    <button id="viewer-prev" class="viewer-nav" aria-label="prev">◀</button>
+  <div id="viewer-overlay" class="viewer-overlay" hidden role="dialog" aria-modal="true" data-i18n-aria="viewerAria" tabindex="-1">
+    <button id="viewer-prev" class="viewer-nav" data-i18n-aria="viewerPrev" aria-label="prev">◀</button>
     <img id="viewer-img" class="viewer-img" alt="">
-    <button id="viewer-next" class="viewer-nav" aria-label="next">▶</button>
+    <button id="viewer-next" class="viewer-nav" data-i18n-aria="viewerNext" aria-label="next">▶</button>
     <div id="viewer-index" class="viewer-index"></div>
   </div>
 
@@ -553,7 +553,7 @@
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
         mFull: 'Post metadata (engagement numbers + author/text) fetched.',
         mPartial: 'The post has item(s) not fetched yet (incl. error / deleted / private, or a mix). The button fetches them.',
-        mNolink: 'No Info+ info. Fetched only if it has an SNS post URL.',
+        mNolink: 'Has an SNS post link but no Info+ annotation. The button can fetch these. (Images with no SNS link at all are hidden.)',
         stSynced: 'synced', stParsed: 'parsed', stError: 'error', stDeleted: 'deleted', stPrivate: 'private', stNoAnno: 'no-annotation',
         mSynced: 'Engagement fetched from SNS API. Main view.', rSynced: 're-fetch refreshes',
         mParsed: 'Info+ annotation parsed but engagement not yet fetched. Intermediate state right after Sync.', rParsed: 'Fetch engagement promotes to synced',
@@ -564,6 +564,7 @@
         openWindowTitle: 'Open in a new window',
         detailTitle: 'Details', dOpen: 'Open in Eagle', dEngagement: 'Engagement', dText: 'Text', dTags: 'Tags',
         dImages: 'Images', dFetched: 'Fetched', dModified: 'Modified', dClose: 'Close',
+        detailAria: 'Post details', viewerAria: 'Image viewer', viewerPrev: 'Previous page', viewerNext: 'Next page', cardAria: 'Open post',
         deleteTitle: 'Delete (to Eagle trash)', deleteConfirm: 'Move {0} item(s) to Eagle’s trash? (recoverable)',
         testFetchTitle: 'Fetch only a few (5) to test — runs even if the daily cap is reached',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching metadata…', fetchingProgress: 'fetching metadata… {0}/{1}',
@@ -574,7 +575,7 @@
         confirmYes: 'OK', confirmNo: 'Cancel',
         confirmLargeX: 'Fetch metadata for {0} X posts? X uses an unofficial API, so large batches may get rate-limited or blocked. Splitting across sessions is safer. Continue?',
         errSync: 'sync error: {0}', errEngagement: 'metadata error: {0}', errInit: 'init error: {0}', errNoEagle: '✗ eagle global not found',
-        resultCount: '{0} posts', groupCount: '{0} images (same post)', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
+        resultCount: '{0} posts', resultCountCapped: 'showing {0} of {1}', groupCount: '{0} images (same post)', storeStats: 'total {0} | synced {1} | last {2}', never: 'never',
         emptyFiltered: 'No items match the filter. Loosen the filters or run Fetch engagement.',
         emptyNoSync: 'No items in Eagle.'
       },
@@ -591,10 +592,10 @@
         minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
-        bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクなし',
+        bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクのみ',
         mFull: '投稿のメタデータ（いいね等の数値・作者・本文）を取得済み。',
         mPartial: '投稿に未取得のアイテムがある（エラー / 削除済み / 非公開 や混在も含む）。ボタンで取得対象。',
-        mNolink: 'Info+ の情報なし。SNS の投稿 URL があるものだけ取得対象。',
+        mNolink: 'SNS リンクはあるが Info+ 注釈なし。ボタンで取得できる。(SNS リンクが全く無い画像は非表示)',
         stSynced: '取得済み', stParsed: '解析済み', stError: 'エラー', stDeleted: '削除済み', stPrivate: '非公開', stNoAnno: '情報なし',
         mSynced: 'SNS の API からエンゲージメント（いいね等）を取得済み。主にこの状態を見る。', rSynced: '再取得で最新化できる',
         mParsed: 'Info+ のアノテーションは解析済みだが、エンゲージメント未取得。同期直後の中間状態。', rParsed: '「エンゲージメントを取得」で取得済みになる',
@@ -605,6 +606,7 @@
         openWindowTitle: '別ウィンドウで開く',
         detailTitle: '詳細', dOpen: 'Eagle で開く', dEngagement: '反応', dText: '本文', dTags: 'タグ',
         dImages: '画像数', dFetched: '取得日時', dModified: '更新日時', dClose: '閉じる',
+        detailAria: '投稿の詳細', viewerAria: '画像ビューア', viewerPrev: '前のページ', viewerNext: '次のページ', cardAria: '投稿を開く',
         deleteTitle: '削除（Eagle のゴミ箱へ）', deleteConfirm: '{0} 件を Eagle のゴミ箱へ移動しますか？（復元可）',
         testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限に到達していても実行できます',
         ready: '準備完了', syncing: '同期中…', fetching: 'メタデータ取得中…', fetchingProgress: 'メタデータ取得中… {0}/{1}',
@@ -615,7 +617,7 @@
         confirmYes: '実行', confirmNo: 'やめる',
         confirmLargeX: 'X の投稿 {0} 件を取得します。X は非公式 API のため、大量取得はレート制限やブロックの恐れがあります（日を分けると安全）。続けますか？',
         errSync: '同期エラー: {0}', errEngagement: 'メタデータ取得エラー: {0}', errInit: '初期化エラー: {0}', errNoEagle: '✗ Eagle 内で開いてください',
-        resultCount: '{0} 投稿', groupCount: '{0} 枚（同じ投稿）', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
+        resultCount: '{0} 投稿', resultCountCapped: '{1} 件中 {0} 件を表示', groupCount: '{0} 枚（同じ投稿）', storeStats: '合計 {0}件 / 取得済み {1}件 / 最終同期 {2}', never: 'なし',
         emptyFiltered: '条件に合うアイテムがありません。フィルタを緩めるか「エンゲージメントを取得」を実行してください。',
         emptyNoSync: 'Eagle にアイテムがありません。'
       }
@@ -720,6 +722,11 @@
         card.dataset.id = it.id;
         card.dataset.ids = group.map((g) => g.id).join(',');
         card.title = it.text || it.title || it.name || '';
+        // キーボード操作 (a11y): カード本体を Enter/Space で開けるよう focusable に
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        const ariaName = it.displayName || (it.author ? '@' + it.author : '') || it.text || it.title || it.name || '';
+        card.setAttribute('aria-label', t('cardAria') + (ariaName ? ': ' + ariaName : ''));
 
         if (it.thumbnailURL) {
           const img = document.createElement('img');
@@ -870,12 +877,30 @@
         } catch {}
       };
 
+      // 描画コスト対策: store.query 結果のメモ化 + カード描画上限。
+      const RENDER_CAP = 600;       // 一度に DOM 生成するカードの上限 (全描画で固まるのを防ぐ)
+      let dataVersion = 0;          // store 変更 (sync/fetch/delete) ごとに ++ してキャッシュ無効化
+      const invalidateData = () => { dataVersion++; };
+      let queryCache = { key: null, result: null };
+
       const renderGrid = () => {
         if (!store) return;
         const filters = readGridFilters();
-        const sort = { field: $('sort-field').value, order: 'desc' };
-
-        const results = store.query(filters, sort);
+        const sortField = $('sort-field').value;
+        // store.query (platform/minLikes/minViews フィルタ + sort/percentile 計算) は
+        // filters・sort・データが変わらない限り使い回す。検索/ステータス/複数画像トグルは query の
+        // 後段で効くのでキャッシュに当たり、キーストロークごとの全件再ソートを避けられる。
+        const qKey = [filters.platform, filters.minLikes, filters.minViews, sortField, dataVersion].join('|');
+        let results;
+        if (queryCache.key === qKey && queryCache.result) {
+          results = queryCache.result;
+        } else {
+          results = store.query(filters, { field: sortField, order: 'desc' })
+            // SNS リンクも Info+ 注釈も無いただの画像 (非SNS画像) は、取得対象にならず表示価値も無いので除外。
+            // 「リンクはあるが注釈なし」(取得すれば数字が付く) は残す → no-annotation かつ SNS URL 無しだけ落とす。
+            .filter((it) => it.status !== 'no-annotation' || (parsePostUrl && parsePostUrl(it.url)));
+          queryCache = { key: qKey, result: results };
+        }
 
         // 同じ投稿 (postKey: platform:postId) を 1 グループに束ねる。url 無し/未parse は単独。
         // 並び順は最初の出現位置を維持 (同一投稿は engagement が同じなのでソート上も隣接する)。
@@ -897,25 +922,44 @@
         const search = readSearch();
         if (search.text) groups = groups.filter((g) => matchSearch(g[0], search.field, search.text));
 
-        $('result-count').textContent = t('resultCount', groups.length);
-
+        const total = groups.length;
         const grid = $('grid');
         const empty = $('empty');
         grid.replaceChildren();
 
-        if (groups.length === 0) {
+        if (total === 0) {
+          $('result-count').textContent = t('resultCount', 0);
           empty.style.display = 'block';
           empty.textContent = t(store.data.lastSync ? 'emptyFiltered' : 'emptyNoSync');
           return;
         }
         empty.style.display = 'none';
 
+        // 描画は RENDER_CAP 件まで (件数表示には総数を出す)。9000 件規模で全カード生成が固まるのを防ぐ。
+        const shown = total > RENDER_CAP ? groups.slice(0, RENDER_CAP) : groups;
+        $('result-count').textContent = total > RENDER_CAP
+          ? t('resultCountCapped', shown.length, total)
+          : t('resultCount', total);
+
         const frag = document.createDocumentFragment();
-        for (const g of groups) frag.appendChild(buildCard(g));
+        for (const g of shown) frag.appendChild(buildCard(g));
         grid.appendChild(frag);
       };
 
       const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString() : '—');
+
+      // モーダルのフォーカス管理 (a11y): 開く前のフォーカス位置を覚え、閉じたら戻す。
+      let modalReturnFocus = null;
+      const openModal = (overlay, focusTarget) => {
+        modalReturnFocus = document.activeElement;
+        overlay.hidden = false;
+        try { (focusTarget || overlay).focus(); } catch {}
+      };
+      const closeModal = (overlay) => {
+        overlay.hidden = true;
+        if (modalReturnFocus && modalReturnFocus.focus) { try { modalReturnFocus.focus(); } catch {} }
+        modalReturnFocus = null;
+      };
 
       // 任意のアイテム(群)のメタデータ詳細モーダル。グループはメンバー画像も展開し、画像クリックで
       // Eagle で開く (ジャンプ)。
@@ -984,11 +1028,11 @@
         cl.className = 'detail-close';
         const cb = document.createElement('button');
         cb.textContent = t('dClose');
-        cb.onclick = () => { $('detail-overlay').hidden = true; };
+        cb.onclick = () => { closeModal($('detail-overlay')); };
         cl.appendChild(cb);
         box.appendChild(cl);
 
-        $('detail-overlay').hidden = false;
+        openModal($('detail-overlay'), $('detail-box'));
       };
 
       // グループ(投稿)を大きな画像で左右めくり閲覧するビューア (4P 漫画など)。
@@ -999,6 +1043,7 @@
       const renderViewer = () => {
         if (!viewerItems.length) return;
         $('viewer-img').src = viewerItems[viewerIdx].url;
+        $('viewer-img').alt = `${viewerIdx + 1} / ${viewerItems.length}`;
         $('viewer-index').textContent = `${viewerIdx + 1} / ${viewerItems.length}`;
         $('viewer-prev').disabled = viewerIdx <= 0;
         $('viewer-next').disabled = viewerIdx >= viewerItems.length - 1;
@@ -1012,7 +1057,7 @@
         if (!viewerItems.length) return;
         viewerIdx = 0;
         renderViewer();
-        $('viewer-overlay').hidden = false;
+        openModal($('viewer-overlay'));
       };
 
       const onCardClick = async (e) => {
@@ -1031,6 +1076,7 @@
             }
             for (const id of ids) store.delete(id);
             store.save();
+            invalidateData();
             renderFooter();
             renderGrid();
           } catch (err) {
@@ -1075,6 +1121,7 @@
             log: (msg) => console.log('[sync]', msg)
           });
           setStatus(t('syncResult', r.newCount, r.changedCount, r.deletedCount, r.upsertedCount, r.elapsedMs));
+          invalidateData();
           renderFooter();
           renderGrid();
         } catch (e) {
@@ -1092,15 +1139,27 @@
       const confirmDialog = (msg) => new Promise((resolve) => {
         const overlay = $('confirm-overlay');
         $('confirm-msg').textContent = msg;
-        overlay.hidden = false;
+        const prevFocus = document.activeElement;
         const done = (v) => {
           overlay.hidden = true;
           $('confirm-ok').onclick = null;
           $('confirm-cancel').onclick = null;
+          overlay.removeEventListener('click', onBackdrop);
+          document.removeEventListener('keydown', onKey, true);
+          if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch {} }
           resolve(v);
         };
+        const onKey = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); done(false); }
+          else if (e.key === 'Enter') { e.preventDefault(); done(true); }
+        };
+        const onBackdrop = (e) => { if (e.target === overlay) done(false); };
         $('confirm-ok').onclick = () => done(true);
         $('confirm-cancel').onclick = () => done(false);
+        overlay.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKey, true); // capture: 他の Esc ハンドラより先に閉じる
+        overlay.hidden = false;
+        try { $('confirm-cancel').focus(); } catch {} // 既定フォーカスは Cancel (誤爆防止)
       });
 
       // 実行中はボタンが「中止」に変わる (別ボタンにしない)。実行中の再クリックで cancel。
@@ -1138,14 +1197,17 @@
           });
           if (r.rateLimited) {
             setStatus(t('engRateLimited', r.remainingIds.length));
+          } else if (r.cancelled) {
+            // 中止は日次上限より優先して表示 (ユーザー操作の結果なので一番伝えたい)
+            setStatus(t('engResult', t('engCancelled', r.remainingIds.length), r.okCount, r.errCount, r.skipCount, r.elapsedMs));
           } else if (r.dailyLimited) {
             setStatus(t('engDailyLimit', r.okCount, DEFAULT_DAILY_LIMIT.x));
           } else if (r.targetCount === 0) {
             setStatus(t('engNothing'));
           } else {
-            const tag = r.cancelled ? t('engCancelled', r.remainingIds.length) : t('engTag');
-            setStatus(t('engResult', tag, r.okCount, r.errCount, r.skipCount, r.elapsedMs));
+            setStatus(t('engResult', t('engTag'), r.okCount, r.errCount, r.skipCount, r.elapsedMs));
           }
+          invalidateData();
           renderFooter();
           renderGrid();
         } catch (e) {
@@ -1167,9 +1229,17 @@
       // テスト取得: 少数 (5 投稿) だけ・日次上限を消費せず動作確認
       $('test-btn').addEventListener('click', () => runEngagement({ limit: 5, dailyLimit: {} }));
       $('grid').addEventListener('click', onCardClick);
+      // カード本体に Enter / Space → クリックと同じ本体動作 (act-btn は <button> なのでネイティブで動く)
+      $('grid').addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest('.card');
+        if (!card || e.target !== card) return; // カード自身にフォーカスがあるときだけ (ボタンは除外)
+        e.preventDefault();
+        onCardClick({ target: card });
+      });
       // 詳細モーダル: 背景クリック / Esc で閉じる
       $('detail-overlay').addEventListener('click', (e) => {
-        if (e.target === $('detail-overlay')) $('detail-overlay').hidden = true;
+        if (e.target === $('detail-overlay')) closeModal($('detail-overlay'));
       });
       // 画像ビューア: ◀▶ / 背景クリック / Esc / ←→ キー
       $('viewer-prev').addEventListener('click', () => { if (viewerIdx > 0) { viewerIdx--; renderViewer(); } });
@@ -1185,15 +1255,15 @@
         } catch (err) { console.error('viewer open failed:', err); }
       });
       $('viewer-overlay').addEventListener('click', (e) => {
-        if (e.target === $('viewer-overlay')) $('viewer-overlay').hidden = true;
+        if (e.target === $('viewer-overlay')) closeModal($('viewer-overlay'));
       });
       document.addEventListener('keydown', (e) => {
         if (!$('viewer-overlay').hidden) {
-          if (e.key === 'Escape') $('viewer-overlay').hidden = true;
+          if (e.key === 'Escape') closeModal($('viewer-overlay'));
           else if (e.key === 'ArrowLeft' && viewerIdx > 0) { viewerIdx--; renderViewer(); }
           else if (e.key === 'ArrowRight' && viewerIdx < viewerItems.length - 1) { viewerIdx++; renderViewer(); }
         } else if (e.key === 'Escape' && !$('detail-overlay').hidden) {
-          $('detail-overlay').hidden = true;
+          closeModal($('detail-overlay'));
         }
       });
       const onFilterChange = () => { saveUiState(); renderGrid(); };
@@ -1225,8 +1295,11 @@
       // dev: プラグイン / shared のファイル変更を監視して自動リロード (手動の開き直しを不要に)。
       // nodeIntegration の fs.watch で plugin-window と shared を見る。配布時は LIVE_RELOAD=false に。
       const LIVE_RELOAD = true;
+      let liveReloadArmed = false;            // 多重 arm 防止 (init 再試行で watcher が増殖しないように)
+      const liveReloadWatchers = [];
       const setupLiveReload = (pluginPath) => {
-        if (!LIVE_RELOAD || !pluginPath) return;
+        if (!LIVE_RELOAD || !pluginPath || liveReloadArmed) return;
+        liveReloadArmed = true;
         try {
           const fs = require('fs');
           const path = require('path');
@@ -1238,8 +1311,13 @@
             pending = setTimeout(() => location.reload(), 200);
           };
           for (const d of dirs) {
-            try { fs.watch(d, { recursive: false }, onChange); } catch {}
+            try { liveReloadWatchers.push(fs.watch(d, { recursive: false }, onChange)); } catch {}
           }
+          // reload / ウィンドウ破棄の前に watcher を閉じてハンドルリークを防ぐ
+          window.addEventListener('pagehide', () => {
+            for (const w of liveReloadWatchers) { try { w.close(); } catch {} }
+            liveReloadWatchers.length = 0;
+          }, { once: true });
           console.log('[live-reload] watching', dirs.join(' , '));
         } catch (e) { console.warn('[live-reload] setup failed', e && e.message); }
       };
@@ -1266,9 +1344,13 @@
       // 詰んでいた。しかも init は await 前に inited=true を立てるため、後から onPluginCreate が来ても
       // 弾かれ二度と復帰しなかった ← これが「真っ暗」の真因。
       // → init は plugin-create 後のイベントからのみ起動する。二重起動は inited/initRunning でガード。
-      let inited = false, initRunning = false;
+      let inited = false, initRunning = false, pluginCreated = false;
       const init = async (trigger) => {
         if (inited || initRunning) return;
+        // eagle API は plugin-create イベント後のみ使用可。onPluginShow は create より前に発火する
+        // ことがある (実機で確認) ため、未 create のうちは API を叩かず抜ける。これを怠ると pre-create の
+        // eagle.library.info() がハング → initRunning が立ったまま後続イベントも弾かれて詰む。
+        if (!pluginCreated) { console.log('[init] skip via ' + trigger + ' (plugin-create 前)'); return; }
         initRunning = true;
         console.log('[init] start via ' + trigger);
         try {
@@ -1296,15 +1378,17 @@
         }
       };
 
-      // plugin-create 後に発火する各ライフサイクルイベントで init を試みる (init が二重起動をガード)。
-      // onPluginShow も拾うので「閉じて開き直し (再表示)」でも復帰する。dev の live-reload
-      // (location.reload) 後も、これらのいずれかが再発火すれば復帰する。
-      ['onPluginCreate', 'onPluginRun', 'onPluginShow'].forEach((name) => {
-        try {
-          if (typeof eagle !== 'undefined' && typeof eagle[name] === 'function') eagle[name](() => init(name));
-        } catch (e) { console.warn('[init] bind ' + name + ' failed', e && e.message); }
-      });
-      console.log('[boot] lifecycle handlers bound (onPluginCreate/Run/Show)');
+      // onPluginCreate / onPluginRun は plugin-create 以後 = API 使用可。pluginCreated を立てて init。
+      // onPluginShow は create より前に発火しうるので flag は立てず、create 済みのときだけ init を通す
+      // (= 閉じて開き直し/再表示での復帰用)。これで「show が create に先行 → 早撃ちで詰む」を防ぐ。
+      const bind = (name, fn) => {
+        try { if (typeof eagle !== 'undefined' && typeof eagle[name] === 'function') eagle[name](fn); }
+        catch (e) { console.warn('[init] bind ' + name + ' failed', e && e.message); }
+      };
+      bind('onPluginCreate', () => { pluginCreated = true; init('onPluginCreate'); });
+      bind('onPluginRun', () => { pluginCreated = true; init('onPluginRun'); });
+      bind('onPluginShow', () => init('onPluginShow'));
+      console.log('[boot] lifecycle handlers bound');
     }
   </script>
 </body>

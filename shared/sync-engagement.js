@@ -169,6 +169,22 @@ export async function syncEngagement({
 
   reportProgress(); // 初期表示 (skip 済み分のみ反映された状態)
 
+  // 取得途中でも定期的に永続化する。取得中にプロセス終了 / live-reload (location.reload) が
+  // 走っても、それまでの取得結果と日次カウントを失わないため (旧実装は run 末尾で 1 回だけ
+  // save していたので途中で落ちると全損だった)。N 件ごと or 一定時間ごとにスロットル。
+  const SAVE_EVERY_N = 25;
+  const SAVE_EVERY_MS = 3000;
+  let lastSaveAt = now();
+  let sinceSave = 0;
+  const maybeSave = () => {
+    sinceSave++;
+    if (sinceSave >= SAVE_EVERY_N || (now() - lastSaveAt) >= SAVE_EVERY_MS) {
+      try { store.save(); } catch (e) { log(`mid-run save failed: ${e.message}`); }
+      lastSaveAt = now();
+      sinceSave = 0;
+    }
+  };
+
   // 1 投稿 = 1 fetch。結果を ids 全員に適用する。日次カウントは「リクエスト数 = 投稿数」で +1。
   const processPost = async ({ parsed, ids }) => {
     daily.counts[parsed.platform] = (daily.counts[parsed.platform] || 0) + 1;
@@ -198,6 +214,7 @@ export async function syncEngagement({
     }
     for (const id of ids) processedIds.add(id);
     reportProgress();
+    maybeSave(); // 途中経過を定期的にディスクへ
   };
 
   // platform 同士は並行に走らせる (X を間隔空けて流す裏で Bluesky / pixiv が並列で進む)。

@@ -5,8 +5,10 @@ const DEBUG = false;
 const log = (...args) => { if (DEBUG) console.log('[Eagle Info+]', ...args); };
 
 let pollTimer = null;
-let pollStartTime = 0;
-let pendingDrag = null;
+let polling = false;
+// 複数画像を続けてドラッグした分を取りこぼさないようキューで保持する
+// (旧実装は単一スロットで上書きし、最後の 1 枚しか annotation が付かなかった)。
+const pendingDrags = [];
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'imageDragged') {
@@ -30,12 +32,12 @@ async function handleImageDragged({ platform, pageUrl, imageUrls, identity }) {
     ? [...imageUrls, ...derivePixivImageUrls(post)]
     : imageUrls;
 
-  pendingDrag = {
+  pendingDrags.push({
     imageUrls: augmentedImageUrls,
     pageUrl,
     metadata,
     timestamp: Date.now()
-  };
+  });
   startPolling();
 }
 
@@ -147,9 +149,10 @@ function extractXFields(identity, data, imageUrls) {
     ? `${matchedIdx + 1}/${total}`
     : null;
 
-  const altText = (matchedIdx != null && media[matchedIdx]?.ext_alt_text)
-    || media[0]?.ext_alt_text
-    || null;
+  // 多画像で画像を特定できないとき media[0] の alt を借りると誤ラベルになるので付けない
+  const altText = matchedIdx != null
+    ? (media[matchedIdx]?.ext_alt_text || null)
+    : (total <= 1 ? (media[0]?.ext_alt_text || null) : null);
 
   return {
     screenName,
@@ -191,7 +194,9 @@ function extractBlueskyFields(identity, post, imageUrls) {
   const imageIndex = total > 1 && matchedIdx != null
     ? `${matchedIdx + 1}/${total}`
     : null;
-  const altText = (matchedIdx != null && images[matchedIdx]?.alt) || images[0]?.alt || null;
+  const altText = matchedIdx != null
+    ? (images[matchedIdx]?.alt || null)
+    : (total <= 1 ? (images[0]?.alt || null) : null);
 
   return {
     screenName,
@@ -278,57 +283,63 @@ function truncate(text, maxLen) {
 // === Eagle ポーリング ===
 
 function startPolling() {
-  stopPolling();
-  pollStartTime = Date.now();
+  if (polling) return; // 既に回っていれば追加分は次の tick で拾われる
+  polling = true;
   poll();
 }
 
-function stopPolling() {
-  if (pollTimer != null) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
 async function poll() {
-  if (!pendingDrag) {
-    stopPolling();
-    return;
-  }
+  pollTimer = null;
 
-  if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
-    log('Polling timed out');
-    pendingDrag = null;
-    stopPolling();
-    return;
+  // 期限切れを破棄 (各ドラッグは自分の timestamp 起点で TIMEOUT)
+  const now = Date.now();
+  for (let i = pendingDrags.length - 1; i >= 0; i--) {
+    if (now - pendingDrags[i].timestamp > POLL_TIMEOUT_MS) {
+      log('Drag timed out:', pendingDrags[i].metadata?.link);
+      pendingDrags.splice(i, 1);
+    }
   }
+  if (!pendingDrags.length) { polling = false; return; }
 
   try {
     const items = await fetchRecentItems();
-    const matched = findMatchingItem(items);
-
-    if (matched) {
-      const metadata = pendingDrag.metadata;
-      const itemId = matched.id;
-      pendingDrag = null;
-      stopPolling();
-
-      await updateItemMetadata(itemId, {
-        annotation: metadata.annotation,
-        link: metadata.link
-      });
-      log('Updated item:', itemId);
-      return;
+    // 同 tick で同じ Eagle item に複数ドラッグが衝突しないよう、消費済み id を除外しつつ
+    // ドラッグ順に照合する。先に画像固有 URL で正しい画像↔item を当て、無ければ投稿/ページ URL。
+    const consumed = new Set();
+    const toApply = [];
+    for (const entry of pendingDrags) {
+      const matched = findMatchingItem(items, entry, consumed);
+      if (matched) {
+        consumed.add(matched.id);
+        toApply.push({ entry, itemId: matched.id });
+      }
+    }
+    for (const { entry } of toApply) {
+      const idx = pendingDrags.indexOf(entry);
+      if (idx >= 0) pendingDrags.splice(idx, 1);
+    }
+    for (const { entry, itemId } of toApply) {
+      try {
+        await updateItemMetadata(itemId, {
+          annotation: entry.metadata.annotation,
+          link: entry.metadata.link
+        });
+        log('Updated item:', itemId);
+      } catch (e) {
+        log('Update failed:', e.message);
+      }
     }
   } catch (e) {
     log('Poll error:', e.message);
   }
 
-  pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
+  if (pendingDrags.length) pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
+  else polling = false;
 }
 
 async function fetchRecentItems() {
-  const res = await fetch(`${EAGLE_API}/api/item/list?limit=10`, {
+  // 複数画像を続けてドラッグするとその数だけ新規 item が並ぶので余裕をもって取得する
+  const res = await fetch(`${EAGLE_API}/api/item/list?limit=50`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -339,23 +350,24 @@ async function fetchRecentItems() {
   return data.data || [];
 }
 
-function findMatchingItem(items) {
-  if (!pendingDrag) return null;
+// 1 ドラッグ (entry) に対応する Eagle item を探す。consumed は同 tick で既に割り当て済みの item id。
+function findMatchingItem(items, entry, consumed) {
+  const imageUrls = (entry.imageUrls || []).filter(Boolean);
+  const postUrls = [entry.pageUrl, entry.metadata?.link].filter(Boolean);
+  // pass1: 画像固有 URL (画像ごとに異なる) → 物理画像と item を正しく対応付けられる
+  return matchByUrls(items, imageUrls, entry.timestamp, consumed)
+    // pass2: 投稿/ページ URL (同一投稿の N 枚で共通) → consumed 除外で別 item を割り当て
+    || matchByUrls(items, postUrls, entry.timestamp, consumed);
+}
 
-  const dragTime = pendingDrag.timestamp;
-  const candidateUrls = [
-    ...pendingDrag.imageUrls,
-    pendingDrag.pageUrl,
-    pendingDrag.metadata?.link
-  ].filter(Boolean);
-
+function matchByUrls(items, candidateUrls, dragTime, consumed) {
+  if (!candidateUrls.length) return null;
   for (const item of items) {
+    if (consumed.has(item.id)) continue;
     const itemTime = item.modificationTime || item.lastModified || 0;
     if (itemTime < dragTime - 30000) continue;
-
     const itemUrl = item.url || '';
     if (!itemUrl) continue;
-
     for (const candidateUrl of candidateUrls) {
       if (urlMatches(itemUrl, candidateUrl)) return item;
     }
