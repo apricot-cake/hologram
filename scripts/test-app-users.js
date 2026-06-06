@@ -46,10 +46,12 @@ const evalJs = `(async () => {
   const allNames = names();
   const platformChips = [...document.querySelectorAll('#userPlatformChips .sb-chip')].map(c => c.dataset.pl).sort();
 
-  // search
+  // search (plain, and with a leading "@" which should be ignored)
   const us = document.getElementById('userSearch');
   us.value = 'bob'; us.dispatchEvent(new Event('input')); await sleep(40);
   const searchNames = names();
+  us.value = '@bob'; us.dispatchEvent(new Event('input')); await sleep(40);
+  const atSearchNames = names();
   us.value = ''; us.dispatchEvent(new Event('input')); await sleep(40);
 
   // platform filter (click the 'x' chip, read, then toggle off)
@@ -65,7 +67,7 @@ const evalJs = `(async () => {
   const chipText = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-user')].map(c => c.textContent);
   const cardCount = document.querySelectorAll('#postGrid .post-card').length;
 
-  return { allNames, platformChips, searchNames, xNames, postsActive, chipText, cardCount };
+  return { allNames, platformChips, searchNames, atSearchNames, xNames, postsActive, chipText, cardCount };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -92,6 +94,7 @@ child.on('close', () => {
   check('users grouped + sorted by post count (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
   check('platform chips for present platforms (bluesky, misskey, x)', eq(r.platformChips, ['bluesky', 'misskey', 'x']));
   check('user search filters the list (bob -> Bob)', eq(r.searchNames, ['Bob']));
+  check('user search ignores a leading @ (@bob -> Bob)', eq(r.atSearchNames, ['Bob']));
   check('platform filter narrows the list (x -> Alice)', eq(r.xNames, ['Alice']));
   check('clicking a user jumps to the Posts tab', r.postsActive === true);
   check('the active filter chip shows the user (Alice)', eq(r.chipText, ['Alice']));

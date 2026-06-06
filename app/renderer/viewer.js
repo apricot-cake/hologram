@@ -747,7 +747,8 @@
       });
     });
 
-    const q = document.getElementById('userSearch').value.trim().toLowerCase();
+    // Strip a leading "@" so typing a handle (e.g. "@alice") still matches.
+    const q = document.getElementById('userSearch').value.trim().toLowerCase().replace(/^@+/, '');
     if (usersPlatformFilter.size) users = users.filter(u => usersPlatformFilter.has(u.platform));
     if (q) users = users.filter(u =>
       (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q)
