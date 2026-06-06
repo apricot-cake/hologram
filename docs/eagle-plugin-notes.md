@@ -70,6 +70,25 @@ await していても解決せずハングする場合があり、UI は真っ�
   - **`onPluginShow` から無条件に init** → show は create に**先行発火しうる** (実機で確認) ので pre-create で `eagle.library.info()` を叩いてハング。さらに `initRunning` が立ったままになり後続の onPluginCreate も弾かれて詰む
 - **正しい型**: init はイベント駆動。**`pluginCreated` フラグ (onPluginCreate / onPluginRun でのみ立てる) でゲート**し、未 create のうちは API を叩かず抜ける。onPluginShow は create 済みのときだけ init を通す (再表示復帰用)。多重/同時起動は `inited` + `initRunning` でガードし、**`inited` はグリッド描画成功後に立てる** (それ以前で throw したら false のまま → 後続イベントで再試行できる)。
 
+### ライフサイクルイベントは「API 準備完了」を確実には表さない（`onPluginRun` も create 前に発火しうる）
+上の「plugin-create 後でないと API は使えない」を踏まえ、当初は **`onPluginCreate` / `onPluginRun` が来たら create 済み**とみなして `pluginCreated` フラグでゲートする実装にした。これが**実機で破綻**した:
+
+実機ログ (Eagle 4.0.0):
+```
+[init] skip via onPluginShow (plugin-create 前)
+[init] start via onPluginRun
+REJECT This method can only be used after the `plugin-create` event is triggered.
+```
+- 発火順は **`onPluginShow` → `onPluginRun`**。そして **`onPluginRun` の時点でもまだ `eagle.library.info()` が reject** した (= 内部の plugin-create 完了は onPluginRun より後)。`onPluginCreate` はこのセッションでは届かなかった。
+- 「onPluginRun ⇒ create 済み」と仮定してゲートすると、init が**一度 reject で失敗したきり誰も再試行せず**、グリッドが空のまま固着する (UI シェルだけ描画され中身が真っ暗)。
+- 結論: **どのライフサイクルイベント (show/run/create) も「データ API がもう使える」ことを保証しない**。イベントを準備完了の合図として信用してはいけない。
+
+正しい型 (現行 plugin-window/index.html):
+- **どのイベントでも init を試み**、`eagle.library.info()` が reject / timeout したら**後続イベントに頼らず自前で短間隔リトライ** (300ms 間隔・上限 ~12s)。API が答えるまで繰り返すのでイベントの順序・有無・タイミングに依存しない。
+- `library.info()` は **timeout でレース** (まれにハングするため。前述「await しても解決せずハング」)。ハング→reject 化→リトライへ回し、`initRunning` が立ったまま詰むのを防ぐ。
+- 二重起動・多重リトライは `inited` / `initRunning` でガード。`inited` はグリッド描画成功後に立てる。
+- 「ポーリング/リトライはアンチパターン」と上に書いたのは **`eagle` グローバルの生え待ちポーリング**と**plugin-create 前の早撃ち**のこと。ここでの「API が reject したら一定回数だけ短間隔で再試行」は別物で、むしろ正攻法 (イベントが信用できない以上これしかない)。
+
 ### プラグインページは `eagleplugin://` スキームで読み込まれる（`file://` ではない）
 `window.location.href` の例:
 `eagleplugin://<plugin-id>//C:/Users/<name>/…/plugin-window/index.html?theme=DARK&locale=ja_JP`

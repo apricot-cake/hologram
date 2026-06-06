@@ -13,6 +13,21 @@
       --border: #3a3a3a;
     }
     * { box-sizing: border-box; }
+
+    /* モダンなスクロールバー (Chromium renderer)。グリッド・詳細モーダル・ビューア等すべてに適用。
+       track は透明、thumb は細めの角丸でホバー時に明るく。OS 既定の太いバーを置き換える。 */
+    * { scrollbar-width: thin; scrollbar-color: #4a4a4a transparent; } /* 標準プロパティ (フォールバック) */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #4a4a4a;
+      border-radius: 6px;
+      border: 2px solid transparent;   /* content-box と併せて見かけ上 6px 幅に絞る */
+      background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 0;
@@ -1344,17 +1359,38 @@
       // 詰んでいた。しかも init は await 前に inited=true を立てるため、後から onPluginCreate が来ても
       // 弾かれ二度と復帰しなかった ← これが「真っ暗」の真因。
       // → init は plugin-create 後のイベントからのみ起動する。二重起動は inited/initRunning でガード。
-      let inited = false, initRunning = false, pluginCreated = false;
+      // 実機で判明した制約: eagle.library.info() 等のデータ API は、内部の plugin-create 完了まで
+      // "This method can only be used after the `plugin-create` event is triggered" で reject する
+      // (まれに解決せずハングする — docs/eagle-plugin-notes.md)。
+      //
+      // 厄介なのは、どのライフサイクルイベント (onPluginShow / onPluginRun / onPluginCreate) も
+      // この「内部 plugin-create 完了」を確実には表さないこと。実機ログでは onPluginShow→onPluginRun の
+      // 順で発火し、onPluginRun の時点でもまだ API が reject した (onPluginCreate は届かなかった)。
+      // 旧実装は「onPluginRun ⇒ create 済み」と仮定して pluginCreated ゲートを置いたが、この仮定が崩れて
+      // init が一度 reject で失敗したきり誰も再試行せず、グリッドが空のまま固着した (= 真っ暗の再発)。
+      //
+      // → イベントを「準備完了の合図」として信用しない。どのイベントでも init を試み、API が未準備で
+      //   reject / timeout したら、後続イベントに頼らず自前で短間隔リトライする (API が答えるまで)。
+      //   これでイベントの順序・有無・タイミングに依存せず復帰する。二重起動は inited/initRunning でガード。
+      let inited = false, initRunning = false;
+      let initRetries = 0;
+      const MAX_INIT_RETRIES = 40;       // ~12s (300ms 間隔)。超えたら諦めてエラー表示
+      // library.info は plugin-create 完了まで「ハング」する (reject ではなく pending のまま — 実機確認)。
+      // タイムアウトは「諦めて切る」ためでなく、真に壊れた時の保険。通常は完了まで待てるよう余裕を持たせ、
+      // 初回 1 発で resolve させる (短すぎると毎起動で空振りタイムアウト→リトライが入り遅くなる)。
+      const LIB_INFO_TIMEOUT_MS = 4000;
+
       const init = async (trigger) => {
         if (inited || initRunning) return;
-        // eagle API は plugin-create イベント後のみ使用可。onPluginShow は create より前に発火する
-        // ことがある (実機で確認) ため、未 create のうちは API を叩かず抜ける。これを怠ると pre-create の
-        // eagle.library.info() がハング → initRunning が立ったまま後続イベントも弾かれて詰む。
-        if (!pluginCreated) { console.log('[init] skip via ' + trigger + ' (plugin-create 前)'); return; }
         initRunning = true;
-        console.log('[init] start via ' + trigger);
+        console.log('[init] start via ' + trigger + (initRetries ? ' (retry ' + initRetries + ')' : ''));
         try {
-          const lib = await eagle.library.info(); // plugin-create 後なのでここで使える
+          // plugin-create 未完了だと reject、まれにハングするので timeout でレースして必ず決着させる。
+          const lib = await Promise.race([
+            eagle.library.info(),
+            new Promise((_, rej) => setTimeout(
+              () => rej(new Error('library.info timeout (plugin-create 未完了?)')), LIB_INFO_TIMEOUT_MS))
+          ]);
           const pluginPath = eagle.plugin?.path;
           setupLiveReload(pluginPath); // dev: 以降ファイル編集で自動リロード
           $('library-path').textContent = lib?.path || '(unknown)';
@@ -1364,29 +1400,35 @@
           restoreUiState();         // 前回のフィルタ/ソートを復元
           renderFooter();
           renderGrid();             // キャッシュから即描画
-          inited = true;            // グリッド描画まで成功 = 起動成功とみなす。ここより前で throw した場合は
-                                    // inited は false のままなので、次の onPluginShow 等で再試行できる (真っ暗で詰まない)
+          inited = true;            // グリッド描画まで成功 = 起動成功
+          initRetries = 0;
           logDiagnostics(lib);
           console.log('[init] rendered; running sync…');
           await runSync();          // 開いた時に自動同期 (差分のみ、ミリ秒) → 再描画
           console.log('[init] done');
         } catch (e) {
-          setStatus(t('errInit', e.message));
-          console.error('[init] failed', e);
+          // 大半は「API がまだ準備できていないだけ」。後続イベントに頼らず自前で再試行する。
+          if (!inited && initRetries < MAX_INIT_RETRIES) {
+            initRetries++;
+            console.warn('[init] not ready via ' + trigger + ': ' + (e && e.message) + ' → retry in 300ms');
+            setTimeout(() => init('retry'), 300);
+          } else if (!inited) {
+            setStatus(t('errInit', e && e.message));
+            console.error('[init] gave up after ' + initRetries + ' retries', e);
+          }
         } finally {
-          initRunning = false; // 失敗時は再試行できるよう必ず戻す (成功時は inited で弾かれる)
+          initRunning = false; // 成功時は inited で弾かれる。失敗時は次の試行のため必ず戻す
         }
       };
 
-      // onPluginCreate / onPluginRun は plugin-create 以後 = API 使用可。pluginCreated を立てて init。
-      // onPluginShow は create より前に発火しうるので flag は立てず、create 済みのときだけ init を通す
-      // (= 閉じて開き直し/再表示での復帰用)。これで「show が create に先行 → 早撃ちで詰む」を防ぐ。
+      // どのライフサイクルイベントでも init を試みる (init が二重起動・再試行をガード)。onPluginShow も
+      // 拾うので「閉じて開き直し / 再表示」でも、dev の live-reload (location.reload) 後でも復帰する。
       const bind = (name, fn) => {
         try { if (typeof eagle !== 'undefined' && typeof eagle[name] === 'function') eagle[name](fn); }
         catch (e) { console.warn('[init] bind ' + name + ' failed', e && e.message); }
       };
-      bind('onPluginCreate', () => { pluginCreated = true; init('onPluginCreate'); });
-      bind('onPluginRun', () => { pluginCreated = true; init('onPluginRun'); });
+      bind('onPluginCreate', () => init('onPluginCreate'));
+      bind('onPluginRun', () => init('onPluginRun'));
       bind('onPluginShow', () => init('onPluginShow'));
       console.log('[boot] lifecycle handlers bound');
     }
