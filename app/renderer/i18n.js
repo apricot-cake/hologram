@@ -1,14 +1,14 @@
-// Shared i18n helper for viewer and content scripts.
-// Manifest-level strings (name, description, action title, command descriptions)
-// are handled by Chrome's native i18n via _locales/*/messages.json. The UI
-// strings below are embedded here so content scripts (which cannot fetch
-// _locales/ files reliably) get them without extra network round-trips.
+// i18n helper for the Electron viewer (renderer) only.
+// Language resolves from the app's saved preference (config.json `language`, via
+// window.postSnap.getPrefs); 'auto' follows navigator.language (the OS/app
+// locale). The viewer reloads on change so the new language takes effect.
 //
 // Consumers do: const { getMessage, lang, resolved } = await window.postSnapI18n;
 // then call getMessage('key', [sub1, sub2]).
-// Note: this file may be re-executed by chrome.scripting.executeScript on every
-// Alt+S press. We intentionally reassign window.postSnapI18n each time so
-// language changes made in the viewer take effect on the next capture.
+//
+// Note: the extension's capture banner keeps its OWN copy of strings in the root
+// i18n.js (the extension can't read this file or the app's config), so banner /
+// content-script strings deliberately do NOT live here.
 (function () {
   const MESSAGES = {
     ja: {
@@ -33,16 +33,9 @@
       emptySearchTitle: '見つかりませんでした',
       emptySearchDesc: '検索条件を変更してください。',
 
-      // viewer: settings > download
-      downloadTitle: 'ダウンロード',
-      labelFolder: '保存フォルダ名',
-      hintFolder: 'ダウンロードフォルダ内のサブフォルダ',
-      labelSaveAs: '毎回保存先を確認する',
-      hintSaveAs: 'キャプチャごとに「名前を付けて保存」ダイアログを表示',
-      hintBackup: 'ダウンロードフォルダへの画像保存は、拡張機能を削除した場合でもデータを復元するためのバックアップです。',
+      // viewer: common
       save: '保存',
       saved: '保存しました',
-      invalidFolder: '無効なフォルダ名',
 
       // settings > save folder (app)
       saveFolderTitle: '保存先フォルダ',
@@ -51,8 +44,8 @@
 
       // viewer: settings > language / shortcut
       langTitle: '言語',
-      langAuto: '自動（ブラウザ設定に従う）',
-      hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
+      langAuto: '自動（OSの言語設定に従う）',
+      hintLang: 'ビューアの表示言語を変更します。変更後に再読み込みされます。',
       shortcutTitle: 'キーボードショートカット',
       shortcutLink: 'ショートカットを変更',
       hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
@@ -152,17 +145,7 @@
       qfEngSuffix: '以上',
       qfEngGte: '以上',
       qfEngLte: '以下',
-      sbActiveTitle: 'アクティブフィルタ',
-
-      // viewer: debug section (unpacked only)
-      debugInjectDummy: 'ダミーデータ投入（50件）',
-      debugVerifySaved: '検証結果を保存しました',
-
-      // content.js banner
-      bannerSelect: '保存する投稿をクリック（Escでキャンセル / 右クリックで設定）',
-      bannerSaving: '保存中...',
-      bannerSaved: '画像を保存しました',
-      bannerFailed: '保存に失敗しました'
+      sbActiveTitle: 'アクティブフィルタ'
     },
 
     en: {
@@ -185,15 +168,8 @@
       emptySearchTitle: 'No results found',
       emptySearchDesc: 'Try changing your search terms.',
 
-      downloadTitle: 'Download',
-      labelFolder: 'Save folder name',
-      hintFolder: 'Subfolder inside your Downloads directory',
-      labelSaveAs: 'Ask where to save each time',
-      hintSaveAs: 'Shows a "Save As" dialog for every capture',
-      hintBackup: 'Images saved to the download folder serve as a backup to restore data even if the extension is removed.',
       save: 'Save',
       saved: 'Saved',
-      invalidFolder: 'Invalid folder name',
 
       // settings > save folder (app)
       saveFolderTitle: 'Save folder',
@@ -201,8 +177,8 @@
       hintSaveFolder: 'Where captured images and metadata are stored. Changing it affects future captures.',
 
       langTitle: 'Language',
-      langAuto: 'Auto (follow browser setting)',
-      hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
+      langAuto: 'Auto (follow system language)',
+      hintLang: 'Changes the viewer display language. The app reloads after the change.',
       shortcutTitle: 'Keyboard Shortcut',
       shortcutLink: 'Change keyboard shortcut',
       hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
@@ -295,15 +271,7 @@
       qfEngSuffix: 'or more',
       qfEngGte: '\u2265',
       qfEngLte: '\u2264',
-      sbActiveTitle: 'Active Filters',
-
-      debugInjectDummy: 'Inject dummy data (50 posts)',
-      debugVerifySaved: 'Verification saved',
-
-      bannerSelect: 'Click a post to save (Esc to cancel / Right-click for settings)',
-      bannerSaving: 'Saving...',
-      bannerSaved: 'Image saved',
-      bannerFailed: 'Save failed'
+      sbActiveTitle: 'Active Filters'
     }
   };
 

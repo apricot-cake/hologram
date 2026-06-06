@@ -30,16 +30,8 @@
     emptySearchTitle: _s('emptySearchTitle'),
     emptySearchDesc: _s('emptySearchDesc'),
 
-    // settings > download
-    downloadTitle: _s('downloadTitle'),
-    labelFolder: _s('labelFolder'),
-    hintFolder: _s('hintFolder'),
-    labelSaveAs: _s('labelSaveAs'),
-    hintSaveAs: _s('hintSaveAs'),
-    hintBackup: _s('hintBackup'),
-    save: _s('save'),
-    saved: _s('saved'),
-    invalidFolder: _s('invalidFolder'),
+    save: _s('save'),       // tag editor save button
+    saved: _s('saved'),     // settings status toast
     saveFolderTitle: _s('saveFolderTitle'),
     chooseFolder: _s('chooseFolder'),
     hintSaveFolder: _s('hintSaveFolder'),
