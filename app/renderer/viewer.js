@@ -95,7 +95,6 @@
     dateTypeCaptured: _s('dateTypeCaptured'),
     clickToExpand: _s('clickToExpand'),
     tipZoom: _s('tipZoom'),
-    tipOriginal: _s('tipOriginal'),
     lbPrev: _s('lbPrev'),
     lbNext: _s('lbNext'),
     tipEdit: _s('tipEdit'),
@@ -837,21 +836,12 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
-      // Original-media access is an overlay button (grid view only; list view
-      // stays text-first), parallel to the screenshot zoom button. It opens the
-      // gallery at the first downloaded original image.
-      const hasOriginals = currentView !== 'list' && Array.isArray(p.media) && p.media.some(m => m && m.file);
-      const mediaBtn = hasOriginals
-        ? `<button class="media-btn" data-index="${i}" title="${escapeAttr(MSG.tipOriginal)}" aria-label="${escapeAttr(MSG.tipOriginal)}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>`
-        : '';
-
       const postKey = (p.url || '') + '|' + (p.capturedAt || '');
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check">${isSelected ? '✓' : ''}</div>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}">✎</button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
-        ${mediaBtn}
         ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
           <div class="user">
@@ -951,14 +941,6 @@
       const card = zoom.closest('.post-card');
       const p = getFilteredPosts()[parseInt(card?.dataset.index, 10)];
       if (p) openGallery(buildGalleryItems(p), 0);
-      return;
-    }
-    // Original-media button -> open the gallery at the first original image.
-    const mediaBtn = e.target.closest('.media-btn');
-    if (mediaBtn) {
-      e.stopPropagation();
-      const p = getFilteredPosts()[parseInt(mediaBtn.dataset.index, 10)];
-      if (p) openGallery(buildGalleryItems(p), p.image ? 1 : 0);
     }
   });
 
@@ -989,7 +971,7 @@
 
   // Click on post card -> select or open URL
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text') || e.target.closest('.media-btn')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
 
