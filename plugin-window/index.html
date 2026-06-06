@@ -168,7 +168,7 @@
     .card .thumb-state {
       position: absolute; inset: 0;
       display: flex; align-items: center; justify-content: center;
-      font-size: 11px; color: var(--muted); background: var(--bg2);
+      font-size: 16px; color: var(--muted); background: var(--bg2);
       text-align: center; padding: 4px; pointer-events: none;
     }
     .card .thumb-state.error { color: #e08a8a; }
@@ -508,8 +508,8 @@
   </div>
 
   <div class="footer">
-    <span id="library-path">—</span>
-    <span id="store-stats">—</span>
+    <span id="library-path" data-i18n="footerLoading">Loading…</span>
+    <span id="store-stats"></span>
   </div>
 
   <div id="confirm-overlay" class="confirm-overlay" hidden>
@@ -631,7 +631,7 @@
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
         minLikes: 'Min likes', multiOnly: 'multi-image only',
         tabGrid: 'Grid', tabHashtags: 'Hashtags', htSearchPlaceholder: 'filter hashtags', htEmpty: 'No hashtags yet', htNoMatch: 'No matching hashtags',
-        thumbLoading: 'Loading…', thumbError: 'Load error',
+        thumbLoading: 'Loading…', thumbError: 'Load error', footerLoading: 'Loading…',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortFetched: 'Recently fetched ↓', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
@@ -675,7 +675,7 @@
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
         minLikes: '最低いいね数', multiOnly: '複数画像のみ',
         tabGrid: 'グリッド', tabHashtags: 'ハッシュタグ', htSearchPlaceholder: 'ハッシュタグを絞り込み', htEmpty: 'ハッシュタグがまだありません', htNoMatch: '一致するハッシュタグがありません',
-        thumbLoading: 'ロード中…', thumbError: '読み込みエラー',
+        thumbLoading: 'ロード中…', thumbError: '読み込みエラー', footerLoading: 'ロード中…',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
         bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクのみ',
