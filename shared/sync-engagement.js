@@ -16,6 +16,7 @@ import {
   fetchBlueskyEngagement,
   fetchPixivEngagement
 } from './sns-api-client.js';
+import { buildAnnotation } from './annotation-builder.js';
 
 const FETCHERS = {
   x: fetchXEngagement,
@@ -52,6 +53,9 @@ export async function syncEngagement({
   signal,
   onProgress,
   onConfirm,        // async (countsByPlatform) => boolean。false で取得せず終了 (大量時の確認用)
+  backfillAnnotation, // async (id, annotationText) => boolean|void。リンクだけで Info+ 注釈が無かった
+                      //   アイテムに、取れた meta から注釈を後追い保存する。書き込みは呼び出し側 (plugin が
+                      //   Eagle item へ) が担い、空注釈のみ埋める。false を返すとスキップ扱い (count しない)。
   rateLimit = {},
   dailyLimit = {},  // { x: N } 等。1 日あたりの取得リクエスト上限。超過分は翌日へ繰り越し
   limit,            // この 1 回で取得する投稿数の上限 (platform 横断の合計)。テスト取得用
@@ -85,12 +89,18 @@ export async function syncEngagement({
     targets = targets.filter(([_, v]) => v.engagementSyncedAt == null || v.engagementSyncedAt < cutoff);
   }
 
+  // バックフィル対象: 取得前に no-annotation だった id を覚えておく (取得後は status が変わるため)。
+  const noAnnotationIds = new Set(
+    targets.filter(([_, v]) => v.status === 'no-annotation').map(([id]) => id)
+  );
+
   const total = targets.length;
   log(`engagement targets: ${total}`);
 
   let okCount = 0;
   let errCount = 0;
   let skipCount = 0;
+  let backfilledCount = 0;
 
   // 日次上限の残量。store.data.dailyFetch に日別カウントを持ち、日付が変われば 0 に戻す。
   // 日付はローカル暦日 (端末の深夜 0 時でリセット)。
@@ -156,7 +166,7 @@ export async function syncEngagement({
     for (const [p, entries] of queues) counts[p] = entries.length;
     const proceed = await onConfirm(counts);
     if (!proceed) {
-      return { targetCount: total, okCount: 0, errCount: 0, skipCount, cancelled: true, rateLimited: false, dailyLimited, remainingIds: [], elapsedMs: now() - t0 };
+      return { targetCount: total, okCount: 0, errCount: 0, skipCount, backfilledCount: 0, cancelled: true, rateLimited: false, dailyLimited, remainingIds: [], elapsedMs: now() - t0 };
     }
   }
 
@@ -201,6 +211,23 @@ export async function syncEngagement({
       }
       okCount += ids.length;
       log(`  ${parsed.platform}:${parsed.postId} ×${ids.length} ${result.status} ${JSON.stringify(result.engagement)}`);
+
+      // バックフィル: no-annotation だったアイテムに、取れた meta から注釈を後追い保存。
+      // 投稿レベル情報のみ (Image/Alt は URL から画像を特定できないため付けない)。
+      if (backfillAnnotation && result.status === 'synced' && result.meta) {
+        const ann = buildAnnotation({ platform: parsed.platform, ...result.meta });
+        if (ann) {
+          for (const id of ids) {
+            if (!noAnnotationIds.has(id)) continue; // 既に Info+ 注釈があるものは触らない
+            try {
+              const wrote = await backfillAnnotation(id, ann);
+              if (wrote !== false) backfilledCount++;
+            } catch (e) {
+              log(`  backfill ${id} failed: ${e.message}`);
+            }
+          }
+        }
+      }
     } catch (e) {
       // レート制限は error 印を付けず run を止める。未処理のまま残し再開可能にする。
       if (e.rateLimited) {
@@ -246,6 +273,7 @@ export async function syncEngagement({
     okCount,
     errCount,
     skipCount,
+    backfilledCount,
     cancelled,
     rateLimited,
     dailyLimited,

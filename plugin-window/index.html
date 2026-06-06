@@ -387,7 +387,7 @@
 </head>
 <body>
   <div class="toolbar">
-    <button id="engagement-btn" data-i18n="fetch">Fetch metadata</button>
+    <button id="engagement-btn" data-i18n="fetch" data-i18n-title="fetchTitle" title="Backfill metadata">Backfill metadata</button>
     <button id="test-btn" data-i18n="testFetch" data-i18n-title="testFetchTitle" title="Fetch a few to test">Test fetch</button>
     <span class="status" id="status"></span>
   </div>
@@ -553,7 +553,7 @@
     })();
     const I18N = {
       en: {
-        sync: 'Sync from Eagle', fetch: 'Fetch metadata', testFetch: 'Test fetch', backfill: 'Backfill',
+        sync: 'Sync from Eagle', fetch: 'Backfill metadata', fetchTitle: 'Fetch engagement for not-yet-fetched items and backfill Info+ annotations for link-only ones (already-fetched items are skipped)', testFetch: 'Test fetch', backfill: 'Backfill',
         backfillTitle: 'Fill engagement for existing items that have an SNS URL but no Info+ annotation',
         resume: 'Resume ({0})', resumeTitle: 'Process the items left over from the last cancel',
         cancel: 'Cancel', stop: 'Stop',
@@ -584,7 +584,7 @@
         testFetchTitle: 'Fetch only a few (5) to test — runs even if the daily cap is reached',
         ready: 'ready', syncing: 'syncing…', fetching: 'fetching metadata…', fetchingProgress: 'fetching metadata… {0}/{1}',
         syncResult: 'sync: +{0} ~{1} -{2} upserted={3} ({4}ms)',
-        engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)',
+        engTag: 'engagement', engCancelled: 'cancelled ({0} left)', engResult: '{0}: {1} ok / {2} err / {3} skip ({4}ms)', engNothing: 'nothing to fetch (everything already fetched)', engBackfillSuffix: ' / {0} annotations filled',
         engRateLimited: 'X rate-limited, stopped. {0} left — try again later.',
         engDailyLimit: 'Daily cap reached (X: {1}/day). {0} fetched this run. Resume another day.',
         confirmYes: 'OK', confirmNo: 'Cancel',
@@ -595,7 +595,7 @@
         emptyNoSync: 'No items in Eagle.'
       },
       ja: {
-        sync: 'Eagle から同期', fetch: 'メタデータ取得', testFetch: 'テスト取得', backfill: 'バックフィル',
+        sync: 'Eagle から同期', fetch: 'メタデータ補完', fetchTitle: '未取得の engagement を取得し、リンクのみのアイテムには注釈も補完します（取得済みは対象外）', testFetch: 'テスト取得', backfill: 'バックフィル',
         backfillTitle: 'アノテーション無しだが SNS の URL を持つ既存アイテムのエンゲージメントを取得する',
         resume: '再開 ({0})', resumeTitle: '前回キャンセルした分の続きを処理',
         cancel: 'キャンセル', stop: '中止',
@@ -626,7 +626,7 @@
         testFetchTitle: '少数（5件）だけ取得して動作確認 — 日次上限に到達していても実行できます',
         ready: '準備完了', syncing: '同期中…', fetching: 'メタデータ取得中…', fetchingProgress: 'メタデータ取得中… {0}/{1}',
         syncResult: '同期完了: 新規{0} / 変更{1} / 削除{2} / 反映{3}件 ({4}ms)',
-        engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）',
+        engTag: '完了', engCancelled: '中止（残り {0}）', engResult: '{0}: 成功{1} / 失敗{2} / 対象外{3} ({4}ms)', engNothing: '取得が必要なアイテムはありません（すべて取得済み）', engBackfillSuffix: ' / 注釈補完 {0}件',
         engRateLimited: 'X にレート制限されたため中止しました。残り {0} 件は時間を置いて再実行してください。',
         engDailyLimit: '今日の取得上限（X: {1}件/日）に達しました。今回 {0} 件取得。残りは日を改めて。',
         confirmYes: '実行', confirmNo: 'やめる',
@@ -1201,6 +1201,22 @@
             dailyLimit: opts.dailyLimit ?? DEFAULT_DAILY_LIMIT,
             limit: opts.limit,
             filter: { statuses: ['no-annotation', 'parsed'] },
+            // バックフィル: リンクだけで Info+ 注釈が無いアイテムに、取れた meta から注釈を後追い保存。
+            // 投稿レベル情報のみ (Image/Alt なし)。空注釈のみ埋め、既存の注釈/ユーザーのメモは絶対に
+            // 上書きしない (空でなければ false を返してスキップ)。Eagle item へは Plugin API で書く。
+            backfillAnnotation: async (id, text) => {
+              try {
+                const [it] = await eagle.item.getByIds([id]);
+                if (!it) return false;
+                if (it.annotation && it.annotation.trim()) return false;
+                it.annotation = text;
+                await it.save();
+                return true;
+              } catch (e) {
+                console.warn('[backfill] write failed', id, e && e.message);
+                return false;
+              }
+            },
             onConfirm: async (counts) => {
               const x = counts.x || 0;
               return x <= X_CONFIRM_THRESHOLD ? true : confirmDialog(t('confirmLargeX', x));
@@ -1221,6 +1237,9 @@
             setStatus(t('engNothing'));
           } else {
             setStatus(t('engResult', t('engTag'), r.okCount, r.errCount, r.skipCount, r.elapsedMs));
+          }
+          if (r.backfilledCount > 0) {
+            setStatus($('status').textContent + t('engBackfillSuffix', r.backfilledCount));
           }
           invalidateData();
           renderFooter();

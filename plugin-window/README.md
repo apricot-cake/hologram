@@ -60,20 +60,21 @@ Eagle の `modifiedAt` 降順。「最近 Eagle に追加 or 編集したアイ�
 | Status | 意味 | リトライ |
 |---|---|---|
 | `synced` | SNS API から engagement (likes 等) を取得済み。**Engagement Browser の主用途** | 再フェッチで最新化可 |
-| `parsed` | Info+ の annotation を parse できたが engagement 未取得。同期直後の中間状態 | 「エンゲージメントを取得」で `synced` に昇格 |
+| `parsed` | Info+ の annotation を parse できたが engagement 未取得。同期直後の中間状態 | 「メタデータ補完」で `synced` に昇格 |
 | `error` | SNS API が想定外エラー (5xx / ネットワーク / JSON parse 失敗 等) を返した | retry で復活する可能性あり。`errorMessage` がカードの tooltip に出る |
 | `deleted` | SNS 側で投稿削除済み (404 等)。最終フェッチ時の engagement は **温存される** (historical snapshot として参照可能) | retry しても無駄 |
 | `private` | アクセス権なし (X 鍵垢の 401/403、pixiv R-18 ログアウト時の error body 等) | ログイン直せば retry で復活可能 |
-| `no-annotation` | Info+ の annotation がない (Phase 1 以前の保存、対応外サイトドラッグ、公式 Eagle for Chrome の素ドラッグ 等) | SNS の URL を持つものは「エンゲージメントを取得」の対象になる |
+| `no-annotation` | Info+ の annotation がない (Phase 1 以前の保存、対応外サイトドラッグ、公式 Eagle for Chrome の素ドラッグ 等) | SNS の URL を持つものは「メタデータ補完」の対象になる |
 
 `deleted` / `private` でも engagement の数値フィールドは上書きしない (空 object を upsert するため)。「削除前最後のスナップショット」として読める。
 
 ## 操作
 
-ツールバーは **「エンゲージメントを取得」ボタン1つ**だけ (UI 簡素化のため。同期・スコープ・バックフィル・再開・キャンセルの個別ボタンは廃止)。
+ツールバーは **「メタデータ補完」ボタン1つ**だけ (UI 簡素化のため。同期・スコープ・バックフィル・再開・キャンセルの個別ボタンは廃止)。
 
 - **同期は起動時に自動実行** — プラグインを開くと、ライブラリ全件と store を差分同期する (getIdsWithModifiedAt → batched 200 getByIds → upsert)。約 9000 件でもミリ秒。手動同期ボタンは無い
-- **「エンゲージメントを取得」** — **まだ一度も engagement を取得していない・SNS の URL を持つアイテム**を取得する。対象は status が `parsed` (Info+ 注釈あり) と `no-annotation` (URL のみ) の両方。**取得済み (`synced`) は触らない**ので、押すたびに未取得分が減っていく。取るものが無ければ「取得が必要なアイテムはありません」と表示
+- **「メタデータ補完」** — **まだ一度も engagement を取得していない・SNS の URL を持つアイテム**を取得する。対象は status が `parsed` (Info+ 注釈あり) と `no-annotation` (URL のみ) の両方。**取得済み (`synced`) は触らない**ので、押すたびに未取得分が減っていく。取るものが無ければ「取得が必要なアイテムはありません」と表示
+- **annotation バックフィル (同じ操作で同時に実行)** — `no-annotation` のアイテム (公式 Eagle for Chrome の素ドラッグ等でリンクはあるが Info+ 注釈なし) を取得したとき、同じ SNS レスポンス由来の作者・本文・タグ等を **Info+ 注釈として Eagle item に書き戻す**。これで Eagle 標準検索 (作者ハンドル等) からもヒットするようになる。投稿レベル情報のみ (`Image:` `Alt:` は付かない — URL から画像を特定できないため)。**空注釈のアイテムだけ**埋め、既存の注釈やユーザーのメモは上書きしない。補完件数は結果に「注釈補完 N件」と表示
 - 実行中はボタンが**赤い「中止」**に変わり、もう一度押すと止まる。**中断しても未処理はその status のまま残る**ので、次に押せば自然に続き (再開ボタンは不要)
 
 ### レート制限 / 安全装置

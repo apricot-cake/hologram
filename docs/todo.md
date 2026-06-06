@@ -174,7 +174,7 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 
 ### 後日の UI 簡素化・X 保護 (上の scope/Backfill/Resume ボタンは廃止)
 
-ユーザビリティの指摘で**ツールバーは「エンゲージメントを取得」ボタン1つ**に整理した。**shared 側 (`syncEngagement`) は scope/staleDays/ids/statuses を引き続きサポート**しているが、UI からは公開していない (将来また出すのは容易)。現行 UI:
+ユーザビリティの指摘で**ツールバーは「メタデータ補完」ボタン1つ**に整理した（ボタン名は後に「エンゲージメントを取得」→「メタデータ取得」→「メタデータ補完」と変遷）。**shared 側 (`syncEngagement`) は scope/staleDays/ids/statuses を引き続きサポート**しているが、UI からは公開していない (将来また出すのは容易)。現行 UI:
 
 - 同期は起動時に自動実行 (Sync ボタン廃止)
 - ボタンは「まだ一度も取得していない・URL を持つアイテム」= `filter: { statuses: ['no-annotation', 'parsed'] }` を取得。取得済み (synced) は触らない。実行中は「中止」トグル。中断分は status 据え置きで次回自然に再開 (Resume ボタン廃止)
@@ -240,11 +240,13 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 - 選択中の画像 (アイテム) に対して実行できる Eagle プラグインとして実装
 - 要調査: Eagle Plugin API でタググループ一覧 / グループ内タグを取得できるか (`eagle.tag` / `eagle.tagGroup` 系の有無)。plugin type は inspector / window / 別か
 
-### リンク付き画像の annotation 一括バックフィル
-- Eagle 公式拡張 (Eagle for Chrome) 経由で `url` が自動付与された画像のうち、**Info+ の annotation をまだ取得していないもの**を一括で書き込む
-- Phase 3 の engagement Backfill (status=no-annotation) とは別物: あちらは engagement 数値、こちらは **annotation (platform / author / text / hashtags / alt の人間情報)** を埋める
-- 実質 `extension/background.js` の `fetchPost` + `buildAnnotation` を、ライブラリ既存アイテムの `url` に対して後追い実行する経路
-- Phase 5 の「extension/ も shared/ から import するリファクタ」と合流させると重複なく書ける (annotation 構築ロジックを shared に寄せてから両方で使う)
+### リンク付き画像の annotation 一括バックフィル 【実装済み】
+- Eagle 公式拡張 (Eagle for Chrome) 経由で `url` が自動付与された画像のうち、**Info+ の annotation をまだ取得していないもの**に注釈を書き込む
+- Phase 3 の engagement Backfill (status=no-annotation) とは別物: あちらは engagement 数値、こちらは **annotation (platform / author / text / hashtags の人間情報)** を埋める
+- 実装: Window Plugin の「メタデータ取得」に統合。`syncEngagement` は no-annotation アイテムを engagement 取得する際に同じレスポンスの `meta` を既に得ているので、それを `shared/annotation-builder.js` の `buildAnnotation` で注釈化し、`backfillAnnotation(id, text)` コールバック (plugin が Eagle item へ Plugin API で書く) で保存する。1 パスで engagement + 注釈補完。結果に「注釈補完 N件」を表示
+- **投稿レベル情報のみ** (Platform / Display Name / Author / Hashtags / Text|Title)。`Image:` `Alt:` は付かない — URL=投稿 permalink からは「どの画像か」を特定できないため
+- **安全策**: 書き込みは**空注釈のアイテムのみ**。既存の Info+ 注釈やユーザーのメモが入っていれば絶対に上書きしない (`it.annotation.trim()` が空でなければ skip)
+- 注釈構築を `shared/annotation-builder.js` に切り出し round-trip テスト済み。**extension 側はまだ自前の `buildAnnotation` を持つ** (package 外の shared を import できないため。Phase 5 の build 統合で共用化する余地あり)
 
 ---
 

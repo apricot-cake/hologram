@@ -519,6 +519,60 @@ test('syncEngagement: full completion leaves no resume state', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('syncEngagement: no-annotation アイテムに注釈をバックフィルする', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'no-annotation', url: 'https://x.com/foo/status/123' });
+    const fetch = async () => mockJson({
+      favorite_count: 9, conversation_count: 1,
+      user: { name: 'Foo Name', screen_name: 'foo' },
+      text: 'hello world',
+      entities: { hashtags: [{ text: 'tag1' }] }
+    });
+    const written = [];
+    const r = await syncEngagement({
+      store, fetch,
+      filter: { statuses: ['no-annotation', 'parsed'] }, // plugin と同じ対象範囲
+      backfillAnnotation: async (id, text) => { written.push({ id, text }); }
+    });
+    assert.equal(r.backfilledCount, 1);
+    assert.equal(written.length, 1);
+    assert.equal(written[0].id, 'a');
+    assert.ok(written[0].text.includes('Platform: X (Twitter)'));
+    assert.ok(written[0].text.includes('Author: @foo'));
+    assert.ok(written[0].text.includes('Text: hello world'));
+    assert.ok(written[0].text.includes('Hashtags: #tag1'));
+    // engagement も従来どおり入る
+    assert.equal(store.get('a').likes, 9);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: parsed (注釈済み) アイテムはバックフィルしない', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'parsed', platform: 'x', url: 'https://x.com/foo/status/123' });
+    const fetch = async () => mockJson({ favorite_count: 1, conversation_count: 0, user: { screen_name: 'foo' }, text: 't' });
+    const written = [];
+    const r = await syncEngagement({ store, fetch, backfillAnnotation: async (id) => { written.push(id); } });
+    assert.equal(r.backfilledCount, 0);
+    assert.equal(written.length, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: backfillAnnotation が false を返すと count しない', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'no-annotation', url: 'https://x.com/foo/status/123' });
+    const fetch = async () => mockJson({ favorite_count: 1, conversation_count: 0, user: { screen_name: 'foo' }, text: 't' });
+    const r = await syncEngagement({
+      store, fetch,
+      filter: { statuses: ['no-annotation', 'parsed'] },
+      backfillAnnotation: async () => false
+    });
+    assert.equal(r.backfilledCount, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 let pass = 0, fail = 0;
 for (const t of tests) {
   try {
