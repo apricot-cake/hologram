@@ -11,6 +11,19 @@
       background: #f5f5f5; color: #333;
       padding: 24px 32px; overflow-x: hidden;
     }
+
+    /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
+       `scrollbar-width` property disables these ::-webkit-scrollbar rules in
+       Chromium, so style scrollable areas via padding, not scrollbar-width. --- */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #c4cad0; border-radius: 8px;
+      border: 2px solid transparent; background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #9aa2ab; background-clip: padding-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
     #panelSettings { max-width: 720px; }
 
     /* --- Header --- */
@@ -414,7 +427,7 @@
       width: 220px; flex-shrink: 0;
       position: sticky; top: 0; align-self: flex-start;
       max-height: 100vh; overflow-y: auto; overflow-x: hidden;
-      scrollbar-width: thin;
+      padding-right: 8px;
     }
     .filter-sidebar input, .filter-sidebar select {
       max-width: 100%; box-sizing: border-box;
