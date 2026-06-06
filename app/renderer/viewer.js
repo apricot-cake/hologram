@@ -103,6 +103,9 @@
     dateTypeCaptured: _s('dateTypeCaptured'),
     clickToExpand: _s('clickToExpand'),
     tipZoom: _s('tipZoom'),
+    tipOriginal: _s('tipOriginal'),
+    lbPrev: _s('lbPrev'),
+    lbNext: _s('lbNext'),
     tipEdit: _s('tipEdit'),
     tipDelete: _s('tipDelete'),
     postedOn: _f1('postedOn'),
@@ -842,13 +845,20 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
+      // Original-media thumbnails (grid view only; list view stays text-first).
+      const mediaFiles = (currentView !== 'list' && Array.isArray(p.media)) ? p.media.filter(m => m && m.file) : [];
+      const mediaStrip = mediaFiles.length
+        ? `<div class="media-strip">${mediaFiles.map((m, k) => `<img class="media-thumb" src="psimg://img/${encodeURIComponent(m.file)}" data-index="${i}" data-media="${k}" alt="${escapeAttr(m.alt || '')}" title="${escapeAttr(MSG.tipOriginal)}" loading="lazy">`).join('')}</div>`
+        : '';
+
       const postKey = (p.url || '') + '|' + (p.capturedAt || '');
       const isSelected = selectedSet.has(postKey);
-      return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeHtml(p.url || '')}" data-index="${i}" data-key="${escapeHtml(postKey)}">
+      return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check">${isSelected ? '✓' : ''}</div>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}">✎</button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
+        ${mediaStrip}
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
@@ -887,22 +897,90 @@
     }
   });
 
-  // Image lightbox via zoom button
+  // Image lightbox / gallery (captured screenshot + downloaded originals)
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightboxImg');
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.zoom-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const card = btn.closest('.post-card');
-    const img = card?.querySelector('img');
-    if (!img) return;
-    lightboxImg.src = img.src;
+  const lbCounter = document.getElementById('lbCounter');
+  const lbPrev = document.getElementById('lbPrev');
+  const lbNext = document.getElementById('lbNext');
+  lbPrev.setAttribute('aria-label', MSG.lbPrev);
+  lbNext.setAttribute('aria-label', MSG.lbNext);
+  let galleryItems = [];
+  let galleryIndex = 0;
+
+  // Gallery items for a post: the screenshot first, then each original image.
+  function buildGalleryItems(p) {
+    const items = [];
+    if (p.image) items.push({ src: imgSrc(p), alt: '' });
+    if (Array.isArray(p.media)) {
+      for (const m of p.media) {
+        if (m && m.file) items.push({ src: 'psimg://img/' + encodeURIComponent(m.file), alt: m.alt || '' });
+      }
+    }
+    return items;
+  }
+
+  function showGallerySlide() {
+    const item = galleryItems[galleryIndex];
+    if (!item) return;
+    lightboxImg.src = item.src;
+    lightboxImg.alt = item.alt || ''; // DOM property assignment — XSS-safe
+    lbCounter.textContent = (galleryIndex + 1) + ' / ' + galleryItems.length;
+    lightbox.classList.toggle('multi', galleryItems.length > 1);
+  }
+
+  function openGallery(items, start) {
+    if (!items.length) return;
+    galleryItems = items;
+    galleryIndex = Math.max(0, Math.min(start || 0, items.length - 1));
+    showGallerySlide();
     lightbox.classList.add('show');
-  });
-  lightbox.addEventListener('click', () => {
-    lightbox.classList.remove('show');
+  }
+
+  function galleryStep(d) {
+    if (galleryItems.length < 2) return;
+    galleryIndex = (galleryIndex + d + galleryItems.length) % galleryItems.length;
+    showGallerySlide();
+  }
+
+  function closeGallery() {
+    lightbox.classList.remove('show', 'multi');
     lightboxImg.src = '';
+    galleryItems = [];
+  }
+
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    // Zoom button -> open the gallery at the screenshot.
+    const zoom = e.target.closest('.zoom-btn');
+    if (zoom) {
+      e.stopPropagation();
+      const card = zoom.closest('.post-card');
+      const p = getFilteredPosts()[parseInt(card?.dataset.index, 10)];
+      if (p) openGallery(buildGalleryItems(p), 0);
+      return;
+    }
+    // Original-media thumbnail -> open the gallery at that image.
+    const thumb = e.target.closest('.media-thumb');
+    if (thumb) {
+      e.stopPropagation();
+      const p = getFilteredPosts()[parseInt(thumb.dataset.index, 10)];
+      if (!p) return;
+      const k = parseInt(thumb.dataset.media, 10) || 0;
+      openGallery(buildGalleryItems(p), (p.image ? 1 : 0) + k);
+    }
+  });
+
+  lbPrev.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(-1); });
+  lbNext.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(1); });
+  lightbox.addEventListener('click', (e) => {
+    if (e.target.closest('.lb-nav')) return; // nav clicks don't close
+    closeGallery();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!lightbox.classList.contains('show')) return;
+    if (e.key === 'Escape') closeGallery();
+    else if (e.key === 'ArrowLeft') galleryStep(-1);
+    else if (e.key === 'ArrowRight') galleryStep(1);
   });
 
   // Edit button on card
@@ -1477,6 +1555,15 @@ render()
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // escapeHtml (textContent->innerHTML) does NOT escape quotes, so it is unsafe
+  // inside a double-quoted attribute (a `"` in API-sourced text would break out).
+  // Use this for any attribute value built from post content.
+  function escapeAttr(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function readFileAsText(file) {

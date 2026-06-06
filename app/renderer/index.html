@@ -297,6 +297,33 @@
       max-width: 95vw; max-height: 95vh; object-fit: contain;
       border-radius: 4px;
     }
+    .lb-nav {
+      position: fixed; top: 50%; transform: translateY(-50%);
+      width: 48px; height: 64px; border: none; border-radius: 6px;
+      background: rgba(0,0,0,0.4); color: #fff; font-size: 32px; line-height: 1;
+      cursor: pointer; z-index: 11001; display: none;
+    }
+    .lb-nav:hover { background: rgba(255,255,255,0.18); }
+    .lb-prev { left: 16px; }
+    .lb-next { right: 16px; }
+    .lightbox-overlay.multi .lb-nav { display: block; }
+    .lb-counter {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      color: #fff; font-size: 13px; background: rgba(0,0,0,0.4);
+      padding: 4px 10px; border-radius: 12px; display: none;
+    }
+    .lightbox-overlay.multi .lb-counter { display: block; }
+
+    /* --- Original-media thumbnail strip (grid view) --- */
+    .media-strip {
+      display: flex; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap;
+    }
+    .media-strip .media-thumb {
+      width: 56px; height: 56px; min-width: 56px;
+      object-fit: cover; border-radius: 4px; cursor: zoom-in;
+      border: 1px solid #e1e1e1;
+    }
+    .media-strip .media-thumb:hover { border-color: #1d9bf0; }
 
     /* --- Delete confirm --- */
     .confirm-overlay {
@@ -619,9 +646,12 @@
     </div>
   </div>
 
-  <!-- Image lightbox -->
+  <!-- Image lightbox / gallery -->
   <div class="lightbox-overlay" id="lightbox">
+    <button class="lb-nav lb-prev" id="lbPrev" type="button">&#8249;</button>
     <img id="lightboxImg" src="" alt="">
+    <button class="lb-nav lb-next" id="lbNext" type="button">&#8250;</button>
+    <div class="lb-counter" id="lbCounter"></div>
   </div>
 
   <!-- Edit tags overlay -->
