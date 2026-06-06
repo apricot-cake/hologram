@@ -177,8 +177,9 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 ユーザビリティの指摘で**ツールバーは「メタデータ補完」ボタン1つ**に整理した（ボタン名は後に「エンゲージメントを取得」→「メタデータ取得」→「メタデータ補完」と変遷）。**shared 側 (`syncEngagement`) は scope/staleDays/ids/statuses を引き続きサポート**しているが、UI からは公開していない (将来また出すのは容易)。現行 UI:
 
 - 同期は起動時に自動実行 (Sync ボタン廃止)
-- ボタンは「まだ一度も取得していない・URL を持つアイテム」= `filter: { statuses: ['no-annotation', 'parsed'] }` を取得。取得済み (synced) は触らない。実行中は「中止」トグル。中断分は status 据え置きで次回自然に再開 (Resume ボタン廃止)
+- ボタンは「まだ一度も取得していない・URL を持つアイテム」= `filter: { statuses: ['no-annotation', 'parsed'] }` を取得。取得済み (synced) は基本触らない。実行中は「中止」トグル。中断分は status 据え置きで次回自然に再開 (Resume ボタン廃止)
 - バックフィル (no-annotation) は上の対象に内包 (専用ボタン廃止)
+- **スキーマ版で再取得 (`FETCH_SCHEMA_VERSION`)**: 取得する engagement/meta フィールドや annotation 構築を変えたら `shared/sync-engagement.js` の `FETCH_SCHEMA_VERSION` を +1 する。各 record に取得時の版を刻んでおり、版が古い synced は次回の「メタデータ補完」で再取得対象に加わり新フィールドが既存アイテムにも段階的に行き渡る (レート制限・日次上限・resume はそのまま効く)。未刻印の legacy は baseline=1 扱いなので 1 のままでは何も再取得しない (初回デプロイの全件再取得を回避)。**engagement/meta の更新が対象。注釈フォーマット変更を既存注釈に反映するには別途「Info+ 注釈のみ上書きする再注釈パス」が必要 (未実装)**
 - X 保護を強化: 間隔 2.5〜3.5 秒 (jitter)、**429/420 で run 停止** (error 印を付けず未処理のまま残す)、**日次上限** `DEFAULT_DAILY_LIMIT = {x:500}` (`store.data.dailyFetch` に永続化・ローカル暦日でリセット・超過は翌日繰り越し)、X 200 件超は実行前に確認ダイアログ
 - 詳細は plugin-window/README.md
 

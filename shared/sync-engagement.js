@@ -43,6 +43,13 @@ export const DEFAULT_RATE_LIMIT = {
 // store.data.dailyFetch に日別カウントを永続化し、日付が変われば自動リセット。
 export const DEFAULT_DAILY_LIMIT = { x: 500 };
 
+// 取得スキーマのバージョン。**取得する engagement / meta フィールドや annotation 構築を変えたら +1 する。**
+// 各 record には取得時に fetchSchemaVersion を刻み、次回の取得で「version が古い synced」を再取得対象に
+// 加える → 新フィールドが既存アイテムにも段階的に行き渡る (レート制限・日次上限・resume はそのまま効く)。
+// 未刻印 (この機能以前に取得した legacy) は baseline=1 とみなす (`?? 1`) ので、1 のままなら再取得は起きない
+// (初回デプロイで全件再取得するサプライズを防ぐ)。2 以上に上げて初めて legacy/旧 version が refresh される。
+export const FETCH_SCHEMA_VERSION = 1;
+
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function syncEngagement({
@@ -75,7 +82,12 @@ export async function syncEngagement({
     targets = targets.filter(([id]) => allow.has(id));
   } else {
     const eligible = new Set(filter.statuses || ['parsed', 'synced']);
-    targets = targets.filter(([_, v]) => eligible.has(v.status));
+    targets = targets.filter(([_, v]) =>
+      eligible.has(v.status) ||
+      // スキーマ更新 (FETCH_SCHEMA_VERSION 増) で取得フィールドが増えたら、version が古い synced も
+      // 再取得対象に加えて新フィールドを補う。未刻印 (legacy) は baseline=1 扱い。
+      (v.status === 'synced' && (v.fetchSchemaVersion ?? 1) < FETCH_SCHEMA_VERSION)
+    );
   }
 
   // 追加スコープ (AND)。詳細は todo.md の Phase 3「スコープ選択」。
@@ -206,7 +218,8 @@ export async function syncEngagement({
           ...(result.meta || {}), // 同じレスポンス由来の人間情報 (作者・本文・タイトル・タグ)。リンクだけの項目も埋まる
           platform: parsed.platform, // backfill (no-annotation) でも platform バッジ/フィルタが効くよう URL 由来で埋める
           status: result.status,
-          engagementSyncedAt: now()
+          engagementSyncedAt: now(),
+          fetchSchemaVersion: FETCH_SCHEMA_VERSION // 取得スキーマの版を刻む (将来の bump で再取得判定に使う)
         });
       }
       okCount += ids.length;

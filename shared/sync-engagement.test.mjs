@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import assert from 'node:assert/strict';
 import { EngagementStore } from './engagement-store.js';
-import { syncEngagement } from './sync-engagement.js';
+import { syncEngagement, FETCH_SCHEMA_VERSION } from './sync-engagement.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -570,6 +570,41 @@ test('syncEngagement: backfillAnnotation が false を返すと count しない'
       backfillAnnotation: async () => false
     });
     assert.equal(r.backfilledCount, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: スキーマ version が古い synced は再取得され version が更新される', async () => {
+  const { dir, store } = mkstore();
+  try {
+    // 現行より古い version の synced (取得済みだが旧スキーマ)。filter に synced を含めなくても対象に入る。
+    store.upsert('a', { status: 'synced', platform: 'x', url: 'https://x.com/foo/status/1', fetchSchemaVersion: 0, likes: 1 });
+    const fetch = async () => mockJson({ favorite_count: 99, conversation_count: 0, user: { screen_name: 'foo' }, text: 't' });
+    const r = await syncEngagement({ store, fetch, filter: { statuses: ['no-annotation', 'parsed'] } });
+    assert.equal(r.okCount, 1);
+    assert.equal(store.get('a').likes, 99); // 再取得で engagement 更新
+    assert.equal(store.get('a').fetchSchemaVersion, FETCH_SCHEMA_VERSION); // 現行版に更新
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: version が現行の synced は再取得しない', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'synced', platform: 'x', url: 'https://x.com/foo/status/1', fetchSchemaVersion: FETCH_SCHEMA_VERSION, likes: 1 });
+    const fetch = async () => { throw new Error('should not fetch'); };
+    const r = await syncEngagement({ store, fetch, filter: { statuses: ['no-annotation', 'parsed'] } });
+    assert.equal(r.targetCount, 0);
+    assert.equal(store.get('a').likes, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('syncEngagement: legacy (version 未刻印) の synced は baseline=1 扱い → v1 のうちは再取得しない', async () => {
+  const { dir, store } = mkstore();
+  try {
+    store.upsert('a', { status: 'synced', platform: 'x', url: 'https://x.com/foo/status/1', likes: 1 }); // fetchSchemaVersion なし
+    const fetch = async () => { throw new Error('should not fetch'); };
+    const r = await syncEngagement({ store, fetch, filter: { statuses: ['no-annotation', 'parsed'] } });
+    // FETCH_SCHEMA_VERSION=1 のうちは legacy も baseline 1 で「現行」扱い → 初回デプロイで全件再取得しない
+    assert.equal(r.targetCount, FETCH_SCHEMA_VERSION > 1 ? 1 : 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
