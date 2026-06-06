@@ -317,13 +317,23 @@ function mastodonMedia(atts) {
     }));
 }
 
+// A Mastodon status permalink looks like /@user/<numericId>. Posts that federated
+// in from non-Mastodon software (Lemmy/PieFed/Mbin/...) report a canonical s.url
+// in that software's own scheme, which doesn't open as a status (404/forbidden).
+function isMastodonStatusUrl(u) {
+  try { return /^\/@[^/]+\/\d+\/?$/.test(new URL(u).pathname); } catch { return false; }
+}
+
 async function fetchMastodonStatus(parsed, url) {
   const rec = emptyRecord(url, 'mastodon');
   try {
     const res = await fetch(`https://${parsed.host}/api/v1/statuses/${parsed.id}`, { headers: { Accept: 'application/json' } });
     if (!res.ok) return rec;
     const s = await res.json();
-    rec.url = s.url || url;
+    // Keep the canonical permalink only when it's a real Mastodon status URL;
+    // otherwise fall back to the instance URL we captured (always opens in the
+    // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
+    rec.url = (s.url && isMastodonStatusUrl(s.url)) ? s.url : url;
     rec.text = htmlToText(s.content);
     rec.date = toIso(s.created_at);
     if (s.account) {
