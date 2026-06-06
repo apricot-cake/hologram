@@ -17,6 +17,9 @@
     searchPlaceholder: _s('searchPlaceholder'),
     searchHashtags: _s('searchHashtags'),
     searchTags: _s('searchTags'),
+    tabUsers: _s('tabUsers'),
+    searchUsers: _s('searchUsers'),
+    emptyUsers: _s('emptyUsers'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -154,10 +157,12 @@
 
   setText('tabPosts', MSG.tabPosts);
   setText('tabTags', MSG.tabTags);
+  setText('tabUsers', MSG.tabUsers);
   setText('tabSettings', MSG.tabSettings);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('hashtagSearch', 'placeholder', MSG.searchHashtags);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
+  setAttr('userSearch', 'placeholder', MSG.searchUsers);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
   setText('chooseFolderBtn', MSG.chooseFolder);
   setText('hintSaveFolder', MSG.hintSaveFolder);
@@ -247,6 +252,9 @@
           break;
         case 'instance':
           label = f.value;
+          break;
+        case 'user':
+          label = f.label || f.value;
           break;
       }
       return `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
@@ -644,6 +652,7 @@
   let skipDeleteConfirm = false;
   let selectMode = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
+  const usersPlatformFilter = new Set(); // Users tab: selected platform chips (local)
 
   // --- Tabs ---
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -653,6 +662,7 @@
       btn.classList.add('active');
       document.getElementById(`panel${capitalize(btn.dataset.tab)}`).classList.add('active');
       if (btn.dataset.tab === 'tags') renderHashtags();
+      if (btn.dataset.tab === 'users') renderUsers();
     });
   });
 
@@ -698,9 +708,84 @@
   document.getElementById('hashtagSearch').addEventListener('input', renderHashtags);
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
 
+  // --- Users tab (derived from post author fields; no extra fetching) ---
+  const PLATFORM_LABEL = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon' };
+
+  // Group posts by author. Posts arrive newest-first, so the first occurrence
+  // carries the latest display name / handle for that user.
+  function buildUsers() {
+    const map = new Map();
+    for (const p of allPosts) {
+      const key = userKey(p);
+      let u = map.get(key);
+      if (!u) {
+        u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '', count: 0 };
+        map.set(key, u);
+      }
+      u.count++;
+      if (!u.displayName && p.displayName) u.displayName = p.displayName;
+      if (!u.screenName && p.screenName) u.screenName = p.screenName;
+    }
+    return [...map.values()];
+  }
+
+  function renderUsers() {
+    const list = document.getElementById('userList');
+    const chipWrap = document.getElementById('userPlatformChips');
+    let users = buildUsers();
+
+    // Platform filter chips — only platforms actually present.
+    const platforms = [...new Set(users.map(u => u.platform))].filter(Boolean);
+    chipWrap.innerHTML = platforms.map(pl =>
+      `<button class="sb-chip${usersPlatformFilter.has(pl) ? ' active' : ''}" data-pl="${escapeHtml(pl)}">${PLATFORM_LABEL[pl] || pl}</button>`
+    ).join('');
+    chipWrap.querySelectorAll('.sb-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const pl = chip.dataset.pl;
+        if (usersPlatformFilter.has(pl)) usersPlatformFilter.delete(pl); else usersPlatformFilter.add(pl);
+        renderUsers();
+      });
+    });
+
+    const q = document.getElementById('userSearch').value.trim().toLowerCase();
+    if (usersPlatformFilter.size) users = users.filter(u => usersPlatformFilter.has(u.platform));
+    if (q) users = users.filter(u =>
+      (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q)
+    );
+    users.sort((a, b) => b.count - a.count ||
+      (a.displayName || a.screenName).localeCompare(b.displayName || b.screenName));
+
+    if (!users.length) {
+      list.innerHTML = `<div class="user-empty">${MSG.emptyUsers}</div>`;
+      return;
+    }
+    list.innerHTML = users.map(u => {
+      const name = u.displayName || u.screenName || '(unknown)';
+      const handle = u.screenName ? '@' + u.screenName : '';
+      return `<button class="user-row" data-user-key="${escapeHtml(u.key)}" data-user-label="${escapeHtml(name)}">
+        <span class="platform-badge ${u.platform || ''}">${(u.platform || '').toUpperCase()}</span>
+        <span class="user-name">${escapeHtml(name)}</span>
+        ${handle ? `<span class="user-handle">${escapeHtml(handle)}</span>` : ''}
+        <span class="user-count">${MSG.postCount(u.count)}</span>
+      </button>`;
+    }).join('');
+  }
+
+  document.getElementById('userSearch').addEventListener('input', renderUsers);
+  document.getElementById('userList').addEventListener('click', (e) => {
+    const row = e.target.closest('.user-row');
+    if (!row) return;
+    // Replace any existing user filter, then jump to the Posts tab.
+    activeFilters = activeFilters.filter(f => f.type !== 'user');
+    document.querySelector('.tab-btn[data-tab="posts"]').click();
+    addFilter({ type: 'user', value: row.dataset.userKey, label: row.dataset.userLabel });
+  });
+
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
   const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
+  // Stable per-author key: prefer the platform user id, fall back to the handle.
+  const userKey = (p) => p.platform + ':' + (p.userId || ('@' + (p.screenName || '')));
 
   // --- Load posts ---
   async function loadPosts() {
@@ -734,6 +819,12 @@
     if (byType.platform) {
       const values = byType.platform.map(f => f.value);
       posts = posts.filter(p => values.includes(p.platform));
+    }
+
+    // User: OR within group (value is the userKey "platform:userId")
+    if (byType.user) {
+      const keys = byType.user.map(f => f.value);
+      posts = posts.filter(p => keys.includes(userKey(p)));
     }
 
     // Instance (Misskey): OR within group

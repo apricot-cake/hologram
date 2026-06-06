@@ -452,7 +452,23 @@
     .sb-active-chip.qc-engagement { background: #fdf0e8; border: 1px solid #f1c8b0; color: #333; }
     .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
     .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
+    .sb-active-chip.qc-user { background: #fde8f4; border: 1px solid #f1b0d4; color: #333; }
   #panelTags { max-width: 960px; }
+  #panelUsers { max-width: 960px; }
+  .users-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .users-controls .ht-search { margin-bottom: 0; max-width: 280px; }
+  .user-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+  .user-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 12px; border: 1px solid #eee; border-radius: 8px; background: #fff;
+    cursor: pointer; text-align: left; font: inherit;
+    transition: background .15s, border-color .15s;
+  }
+  .user-row:hover { background: #f7fbff; border-color: #1d9bf0; }
+  .user-row .user-name { font-weight: 600; color: #0f1419; }
+  .user-row .user-handle { color: #8b98a5; font-size: 13px; }
+  .user-row .user-count { margin-left: auto; font-size: 12px; color: #666; background: #f0f0f0; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+  .user-empty { color: #999; padding: 40px 8px; }
   .ht-search {
     width: 100%; max-width: 360px; display: block; margin-bottom: 8px;
     padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
@@ -471,6 +487,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
     <button class="tab-btn" data-tab="tags" id="tabTags"></button>
+    <button class="tab-btn" data-tab="users" id="tabUsers"></button>
     <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
   </div>
 
@@ -588,6 +605,15 @@
   <div class="tab-panel" id="panelTags">
     <input type="text" class="ht-search" id="hashtagSearch">
     <div id="hashtagList" class="hashtag-list"></div>
+  </div>
+
+  <!-- Users tab -->
+  <div class="tab-panel" id="panelUsers">
+    <div class="users-controls">
+      <input type="text" class="ht-search" id="userSearch">
+      <div class="sb-chips" id="userPlatformChips"></div>
+    </div>
+    <div id="userList" class="user-list"></div>
   </div>
 
   <!-- Settings tab -->
