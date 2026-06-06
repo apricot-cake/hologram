@@ -1204,10 +1204,13 @@
       currentView = 'list';
       document.getElementById('viewGrid').classList.remove('active');
       document.getElementById('viewList').classList.add('active');
-      renderPosts();
     }
+    if (prefs.sortBy) sortSelect.value = prefs.sortBy;
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
+    // Re-render once after applying the saved view mode + sort, so the initial
+    // list reflects the persisted sort regardless of the prefs/loadPosts race.
+    renderPosts();
   });
 
   resetDeleteConfirmCheckbox.addEventListener('change', () => {
@@ -1217,7 +1220,10 @@
 
   // Search / sort events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
-  sortSelect.addEventListener('change', renderPosts);
+  sortSelect.addEventListener('change', () => {
+    window.postSnap.setPref('sortBy', sortSelect.value);
+    renderPosts();
+  });
 
   // --- Settings: save folder ---
   const saveFolderPath = document.getElementById('saveFolderPath');

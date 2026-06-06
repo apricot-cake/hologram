@@ -189,15 +189,17 @@ ipcMain.handle('open-external', (_event, url) => {
   }
 });
 
-// --- Preferences (language / viewMode / skipDeleteConfirm) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm'];
+// --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy'];
+const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
 
 ipcMain.handle('get-prefs', () => {
   const cfg = readConfig();
   return {
     language: cfg.language || 'auto',
     viewMode: cfg.viewMode === 'list' ? 'list' : 'grid',
-    skipDeleteConfirm: !!cfg.skipDeleteConfirm
+    skipDeleteConfirm: !!cfg.skipDeleteConfirm,
+    sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc'
   };
 });
 
