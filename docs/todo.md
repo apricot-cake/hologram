@@ -220,9 +220,16 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
   - 実装: index.html にインライン i18n 辞書 (en/ja) + `eagle.app.locale` 自動判定 (`ja*`→ja)。静的要素は `data-i18n` / `data-i18n-title` / `data-i18n-aria`、動的は `t(key, ...args)` ({0} 置換)。Eagle の i18n フレームワークには依存しない自己完結方式
   - [ ] manifest.json の `languages` / `fallbackLanguage`、manifest 自体の `name` `description` の locale 別化 (未対応。Eagle の manifest i18n 形式の確認が必要)
   - 備考: status 値 (synced/parsed 等) と platform 名 (X/Bluesky/pixiv) はバッジと一致させるため翻訳せず英語のまま
-- [ ] 派生指標
-  - エンゲージメント率 (likes / views)
-  - 期間内増加率
+- [ ] 派生指標 (品質スコア) — *保留中。方針は下記*
+  - **狙い: 「ユーザー規模に依存しない質」**。フォロワーが少ないユーザーは絶対いいね数も小さくなるので、
+    **likes / followers** 比で出せばフォロワーの大きいユーザーとも公平に比較できる (ユーザー本人の意図)。
+  - 課題: follower 数の取得が要る。Bluesky は profile に `followersCount` (投稿ごと別 fetch)、pixiv も
+    `ajax/user` 追加 fetch、**X は syndication で follower 数が取れない公算大** (X 除外 or 別ソース)。
+    取得コスト増 + X 脆弱性増がトレードオフ。
+  - likes / views は **pixiv のみ** (X/Bluesky は views 非取得)。実データ: pixiv の likes/views 中央値
+    ~3.86% (分布が狭く質の signal になる)、bookmarks/views ~5.96%。あくまで pixiv 限定の補助指標。
+  - 既存の「Likes (ranked)」percentile は *platform 内順位* で規模非依存だが "率" ではない (別軸)。
+  - 期間内増加率 (engagement の伸び) は別途。
 - [x] ルート README をハブ化 (構成図 + 各サブディレクトリの README にリンク)
 - [ ] annotation 仕様変更時の互換性管理
   - Window Plugin 側で旧バージョン parser を残す (モノレポなので Info+ 変更と原子的に PR できる)

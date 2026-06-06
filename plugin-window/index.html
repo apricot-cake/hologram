@@ -396,7 +396,7 @@
     <label><span data-i18n="searchLabel">Search</span> <select id="search-field">
       <option value="all" data-i18n="searchAll">all</option>
       <option value="displayName" data-i18n="searchDisplayName">Display Name</option>
-      <option value="author" data-i18n="searchAuthor">Author</option>
+      <option value="author" data-i18n="searchAuthor">User</option>
       <option value="hashtags" data-i18n="searchHashtags">Hashtags</option>
       <option value="text" data-i18n="searchText">Text</option>
     </select>
@@ -426,7 +426,6 @@
     </div>
     </label>
     <label><span data-i18n="minLikes">Min likes</span> <input id="filter-min-likes" type="number" min="0" placeholder="0"></label>
-    <label><span data-i18n="minViews">Min views</span> <input id="filter-min-views" type="number" min="0" placeholder="0"></label>
     <label><span data-i18n="sortLabel">Sort</span> <select id="sort-field">
       <option value="likesPercentile" data-i18n="sortRanked">Likes ↓ (ranked)</option>
       <option value="likes" data-i18n="sortRaw">Likes ↓ (raw)</option>
@@ -560,9 +559,9 @@
         scopeLabel: 'Target', scopeAll: 'all parsed/synced', scopeCurrent: 'current filter', scopeStale: 'stale > N days',
         scopeBackfill: 'no-annotation (URL only)', scopeResume: 'resume left-over ({0})',
         staleDaysTitle: 'days',
-        searchLabel: 'Search', searchAll: 'all fields', searchDisplayName: 'Display Name', searchAuthor: 'Author', searchHashtags: 'Hashtags', searchText: 'Text/Title', searchPlaceholder: 'keyword',
+        searchLabel: 'Search', searchAll: 'all fields', searchDisplayName: 'Display Name', searchAuthor: 'User', searchHashtags: 'Hashtags', searchText: 'Text/Title', searchPlaceholder: 'keyword',
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
-        minLikes: 'Min likes', minViews: 'Min views', multiOnly: 'multi-image only',
+        minLikes: 'Min likes', multiOnly: 'multi-image only',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortFetched: 'Recently fetched ↓', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
@@ -602,9 +601,9 @@
         scopeLabel: '対象', scopeAll: 'すべて（解析・取得済み）', scopeCurrent: '現在のフィルタ', scopeStale: 'N 日以上前',
         scopeBackfill: '情報なし（URLのみ）', scopeResume: '中断した続き ({0})',
         staleDaysTitle: '日数',
-        searchLabel: '検索', searchAll: '全フィールド', searchDisplayName: '表示名', searchAuthor: 'Author', searchHashtags: 'ハッシュタグ', searchText: '本文・作品名', searchPlaceholder: 'キーワード',
+        searchLabel: '検索', searchAll: '全フィールド', searchDisplayName: '表示名', searchAuthor: 'ユーザー', searchHashtags: 'ハッシュタグ', searchText: '本文・作品名', searchPlaceholder: 'キーワード',
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
-        minLikes: 'いいね下限', minViews: '表示回数下限', multiOnly: '複数画像のみ',
+        minLikes: '最低いいね数', multiOnly: '複数画像のみ',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
         bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクのみ',
@@ -836,8 +835,7 @@
       const readGridFilters = () => {
         return {
           platform: $('filter-platform').value || undefined,
-          minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined,
-          minViews: $('filter-min-views').value ? Number($('filter-min-views').value) : undefined
+          minLikes: $('filter-min-likes').value ? Number($('filter-min-likes').value) : undefined
         };
       };
 
@@ -867,7 +865,6 @@
             platform: $('filter-platform').value,
             status: $('filter-status').value,
             minLikes: $('filter-min-likes').value,
-            minViews: $('filter-min-views').value,
             sort: $('sort-field').value,
             multi: $('filter-multi').checked,
             searchField: $('search-field').value,
@@ -884,7 +881,6 @@
           const validStatus = ['', 'full', 'partial', 'nolink'];
           $('filter-status').value = validStatus.includes(s.status) ? s.status : 'full';
           if (s.minLikes != null) $('filter-min-likes').value = s.minLikes;
-          if (s.minViews != null) $('filter-min-views').value = s.minViews;
           if (s.sort != null) $('sort-field').value = s.sort;
           if (s.multi != null) $('filter-multi').checked = s.multi;
           if (s.searchField != null) $('search-field').value = s.searchField;
@@ -902,10 +898,10 @@
         if (!store) return;
         const filters = readGridFilters();
         const sortField = $('sort-field').value;
-        // store.query (platform/minLikes/minViews フィルタ + sort/percentile 計算) は
+        // store.query (platform/minLikes フィルタ + sort/percentile 計算) は
         // filters・sort・データが変わらない限り使い回す。検索/ステータス/複数画像トグルは query の
         // 後段で効くのでキャッシュに当たり、キーストロークごとの全件再ソートを避けられる。
-        const qKey = [filters.platform, filters.minLikes, filters.minViews, sortField, dataVersion].join('|');
+        const qKey = [filters.platform, filters.minLikes, sortField, dataVersion].join('|');
         let results;
         if (queryCache.key === qKey && queryCache.result) {
           results = queryCache.result;
@@ -1310,7 +1306,7 @@
       };
       ['filter-platform', 'filter-status', 'sort-field', 'filter-multi', 'search-field']
         .forEach(id => $(id).addEventListener('input', onFilterChange));
-      ['filter-min-likes', 'filter-min-views', 'search-text']
+      ['filter-min-likes', 'search-text']
         .forEach(id => $(id).addEventListener('input', onFilterChangeDebounced));
 
       // Status info ポップオーバー
