@@ -99,7 +99,7 @@
     dateTypePost: _s('dateTypePost'),
     dateTypeCaptured: _s('dateTypeCaptured'),
     clickToExpand: _s('clickToExpand'),
-    tipZoom: _s('tipZoom'),
+    tipOpen: _s('tipOpen'),
     lbPrev: _s('lbPrev'),
     lbNext: _s('lbNext'),
     tipEdit: _s('tipEdit'),
@@ -961,7 +961,8 @@
         <div class="select-check">${isSelected ? '✓' : ''}</div>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
-        ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
+        ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
+        ${p.image ? `<img class="card-img" src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
@@ -1054,12 +1055,20 @@
   }
 
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    // Zoom button -> open the gallery at the screenshot.
-    const zoom = e.target.closest('.zoom-btn');
-    if (zoom) {
+    if (selectMode) return; // in select mode, clicks toggle selection (handled below)
+    // Dedicated button -> jump to the source post.
+    const openBtn = e.target.closest('.open-btn');
+    if (openBtn) {
       e.stopPropagation();
-      const card = zoom.closest('.post-card');
-      const p = getFilteredPosts()[parseInt(card?.dataset.index, 10)];
+      const url = openBtn.closest('.post-card')?.dataset.url;
+      if (url) window.postSnap.openExternal(url);
+      return;
+    }
+    // Image -> open the gallery (screenshot + originals).
+    const img = e.target.closest('.card-img');
+    if (img) {
+      e.stopPropagation();
+      const p = getFilteredPosts()[parseInt(img.closest('.post-card')?.dataset.index, 10)];
       if (p) openGallery(buildGalleryItems(p), 0);
     }
   });
@@ -1089,29 +1098,25 @@
     openEditOverlay(post);
   });
 
-  // Click on post card -> select or open URL
+  // Click on post card in select mode -> toggle selection. (In normal mode the
+  // card body is inert: the image opens the gallery and a button opens the post.)
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.open-btn') || e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
+    if (!selectMode && !e.target.closest('.select-check')) return;
 
-    if (selectMode || e.target.closest('.select-check')) {
-      const key = card.dataset.key;
-      if (selectedSet.has(key)) {
-        selectedSet.delete(key);
-        card.classList.remove('selected');
-        card.querySelector('.select-check').textContent = '';
-      } else {
-        selectedSet.add(key);
-        card.classList.add('selected');
-        card.querySelector('.select-check').textContent = '✓';
-      }
-      updateSelectionBar();
-      return;
+    const key = card.dataset.key;
+    if (selectedSet.has(key)) {
+      selectedSet.delete(key);
+      card.classList.remove('selected');
+      card.querySelector('.select-check').textContent = '';
+    } else {
+      selectedSet.add(key);
+      card.classList.add('selected');
+      card.querySelector('.select-check').textContent = '✓';
     }
-
-    const url = card.dataset.url;
-    if (url) window.postSnap.openExternal(url);
+    updateSelectionBar();
   });
 
   // Delete button on card

@@ -48,9 +48,9 @@ const evalJs = `(async () => {
   const injectedInCard = !!(document.querySelector('.post-card [onerror]') || window.__xss);
   // The card surfaces a media flag (the sidecar's mediaType is "image").
   const hasMediaFlag = !!document.querySelector('.post-card .post-flag.flag-media');
-  // Zoom button -> one gallery: screenshot first (1 / 3).
-  const zoom = document.querySelector('.post-card .zoom-btn');
-  if (zoom) zoom.click();
+  // Clicking the image opens one gallery: screenshot first (1 / 3).
+  const cardImg = document.querySelector('.post-card .card-img');
+  if (cardImg) cardImg.click();
   const lb = document.getElementById('lightbox');
   const shown = lb.classList.contains('show');
   const multi = lb.classList.contains('multi');

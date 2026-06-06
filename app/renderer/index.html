@@ -109,25 +109,25 @@
     .post-card {
       background: #fff; border-radius: 8px; overflow: hidden;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      cursor: pointer; transition: box-shadow 0.15s;
+      cursor: default; transition: box-shadow 0.15s;
       position: relative;
     }
     .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .post-grid.select-mode .post-card { cursor: pointer; }
     .post-card img {
       width: 100%; display: block;
-      max-height: 300px; object-fit: cover;
+      max-height: 300px; object-fit: cover; cursor: zoom-in;
     }
-    .zoom-btn {
+    .open-btn {
       position: absolute; top: 8px; right: 72px;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(0,0,0,0.5); color: #fff; border: none;
-      font-size: 14px; line-height: 28px; text-align: center;
+      display: flex; align-items: center; justify-content: center;
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
-    .zoom-btn { filter: grayscale(1) brightness(2); }
-    .zoom-btn:hover { background: rgba(100,100,100,0.7); }
-    .post-card:hover .zoom-btn { opacity: 1; }
+    .open-btn:hover { background: rgba(29,155,240,0.8); }
+    .post-card:hover .open-btn { opacity: 1; }
     .post-meta {
       padding: 12px;
     }
@@ -225,6 +225,7 @@
     .post-grid.list-view .post-meta .date-captured { display: none; }
     .post-grid.list-view .post-meta .tags-label { display: none; }
     .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
+    .post-grid.list-view .open-btn { top: 50%; right: 72px; transform: translateY(-50%); }
 
     .empty-state {
       text-align: center; padding: 60px 20px; color: #999;
