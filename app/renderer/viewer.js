@@ -989,7 +989,7 @@
 
   // Click on post card -> select or open URL
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text') || e.target.closest('.media-thumb')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
 
