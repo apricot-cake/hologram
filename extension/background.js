@@ -1,3 +1,5 @@
+import { selectMatches } from './drag-matching.js';
+
 const EAGLE_API = 'http://localhost:41595';
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 30000;
@@ -9,6 +11,10 @@ let polling = false;
 // 複数画像を続けてドラッグした分を取りこぼさないようキューで保持する
 // (旧実装は単一スロットで上書きし、最後の 1 枚しか annotation が付かなかった)。
 const pendingDrags = [];
+// この SW セッション中に Info+ が注釈を書き込んだ Eagle item の id。poll をまたいで
+// 一度割り当てた item を別ドラッグが再マッチ (上書き) しないよう selectMatches にシードする。
+// (同一投稿の複数画像で、後続ドラッグが先に注釈済みの item へ吸われる N 枚中 1 枚バグの防止)。
+const claimedItemIds = new Set();
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'imageDragged') {
@@ -304,16 +310,9 @@ async function poll() {
   try {
     const items = await fetchRecentItems();
     // 同 tick で同じ Eagle item に複数ドラッグが衝突しないよう、消費済み id を除外しつつ
-    // ドラッグ順に照合する。先に画像固有 URL で正しい画像↔item を当て、無ければ投稿/ページ URL。
-    const consumed = new Set();
-    const toApply = [];
-    for (const entry of pendingDrags) {
-      const matched = findMatchingItem(items, entry, consumed);
-      if (matched) {
-        consumed.add(matched.id);
-        toApply.push({ entry, itemId: matched.id });
-      }
-    }
+    // ドラッグ順に照合する (drag-matching.js)。先に画像固有 URL で正しい画像↔item を当て、
+    // 無ければ投稿/ページ URL。同一投稿の N 枚でも別 item に割り当たる。
+    const toApply = selectMatches(items, pendingDrags, claimedItemIds);
     for (const { entry } of toApply) {
       const idx = pendingDrags.indexOf(entry);
       if (idx >= 0) pendingDrags.splice(idx, 1);
@@ -324,6 +323,7 @@ async function poll() {
           annotation: entry.metadata.annotation,
           link: entry.metadata.link
         });
+        claimedItemIds.add(itemId); // 確定: 次の tick 以降この item は再マッチさせない
         log('Updated item:', itemId);
       } catch (e) {
         log('Update failed:', e.message);
@@ -348,54 +348,6 @@ async function fetchRecentItems() {
     throw new Error('Eagle API error: ' + JSON.stringify(data));
   }
   return data.data || [];
-}
-
-// 1 ドラッグ (entry) に対応する Eagle item を探す。consumed は同 tick で既に割り当て済みの item id。
-function findMatchingItem(items, entry, consumed) {
-  const imageUrls = (entry.imageUrls || []).filter(Boolean);
-  const postUrls = [entry.pageUrl, entry.metadata?.link].filter(Boolean);
-  // pass1: 画像固有 URL (画像ごとに異なる) → 物理画像と item を正しく対応付けられる
-  return matchByUrls(items, imageUrls, entry.timestamp, consumed)
-    // pass2: 投稿/ページ URL (同一投稿の N 枚で共通) → consumed 除外で別 item を割り当て
-    || matchByUrls(items, postUrls, entry.timestamp, consumed);
-}
-
-function matchByUrls(items, candidateUrls, dragTime, consumed) {
-  if (!candidateUrls.length) return null;
-  for (const item of items) {
-    if (consumed.has(item.id)) continue;
-    const itemTime = item.modificationTime || item.lastModified || 0;
-    if (itemTime < dragTime - 30000) continue;
-    const itemUrl = item.url || '';
-    if (!itemUrl) continue;
-    for (const candidateUrl of candidateUrls) {
-      if (urlMatches(itemUrl, candidateUrl)) return item;
-    }
-  }
-  return null;
-}
-
-function urlMatches(eagleUrl, candidateUrl) {
-  if (!eagleUrl || !candidateUrl) return false;
-  if (eagleUrl === candidateUrl) return true;
-
-  try {
-    const a = new URL(eagleUrl);
-    const b = new URL(candidateUrl);
-
-    if (a.hostname === b.hostname) {
-      if (a.pathname === b.pathname) return true;
-
-      // パス境界での前方一致: /status/123 は /status/123/photo/1 にマッチするが
-      // /status/12 は /status/123 にマッチしない
-      const shorter = a.pathname.length <= b.pathname.length ? a.pathname : b.pathname;
-      const longer = a.pathname.length > b.pathname.length ? a.pathname : b.pathname;
-      if (longer.startsWith(shorter) && (longer[shorter.length] === '/' || shorter.endsWith('/'))) {
-        return true;
-      }
-    }
-  } catch {}
-  return false;
 }
 
 async function updateItemMetadata(itemId, metadata) {

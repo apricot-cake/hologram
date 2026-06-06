@@ -76,17 +76,30 @@
     return {
       platform: 'x',
       extractIdentity(img) {
-        const link = img.closest('a[href*="/status/"]')
-          || findAncestorContainerLink(img, 'a[href*="/status/"]');
-        const parsed = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
-        if (!parsed) return null;
-        const [, screenName, postId] = parsed.match;
+        // 三段構えで postId を取る:
+        //  1. ライトボックス (URL が …/status/<id>/photo/<n>) — 表示中の拡大画像 = その投稿の画像で
+        //     確実なので、近傍アンカー (X は /analytics リンクしか拾えないことがある) に頼らず location を
+        //     直接の真実にする (堅牢化)。
+        //  2. アンカー — タイムライン/グリッド/リプライでは画像を包む/近傍の status リンクから取り、
+        //     複数投稿が並ぶレイアウトでも画像ごとに正しい投稿を指す。
+        //  3. 単独投稿ページの location (/status/<id>) — アンカーが取れないときの最後の砦。
+        const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
+        const link = !viewer && (img.closest('a[href*="/status/"]')
+          || findAncestorContainerLink(img, 'a[href*="/status/"]'));
+        const parsedAnchor = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
+        const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
+
+        let screenName, postId, baseUrl;
+        if (viewer) { [, screenName, postId] = viewer; baseUrl = location.href; }
+        else if (parsedAnchor) { [, screenName, postId] = parsedAnchor.match; baseUrl = parsedAnchor.url; }
+        else if (parsedLoc) { [, screenName, postId] = parsedLoc; baseUrl = location.href; }
+        else return null;
+
         const sn = decodeURIComponent(screenName);
         const pid = decodeURIComponent(postId);
-        // 素の permalink を組み立てる。アンカーが /photo/N や /analytics でも postId は同じなので、
-        // 末尾を引きずらず常に <origin>/<user>/status/<id> に正規化する (同一投稿で url が揃う)。
+        // 素の permalink に正規化 (アンカーが /photo/N や /analytics でも postId は同じ → 同一投稿で url が揃う)。
         let origin = 'https://x.com';
-        try { origin = new URL(parsed.url).origin; } catch {}
+        try { origin = new URL(baseUrl).origin; } catch {}
         return {
           screenName: sn,
           postId: pid,

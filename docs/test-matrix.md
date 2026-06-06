@@ -17,6 +17,7 @@ DOM 依存削減 / API ベース移行 (v0.2.0) 後の動作検証用。
 | X7 | 削除済みツイート | 削除直後のページキャッシュからドラッグ | API 404 → URL 由来情報のみで保存 |
 | X8 | 鍵アカウント・ログアウト状態 | シークレットウィンドウでログイン無しにアクセス → 鍵垢の画像をドラッグ | API 401/403 → URL 由来情報のみで保存 |
 | X9 | `twitter.com` 旧ドメイン | `twitter.com` でドラッグ | x.com と同等動作 |
+| X10 | ✅ | 画像クリック後の**拡大画像 (ライトボックス)** をドラッグ | URL が `…/status/<id>/photo/<n>` のとき content.js が `location` から postId を取る (三段 identity の最優先)。`/analytics` アンカー依存を回避。サムネと同 postId・同画像番号。実機 4/4 検証に内包 |
 
 ### Bluesky
 
@@ -54,7 +55,7 @@ DOM 依存削減 / API ベース移行 (v0.2.0) 後の動作検証用。
 | C4 | ✅ | **Eagle 未起動** | 30 秒タイムアウト、エラー無く終了 |
 | C5 | | **Eagle 起動が遅い** | ドラッグ後 10 秒以内に Eagle 起動 → ポーリングで検出され annotation 付与 |
 | C6 | | **Eagle へのドロップが極端に遅い** (タイムアウト超過) | 30 秒経過後ドロップ → annotation 無しで Eagle に保存される (既知の挙動) |
-| C7 | | **同時複数ドラッグ** — 短時間に 2 つの異なる投稿をドラッグ | 後発の `pendingDrag` が前者を上書き、後発のみ annotation される (既知の挙動) |
+| C7 | ✅ | **同時複数ドラッグ** — 同一投稿の複数画像 (or 異なる投稿) を続けてドラッグ | 全枚数が別 item に annotation + 画像番号も各々正しい。`pendingDrags` キュー + `consumed`(tick 内) + `claimedItemIds`(poll 跨ぎ) マッチング。自動テスト `extension/drag-matching.test.mjs` (17 件)。**実機検証済: 4 枚投稿で 4/4・番号 1/4〜4/4 正 (2026-06-06)** |
 | C8 | | **Eagle URL マッチ** — Eagle が picture URL ではなく page URL で保存した場合 | `urlMatches` のパス境界一致でマッチする |
 
 ---
@@ -68,6 +69,17 @@ DOM 依存削減 / API ベース移行 (v0.2.0) 後の動作検証用。
 | R5 | ✅ | manifest host_permissions | `cdn.syndication.twimg.com` と `public.api.bsky.app` のみ、`page-context.js` 系は無し |
 
 ---
+
+## 3.5 自動テスト (machine-checked)
+
+実機ドラッグを要さず `node` で回せる回帰テスト。手動シナリオの前段の安全網。
+
+| ファイル | 対象 | 実行 |
+|---|---|---|
+| `extension/drag-matching.test.mjs` | ドラッグ↔Eagle item マッチング (`urlMatches` / 2 段マッチ / `consumed`(tick 内) / `claimedItemIds`(poll 跨ぎ cross-tick) / 注釈済みスキップ / マッチ窓)。**C7「同時複数ドラッグで全枚数に付く」を固定** (17 件) | `node extension/drag-matching.test.mjs` |
+| `shared/*.test.mjs` | annotation parser / store / SNS client / 同期 (sync-eagle・sync-engagement) | `node shared/<name>.test.mjs` |
+
+> マッチングロジックは `extension/background.js` から `extension/drag-matching.js` (ESM) に切り出してテスト可能にした (service worker は `manifest.json` の `"type": "module"` でモジュール読み込み)。**自動テストが緑でも C7 等の実機検証は別途必要** (DOM ドラッグ・Eagle ポーリング・API 応答の実挙動は対象外)。
 
 ## 4. 検証手順テンプレ
 

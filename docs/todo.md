@@ -255,10 +255,19 @@ X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0`
 - **画像ごとに url がバラバラ** (`/photo/2` `/photo/3` `/photo/4` `/analytics`) → 同一投稿なのにグループ化できない
   - 原因: content.js が拾う status アンカーが /analytics リンクのことがあり、旧コードは `/photo|/video` 末尾しか除去しなかった
   - 対策【済】: content.js で素の permalink `<origin>/<user>/status/<id>` に正規化 (今後の保存分)。**既存データは plugin-window 側で postKey (`parsePostUrl` の platform:postId) 基準グループ化で吸収**
-- **N 枚中 1 枚しか annotation が付かない**【未解決】
-  - 原因: Info+ の `pendingDrag` 単一スロット + 連続ドラッグ競合 (test-matrix C7)。複数画像を続けて保存すると 1 件しか処理されない
-- **Image 番号が誤る** (1 枚目なのに `Image: 4/4`)【未解決・要 repro】
-  - 原因候補: `findXImageIndex` の media マッチ、または content.js のアンカー誤検出で画像コンテキストがズレる
+- **N 枚中 1 枚しか annotation が付かない**【修正済・実機検証済 (4/4, 2026-06-06)】
+  - 原因(1): Info+ の `pendingDrag` 単一スロット + 連続ドラッグ競合。複数画像を続けて保存すると 1 件しか処理されなかった
+  - 原因(2 / cross-tick — 当初のキュー修正後も残っていた本丸): 1 枚目を注釈すると item の url が素の permalink に正規化され、以降**同一投稿の後続ドラッグが pass2(投稿 URL) でその item に再マッチ**する。とくに後続ドラッグの自分の item がまだ未作成のタイミングだと、先に注釈済みの item へ吸われて新規 item が取り残される (実機で 1/2 を観測)
+  - 対策【済】:
+    - `pendingDrags` をキュー化 (取りこぼし防止)
+    - 1 poll tick 内は `consumed` セットで別 item に割り当て
+    - **poll をまたぐ `claimedItemIds`** (background.js のセッション集合) を `selectMatches` にシード → 一度注釈した item を後続ドラッグが再マッチしない (cross-tick 修正)。加えて「既に annotation が入っている item はマッチ対象外」を保険に (SW 再起動でも安全)
+    - ロジック: `extension/drag-matching.js` / 回帰テスト `extension/drag-matching.test.mjs` (17 件、cross-tick 含む)
+  - 実機検証: Yuuki_UYU 4 枚投稿で **4/4** 取得・画像番号 1/4〜4/4 すべて正しい
+- **Image 番号が誤る** (1 枚目なのに `Image: 4/4`)【修正済・実機検証済】
+  - 実体: 主因は上の cross-tick 上書き (後続ドラッグが先行 item を別番号で上書きしていた) + content.js のアンカー誤検出
+  - 対策: (a) content.js `findAncestorContainerLink`+`treeDistance` で最も近い候補リンクを選ぶ、(b) 上の cross-tick 修正、(c) X identity を三段化 (ライトボックス=`location`/アンカー/単独投稿 `location`) し `/analytics` アンカー依存を解消。`findXImageIndex` (pbs media_id マッチ) は据え置き
+  - 実機検証: 上記 4 枚で 1/4〜4/4 が正しく付与
 
 ---
 
