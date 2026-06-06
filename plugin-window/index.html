@@ -164,6 +164,14 @@
       object-fit: cover;
       display: block;
     }
+    /* サムネのロード中 / 読み込みエラー表示 (どちらか待たずに区別できるように) */
+    .card .thumb-state {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--muted); background: var(--bg2);
+      text-align: center; padding: 4px; pointer-events: none;
+    }
+    .card .thumb-state.error { color: #e08a8a; }
     .card .badges {
       position: absolute;
       top: 6px;
@@ -383,6 +391,50 @@
       padding: 4px 12px;
       border-radius: 12px;
     }
+
+    /* タブ */
+    .tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--border); background: #252525; }
+    .tab {
+      background: none; border: none; color: var(--muted); font-size: 13px;
+      padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--fg); }
+    .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+
+    /* ハッシュタグタブ */
+    #tab-hashtags { padding: 12px 16px; }
+    .ht-search-row { margin-bottom: 14px; }
+    .ht-search { position: relative; max-width: 340px; }
+    #ht-search {
+      width: 100%; box-sizing: border-box;
+      background: var(--bg2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cline x1='10.5' y1='10.5' x2='15' y2='15'/%3E%3C/svg%3E") no-repeat 12px center;
+      background-size: 14px;
+      color: var(--fg);
+      border: 1px solid var(--border); border-radius: 18px;
+      padding: 8px 14px 8px 34px; font-size: 13px; outline: none;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    #ht-search::placeholder { color: var(--muted); }
+    #ht-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.18);
+    }
+    /* ダークテーマで見やすいクリア (×) ボタン */
+    #ht-search::-webkit-search-cancel-button {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; cursor: pointer; opacity: 0.5;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23bbb' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='3' y1='3' x2='11' y2='11'/%3E%3Cline x1='11' y1='3' x2='3' y2='11'/%3E%3C/svg%3E") no-repeat center;
+    }
+    #ht-search::-webkit-search-cancel-button:hover { opacity: 1; }
+    .ht-list { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+    .ht-item {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+      padding: 4px 12px; cursor: pointer; font-size: 12px; color: var(--fg);
+    }
+    .ht-item:hover { border-color: var(--accent); }
+    .ht-item .ht-count { color: var(--muted); font-size: 11px; }
+    .ht-empty { color: var(--muted); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -392,6 +444,12 @@
     <span class="status" id="status"></span>
   </div>
 
+  <div class="tabs">
+    <button class="tab active" data-tab="grid" data-i18n="tabGrid">Grid</button>
+    <button class="tab" data-tab="hashtags" data-i18n="tabHashtags">Hashtags</button>
+  </div>
+
+  <div id="tab-grid">
   <div class="filters">
     <label><span data-i18n="searchLabel">Search</span> <select id="search-field">
       <option value="all" data-i18n="searchAll">all</option>
@@ -438,6 +496,16 @@
 
   <div id="grid" class="grid"></div>
   <div id="empty" class="empty" style="display: none;"></div>
+  </div>
+
+  <div id="tab-hashtags" hidden>
+    <div class="ht-search-row">
+      <div class="ht-search">
+        <input id="ht-search" type="search" data-i18n-placeholder="htSearchPlaceholder" placeholder="filter hashtags">
+      </div>
+    </div>
+    <div id="ht-list" class="ht-list"></div>
+  </div>
 
   <div class="footer">
     <span id="library-path">—</span>
@@ -562,6 +630,8 @@
         searchLabel: 'Search', searchAll: 'all fields', searchDisplayName: 'Display Name', searchAuthor: 'User', searchHashtags: 'Hashtags', searchText: 'Text/Title', searchPlaceholder: 'keyword',
         platformLabel: 'Platform', optAll: 'all', statusLabel: 'Status', statusInfoAria: 'What do these statuses mean?',
         minLikes: 'Min likes', multiOnly: 'multi-image only',
+        tabGrid: 'Grid', tabHashtags: 'Hashtags', htSearchPlaceholder: 'filter hashtags', htEmpty: 'No hashtags yet', htNoMatch: 'No matching hashtags',
+        thumbLoading: 'Loading…', thumbError: 'Load error',
         sortLabel: 'Sort', sortRanked: 'Likes ↓ (ranked)', sortRaw: 'Likes ↓ (raw)', sortFetched: 'Recently fetched ↓', sortModified: 'Recently modified ↓',
         colStatus: 'Status', colMeaning: 'Meaning', colRetry: 'Retry',
         bFull: 'fetched', bPartial: 'has unfetched', bNolink: 'link only',
@@ -604,6 +674,8 @@
         searchLabel: '検索', searchAll: '全フィールド', searchDisplayName: '表示名', searchAuthor: 'ユーザー', searchHashtags: 'ハッシュタグ', searchText: '本文・作品名', searchPlaceholder: 'キーワード',
         platformLabel: 'プラットフォーム', optAll: 'すべて', statusLabel: 'ステータス', statusInfoAria: '各ステータスの意味',
         minLikes: '最低いいね数', multiOnly: '複数画像のみ',
+        tabGrid: 'グリッド', tabHashtags: 'ハッシュタグ', htSearchPlaceholder: 'ハッシュタグを絞り込み', htEmpty: 'ハッシュタグがまだありません', htNoMatch: '一致するハッシュタグがありません',
+        thumbLoading: 'ロード中…', thumbError: '読み込みエラー',
         sortLabel: '並び替え', sortRanked: 'いいね ↓（ランク）', sortRaw: 'いいね ↓（実数）', sortFetched: '取得日時 ↓', sortModified: '更新日時 ↓',
         colStatus: 'ステータス', colMeaning: '意味', colRetry: 'リトライ',
         bFull: '取得済み', bPartial: '未取得項目あり', bNolink: 'リンクのみ',
@@ -744,12 +816,21 @@
 
         if (it.thumbnailURL) {
           const img = document.createElement('img');
-          img.src = thumbnailSrc(it);
+          // ロード中は「ロード中…」、失敗は「読み込みエラー」を出す (黙って黒くせず、待たずに区別できるように)。
+          const state = document.createElement('div');
+          state.className = 'thumb-state';
+          state.textContent = t('thumbLoading');
           img.loading = 'lazy';
           img.alt = '';
-          // Eagle が thumbnail を生成してない (非画像/破損) ケースで黙って隠す
-          img.onerror = () => { img.style.display = 'none'; };
+          img.onload = () => { state.remove(); };
+          img.onerror = () => {
+            img.style.display = 'none';
+            state.classList.add('error');
+            state.textContent = t('thumbError');
+          };
+          img.src = thumbnailSrc(it); // onload/onerror を付けてから src を設定
           card.appendChild(img);
+          card.appendChild(state);
         }
 
         const badges = document.createElement('div');
@@ -955,6 +1036,65 @@
         const frag = document.createDocumentFragment();
         for (const g of shown) frag.appendChild(buildCard(g));
         grid.appendChild(frag);
+      };
+
+      // === ハッシュタグタブ ===
+      // 全 record の hashtags を投稿単位 (postKey で重複排除 → 多ページ投稿で水増ししない) で集計。
+      // dataVersion でメモ化し、検索の絞り込みは集計済みリストに対して行う。
+      let htCache = { version: -1, list: null };
+      const getHashtagCounts = () => {
+        if (htCache.version === dataVersion && htCache.list) return htCache.list;
+        const seen = new Map(); // tag -> Set(postKey)
+        for (const [id, rec] of Object.entries(store.data.items)) {
+          const tags = rec.hashtags;
+          if (!tags || !tags.length) continue;
+          const pk = postKey(rec.url) ?? ('id:' + id);
+          for (const tag of tags) {
+            let s = seen.get(tag);
+            if (!s) seen.set(tag, (s = new Set()));
+            s.add(pk);
+          }
+        }
+        const list = [...seen.entries()]
+          .map(([tag, posts]) => ({ tag, count: posts.size }))
+          .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+        htCache = { version: dataVersion, list };
+        return list;
+      };
+      const renderHashtags = () => {
+        if (!store) return;
+        const all = getHashtagCounts();
+        const q = ($('ht-search').value || '').trim().toLowerCase();
+        const list = q ? all.filter((h) => h.tag.toLowerCase().includes(q)) : all;
+        const box = $('ht-list');
+        box.replaceChildren();
+        if (!list.length) {
+          const e = document.createElement('div');
+          e.className = 'ht-empty';
+          e.textContent = t(all.length ? 'htNoMatch' : 'htEmpty');
+          box.appendChild(e);
+          return;
+        }
+        const frag = document.createDocumentFragment();
+        for (const { tag, count } of list) {
+          const chip = document.createElement('button');
+          chip.className = 'ht-item';
+          chip.dataset.tag = tag;
+          const name = document.createElement('span');
+          name.textContent = '#' + tag;            // textContent で XSS 防止
+          const cnt = document.createElement('span');
+          cnt.className = 'ht-count';
+          cnt.textContent = count;
+          chip.append(name, cnt);
+          frag.appendChild(chip);
+        }
+        box.appendChild(frag);
+      };
+      const switchTab = (name) => {
+        document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+        $('tab-grid').hidden = name !== 'grid';
+        $('tab-hashtags').hidden = name !== 'hashtags';
+        if (name === 'hashtags') renderHashtags(); // 開くたび最新 (dataVersion 変化で再集計)
       };
 
       const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString() : '—');
@@ -1308,6 +1448,20 @@
         .forEach(id => $(id).addEventListener('input', onFilterChange));
       ['filter-min-likes', 'search-text']
         .forEach(id => $(id).addEventListener('input', onFilterChangeDebounced));
+
+      // タブ切り替え + ハッシュタグタブ
+      document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+      $('ht-search').addEventListener('input', renderHashtags);
+      $('ht-list').addEventListener('click', (e) => {
+        const chip = e.target.closest('.ht-item');
+        if (!chip) return;
+        // クリックしたタグでグリッドを絞り込み、グリッドタブへ切り替え
+        $('search-field').value = 'hashtags';
+        $('search-text').value = chip.dataset.tag;
+        saveUiState();
+        switchTab('grid');
+        renderGrid();
+      });
 
       // Status info ポップオーバー
       const infoBtn = $('status-info-btn');
