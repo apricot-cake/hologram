@@ -20,7 +20,7 @@
 | # | 状態 | 結果メモ |
 |---|------|---------|
 | A-2a | - | |
-| A-2b | - | |
+| A-2b | OK | bsky.app/.../post/3mmwmla3xph26。個別ページ postThreadItem 検出。displayName/DID/text/date/likes3016・reposts523・replies523 全API一致、画像1枚を原寸webp保存。verify-store PASS（ストア版dev除去後の回帰確認も兼ねる） |
 | A-2c | - | |
 | A-2d | - | |
 | A-2e | - | |
