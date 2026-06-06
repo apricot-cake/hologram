@@ -21,10 +21,10 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - `background.js` — Service Worker。タブキャプチャ → クロップ → `metadata.js` で投稿URLから各プラットフォームのAPIでメタデータ取得 → Native Messaging でブリッジへ送信（EXIF/storage 廃止、**DOMスクレイピング廃止＝安定API由来のみ**）
 - `content.js` — コンテンツスクリプト。投稿選択UI・投稿要素の特定・パーマリンク抽出・クロップ（**メタデータのDOM抽出は廃止**しAPIへ移行）
 - `metadata.js`（ルート）— 投稿URLから X（`cdn.syndication.twimg.com` の syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）でメタデータを取得・正規化。background が importScripts、node でもテスト可能。Xはリポスト/ブックマーク/閲覧数を含まない
-- `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
+- `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）を**ベストエフォートでDLし `<id>-media-N.<ext>` に保存**＝静止画のみ・https限定・25MB/12s/12件上限・失敗時dropで保存自体は失敗させない）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
 - `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`（`index.html`・`viewer.js`・`i18n.js`）、`vendor/jszip.min.js`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録。画像は `psimg://` プロトコルで遅延読込
 - `i18n.js`（ルート）— content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js` を使用）
-- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`backfill-metadata.js`（保存先の欠損メタを保存URLから再取得）、`test-metadata.js`（メタデータAPI取得の実地検証）、`test-bridge.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`/`test-app-watch.js`（ブリッジ/アプリ/IPC/ハッシュタグ/自動更新のスモークテスト）、`make-icons.js`（アイコン生成）
+- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`backfill-metadata.js`（保存先の欠損メタを保存URLから再取得）、`test-metadata.js`（メタデータAPI取得の実地検証）、`test-bridge.js`/`test-media.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`/`test-app-watch.js`/`test-app-media.js`（ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示のスモークテスト）、`make-icons.js`（アイコン生成）
 
 ## キーボードショートカット
 
@@ -53,6 +53,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - Misskey インスタンスフィルタ（Misskey 選択時にサイドバーへインスタンス一覧を展開、URLのホストで絞り込み）
 - 保存先フォルダの自動監視（新規キャプチャ等で一覧を自動更新。main の `fs.watch`→`posts-changed` IPC）
 - ハッシュタグ一覧タブ（本文の #タグ を抽出・頻度順表示、クリックで絞り込み）
+- 添付画像の原寸表示（カードにサムネ列＝グリッド表示のみ、クリックでスクショ＋原寸を束ねたギャラリー＝prev/next・矢印キー・カウンタ）
 - 日付範囲フィルタ（from/to）
 - エンゲージメントフィルタ（種類選択+最低値）
 - カード/リスト表示切替（config保存）
@@ -98,7 +99,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
   - [x] メタデータはサイドカーJSON（SQLite不採用：Electronでのネイティブ依存回避）+ ファイルシステムに画像保存
   - [x] ビューア全機能の Electron 移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
   - [ ] 配布パッケージング（electron-builder 等）
-  - [ ] 添付画像の原寸保存・表示
+  - [x] 添付画像の原寸保存・表示（静止画。metadata.js が `media[]`（原寸URL）抽出 → bridge が DL して `<id>-media-N.<ext>` 保存 → ビューアでサムネ列＋ギャラリー表示。動画/GIFは対象外、新規キャプチャのみ。検証: `scripts/test-media.js`/`test-app-media.js`、`test-metadata.js` の media アサーション）
 - [x] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [x] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
 - [x] Mastodon 対応（公開REST API `/api/v1/statuses/:id`＝**安定API方針に合致**。metadata.js に追加、content.js は標準Web UIの投稿特定＋URL抽出のみ。CORSは Origin付きで `*`）
