@@ -2,7 +2,7 @@
 
 [English](README.en.md) | **日本語**
 
-X / Bluesky / Misskey の投稿をキャプチャして、デスクトップアプリで後から閲覧・検索できます。
+X / Bluesky / Misskey / Mastodon の投稿をキャプチャして、デスクトップアプリで後から閲覧・検索できます。
 
 Post Snap は2つの部品でできています。
 
@@ -22,6 +22,7 @@ Post Snap は2つの部品でできています。
 - X (Twitter)
 - Bluesky
 - Misskey
+- Mastodon
 
 ## できること
 

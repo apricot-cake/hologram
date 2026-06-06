@@ -478,10 +478,14 @@
       const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
       if (existIdx >= 0) {
         removeFilter(existIdx);
-        if (type === 'platform' && value === 'misskey') {
-          activeFilters = activeFilters.filter(f => f.type !== 'instance');
-          renderQueryChips();
-          renderPosts();
+        // Deselecting a host-based platform can orphan instance filters; keep only
+        // those whose host still belongs to a selected host-based platform.
+        if (type === 'platform' && ['misskey', 'mastodon'].includes(value)) {
+          const activeIP = activeFilters.filter(f => f.type === 'platform' && ['misskey', 'mastodon'].includes(f.value)).map(f => f.value);
+          const validHosts = new Set(allPosts.filter(p => activeIP.includes(p.platform)).map(p => hostOf(p.url)));
+          const before = activeFilters.length;
+          activeFilters = activeFilters.filter(f => f.type !== 'instance' || validHosts.has(f.value));
+          if (activeFilters.length !== before) { renderQueryChips(); renderPosts(); }
         }
       } else {
         addFilter({ type, value });
@@ -619,13 +623,16 @@
     });
   }
 
-  // Sidebar: Misskey instances (expands under the Platform section when Misskey is selected)
+  // Sidebar: instances/servers for Misskey + Mastodon (expands under the Platform
+  // section when one of those host-based platforms is selected).
   function updateSidebarInstances() {
     const wrap = document.getElementById('sbInstanceWrap');
     const container = document.getElementById('sbInstanceChips');
-    const misskeyActive = activeFilters.some(f => f.type === 'platform' && f.value === 'misskey');
-    const instances = [...new Set(allPosts.filter(p => p.platform === 'misskey').map(p => hostOf(p.url)).filter(Boolean))].sort();
-    if (!misskeyActive || instances.length === 0) {
+    const activePlatforms = activeFilters
+      .filter(f => f.type === 'platform' && ['misskey', 'mastodon'].includes(f.value))
+      .map(f => f.value);
+    const instances = [...new Set(allPosts.filter(p => activePlatforms.includes(p.platform)).map(p => hostOf(p.url)).filter(Boolean))].sort();
+    if (activePlatforms.length === 0 || instances.length === 0) {
       wrap.style.display = 'none';
       container.innerHTML = '';
       return;
@@ -828,10 +835,10 @@
       posts = posts.filter(p => keys.includes(userKey(p)));
     }
 
-    // Instance (Misskey): OR within group
+    // Instance/server (Misskey + Mastodon): OR within group
     if (byType.instance) {
       const hosts = byType.instance.map(f => f.value);
-      posts = posts.filter(p => p.platform === 'misskey' && hosts.includes(hostOf(p.url)));
+      posts = posts.filter(p => (p.platform === 'misskey' || p.platform === 'mastodon') && hosts.includes(hostOf(p.url)));
     }
 
     // Post type: OR within group

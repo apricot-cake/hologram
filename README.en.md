@@ -2,7 +2,7 @@
 
 **English** | [日本語](README.md)
 
-Capture posts from X, Bluesky, and Misskey, and browse them later in a desktop viewer.
+Capture posts from X, Bluesky, Misskey, and Mastodon, and browse them later in a desktop viewer.
 
 Post Snap has two parts:
 
@@ -22,6 +22,7 @@ No browser storage, no EXIF — the image and its metadata sit side by side as p
 - X (Twitter)
 - Bluesky
 - Misskey
+- Mastodon
 
 ## What you can do
 
