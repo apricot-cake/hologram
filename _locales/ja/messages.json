@@ -14,13 +14,5 @@
   "cmdActivate": {
     "message": "投稿の保存を開始",
     "description": "Keyboard command description (Alt+S)"
-  },
-  "cmdOpenViewer": {
-    "message": "ビューアを開く",
-    "description": "Keyboard command description (Alt+V)"
-  },
-  "cmdReloadExtension": {
-    "message": "拡張機能をリロード（開発用）",
-    "description": "Keyboard command description (Alt+R, dev only)"
   }
 }

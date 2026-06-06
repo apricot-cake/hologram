@@ -1,22 +1,5 @@
 importScripts('metadata.js');
 
-const BUILD_FILES = ['background.js', 'content.js', 'i18n.js', 'manifest.json', 'metadata.js'];
-let buildHash = 'unknown';
-
-(async () => {
-  try {
-    let combined = '';
-    for (const f of BUILD_FILES) {
-      const res = await fetch(chrome.runtime.getURL(f));
-      combined += (await res.text()).replace(/\r\n/g, '\n');
-    }
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(combined));
-    buildHash = Array.from(new Uint8Array(buf)).slice(0, 4)
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-    console.log(`[Post Snap] Build: ${buildHash}`);
-  } catch { /* non-critical */ }
-})();
-
 const NATIVE_HOST = 'com.postsnap.host';
 
 // Allowed capture origins per platform (used to validate the sender tab).
@@ -54,10 +37,6 @@ async function activateOnTab(tab) {
 chrome.action.onClicked.addListener(activateOnTab);
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'reload-extension' && !('update_url' in chrome.runtime.getManifest())) {
-    chrome.runtime.reload();
-    return;
-  }
   if (command !== 'activate') return;
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -65,11 +44,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'getBuildHash') {
-    sendResponse({ hash: buildHash });
-    return false;
-  }
-
   if (message.type !== 'captureAndSend') return false;
 
   if (!sender.tab?.id) {

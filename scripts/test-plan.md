@@ -7,7 +7,7 @@
 ## 事前準備（毎回）
 
 - Electron アプリ（`cd app && npm start`）で保存先フォルダと拡張IDを設定済みであること（初回起動で Native Messaging host が登録される）。
-- 拡張とテスト対象ページをリロード済みであること（リロード検出: `python scripts/check-reload.py`）。
+- 拡張とテスト対象ページをリロード済みであること（`chrome://extensions` でリロード後、対象ページを再読込）。
 
 ## テスト後の一括検証（毎回）
 

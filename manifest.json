@@ -28,12 +28,6 @@
         "default": "Alt+S"
       },
       "description": "__MSG_cmdActivate__"
-    },
-    "reload-extension": {
-      "suggested_key": {
-        "default": "Alt+R"
-      },
-      "description": "__MSG_cmdReloadExtension__"
     }
   }
 }

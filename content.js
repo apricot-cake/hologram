@@ -244,11 +244,6 @@
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
-  // === ビルドハッシュをDOMに埋め込む（リロードチェック用） ===
-  chrome.runtime.sendMessage({ type: 'getBuildHash' }, (res) => {
-    if (res?.hash) document.documentElement.dataset.postSnapBuild = res.hash;
-  });
-
   // === リスナー登録 ===
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClick, true);

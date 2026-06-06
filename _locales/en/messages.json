@@ -14,13 +14,5 @@
   "cmdActivate": {
     "message": "Start capturing a post",
     "description": "Keyboard command description (Alt+S)"
-  },
-  "cmdOpenViewer": {
-    "message": "Open viewer",
-    "description": "Keyboard command description (Alt+V)"
-  },
-  "cmdReloadExtension": {
-    "message": "Reload extension (dev)",
-    "description": "Keyboard command description (Alt+R, dev only)"
   }
 }
