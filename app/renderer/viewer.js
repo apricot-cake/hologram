@@ -842,7 +842,7 @@
       // gallery at the first downloaded original image.
       const hasOriginals = currentView !== 'list' && Array.isArray(p.media) && p.media.some(m => m && m.file);
       const mediaBtn = hasOriginals
-        ? `<button class="media-btn" data-index="${i}" title="${escapeAttr(MSG.tipOriginal)}">🖼️</button>`
+        ? `<button class="media-btn" data-index="${i}" title="${escapeAttr(MSG.tipOriginal)}" aria-label="${escapeAttr(MSG.tipOriginal)}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>`
         : '';
 
       const postKey = (p.url || '') + '|' + (p.capturedAt || '');
