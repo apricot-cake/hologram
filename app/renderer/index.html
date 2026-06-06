@@ -328,15 +328,17 @@
     .lightbox-overlay.multi .lb-counter { display: block; }
 
     /* --- Original-media thumbnail strip (grid view) --- */
-    .media-strip {
-      display: flex; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap;
+    .media-btn {
+      position: absolute; top: 8px; right: 104px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      font-size: 14px; line-height: 28px; text-align: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
     }
-    .media-strip .media-thumb {
-      width: 56px; height: 56px; min-width: 56px;
-      object-fit: cover; border-radius: 4px; cursor: zoom-in;
-      border: 1px solid #e1e1e1;
-    }
-    .media-strip .media-thumb:hover { border-color: #1d9bf0; }
+    .media-btn { filter: grayscale(1) brightness(2); }
+    .media-btn:hover { background: rgba(100,100,100,0.7); }
+    .post-card:hover .media-btn { opacity: 1; }
 
     /* --- Delete confirm --- */
     .confirm-overlay {

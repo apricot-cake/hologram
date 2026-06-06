@@ -837,10 +837,12 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
-      // Original-media thumbnails (grid view only; list view stays text-first).
-      const mediaFiles = (currentView !== 'list' && Array.isArray(p.media)) ? p.media.filter(m => m && m.file) : [];
-      const mediaStrip = mediaFiles.length
-        ? `<div class="media-strip">${mediaFiles.map((m, k) => `<img class="media-thumb" src="psimg://img/${encodeURIComponent(m.file)}" data-index="${i}" data-media="${k}" alt="${escapeAttr(m.alt || '')}" title="${escapeAttr(MSG.tipOriginal)}" loading="lazy">`).join('')}</div>`
+      // Original-media access is an overlay button (grid view only; list view
+      // stays text-first), parallel to the screenshot zoom button. It opens the
+      // gallery at the first downloaded original image.
+      const hasOriginals = currentView !== 'list' && Array.isArray(p.media) && p.media.some(m => m && m.file);
+      const mediaBtn = hasOriginals
+        ? `<button class="media-btn" data-index="${i}" title="${escapeAttr(MSG.tipOriginal)}">🖼️</button>`
         : '';
 
       const postKey = (p.url || '') + '|' + (p.capturedAt || '');
@@ -849,8 +851,8 @@
         <div class="select-check">${isSelected ? '✓' : ''}</div>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}">✎</button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
+        ${mediaBtn}
         ${p.image ? `<button class="zoom-btn" title="${MSG.tipZoom}">🔍</button><img src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
-        ${mediaStrip}
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
@@ -951,14 +953,12 @@
       if (p) openGallery(buildGalleryItems(p), 0);
       return;
     }
-    // Original-media thumbnail -> open the gallery at that image.
-    const thumb = e.target.closest('.media-thumb');
-    if (thumb) {
+    // Original-media button -> open the gallery at the first original image.
+    const mediaBtn = e.target.closest('.media-btn');
+    if (mediaBtn) {
       e.stopPropagation();
-      const p = getFilteredPosts()[parseInt(thumb.dataset.index, 10)];
-      if (!p) return;
-      const k = parseInt(thumb.dataset.media, 10) || 0;
-      openGallery(buildGalleryItems(p), (p.image ? 1 : 0) + k);
+      const p = getFilteredPosts()[parseInt(mediaBtn.dataset.index, 10)];
+      if (p) openGallery(buildGalleryItems(p), p.image ? 1 : 0);
     }
   });
 
@@ -989,7 +989,7 @@
 
   // Click on post card -> select or open URL
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text') || e.target.closest('.media-thumb')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.zoom-btn') || e.target.closest('.text') || e.target.closest('.media-btn')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
 

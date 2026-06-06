@@ -48,7 +48,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - Misskey インスタンスフィルタ（Misskey 選択時にサイドバーへインスタンス一覧を展開、URLのホストで絞り込み）
 - 保存先フォルダの自動監視（新規キャプチャ等で一覧を自動更新。main の `fs.watch`→`posts-changed` IPC）
 - ハッシュタグ一覧タブ（本文の #タグ を抽出・頻度順表示、クリックで絞り込み）
-- 添付画像の原寸表示（カードにサムネ列＝グリッド表示のみ、クリックでスクショ＋原寸を束ねたギャラリー＝prev/next・矢印キー・カウンタ）
+- 添付画像の原寸表示（カードに原寸ボタン＝グリッド表示のみのオーバーレイ。クリックでスクショ＋原寸を束ねたギャラリー＝prev/next・矢印キー・カウンタ）
 - 日付範囲フィルタ（from/to）
 - エンゲージメントフィルタ（種類選択+最低値）
 - カード/リスト表示切替（config保存）
@@ -91,7 +91,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
   - [x] メタデータはサイドカーJSON（SQLite不採用：Electronでのネイティブ依存回避）+ ファイルシステムに画像保存
   - [x] ビューア全機能の Electron 移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
   - [ ] 配布パッケージング（electron-builder 等）
-  - [x] 添付画像の原寸保存・表示（静止画。metadata.js が `media[]`（原寸URL）抽出 → bridge が DL して `<id>-media-N.<ext>` 保存 → ビューアでサムネ列＋ギャラリー表示。動画/GIFは対象外、新規キャプチャのみ。検証: `scripts/test-media.js`/`test-app-media.js`、`test-metadata.js` の media アサーション）
+  - [x] 添付画像の原寸保存・表示（静止画。metadata.js が `media[]`（原寸URL）抽出 → bridge が DL して `<id>-media-N.<ext>` 保存 → ビューアで原寸ボタン（オーバーレイ）＋ギャラリー表示。動画/GIFは対象外、新規キャプチャのみ。検証: `scripts/test-media.js`/`test-app-media.js`、`test-metadata.js` の media アサーション）
 - [x] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
 - [x] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
 - [x] Mastodon 対応（公開REST API `/api/v1/statuses/:id`＝**安定API方針に合致**。metadata.js に追加、content.js は標準Web UIの投稿特定＋URL抽出のみ。CORSは Origin付きで `*`）

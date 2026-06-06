@@ -1,9 +1,10 @@
 'use strict';
 
 // V3 — viewer original-media display (headless). A sidecar with 2 media entries
-// + matching PNG files: assert the thumbnail strip renders, the gallery opens
-// (screenshot + 2 originals) and pages, alt text is escaped, and the PNG thumb
-// actually loads via the psimg:// protocol.
+// + matching PNG files: assert the overlay media button renders and opens the
+// gallery at the first original (screenshot + 2 originals, with paging), the alt
+// text is carried into the gallery safely (DOM property, not injected), and the
+// original PNG loads via the psimg:// protocol.
 //
 //   node scripts/test-app-media.js
 
@@ -41,21 +42,29 @@ fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
 }, null, 2));
 
 const evalJs = `(async () => {
-  const thumbs = document.querySelectorAll('.media-thumb');
-  const firstThumb = thumbs[0] || null;
-  const altAttr = firstThumb ? firstThumb.getAttribute('alt') : null;
-  const injected = !!(document.querySelector('.post-card [onerror]') || window.__xss);
-  let nat = 0;
-  if (firstThumb) { try { await firstThumb.decode(); } catch (e) {} nat = firstThumb.naturalWidth; }
-  const zoom = document.querySelector('.post-card .zoom-btn');
-  if (zoom) zoom.click();
+  const mediaBtns = document.querySelectorAll('.post-card .media-btn');
+  const btn = mediaBtns[0] || null;
+  // No thumbnail DOM now: the hostile alt must not appear in the card markup.
+  const injectedInCard = !!(document.querySelector('.post-card [onerror]') || window.__xss);
+  // Media button -> gallery opens at the first original (2 / 3 of screenshot+2).
+  if (btn) btn.click();
   const lb = document.getElementById('lightbox');
   const shown = lb.classList.contains('show');
   const multi = lb.classList.contains('multi');
-  const counter = document.getElementById('lbCounter').textContent;
+  const counterAtOriginal = document.getElementById('lbCounter').textContent;
+  const img = document.getElementById('lightboxImg');
+  let nat = 0; try { await img.decode(); } catch (e) {} nat = img.naturalWidth;
+  const galleryAlt = img.getAttribute('alt');
+  const injectedAfterOpen = !!(document.querySelector('#lightbox [onerror]') || window.__xss);
+  // Page to the second original (3 / 3).
   document.getElementById('lbNext').click();
   const counter2 = document.getElementById('lbCounter').textContent;
-  return { thumbCount: thumbs.length, altAttr, injected, nat, shown, multi, counter, counter2 };
+  // The zoom button still opens at the screenshot (1 / 3).
+  lb.classList.remove('show');
+  const zoom = document.querySelector('.post-card .zoom-btn');
+  if (zoom) zoom.click();
+  const counterZoom = document.getElementById('lbCounter').textContent;
+  return { mediaBtnCount: mediaBtns.length, injectedInCard, shown, multi, counterAtOriginal, nat, galleryAlt, injectedAfterOpen, counter2, counterZoom };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, POSTSNAP_SMOKE: '1', POSTSNAP_SMOKE_EVAL: evalJs });
@@ -72,11 +81,12 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('2 media thumbnails rendered', r.thumbCount === 2);
-  check('alt is the escaped literal; no element/handler injected', r.injected === false && r.altAttr === ALT);
-  check('thumb loads via psimg (naturalWidth>0)', r.nat > 0);
-  check('gallery opens with screenshot + 2 originals (1 / 3, multi)', r.shown === true && r.multi === true && r.counter === '1 / 3');
-  check('Next advances the gallery (2 / 3)', r.counter2 === '2 / 3');
+  check('1 overlay media button rendered', r.mediaBtnCount === 1);
+  check('media button opens gallery at the first original (2 / 3, multi)', r.shown === true && r.multi === true && r.counterAtOriginal === '2 / 3');
+  check('original loads via psimg (naturalWidth>0)', r.nat > 0);
+  check('alt carried into gallery as the escaped literal; no element/handler injected', r.injectedInCard === false && r.injectedAfterOpen === false && r.galleryAlt === ALT);
+  check('Next advances to the second original (3 / 3)', r.counter2 === '3 / 3');
+  check('zoom button still opens at the screenshot (1 / 3)', r.counterZoom === '1 / 3');
   console.log('\n' + (ok ? 'MEDIA_APP_TEST_PASS' : 'MEDIA_APP_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });
