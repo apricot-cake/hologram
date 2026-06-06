@@ -126,6 +126,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     date: meta.date || capturedAt,
     capturedAt,
     mediaType: meta.mediaType,
+    media: meta.media || [],
     lang: meta.lang,
     isReply: meta.isReply,
     isQuote: meta.isQuote,

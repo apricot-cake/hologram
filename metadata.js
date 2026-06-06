@@ -40,7 +40,7 @@ function emptyRecord(url, platform) {
     url: url || null, platform: platform || null, text: null,
     displayName: null, screenName: null, userId: null,
     likes: null, reposts: null, replies: null, bookmarks: null, views: null,
-    date: null, mediaType: null, lang: null,
+    date: null, mediaType: null, media: [], lang: null,
     isReply: null, isQuote: null, isThread: null, quotedUrl: null, tags: []
   };
 }
@@ -64,6 +64,19 @@ function xMediaType(details) {
   return null;
 }
 
+// Original-resolution still images only (skip video/animated_gif).
+function xMedia(details) {
+  if (!Array.isArray(details)) return [];
+  return details
+    .filter((m) => m && m.type === 'photo' && m.media_url_https)
+    .map((m) => ({
+      url: m.media_url_https,
+      alt: m.ext_alt_text || null,
+      width: (m.original_info && m.original_info.width) || null,
+      height: (m.original_info && m.original_info.height) || null
+    }));
+}
+
 async function fetchXTweet(parsed, url) {
   const rec = emptyRecord(url, 'x');
   rec.screenName = parsed.screenName;
@@ -83,6 +96,7 @@ async function fetchXTweet(parsed, url) {
     rec.date = toIso(j.created_at);
     rec.lang = j.lang || null;
     rec.mediaType = xMediaType(j.mediaDetails);
+    rec.media = xMedia(j.mediaDetails);
     if (j.in_reply_to_screen_name) {
       rec.isReply = true;
       // self-reply (thread): promote to thread and clear isReply, so the four
@@ -129,6 +143,25 @@ function bskyMediaType(post) {
   return null;
 }
 
+// Original-resolution still images from an images embed (or recordWithMedia).
+function bskyMedia(post) {
+  const e = post.embed || (post.record && post.record.embed);
+  if (!e) return [];
+  const type = e.$type || '';
+  let images = null;
+  if (type.includes('app.bsky.embed.images')) images = e.images;
+  else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('images')) images = e.media.images;
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter((im) => im && im.fullsize)
+    .map((im) => ({
+      url: im.fullsize,
+      alt: im.alt || null,
+      width: (im.aspectRatio && im.aspectRatio.width) || null,
+      height: (im.aspectRatio && im.aspectRatio.height) || null
+    }));
+}
+
 async function fetchBlueskyPost(parsed, url) {
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
@@ -156,6 +189,7 @@ async function fetchBlueskyPost(parsed, url) {
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.mediaType = bskyMediaType(post);
+    rec.media = bskyMedia(post);
     if (record.reply) {
       rec.isReply = true;
       // self-reply (thread): parent author DID matches this author
@@ -190,6 +224,19 @@ function misskeyMediaType(files) {
   return null;
 }
 
+// Original-resolution still images (skip gifs and non-image files).
+function misskeyMedia(files) {
+  if (!Array.isArray(files)) return [];
+  return files
+    .filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/') && f.type !== 'image/gif' && f.url)
+    .map((f) => ({
+      url: f.url,
+      alt: f.comment || null,
+      width: (f.properties && f.properties.width) || null,
+      height: (f.properties && f.properties.height) || null
+    }));
+}
+
 async function fetchMisskeyNote(parsed, url) {
   const rec = emptyRecord(url, 'misskey');
   try {
@@ -215,6 +262,7 @@ async function fetchMisskeyNote(parsed, url) {
     rec.replies = note.repliesCount ?? null;
     if (note.lang) rec.lang = note.lang;
     rec.mediaType = misskeyMediaType(note.files);
+    rec.media = misskeyMedia(note.files);
     if (note.replyId) {
       rec.isReply = true;
       if (note.reply && note.reply.userId && note.reply.userId === note.userId) { rec.isThread = true; rec.isReply = null; }
@@ -256,6 +304,19 @@ function mastodonMediaType(atts) {
   return null;
 }
 
+// Original-resolution still images only.
+function mastodonMedia(atts) {
+  if (!Array.isArray(atts)) return [];
+  return atts
+    .filter((a) => a && a.type === 'image' && a.url)
+    .map((a) => ({
+      url: a.url,
+      alt: a.description || null,
+      width: (a.meta && a.meta.original && a.meta.original.width) || null,
+      height: (a.meta && a.meta.original && a.meta.original.height) || null
+    }));
+}
+
 async function fetchMastodonStatus(parsed, url) {
   const rec = emptyRecord(url, 'mastodon');
   try {
@@ -275,6 +336,7 @@ async function fetchMastodonStatus(parsed, url) {
     rec.replies = s.replies_count ?? null;
     rec.lang = s.language || null;
     rec.mediaType = mastodonMediaType(s.media_attachments);
+    rec.media = mastodonMedia(s.media_attachments);
     if (s.in_reply_to_id) {
       rec.isReply = true;
       if (s.account && s.in_reply_to_account_id && s.in_reply_to_account_id === s.account.id) {
@@ -304,5 +366,8 @@ async function fetchPostMetadata(url) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, xToken };
+  module.exports = {
+    parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, xToken,
+    xMedia, bskyMedia, misskeyMedia, mastodonMedia
+  };
 }

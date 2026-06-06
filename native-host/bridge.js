@@ -66,7 +66,61 @@ function uniqueBase(dir, captureId) {
   return `${captureId}-${n}`;
 }
 
-function handleSave(msg) {
+// --- Original-media download (best-effort, still images only) ---
+// Supported still-image content types -> file extension. Anything else (video,
+// svg, avif, html error pages, ...) is skipped rather than saved.
+const MEDIA_MIME_EXT = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif'
+};
+const MAX_MEDIA = 12;                       // cap attachments per post
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024;   // skip anything larger
+const MEDIA_TIMEOUT_MS = 12000;             // per-image abort
+
+// Download one still image to <base>-media-<i>.<ext>. Returns the post-download
+// descriptor (with `file`) on success, or null on any failure (caller drops it).
+async function downloadOneMedia(entry, dir, base, i) {
+  if (!entry || typeof entry.url !== 'string' || !/^https:\/\//i.test(entry.url)) return null;
+  if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
+  try {
+    const res = await fetch(entry.url, { signal: ctrl.signal, redirect: 'follow' });
+    if (!res.ok) return null;
+    const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ext = MEDIA_MIME_EXT[ct];
+    if (!ext) return null; // not a supported still image
+    const declared = Number(res.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_MEDIA_BYTES) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_MEDIA_BYTES) return null;
+    const file = `${base}-media-${i}.${ext}`;
+    fs.writeFileSync(path.join(dir, file), buf);
+    return {
+      url: entry.url,
+      alt: entry.alt != null ? String(entry.alt) : null,
+      width: Number.isFinite(entry.width) ? entry.width : null,
+      height: Number.isFinite(entry.height) ? entry.height : null,
+      file
+    };
+  } catch {
+    return null; // network/abort/parse failure — drop this entry
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function downloadMedia(mediaList, dir, base) {
+  if (!Array.isArray(mediaList) || !mediaList.length) return [];
+  const list = mediaList.slice(0, MAX_MEDIA);
+  const settled = await Promise.allSettled(list.map((m, i) => downloadOneMedia(m, dir, base, i)));
+  return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
+}
+
+async function handleSave(msg) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
   if (typeof msg.image !== 'string' || !msg.image) throw new Error('Missing image data');
@@ -89,16 +143,31 @@ function handleSave(msg) {
   }
   fs.writeFileSync(jpgPath, img);
 
-  const record = Object.assign({}, msg.metadata || {}, {
+  const meta = msg.metadata || {};
+  // Best-effort original-media download. A failure here must NEVER fail the save:
+  // the screenshot + sidecar are the primary artifacts. The sidecar is written
+  // LAST so media[].file reflects exactly what landed on disk.
+  let savedMedia = [];
+  try {
+    savedMedia = await downloadMedia(meta.media, saveFolder, base);
+  } catch {
+    savedMedia = [];
+  }
+
+  const record = Object.assign({}, meta, {
     captureId: base,
-    image: `${base}.jpg`
+    image: `${base}.jpg`,
+    media: savedMedia
   });
   fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
 
-  return { ok: true, file: `${base}.jpg`, saveFolder };
+  return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length };
 }
 
 // --- stdin reader: buffer bytes and process complete messages ---
+// Only act as a real native-messaging host when executed directly. When this
+// module is require()'d (by a test), skip the reader and expose internals.
+if (require.main === module) {
 let buffer = Buffer.alloc(0);
 
 process.stdin.on('data', (chunk) => {
@@ -119,7 +188,9 @@ process.stdin.on('data', (chunk) => {
 
     try {
       if (msg.type === 'save') {
-        sendMessage(handleSave(msg));
+        // async (downloads original media) — ack is sent once it settles. The
+        // process drains naturally so the pending fetch keeps it alive.
+        handleSave(msg).then(sendMessage).catch((err) => sendMessage({ ok: false, error: err.message }));
       } else if (msg.type === 'ping') {
         sendMessage({ ok: true, pong: true });
       } else {
@@ -130,7 +201,10 @@ process.stdin.on('data', (chunk) => {
     }
   }
 });
+}
 
 // When Chrome closes the port, stdin ends. We let the event loop drain
 // naturally rather than calling process.exit(), so any pending stdout write
 // (the ack) is flushed before the process terminates.
+
+module.exports = { handleSave, downloadMedia };

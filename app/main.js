@@ -114,6 +114,12 @@ function ensureHostRegistered() {
 }
 
 // --- Image protocol ---
+// Screenshots are JPEG; downloaded original media may be png/webp/gif.
+const EXT_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+function mimeForFile(name) {
+  return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
+}
+
 function registerImageProtocol() {
   protocol.handle('psimg', async (request) => {
     try {
@@ -131,7 +137,7 @@ function registerImageProtocol() {
       }
 
       const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { 'content-type': 'image/jpeg' } });
+      return new Response(data, { headers: { 'content-type': mimeForFile(name) } });
     } catch {
       return new Response('Error', { status: 500 });
     }
@@ -216,16 +222,33 @@ ipcMain.handle('image-data-url', async (_e, image) => {
   if (!p) return null;
   try {
     const buf = await fs.promises.readFile(p);
-    return 'data:image/jpeg;base64,' + buf.toString('base64');
+    return 'data:' + mimeForFile(image) + ';base64,' + buf.toString('base64');
   } catch {
     return null;
   }
 });
 
 ipcMain.handle('delete-post', async (_e, image) => {
-  if (!getSaveFolder() || !image) return { ok: false };
+  const folder = getSaveFolder();
+  if (!folder || !image) return { ok: false };
   const base = path.basename(image).replace(/\.jpe?g$/i, '');
-  for (const name of [`${base}.jpg`, `${base}.jpeg`, `${base}.json`]) {
+  const targets = new Set([`${base}.jpg`, `${base}.jpeg`, `${base}.json`]);
+  // Original-media files: take the exact names from the sidecar, and also sweep
+  // any `<base>-media-*` on disk (covers a missing/partial sidecar). The literal
+  // `-media-` anchor prevents matching a different post whose id is a prefix.
+  const jsonPath = resolveInFolder(`${base}.json`);
+  if (jsonPath) {
+    try {
+      const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+      for (const m of (rec.media || [])) { if (m && m.file) targets.add(path.basename(m.file)); }
+    } catch { /* sidecar missing/corrupt — fall back to the disk sweep */ }
+  }
+  try {
+    for (const f of await fs.promises.readdir(folder)) {
+      if (f.startsWith(`${base}-media-`)) targets.add(f);
+    }
+  } catch { /* ignore */ }
+  for (const name of targets) {
     const f = resolveInFolder(name);
     if (f) {
       try { await fs.promises.unlink(f); } catch { /* may not exist */ }
@@ -313,7 +336,7 @@ ipcMain.handle('clear-all', async () => {
   try {
     for (const f of fs.readdirSync(folder)) {
       if (f === 'config.json' || f === '.index.json') continue;
-      if (/\.(jpe?g|json)$/i.test(f)) {
+      if (/\.(jpe?g|png|webp|gif|json)$/i.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
     }
