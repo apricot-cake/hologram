@@ -170,9 +170,20 @@ function uninstall() {
     }
   }
 
-  for (const f of ['bridge.js', 'paths.js']) {
+  // Remove the deployed bridge, the launcher, and the generated host manifest.
+  // Leave config.json (extensionId / saveFolder) so user settings survive an
+  // uninstall. Clearing the stale manifest also matters because app/main.js
+  // gates registration on existsSync(manifestPath()); a leftover manifest would
+  // make a later launch skip re-registering with stale allowed_origins.
+  const leftovers = [
+    path.join(configDir(), 'bridge.js'),
+    path.join(configDir(), 'paths.js'),
+    launcherPath(),
+    manifestPath()
+  ];
+  for (const f of leftovers) {
     try {
-      fs.unlinkSync(path.join(configDir(), f));
+      fs.unlinkSync(f);
     } catch {
       // Not present — fine.
     }

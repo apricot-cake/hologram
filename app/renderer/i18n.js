@@ -55,7 +55,7 @@
       hintLang: 'バナーとビューアの表示言語を変更します。変更後にページがリロードされます。',
       shortcutTitle: 'キーボードショートカット',
       shortcutLink: 'ショートカットを変更',
-      hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）、Alt+V（ビューア・設定）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
+      hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
 
       // viewer: settings > data / danger
       dataTitle: 'データ',
@@ -202,7 +202,7 @@
       hintLang: 'Changes the display language for banners and viewer. Page will reload after change.',
       shortcutTitle: 'Keyboard Shortcut',
       shortcutLink: 'Change keyboard shortcut',
-      hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture), Alt+V (viewer/settings). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
+      hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
       dataTitle: 'Data',
       exportZip: 'Export ZIP',

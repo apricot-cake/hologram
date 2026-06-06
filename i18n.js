@@ -7,8 +7,9 @@
 // Consumers do: const { getMessage, lang, resolved } = await window.postSnapI18n;
 // then call getMessage('key', [sub1, sub2]).
 // Note: this file may be re-executed by chrome.scripting.executeScript on every
-// Alt+S press. We intentionally reassign window.postSnapI18n each time so
-// language changes made in the viewer take effect on the next capture.
+// Alt+S press, so window.postSnapI18n is reassigned each time. The banner
+// language follows the browser locale (navigator.language); the desktop app has
+// its own independent language setting and the content script cannot read it.
 (function () {
   const MESSAGES = {
     ja: {
@@ -286,16 +287,10 @@
   };
 
   window.postSnapI18n = (async () => {
-    let lang = 'auto';
-    try {
-      const result = await chrome.storage.local.get('language');
-      lang = result.language || 'auto';
-    } catch {
-      // storage may be unavailable in some contexts; fall back to auto
-    }
-    const resolved = lang === 'auto'
-      ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en')
-      : (lang === 'ja' ? 'ja' : 'en');
+    // The banner follows the browser locale. The extension no longer stores a
+    // language preference (the viewer moved to the desktop app, which keeps its
+    // own setting in config.json that a content script cannot read).
+    const resolved = (navigator.language && navigator.language.toLowerCase().startsWith('ja')) ? 'ja' : 'en';
     const table = MESSAGES[resolved] || MESSAGES.en;
 
     const getMessage = (key, subs) => {
@@ -309,6 +304,6 @@
       return text;
     };
 
-    return { lang, resolved, getMessage };
+    return { lang: resolved, resolved, getMessage };
   })();
 })();

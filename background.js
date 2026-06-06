@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const tabId = sender.tab.id;
-  captureAndSave(sender.tab, message.rect, message.postUrl)
+  captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => {
       console.error(error);
@@ -94,7 +94,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-async function captureAndSave(tab, rect, postUrl) {
+async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   const captureId = generateCaptureId();
   const capturedAt = new Date().toISOString();
 
@@ -110,7 +110,10 @@ async function captureAndSave(tab, rect, postUrl) {
     captureId,
     image: `${captureId}.jpg`,
     url: meta.url || postUrl || null,
-    platform: meta.platform,
+    // meta.platform is null only when the URL didn't parse; fall back to the
+    // sender-reported platform (already origin-validated) so the record stays
+    // visible in the viewer's platform filter rather than becoming platform:null.
+    platform: meta.platform || sendPlatform || null,
     text: meta.text,
     displayName: meta.displayName,
     screenName: meta.screenName,

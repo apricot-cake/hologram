@@ -78,7 +78,16 @@ function handleSave(msg) {
   const jpgPath = path.join(saveFolder, `${base}.jpg`);
   const jsonPath = path.join(saveFolder, `${base}.json`);
 
-  fs.writeFileSync(jpgPath, Buffer.from(msg.image, 'base64'));
+  // base64 decoding is lenient (it silently drops invalid chars), so a corrupt
+  // payload would otherwise be written as a broken .jpg with ok:true. Validate
+  // the JPEG SOI marker (FF D8 FF) and fail loudly before writing anything; the
+  // throw is caught upstream and returned as { ok:false, error }, leaving no
+  // orphaned files (the sidecar .json is written only after the image).
+  const img = Buffer.from(msg.image, 'base64');
+  if (img.length < 3 || img[0] !== 0xFF || img[1] !== 0xD8 || img[2] !== 0xFF) {
+    throw new Error('Invalid image data (not a JPEG)');
+  }
+  fs.writeFileSync(jpgPath, img);
 
   const record = Object.assign({}, msg.metadata || {}, {
     captureId: base,

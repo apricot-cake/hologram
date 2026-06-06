@@ -40,9 +40,11 @@ async function recentMastodonUrl() {
   // public timeline needs auth on some instances; use a known public account.
   const acc = await (await fetch('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron')).json();
   if (!acc || !acc.id) return null;
-  const st = await (await fetch(`https://mastodon.social/api/v1/accounts/${acc.id}/statuses?limit=5`)).json();
-  const s = Array.isArray(st) ? st.find((x) => x && x.url && x.account) : null;
-  return s ? s.url : null;
+  const st = await (await fetch(`https://mastodon.social/api/v1/accounts/${acc.id}/statuses?limit=20&exclude_reblogs=true`)).json();
+  // Build the canonical web URL (/@user/id) that parsePostUrl understands; skip
+  // boosts whose .url is an ActivityPub /activity URL (not a parseable permalink).
+  const s = Array.isArray(st) ? st.find((x) => x && x.account && !x.reblog) : null;
+  return s ? `https://mastodon.social/@${s.account.acct}/${s.id}` : null;
 }
 
 (async () => {

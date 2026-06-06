@@ -753,8 +753,11 @@
         posts = posts.filter(p => p[field] && new Date(p[field]) >= from);
       }
       if (f.to) {
-        const to = new Date(f.to + 'T23:59:59');
-        posts = posts.filter(p => p[field] && new Date(p[field]) <= to);
+        // Exclusive next-day bound so the whole selected end day is included
+        // regardless of the stored timestamps' sub-second precision.
+        const to = new Date(f.to + 'T00:00:00');
+        to.setDate(to.getDate() + 1);
+        posts = posts.filter(p => p[field] && new Date(p[field]) < to);
       }
     }
 
@@ -1192,9 +1195,13 @@
         reposts: p.reposts,
         replies: p.replies,
         bookmarks: p.bookmarks,
+        views: p.views ?? null,
+        mediaType: p.mediaType || null,
+        lang: p.lang || null,
         isReply: p.isReply || null,
         isQuote: p.isQuote || null,
         isThread: p.isThread || null,
+        quotedUrl: p.quotedUrl || null,
         date: p.date,
         capturedAt: p.capturedAt,
         tags: p.tags?.length ? p.tags : null,
@@ -1231,9 +1238,13 @@
         reposts: p.reposts,
         replies: p.replies,
         bookmarks: p.bookmarks,
+        views: p.views ?? null,
+        mediaType: p.mediaType || null,
+        lang: p.lang || null,
         isReply: p.isReply || null,
         isQuote: p.isQuote || null,
         isThread: p.isThread || null,
+        quotedUrl: p.quotedUrl || null,
         date: p.date,
         capturedAt: p.capturedAt,
         tags: p.tags?.length ? p.tags : null,
@@ -1383,17 +1394,18 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 <option value="x">X</option>
 <option value="bluesky">Bluesky</option>
 <option value="misskey">Misskey</option>
+<option value="mastodon">Mastodon</option>
 </select>
 <span class="count" id="cnt"></span>
 </div>
 <div class="grid" id="g"></div>
 <div class="empty" id="e" style="display:none"></div>
-<script id="postSnapData" type="application/json">${JSON.stringify(postsData)}</script>
+<script id="postSnapData" type="application/json">${JSON.stringify(postsData).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))}</script>
 <script>
 (function(){
 var posts=JSON.parse(document.getElementById('postSnapData').textContent);
 var q=document.getElementById('q'),s=document.getElementById('sort'),pf=document.getElementById('pf');
-function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML}
+function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':String(n)}
 function fmtDate(d){if(!d)return'';var dt=new Date(d);return dt.toLocaleDateString()+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
 function render(){
@@ -1412,7 +1424,7 @@ var st=[];
 if(p.likes!=null)st.push('\\u2764 '+fmt(p.likes));
 if(p.reposts!=null)st.push('\\ud83d\\udd01 '+fmt(p.reposts));
 if(p.replies!=null)st.push('\\ud83d\\udcac '+fmt(p.replies));
-return '<div class="card" onclick="window.open(\\''+esc(p.url||'')+'\\',\\'_blank\\')">'
+return '<div class="card" data-url="'+esc(p.url||'')+'">'
 +(p.image?'<img src="'+p.image+'" loading="lazy">':'')
 +'<div class="meta"><div class="user"><span class="badge '+(p.platform||'')+'">'+(p.platform||'').toUpperCase()+'</span>'+esc(p.displayName||p.screenName||'')
 +(p.screenName?' <span style="color:#999;font-weight:400">@'+esc(p.screenName)+'</span>':'')
@@ -1421,6 +1433,7 @@ return '<div class="card" onclick="window.open(\\''+esc(p.url||'')+'\\',\\'_blan
 +'<div class="date">'+fmtDate(p.date)+'</div></div></div>'
 }).join('')}
 q.addEventListener('input',render);s.addEventListener('change',render);pf.addEventListener('change',render);
+document.getElementById('g').addEventListener('click',function(e){var c=e.target.closest('.card');if(!c)return;var u=c.getAttribute('data-url')||'';if(/^https?:\\/\\//i.test(u))window.open(u,'_blank','noopener')});
 render()
 })();
 </script>

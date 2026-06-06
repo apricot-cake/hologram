@@ -102,6 +102,15 @@
     // The page is only used to identify the clicked post and its permalink.
     const postUrl = siteConfig.getPermalink(post);
 
+    // パーマリンクが取れないとAPIメタデータも取れず、保存しても platform:null の
+    // レコードになりビューアに表示されない。ここで中止する。
+    if (!postUrl) {
+      banner.textContent = MSG.failed;
+      banner.style.background = '#f4212e';
+      setTimeout(cleanup, 1500);
+      return;
+    }
+
     // イベントリスナー除去（クリックは1回だけ）
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
@@ -161,6 +170,15 @@
 
   // === クリーンアップ ===
 
+  // スクロール位置を復元（idempotent: 成功・失敗・キャンセルのどの経路からでも
+  // 1回だけ実行され、二重呼び出しは no-op）。
+  function restoreScroll() {
+    if (savedScrollPosition) {
+      window.scrollTo({ left: savedScrollPosition.x, top: savedScrollPosition.y, behavior: 'instant' });
+      savedScrollPosition = null;
+    }
+  }
+
   function cleanup() {
     if (isCleanedUp) return;
     isCleanedUp = true;
@@ -172,6 +190,7 @@
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
     restoreCaptureState?.();
     restoreCaptureState = null;
+    restoreScroll();
     banner.remove();
     highlight.remove();
     captureStyle?.remove();
@@ -206,14 +225,9 @@
           0, 0, w, h
         );
         sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
-
-        // スクロール位置を復元
-        if (savedScrollPosition) {
-          window.scrollTo({ left: savedScrollPosition.x, top: savedScrollPosition.y, behavior: 'instant' });
-          savedScrollPosition = null;
-        }
+        restoreScroll();
       };
-      img.onerror = () => sendResponse(null);
+      img.onerror = () => { restoreScroll(); sendResponse(null); };
       img.src = dataUrl;
       return true; // 非同期レスポンス
     }
@@ -264,7 +278,10 @@ function getSiteConfig() {
         }
       `,
       getPermalink(post) {
-        return getXPostLink(post)?.url || '';
+        // Fall back to the URL bar on a single-status page (parity with Bluesky/
+        // Mastodon/Misskey), so an article whose own permalink anchor isn't
+        // rendered still yields a usable URL.
+        return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
       },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureXNoHover', [

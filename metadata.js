@@ -83,8 +83,15 @@ async function fetchXTweet(parsed, url) {
     rec.date = toIso(j.created_at);
     rec.lang = j.lang || null;
     rec.mediaType = xMediaType(j.mediaDetails);
-    rec.isReply = j.in_reply_to_screen_name ? true : null;
-    rec.isThread = (j.in_reply_to_user_id_str && j.user && j.in_reply_to_user_id_str === j.user.id_str) ? true : null;
+    if (j.in_reply_to_screen_name) {
+      rec.isReply = true;
+      // self-reply (thread): promote to thread and clear isReply, so the four
+      // platforms categorize mutually-exclusively (a self-thread is not a reply).
+      if (j.in_reply_to_user_id_str && j.user && j.in_reply_to_user_id_str === j.user.id_str) {
+        rec.isThread = true;
+        rec.isReply = null;
+      }
+    }
     if (j.quoted_tweet) {
       rec.isQuote = true;
       const qu = j.quoted_tweet.user && j.quoted_tweet.id_str;
@@ -101,6 +108,7 @@ async function resolveBlueskyDid(handle) {
   if (!handle || handle.startsWith('did:')) return handle || null;
   try {
     const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
+    if (!res.ok) return null;
     const data = await res.json();
     return (data.did && /^did:[a-z]+:.+/.test(data.did)) ? data.did : null;
   } catch {
@@ -130,6 +138,7 @@ async function fetchBlueskyPost(parsed, url) {
   try {
     const uri = `at://${did}/app.bsky.feed.post/${parsed.rkey}`;
     const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=1`);
+    if (!res.ok) return rec;
     const data = await res.json();
     const thread = data && data.thread;
     const post = thread && thread.post;
@@ -212,7 +221,12 @@ async function fetchMisskeyNote(parsed, url) {
     }
     if (note.renoteId && note.text) {
       rec.isQuote = true;
-      if (note.renote) rec.quotedUrl = `https://${parsed.host}/notes/${note.renoteId}`;
+      // Prefer the quoted note's own canonical URL — a federated remote note
+      // exposes url/uri; a note local to this instance has neither, so fall back
+      // to the local-host permalink.
+      if (note.renote) {
+        rec.quotedUrl = note.renote.url || note.renote.uri || `https://${parsed.host}/notes/${note.renoteId}`;
+      }
     }
   } catch {
     // keep partial
