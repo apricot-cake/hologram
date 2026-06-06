@@ -943,6 +943,18 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || '');
 
+      // Post-type + media flags (grid view only; hidden in the compact list view).
+      const flags = [];
+      if (p.isThread) flags.push(MSG.qfThread);
+      if (p.isReply) flags.push(MSG.qfReply);
+      if (p.isQuote) flags.push(MSG.qfQuote);
+      const mediaLabel = p.mediaType === 'image' ? MSG.qfImage
+        : p.mediaType === 'video' ? MSG.qfVideo
+        : p.mediaType === 'gif' ? MSG.qfGif : '';
+      const flagsHtml = (flags.length || mediaLabel)
+        ? `<div class="post-flags">${flags.map(f => `<span class="post-flag flag-type">${escapeHtml(f)}</span>`).join('')}${mediaLabel ? `<span class="post-flag flag-media">${escapeHtml(mediaLabel)}</span>` : ''}</div>`
+        : '';
+
       const postKey = (p.url || '') + '|' + (p.capturedAt || '');
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
@@ -955,6 +967,7 @@
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
             ${escapeHtml(userName)}${handle ? ` <span style="color:#999;font-weight:400">${escapeHtml(handle)}</span>` : ''}
           </div>
+          ${flagsHtml}
           ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
           <div class="stats">${statsHtml}</div>
           <div class="date">${dateStr}</div>

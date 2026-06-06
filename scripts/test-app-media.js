@@ -46,6 +46,8 @@ const evalJs = `(async () => {
   const noMediaBtn = document.querySelectorAll('.post-card .media-btn').length === 0;
   // The hostile alt must not appear in the card markup.
   const injectedInCard = !!(document.querySelector('.post-card [onerror]') || window.__xss);
+  // The card surfaces a media flag (the sidecar's mediaType is "image").
+  const hasMediaFlag = !!document.querySelector('.post-card .post-flag.flag-media');
   // Zoom button -> one gallery: screenshot first (1 / 3).
   const zoom = document.querySelector('.post-card .zoom-btn');
   if (zoom) zoom.click();
@@ -63,7 +65,7 @@ const evalJs = `(async () => {
   // Page to the second original (3 / 3).
   document.getElementById('lbNext').click();
   const counter3 = document.getElementById('lbCounter').textContent;
-  return { noMediaBtn, injectedInCard, shown, multi, counterScreenshot, counterOriginal, nat, galleryAlt, injectedAfterOpen, counter3 };
+  return { noMediaBtn, injectedInCard, hasMediaFlag, shown, multi, counterScreenshot, counterOriginal, nat, galleryAlt, injectedAfterOpen, counter3 };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, POSTSNAP_SMOKE: '1', POSTSNAP_SMOKE_EVAL: evalJs });
@@ -86,6 +88,7 @@ child.on('close', () => {
   check('original loads via psimg (naturalWidth>0)', r.nat > 0);
   check('alt carried into gallery as the escaped literal; no element/handler injected', r.injectedInCard === false && r.injectedAfterOpen === false && r.galleryAlt === ALT);
   check('paging reaches the second original (3 / 3)', r.counter3 === '3 / 3');
+  check('card shows a media flag for the image post', r.hasMediaFlag === true);
   console.log('\n' + (ok ? 'MEDIA_APP_TEST_PASS' : 'MEDIA_APP_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });
