@@ -1,44 +1,44 @@
 # Post Snap
 
-**English** | [日本語](README.ja.md)
+[English](README.en.md) | **日本語**
 
-Capture posts from X, Bluesky, and Misskey, and browse them later in a desktop viewer.
+X / Bluesky / Misskey の投稿をキャプチャして、デスクトップアプリで後から閲覧・検索できます。
 
-Post Snap has two parts:
+Post Snap は2つの部品でできています。
 
-- a **Chrome extension** that captures the post you click as a JPEG, and
-- a **desktop app** (Electron) that stores captures in a folder you choose and lets you search, filter, tag, and export them.
+- 投稿をクリックして JPEG としてキャプチャする **Chrome 拡張機能**
+- キャプチャを **あなたが選んだフォルダ** に保存し、検索・フィルタ・タグ付け・エクスポートできる **デスクトップアプリ**（Electron）
 
-## How it works
+## 使い方
 
-1. Press `Alt+S` (or click the toolbar icon) and click the post you want to save.
-2. The capture is written to your chosen folder as `<id>.jpg` plus a `<id>.json` sidecar holding the post's text, author, date, and engagement counts.
-3. Open the desktop app to browse, search, filter, tag, and export.
+1. `Alt+S`（またはツールバーのアイコン）→ 保存したい投稿をクリック
+2. 選んだフォルダに `<id>.jpg`（画像）と `<id>.json`（本文・ユーザー・日付・エンゲージメントなどのメタデータ）が並んで保存されます
+3. デスクトップアプリを開いて閲覧・検索・フィルタ・タグ付け・エクスポート
 
-No browser storage, no EXIF — the image and its metadata sit side by side as plain files you own and can move or back up freely.
+ブラウザストレージも EXIF も使いません。画像とメタデータは普通のファイルとして並んで置かれ、移動もバックアップも自由です。
 
-## Supported Platforms
+## 対応プラットフォーム
 
 - X (Twitter)
 - Bluesky
 - Misskey
 
-## What you can do
+## できること
 
-- Save posts to a folder you pick
-- Search by text, user, date, engagement, or tags
-- Tag posts and bulk-delete them
-- Export to ZIP (images + metadata) or a standalone HTML file
-- Restore by importing an exported HTML file
+- 投稿を任意のフォルダに保存（保存先を自分で選べる）
+- 本文・ユーザー・日付・エンゲージメント・タグで検索
+- 投稿にタグを付ける、まとめて削除する
+- ZIP（画像＋メタデータ）や単体 HTML としてエクスポート
+- エクスポートした HTML から復元（インポート）
 
-## Setup (development)
+## セットアップ（開発）
 
-The desktop app isn't packaged yet — run it from source:
+デスクトップアプリはまだパッケージ化していないため、ソースから起動します。
 
-1. `cd app && npm install && npm start` — on first launch it registers the capture helper. Use **Save folder** in Settings to choose where captures go.
-2. Load the extension: `chrome://extensions` → enable Developer mode → **Load unpacked** → select this folder. Copy the shown extension ID into the app's **Extension ID** field.
-3. Capture with `Alt+S` (assign the shortcut at `chrome://extensions/shortcuts` if it isn't bound).
+1. `cd app && npm install && npm start` — 初回起動でキャプチャ用ヘルパーを登録します。設定の **保存先フォルダ** で保存場所を選んでください。
+2. 拡張を読み込む: `chrome://extensions` → デベロッパーモードON → **パッケージ化されていない拡張機能を読み込む** → このフォルダを選択。表示された拡張IDをアプリの **拡張ID** 欄に貼り付け。
+3. `Alt+S` でキャプチャ（効かない場合は `chrome://extensions/shortcuts` で割り当て）。
 
-## Privacy
+## プライバシー
 
-See [PRIVACY.md](PRIVACY.md). Nothing is sent to any server; everything stays in your local folder.
+[PRIVACY.md](PRIVACY.md) を参照してください。サーバーへは何も送信されず、すべてローカルのフォルダに保存されます。
