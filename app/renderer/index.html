@@ -696,6 +696,10 @@
         <label class="iv-check"><input type="checkbox" id="ivMultiOnly"> 複数画像のみ</label>
         <div class="iv-tilewrap"><span>タイルサイズ</span><input type="range" id="ivTile" min="120" max="360" step="20" value="180"></div>
       </div>
+      <div class="sb-section" id="ivTagSection" style="display:none">
+        <div class="sb-title">タグ（Eagle）</div>
+        <div id="ivTagGroups"></div>
+      </div>
       <button class="iv-reset" id="ivReset" type="button">フィルタをリセット</button>
     </div>
   </aside><!-- /sidebar -->
@@ -873,6 +877,10 @@
     /* Content + slide-in inspector. The filter controls live in the shared
        #sidebar (#side-image); reuse post-view's sb-section classes there. */
     .iv-main { display: flex; gap: 20px; align-items: flex-start; }
+    #ivTagGroups .sb-subtitle { margin-top: 8px; }
+    #ivTagGroups .sb-subtitle:first-child { margin-top: 0; }
+    #ivTagGroups .sb-chips { margin-bottom: 2px; }
+    .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
     .iv-tilewrap { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
     .iv-tilewrap input { width: 100%; }

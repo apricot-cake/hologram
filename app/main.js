@@ -61,7 +61,7 @@ function watchSaveFolder() {
   if (!folder) return;
   try {
     folderWatcher = fs.watch(folder, (_event, filename) => {
-      if (filename && !/\.(jpe?g|json)$/i.test(filename)) return;
+      if (filename && !/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(filename)) return;
       clearTimeout(watchDebounce);
       watchDebounce = setTimeout(() => {
         if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
@@ -87,7 +87,7 @@ function listPosts() {
   const posts = [];
   for (const f of files) {
     if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json') continue;
+    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
       if (rec && rec.image) posts.push(rec);
@@ -115,7 +115,7 @@ function ensureHostRegistered() {
 
 // --- Image protocol ---
 // Screenshots are JPEG; downloaded original media may be png/webp/gif.
-const EXT_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+const EXT_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jfif': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
 }
@@ -126,7 +126,7 @@ function mimeForFile(name) {
 // generated once with Electron's built-in nativeImage and cached on disk
 // (keyed by name + mtime + width, so re-migration invalidates it). The
 // full-resolution original is still served when no ?w= is given (lightbox/viewer).
-const THUMB_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif']);
 function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
 
 async function getThumbnail(resolved, name, w) {
@@ -216,6 +216,19 @@ ipcMain.handle('pick-save-folder', async () => {
 });
 
 ipcMain.handle('list-posts', () => listPosts());
+
+// Tag groups (migrated from Eagle's library metadata) live alongside the
+// sidecars as <saveFolder>/tag-groups.json: { groups: [{id,name,tags[]}] }.
+ipcMain.handle('get-tag-groups', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { groups: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'tag-groups.json'), 'utf8'));
+    return { groups: Array.isArray(j.groups) ? j.groups : [] };
+  } catch {
+    return { groups: [] };
+  }
+});
 
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {

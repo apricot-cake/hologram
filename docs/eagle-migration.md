@@ -1,8 +1,19 @@
 # Eagle → Corpus データ移行 設計（確定版）
 
+> **改訂（スコープ拡大・確定）**: 当初は「URL保有の SNS 投稿 942件」限定だったが、ユーザー判断で
+> **ライブラリ全体（静止画・非削除 8,949件）を移行＝Eagle完全卒業**に変更。これに伴い `migrate-eagle.js`
+> を全面書き直し：
+> - **データ源 = Eagleネイティブの全アイテム** `<lib>/images/<id>.info/metadata.json`（engagement-browser.json
+>   ではなくこちらを正本に。SNSの engagement/author/text は store を id で重ねる overlay）。
+> - **タグ = ネイティブ metadata.json の `tags`**（プラグインstoreの写しでなく正本。全57タグ）。URLなしの
+>   参照画像（約8,000件）も `image`+`tags` のイラストレコードとして移行（url/platform/engagement は null）。
+> - **タググループを移行**: `<lib>/metadata.json` の `tagsGroups`（人物/角度/形式/作品/キャラ）→
+>   `<saveFolder>/tag-groups.json`。ビューア（画像閲覧）がタグ絞り込みをグループ表示。
+> - `quotes` のマップ漏れ修正、`jfif` 対応（psimg mime + STILL_EXT）、`title` は URLなし時に Eagle `name` を流用。
+> - スコープ別フラグ: 既定=全ライブラリ、`--tagged-only` でタグ付き∪URL付きのみ。
+> 以下の §1〜§3 は当初の URL-only 設計の記録（フィールドマッピングの基本ルールは現行も踏襲）。
+>
 > 多エージェント解析（実データ・安全設計・敵対的検証）の結論を補正して確定したもの。
-> 実装は **Phase F**（Phase C スキーマ＋Phase D 目視検証の後）。ただし「イラストレコード形」と
-> 非JPEG主画像サポートは**ドラッグ保存（§4b）と共通の基盤**なので先に入る。
 
 ## 0. 大前提（安全性・絶対条件）
 - **Eagle ライブラリは読み取り専用**。画像は**コピー**（move/削除しない）。`C:\Users\apricot\ローカル\絵\資料.library`。

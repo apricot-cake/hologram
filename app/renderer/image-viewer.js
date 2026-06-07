@@ -23,7 +23,8 @@
   let vItems = [];   // 全画面ビューアで開いているレコードの画像URL配列
   let vIdx = 0;
 
-  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false };
+  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, tags: new Set() };
+  let tagGroups = [];   // [{ id, name, tags:[] }] migrated from Eagle (tag-groups.json)
 
   // 画像閲覧に出す「実際の絵」のファイル名配列。
   //  - media[] の原本があれば常にそれ（投稿キャプチャの原寸画像・pixiv原寸など＝表示OK）。
@@ -75,6 +76,13 @@
     if (state.platform) list = list.filter((p) => p.platform === state.platform);
     if (state.minLikes > 0) list = list.filter((p) => (p.likes || 0) >= state.minLikes);
     if (state.multiOnly) list = list.filter((p) => recordImageFiles(p).length > 1);
+    if (state.tags.size) {
+      list = list.filter((p) => {                          // AND: must have every selected tag
+        const ts = new Set(p.tags || []);
+        for (const t of state.tags) if (!ts.has(t)) return false;
+        return true;
+      });
+    }
     if (q) {
       list = list.filter((p) =>
         (p.text || '').toLowerCase().includes(q) ||
@@ -90,6 +98,35 @@
     else if (state.sort === 'date') list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     else list.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
     return list;
+  }
+
+  // タグ絞り込み（Eagleのタグ）。タググループ単位で並べ、グループ外は「その他」。
+  // 各タグに件数を出し、クリックで AND 絞り込み。データに1件も無いタグは隠す。
+  function renderTagFilter() {
+    const host = $('ivTagGroups');
+    const section = $('ivTagSection');
+    if (!host || !section) return;
+    const counts = {};
+    allPosts.forEach((p) => {
+      if (!recordImageFiles(p).length) return;
+      (Array.isArray(p.tags) ? p.tags : []).forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
+    });
+    const present = new Set(Object.keys(counts));
+    if (!present.size) { section.style.display = 'none'; host.innerHTML = ''; return; }
+    section.style.display = '';
+    const chip = (t) => `<button class="sb-chip" data-tag="${escapeHtml(t)}">${escapeHtml(t)}<span class="iv-tagn">${counts[t]}</span></button>`;
+    const grouped = new Set();
+    let html = '';
+    for (const g of tagGroups) {
+      const tags = (g.tags || []).filter((t) => present.has(t));
+      tags.forEach((t) => grouped.add(t));
+      if (!tags.length) continue;
+      html += `<div class="sb-subtitle">${escapeHtml(g.name)}</div><div class="sb-chips">${tags.map(chip).join('')}</div>`;
+    }
+    const other = [...present].filter((t) => !grouped.has(t)).sort((a, b) => counts[b] - counts[a]);
+    if (other.length) html += `<div class="sb-subtitle">その他</div><div class="sb-chips">${other.map(chip).join('')}</div>`;
+    host.innerHTML = html;
+    host.querySelectorAll('.sb-chip').forEach((c) => c.classList.toggle('active', state.tags.has(c.dataset.tag)));
   }
 
   function render() {
@@ -189,8 +226,10 @@
 
   function resetFilters() {
     state.search = ''; state.platform = ''; state.sort = 'captured'; state.minLikes = 0; state.multiOnly = false;
+    state.tags.clear();
     $('ivSearch').value = ''; $('ivSort').value = 'captured'; $('ivMinLikes').value = ''; $('ivMultiOnly').checked = false;
     $('ivPlatformChips').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
+    $('ivTagGroups').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
     render();
   }
 
@@ -209,6 +248,16 @@
       const next = state.platform === pf ? '' : pf;
       state.platform = next;
       $('ivPlatformChips').querySelectorAll('.sb-chip').forEach((c) => c.classList.toggle('active', c.dataset.pf === next));
+      render();
+    });
+
+    // タグチップ: 複数選択 (AND)。クリックでトグル。
+    $('ivTagGroups').addEventListener('click', (e) => {
+      const chip = e.target.closest('.sb-chip');
+      if (!chip) return;
+      const tag = chip.dataset.tag;
+      if (state.tags.has(tag)) state.tags.delete(tag); else state.tags.add(tag);
+      chip.classList.toggle('active', state.tags.has(tag));
       render();
     });
 
@@ -248,16 +297,22 @@
     catch { allPosts = []; }
   }
 
+  async function loadTagGroups() {
+    try { const r = await window.corpus.getTagGroups(); tagGroups = (r && r.groups) || []; }
+    catch { tagGroups = []; }
+  }
+
   async function init() {
     if (inited) return;
     inited = true;
     bind();
-    if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(render); });
-    await load();
+    if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(() => { render(); renderTagFilter(); }); });
+    await Promise.all([load(), loadTagGroups()]);
     render();
+    renderTagFilter();
   }
 
-  async function refresh() { await load(); render(); }
+  async function refresh() { await load(); render(); renderTagFilter(); }
 
   window.corpusImageView = { init, refresh };
 })();

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('corpus', {
   pickSaveFolder: () => ipcRenderer.invoke('pick-save-folder'),
   setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   listPosts: () => ipcRenderer.invoke('list-posts'),
+  getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getPrefs: () => ipcRenderer.invoke('get-prefs'),
   setPref: (key, value) => ipcRenderer.invoke('set-pref', key, value),
