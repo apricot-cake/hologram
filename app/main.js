@@ -304,6 +304,7 @@ ipcMain.handle('import-posts', async (_e, posts) => {
       url: p.url || null,
       platform: p.platform || null,
       text: p.text || null,
+      title: p.title || null,
       displayName: p.displayName || null,
       screenName: p.screenName || null,
       userId: p.userId || null,
@@ -320,6 +321,7 @@ ipcMain.handle('import-posts', async (_e, posts) => {
       isQuote: p.isQuote || null,
       isThread: p.isThread || null,
       quotedUrl: p.quotedUrl || null,
+      hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
       tags: Array.isArray(p.tags) ? p.tags : []
     };
     try {

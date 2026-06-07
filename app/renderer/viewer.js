@@ -232,7 +232,7 @@
       let cls = `qc-${f.type}`;
       switch (f.type) {
         case 'platform':
-          label = f.value === 'x' ? 'X' : f.value === 'bluesky' ? 'Bluesky' : f.value === 'misskey' ? 'Misskey' : 'Mastodon';
+          label = ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
           break;
         case 'postType':
           label = f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
@@ -723,7 +723,7 @@
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
 
   // --- Users tab (derived from post author fields; no extra fetching) ---
-  const PLATFORM_LABEL = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon' };
+  const PLATFORM_LABEL = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
   // Group posts by author. Posts arrive newest-first, so the first occurrence
   // carries the latest display name / handle for that user.
@@ -956,7 +956,7 @@
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
       const userName = p.displayName || p.screenName || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
-      const textPreview = escapeHtml(p.text || '');
+      const textPreview = escapeHtml(p.text || p.title || '');
 
       // Post-type + media flags (grid view only; hidden in the compact list view).
       const flags = [];
@@ -1380,6 +1380,7 @@
         url: p.url,
         platform: p.platform,
         text: p.text,
+        title: p.title ?? null,
         displayName: p.displayName,
         screenName: p.screenName,
         userId: p.userId,
@@ -1397,6 +1398,7 @@
         date: p.date,
         capturedAt: p.capturedAt,
         tags: p.tags?.length ? p.tags : null,
+        hashtags: p.hashtags?.length ? p.hashtags : null,
         imageFile: `images/${filename}`
       });
     }
@@ -1423,6 +1425,7 @@
         url: p.url,
         platform: p.platform,
         text: p.text,
+        title: p.title ?? null,
         displayName: p.displayName,
         screenName: p.screenName,
         userId: p.userId,
@@ -1440,6 +1443,7 @@
         date: p.date,
         capturedAt: p.capturedAt,
         tags: p.tags?.length ? p.tags : null,
+        hashtags: p.hashtags?.length ? p.hashtags : null,
         image
       });
     }
@@ -1568,7 +1572,7 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 .meta{padding:12px}
 .meta .user{font-weight:600;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .badge{font-size:10px;font-weight:500;padding:1px 6px;border-radius:3px;color:#fff;text-transform:uppercase}
-.badge.x{background:#000}.badge.bluesky{background:#0085ff}.badge.misskey{background:#96d04a;color:#333}.badge.mastodon{background:#6364ff}
+.badge.x{background:#000}.badge.bluesky{background:#0085ff}.badge.misskey{background:#96d04a;color:#333}.badge.mastodon{background:#6364ff}.badge.pixiv{background:#0096fa}
 .meta .text{font-size:13px;color:#555;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px}
 .meta .stats{display:flex;gap:12px;font-size:12px;color:#999}
 .meta .date{font-size:11px;color:#bbb;margin-top:4px}
@@ -1590,6 +1594,7 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 <option value="bluesky">Bluesky</option>
 <option value="misskey">Misskey</option>
 <option value="mastodon">Mastodon</option>
+<option value="pixiv">pixiv</option>
 </select>
 <span class="count" id="cnt"></span>
 </div>
@@ -1623,7 +1628,7 @@ return '<div class="card" data-url="'+esc(p.url||'')+'">'
 +(p.image?'<img src="'+p.image+'" loading="lazy">':'')
 +'<div class="meta"><div class="user"><span class="badge '+(p.platform||'')+'">'+(p.platform||'').toUpperCase()+'</span>'+esc(p.displayName||p.screenName||'')
 +(p.screenName?' <span style="color:#999;font-weight:400">@'+esc(p.screenName)+'</span>':'')
-+'</div>'+(p.text?'<div class="text">'+esc(p.text)+'</div>':'')
++'</div>'+((p.text||p.title)?'<div class="text">'+esc(p.text||p.title)+'</div>':'')
 +'<div class="stats">'+st.join(' &middot; ')+'</div>'
 +'<div class="date">'+fmtDate(p.date)+'</div></div></div>'
 }).join('')}
