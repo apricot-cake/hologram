@@ -32,16 +32,21 @@ function parsePostUrl(url) {
   if ((m = u.pathname.match(/^\/notes\/([^/?#]+)/))) {
     return { platform: 'misskey', host, noteId: m[1] };
   }
+  // pixiv artwork: /artworks/<id> (with optional /en /ja locale prefix).
+  if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = u.pathname.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) {
+    return { platform: 'pixiv', id: m[1] };
+  }
   return null;
 }
 
 function emptyRecord(url, platform) {
   return {
-    url: url || null, platform: platform || null, text: null,
+    url: url || null, platform: platform || null, text: null, title: null,
     displayName: null, screenName: null, userId: null,
     likes: null, reposts: null, replies: null, bookmarks: null, views: null,
     date: null, mediaType: null, media: [], lang: null,
-    isReply: null, isQuote: null, isThread: null, quotedUrl: null, tags: []
+    isReply: null, isQuote: null, isThread: null, quotedUrl: null,
+    hashtags: [], tags: []
   };
 }
 
@@ -365,6 +370,57 @@ async function fetchMastodonStatus(parsed, url) {
   return rec;
 }
 
+// --- pixiv (undocumented ajax frontend API) ---
+// Original-resolution still images. Multi-page works expose page 0 at
+// urls.original; the other pages share the same path with _p0 → _pN. Each entry
+// carries a Referer because i.pximg.net 403s downloads without it (the native
+// host honors media[].referer).
+function pixivMedia(il) {
+  const original = il && il.urls && il.urls.original;
+  if (!original) return [];
+  const pageCount = il.pageCount || 1;
+  const out = [];
+  for (let i = 0; i < pageCount; i++) {
+    const url = i === 0 ? original : original.replace(/_p0(\.[a-z]+)$/i, `_p${i}$1`);
+    out.push({
+      url,
+      alt: null,
+      width: i === 0 ? (il.width || null) : null,
+      height: i === 0 ? (il.height || null) : null,
+      referer: 'https://www.pixiv.net/'
+    });
+  }
+  return out;
+}
+
+async function fetchPixivIllust(parsed, url) {
+  const rec = emptyRecord(url, 'pixiv');
+  try {
+    // credentials:include so logged-in users can read R-18 / follower-only works.
+    const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
+    if (!res.ok) return rec;
+    const data = await res.json();
+    // pixiv returns 200 + { error:true } for deleted / private / R-18-logged-out.
+    if (data.error) return rec;
+    const il = data.body || {};
+    rec.title = il.illustTitle || null;
+    rec.displayName = il.userName || null;
+    rec.screenName = il.userId || null;   // pixiv has no @handle; userId is the stable id
+    rec.userId = il.userId || null;
+    rec.likes = il.likeCount ?? null;
+    rec.bookmarks = il.bookmarkCount ?? null;
+    rec.views = il.viewCount ?? null;
+    rec.replies = il.commentCount ?? null;
+    rec.date = toIso(il.createDate || il.uploadDate);
+    rec.hashtags = (il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t.tag).filter(Boolean);
+    rec.mediaType = 'image';   // ugoira (animation) originals are zip — not handled here
+    rec.media = pixivMedia(il);
+  } catch {
+    // network/parse failure — keep what we have (URL only)
+  }
+  return rec;
+}
+
 async function fetchPostMetadata(url) {
   const parsed = parsePostUrl(url);
   if (!parsed) return emptyRecord(url, null);
@@ -372,12 +428,13 @@ async function fetchPostMetadata(url) {
   if (parsed.platform === 'bluesky') return fetchBlueskyPost(parsed, url);
   if (parsed.platform === 'misskey') return fetchMisskeyNote(parsed, url);
   if (parsed.platform === 'mastodon') return fetchMastodonStatus(parsed, url);
+  if (parsed.platform === 'pixiv') return fetchPixivIllust(parsed, url);
   return emptyRecord(url, parsed.platform);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, xToken,
-    xMedia, bskyMedia, misskeyMedia, mastodonMedia
+    parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, xToken,
+    xMedia, bskyMedia, misskeyMedia, mastodonMedia, pixivMedia
   };
 }

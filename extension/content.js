@@ -395,7 +395,76 @@ function getSiteConfig() {
     };
   }
 
+  if (hostnameMatches('pixiv.net')) {
+    return {
+      platform: 'pixiv',
+      captureStyleText: `
+        .__snsCapturePixivNoHover,
+        .__snsCapturePixivNoHover * {
+          pointer-events: none !important;
+          transition: none !important;
+        }
+      `,
+      findPostElement(target) {
+        return findPixivPostElement(target);
+      },
+      getPermalink(post) {
+        return getPixivPermalink(post);
+      },
+      prepareForCapture(post) {
+        return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
+      }
+    };
+  }
+
   return null;
+}
+
+// === pixiv helpers ===
+// pximg URL filename embeds the artwork id: <id>_p<N>_<size>.<ext>.
+const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
+
+// Resolve the artwork id for an element's subtree (or itself): prefer a pximg
+// <img> (unambiguous even on user/search pages), then an /artworks/ link.
+function getPixivArtworkId(scope) {
+  if (!(scope instanceof Element)) return null;
+  const imgs = scope.matches('img') ? [scope] : Array.from(scope.querySelectorAll('img'));
+  for (const im of imgs) {
+    for (const src of [im.src, im.currentSrc]) {
+      const m = src && src.match(PXIMG_FILENAME);
+      if (m) return m[1];
+    }
+  }
+  const link = scope.matches('a[href*="/artworks/"]') ? scope
+    : (scope.querySelector('a[href*="/artworks/"]') || scope.closest('a[href*="/artworks/"]'));
+  if (link) {
+    const m = (link.getAttribute('href') || '').match(/\/artworks\/(\d+)/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Pick the element to highlight/capture: the artwork <figure> on the work page,
+// the thumbnail's /artworks/ link on listing/grid pages, else the nearest
+// ancestor that resolves to an artwork.
+function findPixivPostElement(target) {
+  let el = target instanceof Element ? target : target?.parentElement;
+  if (!el) return null;
+  const fig = el.closest('figure');
+  if (fig && getPixivArtworkId(fig)) return fig;
+  const link = el.closest('a[href*="/artworks/"]');
+  if (link && getPixivArtworkId(link)) return link;
+  let cur = el;
+  while (cur && cur !== document.body) {
+    if (getPixivArtworkId(cur)) return cur;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+function getPixivPermalink(post) {
+  const id = getPixivArtworkId(post) || (location.pathname.match(/\/artworks\/(\d+)/) || [])[1];
+  return id ? `https://www.pixiv.net/artworks/${id}` : '';
 }
 
 function getXPostLink(post) {

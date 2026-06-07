@@ -88,7 +88,12 @@ async function downloadOneMedia(entry, dir, base, i) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
   try {
-    const res = await fetch(entry.url, { signal: ctrl.signal, redirect: 'follow' });
+    // pixiv originals on i.pximg.net 403 without a pixiv Referer; the metadata
+    // builder sets entry.referer for those. Other platforms omit it.
+    const headers = (typeof entry.referer === 'string' && /^https:\/\//i.test(entry.referer))
+      ? { Referer: entry.referer }
+      : undefined;
+    const res = await fetch(entry.url, { signal: ctrl.signal, redirect: 'follow', headers });
     if (!res.ok) return null;
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     const ext = MEDIA_MIME_EXT[ct];

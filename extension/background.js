@@ -5,8 +5,9 @@ const NATIVE_HOST = 'com.corpus.host';
 // Allowed capture origins per platform (used to validate the sender tab).
 const PLATFORM_HOSTS = {
   x: ['x.com', 'twitter.com'],
-  bluesky: ['bsky.app']
-  // misskey: any https origin (instances are arbitrary hosts)
+  bluesky: ['bsky.app'],
+  pixiv: ['www.pixiv.net', 'pixiv.net']
+  // misskey / mastodon: any https origin (instances are arbitrary hosts)
 };
 
 function getHostname(url) {
@@ -89,6 +90,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     // visible in the viewer's platform filter rather than becoming platform:null.
     platform: meta.platform || sendPlatform || null,
     text: meta.text,
+    title: meta.title || null,
     displayName: meta.displayName,
     screenName: meta.screenName,
     userId: meta.userId,
@@ -106,6 +108,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     isQuote: meta.isQuote,
     isThread: meta.isThread,
     quotedUrl: meta.quotedUrl,
+    hashtags: meta.hashtags || [],
     tags: meta.tags || []
   };
 
