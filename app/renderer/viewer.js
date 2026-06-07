@@ -20,6 +20,8 @@
     tabUsers: _s('tabUsers'),
     searchUsers: _s('searchUsers'),
     emptyUsers: _s('emptyUsers'),
+    barOpen: _s('barOpen'),
+    barClose: _s('barClose'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -670,6 +672,7 @@
       document.getElementById(`panel${capitalize(btn.dataset.tab)}`).classList.add('active');
       if (btn.dataset.tab === 'tags') renderHashtags();
       if (btn.dataset.tab === 'users') renderUsers();
+      updateToolbar();
     });
   });
 
@@ -787,6 +790,40 @@
     activeFilters = activeFilters.filter(f => f.type !== 'user');
     document.querySelector('.tab-btn[data-tab="posts"]').click();
     addFilter({ type: 'user', value: row.dataset.userKey, label: row.dataset.userLabel });
+  });
+
+  // --- Toolbar scroll behaviour (ported from eagle-info-plus) ---
+  // On the Posts tab the toolbar scrolls away normally; once scrolled past the
+  // top, a centered pill lets you re-float it as a card on demand. It closes when
+  // you click outside it or scroll back to the top.
+  const postsToolbar = document.getElementById('postsToolbar');
+  const toolbarToggle = document.getElementById('toolbarToggle');
+  const tbLabel = toolbarToggle.querySelector('.tb-label');
+  let tbFloating = false;
+  function updateToolbar() {
+    const onPosts = document.getElementById('panelPosts').classList.contains('active');
+    const scrolled = window.scrollY > 48;
+    if (!onPosts || !scrolled) {
+      tbFloating = false;
+      postsToolbar.classList.remove('floating');
+      toolbarToggle.hidden = true;
+      toolbarToggle.style.top = '';
+      return;
+    }
+    postsToolbar.classList.toggle('floating', tbFloating);
+    toolbarToggle.hidden = false;
+    toolbarToggle.classList.toggle('open', tbFloating);
+    tbLabel.textContent = tbFloating ? MSG.barClose : MSG.barOpen;
+    // Closed: top-center (CSS top:12px). Open: just below the floated toolbar.
+    toolbarToggle.style.top = tbFloating ? (postsToolbar.getBoundingClientRect().bottom + 8) + 'px' : '';
+  }
+  window.addEventListener('scroll', updateToolbar, { passive: true });
+  toolbarToggle.addEventListener('click', (e) => { e.stopPropagation(); tbFloating = !tbFloating; updateToolbar(); });
+  document.addEventListener('click', (e) => {
+    if (tbFloating && !postsToolbar.contains(e.target) && !toolbarToggle.contains(e.target)) {
+      tbFloating = false;
+      updateToolbar();
+    }
   });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
