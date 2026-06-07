@@ -1140,10 +1140,10 @@
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
-    // If filtering by the default folder and we removed it, drop the card (no full re-render = no flicker).
+    // If filtering by the default folder and we removed it, re-render so EVERY card's
+    // data-index stays in sync with getFilteredPosts() (other handlers read by index).
     if (res === 'removed' && folderFilter === CF().defaultId()) {
-      const card = btn.closest('.post-card');
-      if (card) card.remove();
+      renderPosts();
     }
   });
 
@@ -1232,6 +1232,8 @@
     const idx = allPosts.findIndex(p => p.captureId === post.captureId);
     if (idx >= 0) allPosts.splice(idx, 1);
     renderPosts();
+    reconcileFolders();   // 削除した captureId をフォルダから即時掃除
+    renderPostFolders();
     showToast(MSG.deleted);
   }
 
@@ -1777,7 +1779,12 @@ render()
   // --- Init ---
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)
   // when the folder list/default changes.
-  if (CF()) CF().onChange((kind) => { renderPostFolders(); if (kind === 'list') renderPosts(); });
+  if (CF()) CF().onChange((kind) => {
+    // 絞り込み中のフォルダが削除されたらフィルタを解除（一覧が原因不明に空になるのを防ぐ）。
+    if (folderFilter && !CF().byId(folderFilter)) folderFilter = '';
+    renderPostFolders();
+    if (kind === 'list') renderPosts();
+  });
   if (window.corpus.onPostsChanged) {
     window.corpus.onPostsChanged(async () => {
       await loadPosts();

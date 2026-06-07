@@ -21,7 +21,10 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function genId() { return 'f-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
-  function persist() { if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders, defaultId }).catch(() => { /* best-effort */ }); }
+  function persist() {
+    loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
+    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders, defaultId }).catch(() => { /* best-effort */ });
+  }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
   async function doLoad() {

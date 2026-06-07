@@ -314,10 +314,16 @@
       if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
     }
     // このフォルダで絞り込み中に解除したら、そのタイル1枚だけ取り除く（全再描画しない）。
+    // view[] からも除去して残りカードの data-idx を振り直す（後続クリックのindexズレ防止）。
     if (res === 'removed' && state.folder === CF().defaultId() && btn) {
       const card = btn.closest('.iv-card');
-      if (card) card.remove();
-      $('ivCount').textContent = $('ivGrid').querySelectorAll('.iv-card').length + ' 件';
+      if (card) {
+        const ri = parseInt(card.dataset.idx, 10);
+        card.remove();
+        if (ri >= 0 && ri < view.length) view.splice(ri, 1);
+        $('ivGrid').querySelectorAll('.iv-card').forEach((c, i) => { c.dataset.idx = String(i); });
+        $('ivCount').textContent = view.length + ' 件';
+      }
     }
   }
   function updateSelBar() {
@@ -551,8 +557,16 @@
     inited = true;
     bind();
     // 共有フォルダの変更通知: 一覧/デフォルト変更ならグリッドも更新（📁状態反映）、件数のみなら軽更新。
-    if (CF()) CF().onChange((kind) => { renderFolderFilter(); if (kind === 'list') render(); });
-    if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(() => { reconcileFolders(); render(); renderTagFilter(); renderFolderFilter(); }); });
+    // 絞り込み中のフォルダが削除されたら state.folder を解除（グリッドが原因不明に空になるのを防ぐ）。
+    if (CF()) CF().onChange((kind) => {
+      if (state.folder && !CF().byId(state.folder)) state.folder = '';
+      renderFolderFilter();
+      if (kind === 'list') render();
+    });
+    // 新規キャプチャ等: 投稿とフォルダ両方を読み直してから reconcile（フォルダ未読込時の取りこぼし防止）。
+    if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => {
+      Promise.all([load(), CF() ? CF().load() : Promise.resolve()]).then(() => { reconcileFolders(); render(); renderTagFilter(); renderFolderFilter(); });
+    });
     await Promise.all([load(), loadTagGroups(), loadUngrouped(), loadManualGroups(), CF() ? CF().load() : Promise.resolve()]);
     reconcileFolders();
     render();

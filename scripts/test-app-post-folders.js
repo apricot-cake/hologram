@@ -64,12 +64,31 @@ const evalJs = `(async () => {
   await new Promise(r => setTimeout(r, 30));
   const filteredCount = grid.querySelectorAll('.post-card').length;
 
-  // persistence round-trip (shared folders.json)
+  // persistence round-trip BEFORE further mutations (shared folders.json)
   const rb = await window.corpus.getFolders();
   const f0 = rb.folders[0] || {};
+  const persistedFolders = rb.folders.length;
+  const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
+  const persistedDefault = rb.defaultId === f0.id;
+
+  // H1 regression: remove the card from the folder WHILE filtering → renderPosts re-syncs
+  // data-index (no stale-index mis-click), card drops out.
+  grid.querySelector('.post-card .fold-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 30));
+  const afterUnfilter = grid.querySelectorAll('.post-card').length;
+
+  // H3 regression: delete the folder WHILE it is the active filter → folderFilter clears,
+  // grid returns to all posts (not silently empty), chip disappears.
+  window.confirm = () => true;
+  document.getElementById('postFolderManage').click();
+  document.querySelector('#ivFolderList [data-fact="delete"]').click();
+  await new Promise(r => setTimeout(r, 50));
+  if (!document.getElementById('ivFolderModal').hidden) document.getElementById('ivFolderClose').click();
+  const afterDelete = grid.querySelectorAll('.post-card').length;
+  const chipsGone = document.querySelectorAll('#postFolderChips .sb-chip').length;
+
   return { totalBefore, modalOpen, chips, hasStar, foldIn, countText, filteredCount,
-    persistedFolders: rb.folders.length, persistedItems: Array.isArray(f0.items) ? f0.items.length : -1,
-    persistedDefault: rb.defaultId === f0.id };
+    persistedFolders, persistedItems, persistedDefault, afterUnfilter, afterDelete, chipsGone };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -87,8 +106,9 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.totalBefore === 3 && r.modalOpen === true && r.chips === 1 && r.hasStar === true &&
     r.foldIn === true && r.countText === '1' && r.filteredCount === 1 &&
-    r.persistedFolders === 1 && r.persistedItems === 1 && r.persistedDefault === true;
-  console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} star=${r.hasStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault}`);
+    r.persistedFolders === 1 && r.persistedItems === 1 && r.persistedDefault === true &&
+    r.afterUnfilter === 0 && r.afterDelete === 3 && r.chipsGone === 0;
+  console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} star=${r.hasStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault} unfilter=${r.afterUnfilter} delete=${r.afterDelete} chipsGone=${r.chipsGone}`);
   console.log(ok ? 'POST_FOLDERS_TEST_PASS' : 'POST_FOLDERS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
