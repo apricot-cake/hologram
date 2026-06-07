@@ -115,7 +115,11 @@ function ensureHostRegistered() {
 
 // --- Image protocol ---
 // Screenshots are JPEG; downloaded original media may be png/webp/gif.
-const EXT_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jfif': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+const EXT_MIME = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jfif': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif', '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.m4v': 'video/x-m4v'
+};
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
 }
@@ -126,7 +130,7 @@ function mimeForFile(name) {
 // generated once with Electron's built-in nativeImage and cached on disk
 // (keyed by name + mtime + width, so re-migration invalidates it). The
 // full-resolution original is still served when no ?w= is given (lightbox/viewer).
-const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif']);
+const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
 function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
 
 async function getThumbnail(resolved, name, w) {
@@ -266,6 +270,14 @@ function resolveInFolder(name) {
   return resolved.startsWith(path.resolve(folder)) ? resolved : null;
 }
 
+// Recover the captureId base from a filename. The argument may be the primary
+// image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
+// or the video itself. Strip the -poster marker first, then any extension.
+const VIEWABLE_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v'];
+function baseOf(name) {
+  return path.basename(name || '').replace(/-poster\.[a-z0-9]+$/i, '').replace(/\.[a-z0-9]+$/i, '');
+}
+
 ipcMain.handle('image-data-url', async (_e, image) => {
   const p = resolveInFolder(image);
   if (!p) return null;
@@ -280,24 +292,27 @@ ipcMain.handle('image-data-url', async (_e, image) => {
 ipcMain.handle('delete-post', async (_e, image) => {
   const folder = getSaveFolder();
   if (!folder || !image) return { ok: false };
-  // Primary image is <captureId>.<ext>; ext is jpg for screenshots but png/webp/
-  // gif for illustration records (drag-save / Eagle migration). Strip any
-  // supported image ext to recover the base, and delete the primary of any ext.
-  const base = path.basename(image).replace(/\.(jpe?g|png|webp|gif)$/i, '');
-  const targets = new Set([`${base}.jpg`, `${base}.jpeg`, `${base}.png`, `${base}.webp`, `${base}.gif`, `${base}.json`]);
-  // Original-media files: take the exact names from the sidecar, and also sweep
-  // any `<base>-media-*` on disk (covers a missing/partial sidecar). The literal
-  // `-media-` anchor prevents matching a different post whose id is a prefix.
+  // The arg may be a screenshot jpg, an illustration of any ext, or a video
+  // poster — baseOf() recovers <captureId>. Delete the sidecar, the primary of
+  // any viewable ext, the video poster, and original-media files.
+  const base = baseOf(image);
+  const targets = new Set([`${base}.json`]);
+  for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
+  // Exact names from the sidecar (image / video / media), then sweep the disk for
+  // <base>-media-* and <base>-poster.* (covers a missing/partial sidecar). The
+  // anchors prevent matching a different post whose id is a prefix.
   const jsonPath = resolveInFolder(`${base}.json`);
   if (jsonPath) {
     try {
       const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+      if (rec.image) targets.add(path.basename(rec.image));
+      if (rec.video) targets.add(path.basename(rec.video));
       for (const m of (rec.media || [])) { if (m && m.file) targets.add(path.basename(m.file)); }
     } catch { /* sidecar missing/corrupt — fall back to the disk sweep */ }
   }
   try {
     for (const f of await fs.promises.readdir(folder)) {
-      if (f.startsWith(`${base}-media-`)) targets.add(f);
+      if (f.startsWith(`${base}-media-`) || f.startsWith(`${base}-poster.`)) targets.add(f);
     }
   } catch { /* ignore */ }
   for (const name of targets) {
@@ -310,7 +325,7 @@ ipcMain.handle('delete-post', async (_e, image) => {
 });
 
 ipcMain.handle('update-tags', async (_e, image, tags) => {
-  const base = path.basename(image || '').replace(/\.(jpe?g|png|webp|gif)$/i, '');
+  const base = baseOf(image);
   const jsonPath = resolveInFolder(`${base}.json`);
   if (!jsonPath) return { ok: false };
   try {

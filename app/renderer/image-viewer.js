@@ -143,11 +143,12 @@
       const author = p.displayName || p.screenName || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
+      const playOverlay = p.mediaType === 'video' ? `<div class="iv-play"><span>▶</span></div>` : '';
       const card = document.createElement('div');
       card.className = 'iv-card';
       card.dataset.idx = String(i);
       card.innerHTML =
-        `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">` +
+        `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">` + playOverlay +
         `<div class="iv-badges">${badges.join('')}</div>` +
         `<div class="iv-actions">` +
           `<button class="iv-act" data-act="detail" title="詳細">ℹ</button>${openBtn}` +
@@ -204,16 +205,28 @@
   }
 
   // === 全画面ビューア ===
+  let vIsVideo = false;
   function openViewer(recIdx) {
     const p = view[recIdx];
     if (!p) return;
-    vItems = recordImages(p);
+    if (p.video) { vItems = [imgUrl(p.video)]; vIsVideo = true; }   // 動画は原寸で再生
+    else { vItems = recordImages(p); vIsVideo = false; }
     vIdx = 0;
     renderViewer();
     $('ivViewer').hidden = false;
   }
   function renderViewer() {
-    $('ivViewerImg').src = vItems[vIdx] || '';
+    const img = $('ivViewerImg'), vid = $('ivViewerVid');
+    if (vIsVideo) {
+      img.hidden = true; img.src = '';
+      vid.hidden = false; vid.src = vItems[0] || ''; vid.play().catch(() => { /* autoplay may be blocked */ });
+      $('ivViewerIndex').textContent = '';
+      $('ivPrev').style.visibility = 'hidden'; $('ivNext').style.visibility = 'hidden';
+      return;
+    }
+    vid.hidden = true; try { vid.pause(); } catch { /* ignore */ } vid.src = '';
+    img.hidden = false;
+    img.src = vItems[vIdx] || '';
     $('ivViewerIndex').textContent = vItems.length > 1 ? `${vIdx + 1} / ${vItems.length}` : '';
     const multi = vItems.length > 1;
     $('ivPrev').disabled = vIdx <= 0;
@@ -221,8 +234,12 @@
     $('ivPrev').style.visibility = multi ? '' : 'hidden';
     $('ivNext').style.visibility = multi ? '' : 'hidden';
   }
-  function closeViewer() { $('ivViewer').hidden = true; $('ivViewerImg').src = ''; }
-  function step(d) { const n = vIdx + d; if (n >= 0 && n < vItems.length) { vIdx = n; renderViewer(); } }
+  function closeViewer() {
+    $('ivViewer').hidden = true;
+    $('ivViewerImg').src = '';
+    const vid = $('ivViewerVid'); try { vid.pause(); } catch { /* ignore */ } vid.src = '';
+  }
+  function step(d) { if (vIsVideo) return; const n = vIdx + d; if (n >= 0 && n < vItems.length) { vIdx = n; renderViewer(); } }
 
   function resetFilters() {
     state.search = ''; state.platform = ''; state.sort = 'captured'; state.minLikes = 0; state.multiOnly = false;

@@ -788,6 +788,7 @@
     <div id="ivViewer" class="iv-viewer" hidden>
       <button class="iv-nav" id="ivPrev" type="button">&#8249;</button>
       <img id="ivViewerImg" class="iv-viewer-img" alt="">
+      <video id="ivViewerVid" class="iv-viewer-img" controls hidden></video>
       <button class="iv-nav" id="ivNext" type="button">&#8250;</button>
       <div class="iv-index" id="ivViewerIndex"></div>
     </div>
@@ -931,6 +932,8 @@
     .iv-badge.mastodon { background: rgba(99,100,255,0.95); }
     .iv-badge.pixiv { background: rgba(0,150,250,0.95); }
     .iv-badge.count { background: rgba(0,0,0,0.8); }
+    .iv-card .iv-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .iv-card .iv-play span { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; padding-left: 3px; }
     .iv-card .iv-actions { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; gap: 4px; opacity: 0; transition: opacity 0.1s; }
     .iv-card:hover .iv-actions { opacity: 1; }
     .iv-act {

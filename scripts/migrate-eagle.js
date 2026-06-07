@@ -3,12 +3,17 @@
 // One-time Eagle → Corpus migration (WHOLE LIBRARY — "graduate from Eagle").
 //
 // Iterates Eagle's NATIVE items (<lib>/images/<id>.info/metadata.json), copies
-// each original still image OUT of the (read-only) library into the Corpus save
-// folder as a sidecar record, carries over the item's NATIVE Eagle tags, and
-// migrates the library's TAG GROUPS (<lib>/metadata.json → tagsGroups) to
-// <saveFolder>/tag-groups.json. SNS engagement / author / text is overlaid from
-// the engagement-browser.json plugin store (matched by item id) when present;
-// items with no SNS URL become plain illustration records (image + tags).
+// each VIEWABLE original (images + video) OUT of the (read-only) library into the
+// Corpus save folder as a sidecar record, carries over the item's NATIVE Eagle
+// tags, and migrates the library's TAG GROUPS (<lib>/metadata.json → tagsGroups)
+// to <saveFolder>/tag-groups.json. SNS engagement / author / text / uid is
+// overlaid from the engagement-browser.json plugin store (+ the per-item Eagle
+// annotation's UID line) when present; items with no SNS URL become plain
+// illustration records (image + tags).
+//
+// VIEWABLE = images (jpg/jpeg/jfif/png/webp/gif/avif/svg) + video (mp4/webm/mov/
+// m4v). Everything else (exe, archives, …) is excluded. Videos copy their Eagle
+// thumbnail as a poster (record.image) and the video file as record.video.
 //
 // SAFETY: never writes to / moves / deletes anything under the Eagle library.
 // DRY-RUN BY DEFAULT (no --apply → writes nothing, prints the plan). Idempotent
@@ -16,8 +21,7 @@
 // docs/eagle-migration.md.
 //
 //   node scripts/migrate-eagle.js --lib "<path to .library>"            (dry-run)
-//   node scripts/migrate-eagle.js --lib "<...>" --apply                 (write)
-//   node scripts/migrate-eagle.js --lib "<...>" --apply --verify        (+ audit)
+//   node scripts/migrate-eagle.js --lib "<...>" --apply --verify        (write+audit)
 //   flags: --tagged-only     only items that have tags or an SNS URL (skip plain refs)
 //          --save "<folder>"  override the Corpus save folder (default: config.json)
 //          --limit N          cap the writes to the first N items (trial batch)
@@ -47,9 +51,11 @@ function parseArgs(argv) {
 function abort(msg) { console.error('ERROR: ' + msg); process.exit(2); }
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
 
-// jfif is just JPEG; include it. mp4/svg/etc. are skipped (psimg can't render them).
-const STILL_EXT = /^(jpe?g|jfif|png|webp|gif)$/i;
-const STILL_FILE = /\.(jpe?g|jfif|png|webp|gif)$/i;
+// Viewable allowlist. Anything not matched (exe, zip, psd, fonts, …) is excluded.
+const IMAGE_EXT = /^(jpe?g|jfif|png|webp|gif|avif|svg)$/i;
+const VIDEO_EXT = /^(mp4|webm|mov|m4v)$/i;
+const VIEWABLE_FILE = /\.(jpe?g|jfif|png|webp|gif|avif|svg|mp4|webm|mov|m4v)$/i;
+const isViewable = (ext) => IMAGE_EXT.test(ext) || VIDEO_EXT.test(ext);
 
 function isoFromMs(ms) {
   return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
@@ -63,9 +69,8 @@ function hashOffset(id) {
   return h % 1000;
 }
 
-// Resolve an item's original image on disk. Primary: <lib>/images/<id>.info/<name>.<ext>
-// (name+ext from the native metadata). Fallback: the first non-thumbnail still
-// image in the .info dir (covers name-sanitization / ext mismatches). null if none.
+// Resolve an item's original file. Primary: <lib>/images/<id>.info/<name>.<ext>.
+// Fallback: the first non-thumbnail viewable file in the .info dir. null if none.
 function resolveImage(lib, id, name, ext) {
   const dir = path.join(lib, 'images', `${id}.info`);
   if (name) {
@@ -74,9 +79,19 @@ function resolveImage(lib, id, name, ext) {
   }
   try {
     const files = fs.readdirSync(dir);
-    const imgs = files.filter((f) => STILL_FILE.test(f) && !/_thumbnail\.[a-z0-9]+$/i.test(f));
-    if (imgs.length) return path.join(dir, imgs[0]);
+    const hit = files.filter((f) => VIEWABLE_FILE.test(f) && !/_thumbnail\.[a-z0-9]+$/i.test(f));
+    if (hit.length) return path.join(dir, hit[0]);
   } catch { /* .info dir missing */ }
+  return null;
+}
+
+// Eagle's generated poster for a video: <id>.info/<name>_thumbnail.png. null if none.
+function resolveThumbnail(lib, id) {
+  const dir = path.join(lib, 'images', `${id}.info`);
+  try {
+    const f = fs.readdirSync(dir).find((x) => /_thumbnail\.(png|jpe?g|webp)$/i.test(x));
+    if (f) return path.join(dir, f);
+  } catch { /* none */ }
   return null;
 }
 
@@ -91,20 +106,21 @@ function parseAnnotation(a) {
   return o;
 }
 
-// meta = native metadata.json (source of truth for tags/url/time/name/annotation).
-// ov   = engagement-browser store item (overlay; {} when the item has no SNS data).
-function buildRecord(id, meta, ov, platform, captureId, imageBasename) {
+// meta = native metadata.json; ov = engagement store overlay ({} when none).
+// files = { captureId, image, video, mediaType } resolved by the caller.
+function buildRecord(id, meta, ov, platform, files) {
   const url = meta.url || ov.url || null;
   const hasUrl = !!url;
   const anno = parseAnnotation(meta.annotation);
   const annoAuthor = anno.Author ? anno.Author.replace(/^@/, '') : null;
   return {
-    captureId,
-    image: imageBasename,
+    captureId: files.captureId,
+    image: files.image,
+    video: files.video || null,                                   // playable file for mediaType:'video'
     url,
     platform: platform || null,
     text: ov.text || null,
-    title: ov.title || (!hasUrl ? (meta.name || null) : null),   // ref images: use Eagle name
+    title: ov.title || (!hasUrl ? (meta.name || null) : null),    // ref images: use Eagle name
     displayName: ov.displayName || null,
     screenName: ov.author || annoAuthor || null,                  // handle (pixiv: numeric id)
     userId: platform === 'pixiv' ? (ov.author || null) : (anno.UID || null),  // stable user id (all platforms)
@@ -116,7 +132,7 @@ function buildRecord(id, meta, ov, platform, captureId, imageBasename) {
     quotes: ov.quotes ?? null,
     date: isoFromMs(ov.publishedAt) || isoFromMs(ov.modifiedAt) || isoFromMs(meta.btime),
     capturedAt: isoFromMs((meta.btime || meta.mtime || Date.parse('2020-01-01')) + hashOffset(id)),
-    mediaType: 'image',
+    mediaType: files.mediaType,
     media: [],                                                    // image IS the artwork; empty avoids lightbox dup
     lang: null,
     isReply: null, isQuote: null, isThread: null, quotedUrl: null,
@@ -151,8 +167,8 @@ const tagGroups = (Array.isArray(libMeta.tagsGroups) ? libMeta.tagsGroups : [])
 const saveFolder = resolveSaveFolder(args.save);
 
 const stats = {
-  scanned: 0, deleted: 0, nonStill: 0, imageMissing: 0,
-  skippedExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0,
+  scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0,
+  skippedExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0, video: 0,
   byPlatform: {}
 };
 const plan = [];
@@ -168,7 +184,7 @@ for (const d of dirs) {
   stats.scanned++;
   if (meta.isDeleted) { stats.deleted++; continue; }
   const ext = String(meta.ext || '').toLowerCase().replace(/^\./, '');
-  if (!STILL_EXT.test(ext)) { stats.nonStill++; continue; }      // mp4/svg/etc — psimg can't render
+  if (!isViewable(ext)) { stats.nonViewable++; continue; }        // exe / archives / etc.
 
   const ov = storeItems[id] || {};
   const url = meta.url || ov.url || null;
@@ -178,17 +194,30 @@ for (const d of dirs) {
   const captureId = `eagle-${id}`;
   if (saveFolder && fs.existsSync(path.join(saveFolder, `${captureId}.json`))) { stats.skippedExisting++; continue; }
 
-  const srcImage = resolveImage(args.lib, id, meta.name, ext);
-  if (!srcImage) { stats.imageMissing++; continue; }             // no renderable original → skip
+  const srcMain = resolveImage(args.lib, id, meta.name, ext);
+  if (!srcMain) { stats.imageMissing++; continue; }               // original missing → skip
+
+  const isVideo = VIDEO_EXT.test(ext);
+  const destMain = `${captureId}.${ext}`;
+  let image, video = null, srcPoster = null, destPoster = null;
+  const mediaType = isVideo ? 'video' : (ext === 'gif' ? 'gif' : 'image');
+  if (isVideo) {
+    video = destMain;
+    srcPoster = resolveThumbnail(args.lib, id);                   // tile poster = Eagle thumbnail
+    if (srcPoster) { destPoster = `${captureId}-poster${path.extname(srcPoster).toLowerCase()}`; image = destPoster; }
+    else { image = null; }                                        // no poster (rare); tile falls back
+  } else {
+    image = destMain;
+  }
 
   const parsed = url ? parsePostUrl(url) : null;
   const platform = ov.platform || (parsed && parsed.platform) || null;
-  const destImage = `${captureId}.${ext}`;
-  const rec = buildRecord(id, meta, ov, platform, captureId, destImage);
-  plan.push({ id, captureId, platform, srcImage, destImage, rec });
+  const rec = buildRecord(id, meta, ov, platform, { captureId, image, video, mediaType });
+  plan.push({ id, captureId, platform, srcMain, destMain, srcPoster, destPoster, rec });
   stats.wouldWrite++;
   if (tagged) stats.withTags++;
   if (url) stats.withUrl++;
+  if (isVideo) stats.video++;
   const k = platform || '(none)';
   stats.byPlatform[k] = (stats.byPlatform[k] || 0) + 1;
 }
@@ -202,15 +231,15 @@ function csvCell(v) {
   return /[",]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function writeCsv(file, items) {
-  const cols = ['captureId', 'platform', 'tags', 'title', 'text', 'displayName', 'screenName',
-    'likes', 'quotes', 'date', 'url', 'srcImage', 'destImage'];
+  const cols = ['captureId', 'mediaType', 'platform', 'tags', 'title', 'text', 'displayName', 'screenName',
+    'likes', 'date', 'url', 'srcImage', 'destImage'];
   const lines = [cols.join(',')];
   for (const p of items) {
     const r = p.rec;
     lines.push([
-      p.captureId, r.platform || '', (r.tags || []).join(' / '), r.title || '', r.text || '',
-      r.displayName || '', r.screenName || '', r.likes ?? '', r.quotes ?? '',
-      r.date || '', r.url || '', path.basename(p.srcImage), p.destImage
+      p.captureId, r.mediaType, r.platform || '', (r.tags || []).join(' / '), r.title || '', r.text || '',
+      r.displayName || '', r.screenName || '', r.likes ?? '', r.date || '', r.url || '',
+      path.basename(p.srcMain), p.destMain
     ].map(csvCell).join(','));
   }
   fs.writeFileSync(file, '﻿' + lines.join('\r\n') + '\r\n', 'utf8');
@@ -221,22 +250,21 @@ function printPlan() {
   console.log('library      :', args.lib);
   console.log('save folder  :', saveFolder || '(NOT CONFIGURED — set it in Corpus or pass --save before --apply)');
   console.log('scanned      :', stats.scanned, 'native items | deleted:', stats.deleted);
-  console.log('skipped      : non-still(mp4/svg)=' + stats.nonStill,
+  console.log('skipped      : non-viewable(exe等)=' + stats.nonViewable,
     '| image-missing=' + stats.imageMissing, '| already-migrated=' + stats.skippedExisting,
     (args.taggedOnly ? '| untagged-skipped=' + stats.skippedUntagged : ''));
-  console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| with SNS url:', stats.withUrl + ')');
+  console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| SNS url:', stats.withUrl, '| video:', stats.video + ')');
   console.log('             by platform:', JSON.stringify(stats.byPlatform));
   if (args.limit) console.log('LIMIT        : --limit ' + args.limit + ' → writing only first ' + toWrite.length + ' of ' + stats.wouldWrite);
   console.log('tag groups   :', tagGroups.length, tagGroups.map((g) => `${g.name}(${g.tags.length})`).join(' '));
-  const accounted = stats.wouldWrite + stats.deleted + stats.nonStill + stats.imageMissing + stats.skippedExisting + stats.skippedUntagged;
+  const accounted = stats.wouldWrite + stats.deleted + stats.nonViewable + stats.imageMissing + stats.skippedExisting + stats.skippedUntagged;
   console.log('accounting   :', accounted, '==', stats.scanned, accounted === stats.scanned ? 'OK' : 'MISMATCH');
   console.log('\nsample (first 5 mapped):');
   for (const p of toWrite.slice(0, 5)) {
     const r = p.rec;
-    console.log('  •', p.captureId, '| pf=' + (r.platform || 'none'),
+    console.log('  •', p.captureId, '| ' + r.mediaType, '| pf=' + (r.platform || 'none'),
       '| tags=[' + (r.tags || []).slice(0, 4).join(',') + ']',
-      '| ' + (r.title || r.text || '').slice(0, 28).replace(/\n/g, ' '),
-      '| ' + path.basename(p.srcImage), '→', p.destImage);
+      '| ' + (r.title || r.text || '').slice(0, 24).replace(/\n/g, ' '), '→', p.destMain);
   }
 }
 
@@ -264,11 +292,11 @@ try {
 let done = 0; const failed = [];
 for (const p of toWrite) {
   const destJson = path.join(saveFolder, `${p.captureId}.json`);
-  const destImg = path.join(saveFolder, p.destImage);
   try {
     if (fs.existsSync(destJson)) continue;                 // idempotent
-    fs.copyFileSync(p.srcImage, destImg);                  // image first
-    fs.writeFileSync(destJson, JSON.stringify(p.rec, null, 2), 'utf8');  // then sidecar
+    fs.copyFileSync(p.srcMain, path.join(saveFolder, p.destMain));            // original (image or video)
+    if (p.srcPoster && p.destPoster) fs.copyFileSync(p.srcPoster, path.join(saveFolder, p.destPoster)); // video poster
+    fs.writeFileSync(destJson, JSON.stringify(p.rec, null, 2), 'utf8');       // then sidecar
     done++;
     if (done % 500 === 0) console.log('  …', done, '/', toWrite.length);
   } catch (e) { failed.push({ id: p.id, error: e.message }); }
@@ -281,12 +309,13 @@ if (args.verify) {
   let okCount = 0; const problems = [];
   for (const p of toWrite) {
     const destJson = path.join(saveFolder, `${p.captureId}.json`);
-    const destImg = path.join(saveFolder, p.destImage);
+    const destMain = path.join(saveFolder, p.destMain);
     if (!fs.existsSync(destJson)) { problems.push(`${p.captureId}: sidecar missing`); continue; }
-    if (!fs.existsSync(destImg)) { problems.push(`${p.captureId}: image missing`); continue; }
+    if (!fs.existsSync(destMain)) { problems.push(`${p.captureId}: original missing`); continue; }
     try {
-      if (fs.statSync(p.srcImage).size !== fs.statSync(destImg).size) { problems.push(`${p.captureId}: size mismatch`); continue; }
+      if (fs.statSync(p.srcMain).size !== fs.statSync(destMain).size) { problems.push(`${p.captureId}: size mismatch`); continue; }
       const rec = JSON.parse(fs.readFileSync(destJson, 'utf8'));
+      if (rec.image && !fs.existsSync(path.join(saveFolder, rec.image))) { problems.push(`${p.captureId}: image/poster missing`); continue; }
       const expectPf = rec.url ? (parsePostUrl(rec.url) || {}).platform : null;
       if (rec.platform && expectPf && rec.platform !== expectPf) { problems.push(`${p.captureId}: platform ${rec.platform}!=${expectPf}`); continue; }
       okCount++;
