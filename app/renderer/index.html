@@ -727,28 +727,54 @@
   </div>
   </div><!-- /mode-post -->
 
-  <!-- Image-view mode (info-plus style tile grid) -->
+  <!-- Image-view mode (info-plus style tile grid, light shell: sb-section filter
+       sidebar + tile overlay actions + inspector) -->
   <div id="mode-image" style="display:none">
-    <div class="iv-toolbar">
-      <input type="search" id="ivSearch" class="iv-search" placeholder="検索（作者・本文・タグ）">
-      <select id="ivPlatform" class="iv-select">
-        <option value="">All</option>
-        <option value="x">X</option>
-        <option value="bluesky">Bluesky</option>
-        <option value="misskey">Misskey</option>
-        <option value="mastodon">Mastodon</option>
-        <option value="pixiv">pixiv</option>
-      </select>
-      <select id="ivSort" class="iv-select">
-        <option value="captured">最近保存</option>
-        <option value="likes">いいね ↓</option>
-        <option value="date">投稿日 ↓</option>
-      </select>
-      <label class="iv-tile">タイル <input type="range" id="ivTile" min="120" max="360" step="20" value="180"></label>
-      <span class="iv-count" id="ivCount"></span>
+    <div class="iv-layout">
+      <aside class="iv-sidebar">
+        <div class="sb-section">
+          <input type="search" id="ivSearch" class="search-box" placeholder="検索（作者・本文・タグ）">
+        </div>
+        <div class="sb-section">
+          <div class="sb-title">プラットフォーム</div>
+          <div class="sb-chips" id="ivPlatformChips">
+            <button class="sb-chip" data-pf="x">X</button>
+            <button class="sb-chip" data-pf="bluesky">Bluesky</button>
+            <button class="sb-chip" data-pf="misskey">Misskey</button>
+            <button class="sb-chip" data-pf="mastodon">Mastodon</button>
+            <button class="sb-chip" data-pf="pixiv">pixiv</button>
+          </div>
+        </div>
+        <div class="sb-section">
+          <div class="sb-title">並び替え</div>
+          <select id="ivSort">
+            <option value="captured">最近保存</option>
+            <option value="likesPct">いいね ↓（ランク）</option>
+            <option value="likes">いいね ↓（実数）</option>
+            <option value="date">投稿日 ↓</option>
+          </select>
+        </div>
+        <div class="sb-section">
+          <div class="sb-title">最低いいね数</div>
+          <input type="number" id="ivMinLikes" class="search-box" min="0" placeholder="0">
+        </div>
+        <div class="sb-section">
+          <div class="sb-title">表示オプション</div>
+          <label class="iv-check"><input type="checkbox" id="ivMultiOnly"> 複数画像のみ</label>
+          <div class="iv-tilewrap"><span>タイルサイズ</span><input type="range" id="ivTile" min="120" max="360" step="20" value="180"></div>
+        </div>
+        <button class="iv-reset" id="ivReset" type="button">フィルタをリセット</button>
+      </aside>
+
+      <div class="iv-content">
+        <div class="iv-headbar"><span class="iv-count" id="ivCount"></span></div>
+        <div id="ivGrid" class="iv-grid"></div>
+        <div id="ivEmpty" class="iv-empty" style="display:none">画像がありません</div>
+      </div>
+
+      <aside id="ivInspector" class="iv-inspector" hidden></aside>
     </div>
-    <div id="ivGrid" class="iv-grid"></div>
-    <div id="ivEmpty" class="iv-empty" style="display:none">画像がありません</div>
+
     <div id="ivViewer" class="iv-viewer" hidden>
       <button class="iv-nav" id="ivPrev" type="button">&#8249;</button>
       <img id="ivViewerImg" class="iv-viewer-img" alt="">
@@ -838,16 +864,46 @@
       padding: 16px 24px 32px; min-height: 100vh;
       background: var(--bg); color: var(--fg);
     }
-    .iv-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
-    .iv-search, .iv-select {
-      background: var(--surface); color: var(--fg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 7px 12px; font-size: 13px; outline: none;
+    /* Layout: sb-section filter sidebar (reuses post-view's light sidebar classes)
+       + content + a slide-in inspector. */
+    .iv-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .iv-sidebar {
+      width: 230px; flex-shrink: 0; position: sticky; top: 16px; align-self: flex-start;
+      max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden; padding-right: 6px;
     }
-    .iv-search { min-width: 220px; }
-    .iv-search:focus, .iv-select:focus { border-color: var(--accent); }
-    .iv-tile { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-    .iv-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .iv-sidebar select, .iv-sidebar input.search-box { width: 100%; }
+    .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
+    .iv-tilewrap { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+    .iv-tilewrap input { width: 100%; }
+    .iv-reset {
+      width: 100%; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px; font-size: 12px; cursor: pointer; transition: all .15s;
+    }
+    .iv-reset:hover { border-color: var(--accent); color: var(--accent); }
+    .iv-content { flex: 1; min-width: 0; }
+    .iv-headbar { display: flex; align-items: center; margin-bottom: 12px; min-height: 18px; }
+    .iv-count { color: var(--muted); font-size: 12px; }
     .iv-empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+
+    /* Inspector (selected-tile metadata), slides in on the detail (ℹ) action. */
+    .iv-inspector {
+      width: 288px; flex-shrink: 0; position: sticky; top: 16px; align-self: flex-start;
+      max-height: calc(100vh - 32px); overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .iv-inspector[hidden] { display: none; }
+    .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+    .iv-insp-close:hover { color: var(--fg); }
+    .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
+    .iv-insp-thumb { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; display: block; }
+    .iv-insp-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); }
+    .iv-insp-k { color: var(--muted); flex: 0 0 72px; }
+    .iv-insp-v { flex: 1; word-break: break-word; }
+    .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: #666; }
+    .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
+    .iv-insp-open:hover { text-decoration: underline; }
 
     .iv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--iv-tile), 1fr)); gap: 8px; }
     .iv-card {
@@ -866,6 +922,15 @@
     .iv-badge.mastodon { background: rgba(99,100,255,0.95); }
     .iv-badge.pixiv { background: rgba(0,150,250,0.95); }
     .iv-badge.count { background: rgba(0,0,0,0.8); }
+    .iv-card .iv-actions { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; gap: 4px; opacity: 0; transition: opacity 0.1s; }
+    .iv-card:hover .iv-actions { opacity: 1; }
+    .iv-act {
+      width: 24px; height: 24px; padding: 0; border: none; border-radius: 5px;
+      background: rgba(0,0,0,0.62); color: #fff; font-size: 12px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background 0.1s;
+    }
+    .iv-act:hover { background: var(--accent); }
+    .iv-act.del:hover { background: #c0392b; }
     .iv-card .iv-stats {
       position: absolute; bottom: 0; left: 0; right: 0; padding: 8px;
       background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff; font-size: 11px;
