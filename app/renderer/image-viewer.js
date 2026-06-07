@@ -96,6 +96,7 @@
     if (state.sort === 'likes') list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
     else if (state.sort === 'likesPct') { const pct = percentileFn(list); list.sort((a, b) => pct(b) - pct(a)); }
     else if (state.sort === 'date') list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    else if (state.sort === 'updated') list.sort((a, b) => new Date(b.updatedAt || b.capturedAt || 0) - new Date(a.updatedAt || a.capturedAt || 0));
     else list.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
     return list;
   }
@@ -188,6 +189,7 @@
       row('反応', eng.join('   ')) +
       row('投稿日', p.date ? new Date(p.date).toLocaleString() : '') +
       row('保存日', p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '') +
+      row('更新日', p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
       row('画像数', files.length > 1 ? files.length + ' 枚' : '') +
       tagsHtml +
       (p.url ? `<a class="iv-insp-open" id="ivInspOpen">元投稿を開く ↗</a>` : '');

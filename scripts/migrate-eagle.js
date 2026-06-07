@@ -131,7 +131,8 @@ function buildRecord(id, meta, ov, platform, files) {
     views: ov.views ?? null,
     quotes: ov.quotes ?? null,
     date: isoFromMs(ov.publishedAt) || isoFromMs(ov.modifiedAt) || isoFromMs(meta.btime),
-    capturedAt: isoFromMs((meta.btime || meta.mtime || Date.parse('2020-01-01')) + hashOffset(id)),
+    capturedAt: isoFromMs((meta.btime || meta.mtime || Date.parse('2020-01-01')) + hashOffset(id)),  // Eagle 追加日
+    updatedAt: isoFromMs(meta.mtime || meta.modificationTime || meta.btime),  // Eagle 変更日; bumped on Corpus edits
     mediaType: files.mediaType,
     media: [],                                                    // image IS the artwork; empty avoids lightbox dup
     lang: null,

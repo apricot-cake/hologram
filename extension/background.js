@@ -101,6 +101,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     views: meta.views,
     date: meta.date || capturedAt,
     capturedAt,
+    updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
     mediaType: meta.mediaType,
     media: meta.media || [],
     lang: meta.lang,
@@ -217,6 +218,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
     views: meta.views,
     date: meta.date || capturedAt,
     capturedAt,
+    updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
     mediaType: 'image',
     lang: meta.lang,
     isReply: meta.isReply,

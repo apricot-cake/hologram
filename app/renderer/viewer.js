@@ -1397,6 +1397,7 @@
         quotedUrl: p.quotedUrl || null,
         date: p.date,
         capturedAt: p.capturedAt,
+        updatedAt: p.updatedAt || null,
         tags: p.tags?.length ? p.tags : null,
         hashtags: p.hashtags?.length ? p.hashtags : null,
         imageFile: `images/${filename}`
@@ -1442,6 +1443,7 @@
         quotedUrl: p.quotedUrl || null,
         date: p.date,
         capturedAt: p.capturedAt,
+        updatedAt: p.updatedAt || null,
         tags: p.tags?.length ? p.tags : null,
         hashtags: p.hashtags?.length ? p.hashtags : null,
         image

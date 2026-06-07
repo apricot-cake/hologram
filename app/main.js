@@ -331,6 +331,7 @@ ipcMain.handle('update-tags', async (_e, image, tags) => {
   try {
     const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
     rec.tags = Array.isArray(tags) ? tags.map(String) : [];
+    rec.updatedAt = new Date().toISOString();        // record was modified in Corpus
     await fs.promises.writeFile(jsonPath, JSON.stringify(rec, null, 2), 'utf8');
     return { ok: true };
   } catch {
@@ -377,6 +378,7 @@ ipcMain.handle('import-posts', async (_e, posts) => {
       views: p.views ?? null,
       date: p.date || null,
       capturedAt: p.capturedAt || new Date().toISOString(),
+      updatedAt: p.updatedAt || p.capturedAt || new Date().toISOString(),
       mediaType: p.mediaType || null,
       lang: p.lang || null,
       isReply: p.isReply || null,
