@@ -87,7 +87,7 @@ function listPosts() {
   const posts = [];
   for (const f of files) {
     if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json') continue;
+    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
       // Keep records with an image, a (poster-less) video, or downloaded media.
@@ -285,6 +285,40 @@ ipcMain.handle('set-manual-groups', (_e, groups) => {
   }
 });
 
+// User folders (image-view): named collections of captureIds, with one designated
+// default for one-click "add to folder" from a tile's hover overlay. Distinct from
+// tags — a folder is an explicit container with a default add-target. Lives as
+// <saveFolder>/folders.json: { folders: [ { id, name, items: [captureId,…] } ], defaultId }.
+ipcMain.handle('get-folders', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { folders: [], defaultId: null };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
+    const folders = Array.isArray(j.folders) ? j.folders
+      .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
+      .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
+    const defaultId = folders.some((f) => f.id === j.defaultId) ? j.defaultId : null;
+    return { folders, defaultId };
+  } catch {
+    return { folders: [], defaultId: null };
+  }
+});
+ipcMain.handle('set-folders', (_e, data) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    const src = (data && Array.isArray(data.folders)) ? data.folders : [];
+    const folders = src
+      .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
+      .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
+    const defaultId = folders.some((f) => f.id === (data && data.defaultId)) ? data.defaultId : null;
+    fs.writeFileSync(path.join(folder, 'folders.json'), JSON.stringify({ folders, defaultId }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);
@@ -462,7 +496,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
