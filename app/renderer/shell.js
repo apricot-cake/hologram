@@ -8,6 +8,8 @@
   const imgBtn = document.getElementById('modeImageBtn');
   const modePost = document.getElementById('mode-post');
   const modeImage = document.getElementById('mode-image');
+  const sidePost = document.getElementById('side-post');     // post filters (in shared sidebar)
+  const sideImage = document.getElementById('side-image');   // image filters (in shared sidebar)
   if (!postBtn || !imgBtn || !modePost || !modeImage) return;
 
   let imageReady = false;
@@ -16,6 +18,8 @@
     const img = mode === 'image';
     modePost.style.display = img ? 'none' : '';
     modeImage.style.display = img ? '' : 'none';
+    if (sidePost) sidePost.style.display = img ? 'none' : '';
+    if (sideImage) sideImage.style.display = img ? '' : 'none';
     postBtn.classList.toggle('active', !img);
     imgBtn.classList.toggle('active', img);
     if (img && window.corpusImageView) {
