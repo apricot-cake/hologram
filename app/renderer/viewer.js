@@ -82,8 +82,9 @@
     engagementViews: _s('engagementViews'),
     engagementSuffix: _s('engagementSuffix'),
 
-    // selection mode
-    selectMode: _s('selectMode'),
+    // view toggle + selection
+    viewGrid: _s('viewGrid'),
+    viewList: _s('viewList'),
     selectAll: _s('selectAll'),
     deselectAll: _s('deselectAll'),
     cancelSelect: _s('cancelSelect'),
@@ -163,6 +164,8 @@
   setAttr('hashtagSearch', 'placeholder', MSG.searchHashtags);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('userSearch', 'placeholder', MSG.searchUsers);
+  setText('viewGrid', MSG.viewGrid);
+  setText('viewList', MSG.viewList);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
   setText('chooseFolderBtn', MSG.chooseFolder);
   setText('hintSaveFolder', MSG.hintSaveFolder);
@@ -657,8 +660,8 @@
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'grid';
   let skipDeleteConfirm = false;
-  let selectMode = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
+  let selectionAnchor = null;    // index in the filtered list, for shift-range select
   const usersPlatformFilter = new Set(); // Users tab: selected platform chips (local)
 
   // --- Tabs ---
@@ -1067,7 +1070,6 @@
   }
 
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (selectMode) return; // in select mode, clicks toggle selection (handled below)
     // Dedicated button -> jump to the source post.
     const openBtn = e.target.closest('.open-btn');
     if (openBtn) {
@@ -1110,24 +1112,36 @@
     openEditOverlay(post);
   });
 
-  // Click on post card in select mode -> toggle selection. (In normal mode the
-  // card body is inert: the image opens the gallery and a button opens the post.)
+  // Click the card body (anything but the image, the post/edit/delete buttons,
+  // or the expandable text) to select it. Plain click selects only that card;
+  // Ctrl/Cmd-click toggles one; Shift-click selects the range from the anchor.
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') || e.target.closest('.open-btn') || e.target.closest('.text')) return;
+    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') ||
+        e.target.closest('.open-btn') || e.target.closest('.card-img') ||
+        e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
-    if (!selectMode && !e.target.closest('.select-check')) return;
-
+    const filtered = getFilteredPosts();
+    const keyOf = (p) => (p.url || '') + '|' + (p.capturedAt || '');
+    const idx = parseInt(card.dataset.index, 10);
     const key = card.dataset.key;
-    if (selectedSet.has(key)) {
-      selectedSet.delete(key);
-      card.classList.remove('selected');
-      card.querySelector('.select-check').textContent = '';
+
+    if (e.shiftKey && selectionAnchor !== null) {
+      const lo = Math.min(selectionAnchor, idx);
+      const hi = Math.max(selectionAnchor, idx);
+      selectedSet.clear();
+      for (let i = lo; i <= hi; i++) { if (filtered[i]) selectedSet.add(keyOf(filtered[i])); }
+    } else if (e.ctrlKey || e.metaKey) {
+      if (selectedSet.has(key)) selectedSet.delete(key); else selectedSet.add(key);
+      selectionAnchor = idx;
     } else {
-      selectedSet.add(key);
-      card.classList.add('selected');
-      card.querySelector('.select-check').textContent = '✓';
+      // Plain click: select only this (clicking the sole selection clears it).
+      const only = selectedSet.size === 1 && selectedSet.has(key);
+      selectedSet.clear();
+      if (!only) selectedSet.add(key);
+      selectionAnchor = only ? null : idx;
     }
+    renderPosts();
     updateSelectionBar();
   });
 
@@ -1235,39 +1249,27 @@
   });
 
 
-  // --- Selection mode ---
-  const selectModeBtn = document.getElementById('selectModeBtn');
+  // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
   const selectionBar = document.getElementById('selectionBar');
   const selectAllBtn = document.getElementById('selectAllBtn');
   const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
   const cancelSelectBtn = document.getElementById('cancelSelectBtn');
   const selectedCountEl = document.getElementById('selectedCount');
 
-  selectModeBtn.textContent = MSG.selectMode;
   selectAllBtn.textContent = MSG.selectAll;
   deleteSelectedBtn.textContent = MSG.deleteSelected;
   cancelSelectBtn.textContent = MSG.cancelSelect;
 
-  function enterSelectMode() {
-    selectMode = true;
+  function clearSelection() {
     selectedSet.clear();
-    document.getElementById('postGrid').classList.add('select-mode');
-    selectionBar.style.display = '';
-    selectModeBtn.classList.add('active');
-    updateSelectionBar();
-  }
-
-  function exitSelectMode() {
-    selectMode = false;
-    selectedSet.clear();
-    document.getElementById('postGrid').classList.remove('select-mode');
-    selectionBar.style.display = 'none';
-    selectModeBtn.classList.remove('active');
+    selectionAnchor = null;
     renderPosts();
+    updateSelectionBar();
   }
 
   function updateSelectionBar() {
     const count = selectedSet.size;
+    selectionBar.style.display = count > 0 ? '' : 'none';
     selectedCountEl.textContent = MSG.selectedCount(count);
     deleteSelectedBtn.disabled = count === 0;
     const filtered = getFilteredPosts();
@@ -1275,12 +1277,7 @@
     selectAllBtn.textContent = allSelected ? MSG.deselectAll : MSG.selectAll;
   }
 
-  selectModeBtn.addEventListener('click', () => {
-    if (selectMode) exitSelectMode();
-    else enterSelectMode();
-  });
-
-  cancelSelectBtn.addEventListener('click', exitSelectMode);
+  cancelSelectBtn.addEventListener('click', clearSelection);
 
   selectAllBtn.addEventListener('click', () => {
     const filtered = getFilteredPosts();
@@ -1515,8 +1512,9 @@
         await window.postSnap.deletePost(p.image);
       }
       selectedSet.clear();
+      selectionAnchor = null;
       pendingBulkDelete = false;
-      exitSelectMode();
+      updateSelectionBar();
       await loadPosts();
       showToast(MSG.deletedN(count));
     } else if (pendingDeletePost) {

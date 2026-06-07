@@ -113,11 +113,10 @@
     .post-card {
       background: #fff; border-radius: 8px; overflow: hidden;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      cursor: default; transition: box-shadow 0.15s;
+      cursor: pointer; transition: box-shadow 0.15s;
       position: relative;
     }
     .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
-    .post-grid.select-mode .post-card { cursor: pointer; }
     .post-card img {
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
@@ -193,8 +192,7 @@
       display: none; cursor: pointer; z-index: 1;
       text-align: center; line-height: 20px; font-size: 14px; color: #1d9bf0;
     }
-    .select-mode .select-check { display: block; }
-    .post-card.selected .select-check { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .post-card.selected .select-check { display: block; background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
@@ -418,8 +416,10 @@
     }
     .app-sidebar {
       width: 250px; flex-shrink: 0;
-      position: sticky; top: 0; align-self: flex-start;
-      max-height: 100vh; overflow-y: auto; overflow-x: hidden;
+      /* Match body's 24px top padding so the sticky bar doesn't jump up / crowd
+         the tabs against the window edge when the content scrolls. */
+      position: sticky; top: 24px; align-self: flex-start;
+      max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
       padding-right: 8px;
     }
     .app-sidebar input, .app-sidebar select {
@@ -516,10 +516,9 @@
             <option value="captured-desc"></option>
           </select>
           <div class="view-toggle">
-            <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
-            <button data-view="list" id="viewList" title="List">&#9776;</button>
+            <button data-view="grid" id="viewGrid" class="active"></button>
+            <button data-view="list" id="viewList"></button>
           </div>
-          <button class="chip" id="selectModeBtn"></button>
           <span class="post-count" id="postCount"></span>
         </div>
         <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">

@@ -88,8 +88,9 @@
       engagementViews: '閲覧数（Xのみ）',
       engagementSuffix: '以上',
 
-      // viewer: selection mode
-      selectMode: '選択',
+      // viewer: view toggle + selection
+      viewGrid: 'グリッド',
+      viewList: 'リスト',
       selectAll: 'すべて選択',
       deselectAll: '選択解除',
       cancelSelect: 'キャンセル',
@@ -222,7 +223,8 @@
       engagementViews: 'Views (X only)',
       engagementSuffix: 'or more',
 
-      selectMode: 'Select',
+      viewGrid: 'Grid',
+      viewList: 'List',
       selectAll: 'Select all',
       deselectAll: 'Deselect all',
       cancelSelect: 'Cancel',
