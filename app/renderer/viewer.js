@@ -664,6 +664,7 @@
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
   const usersPlatformFilter = new Set(); // Users tab: selected platform chips (local)
   let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
+  let tagMode = 'or';            // tag multi-select combine: 'or' (any) | 'and' (all)
   const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Tabs ---
@@ -723,6 +724,13 @@
   // Live filter for the hashtag-tab list and the sidebar tag chips.
   document.getElementById('hashtagSearch').addEventListener('input', renderHashtags);
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
+  document.getElementById('sbTagMode').addEventListener('click', () => {
+    tagMode = tagMode === 'or' ? 'and' : 'or';
+    const b = document.getElementById('sbTagMode');
+    b.textContent = tagMode === 'or' ? 'いずれか' : 'すべて含む';
+    b.classList.toggle('or', tagMode === 'or');
+    renderPosts();
+  });
 
   // --- Users tab (derived from post author fields; no extra fetching) ---
   const PLATFORM_LABEL = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
@@ -905,10 +913,11 @@
       }
     }
 
-    // Tag: OR within group
+    // Tag: AND (all selected) or OR (any selected), per the sbTagMode toggle
     if (byType.tag) {
       const values = byType.tag.map(f => f.value);
-      posts = posts.filter(p => (p.tags || []).some(t => values.includes(t)));
+      if (tagMode === 'and') posts = posts.filter(p => values.every(v => (p.tags || []).includes(v)));
+      else posts = posts.filter(p => (p.tags || []).some(t => values.includes(t)));
     }
 
     // Media: OR within group

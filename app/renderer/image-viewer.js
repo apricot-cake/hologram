@@ -23,7 +23,7 @@
   let vItems = [];   // 全画面ビューアで開いているレコードの画像URL配列
   let vIdx = 0;
 
-  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, expandAll: false, tags: new Set(), folder: '' };
+  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, expandAll: false, tags: new Set(), tagMode: 'and', folder: '' };
   let tagGroups = [];   // [{ id, name, tags:[] }] migrated from Eagle (tag-groups.json)
   let ungrouped = new Set();    // 永続: グループ化しない投稿キー（ungrouped.json）
   let manualGroups = [];        // 永続: 手動グループ [[captureId,…],…]（manual-groups.json）
@@ -129,10 +129,10 @@
     if (state.platform) list = list.filter((p) => p.platform === state.platform);
     if (state.minLikes > 0) list = list.filter((p) => (p.likes || 0) >= state.minLikes);
     if (state.tags.size) {
-      list = list.filter((p) => {                          // AND: must have every selected tag
+      list = list.filter((p) => {
         const ts = new Set(p.tags || []);
-        for (const t of state.tags) if (!ts.has(t)) return false;
-        return true;
+        if (state.tagMode === 'or') { for (const t of state.tags) if (ts.has(t)) return true; return false; }  // OR: any selected tag
+        for (const t of state.tags) if (!ts.has(t)) return false; return true;                                 // AND: every selected tag
       });
     }
     if (q) {
@@ -437,8 +437,9 @@
 
   function resetFilters() {
     state.search = ''; state.platform = ''; state.sort = 'captured'; state.minLikes = 0; state.multiOnly = false; state.expandAll = false;
-    state.tags.clear(); state.folder = '';
+    state.tags.clear(); state.folder = ''; state.tagMode = 'and';
     $('ivSearch').value = ''; $('ivSort').value = 'captured'; $('ivMinLikes').value = ''; $('ivMultiOnly').checked = false; $('ivExpandAll').checked = false;
+    $('ivTagMode').textContent = 'すべて含む'; $('ivTagMode').classList.remove('or');
     $('ivPlatformChips').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
     $('ivTagGroups').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
     renderFolderFilter();
@@ -467,13 +468,19 @@
       render();
     });
 
-    // タグチップ: 複数選択 (AND)。クリックでトグル。
+    // タグチップ: 複数選択。クリックでトグル。結合(AND/OR)は ivTagMode で切替。
     $('ivTagGroups').addEventListener('click', (e) => {
       const chip = e.target.closest('.sb-chip');
       if (!chip) return;
       const tag = chip.dataset.tag;
       if (state.tags.has(tag)) state.tags.delete(tag); else state.tags.add(tag);
       chip.classList.toggle('active', state.tags.has(tag));
+      render();
+    });
+    $('ivTagMode').addEventListener('click', () => {
+      state.tagMode = state.tagMode === 'and' ? 'or' : 'and';
+      $('ivTagMode').textContent = state.tagMode === 'and' ? 'すべて含む' : 'いずれか';
+      $('ivTagMode').classList.toggle('or', state.tagMode === 'or');
       render();
     });
 

@@ -665,7 +665,7 @@
 
         <!-- Tags -->
         <div class="sb-section">
-          <div class="sb-title" id="sbTagTitle"></div>
+          <div class="sb-title"><span id="sbTagTitle"></span> <button class="iv-andor or" id="sbTagMode" type="button" title="複数選択の結合（すべて含む / いずれか）">いずれか</button></div>
           <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
@@ -737,7 +737,7 @@
         <button class="iv-folder-manage" id="ivFolderManage" type="button">フォルダを管理…</button>
       </div>
       <div class="sb-section" id="ivTagSection" style="display:none">
-        <div class="sb-title">タグ</div>
+        <div class="sb-title">タグ <button class="iv-andor" id="ivTagMode" type="button" title="複数選択の結合（すべて含む / いずれか）">すべて含む</button></div>
         <div id="ivTagGroups"></div>
       </div>
       <button class="iv-reset" id="ivReset" type="button">フィルタをリセット</button>
@@ -940,7 +940,7 @@
   <style>
     #mode-image {
       --iv-tile: 180px;
-      padding: 16px 24px 32px; min-height: 100vh;
+      padding: 16px 24px 32px; height: 100vh; overflow-y: auto;
       background: var(--bg); color: var(--fg);
     }
     /* Content + slide-in inspector. The filter controls live in the shared
@@ -963,7 +963,14 @@
     }
     .iv-reset:hover { border-color: var(--accent); color: var(--accent); }
     .iv-content { flex: 1; min-width: 0; }
-    .iv-headbar { display: flex; align-items: center; margin-bottom: 12px; min-height: 28px; }
+    /* Sticky so the count + selection tools (クリア/選択終了/グループ化) stay reachable
+       while scrolling a long grid. The -16px/-16px negative margins + matching padding
+       let the bg cover the container's padding so tiles don't peek above it. */
+    .iv-headbar {
+      display: flex; align-items: center; min-height: 28px;
+      position: sticky; top: -16px; z-index: 10; background: var(--bg);
+      margin: -16px -24px 12px; padding: 16px 24px 10px;
+    }
     .iv-count { color: var(--muted); font-size: 12px; }
     .iv-headtools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
     .iv-selcount { font-size: 12px; color: var(--muted); }
@@ -1048,6 +1055,10 @@
       border-radius: 6px; padding: 6px; font-size: 11px; color: var(--muted); cursor: pointer; transition: all .15s;
     }
     .iv-folder-manage:hover { border-color: var(--accent); color: var(--accent); }
+    /* AND/OR toggle for multi-select filters (tags) */
+    .iv-andor { font-size: 10px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; margin-left: 4px; vertical-align: middle; }
+    .iv-andor:hover { border-color: var(--accent); color: var(--accent); }
+    .iv-andor.or { background: var(--accent); color: #fff; border-color: var(--accent); }
     .iv-foldstar { color: #f5b301; margin-right: 3px; }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
     .iv-folder-new .search-box { flex: 1; }
