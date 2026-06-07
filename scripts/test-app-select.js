@@ -61,7 +61,13 @@ const evalJs = `(async () => {
   click(circleAt(1), false);
   const afterToggle = selCount();
   const tile1Selected = tileAt(1).classList.contains('selected');
-  return { total, enteredMode, afterFirst, btnText, afterRange, countLabel, afterToggle, tile1Selected };
+  // 4) deselect the remaining tiles → select mode auto-exits when nothing is selected
+  click(circleAt(0), false);
+  click(circleAt(2), false);
+  const afterEmpty = selCount();
+  const exitedMode = !grid.classList.contains('selecting');
+  const btnAfterExit = document.getElementById('ivSelectBtn').textContent;
+  return { total, enteredMode, afterFirst, btnText, afterRange, countLabel, afterToggle, tile1Selected, afterEmpty, exitedMode, btnAfterExit };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -79,8 +85,9 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.total === 4 && r.enteredMode === true && r.afterFirst === 1 &&
     r.btnText === '選択終了' && r.afterRange === 3 && /3/.test(r.countLabel || '') &&
-    r.afterToggle === 2 && r.tile1Selected === false;
-  console.log(`total=${r.total} enter=${r.enteredMode} first=${r.afterFirst} btn=${r.btnText} range=${r.afterRange} label=${r.countLabel} toggle=${r.afterToggle} tile1=${r.tile1Selected}`);
+    r.afterToggle === 2 && r.tile1Selected === false &&
+    r.afterEmpty === 0 && r.exitedMode === true && r.btnAfterExit === '選択';
+  console.log(`total=${r.total} enter=${r.enteredMode} first=${r.afterFirst} btn=${r.btnText} range=${r.afterRange} label=${r.countLabel} toggle=${r.afterToggle} tile1=${r.tile1Selected} empty=${r.afterEmpty} exited=${r.exitedMode} btn2=${r.btnAfterExit}`);
   console.log(ok ? 'SELECT_TEST_PASS' : 'SELECT_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

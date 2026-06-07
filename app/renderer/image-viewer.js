@@ -102,6 +102,16 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // 一時トースト（フォルダ追加/解除などの反応）。連打しても1つだけ。
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('ivToast'); if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+  }
+
   // いいねのパーセンタイル順 (info+ の likesPercentile)。プラットフォームごとに順位化し、
   // 「そのSNSの中で相対的に伸びた投稿」を上位に。実数だとXばかり上位に来る問題を緩和。
   function percentileFn(list) {
@@ -321,12 +331,18 @@
     if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
     else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
     persistFolders();
-    if (btn) {
+    if (btn) {                                          // 即時の見た目反映（フルrender無し＝ホバーが外れない）
       btn.classList.toggle('in', !wasIn);
-      if (!wasIn) { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 800); }
+      if (!wasIn) { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
     }
-    renderFolderFilter();
-    if (state.folder === defaultFolderId) render();   // フィルタ中なら追加/除外を即時反映
+    toast(wasIn ? `「${f.name}」から削除` : `「${f.name}」に追加`);
+    renderFolderFilter();                               // サイドバーの件数だけ更新（グリッドは触らない）
+    // このフォルダで絞り込み中に解除したら、そのタイル1枚だけ取り除く（全再描画しない）。
+    if (wasIn && state.folder === defaultFolderId && btn) {
+      const card = btn.closest('.iv-card');
+      if (card) card.remove();
+      $('ivCount').textContent = $('ivGrid').querySelectorAll('.iv-card').length + ' 件';
+    }
   }
 
   // --- フォルダ管理モーダル（デフォルト設定・作成・改名・削除） ---
@@ -375,6 +391,7 @@
     if (selected.has(g.key)) { selected.delete(g.key); card.classList.remove('selected'); }
     else { selected.add(g.key); card.classList.add('selected'); }
     updateSelBar();
+    if (selectMode && selected.size === 0) setSelectMode(false);   // 全解除したら選択モードを抜ける
   }
   // クリック=トグル＋起点更新 / Shift+クリック=起点〜現在を範囲選択（ctrl不要）
   function selectAt(idx, g, card, shift) {
@@ -482,7 +499,7 @@
     $('ivReset').addEventListener('click', resetFilters);
     $('ivSelectBtn').addEventListener('click', () => setSelectMode(!selectMode));
     $('ivGroupBtn').addEventListener('click', groupSelected);
-    $('ivSelClear').addEventListener('click', () => { selected.clear(); selectAnchor = null; clearSelectClasses(); updateSelBar(); });
+    $('ivSelClear').addEventListener('click', () => setSelectMode(false));   // 全クリア=選択モード終了
 
     // プラットフォームチップ: 単一選択 (同じものを再クリックで解除)。
     $('ivPlatformChips').addEventListener('click', (e) => {
