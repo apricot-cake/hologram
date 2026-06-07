@@ -2,44 +2,77 @@
 
 **English** | [日本語](README.md)
 
-Capture posts from X, Bluesky, Misskey, and Mastodon, and browse them later in a desktop viewer.
+Collect SNS posts and drag-saved illustrations/images into **one app** to browse, search, and organize later. **No dependency on external apps like Eagle.**
 
-Corpus has two parts:
+Corpus has three parts:
 
-- a **Chrome extension** that captures the post you click as a JPEG, and
-- a **desktop app** (Electron) that stores captures in a folder you choose and lets you search, filter, tag, and export them.
+- **Chrome extension** — click a post to capture it as JPEG, or drag an image to save it
+- **Native messaging bridge** (Node) — writes captures as plain files into **a folder you choose**
+- **Desktop app** (Electron) — browse, search, filter, tag, and export in two modes
 
-## How it works
+No browser storage, no EXIF. Images/videos and metadata sit side by side as ordinary files — move or back them up freely (drop them straight into GitHub, etc.).
 
-1. Press `Alt+S` (or click the toolbar icon) and click the post you want to save.
-2. The capture is written to your chosen folder as `<id>.jpg` plus a `<id>.json` sidecar holding the post's text, author, date, and engagement counts.
-3. Open the desktop app to browse, search, filter, tag, and export.
+## Supported platforms
 
-No browser storage, no EXIF — the image and its metadata sit side by side as plain files you own and can move or back up freely.
+X (Twitter) / Bluesky / Misskey / Mastodon / **pixiv**
 
-## Supported Platforms
+> Metadata comes only from each platform's stable official/public API (no DOM scraping). X has no official API, so an unofficial endpoint (`cdn.syndication.twimg.com`) is used; reposts/bookmarks/views aren't available.
 
-- X (Twitter)
-- Bluesky
-- Misskey
-- Mastodon
+## Two ways to save
 
-## What you can do
+- **Click a post** (`Alt+S` → click the post): saves a screenshot of the post plus its original media
+- **Drag an image**: drop the dragged image into the drop zone to save the image itself (no screenshot)
 
-- Save posts to a folder you pick
-- Search by text, user, date, engagement, or tags
-- Tag posts and bulk-delete them
-- Export to ZIP (images + metadata) or a standalone HTML file
-- Restore by importing an exported HTML file
+Both fetch the same metadata (text, author, date, engagement, hashtags, …) from the post URL.
+
+## Two viewer modes (switch in the left sidebar; the last mode is remembered)
+
+- **Post view** — card display (text, stats, lightbox; filter by platform/user/date/engagement/tags). For URL-bearing SNS posts.
+- **Image view** — square tile grid (for an illustration/image library). Filter by search, platform, sort (recently saved / updated / likes), min-likes, and tags (shown grouped).
+
+## Features
+
+- Save to any folder you choose
+- Organize and filter by **tags / tag groups**
+- **Image grouping** — collapse multiple images of the same post into one tile (×N badge, paged in the fullscreen viewer). Per-post ungroup/regroup (persistent), manual grouping of arbitrary images, and a temporary expand-all
+- **Video** (mp4, etc.) and **original-resolution media** in the fullscreen viewer (video muted by default)
+- ℹ for a detail popup, ↗ to open the original post, 🗑 to delete
+- Export as ZIP (images + metadata) or a single HTML file; restore from that HTML (import)
+- Language switch (auto / Japanese / English)
+
+## Migrating from Eagle
+
+Bulk-migrate an existing Eagle library (images, videos, tags, tag groups) into Corpus. **Read-only — the Eagle library is never modified (copy only).**
+
+```bash
+# Preview (dry run — writes nothing)
+node scripts/migrate-eagle.js --lib "<path to .library>"
+# Apply (write) + verify audit
+node scripts/migrate-eagle.js --lib "<path to .library>" --apply --verify
+```
+
+It converts the whole library (viewable stills + video) into sidecars, carrying native tags and tag groups. See [docs/eagle-migration.md](docs/eagle-migration.md).
 
 ## Setup (development)
 
-The desktop app isn't packaged yet — run it from source:
+The desktop app isn't packaged yet, so run it from source.
 
-1. `cd app && npm install && npm start` — on first launch it registers the capture helper. Use **Save folder** in Settings to choose where captures go.
-2. Load the extension: `chrome://extensions` → enable Developer mode → **Load unpacked** → select this folder. Copy the shown extension ID into the app's **Extension ID** field.
-3. Capture with `Alt+S` (assign the shortcut at `chrome://extensions/shortcuts` if it isn't bound).
+1. `cd app && npm install && npm start` — the first launch registers the capture helper. Pick a **save folder** in Settings.
+2. Load the extension: `chrome://extensions` → enable Developer mode → **Load unpacked** → select the `extension/` folder. Paste the shown extension ID into the app's **Extension ID** field.
+3. Capture with `Alt+S` (if it doesn't work, assign it under `chrome://extensions/shortcuts`). You can also save images by dragging into the drop zone.
+
+## Data format (sidecars)
+
+In the save folder, each item is an image plus its metadata, side by side.
+
+- `<id>.jpg` … the post-click screenshot (or the saved image itself)
+- `<id>.json` … metadata (`platform` / `url` / `text` / `title` / `displayName` / `screenName` / `userId` / `likes`·`reposts`·… / `date` / `capturedAt` / `updatedAt` / `mediaType` / `media[]` / `hashtags[]` / `tags[]`, …)
+- `<id>-media-N.<ext>` … the post's original-resolution media (if any)
+- Migrated items use `eagle-<id>.<ext>` (original) + `eagle-<id>.json`; videos add a poster
+- Library-level metadata: `tag-groups.json` (tag groups) / `ungrouped.json`·`manual-groups.json` (grouping settings)
+
+`<captureId>.json` is the single source of truth. Nothing is sent to any server.
 
 ## Privacy
 
-See [PRIVACY.md](PRIVACY.md). Nothing is sent to any server; everything stays in your local folder.
+See [PRIVACY.md](PRIVACY.md). Everything is stored in a local folder; nothing is sent to any server.

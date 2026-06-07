@@ -292,7 +292,7 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
 
 ipcMain.handle('get-prefs', () => {
@@ -301,7 +301,8 @@ ipcMain.handle('get-prefs', () => {
     language: cfg.language || 'auto',
     viewMode: cfg.viewMode === 'list' ? 'list' : 'grid',
     skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-    sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc'
+    sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
+    mode: cfg.mode === 'image' ? 'image' : 'post'   // last-opened top-level tab
   };
 });
 
