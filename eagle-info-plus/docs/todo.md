@@ -1,0 +1,290 @@
+# Eagle Info+ TODO
+
+設計メモ: [.claude/engagement-tracking.md](../.claude/engagement-tracking.md)
+テストマトリクス: [test-matrix.md](test-matrix.md)
+
+---
+
+## 設計方針
+
+annotation = Eagle 標準検索でヒットさせたい人間情報のみ。
+構造化データ + 即時表示は Plugin DB + Inspector Plugin で。
+
+### 確定した責務分離
+
+- **Info+ (Chrome 拡張)** — ドラッグ時に Eagle item の `url` フィールドに post permalink を設定し、annotation に検索可能な人間情報を書く。engagement 取得には一切関わらない
+- **Window Plugin** — Eagle ライブラリ全件を SNS API で同期して engagement / 機械情報をサイドカー DB に格納。フィルタ/ソート UI を提供
+- **Inspector Plugin** — Eagle 右パネルに engagement / pixiv キャプション / alt 等の即時表示カードを差し込む。Window Plugin と DB 共有
+
+### リポ構成: モノレポ
+
+annotation フォーマットを Info+ が書いて Plugin 側が parse する強結合があるため、3 コンポーネントは同一リポで管理する。配布先 (Chrome Web Store / Eagle Plugin Center) が違っても、サブディレクトリ分割で問題なし。
+
+```
+eagle-info-plus/
+├── extension/        # Chrome 拡張 (現 root の background.js / content.js / manifest.json / icons をここへ移動)
+├── plugin-window/    # Eagle Window Plugin
+├── plugin-inspector/ # Eagle Inspector Plugin
+├── shared/           # SNS API client + annotation parser (3 つから import)
+└── docs/             # 全体共通 (本ファイル等)
+```
+
+Phase 2 着手前に restructure すること。Chrome 拡張を unpacked で読み込んでる場合は `extension/` を再選択する必要あり (それだけ)。
+
+### annotation に書く (Eagle 検索可)
+
+- Platform / Display Name / Author / Image / Hashtags
+- Text (X/Bluesky の投稿本文) または Title (pixiv の作品タイトル)
+- Alt (X/Bluesky のみ — pixiv は仕組み上タグ付けが保証されてるので不要)
+
+### Plugin DB に書く (Window Plugin が API 同期で構築)
+
+- engagement 全種 (likes / reposts / replies / quotes / views / bookmarks)
+- 投稿日時 / UID / Post ID
+- pixiv の illustComment / alt
+- 取得時刻 / 同期管理
+
+---
+
+## annotation 最終仕様
+
+X / Bluesky:
+```
+Platform: X (Twitter)
+Display Name: 表示名
+Author: @username
+Image: 1/3
+Hashtags: #foo #bar
+Alt: 画像の説明
+Text: 投稿本文 (200字 truncate)
+```
+
+pixiv:
+```
+Platform: Pixiv
+Display Name: 表示名
+Author: @userId
+Image: 1/3
+Hashtags: #foo #bar
+Title: 作品タイトル
+```
+
+### 議論で確定した削除/廃止項目
+
+- annotation 先頭の `@user - <text>` プレフィックス行 — `Author:` `Text:`/`Title:` で完全に表現可能
+- `UID:` `Post ID:` `Published:` 行 — 検索しない、Plugin DB へ
+- pixiv の `Description:` `Alt:` 行 — Eagle 検索ノイズ。pixiv は Hashtags でキャラ名等が拾える
+- pixiv の `Text:` 行を `Title:` にリネーム — X/Bluesky の `Text:` (post body) と意味的に分離
+- `Format-Version:` `Captured:` 行は追加しない — 破壊的変更可、バージョニング不要
+
+### Eagle for Chrome の `name` 設定について
+
+実 metadata.json 観察結果:
+- X: 2 系統あり (`@handle 投稿文` 形式 と opaque `<media_id>` 形式)。一貫しない
+- Bluesky: `(@handle) — Bluesky` 形式 (handle のみ)
+- pixiv: `<タグ?> <illustTitle> - <userName>のイラスト` 形式 (タイトル + 表示名)
+
+→ Eagle for Chrome の name 設定が一貫しないため、annotation を統一形 (pixiv で Display Name / Title が filename と冗長気味でも全行書く) にして annotation 単体で完結させる。
+
+---
+
+## API engagement 取れる範囲 (Plugin 側で参照)
+
+| Field | X (Syndication) | Bluesky (getPostThread) | pixiv (ajax/illust) |
+|---|---|---|---|
+| Likes | ✅ favorite_count | ✅ likeCount | ✅ likeCount |
+| Reposts | ❌ (要 GraphQL 認証) | ✅ repostCount | — |
+| Replies | ✅ conversation_count | ✅ replyCount | ✅ commentCount |
+| Quotes | ❌ | ✅ quoteCount | — |
+| Views | ❌ | ❌ (Bluesky 自体が未計測) | ✅ viewCount |
+| Bookmarks | ❌ | — | ✅ bookmarkCount |
+
+X の Syndication API は `cdn.syndication.twimg.com/tweet-result?id=20&token=0` を実 fetch して確認済み。retweets/views/bookmarks/quotes は GraphQL 認証が必要で個人利用スコープ外なので非対応。Bluesky / pixiv は実装着手前に再 fetch で確認。
+
+---
+
+## Phase 1: Info+ の annotation を新方針に揃える
+
+### 実装 (background.js)
+
+- [x] `poll` の annotation プレフィックス削除
+  - `metadata.title + '\n\n' + ...` を `metadata.annotation` 直渡しに
+- [x] `buildMetadata` から `title` フィールド削除 (戻り値は `link` `annotation` のみ)
+- [x] `buildAnnotation` 書き換え
+  - 旧パラメータ `uid` `postId` `publishedAt` `description` 削除
+  - `isPixiv` フラグ追加
+  - pixiv のとき `Alt:` 行スキップ、`Text:` の代わりに `Title:` 出力
+- [x] `extract{X,Bluesky,Pixiv}Fields` から `uid` `publishedAt` `postId` 返却を削除
+- [x] `extractPixivFields` から `description` 返却を削除
+- [x] 関数 `stripHtml` 削除 (description 消滅で呼び出しゼロ)
+- [x] 関数 `buildTitle` 削除 (annotation プレフィックス廃止で呼び出しゼロ)
+
+### 実装 (README.md)
+
+- [x] 「書き込まれる内容」の annotation 例ブロックを新形式に置換
+- [x] UID 言及の段落 (`UID は X なら...`) 削除
+- [x] pixiv の場合 `Title:` 行になる旨を一文追加
+
+### 検証
+
+- [x] X: 実投稿ドラッグ → metadata.json で 1 行目から `Platform: X (Twitter)` 開始、`Text:` `Alt:` 残存、`UID:` `Post ID:` `Published:` 消失
+- [x] Bluesky: X と同等
+- [x] pixiv: 1 行目から `Platform: Pixiv` 開始、`Title:` 行あり、`Alt:` `Description:` 行なし
+- [ ] ~~R-18 / 鍵 / 削除済みなどの失敗系で URL 由来情報のみで保存される~~ (Phase 1 で挙動変更なしのためスキップ)
+
+---
+
+## Phase 2: Window Plugin MVP
+
+- [x] モノレポ restructure (現 root 一式を `extension/` へ移動、`plugin-window/` `shared/` ディレクトリ作成)
+- [x] Eagle Plugin manifest (type: window) — `plugin-window/manifest.json`
+- [x] サイドカー DB セットアップ (JSON file + 配列操作)
+- [x] 起動時の増分同期
+- [x] annotation parser (新形式 + 旧形式の `Text:` も `Title:` も読めるように)
+- [x] 基本 UI (一部残)
+  - [x] グリッド (アイテムサムネ + engagement 値オーバーレイ)
+  - [x] 数値範囲フィルタ (Min likes / Min views)
+  - [x] ソート likes (raw + platform 内 ranked)
+  - [ ] ~~ソート reposts / views~~ (platform 固有のため UI 整理で削除)
+  - [ ] ソート published_at (engagement と別軸、現状 `modifiedAt` で代用)
+  - [ ] ソート engagement 率 (likes/views) — Phase 5 派生指標
+  - [x] プラットフォーム別フィルタ
+  - [ ] 期間フィルタ
+- [x] アイテムクリックで `eagle.item.select([id])` + `eagle.window.show()` でメインウィンドウへジャンプ
+- [x] キャッシュベース起動 (DB から即 UI 表示 → 同期は手動)
+
+---
+
+## Phase 3: 運用機能 (Window Plugin)
+
+- [x] 一括リフレッシュ
+  - [x] 進捗テキスト + cancel ボタン (`AbortSignal` + `onProgress`)
+  - [x] スコープ選択 (`syncEngagement` の `filter`: `staleDays` / `ids` / `platform` を AND。UI の Scope = all / current filter / stale。プラットフォーム別は「current filter」+ グリッドの Platform フィルタで賄う)
+  - [x] レート制限 (`syncEngagement` の `rateLimit` パラメータ。platform ごとに concurrency + minIntervalMs。`DEFAULT_RATE_LIMIT` = X: 1 並列 / 1.5 秒間隔、Bluesky / pixiv: 4 並列。platform 同士は並行)
+  - [x] resume 用フラグ (cancel 時に未処理ターゲット id を `store.data.engagementResume.ids` に永続化。`Resume` ボタンで `filter: { ids }` で再開、完走でクリア。「最後の id」でなく残り id 集合を記録するので並列・多 platform でも正確。graceful cancel が対象 — store.save は run 末尾の 1 回)
+- [x] バックフィル機能
+  - 既存ライブラリ内の SNS URL 持ちアイテムを順次取得して engagement 埋め
+  - cancel + rate limit が前提なので「一括リフレッシュ」の運用機能を先に整える
+  - 実装: `syncEngagement` の `filter.statuses` で対象 status を差し替え (backfill = `['no-annotation']`)。`Backfill` ボタンが `runEngagement({ statuses: ['no-annotation'] })` を呼ぶだけで rate limit / cancel / resume を全て再利用。engagement 取得は URL だけで済むので annotation 不要。取得成功で status=synced に昇格し、platform は URL 由来で埋める
+- [x] エラー状態管理
+  - [x] `status` に `deleted` / `private` / `error` を記録してスキップ続行
+  - [x] Status フィルタ + status バッジ + ⓘ popover で説明
+  - [x] エラー時 `errorMessage` をカード tooltip に表示
+  - エラー一覧専用画面ではなく、Status フィルタ で `error` を選ぶ形で代替
+
+### 後日の UI 簡素化・X 保護 (上の scope/Backfill/Resume ボタンは廃止)
+
+ユーザビリティの指摘で**ツールバーは「メタデータ補完」ボタン1つ**に整理した（ボタン名は後に「エンゲージメントを取得」→「メタデータ取得」→「メタデータ補完」と変遷）。**shared 側 (`syncEngagement`) は scope/staleDays/ids/statuses を引き続きサポート**しているが、UI からは公開していない (将来また出すのは容易)。現行 UI:
+
+- 同期は起動時に自動実行 (Sync ボタン廃止)
+- ボタンは「まだ一度も取得していない・URL を持つアイテム」= `filter: { statuses: ['no-annotation', 'parsed'] }` を取得。取得済み (synced) は基本触らない。実行中は「中止」トグル。中断分は status 据え置きで次回自然に再開 (Resume ボタン廃止)
+- バックフィル (no-annotation) は上の対象に内包 (専用ボタン廃止)
+- **スキーマ版で再取得 (`FETCH_SCHEMA_VERSION`)**: 取得する engagement/meta フィールドや annotation 構築を変えたら `shared/sync-engagement.js` の `FETCH_SCHEMA_VERSION` を +1 する。各 record に取得時の版を刻んでおり、版が古い synced は次回の「メタデータ補完」で再取得対象に加わり新フィールドが既存アイテムにも段階的に行き渡る (レート制限・日次上限・resume はそのまま効く)。未刻印の legacy は baseline=1 扱いなので 1 のままでは何も再取得しない (初回デプロイの全件再取得を回避)。**engagement/meta の更新が対象。注釈フォーマット変更を既存注釈に反映するには別途「Info+ 注釈のみ上書きする再注釈パス」が必要 (未実装)**
+- X 保護を強化: 間隔 2.5〜3.5 秒 (jitter)、**429/420 で run 停止** (error 印を付けず未処理のまま残す)、**日次上限** `DEFAULT_DAILY_LIMIT = {x:500}` (`store.data.dailyFetch` に永続化・ローカル暦日でリセット・超過は翌日繰り越し)、X 200 件超は実行前に確認ダイアログ
+- 詳細は plugin-window/README.md
+
+---
+
+## Phase 4: Inspector Plugin
+
+- [ ] `plugin-inspector/` ディレクトリで実装 (Window Plugin と独立した Eagle Plugin として配布、DB のみ共有)
+- [ ] Eagle Plugin manifest (type: inspector)
+- [ ] 右パネルに engagement / 投稿日時 / pixiv キャプション / alt 表示カード
+- [ ] `eagle.event.onItemsSelected` で選択追従
+- [ ] DB は Window Plugin と共有 (read-only)
+
+---
+
+## Phase 5: 将来検討
+
+- [ ] GitHub Releases ワークフロー (Chrome 拡張 + Eagle plugin の zip 配布)
+  - **目的**: clone でなくダウンロード→展開で動かせる経路を提供。リポ内の dev cruft (CLAUDE.md, scripts/, docs/) がエンドユーザに届かない
+  - `scripts/build-release.mjs` を Node で書く:
+    - `extension/` → `eagle-info-plus-extension-vX.zip` (現状自己完結なのでそのまま zip)
+    - `plugin-window/` + `shared/` → `engagement-browser-vY.eagleplugin`
+      - shared/ を stage に展開 (test と package.json を除外)
+      - index.html の `../shared/` を `./shared/` にリライト
+      - README.md は配布物から除外
+    - zip 生成は execFile で `zip` コマンド (CI = ubuntu、ローカル = Git Bash)。`exec` は security hook で弾かれるので注意
+  - `.github/workflows/release.yml`: tag `v*` push で build → softprops/action-gh-release で `dist/*` を release に upload
+  - `.gitignore` に `dist/` 追加
+  - README に「Releases から zip を落とす経路」を install 手順に追記
+- [ ] Plugin Center 提出 (上のリリースワークフローで生成した `.eagleplugin` を提出物として使う)
+  - icon 256×256 PNG, Developer Policies 準拠
+  - サポート連絡先用意
+  - pixiv R-18 取得部分のポリシー確認 (まずローカル運用で安定化、判断ペンディング)
+- [ ] ホットキー対応 (`Ctrl+Shift+E` 等、Window Plugin の manifest.shortcut)
+- [x] 日本語対応 (UI 文字列の i18n) — *UI 文字列のみ完了。manifest 系は未*
+  - [x] plugin-window のラベル (Toolbar / Filter / Status / Sort / Footer) を locale 切り替え対応
+  - [x] エラーメッセージ・empty state・ツールチップ・Status popover も対象
+  - 実装: index.html にインライン i18n 辞書 (en/ja) + `eagle.app.locale` 自動判定 (`ja*`→ja)。静的要素は `data-i18n` / `data-i18n-title` / `data-i18n-aria`、動的は `t(key, ...args)` ({0} 置換)。Eagle の i18n フレームワークには依存しない自己完結方式
+  - [ ] manifest.json の `languages` / `fallbackLanguage`、manifest 自体の `name` `description` の locale 別化 (未対応。Eagle の manifest i18n 形式の確認が必要)
+  - 備考: status 値 (synced/parsed 等) と platform 名 (X/Bluesky/pixiv) はバッジと一致させるため翻訳せず英語のまま
+- [ ] 派生指標 (品質スコア) — *保留中。方針は下記*
+  - **狙い: 「ユーザー規模に依存しない質」**。フォロワーが少ないユーザーは絶対いいね数も小さくなるので、
+    **likes / followers** 比で出せばフォロワーの大きいユーザーとも公平に比較できる (ユーザー本人の意図)。
+  - 課題: follower 数の取得が要る。Bluesky は profile に `followersCount` (投稿ごと別 fetch)、pixiv も
+    `ajax/user` 追加 fetch、**X は syndication で follower 数が取れない公算大** (X 除外 or 別ソース)。
+    取得コスト増 + X 脆弱性増がトレードオフ。
+  - likes / views は **pixiv のみ** (X/Bluesky は views 非取得)。実データ: pixiv の likes/views 中央値
+    ~3.86% (分布が狭く質の signal になる)、bookmarks/views ~5.96%。あくまで pixiv 限定の補助指標。
+  - 既存の「Likes (ranked)」percentile は *platform 内順位* で規模非依存だが "率" ではない (別軸)。
+  - 期間内増加率 (engagement の伸び) は別途。
+- [x] ルート README をハブ化 (構成図 + 各サブディレクトリの README にリンク)
+- [ ] annotation 仕様変更時の互換性管理
+  - Window Plugin 側で旧バージョン parser を残す (モノレポなので Info+ 変更と原子的に PR できる)
+  - ルート README にフォーマット変更履歴を集約
+- [ ] extension/ も shared/ から import するようにリファクタ (現状 extension は自己完結、Phase 1 のロジックが shared/sns-api-client.js と重複してる)
+- [ ] thumbnail を sidecar に絶対パスでなく**ライブラリ相対**で保存 (現状は描画時に相対部分を正規表現抽出して現ライブラリで解決し、PC 移行の stale パスを吸収。`buildRecord` に libraryPath を渡して相対保存すれば描画時の抽出が不要になる。詳細は eagle-plugin-notes.md「thumbnailURL は絶対パス」)
+
+---
+
+## 追加アイデア (未整理 — 2026-06-04 追加)
+
+### 対話的タグ付与プラグイン
+- モーダル / ウィザード UI で、**タググループごとに**「(タググループ名) のタグを付けますか?」と順に質問する
+- 「はい」ならそのグループに含まれるタグ一覧を表示 → 選んで付与
+- これを全タググループ分くり返す
+- 選択中の画像 (アイテム) に対して実行できる Eagle プラグインとして実装
+- 要調査: Eagle Plugin API でタググループ一覧 / グループ内タグを取得できるか (`eagle.tag` / `eagle.tagGroup` 系の有無)。plugin type は inspector / window / 別か
+
+### リンク付き画像の annotation 一括バックフィル 【実装済み】
+- Eagle 公式拡張 (Eagle for Chrome) 経由で `url` が自動付与された画像のうち、**Info+ の annotation をまだ取得していないもの**に注釈を書き込む
+- Phase 3 の engagement Backfill (status=no-annotation) とは別物: あちらは engagement 数値、こちらは **annotation (platform / author / text / hashtags の人間情報)** を埋める
+- 実装: Window Plugin の「メタデータ取得」に統合。`syncEngagement` は no-annotation アイテムを engagement 取得する際に同じレスポンスの `meta` を既に得ているので、それを `shared/annotation-builder.js` の `buildAnnotation` で注釈化し、`backfillAnnotation(id, text)` コールバック (plugin が Eagle item へ Plugin API で書く) で保存する。1 パスで engagement + 注釈補完。結果に「注釈補完 N件」を表示
+- **投稿レベル情報のみ** (Platform / Display Name / Author / Hashtags / Text|Title)。`Image:` `Alt:` は付かない — URL=投稿 permalink からは「どの画像か」を特定できないため
+- **安全策**: 書き込みは**空注釈のアイテムのみ**。既存の Info+ 注釈やユーザーのメモが入っていれば絶対に上書きしない (`it.annotation.trim()` が空でなければ skip)
+- 注釈構築を `shared/annotation-builder.js` に切り出し round-trip テスト済み。**extension 側はまだ自前の `buildAnnotation` を持つ** (package 外の shared を import できないため。Phase 5 の build 統合で共用化する余地あり)
+
+---
+
+## 既知の不具合 — X 複数画像投稿
+
+実例: `status/2054933525628108825` (4枚) で観察。
+
+- **画像ごとに url がバラバラ** (`/photo/2` `/photo/3` `/photo/4` `/analytics`) → 同一投稿なのにグループ化できない
+  - 原因: content.js が拾う status アンカーが /analytics リンクのことがあり、旧コードは `/photo|/video` 末尾しか除去しなかった
+  - 対策【済】: content.js で素の permalink `<origin>/<user>/status/<id>` に正規化 (今後の保存分)。**既存データは plugin-window 側で postKey (`parsePostUrl` の platform:postId) 基準グループ化で吸収**
+- **N 枚中 1 枚しか annotation が付かない**【修正済・実機検証済 (4/4, 2026-06-06)】
+  - 原因(1): Info+ の `pendingDrag` 単一スロット + 連続ドラッグ競合。複数画像を続けて保存すると 1 件しか処理されなかった
+  - 原因(2 / cross-tick — 当初のキュー修正後も残っていた本丸): 1 枚目を注釈すると item の url が素の permalink に正規化され、以降**同一投稿の後続ドラッグが pass2(投稿 URL) でその item に再マッチ**する。とくに後続ドラッグの自分の item がまだ未作成のタイミングだと、先に注釈済みの item へ吸われて新規 item が取り残される (実機で 1/2 を観測)
+  - 対策【済】:
+    - `pendingDrags` をキュー化 (取りこぼし防止)
+    - 1 poll tick 内は `consumed` セットで別 item に割り当て
+    - **poll をまたぐ `claimedItemIds`** (background.js のセッション集合) を `selectMatches` にシード → 一度注釈した item を後続ドラッグが再マッチしない (cross-tick 修正)。加えて「既に annotation が入っている item はマッチ対象外」を保険に (SW 再起動でも安全)
+    - ロジック: `extension/drag-matching.js` / 回帰テスト `extension/drag-matching.test.mjs` (17 件、cross-tick 含む)
+  - 実機検証: Yuuki_UYU 4 枚投稿で **4/4** 取得・画像番号 1/4〜4/4 すべて正しい
+- **Image 番号が誤る** (1 枚目なのに `Image: 4/4`)【修正済・実機検証済】
+  - 実体: 主因は上の cross-tick 上書き (後続ドラッグが先行 item を別番号で上書きしていた) + content.js のアンカー誤検出
+  - 対策: (a) content.js `findAncestorContainerLink`+`treeDistance` で最も近い候補リンクを選ぶ、(b) 上の cross-tick 修正、(c) X identity を三段化 (ライトボックス=`location`/アンカー/単独投稿 `location`) し `/analytics` アンカー依存を解消。`findXImageIndex` (pbs media_id マッチ) は据え置き
+  - 実機検証: 上記 4 枚で 1/4〜4/4 が正しく付与
+
+---
+
+## リポジトリ整理 (要手動対応)
+
+- [x] `eagle-info-plus-private` リポを削除する (開発メモは本リポ `docs/` に統合済み)
+  - GitHub → 当該リポ → Settings → 一番下 Danger Zone → Delete this repository
+  - **前提**: メインリポの統合 PR をマージしてから削除する (マージ前に消すと統合元が失われる)
+  - private リポにはサニタイズ**前**の実値 (個人パス・実件数) が残っているので、残したいなら削除前に clone して退避
+  - 削除に抵抗があれば Archive (読み取り専用で凍結) でも可
