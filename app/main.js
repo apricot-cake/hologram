@@ -138,14 +138,16 @@ async function getThumbnail(resolved, name, w) {
   if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
   let st;
   try { st = await fs.promises.stat(resolved); } catch { return null; }
-  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.jpg`.replace(/[^\w.\-]/g, '_');
+  // q2 in the key invalidates the older lower-quality cache so high-res art is
+  // re-downscaled with the best resampler (small tiles were showing jaggies).
+  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q2.jpg`.replace(/[^\w.\-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try { return await fs.promises.readFile(cachePath); } catch { /* cache miss */ }
   try {
     let img = nativeImage.createFromPath(resolved);
     if (img.isEmpty()) return null;
-    if (img.getSize().width > w) img = img.resize({ width: w, quality: 'good' });
-    const buf = img.toJPEG(78);
+    if (img.getSize().width > w) img = img.resize({ width: w, quality: 'best' });
+    const buf = img.toJPEG(90);
     fs.promises.mkdir(thumbCacheDir(), { recursive: true })
       .then(() => fs.promises.writeFile(cachePath, buf)).catch(() => { /* cache best-effort */ });
     return buf;
@@ -326,7 +328,7 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
 
 ipcMain.handle('get-prefs', () => {
@@ -336,7 +338,8 @@ ipcMain.handle('get-prefs', () => {
     viewMode: cfg.viewMode === 'list' ? 'list' : 'grid',
     skipDeleteConfirm: !!cfg.skipDeleteConfirm,
     sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
-    mode: cfg.mode === 'image' ? 'image' : 'post'   // last-opened top-level tab
+    mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
+    imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null)   // image-view tile px
   };
 });
 

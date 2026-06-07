@@ -14,7 +14,7 @@
   // Tiles request a downscaled thumbnail (main resizes + caches) so scrolling a
   // grid of full-resolution originals stays smooth. The fullscreen viewer uses
   // the full-res imgUrl. 480px is sharp up to the max tile size with one cache size.
-  const thumbUrl = (file) => imgUrl(file) + '?w=480';
+  const thumbUrl = (file) => imgUrl(file) + '?w=720';
 
   let allPosts = [];
   let view = [];     // 現在表示中の (フィルタ+ソート済) レコード配列
@@ -30,6 +30,8 @@
   // ユーザーフォルダ（作成/デフォルト/メンバーシップ）は共有モジュール window.corpusFolders が所有。
   // ここでは state.folder（絞り込み対象）だけローカルに持つ。
   const CF = () => window.corpusFolders;
+  const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
+  let tileSize = 180;           // 画像タイルの一辺px（−/＋ボタンで増減、prefに記憶）
   let selectMode = false;       // 選択モード（手動グループ化用）
   const selected = new Set();   // 選択中のグループキー
   let selectAnchor = null;      // Shift範囲選択の起点（view内インデックス）
@@ -487,9 +489,16 @@
     // 作成/改名/削除/デフォルト設定は共有モジュールの管理モーダルが担当。
     $('ivFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
-    const tile = $('ivTile');
-    const applyTile = () => { $('mode-image').style.setProperty('--iv-tile', (tile.value || 180) + 'px'); };
-    tile.addEventListener('input', applyTile);
+    const applyTile = () => {
+      tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, tileSize));
+      $('mode-image').style.setProperty('--iv-tile', tileSize + 'px');
+      $('ivTileVal').textContent = String(tileSize);
+      $('ivTileMinus').disabled = tileSize <= TILE_MIN;
+      $('ivTilePlus').disabled = tileSize >= TILE_MAX;
+    };
+    const stepTile = (d) => { tileSize += d; applyTile(); if (window.corpus.setPref) window.corpus.setPref('imageTileSize', tileSize).catch(() => { /* best-effort */ }); };
+    $('ivTileMinus').addEventListener('click', () => stepTile(-TILE_STEP));
+    $('ivTilePlus').addEventListener('click', () => stepTile(TILE_STEP));
     applyTile();
 
     $('ivGrid').addEventListener('click', (e) => {
@@ -555,6 +564,7 @@
   async function init() {
     if (inited) return;
     inited = true;
+    try { const p = await window.corpus.getPrefs(); if (p && Number.isFinite(p.imageTileSize)) tileSize = p.imageTileSize; } catch { /* default */ }
     bind();
     // 共有フォルダの変更通知: 一覧/デフォルト変更ならグリッドも更新（📁状態反映）、件数のみなら軽更新。
     // 絞り込み中のフォルダが削除されたら state.folder を解除（グリッドが原因不明に空になるのを防ぐ）。

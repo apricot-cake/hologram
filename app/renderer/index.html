@@ -723,7 +723,13 @@
         <div class="sb-title">表示オプション</div>
         <label class="iv-check"><input type="checkbox" id="ivMultiOnly"> 複数画像のみ</label>
         <label class="iv-check"><input type="checkbox" id="ivExpandAll"> グループを展開（一時）</label>
-        <div class="iv-tilewrap"><span>タイルサイズ</span><input type="range" id="ivTile" min="120" max="360" step="20" value="180"></div>
+        <div class="iv-tilewrap"><span>タイルサイズ</span>
+          <div class="iv-tilebtns">
+            <button id="ivTileMinus" type="button" title="小さく">−</button>
+            <span id="ivTileVal">180</span>
+            <button id="ivTilePlus" type="button" title="大きく">＋</button>
+          </div>
+        </div>
       </div>
       <div class="sb-section" id="ivFolderSection">
         <div class="sb-title">フォルダ</div>
@@ -945,8 +951,12 @@
     #ivTagGroups .sb-chips { margin-bottom: 2px; }
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
-    .iv-tilewrap { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
-    .iv-tilewrap input { width: 100%; }
+    .iv-tilewrap { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
+    .iv-tilebtns { display: flex; align-items: center; gap: 8px; }
+    .iv-tilebtns button { width: 30px; height: 26px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; transition: all .12s; }
+    .iv-tilebtns button:hover { border-color: var(--accent); color: var(--accent); }
+    .iv-tilebtns button:disabled { opacity: .4; cursor: default; }
+    #ivTileVal { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; color: var(--fg); }
     .iv-reset {
       width: 100%; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
       border-radius: 6px; padding: 7px; font-size: 12px; cursor: pointer; transition: all .15s;
