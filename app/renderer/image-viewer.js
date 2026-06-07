@@ -23,8 +23,9 @@
   let vItems = [];   // 全画面ビューアで開いているレコードの画像URL配列
   let vIdx = 0;
 
-  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, tags: new Set() };
+  const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, expandAll: false, tags: new Set() };
   let tagGroups = [];   // [{ id, name, tags:[] }] migrated from Eagle (tag-groups.json)
+  let ungrouped = new Set();   // 永続: グループ化しない投稿キー（ungrouped.json）
 
   // 画像閲覧に出す「実際の絵」のファイル名配列。
   //  - media[] の原本があれば常にそれ（投稿キャプチャの原寸画像・pixiv原寸など＝表示OK）。
@@ -64,7 +65,8 @@
   function groupRecords(list) {
     const map = new Map(); const order = []; let solo = 0;
     for (const p of list) {
-      const key = postKeyOf(p.url) || ('__solo' + (solo++));
+      const k = state.expandAll ? null : postKeyOf(p.url);   // expandAll=全展開 / ungrouped=個別指定
+      const key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
       let g = map.get(key);
       if (!g) { g = { records: [] }; map.set(key, g); order.push(g); }
       g.records.push(p);
@@ -221,6 +223,14 @@
       ? `<div class="iv-insp-row"><span class="iv-insp-k">タグ</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
       : '';
     const heading = p.title || p.text || '';
+    // このタイルの投稿に「まとめられる別レコード」が存在するか（グループ化解除/再開ボタンの可否）
+    const gkey = postKeyOf(p.url);
+    const potential = gkey ? allPosts.filter((q) => postKeyOf(q.url) === gkey).length : 0;
+    const groupBtn = potential > 1
+      ? (ungrouped.has(gkey)
+        ? `<a class="iv-insp-open" id="ivRegroup">🔗 この投稿をまとめる（再グループ化）</a>`
+        : `<a class="iv-insp-open" id="ivUngroup">✂ この投稿のグループ化を解除（個別表示）</a>`)
+      : '';
     box.innerHTML =
       `<button class="iv-insp-close" id="ivInspClose" title="閉じる">×</button>` +
       (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
@@ -234,10 +244,22 @@
       row('更新日', p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
       row('画像数', files.length > 1 ? files.length + ' 枚' : '') +
       tagsHtml +
-      (p.url ? `<a class="iv-insp-open" id="ivInspOpen">元投稿を開く ↗</a>` : '');
+      (p.url ? `<a class="iv-insp-open" id="ivInspOpen">元投稿を開く ↗</a>` : '') +
+      groupBtn;
     $('ivDetail').hidden = false;
     const c = $('ivInspClose'); if (c) c.onclick = closeDetail;
     const o = $('ivInspOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
+    const ug = $('ivUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
+    const rg = $('ivRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
+  }
+
+  // 投稿キーのグループ化解除/再開（永続）。
+  function setGroupKey(key, ungroup) {
+    if (!key) return;
+    if (ungroup) ungrouped.add(key); else ungrouped.delete(key);
+    if (window.corpus.setUngrouped) window.corpus.setUngrouped([...ungrouped]).catch(() => { /* best-effort */ });
+    closeDetail();
+    render();
   }
 
   async function doDelete(g) {
@@ -292,9 +314,9 @@
   function step(d) { if (vIsVideo) return; const n = vIdx + d; if (n >= 0 && n < vItems.length) { vIdx = n; renderViewer(); } }
 
   function resetFilters() {
-    state.search = ''; state.platform = ''; state.sort = 'captured'; state.minLikes = 0; state.multiOnly = false;
+    state.search = ''; state.platform = ''; state.sort = 'captured'; state.minLikes = 0; state.multiOnly = false; state.expandAll = false;
     state.tags.clear();
-    $('ivSearch').value = ''; $('ivSort').value = 'captured'; $('ivMinLikes').value = ''; $('ivMultiOnly').checked = false;
+    $('ivSearch').value = ''; $('ivSort').value = 'captured'; $('ivMinLikes').value = ''; $('ivMultiOnly').checked = false; $('ivExpandAll').checked = false;
     $('ivPlatformChips').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
     $('ivTagGroups').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active'));
     render();
@@ -305,6 +327,7 @@
     $('ivSort').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
     $('ivMinLikes').addEventListener('input', (e) => { state.minLikes = parseInt(e.target.value, 10) || 0; render(); });
     $('ivMultiOnly').addEventListener('change', (e) => { state.multiOnly = e.target.checked; render(); });
+    $('ivExpandAll').addEventListener('change', (e) => { state.expandAll = e.target.checked; render(); });
     $('ivReset').addEventListener('click', resetFilters);
 
     // プラットフォームチップ: 単一選択 (同じものを再クリックで解除)。
@@ -371,12 +394,17 @@
     catch { tagGroups = []; }
   }
 
+  async function loadUngrouped() {
+    try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); }
+    catch { ungrouped = new Set(); }
+  }
+
   async function init() {
     if (inited) return;
     inited = true;
     bind();
     if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(() => { render(); renderTagFilter(); }); });
-    await Promise.all([load(), loadTagGroups()]);
+    await Promise.all([load(), loadTagGroups(), loadUngrouped()]);
     render();
     renderTagFilter();
   }

@@ -87,7 +87,7 @@ function listPosts() {
   const posts = [];
   for (const f of files) {
     if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json') continue;
+    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
       // Keep records with an image, a (poster-less) video, or downloaded media.
@@ -232,6 +232,31 @@ ipcMain.handle('get-tag-groups', () => {
     return { groups: Array.isArray(j.groups) ? j.groups : [] };
   } catch {
     return { groups: [] };
+  }
+});
+
+// Persistent per-post "do not group" set (image-view). Post keys whose images
+// should stay individual tiles (e.g. several pics from one post that aren't a
+// multi-page work). Lives as <saveFolder>/ungrouped.json: { keys: [...] }.
+ipcMain.handle('get-ungrouped', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { keys: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'ungrouped.json'), 'utf8'));
+    return { keys: Array.isArray(j.keys) ? j.keys : [] };
+  } catch {
+    return { keys: [] };
+  }
+});
+ipcMain.handle('set-ungrouped', (_e, keys) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    fs.writeFileSync(path.join(folder, 'ungrouped.json'),
+      JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 });
 
@@ -411,7 +436,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
