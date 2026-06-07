@@ -87,6 +87,7 @@
       list = list.filter((p) =>
         (p.text || '').toLowerCase().includes(q) ||
         (p.title || '').toLowerCase().includes(q) ||
+        (p.eagleName || '').toLowerCase().includes(q) ||
         (p.displayName || '').toLowerCase().includes(q) ||
         (p.screenName || '').toLowerCase().includes(q) ||
         (Array.isArray(p.hashtags) && p.hashtags.some((h) => String(h).toLowerCase().includes(q))) ||
@@ -144,7 +145,8 @@
       const author = p.displayName || p.screenName || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
-      const playOverlay = p.mediaType === 'video' ? `<div class="iv-play"><span>▶</span></div>` : '';
+      const playOverlay = (p.mediaType === 'video' || p.mediaType === 'gif')
+        ? `<div class="iv-play"><span>${p.mediaType === 'gif' ? 'GIF' : '▶'}</span></div>` : '';
       const card = document.createElement('div');
       card.className = 'iv-card';
       card.dataset.idx = String(i);

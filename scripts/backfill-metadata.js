@@ -49,6 +49,7 @@ function saveFolder() {
       url: m.url || rec.url,
       platform: m.platform || rec.platform,
       text: m.text,
+      title: m.title ?? rec.title,                 // keep existing (e.g. pixiv work title) if re-fetch lacks it
       displayName: m.displayName,
       screenName: m.screenName,
       userId: m.userId,

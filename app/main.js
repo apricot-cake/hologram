@@ -379,6 +379,7 @@ ipcMain.handle('import-posts', async (_e, posts) => {
       date: p.date || null,
       capturedAt: p.capturedAt || new Date().toISOString(),
       updatedAt: p.updatedAt || p.capturedAt || new Date().toISOString(),
+      eagleName: p.eagleName || null,
       mediaType: p.mediaType || null,
       lang: p.lang || null,
       isReply: p.isReply || null,
@@ -404,10 +405,13 @@ ipcMain.handle('clear-all', async () => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false, count: 0 };
   let count = 0;
+  // Keep app metadata (config + migrated tag groups); wipe sidecars + every
+  // viewable media type (incl. jfif/avif/svg/video/-poster), mirroring delete-post.
+  const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json') continue;
-      if (/\.(jpe?g|png|webp|gif|json)$/i.test(f)) {
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json') continue;
+      if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
     }

@@ -819,6 +819,8 @@
     if (query) {
       posts = posts.filter(p =>
         (p.text || '').toLowerCase().includes(query) ||
+        (p.title || '').toLowerCase().includes(query) ||
+        (p.eagleName || '').toLowerCase().includes(query) ||
         (p.screenName || '').toLowerCase().includes(query) ||
         (p.displayName || '').toLowerCase().includes(query) ||
         (p.tags || []).some(t => t.toLowerCase().includes(query))
@@ -970,7 +972,7 @@
         ? `<div class="post-flags">${flags.map(f => `<span class="post-flag flag-type">${escapeHtml(f)}</span>`).join('')}${mediaLabel ? `<span class="post-flag flag-media">${escapeHtml(mediaLabel)}</span>` : ''}</div>`
         : '';
 
-      const postKey = (p.url || '') + '|' + (p.capturedAt || '');
+      const postKey = (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check">${isSelected ? '✓' : ''}</div>
@@ -1122,7 +1124,7 @@
     const card = e.target.closest('.post-card');
     if (!card) return;
     const filtered = getFilteredPosts();
-    const keyOf = (p) => (p.url || '') + '|' + (p.capturedAt || '');
+    const keyOf = (p) => (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
     const idx = parseInt(card.dataset.index, 10);
     const key = card.dataset.key;
 
@@ -1273,7 +1275,7 @@
     selectedCountEl.textContent = MSG.selectedCount(count);
     deleteSelectedBtn.disabled = count === 0;
     const filtered = getFilteredPosts();
-    const allSelected = filtered.length > 0 && filtered.every(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+    const allSelected = filtered.length > 0 && filtered.every(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
     selectAllBtn.textContent = allSelected ? MSG.deselectAll : MSG.selectAll;
   }
 
@@ -1281,11 +1283,11 @@
 
   selectAllBtn.addEventListener('click', () => {
     const filtered = getFilteredPosts();
-    const allSelected = filtered.every(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+    const allSelected = filtered.every(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
     if (allSelected) {
       selectedSet.clear();
     } else {
-      filtered.forEach(p => selectedSet.add((p.url || '') + '|' + (p.capturedAt || '')));
+      filtered.forEach(p => selectedSet.add((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
     }
     renderPosts();
     updateSelectionBar();
@@ -1398,6 +1400,7 @@
         date: p.date,
         capturedAt: p.capturedAt,
         updatedAt: p.updatedAt || null,
+        eagleName: p.eagleName || null,
         tags: p.tags?.length ? p.tags : null,
         hashtags: p.hashtags?.length ? p.hashtags : null,
         imageFile: `images/${filename}`
@@ -1444,6 +1447,7 @@
         date: p.date,
         capturedAt: p.capturedAt,
         updatedAt: p.updatedAt || null,
+        eagleName: p.eagleName || null,
         tags: p.tags?.length ? p.tags : null,
         hashtags: p.hashtags?.length ? p.hashtags : null,
         image
@@ -1514,7 +1518,7 @@
 
     if (pendingBulkDelete) {
       // Bulk delete selected posts — remove the files on disk
-      const toDelete = allPosts.filter(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
+      const toDelete = allPosts.filter(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
       const count = toDelete.length;
       for (const p of toDelete) {
         await window.corpus.deletePost(p.image);

@@ -24,7 +24,10 @@
 //   node scripts/migrate-eagle.js --lib "<...>" --apply --verify        (write+audit)
 //   flags: --tagged-only     only items that have tags or an SNS URL (skip plain refs)
 //          --save "<folder>"  override the Corpus save folder (default: config.json)
-//          --limit N          cap the writes to the first N items (trial batch)
+//          --limit N          cap writes to N NOT-yet-migrated items (re-runs continue the
+//                             batch: --limit 20 twice = 40 migrated). The batch is STRATIFIED
+//                             (interleaves SNS-url and url-less refs) so a small trial validates
+//                             both field-mapping paths, not just the oldest reference images.
 //          --csv "<file>"     write the migration plan as a CSV (for review)
 
 const fs = require('fs');
@@ -60,14 +63,7 @@ const isViewable = (ext) => IMAGE_EXT.test(ext) || VIDEO_EXT.test(ext);
 function isoFromMs(ms) {
   return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
-
-// Deterministic 0..999 offset from the item id, added to capturedAt so two items
-// sharing the same base time don't collide on the viewer's url|capturedAt key.
-function hashOffset(id) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 1000;
-}
+function isoFromStr(s) { const t = Date.parse(s || ''); return Number.isFinite(t) ? new Date(t).toISOString() : null; }
 
 // Resolve an item's original file. Primary: <lib>/images/<id>.info/<name>.<ext>.
 // Fallback: the first non-thumbnail viewable file in the .info dir. null if none.
@@ -108,11 +104,14 @@ function parseAnnotation(a) {
 
 // meta = native metadata.json; ov = engagement store overlay ({} when none).
 // files = { captureId, image, video, mediaType } resolved by the caller.
-function buildRecord(id, meta, ov, platform, files) {
+// parsed = parsePostUrl(url) (or null) — its screenName is the URL-embedded handle.
+function buildRecord(id, meta, ov, platform, files, parsed) {
   const url = meta.url || ov.url || null;
   const hasUrl = !!url;
   const anno = parseAnnotation(meta.annotation);
   const annoAuthor = anno.Author ? anno.Author.replace(/^@/, '') : null;
+  // pixiv names carry the work title ("<work> - <author>のイラスト"); strip the trailing author clause.
+  const pixivTitle = (platform === 'pixiv' && meta.name) ? String(meta.name).replace(/\s*[-—]\s*[^-—]+の(イラスト|マンガ|うごイラ)\s*$/, '').trim() : null;
   return {
     captureId: files.captureId,
     image: files.image,
@@ -120,18 +119,23 @@ function buildRecord(id, meta, ov, platform, files) {
     url,
     platform: platform || null,
     text: ov.text || null,
-    title: ov.title || (!hasUrl ? (meta.name || null) : null),    // ref images: use Eagle name
+    // ref images: Eagle name is the caption. pixiv: work title. other SNS: leave null (name is page-title junk; raw kept in eagleName).
+    title: ov.title || pixivTitle || (!hasUrl ? (meta.name || null) : null),
+    eagleName: meta.name || null,                                 // raw Eagle filename, preserved losslessly (forensic + search)
     displayName: ov.displayName || null,
-    screenName: ov.author || annoAuthor || null,                  // handle (pixiv: numeric id)
-    userId: platform === 'pixiv' ? (ov.author || null) : (anno.UID || null),  // stable user id (all platforms)
+    // handle: store author → annotation Author → handle embedded in the URL (X/bsky).
+    screenName: ov.author || annoAuthor || (parsed && parsed.screenName) || null,
+    // stable user id for ALL platforms: annotation UID → Eagle legacyUid → pixiv numeric author.
+    userId: anno.UID || ov.legacyUid || (platform === 'pixiv' ? (ov.author || null) : null),
     likes: ov.likes ?? null,
     reposts: ov.reposts ?? null,
     replies: ov.replies ?? null,
     bookmarks: ov.bookmarks ?? null,
     views: ov.views ?? null,
     quotes: ov.quotes ?? null,
-    date: isoFromMs(ov.publishedAt) || isoFromMs(ov.modifiedAt) || isoFromMs(meta.btime),
-    capturedAt: isoFromMs((meta.btime || meta.mtime || Date.parse('2020-01-01')) + hashOffset(id)),  // Eagle 追加日
+    // post date: real publish time only; never the plugin sync timestamp (ov.modifiedAt). btime for ref images.
+    date: isoFromMs(ov.publishedAt) || isoFromStr(ov.legacyPublishedAt) || isoFromStr(anno.Published) || isoFromMs(meta.btime),
+    capturedAt: isoFromMs(meta.btime || meta.mtime),             // Eagle 追加日 (identity is captureId, not this)
     updatedAt: isoFromMs(meta.mtime || meta.modificationTime || meta.btime),  // Eagle 変更日; bumped on Corpus edits
     mediaType: files.mediaType,
     media: [],                                                    // image IS the artwork; empty avoids lightbox dup
@@ -168,7 +172,7 @@ const tagGroups = (Array.isArray(libMeta.tagsGroups) ? libMeta.tagsGroups : [])
 const saveFolder = resolveSaveFolder(args.save);
 
 const stats = {
-  scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0,
+  scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0, unreadable: 0,
   skippedExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0, video: 0,
   byPlatform: {}
 };
@@ -181,8 +185,8 @@ catch (e) { abort(`cannot read images dir: ${e.message}`); }
 for (const d of dirs) {
   const id = d.replace(/\.info$/, '');
   const meta = readJson(path.join(imagesDir, d, 'metadata.json'));
-  if (!meta) continue;
   stats.scanned++;
+  if (!meta) { stats.unreadable++; continue; }   // missing/corrupt metadata.json — count, don't silently drop
   if (meta.isDeleted) { stats.deleted++; continue; }
   const ext = String(meta.ext || '').toLowerCase().replace(/^\./, '');
   if (!isViewable(ext)) { stats.nonViewable++; continue; }        // exe / archives / etc.
@@ -201,7 +205,8 @@ for (const d of dirs) {
   const isVideo = VIDEO_EXT.test(ext);
   const destMain = `${captureId}.${ext}`;
   let image, video = null, srcPoster = null, destPoster = null;
-  const mediaType = isVideo ? 'video' : (ext === 'gif' ? 'gif' : 'image');
+  // animated webp (Eagle sets meta.animated) is a gif-like animation, not a still.
+  const mediaType = isVideo ? 'video' : ((ext === 'gif' || meta.animated === true) ? 'gif' : 'image');
   if (isVideo) {
     video = destMain;
     srcPoster = resolveThumbnail(args.lib, id);                   // tile poster = Eagle thumbnail
@@ -213,7 +218,7 @@ for (const d of dirs) {
 
   const parsed = url ? parsePostUrl(url) : null;
   const platform = ov.platform || (parsed && parsed.platform) || null;
-  const rec = buildRecord(id, meta, ov, platform, { captureId, image, video, mediaType });
+  const rec = buildRecord(id, meta, ov, platform, { captureId, image, video, mediaType }, parsed);
   plan.push({ id, captureId, platform, srcMain, destMain, srcPoster, destPoster, rec });
   stats.wouldWrite++;
   if (tagged) stats.withTags++;
@@ -224,7 +229,21 @@ for (const d of dirs) {
 }
 
 // --limit only caps how many get WRITTEN (trial batch); the survey covers all.
-const toWrite = args.limit ? plan.slice(0, args.limit) : plan;
+// Stratify so a small trial exercises BOTH SNS (url) and ref-image mapping —
+// otherwise the first N are all the oldest url-less refs and --verify "N/N OK"
+// validates none of the SNS field mapping. Interleave url-bearing and url-less.
+function stratify(items, n) {
+  const withUrl = items.filter((p) => p.rec.url);
+  const noUrl = items.filter((p) => !p.rec.url);
+  const out = [];
+  let i = 0, j = 0;
+  while (out.length < n && (i < withUrl.length || j < noUrl.length)) {
+    if (i < withUrl.length) out.push(withUrl[i++]);
+    if (out.length < n && j < noUrl.length) out.push(noUrl[j++]);
+  }
+  return out;
+}
+const toWrite = args.limit ? stratify(plan, args.limit) : plan;
 
 // CSV of the plan, for review. UTF-8 BOM so Excel renders Japanese correctly.
 function csvCell(v) {
@@ -252,13 +271,14 @@ function printPlan() {
   console.log('save folder  :', saveFolder || '(NOT CONFIGURED — set it in Corpus or pass --save before --apply)');
   console.log('scanned      :', stats.scanned, 'native items | deleted:', stats.deleted);
   console.log('skipped      : non-viewable(exe等)=' + stats.nonViewable,
-    '| image-missing=' + stats.imageMissing, '| already-migrated=' + stats.skippedExisting,
+    '| image-missing=' + stats.imageMissing, '| unreadable-meta=' + stats.unreadable, '| already-migrated=' + stats.skippedExisting,
     (args.taggedOnly ? '| untagged-skipped=' + stats.skippedUntagged : ''));
+  if (stats.unreadable) console.log('  ⚠ WARNING: ' + stats.unreadable + ' item(s) had missing/corrupt metadata.json and were skipped');
   console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| SNS url:', stats.withUrl, '| video:', stats.video + ')');
   console.log('             by platform:', JSON.stringify(stats.byPlatform));
   if (args.limit) console.log('LIMIT        : --limit ' + args.limit + ' → writing only first ' + toWrite.length + ' of ' + stats.wouldWrite);
   console.log('tag groups   :', tagGroups.length, tagGroups.map((g) => `${g.name}(${g.tags.length})`).join(' '));
-  const accounted = stats.wouldWrite + stats.deleted + stats.nonViewable + stats.imageMissing + stats.skippedExisting + stats.skippedUntagged;
+  const accounted = stats.wouldWrite + stats.deleted + stats.nonViewable + stats.imageMissing + stats.unreadable + stats.skippedExisting + stats.skippedUntagged;
   console.log('accounting   :', accounted, '==', stats.scanned, accounted === stats.scanned ? 'OK' : 'MISMATCH');
   console.log('\nsample (first 5 mapped):');
   for (const p of toWrite.slice(0, 5)) {

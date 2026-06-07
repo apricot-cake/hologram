@@ -13,6 +13,16 @@
 > - スコープ別フラグ: 既定=全ライブラリ、`--tagged-only` でタグ付き∪URL付きのみ。
 > 以下の §1〜§3 は当初の URL-only 設計の記録（フィールドマッピングの基本ルールは現行も踏襲）。
 >
+> **監査修正（ワークフロー敵対的監査 22件確定 → 反映済み）**:
+> - **【重大】ビューア識別キーを `captureId` に**（旧 `url|capturedAt` は URLなし1,629件が衝突＝一括削除で兄弟巻き込み消去）。`hashOffset` 撤去（衝突を悪化させていた）。
+> - **screenName を URL から復元**（X 799件の @handle 欠落→ユーザータブ "x:@" 潰れを解消。`parsed.screenName` フォールバック）。
+> - **`date` から同期時刻を排除**（publishedAt→legacyPublishedAt/anno.Published→btime。99.4%が誤日付だった）。
+> - **`eagleName`（生ファイル名）を全件保持**＋pixivは作品名を `title` に（URL投稿のキャプション喪失を防止）。検索対象にも追加。
+> - **pixiv userId を安定IDに**（anno.UID/legacyUid 優先。可変ハンドル上書きを停止）。
+> - **CSP に `media-src`**（動画53件が再生ブロックされていた）。**clear-all が tag-groups.json を消さない**＋全 viewable 拡張子対応。
+> - **animated webp → `mediaType:'gif'`**、**読めない metadata.json を accounting 計上**（無言ドロップ防止）、**`--limit` を層化**（試行がSNSマッピングを検証するように）。
+> 詳細は監査ログ（subagents/workflows）。
+>
 > 多エージェント解析（実データ・安全設計・敵対的検証）の結論を補正して確定したもの。
 
 ## 0. 大前提（安全性・絶対条件）
