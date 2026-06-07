@@ -80,11 +80,24 @@ function resolveImage(lib, id, name, ext) {
   return null;
 }
 
-// meta = native metadata.json (source of truth for tags/url/time/name).
+// The eagle-info-plus plugin wrote a text annotation ("Key: value" lines) into
+// each Eagle item. Most keys duplicate structured store fields, but UID / Alt /
+// Published are NOT in the store — notably UID, the stable user id for non-pixiv
+// platforms (X numeric / bsky did / misskey・mastodon id). Parse it so userId
+// survives the migration (the store's `author` is only the numeric id for pixiv).
+function parseAnnotation(a) {
+  const o = {};
+  (a || '').split(/\r?\n/).forEach((l) => { const m = l.match(/^([^:：]+)[:：]\s*(.*)$/); if (m) o[m[1].trim()] = m[2].trim(); });
+  return o;
+}
+
+// meta = native metadata.json (source of truth for tags/url/time/name/annotation).
 // ov   = engagement-browser store item (overlay; {} when the item has no SNS data).
 function buildRecord(id, meta, ov, platform, captureId, imageBasename) {
   const url = meta.url || ov.url || null;
   const hasUrl = !!url;
+  const anno = parseAnnotation(meta.annotation);
+  const annoAuthor = anno.Author ? anno.Author.replace(/^@/, '') : null;
   return {
     captureId,
     image: imageBasename,
@@ -93,8 +106,8 @@ function buildRecord(id, meta, ov, platform, captureId, imageBasename) {
     text: ov.text || null,
     title: ov.title || (!hasUrl ? (meta.name || null) : null),   // ref images: use Eagle name
     displayName: ov.displayName || null,
-    screenName: ov.author || null,                                // pixiv: userId; x/bsky: handle
-    userId: platform === 'pixiv' ? (ov.author || null) : null,
+    screenName: ov.author || annoAuthor || null,                  // handle (pixiv: numeric id)
+    userId: platform === 'pixiv' ? (ov.author || null) : (anno.UID || null),  // stable user id (all platforms)
     likes: ov.likes ?? null,
     reposts: ov.reposts ?? null,
     replies: ov.replies ?? null,
