@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { configDir } = require('../native-host/paths');
-const { fetchPostMetadata } = require('../metadata');
+const { fetchPostMetadata } = require('../extension/metadata');
 
 function saveFolder() {
   try {
