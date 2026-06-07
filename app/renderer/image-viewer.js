@@ -303,11 +303,13 @@
   function renderFolderFilter() {
     const host = $('ivFolderChips'); if (!host) return;
     const cf = CF(); const list = cf ? cf.all() : [];
+    const def = cf ? cf.defaultId() : null;
     const existing = new Set(allPosts.filter((p) => recordImageFiles(p).length || p.video).map((p) => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
     host.innerHTML = list.map((f) => {
       const n = f.items.filter((c) => existing.has(c)).length;
-      return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      const star = f.id === def ? '<span class="iv-foldstar" title="デフォルトフォルダ">★</span>' : '';
+      return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   // タイルの 📁 ワンクリック: デフォルトフォルダへ追加/解除（グループ全レコードに適用）。

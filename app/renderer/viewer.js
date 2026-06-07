@@ -1161,11 +1161,13 @@
     const host = document.getElementById('postFolderChips');
     if (!host || !CF()) return;
     const list = CF().all();
+    const def = CF().defaultId();
     const existing = new Set(allPosts.filter(p => p.url).map(p => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;
-      return `<button class="sb-chip${folderFilter === f.id ? ' active' : ''}" data-fid="${escapeAttr(f.id)}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      const star = f.id === def ? '<span class="iv-foldstar" title="デフォルトフォルダ">★</span>' : '';
+      return `<button class="sb-chip${folderFilter === f.id ? ' active' : ''}" data-fid="${escapeAttr(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   document.getElementById('postFolderChips').addEventListener('click', (e) => {

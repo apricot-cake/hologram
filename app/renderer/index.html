@@ -499,9 +499,10 @@
     }
     .sb-manage-link:hover { text-decoration: underline; }
     /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
-    .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; }
-    .sb-section.collapsible > .sb-title::before { content: '▾'; font-size: 9px; color: var(--muted); margin-right: 5px; display: inline-block; }
-    .sb-section.collapsible.collapsed > .sb-title::before { content: '▸'; }
+    .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; display: block; position: relative; }
+    .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; }
+    .sb-section.collapsible.collapsed > .sb-title::after { content: '▸'; }
+    .sb-section.collapsible > .sb-title > .sb-manage-link { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
     .sb-section.collapsed > :not(.sb-title) { display: none; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
     .sb-tag-filter {
@@ -1066,7 +1067,8 @@
     .iv-andor { font-size: 10px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; margin-left: 4px; vertical-align: middle; }
     .iv-andor:hover { border-color: var(--accent); color: var(--accent); }
     .iv-andor.or { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .iv-foldstar { color: #f5b301; margin-right: 3px; }
+    .iv-foldstar { color: var(--muted); margin-right: 3px; }
+    .sb-chip.active .iv-foldstar { color: #fff; }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
     .iv-folder-new .search-box { flex: 1; }
     .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
@@ -1076,7 +1078,7 @@
     .iv-fold-n { color: var(--muted); font-size: 11px; }
     .iv-fold-def, .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
     .iv-fold-def:hover, .iv-fold-btn:hover { background: var(--hover); }
-    .iv-fold-def.on { color: #f5b301; }
+    .iv-fold-def.on { color: var(--fg); }
     .iv-folder-modalhint { margin-top: 12px; color: var(--muted); font-size: 11px; }
 
     /* transient toast (e.g. "added to folder") — shared, top-level, fixed */
