@@ -55,6 +55,7 @@ function buildRecord(item, parsed) {
     name: item.name || null,
     thumbnailURL: item.thumbnailURL || null,
     ext: item.ext || null,
+    tags: item.tags || [],                    // Eagle 側のタグ (SNS hashtags とは別物。タグ(Eagle)タブ/絞り込み用)
     // annotation 由来 (人間情報)
     platform: parsed?.platform || null,
     platformLabel: parsed?.platformLabel || null,

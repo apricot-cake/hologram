@@ -53,6 +53,9 @@ Phase 2 の同期キーには **`modifiedAt`** を使う (todo.md の `last_sync
 プラグイン renderer で `location.reload()` すると、再読込後に `eagle.onPluginCreate` が**もう一度呼ばれる** (実機確認)。これを利用して、nodeIntegration の `fs.watch` で plugin ディレクトリと `shared/` を監視し `.html/.js` 変更で `location.reload()` する dev 用 live-reload が成立する (手動の開き直し不要)。
 
 - 注意: ログ等の書き込み先を監視対象に含めると**リロードループ**になる。出力は監視外 (`.debug/` = repo 直下、plugin-window の外) に置く。
+- **落とし穴: 書き込み途中の半端ファイルを読んで真っ暗 → live-reload 自滅。** エディタ/ツールが index.html を書いている最中に `fs.watch` が発火し、`location.reload()` が**途中まで書かれた (truncated) HTML**を読むと、トップレベルスクリプトが構文/参照エラーで落ち、**UI シェルすら描画されず全面真っ暗**になる。しかもクラッシュで watcher 自身も止まるため、以降の保存ではリロードされず固着する (=「死んだ live-reload」)。
+  - 切り分け: `.debug/engagement-browser-debug.log` の最終 `[init] done` 以降、保存しても新しい起動ログが増えない → live-reload は死んでいる。ディスク上のファイルが完全 (末尾 `</html>`・`node --check` OK) なら**プラグインを開き直すだけで直る** (ファイルは正しい)。
+  - 緩和: `onChange` のデバウンスを 200→**500ms** に延長 (最後の保存から待ってからリロード=書き込み完了を待つ+連続保存を集約)。根本解決ではない (書き込みが非アトミックなため) が再発を減らす。多数の編集を一気に流すときは特に注意。
 - `eagle.plugin.path` (= onPluginCreate の引数 `plugin.path`) が plugin ディレクトリ。`shared/` はその親の下。
 - ただし reload で再発火するのは **plugin-create イベント**であって、API メソッドが即使えるわけではない (下記)。init は必ずイベント駆動にすること。再表示復帰のため `onPluginRun` / `onPluginShow` も bind してよいが、**`onPluginShow` は plugin-create より前に発火することがある** (下記の罠) ので、show から無条件に API を呼んではいけない。
 
@@ -96,6 +99,32 @@ REJECT This method can only be used after the `plugin-create` event is triggered
 - pathname が `//C:/…` と**先頭スラッシュ過多**になり、ここから OS パスを組むと `\\C:\…` のような不正パスになって `fs.mkdirSync`/`writeFileSync` が `UNKNOWN` で失敗する。
 - **ファイルパスは `window.location` から導出せず、`eagle.plugin.path` を使う**。正しい OS パス (`C:\Users\<name>\…\plugin-window`) を返し、しかも plugin-create 前 (module 読込時点) でも読める — ゲートされた API メソッドではなく単なるプロパティ参照のため。
 - この罠でデバッグログが壊れたパスに書かれて出力されず、原因究明が大幅に遅れた。ログ先は `eagle.plugin.path` から `../.debug` を作るのが堅い。
+
+### 「ローカルプロジェクトをインポート」した開発プラグインは Eagle 再起動で消える
+
+開発者オプション (プラグイン → 開発者オプション) のメニュー:
+- **プラグインを作成する** — 新規プラグインの雛形をゼロから作る (種類選択ダイアログ: ウィンドウ / バックグラウンドサービス / 形式拡張 …)。既存プラグインの再導入には**使わない**。
+- **ローカルプロジェクトをインポート** — `manifest.json` のあるフォルダ (このリポなら `plugin-window/`) を読み込む。**開発中はこれで入れている。**
+
+実機挙動 (Eagle 4.0.0): **インポートした開発プラグインは Eagle を再起動すると一覧から消える** (= 毎回入れ直しが要る)。公式ドキュメントに persistence の明記は無い。manifest が壊れているわけでもプラグイン側のバグでもなく、開発用ロードはセッション限りという Eagle の挙動。
+
+- **復活**: 開発者オプション → ローカルプロジェクトをインポート → `plugin-window/` を再選択。
+- **恒久インストール**: プラグイン一覧で右クリック → **プラグインをパック** (Pack Plugin) → `.eagleplugin` を生成して入れる。再起動でも残る。
+- **トレードオフ**: パック版は Eagle 側へコピーされたスナップショットなので、`eagle.plugin.path` がその installed フォルダを指す → リポジトリを編集しても**ライブリロード (fs.watch on plugin-window/) がリポに効かない**。開発中は import 運用が楽、更新は再パック。
+
+### Eagle item の `tags` を store 化 (タグ(Eagle)タブ + グリッド絞り込み)
+
+- `sync-eagle.js` の `buildRecord` に **`tags: item.tags || []`** を追加し、Eagle 側タグ (ユーザーが Eagle で付けたタグ。SNS の `hashtags` とは別物) を store に保持。`getByIds` 戻り Item は `tags: string[]` (未タグは `[]`)。MCP `item_get` でも同フィールドあり。
+- **既存アイテムの一度きりバックフィル** (`backfillEagleTags`, version flag `eagleTagsBackfillVersion`): sync は modifiedAt 差分でしか取り直さないので、既存分の tags はまとめて `getByIds` → `store.upsert(id, { tags })` でマージ。**`upsert` はマージ (`{...existing, ...partial}`) なので engagement/status は壊れない。** 対象は **グリッドに出る = SNS リンク持ち**のアイテムだけ (非SNSの素画像はグリッドに出ないので不要 → 9009件中 ~985件で済む)。以降の変更は buildRecord 経由で通常 sync が更新。
+- 「タグ（Eagle）」タブは store の tags を表示中グループ単位で union 集計 (`displayedIds + dataVersion` でメモ化)。チップ click で `search-field='eagleTags'` にしてグリッド絞り込み (searchFieldText に `eagleTags` ケース追加)。
+- **右サイドバー（インスペクタ）と ⓘ 詳細**にも Eagle ネイティブ情報を「Eagle」セクションとして別枠表示 (Info+/SNS と明確に区切る)。tags / rating / folders を `getByIds` でライブ取得。
+  - **評価は `item.rating` (0〜5)。`item.star` ではない**（公式 API ドキュメント準拠。コードは `star ?? rating` フォールバック）。
+  - `item.folders` は **フォルダ ID の配列**。名前化には解決が要るが **`eagle.folder.getAll()` は公式ドキュメント未記載**（`getSelected()` 等はある）。実装は try/catch で呼び取れた名前だけ表示・失敗時は行を出さない (安全に劣化)。要必須なら実機で API 要確認。
+
+### 実ライブラリの URL 保有率は低い (グリッドが少なく見える理由)
+
+- 約 9000 件のうち **`url` を持つのは ~940 件だけ** (内訳ほぼ x.com ~846 / bsky ~32 / pixiv ~14)。残り ~8000 件は **Eagle 側に url が無い**素の画像 (Eagle 自身の API で offset 4000 の 80 件すべて url なしを確認 → 同期バグではない)。
+- グリッドは `status!=='no-annotation' || parsePostUrl(url)` で **SNS パーマリンクとして解釈できる url のみ**残すので、表示は ~838 投稿 (グループ) 程度。公式 Eagle for Chrome 経由でも、ドラッグ方法やサイトによっては url が付かない/非SNS url のことがある。「リンクが少ない」のは**実データがそうである**ためで取りこぼしではない。
 
 ---
 
