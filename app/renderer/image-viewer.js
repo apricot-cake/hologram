@@ -192,7 +192,7 @@
     const frag = document.createDocumentFragment();
     view.forEach((g, i) => {
       const p = g.rep;
-      const badges = [`<span class="iv-badge ${escapeHtml(p.platform || '')}">${escapeHtml((p.platform || '').toUpperCase())}</span>`];
+      // 画像モードではプラットフォーム表示は不要（ユーザー要望でタイルのバッジを撤去）。
       const ntag = g.files.length > 1 ? `<div class="iv-ntag">×${g.files.length}</div>` : '';
       const author = p.displayName || p.screenName || p.title || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
@@ -212,7 +212,6 @@
         : `<div class="iv-noposter"></div>`;
       card.innerHTML =
         thumb + playOverlay + ntag +
-        `<div class="iv-badges">${badges.join('')}</div>` +
         `<div class="iv-actions">` +
           `${foldBtn}<button class="iv-act" data-act="detail" title="詳細">ℹ</button>${openBtn}` +
           `<button class="iv-act del" data-act="del" title="削除">🗑</button>` +
