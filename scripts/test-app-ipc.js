@@ -13,8 +13,8 @@ const path = require('path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'postsnap-ipc-'));
-const configDir = path.join(tmp, 'PostSnap');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-ipc-'));
+const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -33,14 +33,14 @@ writePost('dummy-0001', []);
 writePost('dummy-0002', []);
 
 const evalJs = `(async () => {
-  await window.postSnap.updateTags('dummy-0001.jpg', ['tagX']);
-  await window.postSnap.deletePost('dummy-0002.jpg');
-  const { posts } = await window.postSnap.listPosts();
+  await window.corpus.updateTags('dummy-0001.jpg', ['tagX']);
+  await window.corpus.deletePost('dummy-0002.jpg');
+  const { posts } = await window.corpus.listPosts();
   return posts.length;
 })()`;
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, POSTSNAP_SMOKE: '1', POSTSNAP_SMOKE_EVAL: evalJs
+  APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

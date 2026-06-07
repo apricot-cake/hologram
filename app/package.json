@@ -1,7 +1,7 @@
 {
-  "name": "post-snap-app",
+  "name": "corpus-app",
   "version": "1.0.0",
-  "description": "Post Snap desktop viewer",
+  "description": "Corpus desktop viewer",
   "main": "main.js",
   "author": "apricot-cake",
   "scripts": {
@@ -15,8 +15,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.postsnap.app",
-    "productName": "Post Snap",
+    "appId": "com.corpus.app",
+    "productName": "Corpus",
     "directories": { "output": "dist" },
     "files": [
       "main.js",

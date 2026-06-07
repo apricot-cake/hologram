@@ -22,7 +22,7 @@ function resolveFolder() {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
   } catch { /* no config */ }
-  return path.join(os.homedir(), 'PostSnap');
+  return path.join(os.homedir(), 'Corpus');
 }
 
 const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon: '#6364ff' };

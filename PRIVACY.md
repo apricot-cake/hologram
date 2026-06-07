@@ -1,8 +1,8 @@
-# Privacy Policy — Post Snap
+# Privacy Policy — Corpus
 
 ## Data Collection
 
-Post Snap does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to a folder you choose on your device.
+Corpus does **not** collect, store, or transmit any personal data. All captured images and metadata are saved locally to a folder you choose on your device.
 
 ## External API Requests
 
@@ -17,7 +17,7 @@ No authentication tokens, cookies, or personal information are included in these
 
 - **activeTab** — Access the current tab only when you activate the extension.
 - **scripting** — Inject the post selection UI into the current page.
-- **nativeMessaging** — Hand each capture to the Post Snap desktop app on your device, which writes the image and its metadata to the folder you chose.
+- **nativeMessaging** — Hand each capture to the Corpus desktop app on your device, which writes the image and its metadata to the folder you chose.
 
 ## Data Storage
 

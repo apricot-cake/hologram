@@ -1,10 +1,10 @@
-# Post Snap
+# Corpus
 
 [English](README.en.md) | **日本語**
 
 X / Bluesky / Misskey / Mastodon の投稿をキャプチャして、デスクトップアプリで後から閲覧・検索できます。
 
-Post Snap は2つの部品でできています。
+Corpus は2つの部品でできています。
 
 - 投稿をクリックして JPEG としてキャプチャする **Chrome 拡張機能**
 - キャプチャを **あなたが選んだフォルダ** に保存し、検索・フィルタ・タグ付け・エクスポートできる **デスクトップアプリ**（Electron）

@@ -13,8 +13,8 @@ const path = require('path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'postsnap-render-'));
-const configDir = path.join(tmp, 'PostSnap'); // paths.js (win32) => %APPDATA%/PostSnap
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-render-'));
+const configDir = path.join(tmp, 'Corpus'); // paths.js (win32) => %APPDATA%/Corpus
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -47,8 +47,8 @@ try { fs.unlinkSync(shot); } catch {}
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  POSTSNAP_SMOKE: '1',
-  POSTSNAP_SMOKE_SHOT: shot
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_SHOT: shot
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: 'inherit' });

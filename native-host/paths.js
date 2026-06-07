@@ -7,14 +7,14 @@
 // resolve the SAME absolute path independently. The Electron app pins this by
 // calling app.setPath('userData', configDir()) at startup.
 //
-// Windows : %APPDATA%/PostSnap
-// macOS   : ~/Library/Application Support/PostSnap
-// Linux   : $XDG_CONFIG_HOME/PostSnap (or ~/.config/PostSnap)
+// Windows : %APPDATA%/Corpus
+// macOS   : ~/Library/Application Support/Corpus
+// Linux   : $XDG_CONFIG_HOME/Corpus (or ~/.config/Corpus)
 
 const path = require('path');
 const os = require('os');
 
-const APP_NAME = 'PostSnap';
+const APP_NAME = 'Corpus';
 
 function configDir() {
   if (process.platform === 'win32') {

@@ -1,6 +1,6 @@
 'use strict';
 
-// Post Snap native messaging host.
+// Corpus native messaging host.
 //
 // Chrome spawns this process per connection (chrome.runtime.connectNative).
 // It receives a captured post over stdin and writes two files into the user's
@@ -28,7 +28,7 @@ function readSaveFolder() {
   } catch {
     // No config yet — fall back to a sensible default.
   }
-  return path.join(os.homedir(), 'PostSnap');
+  return path.join(os.homedir(), 'Corpus');
 }
 
 // --- Native messaging framing (4-byte LE length prefix + UTF-8 JSON) ---

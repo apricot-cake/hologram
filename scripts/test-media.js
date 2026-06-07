@@ -10,9 +10,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'postsnap-media-'));
-process.env.APPDATA = tmp; // win32 configDir => %APPDATA%/PostSnap
-const configDir = path.join(tmp, 'PostSnap');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-media-'));
+process.env.APPDATA = tmp; // win32 configDir => %APPDATA%/Corpus
+const configDir = path.join(tmp, 'Corpus');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(saveFolder, { recursive: true }); // handleSave mkdir's this; the direct downloadMedia call needs it too

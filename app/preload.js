@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('postSnap', {
+contextBridge.exposeInMainWorld('corpus', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   pickSaveFolder: () => ipcRenderer.invoke('pick-save-folder'),
   setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),

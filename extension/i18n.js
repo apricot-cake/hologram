@@ -4,10 +4,10 @@
 // strings below are embedded here so content scripts (which cannot fetch
 // _locales/ files reliably) get them without extra network round-trips.
 //
-// Consumers do: const { getMessage, lang, resolved } = await window.postSnapI18n;
+// Consumers do: const { getMessage, lang, resolved } = await window.corpusI18n;
 // then call getMessage('key', [sub1, sub2]).
 // Note: this file may be re-executed by chrome.scripting.executeScript on every
-// Alt+S press, so window.postSnapI18n is reassigned each time. The banner
+// Alt+S press, so window.corpusI18n is reassigned each time. The banner
 // language follows the browser locale (navigator.language); the desktop app has
 // its own independent language setting and the content script cannot read it.
 (function () {
@@ -286,7 +286,7 @@
     }
   };
 
-  window.postSnapI18n = (async () => {
+  window.corpusI18n = (async () => {
     // The banner follows the browser locale. The extension no longer stores a
     // language preference (the viewer moved to the desktop app, which keeps its
     // own setting in config.json that a content script cannot read).

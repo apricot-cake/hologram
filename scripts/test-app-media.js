@@ -16,8 +16,8 @@ const path = require('path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'postsnap-media-app-'));
-const configDir = path.join(tmp, 'PostSnap');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-media-app-'));
+const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -68,7 +68,7 @@ const evalJs = `(async () => {
   return { noMediaBtn, injectedInCard, hasMediaFlag, shown, multi, counterScreenshot, counterOriginal, nat, galleryAlt, injectedAfterOpen, counter3 };
 })()`;
 
-const env = Object.assign({}, process.env, { APPDATA: tmp, POSTSNAP_SMOKE: '1', POSTSNAP_SMOKE_EVAL: evalJs });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });

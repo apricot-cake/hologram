@@ -364,7 +364,7 @@ function createWindow(show = true) {
     height: 820,
     show,
     backgroundColor: '#0f1419',
-    title: 'Post Snap',
+    title: 'Corpus',
     paintWhenInitiallyHidden: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -378,8 +378,8 @@ function createWindow(show = true) {
 }
 
 // Side-effect-free launch check: skips host registration, hides the window,
-// and quits once the renderer has loaded. Run with POSTSNAP_SMOKE=1.
-const SMOKE = process.env.POSTSNAP_SMOKE === '1';
+// and quits once the renderer has loaded. Run with CORPUS_SMOKE=1.
+const SMOKE = process.env.CORPUS_SMOKE === '1';
 
 // Single instance: a second launch focuses the existing window instead of
 // opening a duplicate (which would fight over the shared userData/cache).
@@ -405,16 +405,16 @@ if (!gotSingleInstanceLock) {
   watchSaveFolder();
 
   if (SMOKE) {
-    const shot = process.env.POSTSNAP_SMOKE_SHOT;
+    const shot = process.env.CORPUS_SMOKE_SHOT;
     win.webContents.on('console-message', (_e, level, message) => {
       console.log(`[renderer:${level}] ${message}`);
     });
     let done = false;
     const quit = (tag) => { if (done) return; done = true; console.log(tag); app.quit(); };
     win.webContents.once('did-finish-load', () => setTimeout(async () => {
-      if (process.env.POSTSNAP_SMOKE_EVAL) {
+      if (process.env.CORPUS_SMOKE_EVAL) {
         try {
-          const r = await win.webContents.executeJavaScript(process.env.POSTSNAP_SMOKE_EVAL);
+          const r = await win.webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
           console.log('EVAL_RESULT', JSON.stringify(r));
         } catch (e) { console.log('EVAL_ERR', e.message); }
       }
@@ -434,7 +434,7 @@ if (!gotSingleInstanceLock) {
 
   // Start minimized when launched on the user's behalf (env-gated; a normal
   // user launch still opens a focused window).
-  if (process.env.POSTSNAP_START_MINIMIZED === '1' && win) win.minimize();
+  if (process.env.CORPUS_START_MINIMIZED === '1' && win) win.minimize();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

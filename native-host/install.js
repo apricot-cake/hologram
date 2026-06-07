@@ -1,6 +1,6 @@
 'use strict';
 
-// Registers (or removes) the Post Snap native messaging host so Chrome/Edge
+// Registers (or removes) the Corpus native messaging host so Chrome/Edge
 // can launch the bridge.
 //
 // Used two ways:
@@ -17,7 +17,7 @@ const { execFileSync } = require('child_process');
 
 const { configDir } = require('./paths');
 
-const HOST_NAME = 'com.postsnap.host';
+const HOST_NAME = 'com.corpus.host';
 const BRIDGE_PATH = path.join(__dirname, 'bridge.js');
 const PATHS_PATH = path.join(__dirname, 'paths.js');
 
@@ -48,7 +48,7 @@ function readExtensionId() {
 }
 
 function launcherPath() {
-  return path.join(configDir(), process.platform === 'win32' ? 'post-snap-host.bat' : 'post-snap-host.sh');
+  return path.join(configDir(), process.platform === 'win32' ? 'corpus-host.bat' : 'corpus-host.sh');
 }
 
 function manifestPath() {
@@ -76,7 +76,7 @@ function writeLauncher({ exe, runAsNode, bridgePath }) {
 function writeManifest(launcher, extensionId) {
   const manifest = {
     name: HOST_NAME,
-    description: 'Post Snap native messaging host',
+    description: 'Corpus native messaging host',
     path: launcher,
     type: 'stdio',
     allowed_origins: extensionId ? [`chrome-extension://${extensionId}/`] : []

@@ -1,6 +1,6 @@
 """Verify sidecar metadata against actual post data via public APIs.
 
-Reads <id>.json sidecars from the Post Snap save folder (configured by the
+Reads <id>.json sidecars from the Corpus save folder (configured by the
 desktop app) and compares them with live data from the Bluesky / Misskey public
 APIs. Also checks each sidecar has its paired <id>.jpg.
 
@@ -26,11 +26,11 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 def config_dir():
     if os.name == "nt":
         base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
-        return os.path.join(base, "PostSnap")
+        return os.path.join(base, "Corpus")
     if sys.platform == "darwin":
-        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "PostSnap")
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "PostSnap")
+    return os.path.join(base, "Corpus")
 
 
 def save_folder():
@@ -41,7 +41,7 @@ def save_folder():
             return cfg["saveFolder"]
     except Exception:
         pass
-    return os.path.join(os.path.expanduser("~"), "PostSnap")
+    return os.path.join(os.path.expanduser("~"), "Corpus")
 
 
 def parse_post_url(url):

@@ -11,9 +11,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'postsnap-test-'));
-// paths.js (win32) resolves configDir = %APPDATA%/PostSnap, so point APPDATA at tmp.
-const configDir = path.join(tmp, 'PostSnap');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-test-'));
+// paths.js (win32) resolves configDir = %APPDATA%/Corpus, so point APPDATA at tmp.
+const configDir = path.join(tmp, 'Corpus');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));

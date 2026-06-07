@@ -18,7 +18,7 @@ function saveFolder() {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
   } catch { /* no config */ }
-  return path.join(os.homedir(), 'PostSnap');
+  return path.join(os.homedir(), 'Corpus');
 }
 
 (async () => {

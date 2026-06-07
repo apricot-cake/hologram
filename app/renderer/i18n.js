@@ -1,9 +1,9 @@
 // i18n helper for the Electron viewer (renderer) only.
 // Language resolves from the app's saved preference (config.json `language`, via
-// window.postSnap.getPrefs); 'auto' follows navigator.language (the OS/app
+// window.corpus.getPrefs); 'auto' follows navigator.language (the OS/app
 // locale). The viewer reloads on change so the new language takes effect.
 //
-// Consumers do: const { getMessage, lang, resolved } = await window.postSnapI18n;
+// Consumers do: const { getMessage, lang, resolved } = await window.corpusI18n;
 // then call getMessage('key', [sub1, sub2]).
 //
 // Note: the extension's capture banner keeps its OWN copy of strings in the root
@@ -285,10 +285,10 @@
     }
   };
 
-  window.postSnapI18n = (async () => {
+  window.corpusI18n = (async () => {
     let lang = 'auto';
     try {
-      const prefs = await window.postSnap.getPrefs();
+      const prefs = await window.corpus.getPrefs();
       lang = prefs.language || 'auto';
     } catch {
       // prefs unavailable — fall back to auto

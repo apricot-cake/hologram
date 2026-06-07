@@ -1,10 +1,10 @@
-# Post Snap
+# Corpus
 
 **English** | [日本語](README.md)
 
 Capture posts from X, Bluesky, Misskey, and Mastodon, and browse them later in a desktop viewer.
 
-Post Snap has two parts:
+Corpus has two parts:
 
 - a **Chrome extension** that captures the post you click as a JPEG, and
 - a **desktop app** (Electron) that stores captures in a folder you choose and lets you search, filter, tag, and export them.

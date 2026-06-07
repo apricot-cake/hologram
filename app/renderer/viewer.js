@@ -2,7 +2,7 @@
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via viewer.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
-  const { lang, getMessage } = await window.postSnapI18n;
+  const { lang, getMessage } = await window.corpusI18n;
   const _s = (key) => getMessage(key);
   const _f1 = (key) => (a) => getMessage(key, [a]);
   const _f2 = (key) => (a, b) => getMessage(key, [a, b]);
@@ -174,7 +174,7 @@
   setText('hintLang', MSG.hintLang);
   document.getElementById('langSelect').value = lang;
   document.getElementById('langSelect').addEventListener('change', async (e) => {
-    await window.postSnap.setPref('language', e.target.value);
+    await window.corpus.setPref('language', e.target.value);
     location.reload();
   });
   setText('settingsShortcutTitle', MSG.shortcutTitle);
@@ -805,7 +805,7 @@
 
   // --- Load posts ---
   async function loadPosts() {
-    const { posts } = await window.postSnap.listPosts();
+    const { posts } = await window.corpus.listPosts();
     allPosts = posts || [];
     renderPosts();
   }
@@ -1075,7 +1075,7 @@
     if (openBtn) {
       e.stopPropagation();
       const url = openBtn.closest('.post-card')?.dataset.url;
-      if (url) window.postSnap.openExternal(url);
+      if (url) window.corpus.openExternal(url);
       return;
     }
     // Image -> open the gallery (screenshot + originals).
@@ -1169,7 +1169,7 @@
   let pendingDeletePost = null;
 
   async function executeDeletePost(post) {
-    await window.postSnap.deletePost(post.image);
+    await window.corpus.deletePost(post.image);
     const idx = allPosts.findIndex(p => p.captureId === post.captureId);
     if (idx >= 0) allPosts.splice(idx, 1);
     renderPosts();
@@ -1237,7 +1237,7 @@
     const tags = [...editTags];
 
     // Persist to the sidecar, then update in memory
-    await window.postSnap.updateTags(editingPost.image, tags);
+    await window.corpus.updateTags(editingPost.image, tags);
     const idx = allPosts.findIndex(p => p.captureId === editingPost.captureId);
     if (idx >= 0) {
       allPosts[idx].tags = tags;
@@ -1308,14 +1308,14 @@
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
-      window.postSnap.setPref('viewMode', currentView);
+      window.corpus.setPref('viewMode', currentView);
       renderPosts();
     });
   });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
-  window.postSnap.getPrefs().then((prefs) => {
+  window.corpus.getPrefs().then((prefs) => {
     if (prefs.viewMode === 'list') {
       currentView = 'list';
       document.getElementById('viewGrid').classList.remove('active');
@@ -1331,24 +1331,24 @@
 
   resetDeleteConfirmCheckbox.addEventListener('change', () => {
     skipDeleteConfirm = !resetDeleteConfirmCheckbox.checked;
-    window.postSnap.setPref('skipDeleteConfirm', skipDeleteConfirm);
+    window.corpus.setPref('skipDeleteConfirm', skipDeleteConfirm);
   });
 
   // Search / sort events
   document.getElementById('searchBox').addEventListener('input', renderPosts);
   sortSelect.addEventListener('change', () => {
-    window.postSnap.setPref('sortBy', sortSelect.value);
+    window.corpus.setPref('sortBy', sortSelect.value);
     renderPosts();
   });
 
   // --- Settings: save folder ---
   const saveFolderPath = document.getElementById('saveFolderPath');
-  window.postSnap.getConfig().then((cfg) => {
+  window.corpus.getConfig().then((cfg) => {
     if (saveFolderPath) saveFolderPath.textContent = cfg.saveFolder || '';
   });
 
   document.getElementById('chooseFolderBtn').addEventListener('click', async () => {
-    const { saveFolder } = await window.postSnap.pickSaveFolder();
+    const { saveFolder } = await window.corpus.pickSaveFolder();
     if (saveFolderPath) saveFolderPath.textContent = saveFolder || '';
     loadPosts();
   });
@@ -1369,7 +1369,7 @@
       const filename = `${buildFilename(p, i)}.jpg`;
 
       if (p.image) {
-        const dataUrl = await window.postSnap.imageDataUrl(p.image);
+        const dataUrl = await window.corpus.imageDataUrl(p.image);
         const base64 = dataUrl ? dataUrl.split(',')[1] : '';
         if (base64) {
           zip.file(`images/${filename}`, base64, { base64: true });
@@ -1404,7 +1404,7 @@
     zip.file('metadata.json', JSON.stringify(metadata, null, 2));
 
     const bytes = await zip.generateAsync({ type: 'uint8array' });
-    const res = await window.postSnap.exportSave(`post-snap-export-${formatExportDate()}.zip`, bytes);
+    const res = await window.corpus.exportSave(`corpus-export-${formatExportDate()}.zip`, bytes);
     if (res.saved) showToast(MSG.exported);
   });
 
@@ -1418,7 +1418,7 @@
 
     const postsData = [];
     for (const p of allPosts) {
-      const image = p.image ? await window.postSnap.imageDataUrl(p.image) : null;
+      const image = p.image ? await window.corpus.imageDataUrl(p.image) : null;
       postsData.push({
         url: p.url,
         platform: p.platform,
@@ -1446,7 +1446,7 @@
 
     const html = buildExportHtml(postsData);
     const bytes = new TextEncoder().encode(html);
-    const res = await window.postSnap.exportSave(`post-snap-export-${formatExportDate()}.html`, bytes);
+    const res = await window.corpus.exportSave(`corpus-export-${formatExportDate()}.html`, bytes);
     if (res.saved) showToast(MSG.exported);
   });
 
@@ -1464,7 +1464,9 @@
       const text = await readFileAsText(file);
       const parser = new DOMParser();
       const doc = parser.parseFromString(text, 'text/html');
-      const scriptEl = doc.getElementById('postSnapData');
+      // Accept both the current id and the legacy post-snap id so HTML files
+      // exported by the pre-Corpus build remain importable (data migration path).
+      const scriptEl = doc.getElementById('corpusData') || doc.getElementById('postSnapData');
       if (!scriptEl) {
         showToast(MSG.importFailed);
         e.target.value = '';
@@ -1472,7 +1474,7 @@
       }
 
       const postsData = JSON.parse(scriptEl.textContent);
-      const { imported, skipped } = await window.postSnap.importPosts(postsData);
+      const { imported, skipped } = await window.corpus.importPosts(postsData);
       await loadPosts();
       e.target.value = '';
 
@@ -1509,7 +1511,7 @@
       const toDelete = allPosts.filter(p => selectedSet.has((p.url || '') + '|' + (p.capturedAt || '')));
       const count = toDelete.length;
       for (const p of toDelete) {
-        await window.postSnap.deletePost(p.image);
+        await window.corpus.deletePost(p.image);
       }
       selectedSet.clear();
       selectionAnchor = null;
@@ -1521,13 +1523,13 @@
       // Individual post delete
       if (document.getElementById('confirmSkip').checked) {
         skipDeleteConfirm = true;
-        window.postSnap.setPref('skipDeleteConfirm', true);
+        window.corpus.setPref('skipDeleteConfirm', true);
       }
       await executeDeletePost(pendingDeletePost);
       pendingDeletePost = null;
     } else {
       // Clear all data (deletes every image + sidecar in the save folder)
-      await window.postSnap.clearAll();
+      await window.corpus.clearAll();
       allPosts = [];
       renderPosts();
       showToast(MSG.cleared);
@@ -1549,7 +1551,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>Post Snap Export</title>
+<title>Corpus Export</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font:14px/1.6 -apple-system,'Segoe UI',sans-serif;background:#f5f5f5;color:#333;padding:24px 32px;max-width:960px;margin:0 auto}
@@ -1574,7 +1576,7 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 </style>
 </head>
 <body>
-<h1>Post Snap Export</h1>
+<h1>Corpus Export</h1>
 <div class="toolbar">
 <input type="text" class="search-box" id="q" placeholder="Search...">
 <select id="sort">
@@ -1593,10 +1595,10 @@ select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;b
 </div>
 <div class="grid" id="g"></div>
 <div class="empty" id="e" style="display:none"></div>
-<script id="postSnapData" type="application/json">${JSON.stringify(postsData).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))}</script>
+<script id="corpusData" type="application/json">${JSON.stringify(postsData).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))}</script>
 <script>
 (function(){
-var posts=JSON.parse(document.getElementById('postSnapData').textContent);
+var posts=JSON.parse(document.getElementById('corpusData').textContent);
 var q=document.getElementById('q'),s=document.getElementById('sort'),pf=document.getElementById('pf');
 function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':String(n)}
@@ -1705,8 +1707,8 @@ render()
   }
 
   // --- Init ---
-  if (window.postSnap.onPostsChanged) {
-    window.postSnap.onPostsChanged(async () => {
+  if (window.corpus.onPostsChanged) {
+    window.corpus.onPostsChanged(async () => {
       await loadPosts();
       if (document.getElementById('panelTags').classList.contains('active')) renderHashtags();
     });

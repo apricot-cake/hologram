@@ -1,0 +1,10 @@
+{
+  "_README": "Reference template only. The ACTUAL manifest is generated into the config dir (Windows: %APPDATA%/Corpus/) by install.js, with `path` resolved to the absolute launcher path and allowed_origins set to the extension ID stored in config.json. Do not register this file directly.",
+  "name": "com.corpus.host",
+  "description": "Corpus native messaging host",
+  "path": "GENERATED_AT_INSTALL_TIME",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://<YOUR_EXTENSION_ID>/"
+  ]
+}

@@ -1,6 +1,6 @@
 importScripts('metadata.js');
 
-const NATIVE_HOST = 'com.postsnap.host';
+const NATIVE_HOST = 'com.corpus.host';
 
 // Allowed capture origins per platform (used to validate the sender tab).
 const PLATFORM_HOSTS = {

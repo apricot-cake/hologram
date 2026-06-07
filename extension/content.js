@@ -1,7 +1,7 @@
 (async () => {
   // --- i18n ---
   // i18n.js is injected alongside this script (see background.js → executeScript).
-  const { getMessage } = await window.postSnapI18n;
+  const { getMessage } = await window.corpusI18n;
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
