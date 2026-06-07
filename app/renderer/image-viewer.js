@@ -191,6 +191,7 @@
   }
 
   function render() {
+    renderImageActiveChips();                           // 下部固定バー（アクティブフィルタ）を毎回同期
     let groups = groupRecords(applyFilters());          // 同一投稿の複数画像を1タイルに集約
     if (state.multiOnly) groups = groups.filter((g) => g.files.length > 1);
     view = groups;
@@ -311,6 +312,21 @@
       const star = f.id === def ? '<span class="iv-foldstar" title="デフォルトフォルダ">★</span>' : '';
       return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
+  }
+
+  // アクティブフィルタのピル（下部固定バー）。state から生成し、クリックで個別解除。
+  // アクティブが1つでもあればバー表示、無ければ非表示。タグ絞り込み中のみ AND/OR を出す。
+  function renderImageActiveChips() {
+    const host = $('ivActiveChips'); const bar = $('ivActiveBar'); if (!host || !bar) return;
+    const items = [];
+    if (state.search) items.push({ k: 'search', cls: 'qc-img', label: '検索: ' + state.search });
+    if (state.platform) items.push({ k: 'platform', cls: 'qc-platform', label: state.platform });
+    if (state.minLikes > 0) items.push({ k: 'minLikes', cls: 'qc-img', label: '❤≥' + state.minLikes });
+    if (state.folder) { const f = CF() && CF().byId(state.folder); items.push({ k: 'folder', cls: 'qc-img', label: f ? f.name : 'フォルダ' }); }
+    state.tags.forEach((t) => items.push({ k: 'tag', cls: 'qc-tag', val: t, label: '#' + t }));
+    bar.style.display = items.length ? '' : 'none';
+    $('ivTagMode').style.display = state.tags.size > 0 ? '' : 'none';
+    host.innerHTML = items.map((c) => `<span class="sb-active-chip ${c.cls}" data-k="${c.k}" data-val="${escapeHtml(c.val || '')}">${escapeHtml(c.label)} ×</span>`).join('');
   }
   // タイルの 📁 ワンクリック: デフォルトフォルダへ追加/解除（グループ全レコードに適用）。
   function toggleFolder(g, btn) {
@@ -502,6 +518,18 @@
     });
     // 作成/改名/削除/デフォルト設定は共有モジュールの管理モーダルが担当。
     $('ivFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
+
+    // アクティブフィルタバーのピル: クリックでそのフィルタだけ解除。
+    $('ivActiveChips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.sb-active-chip'); if (!chip) return;
+      const k = chip.dataset.k;
+      if (k === 'search') { state.search = ''; $('ivSearch').value = ''; }
+      else if (k === 'platform') { state.platform = ''; $('ivPlatformChips').querySelectorAll('.sb-chip').forEach((c) => c.classList.remove('active')); }
+      else if (k === 'minLikes') { state.minLikes = 0; $('ivMinLikes').value = ''; }
+      else if (k === 'folder') { state.folder = ''; renderFolderFilter(); }
+      else if (k === 'tag') { state.tags.delete(chip.dataset.val); renderTagFilter(); }
+      render();
+    });
 
     const applyTile = () => {
       tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, tileSize));

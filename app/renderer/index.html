@@ -541,6 +541,7 @@
     .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
     .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
     .sb-active-chip.qc-user { background: #fde8f4; border: 1px solid #f1b0d4; color: #333; }
+    .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
   #panelTags { max-width: 960px; }
   #panelUsers { max-width: 960px; }
   .users-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -759,10 +760,19 @@
         <div class="sb-chips" id="ivFolderChips"></div>
       </div>
       <div class="sb-section" id="ivTagSection" style="display:none">
-        <div class="sb-title">タグ <button class="iv-andor" id="ivTagMode" type="button" title="複数選択の結合（すべて含む / いずれか）">すべて含む</button></div>
+        <div class="sb-title">タグ</div>
         <div id="ivTagGroups"></div>
       </div>
-      <button class="iv-reset" id="ivReset" type="button">フィルタをリセット</button>
+
+      <!-- Active-filter bar: pinned to the sidebar bottom; shown only when ≥1 filter is active -->
+      <div id="ivActiveBar" class="sb-activebar" style="display:none">
+        <div class="sb-activebar-head">
+          <span class="sb-activebar-title">適用中のフィルタ</span>
+          <button class="iv-andor" id="ivTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">すべて含む</button>
+          <button class="sb-reset" id="ivReset" type="button">リセット</button>
+        </div>
+        <div class="sb-chips" id="ivActiveChips"></div>
+      </div>
     </div>
   </aside><!-- /sidebar -->
 
