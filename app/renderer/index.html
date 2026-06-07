@@ -227,9 +227,14 @@
       width: 24px; height: 24px; border-radius: 50%;
       background: rgba(255,255,255,0.85); border: 2px solid #ccc;
       display: none; cursor: pointer; z-index: 1;
-      text-align: center; line-height: 20px; font-size: 14px; color: #1d9bf0;
+      align-items: center; justify-content: center;
     }
-    .post-card.selected .select-check { display: block; background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .post-card.selected .select-check { display: flex; background: #1d9bf0; border-color: #1d9bf0; }
+    /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph) */
+    .post-card.selected .select-check::after {
+      content: ''; width: 5px; height: 10px; margin-top: -1px;
+      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
@@ -969,7 +974,11 @@
     }
     .iv-card:hover .iv-selcircle { opacity: 1; }
     .iv-card.selected .iv-selcircle { opacity: 1; background: var(--accent); border-color: #fff; }
-    .iv-card.selected .iv-selcircle::after { content: '✓'; }
+    /* sharp geometric check drawn with borders (avoids the hand-drawn ✓ glyph) */
+    .iv-card.selected .iv-selcircle::after {
+      content: ''; width: 5px; height: 9px; margin-top: -1px;
+      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    }
     .iv-empty { padding: 60px 20px; text-align: center; color: var(--muted); }
 
     /* Detail popup (ℹ action): centered modal over a dim backdrop, not a sidebar. */
