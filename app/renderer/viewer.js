@@ -811,7 +811,9 @@
   }
 
   function getFilteredPosts() {
-    let posts = [...allPosts];
+    // 投稿閲覧 = SNS投稿（URLあり）。URLなしのライブラリ参照画像（Eagle移行の素材等）は
+    // 画像閲覧モード専用なので、ここでは出さない（数千件で投稿一覧が埋もれるのを防ぐ）。
+    let posts = allPosts.filter(p => p.url);
     const query = document.getElementById('searchBox').value.trim().toLowerCase();
     const sort = sortSelect.value;
 
@@ -1171,7 +1173,7 @@
   let pendingDeletePost = null;
 
   async function executeDeletePost(post) {
-    await window.corpus.deletePost(post.image);
+    await window.corpus.deletePost(post.image || post.video);
     const idx = allPosts.findIndex(p => p.captureId === post.captureId);
     if (idx >= 0) allPosts.splice(idx, 1);
     renderPosts();
@@ -1239,7 +1241,7 @@
     const tags = [...editTags];
 
     // Persist to the sidecar, then update in memory
-    await window.corpus.updateTags(editingPost.image, tags);
+    await window.corpus.updateTags(editingPost.image || editingPost.video, tags);
     const idx = allPosts.findIndex(p => p.captureId === editingPost.captureId);
     if (idx >= 0) {
       allPosts[idx].tags = tags;
@@ -1521,7 +1523,7 @@
       const toDelete = allPosts.filter(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
       const count = toDelete.length;
       for (const p of toDelete) {
-        await window.corpus.deletePost(p.image);
+        await window.corpus.deletePost(p.image || p.video);
       }
       selectedSet.clear();
       selectionAnchor = null;

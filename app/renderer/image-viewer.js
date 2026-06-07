@@ -205,9 +205,10 @@
   }
 
   async function doDelete(p) {
-    if (!p || !p.image) return;
+    const target = p && (p.image || p.video);     // poster-less videos have no image; delete by video
+    if (!target) return;
     if (!window.confirm('この画像を削除しますか？（取り消せません）')) return;
-    try { await window.corpus.deletePost(p.image); } catch { /* ignore */ }
+    try { await window.corpus.deletePost(target); } catch { /* ignore */ }
     const insp = $('ivInspector'); if (insp) insp.hidden = true;
     await refresh();
   }

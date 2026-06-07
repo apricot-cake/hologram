@@ -110,8 +110,9 @@ function buildRecord(id, meta, ov, platform, files, parsed) {
   const hasUrl = !!url;
   const anno = parseAnnotation(meta.annotation);
   const annoAuthor = anno.Author ? anno.Author.replace(/^@/, '') : null;
-  // pixiv names carry the work title ("<work> - <author>のイラスト"); strip the trailing author clause.
-  const pixivTitle = (platform === 'pixiv' && meta.name) ? String(meta.name).replace(/\s*[-—]\s*[^-—]+の(イラスト|マンガ|うごイラ)\s*$/, '').trim() : null;
+  // pixiv names carry the work title ("<work> - <author>の(イラスト|マンガ)[ 漫画 tags…]"); strip the
+  // author clause AND any trailing "漫画"/tag list (manga names append tags after the clause).
+  const pixivTitle = (platform === 'pixiv' && meta.name) ? String(meta.name).replace(/\s*[-—]\s*[^-—]+の(イラスト|マンガ|うごイラ).*$/, '').trim() : null;
   return {
     captureId: files.captureId,
     image: files.image,
@@ -119,8 +120,10 @@ function buildRecord(id, meta, ov, platform, files, parsed) {
     url,
     platform: platform || null,
     text: ov.text || null,
-    // ref images: Eagle name is the caption. pixiv: work title. other SNS: leave null (name is page-title junk; raw kept in eagleName).
-    title: ov.title || pixivTitle || (!hasUrl ? (meta.name || null) : null),
+    description: ov.legacyDescription || (anno && anno.Description) || null,  // pixiv artist caption (only in legacy/anno)
+    // Caption = Eagle name for non-SNS items (refs AND non-SNS url pages like gyazo/booth).
+    // pixiv: work title. Genuine SNS posts (platform set): leave null (name is page-title junk; raw kept in eagleName).
+    title: ov.title || pixivTitle || (!platform ? (meta.name || null) : null),
     eagleName: meta.name || null,                                 // raw Eagle filename, preserved losslessly (forensic + search)
     displayName: ov.displayName || null,
     // handle: store author → annotation Author → handle embedded in the URL (X/bsky).
@@ -136,7 +139,10 @@ function buildRecord(id, meta, ov, platform, files, parsed) {
     // post date: real publish time only; never the plugin sync timestamp (ov.modifiedAt). btime for ref images.
     date: isoFromMs(ov.publishedAt) || isoFromStr(ov.legacyPublishedAt) || isoFromStr(anno.Published) || isoFromMs(meta.btime),
     capturedAt: isoFromMs(meta.btime || meta.mtime),             // Eagle 追加日 (identity is captureId, not this)
-    updatedAt: isoFromMs(meta.mtime || meta.modificationTime || meta.btime),  // Eagle 変更日; bumped on Corpus edits
+    // Eagle 変更日 = record edit time (modificationTime/lastModified), NOT the source-file mtime
+    // (which often predates btime). Clamp >= capturedAt so updatedAt is never before 追加日.
+    updatedAt: isoFromMs(Math.max((meta.modificationTime || meta.lastModified || 0), (meta.btime || meta.mtime || 0))),
+    rating: (meta.star && meta.star !== 0) ? meta.star : null,    // Eagle ★ (no UI yet; preserved, ~1 item)
     mediaType: files.mediaType,
     media: [],                                                    // image IS the artwork; empty avoids lightbox dup
     lang: null,
@@ -173,7 +179,7 @@ const saveFolder = resolveSaveFolder(args.save);
 
 const stats = {
   scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0, unreadable: 0, orphan: 0,
-  skippedExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0, video: 0,
+  skippedExisting: 0, staleExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0, video: 0,
   byPlatform: {}
 };
 const plan = [];
@@ -213,7 +219,12 @@ for (const d of dirs) {
   if (args.taggedOnly && !tagged && !url) { stats.skippedUntagged++; continue; }
 
   const captureId = `eagle-${id}`;
-  if (saveFolder && fs.existsSync(path.join(saveFolder, `${captureId}.json`))) { stats.skippedExisting++; continue; }
+  if (saveFolder && fs.existsSync(path.join(saveFolder, `${captureId}.json`))) {
+    stats.skippedExisting++;
+    const ex = readJson(path.join(saveFolder, `${captureId}.json`));   // flag old-spec records (idempotency freezes them)
+    if (ex && !('eagleName' in ex)) stats.staleExisting++;
+    continue;
+  }
 
   const srcMain = resolveImage(args.lib, id, meta.name, ext);
   if (!srcMain) { stats.imageMissing++; continue; }               // original missing → skip
@@ -233,7 +244,12 @@ for (const d of dirs) {
   }
 
   const parsed = url ? parsePostUrl(url) : null;
-  const platform = ov.platform || (parsed && parsed.platform) || null;
+  let platform = ov.platform || (parsed && parsed.platform) || null;
+  // Media-CDN URLs (saved bare image/video, not a post URL) still attribute to a platform.
+  if (!platform && url) {
+    if (/(^|\.)twimg\.com\//.test(url)) platform = 'x';
+    else if (/cdn\.bsky\.app\//.test(url)) platform = 'bluesky';
+  }
   const rec = buildRecord(id, meta, ov, platform, { captureId, image, video, mediaType }, parsed);
   if (isOrphan) rec.orphan = true;                 // recovered without an Eagle metadata.json
   plan.push({ id, captureId, platform, srcMain, destMain, srcPoster, destPoster, rec });
@@ -291,6 +307,7 @@ function printPlan() {
     '| image-missing=' + stats.imageMissing, '| unreadable-meta=' + stats.unreadable, '| already-migrated=' + stats.skippedExisting,
     (args.taggedOnly ? '| untagged-skipped=' + stats.skippedUntagged : ''));
   if (stats.unreadable) console.log('  ⚠ WARNING: ' + stats.unreadable + ' item(s) had missing/corrupt metadata.json AND no recoverable media — skipped');
+  if (stats.staleExisting) console.log('  ⚠ WARNING: ' + stats.staleExisting + ' existing eagle-* sidecar(s) predate the current schema (no eagleName). Delete them first to re-migrate with current logic (idempotency skips them otherwise).');
   if (stats.orphan) console.log('  ↪ recovered ' + stats.orphan + ' orphan(s): media present but no metadata.json (filename→title, no tags/url)');
   console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| SNS url:', stats.withUrl, '| video:', stats.video, '| orphan:', stats.orphan + ')');
   console.log('             by platform:', JSON.stringify(stats.byPlatform));
