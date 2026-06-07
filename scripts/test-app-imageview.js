@@ -35,12 +35,24 @@ fs.writeFileSync(path.join(saveFolder, '1700000000000-aa01.json'), JSON.stringif
   media: [{ url: 'https://pbs.twimg.com/media/x.jpg', file: '1700000000000-aa01-media-0.jpg' }], tags: [], hashtags: []
 }, null, 2));
 
-// B: pixiv illustration record (image-only, no media — the drag/migration shape)
+// B: pixiv illustration record (image IS the artwork, no media — the drag/
+// migration shape). source marks it so the image-view shows the image field.
 W('1700000000001-aa02.jpg');
 fs.writeFileSync(path.join(saveFolder, '1700000000001-aa02.json'), JSON.stringify({
   captureId: '1700000000001-aa02', image: '1700000000001-aa02.jpg', url: 'https://www.pixiv.net/artworks/2',
   platform: 'pixiv', title: 'ピクシブ作品', displayName: '絵師名', screenName: '882569', likes: 5000,
-  capturedAt: '2026-04-05T12:00:00Z', date: '2026-04-03T10:00:00Z', media: [], tags: [], hashtags: ['オリジナル']
+  capturedAt: '2026-04-05T12:00:00Z', date: '2026-04-03T10:00:00Z', media: [], tags: [], hashtags: ['オリジナル'],
+  source: 'eagle-migration'
+}, null, 2));
+
+// C: text-only post-click capture — image IS a screenshot (.jpg) and media is
+// empty. The image-view must NOT show this (post screenshots are excluded);
+// post-view still shows it. capturedAt newest so a regression would surface first.
+W('1700000000002-aa03.jpg');
+fs.writeFileSync(path.join(saveFolder, '1700000000002-aa03.json'), JSON.stringify({
+  captureId: '1700000000002-aa03', image: '1700000000002-aa03.jpg', url: 'https://x.com/u/status/3',
+  platform: 'x', text: 'テキストのみの投稿', displayName: 'X民', screenName: 'xtext', likes: 3,
+  capturedAt: '2026-04-06T12:00:00Z', date: '2026-04-02T10:00:00Z', media: [], tags: [], hashtags: []
 }, null, 2));
 
 const shot = path.join(appDir, '.smoke-shot-iv.png');

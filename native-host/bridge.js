@@ -198,7 +198,9 @@ async function handleSaveDragged(msg) {
   fs.writeFileSync(path.join(saveFolder, imageFile), got.buf);
 
   const meta = msg.metadata || {};
-  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [] });
+  // source:'drag' marks the image as the artwork itself (not a post screenshot),
+  // so the image-view shows it. Mirrors the Eagle migration's source marker.
+  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag' });
   fs.writeFileSync(path.join(saveFolder, `${base}.json`), JSON.stringify(record, null, 2), 'utf8');
 
   return { ok: true, file: imageFile, saveFolder };

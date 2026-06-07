@@ -25,13 +25,21 @@
 
   const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false };
 
-  // 実画像のファイル名配列: 原本 media[] があれば優先、無ければ image (スクショ or 原画)。
+  // 画像閲覧に出す「実際の絵」のファイル名配列。
+  //  - media[] の原本があれば常にそれ（投稿キャプチャの原寸画像・pixiv原寸など＝表示OK）。
+  //  - media が無い場合に image を出すのは「絵そのもの」のときだけ（ドラッグ保存/Eagle移行の
+  //    イラストレコード）。投稿キャプチャの image はスクショなので出さない。
+  //    スクショは常に .jpg。ドラッグ/移行は source で明示判別、非JPEGなら確実に原画。
+  const SCREENSHOT_EXT = /\.jpe?g$/i;
+  function imageIsArtwork(p) {
+    return p.source === 'drag' || p.source === 'eagle-migration' || (!!p.image && !SCREENSHOT_EXT.test(p.image));
+  }
   function recordImageFiles(p) {
     if (Array.isArray(p.media) && p.media.length) {
       const files = p.media.filter((m) => m && m.file).map((m) => m.file);
       if (files.length) return files;
     }
-    return p.image ? [p.image] : [];
+    return (p.image && imageIsArtwork(p)) ? [p.image] : [];
   }
   // 全画面ビューア用の原寸 URL 配列。
   function recordImages(p) { return recordImageFiles(p).map(imgUrl); }
