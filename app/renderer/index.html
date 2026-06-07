@@ -498,6 +498,16 @@
       cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0;
     }
     .sb-manage-link:hover { text-decoration: underline; }
+    /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
+       pills + AND/OR toggle + reset. Shown only when at least one filter is active. */
+    .sb-activebar {
+      position: sticky; bottom: 0; margin: 8px -10px 0; padding: 8px 10px;
+      background: var(--surface); border-top: 1px solid var(--border);
+    }
+    .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .sb-activebar-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
+    .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
+    .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
     /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
     .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; display: block; position: relative; }
     .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; }
@@ -606,12 +616,6 @@
           <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
           <button class="chip" id="cancelSelectBtn"></button>
         </div>
-        <!-- Active filters display -->
-        <div class="sb-section">
-          <div class="sb-title" id="sbActiveTitle"></div>
-          <div class="sb-chips" id="queryChips"></div>
-        </div>
-
         <!-- Platform -->
         <div class="sb-section collapsible">
           <div class="sb-title" id="sbPlatformTitle"></div>
@@ -676,7 +680,7 @@
 
         <!-- Tags -->
         <div class="sb-section">
-          <div class="sb-title"><span id="sbTagTitle"></span> <button class="iv-andor or" id="sbTagMode" type="button" title="複数選択の結合（すべて含む / いずれか）">いずれか</button></div>
+          <div class="sb-title"><span id="sbTagTitle"></span></div>
           <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
@@ -685,6 +689,16 @@
         <div class="sb-section collapsible">
           <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
           <div class="sb-chips" id="postFolderChips"></div>
+        </div>
+
+        <!-- Active-filter bar: pinned to the sidebar bottom; shown only when ≥1 filter is active -->
+        <div id="postActiveBar" class="sb-activebar" style="display:none">
+          <div class="sb-activebar-head">
+            <span class="sb-activebar-title" id="sbActiveTitle"></span>
+            <button class="iv-andor or" id="sbTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">いずれか</button>
+            <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
+          </div>
+          <div class="sb-chips" id="queryChips"></div>
         </div>
       </div>
 

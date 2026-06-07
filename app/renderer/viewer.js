@@ -223,10 +223,16 @@
 
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
+    const bar = document.getElementById('postActiveBar');
+    const tagModeBtn = document.getElementById('sbTagMode');
+    // バーは「アクティブなフィルタが1つでもあれば」だけ出す（無ければ非表示）。
     if (activeFilters.length === 0) {
-      container.innerHTML = `<span style="color:#999;font-size:12px;padding:2px 4px;">${MSG.filterAll}</span>`;
+      container.innerHTML = '';
+      if (bar) bar.style.display = 'none';
       return;
     }
+    if (bar) bar.style.display = '';
+    if (tagModeBtn) tagModeBtn.style.display = activeFilters.some((f) => f.type === 'tag') ? '' : 'none';   // タグ絞り込み中のみ AND/OR
     container.innerHTML = activeFilters.map((f, i) => {
       let label = '';
       let cls = `qc-${f.type}`;
@@ -293,6 +299,21 @@
     renderQueryChips();
     renderPosts();
   }
+
+  // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
+  // タグ結合・日付・エンゲージも含めて消す。renderPosts() が sidebar の active 状態も同期。
+  function resetAllFilters() {
+    activeFilters = [];
+    tagMode = 'or';
+    folderFilter = '';
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
+    const tb = document.getElementById('sbTagMode'); if (tb) { tb.textContent = 'いずれか'; tb.classList.add('or'); }
+    renderQueryChips();
+    renderPostFolders();
+    renderPosts();
+  }
+  document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
 
   // Chip click handler
   document.getElementById('queryChips').addEventListener('click', (e) => {
