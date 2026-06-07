@@ -526,7 +526,8 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(() => {
   if (!SMOKE) ensureHostRegistered();
   registerImageProtocol();
-  createWindow(!SMOKE);
+  const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
+  createWindow(!SMOKE && !startMin);   // start-minimized → create hidden, then show inactive below
   watchSaveFolder();
 
   if (SMOKE) {
@@ -557,9 +558,17 @@ if (!gotSingleInstanceLock) {
     return;
   }
 
-  // Start minimized when launched on the user's behalf (env-gated; a normal
-  // user launch still opens a focused window).
-  if (process.env.CORPUS_START_MINIMIZED === '1' && win) win.minimize();
+  // Start minimized when launched on the user's behalf, WITHOUT stealing focus or
+  // flashing the taskbar button: show inactive (no focus → no FlashWindowEx), then
+  // minimize and explicitly clear any pending attention flash. (A normal launch
+  // opens a focused window.)
+  if (startMin && win) {
+    win.once('ready-to-show', () => {
+      win.showInactive();
+      win.minimize();
+      win.flashFrame(false);
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

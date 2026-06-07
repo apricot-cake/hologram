@@ -29,6 +29,7 @@
   let manualGroups = [];        // 永続: 手動グループ [[captureId,…],…]（manual-groups.json）
   let selectMode = false;       // 選択モード（手動グループ化用）
   const selected = new Set();   // 選択中のグループキー
+  let selectAnchor = null;      // Shift範囲選択の起点（view内インデックス）
 
   // 画像閲覧に出す「実際の絵」のファイル名配列。
   //  - media[] の原本があれば常にそれ（投稿キャプチャの原寸画像・pixiv原寸など＝表示OK）。
@@ -207,7 +208,8 @@
           `<button class="iv-act" data-act="detail" title="詳細">ℹ</button>${openBtn}` +
           `<button class="iv-act del" data-act="del" title="削除">🗑</button>` +
         `</div>` +
-        `<div class="iv-stats"><div class="iv-author">${escapeHtml(author)}</div>${likes ? `<div>${escapeHtml(likes)}</div>` : ''}</div>`;
+        `<div class="iv-stats"><div class="iv-author">${escapeHtml(author)}</div>${likes ? `<div>${escapeHtml(likes)}</div>` : ''}</div>` +
+        `<div class="iv-selcircle" title="選択"></div>`;
       frag.appendChild(card);
     });
     grid.innerHTML = '';
@@ -282,19 +284,36 @@
     $('ivSelCount').textContent = selected.size + ' 件選択';
     $('ivGroupBtn').disabled = selected.size < 2;
   }
+  function clearSelectClasses() { $('ivGrid').querySelectorAll('.iv-card.selected').forEach((c) => c.classList.remove('selected')); }
   function setSelectMode(on) {
     selectMode = on;
-    if (!on) selected.clear();
+    $('ivGrid').classList.toggle('selecting', on);   // CSS: show every ○ while selecting
     $('ivSelectBtn').textContent = on ? '選択終了' : '選択';
     $('ivSelectBtn').classList.toggle('active', on);
     ['ivSelCount', 'ivGroupBtn', 'ivSelClear'].forEach((id) => { $(id).hidden = !on; });
+    if (!on) { selected.clear(); selectAnchor = null; clearSelectClasses(); }
     updateSelBar();
-    render();
   }
   function toggleSelect(g, card) {
     if (selected.has(g.key)) { selected.delete(g.key); card.classList.remove('selected'); }
     else { selected.add(g.key); card.classList.add('selected'); }
     updateSelBar();
+  }
+  // クリック=トグル＋起点更新 / Shift+クリック=起点〜現在を範囲選択（ctrl不要）
+  function selectAt(idx, g, card, shift) {
+    if (shift && selectAnchor != null) {
+      const lo = Math.min(selectAnchor, idx), hi = Math.max(selectAnchor, idx);
+      for (let i = lo; i <= hi; i++) {
+        const gi = view[i]; if (!gi) continue;
+        selected.add(gi.key);
+        const c = $('ivGrid').querySelector('.iv-card[data-idx="' + i + '"]');
+        if (c) c.classList.add('selected');
+      }
+      updateSelBar();
+    } else {
+      toggleSelect(g, card);
+      selectAnchor = idx;
+    }
   }
   function groupSelected() {
     if (selected.size < 2) return;
@@ -305,7 +324,8 @@
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
     persistManual();
-    setSelectMode(false);   // re-renders grouped
+    setSelectMode(false);
+    render();   // 集約後のグリッドを再描画
   }
   function ungroupManual(idx) {
     if (!(idx >= 0 && idx < manualGroups.length)) return;
@@ -384,7 +404,7 @@
     $('ivReset').addEventListener('click', resetFilters);
     $('ivSelectBtn').addEventListener('click', () => setSelectMode(!selectMode));
     $('ivGroupBtn').addEventListener('click', groupSelected);
-    $('ivSelClear').addEventListener('click', () => { selected.clear(); render(); updateSelBar(); });
+    $('ivSelClear').addEventListener('click', () => { selected.clear(); selectAnchor = null; clearSelectClasses(); updateSelBar(); });
 
     // プラットフォームチップ: 単一選択 (同じものを再クリックで解除)。
     $('ivPlatformChips').addEventListener('click', (e) => {
@@ -425,7 +445,14 @@
         else if (act.dataset.act === 'del') doDelete(g);
         return;
       }
-      if (selectMode) { toggleSelect(g, card); return; }   // 選択モード中はクリックで選択トグル
+      // 右下の〇: 押すと選択モードに入る。既に選択モード中はトグル/Shift範囲選択
+      if (e.target.closest('.iv-selcircle')) {
+        e.stopPropagation();
+        if (!selectMode) setSelectMode(true);
+        selectAt(idx, g, card, e.shiftKey);
+        return;
+      }
+      if (selectMode) { selectAt(idx, g, card, e.shiftKey); return; }   // 選択モード中はクリックで選択/Shift範囲選択
       openViewer(idx);
     });
     $('ivPrev').addEventListener('click', () => step(-1));
