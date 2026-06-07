@@ -26,62 +26,37 @@
 
     #panelSettings { max-width: 720px; }
 
-    /* --- Tabs --- */
+    /* --- Tabs (vertical, in the sidebar) --- */
     .tabs {
-      display: flex; gap: 0; margin-bottom: 20px;
-      border-bottom: 2px solid #e0e0e0;
+      display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px;
     }
     .tab-btn {
-      background: none; border: none; border-bottom: 2px solid transparent;
-      padding: 8px 16px; font-size: 14px; font-weight: 500;
-      color: #888; cursor: pointer; margin-bottom: -2px;
-      transition: color 0.15s, border-color 0.15s;
+      background: none; border: none; border-left: 3px solid transparent;
+      padding: 8px 12px; font-size: 14px; font-weight: 500;
+      color: #888; cursor: pointer; text-align: left; border-radius: 0 6px 6px 0;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
     }
-    .tab-btn:hover { color: #555; }
-    .tab-btn.active { color: #1d9bf0; border-bottom-color: #1d9bf0; }
-    /* Floated together with the toolbar via the scroll toggle. */
-    .tabs.floating {
-      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 30;
-      margin: 0; padding: 4px 12px 0;
-      background: #fff; border: 1px solid #ddd; border-radius: 10px;
-      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
-    }
+    .tab-btn:hover { color: #555; background: #ececec; }
+    .tab-btn.active { color: #1d9bf0; border-left-color: #1d9bf0; background: #e8f4fd; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
+    /* Per-tab control set in the sidebar; only the active tab's controls show. */
+    .tab-controls { display: none; }
+    .tab-controls.active { display: block; }
 
-    /* --- Toolbar --- */
+    /* --- Toolbar (stacked in the sidebar) --- */
     .toolbar {
-      display: flex; gap: 8px; align-items: center;
-      margin-bottom: 8px; flex-wrap: wrap;
+      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+      margin-bottom: 8px;
     }
-    /* On scroll the toolbar flows away normally; a top-center pill re-floats it
-       on demand (ported from eagle-info-plus). Closes on outside-click / scroll-to-top. */
-    .toolbar.floating {
-      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 30;
-      margin: 0; padding: 10px 12px;
-      background: #fff; border: 1px solid #ddd; border-radius: 10px;
-      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
-    }
-    #toolbarToggle {
-      position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25;
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 16px; font-size: 12px;
-      background: rgba(255, 255, 255, 0.95); color: #333;
-      border: 1px solid #ddd; border-radius: 18px;
-      cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-      backdrop-filter: blur(4px);
-    }
-    #toolbarToggle:hover { background: #f0f0f0; border-color: #1d9bf0; }
-    #toolbarToggle.open { z-index: 35; border-color: #1d9bf0; color: #1d9bf0; }
-    #toolbarToggle[hidden] { display: none; }
-    #toolbarToggle .tb-chev { display: inline-flex; align-items: center; transition: transform 0.15s; }
-    #toolbarToggle.open .tb-chev { transform: rotate(180deg); }
+    .toolbar select { width: 100%; }
+    .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
     .toolbar-row {
-      display: flex; gap: 6px; align-items: center;
-      margin-bottom: 12px; flex-wrap: wrap;
+      display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+      margin-bottom: 12px;
     }
     .search-box {
-      flex: 1; min-width: 200px;
+      width: 100%; box-sizing: border-box;
       padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
@@ -437,20 +412,20 @@
       z-index: 999; background: transparent;
     }
 
-    /* --- Sidebar layout --- */
-    .posts-layout {
-      display: flex; gap: 24px;
+    /* --- App layout: persistent left sidebar (nav + controls) + content --- */
+    .app-layout {
+      display: flex; gap: 24px; align-items: flex-start;
     }
-    .filter-sidebar {
-      width: 220px; flex-shrink: 0;
+    .app-sidebar {
+      width: 250px; flex-shrink: 0;
       position: sticky; top: 0; align-self: flex-start;
       max-height: 100vh; overflow-y: auto; overflow-x: hidden;
       padding-right: 8px;
     }
-    .filter-sidebar input, .filter-sidebar select {
+    .app-sidebar input, .app-sidebar select {
       max-width: 100%; box-sizing: border-box;
     }
-    .posts-main { flex: 1; min-width: 0; }
+    .app-content { flex: 1; min-width: 0; }
 
     .sb-section {
       background: #fff; border-radius: 8px; padding: 10px 12px;
@@ -519,17 +494,40 @@
   </style>
 </head>
 <body>
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
-    <button class="tab-btn" data-tab="tags" id="tabTags"></button>
-    <button class="tab-btn" data-tab="users" id="tabUsers"></button>
-    <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
-  </div>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
+        <button class="tab-btn" data-tab="tags" id="tabTags"></button>
+        <button class="tab-btn" data-tab="users" id="tabUsers"></button>
+        <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
+      </nav>
 
-  <!-- Posts tab -->
-  <div class="tab-panel active" id="panelPosts">
-    <div class="posts-layout">
-      <aside class="filter-sidebar" id="filterSidebar">
+      <!-- Posts controls -->
+      <div class="tab-controls active" id="controls-posts">
+        <div class="toolbar" id="postsToolbar">
+          <input type="text" class="search-box" id="searchBox">
+          <select id="sortSelect">
+            <option value="date-desc"></option>
+            <option value="date-asc"></option>
+            <option value="likes-desc"></option>
+            <option value="reposts-desc"></option>
+            <option value="replies-desc"></option>
+            <option value="captured-desc"></option>
+          </select>
+          <div class="view-toggle">
+            <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
+            <button data-view="list" id="viewList" title="List">&#9776;</button>
+          </div>
+          <button class="chip" id="selectModeBtn"></button>
+          <span class="post-count" id="postCount"></span>
+        </div>
+        <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
+          <button class="chip" id="selectAllBtn"></button>
+          <span class="post-count" id="selectedCount"></span>
+          <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
+          <button class="chip" id="cancelSelectBtn"></button>
+        </div>
         <!-- Active filters display -->
         <div class="sb-section">
           <div class="sb-title" id="sbActiveTitle"></div>
@@ -603,57 +601,37 @@
           <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
-      </aside>
+      </div>
 
-      <main class="posts-main">
-        <button id="toolbarToggle" hidden>
-          <span class="tb-chev" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6 L8 10 L12 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span class="tb-label"></span>
-        </button>
-        <div class="toolbar" id="postsToolbar">
-          <input type="text" class="search-box" id="searchBox">
-          <select id="sortSelect">
-            <option value="date-desc"></option>
-            <option value="date-asc"></option>
-            <option value="likes-desc"></option>
-            <option value="reposts-desc"></option>
-            <option value="replies-desc"></option>
-            <option value="captured-desc"></option>
-          </select>
-          <div class="view-toggle">
-            <button data-view="grid" id="viewGrid" class="active" title="Grid">&#9638;</button>
-            <button data-view="list" id="viewList" title="List">&#9776;</button>
-          </div>
-          <button class="chip" id="selectModeBtn"></button>
-          <span class="post-count" id="postCount"></span>
-        </div>
-        <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
-          <button class="chip" id="selectAllBtn"></button>
-          <span class="post-count" id="selectedCount"></span>
-          <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
-          <button class="chip" id="cancelSelectBtn"></button>
-        </div>
+      <!-- Hashtags controls -->
+      <div class="tab-controls" id="controls-tags">
+        <input type="text" class="ht-search" id="hashtagSearch">
+      </div>
+
+      <!-- Users controls -->
+      <div class="tab-controls" id="controls-users">
+        <input type="text" class="ht-search" id="userSearch">
+        <div class="sb-chips" id="userPlatformChips"></div>
+      </div>
+    </aside>
+
+    <div class="app-content">
+      <!-- Posts tab -->
+      <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
         <div id="emptyState" class="empty-state" style="display:none;"></div>
         <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
-      </main>
-    </div>
-  </div>
+      </div>
 
-  <!-- Hashtags tab -->
-  <div class="tab-panel" id="panelTags">
-    <input type="text" class="ht-search" id="hashtagSearch">
-    <div id="hashtagList" class="hashtag-list"></div>
-  </div>
+      <!-- Hashtags tab -->
+      <div class="tab-panel" id="panelTags">
+        <div id="hashtagList" class="hashtag-list"></div>
+      </div>
 
-  <!-- Users tab -->
-  <div class="tab-panel" id="panelUsers">
-    <div class="users-controls">
-      <input type="text" class="ht-search" id="userSearch">
-      <div class="sb-chips" id="userPlatformChips"></div>
-    </div>
-    <div id="userList" class="user-list"></div>
-  </div>
+      <!-- Users tab -->
+      <div class="tab-panel" id="panelUsers">
+        <div id="userList" class="user-list"></div>
+      </div>
 
   <!-- Settings tab -->
   <div class="tab-panel" id="panelSettings">
@@ -699,6 +677,8 @@
       <button class="btn-danger" id="clearData"></button>
     </div>
 
+      </div>
+    </div>
   </div>
 
   <!-- Delete confirmation -->

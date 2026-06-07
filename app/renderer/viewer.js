@@ -20,8 +20,6 @@
     tabUsers: _s('tabUsers'),
     searchUsers: _s('searchUsers'),
     emptyUsers: _s('emptyUsers'),
-    barOpen: _s('barOpen'),
-    barClose: _s('barClose'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -666,13 +664,16 @@
   // --- Tabs ---
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(`panel${capitalize(btn.dataset.tab)}`).classList.add('active');
-      if (btn.dataset.tab === 'tags') renderHashtags();
-      if (btn.dataset.tab === 'users') renderUsers();
-      updateTopbar();
+      document.getElementById(`panel${capitalize(tab)}`).classList.add('active');
+      // The per-tab controls live in the sidebar; show only the active tab's set.
+      document.querySelectorAll('.tab-controls').forEach(c => c.classList.remove('active'));
+      const ctrl = document.getElementById(`controls-${tab}`);
+      if (ctrl) ctrl.classList.add('active');
+      if (tab === 'tags') renderHashtags();
+      if (tab === 'users') renderUsers();
     });
   });
 
@@ -792,57 +793,6 @@
     addFilter({ type: 'user', value: row.dataset.userKey, label: row.dataset.userLabel });
   });
 
-  // --- Toolbar scroll behaviour (ported from eagle-info-plus) ---
-  // On the Posts tab the toolbar scrolls away normally; once scrolled past the
-  // top, a centered pill lets you re-float it as a card on demand. It closes when
-  // you click outside it or scroll back to the top.
-  const tabsEl = document.querySelector('.tabs');
-  const panelPostsEl = document.getElementById('panelPosts');
-  const postsToolbar = document.getElementById('postsToolbar');
-  const toolbarToggle = document.getElementById('toolbarToggle');
-  const tbLabel = toolbarToggle.querySelector('.tb-label');
-  let tbFloating = false;
-  function updateTopbar() {
-    const scrolled = window.scrollY > 48;
-    if (!scrolled) {
-      tbFloating = false;
-      tabsEl.classList.remove('floating');
-      postsToolbar.classList.remove('floating');
-      postsToolbar.style.top = '';
-      toolbarToggle.hidden = true;
-      toolbarToggle.style.top = '';
-      return;
-    }
-    const onPosts = panelPostsEl.classList.contains('active');
-    toolbarToggle.hidden = false;
-    toolbarToggle.classList.toggle('open', tbFloating);
-    tbLabel.textContent = tbFloating ? MSG.barClose : MSG.barOpen;
-    // Float the tabs always, and the toolbar too when on the Posts tab; stack
-    // them (tabs, then toolbar, then the toggle pill just below the lowest one).
-    tabsEl.classList.toggle('floating', tbFloating);
-    postsToolbar.classList.toggle('floating', tbFloating && onPosts);
-    if (tbFloating) {
-      let bottom = tabsEl.getBoundingClientRect().bottom;
-      if (onPosts) {
-        postsToolbar.style.top = (bottom + 8) + 'px';
-        bottom = postsToolbar.getBoundingClientRect().bottom;
-      } else {
-        postsToolbar.style.top = '';
-      }
-      toolbarToggle.style.top = (bottom + 8) + 'px';
-    } else {
-      postsToolbar.style.top = '';
-      toolbarToggle.style.top = '';
-    }
-  }
-  window.addEventListener('scroll', updateTopbar, { passive: true });
-  toolbarToggle.addEventListener('click', (e) => { e.stopPropagation(); tbFloating = !tbFloating; updateTopbar(); });
-  document.addEventListener('click', (e) => {
-    if (tbFloating && !tabsEl.contains(e.target) && !postsToolbar.contains(e.target) && !toolbarToggle.contains(e.target)) {
-      tbFloating = false;
-      updateTopbar();
-    }
-  });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
