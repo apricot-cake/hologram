@@ -411,6 +411,9 @@ function getSiteConfig() {
       getPermalink(post) {
         return getPixivPermalink(post);
       },
+      getCaptureRect(post) {
+        return getPixivCaptureRect(post);
+      },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
       }
@@ -424,47 +427,69 @@ function getSiteConfig() {
 // pximg URL filename embeds the artwork id: <id>_p<N>_<size>.<ext>.
 const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
 
-// Resolve the artwork id for an element's subtree (or itself): prefer a pximg
-// <img> (unambiguous even on user/search pages), then an /artworks/ link.
-function getPixivArtworkId(scope) {
-  if (!(scope instanceof Element)) return null;
-  const imgs = scope.matches('img') ? [scope] : Array.from(scope.querySelectorAll('img'));
-  for (const im of imgs) {
-    for (const src of [im.src, im.currentSrc]) {
-      const m = src && src.match(PXIMG_FILENAME);
-      if (m) return m[1];
-    }
-  }
-  const link = scope.matches('a[href*="/artworks/"]') ? scope
-    : (scope.querySelector('a[href*="/artworks/"]') || scope.closest('a[href*="/artworks/"]'));
-  if (link) {
-    const m = (link.getAttribute('href') || '').match(/\/artworks\/(\d+)/);
+function pixivIdFromImg(img) {
+  if (!(img instanceof Element)) return null;
+  for (const src of [img.src, img.currentSrc]) {
+    const m = src && src.match(PXIMG_FILENAME);
     if (m) return m[1];
   }
   return null;
 }
 
-// Pick the element to highlight/capture: the artwork <figure> on the work page,
-// the thumbnail's /artworks/ link on listing/grid pages, else the nearest
-// ancestor that resolves to an artwork.
-function findPixivPostElement(target) {
+function pixivIdFromArtworkLink(link) {
+  if (!(link instanceof Element)) return null;
+  const m = (link.getAttribute('href') || '').match(/\/artworks\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+// Resolve { id, el } anchored at the click/hover TARGET, walking UP via closest()
+// — never scanning a wide scope's descendants by document order, which on a
+// multi-artwork grid would pick a neighbor (the first pximg in DOM order) rather
+// than the clicked one. (This is the wrong-neighbor bug eagle-info-plus fixed with
+// treeDistance; anchoring at the target with closest() avoids it by construction.)
+// Priority: the target's own pximg image (unambiguous) → nearest enclosing
+// /artworks/ link → the nearest <figure>'s main image → the /artworks/ URL bar.
+function resolvePixivTarget(target) {
   let el = target instanceof Element ? target : target?.parentElement;
   if (!el) return null;
-  const fig = el.closest('figure');
-  if (fig && getPixivArtworkId(fig)) return fig;
+
+  const img = el.matches('img') ? el : el.closest('img');
+  const idFromImg = pixivIdFromImg(img);
+  if (idFromImg) return { id: idFromImg, el: img };
+
   const link = el.closest('a[href*="/artworks/"]');
-  if (link && getPixivArtworkId(link)) return link;
-  let cur = el;
-  while (cur && cur !== document.body) {
-    if (getPixivArtworkId(cur)) return cur;
-    cur = cur.parentElement;
+  const idFromLink = pixivIdFromArtworkLink(link);
+  if (idFromLink) return { id: idFromLink, el: link };
+
+  const fig = el.closest('figure');
+  if (fig) {
+    const figImg = fig.querySelector('img');
+    const idFromFig = pixivIdFromImg(figImg);
+    if (idFromFig) return { id: idFromFig, el: figImg || fig };
   }
+
+  const locId = (location.pathname.match(/\/artworks\/(\d+)/) || [])[1];
+  if (locId) return { id: locId, el: fig || el };
   return null;
 }
 
+function findPixivPostElement(target) {
+  return resolvePixivTarget(target)?.el || null;
+}
+
+// post is the element findPixivPostElement returned; re-resolving from it yields
+// the same id (consistent with what was highlighted/clicked).
 function getPixivPermalink(post) {
-  const id = getPixivArtworkId(post) || (location.pathname.match(/\/artworks\/(\d+)/) || [])[1];
-  return id ? `https://www.pixiv.net/artworks/${id}` : '';
+  const r = resolvePixivTarget(post);
+  return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
+}
+
+// Capture the artwork image itself, not an oversized enclosing <figure>.
+function getPixivCaptureRect(post) {
+  let img = null;
+  if (post && post.matches && post.matches('img')) img = post;
+  else if (post && post.querySelector) img = post.querySelector('img');
+  return normalizeRect((img || post).getBoundingClientRect());
 }
 
 function getXPostLink(post) {
