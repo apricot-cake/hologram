@@ -168,10 +168,11 @@
     grid.appendChild(frag);
   }
 
-  // === inspector (選択タイルのメタデータ) ===
-  function showInspector(p) {
+  // === detail popup (ℹボタン → 中央モーダル。サイドバーでも新規ウィンドウでもない) ===
+  function closeDetail() { $('ivDetail').hidden = true; $('ivDetailBox').innerHTML = ''; }
+  function showDetail(p) {
     if (!p) return;
-    const insp = $('ivInspector');
+    const box = $('ivDetailBox');
     const files = recordImageFiles(p);
     const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${k}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
     const eng = [];
@@ -185,10 +186,10 @@
       ? `<div class="iv-insp-row"><span class="iv-insp-k">タグ</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
       : '';
     const heading = p.title || p.text || '';
-    insp.innerHTML =
+    box.innerHTML =
       `<button class="iv-insp-close" id="ivInspClose" title="閉じる">×</button>` +
       (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
-      `<img class="iv-insp-thumb" src="${thumbUrl(files[0])}" alt="">` +
+      (files.length ? `<img class="iv-insp-thumb" src="${thumbUrl(files[0])}" alt="">` : '') +
       row('プラットフォーム', (p.platform || '').toUpperCase()) +
       row('作者', p.displayName || '') +
       row('ユーザー', p.screenName ? '@' + p.screenName : '') +
@@ -199,8 +200,8 @@
       row('画像数', files.length > 1 ? files.length + ' 枚' : '') +
       tagsHtml +
       (p.url ? `<a class="iv-insp-open" id="ivInspOpen">元投稿を開く ↗</a>` : '');
-    insp.hidden = false;
-    const c = $('ivInspClose'); if (c) c.onclick = () => { insp.hidden = true; };
+    $('ivDetail').hidden = false;
+    const c = $('ivInspClose'); if (c) c.onclick = closeDetail;
     const o = $('ivInspOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
   }
 
@@ -209,7 +210,7 @@
     if (!target) return;
     if (!window.confirm('この画像を削除しますか？（取り消せません）')) return;
     try { await window.corpus.deletePost(target); } catch { /* ignore */ }
-    const insp = $('ivInspector'); if (insp) insp.hidden = true;
+    closeDetail();
     await refresh();
   }
 
@@ -301,7 +302,7 @@
       if (act) {
         e.stopPropagation();
         if (act.dataset.act === 'open' && p && p.url) window.corpus.openExternal(p.url);
-        else if (act.dataset.act === 'detail') showInspector(p);
+        else if (act.dataset.act === 'detail') showDetail(p);
         else if (act.dataset.act === 'del') doDelete(p);
         return;
       }
@@ -310,7 +311,9 @@
     $('ivPrev').addEventListener('click', () => step(-1));
     $('ivNext').addEventListener('click', () => step(1));
     $('ivViewer').addEventListener('click', (e) => { if (e.target === $('ivViewer') || e.target === $('ivViewerImg')) closeViewer(); });
+    $('ivDetail').addEventListener('click', (e) => { if (e.target === $('ivDetail')) closeDetail(); });  // backdrop click closes popup
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('ivDetail').hidden) { closeDetail(); return; }
       if ($('ivViewer').hidden) return;
       if (e.key === 'Escape') closeViewer();
       else if (e.key === 'ArrowLeft') step(-1);

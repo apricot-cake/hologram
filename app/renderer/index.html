@@ -782,8 +782,11 @@
         <div id="ivGrid" class="iv-grid"></div>
         <div id="ivEmpty" class="iv-empty" style="display:none">画像がありません</div>
       </div>
+    </div>
 
-      <aside id="ivInspector" class="iv-inspector" hidden></aside>
+    <!-- Detail popup (ℹ button) — centered modal, not a sidebar -->
+    <div id="ivDetail" class="iv-detail-overlay" hidden>
+      <div class="iv-detail-box" id="ivDetailBox"></div>
     </div>
 
     <div id="ivViewer" class="iv-viewer" hidden>
@@ -896,14 +899,17 @@
     .iv-count { color: var(--muted); font-size: 12px; }
     .iv-empty { padding: 60px 20px; text-align: center; color: var(--muted); }
 
-    /* Inspector (selected-tile metadata), slides in on the detail (ℹ) action. */
-    .iv-inspector {
-      width: 288px; flex-shrink: 0; position: sticky; top: 16px; align-self: flex-start;
-      max-height: calc(100vh - 32px); overflow-y: auto;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-      padding: 14px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    /* Detail popup (ℹ action): centered modal over a dim backdrop, not a sidebar. */
+    .iv-detail-overlay {
+      position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center; padding: 24px;
     }
-    .iv-inspector[hidden] { display: none; }
+    .iv-detail-overlay[hidden] { display: none; }
+    .iv-detail-box {
+      background: var(--surface); color: var(--fg); border-radius: 12px;
+      padding: 18px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto;
+      font-size: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
     .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
     .iv-insp-close:hover { color: var(--fg); }
     .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
