@@ -14,7 +14,14 @@
   // Tiles request a downscaled thumbnail (main resizes + caches) so scrolling a
   // grid of full-resolution originals stays smooth. The fullscreen viewer uses
   // the full-res imgUrl. 480px is sharp up to the max tile size with one cache size.
-  const thumbUrl = (file) => imgUrl(file) + '?w=720';
+  // 表示中のタイル一辺×DPR 相当の幅でサムネを要求する。原画→固定幅サムネをブラウザが
+  // 小さいセルへ大幅縮小すると線画でエッジがジャギる主因になるため、main 側に best 品質で
+  // 「表示サイズに近い解像度」へ縮小させる。60px刻みでキャッシュ種別を抑える。
+  function thumbW() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    return Math.min(960, Math.max(180, Math.ceil((tileSize * dpr) / 60) * 60));
+  }
+  const thumbUrl = (file) => imgUrl(file) + '?w=' + thumbW();
 
   let allPosts = [];
   let view = [];     // 現在表示中の (フィルタ+ソート済) レコード配列
@@ -202,7 +209,7 @@
       // 📁 = add this tile to the default folder in one click (hover → click). 'in' if already there.
       const hasDefault = !!(CF() && CF().defaultId());
       const inDefault = CF() && CF().inDefault(p.captureId);
-      const foldBtn = `<button class="iv-act fold${inDefault ? ' in' : ''}" data-act="fold" title="${hasDefault ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}">📁</button>`;
+      const foldBtn = `<button class="iv-act fold${inDefault ? ' in' : ''}" data-act="fold" title="${hasDefault ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>`;
       const playOverlay = (g.isVideo || p.mediaType === 'gif')
         ? `<div class="iv-play"><span>${g.isVideo ? '▶' : 'GIF'}</span></div>` : '';
       const card = document.createElement('div');
@@ -296,13 +303,11 @@
   function renderFolderFilter() {
     const host = $('ivFolderChips'); if (!host) return;
     const cf = CF(); const list = cf ? cf.all() : [];
-    const def = cf ? cf.defaultId() : null;
     const existing = new Set(allPosts.filter((p) => recordImageFiles(p).length || p.video).map((p) => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
     host.innerHTML = list.map((f) => {
       const n = f.items.filter((c) => existing.has(c)).length;
-      const star = f.id === def ? '<span class="iv-foldstar">★</span>' : '';
-      return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   // タイルの 📁 ワンクリック: デフォルトフォルダへ追加/解除（グループ全レコードに適用）。
@@ -503,7 +508,10 @@
       $('ivTileMinus').disabled = tileSize <= TILE_MIN;
       $('ivTilePlus').disabled = tileSize >= TILE_MAX;
     };
-    const stepTile = (d) => { tileSize += d; applyTile(); if (window.corpus.setPref) window.corpus.setPref('imageTileSize', tileSize).catch(() => { /* best-effort */ }); };
+    const stepTile = (d) => {
+      tileSize += d; applyTile(); render();   // re-render so tiles re-request a thumb at the new display size (sharper, less aliasing)
+      if (window.corpus.setPref) window.corpus.setPref('imageTileSize', tileSize).catch(() => { /* best-effort */ });
+    };
     $('ivTileMinus').addEventListener('click', () => stepTile(-TILE_STEP));
     $('ivTilePlus').addEventListener('click', () => stepTile(TILE_STEP));
     applyTile();

@@ -484,15 +484,20 @@
     }
     .app-content { flex: 1; min-width: 0; }
 
-    .sb-section {
-      background: #fff; border-radius: 8px; padding: 10px 12px;
-      margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    }
+    /* フラットなサイドバー: セクションごとの白カード/影は低コントラストでノイズだったので撤去。
+       見出し(sb-title)だけでグループを区切る。 */
+    .sb-section { padding: 6px 2px; margin-bottom: 6px; }
     .sb-title {
       font-size: 11px; font-weight: 600; color: #888;
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 6px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
+    .sb-manage-link {
+      font-size: 10px; font-weight: 500; color: var(--accent); background: none; border: none;
+      cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0;
+    }
+    .sb-manage-link:hover { text-decoration: underline; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 8px;
@@ -672,9 +677,8 @@
 
         <!-- Folders (shared with image-view via folders.json) -->
         <div class="sb-section">
-          <div class="sb-title">フォルダ</div>
+          <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
           <div class="sb-chips" id="postFolderChips"></div>
-          <button class="iv-folder-manage" id="postFolderManage" type="button">フォルダを管理…</button>
         </div>
       </div>
 
@@ -732,9 +736,8 @@
         </div>
       </div>
       <div class="sb-section" id="ivFolderSection">
-        <div class="sb-title">フォルダ</div>
+        <div class="sb-title">フォルダ <button class="sb-manage-link" id="ivFolderManage" type="button">管理</button></div>
         <div class="sb-chips" id="ivFolderChips"></div>
-        <button class="iv-folder-manage" id="ivFolderManage" type="button">フォルダを管理…</button>
       </div>
       <div class="sb-section" id="ivTagSection" style="display:none">
         <div class="sb-title">タグ <button class="iv-andor" id="ivTagMode" type="button" title="複数選択の結合（すべて含む / いずれか）">すべて含む</button></div>

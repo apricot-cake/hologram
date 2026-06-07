@@ -49,7 +49,7 @@ const evalJs = `(async () => {
   document.getElementById('ivFolderCreate').click();
   await new Promise(r => setTimeout(r, 50));
   const chips = document.querySelectorAll('#postFolderChips .sb-chip').length;
-  const hasStar = !!document.querySelector('#postFolderChips .iv-foldstar');
+  const noStar = !document.querySelector('#postFolderChips .iv-foldstar');   // ★ removed from chips
   document.getElementById('ivFolderClose').click();
 
   // one-click add the first card to the (now default) folder via its 📁
@@ -87,7 +87,7 @@ const evalJs = `(async () => {
   const afterDelete = grid.querySelectorAll('.post-card').length;
   const chipsGone = document.querySelectorAll('#postFolderChips .sb-chip').length;
 
-  return { totalBefore, modalOpen, chips, hasStar, foldIn, countText, filteredCount,
+  return { totalBefore, modalOpen, chips, noStar, foldIn, countText, filteredCount,
     persistedFolders, persistedItems, persistedDefault, afterUnfilter, afterDelete, chipsGone };
 })()`;
 
@@ -104,11 +104,11 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.totalBefore === 3 && r.modalOpen === true && r.chips === 1 && r.hasStar === true &&
+  const ok = r.totalBefore === 3 && r.modalOpen === true && r.chips === 1 && r.noStar === true &&
     r.foldIn === true && r.countText === '1' && r.filteredCount === 1 &&
     r.persistedFolders === 1 && r.persistedItems === 1 && r.persistedDefault === true &&
     r.afterUnfilter === 0 && r.afterDelete === 3 && r.chipsGone === 0;
-  console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} star=${r.hasStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault} unfilter=${r.afterUnfilter} delete=${r.afterDelete} chipsGone=${r.chipsGone}`);
+  console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} noStar=${r.noStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault} unfilter=${r.afterUnfilter} delete=${r.afterDelete} chipsGone=${r.chipsGone}`);
   console.log(ok ? 'POST_FOLDERS_TEST_PASS' : 'POST_FOLDERS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
