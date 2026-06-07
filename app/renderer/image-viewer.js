@@ -7,6 +7,10 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const imgUrl = (file) => 'psimg://img/' + encodeURIComponent(file);
+  // Tiles request a downscaled thumbnail (main resizes + caches) so scrolling a
+  // grid of full-resolution originals stays smooth. The fullscreen viewer uses
+  // the full-res imgUrl. 480px is sharp up to the max tile size with one cache size.
+  const thumbUrl = (file) => imgUrl(file) + '?w=480';
 
   let allPosts = [];
   let view = [];     // 現在表示中の (フィルタ+ソート済) レコード配列
@@ -15,14 +19,16 @@
   let vItems = [];   // 全画面ビューアで開いているレコードの画像URL配列
   let vIdx = 0;
 
-  // 実画像: 原本 media[] があれば優先、無ければ image (スクショ or 原画)。
-  function recordImages(p) {
+  // 実画像のファイル名配列: 原本 media[] があれば優先、無ければ image (スクショ or 原画)。
+  function recordImageFiles(p) {
     if (Array.isArray(p.media) && p.media.length) {
-      const files = p.media.filter((m) => m && m.file).map((m) => imgUrl(m.file));
+      const files = p.media.filter((m) => m && m.file).map((m) => m.file);
       if (files.length) return files;
     }
-    return p.image ? [imgUrl(p.image)] : [];
+    return p.image ? [p.image] : [];
   }
+  // 全画面ビューア用の原寸 URL 配列。
+  function recordImages(p) { return recordImageFiles(p).map(imgUrl); }
 
   function fmtNum(n) {
     if (n == null) return '';
@@ -37,7 +43,7 @@
     const q = ($('ivSearch').value || '').trim().toLowerCase();
     const pf = $('ivPlatform').value;
     const sort = $('ivSort').value;
-    let list = allPosts.filter((p) => recordImages(p).length); // 描画できる画像がある物だけ
+    let list = allPosts.filter((p) => recordImageFiles(p).length); // 描画できる画像がある物だけ
     if (pf) list = list.filter((p) => p.platform === pf);
     if (q) {
       list = list.filter((p) =>
@@ -63,16 +69,16 @@
     $('ivEmpty').style.display = 'none';
     const frag = document.createDocumentFragment();
     view.forEach((p, i) => {
-      const imgs = recordImages(p);
+      const files = recordImageFiles(p);
       const badges = [`<span class="iv-badge ${escapeHtml(p.platform || '')}">${escapeHtml((p.platform || '').toUpperCase())}</span>`];
-      if (imgs.length > 1) badges.push(`<span class="iv-badge count">×${imgs.length}</span>`);
+      if (files.length > 1) badges.push(`<span class="iv-badge count">×${files.length}</span>`);
       const author = p.displayName || p.screenName || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const card = document.createElement('div');
       card.className = 'iv-card';
       card.dataset.idx = String(i);
       card.innerHTML =
-        `<img src="${imgs[0]}" alt="" loading="lazy">` +
+        `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">` +
         `<div class="iv-badges">${badges.join('')}</div>` +
         `<div class="iv-stats"><div class="iv-author">${escapeHtml(author)}</div>${likes ? `<div>${escapeHtml(likes)}</div>` : ''}</div>`;
       frag.appendChild(card);

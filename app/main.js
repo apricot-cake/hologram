@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -120,6 +120,33 @@ function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
 }
 
+// Thumbnails: the image-view tile grid downscaled full-resolution originals
+// (multi-MB pixiv/X art) into ~180px cells, which made scrolling stutter as the
+// GPU decoded every full image. Instead serve a resized JPEG via psimg://…?w=N,
+// generated once with Electron's built-in nativeImage and cached on disk
+// (keyed by name + mtime + width, so re-migration invalidates it). The
+// full-resolution original is still served when no ?w= is given (lightbox/viewer).
+const THUMB_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
+
+async function getThumbnail(resolved, name, w) {
+  if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
+  let st;
+  try { st = await fs.promises.stat(resolved); } catch { return null; }
+  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.jpg`.replace(/[^\w.\-]/g, '_');
+  const cachePath = path.join(thumbCacheDir(), key);
+  try { return await fs.promises.readFile(cachePath); } catch { /* cache miss */ }
+  try {
+    let img = nativeImage.createFromPath(resolved);
+    if (img.isEmpty()) return null;
+    if (img.getSize().width > w) img = img.resize({ width: w, quality: 'good' });
+    const buf = img.toJPEG(78);
+    fs.promises.mkdir(thumbCacheDir(), { recursive: true })
+      .then(() => fs.promises.writeFile(cachePath, buf)).catch(() => { /* cache best-effort */ });
+    return buf;
+  } catch { return null; }
+}
+
 function registerImageProtocol() {
   protocol.handle('psimg', async (request) => {
     try {
@@ -134,6 +161,13 @@ function registerImageProtocol() {
       const resolved = path.resolve(filePath);
       if (!resolved.startsWith(path.resolve(folder))) {
         return new Response('Forbidden', { status: 403 });
+      }
+
+      const w = parseInt(url.searchParams.get('w') || '', 10);
+      if (Number.isFinite(w) && w >= 64 && w <= 720) {
+        const thumb = await getThumbnail(resolved, name, w);
+        if (thumb) return new Response(thumb, { headers: { 'content-type': 'image/jpeg' } });
+        // fall through to the original if thumbnailing failed
       }
 
       const data = await fs.promises.readFile(resolved);
