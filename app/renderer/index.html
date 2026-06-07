@@ -498,6 +498,11 @@
       cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0;
     }
     .sb-manage-link:hover { text-decoration: underline; }
+    /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
+    .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; }
+    .sb-section.collapsible > .sb-title::before { content: '▾'; font-size: 9px; color: var(--muted); margin-right: 5px; display: inline-block; }
+    .sb-section.collapsible.collapsed > .sb-title::before { content: '▸'; }
+    .sb-section.collapsed > :not(.sb-title) { display: none; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 8px;
@@ -607,7 +612,7 @@
         </div>
 
         <!-- Platform -->
-        <div class="sb-section">
+        <div class="sb-section collapsible">
           <div class="sb-title" id="sbPlatformTitle"></div>
           <div class="sb-chips">
             <button class="sb-chip" data-filter-type="platform" data-filter-value="x">X</button>
@@ -623,7 +628,7 @@
         </div>
 
         <!-- Post type -->
-        <div class="sb-section">
+        <div class="sb-section collapsible">
           <div class="sb-title" id="sbPostTypeTitle"></div>
           <div class="sb-chips">
             <button class="sb-chip" data-filter-type="postType" data-filter-value="post" id="sbPost"></button>
@@ -676,7 +681,7 @@
         </div>
 
         <!-- Folders (shared with image-view via folders.json) -->
-        <div class="sb-section">
+        <div class="sb-section collapsible">
           <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
           <div class="sb-chips" id="postFolderChips"></div>
         </div>
@@ -699,7 +704,7 @@
       <div class="sb-section">
         <input type="search" id="ivSearch" class="search-box" placeholder="検索（作者・本文・タグ）">
       </div>
-      <div class="sb-section">
+      <div class="sb-section collapsible">
         <div class="sb-title">プラットフォーム</div>
         <div class="sb-chips" id="ivPlatformChips">
           <button class="sb-chip" data-pf="x">X</button>
@@ -730,12 +735,11 @@
         <div class="iv-tilewrap"><span>タイルサイズ</span>
           <div class="iv-tilebtns">
             <button id="ivTileMinus" type="button" title="小さく">−</button>
-            <span id="ivTileVal">180</span>
             <button id="ivTilePlus" type="button" title="大きく">＋</button>
           </div>
         </div>
       </div>
-      <div class="sb-section" id="ivFolderSection">
+      <div class="sb-section collapsible" id="ivFolderSection">
         <div class="sb-title">フォルダ <button class="sb-manage-link" id="ivFolderManage" type="button">管理</button></div>
         <div class="sb-chips" id="ivFolderChips"></div>
       </div>

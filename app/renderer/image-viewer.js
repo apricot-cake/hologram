@@ -504,7 +504,6 @@
     const applyTile = () => {
       tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, tileSize));
       $('mode-image').style.setProperty('--iv-tile', tileSize + 'px');
-      $('ivTileVal').textContent = String(tileSize);
       $('ivTileMinus').disabled = tileSize <= TILE_MIN;
       $('ivTilePlus').disabled = tileSize >= TILE_MAX;
     };

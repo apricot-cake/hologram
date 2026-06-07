@@ -32,6 +32,16 @@
   postBtn.addEventListener('click', () => setMode('post'));
   imgBtn.addEventListener('click', () => setMode('image'));
 
+  // Collapsible sidebar sections (.sb-section.collapsible): click the title to fold
+  // its chips. Controls inside the title (管理 link / AND-OR toggle) are ignored.
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) sidebar.addEventListener('click', (e) => {
+    const title = e.target.closest('.sb-title');
+    if (!title || e.target.closest('button, a, input, select')) return;
+    const section = title.closest('.sb-section.collapsible');
+    if (section) section.classList.toggle('collapsed');
+  });
+
   // Restore the last-opened mode (default: post). persist=false so restoring
   // doesn't itself write the pref.
   (async () => {
