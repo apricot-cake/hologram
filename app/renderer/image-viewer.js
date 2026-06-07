@@ -45,6 +45,39 @@
   // 全画面ビューア用の原寸 URL 配列。
   function recordImages(p) { return recordImageFiles(p).map(imgUrl); }
 
+  // 投稿の一意キー（同じ投稿の複数画像＝別レコードを1タイルにまとめるため）。
+  // metadata.js parsePostUrl と同じURLパターンを踏襲（renderer 用の自前実装）。null=グループ化しない。
+  function postKeyOf(url) {
+    if (!url) return null;
+    let u; try { u = new URL(url); } catch { return null; }
+    const host = u.hostname, pa = u.pathname; let m;
+    if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
+    if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
+    if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
+    if ((m = pa.match(/^\/notes\/([^/?#]+)/))) return 'misskey:' + host + ':' + m[1];
+    if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = pa.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) return 'pixiv:' + m[1];
+    return null;
+  }
+
+  // 同じ投稿(postKey)のレコードを1グループに集約。url無し/parse不可は各自単独グループ。
+  // グループ内のページ順は captureId（≒保存順）でソート。返り値: [{ rep, records[], files[], isVideo }]
+  function groupRecords(list) {
+    const map = new Map(); const order = []; let solo = 0;
+    for (const p of list) {
+      const key = postKeyOf(p.url) || ('__solo' + (solo++));
+      let g = map.get(key);
+      if (!g) { g = { records: [] }; map.set(key, g); order.push(g); }
+      g.records.push(p);
+    }
+    for (const g of order) {
+      g.records.sort((a, b) => String(a.captureId || '').localeCompare(String(b.captureId || '')));
+      g.rep = g.records[0];
+      g.files = g.records.flatMap(recordImageFiles);
+      g.isVideo = g.records.length === 1 && !!g.rep.video;
+    }
+    return order;
+  }
+
   function fmtNum(n) {
     if (n == null) return '';
     return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'K' : String(n);
@@ -75,7 +108,6 @@
     let list = allPosts.filter((p) => recordImageFiles(p).length || p.video); // 描画できる画像、または動画(ポスター無しでも)
     if (state.platform) list = list.filter((p) => p.platform === state.platform);
     if (state.minLikes > 0) list = list.filter((p) => (p.likes || 0) >= state.minLikes);
-    if (state.multiOnly) list = list.filter((p) => recordImageFiles(p).length > 1);
     if (state.tags.size) {
       list = list.filter((p) => {                          // AND: must have every selected tag
         const ts = new Set(p.tags || []);
@@ -132,27 +164,29 @@
   }
 
   function render() {
-    view = applyFilters();
+    let groups = groupRecords(applyFilters());          // 同一投稿の複数画像を1タイルに集約
+    if (state.multiOnly) groups = groups.filter((g) => g.files.length > 1);
+    view = groups;
     const grid = $('ivGrid');
     $('ivCount').textContent = view.length + ' 件';
     if (!view.length) { grid.innerHTML = ''; $('ivEmpty').style.display = 'block'; return; }
     $('ivEmpty').style.display = 'none';
     const frag = document.createDocumentFragment();
-    view.forEach((p, i) => {
-      const files = recordImageFiles(p);
+    view.forEach((g, i) => {
+      const p = g.rep;
       const badges = [`<span class="iv-badge ${escapeHtml(p.platform || '')}">${escapeHtml((p.platform || '').toUpperCase())}</span>`];
-      if (files.length > 1) badges.push(`<span class="iv-badge count">×${files.length}</span>`);
+      if (g.files.length > 1) badges.push(`<span class="iv-badge count">×${g.files.length}</span>`);
       const author = p.displayName || p.screenName || p.title || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
-      const playOverlay = (p.mediaType === 'video' || p.mediaType === 'gif')
-        ? `<div class="iv-play"><span>${p.mediaType === 'gif' ? 'GIF' : '▶'}</span></div>` : '';
+      const playOverlay = (g.isVideo || p.mediaType === 'gif')
+        ? `<div class="iv-play"><span>${g.isVideo ? '▶' : 'GIF'}</span></div>` : '';
       const card = document.createElement('div');
       card.className = 'iv-card';
       card.dataset.idx = String(i);
-      // poster-less video (e.g. recovered orphan mp4): no thumbnail to show → placeholder tile.
-      const thumb = files.length
-        ? `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">`
+      // poster-less video (recovered orphan mp4): no thumbnail to show → placeholder tile.
+      const thumb = g.files.length
+        ? `<img src="${thumbUrl(g.files[0])}" alt="" loading="lazy" decoding="async">`
         : `<div class="iv-noposter"></div>`;
       card.innerHTML =
         thumb + playOverlay +
@@ -170,10 +204,11 @@
 
   // === detail popup (ℹボタン → 中央モーダル。サイドバーでも新規ウィンドウでもない) ===
   function closeDetail() { $('ivDetail').hidden = true; $('ivDetailBox').innerHTML = ''; }
-  function showDetail(p) {
-    if (!p) return;
+  function showDetail(g) {
+    if (!g) return;
+    const p = g.rep;
     const box = $('ivDetailBox');
-    const files = recordImageFiles(p);
+    const files = g.files;
     const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${k}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
     const eng = [];
     if (p.likes != null) eng.push('❤ ' + fmtNum(p.likes));
@@ -205,22 +240,27 @@
     const o = $('ivInspOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
   }
 
-  async function doDelete(p) {
-    const target = p && (p.image || p.video);     // poster-less videos have no image; delete by video
-    if (!target) return;
-    if (!window.confirm('この画像を削除しますか？（取り消せません）')) return;
-    try { await window.corpus.deletePost(target); } catch { /* ignore */ }
+  async function doDelete(g) {
+    const records = g && g.records ? g.records : (g ? [g] : []);   // group → all its records
+    if (!records.length) return;
+    const n = records.length;
+    const msg = n > 1 ? `この投稿（${n}枚）を削除しますか？（取り消せません）` : 'この画像を削除しますか？（取り消せません）';
+    if (!window.confirm(msg)) return;
+    for (const r of records) {
+      const target = r.image || r.video;           // poster-less videos have no image; delete by video
+      if (target) { try { await window.corpus.deletePost(target); } catch { /* ignore */ } }
+    }
     closeDetail();
     await refresh();
   }
 
   // === 全画面ビューア ===
   let vIsVideo = false;
-  function openViewer(recIdx) {
-    const p = view[recIdx];
-    if (!p) return;
-    if (p.video) { vItems = [imgUrl(p.video)]; vIsVideo = true; }   // 動画は原寸で再生
-    else { vItems = recordImages(p); vIsVideo = false; }
+  function openViewer(idx) {
+    const g = view[idx];
+    if (!g) return;
+    if (g.isVideo) { vItems = [imgUrl(g.rep.video)]; vIsVideo = true; }   // 単独動画は原寸で再生
+    else { vItems = g.files.map(imgUrl); vIsVideo = false; }              // グループの全ページを順送り
     vIdx = 0;
     renderViewer();
     $('ivViewer').hidden = false;
@@ -297,13 +337,13 @@
       const card = e.target.closest('.iv-card');
       if (!card) return;
       const idx = parseInt(card.dataset.idx, 10);
-      const p = view[idx];
+      const g = view[idx];
       const act = e.target.closest('.iv-act');
       if (act) {
         e.stopPropagation();
-        if (act.dataset.act === 'open' && p && p.url) window.corpus.openExternal(p.url);
-        else if (act.dataset.act === 'detail') showDetail(p);
-        else if (act.dataset.act === 'del') doDelete(p);
+        if (act.dataset.act === 'open' && g && g.rep.url) window.corpus.openExternal(g.rep.url);
+        else if (act.dataset.act === 'detail') showDetail(g);
+        else if (act.dataset.act === 'del') doDelete(g);
         return;
       }
       openViewer(idx);
