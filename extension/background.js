@@ -116,11 +116,11 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   notify(tab.id, true);
 }
 
-// Send the captured image + metadata to the native messaging host, which writes
-// <captureId>.jpg and <captureId>.json into the user's save folder. The host is
-// short-lived: Chrome spawns it per connection, so this works even when the
-// desktop app is not running.
-function sendToBridge(captureId, jpegBase64, record) {
+// Send a message to the native messaging host (which writes the sidecar + image
+// into the user's save folder) and resolve with its ack. The host is short-lived:
+// Chrome spawns it per connection, so this works even when the desktop app is not
+// running.
+function bridgeSend(message) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
@@ -153,8 +153,18 @@ function sendToBridge(captureId, jpegBase64, record) {
       finish(new Error(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
     });
 
-    port.postMessage({ type: 'save', captureId, image: jpegBase64, metadata: record });
+    port.postMessage(message);
   });
+}
+
+// Post-click save: screenshot (base64 JPEG) + metadata.
+function sendToBridge(captureId, jpegBase64, record) {
+  return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record });
+}
+
+// Image-drag save: the host downloads the dragged image itself (no screenshot).
+function sendDraggedToBridge(captureId, imageUrl, imageReferer, record) {
+  return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record });
 }
 
 function notify(tabId, success, extra = {}) {
@@ -164,4 +174,99 @@ function notify(tabId, success, extra = {}) {
 function generateCaptureId() {
   const hex = Math.floor(Math.random() * 0xFFFF).toString(16).padStart(4, '0');
   return `${Date.now()}-${hex}`;
+}
+
+// --- Image-drag save (drag.js → here) ---
+// Same metadata as a post-click save, but no screenshot: the dragged image
+// itself becomes the record's primary image (the bridge downloads it). Produces
+// the "illustration record" shape (image = the art, media: []).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type !== 'imageDragged') return false;
+  if (!sender.tab?.id) { sendResponse({ ok: false, error: 'Missing tab context' }); return false; }
+  if (!isAllowedSender(sender.tab.url, message.platform)) {
+    sendResponse({ ok: false, error: 'Sender origin does not match platform' });
+    return false;
+  }
+  captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [])
+    .then((result) => sendResponse({ ok: true, ...result }))
+    .catch((error) => { console.error(error); sendResponse({ ok: false, error: error?.message }); });
+  return true; // async response
+});
+
+async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
+  const captureId = generateCaptureId();
+  const capturedAt = new Date().toISOString();
+
+  const meta = await fetchPostMetadata(postUrl);
+  const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
+  if (!primary || !primary.url) throw new Error('Could not resolve a dragged image URL');
+
+  const record = {
+    captureId,
+    url: meta.url || postUrl || null,
+    platform: meta.platform || sendPlatform || null,
+    text: meta.text,
+    title: meta.title || null,
+    displayName: meta.displayName,
+    screenName: meta.screenName,
+    userId: meta.userId,
+    likes: meta.likes,
+    reposts: meta.reposts,
+    replies: meta.replies,
+    bookmarks: meta.bookmarks,
+    views: meta.views,
+    date: meta.date || capturedAt,
+    capturedAt,
+    mediaType: 'image',
+    lang: meta.lang,
+    isReply: meta.isReply,
+    isQuote: meta.isQuote,
+    isThread: meta.isThread,
+    quotedUrl: meta.quotedUrl,
+    hashtags: meta.hashtags || [],
+    tags: meta.tags || []
+    // image + media[] are set by the bridge (image = downloaded original, media = [])
+  };
+
+  return sendDraggedToBridge(captureId, primary.url, primary.referer, record);
+}
+
+// Choose which original to save for a dragged image, preferring the platform
+// API's original (matched to the dragged image) so we store full resolution.
+// Returns { url, referer }.
+function pickPrimaryImage(platform, imageUrls, meta) {
+  const media = (meta && meta.media) || [];
+  if (platform === 'pixiv') {
+    let idx = 0;
+    for (const u of imageUrls) { const m = u && u.match(/\/\d+_p(\d+)[._]/); if (m) { idx = parseInt(m[1], 10); break; } }
+    const pick = media[idx] || media[0];
+    if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/' };
+    return { url: imageUrls[0], referer: 'https://www.pixiv.net/' };
+  }
+  const matched = matchMedia(platform, imageUrls, media);
+  if (matched && matched.url) return { url: matched.url, referer: matched.referer };
+  return { url: hiRes(platform, imageUrls[0]), referer: undefined };
+}
+
+function mediaKey(platform, url) {
+  if (!url) return null;
+  if (platform === 'x') return (url.match(/pbs\.twimg\.com\/media\/([^.?]+)/) || [])[1] || null;
+  if (platform === 'bluesky') return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
+  return null;
+}
+
+function matchMedia(platform, imageUrls, media) {
+  const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
+  if (!keys.length) return null;
+  for (const m of media) { const k = mediaKey(platform, m.url); if (k && keys.includes(k)) return m; }
+  return null;
+}
+
+function hiRes(platform, url) {
+  if (!url) return url;
+  if (platform === 'x' && url.includes('pbs.twimg.com/media/')) {
+    try { const u = new URL(url); u.searchParams.set('name', 'orig'); return u.href; } catch { /* ignore */ }
+  }
+  if (platform === 'bluesky' && url.includes('cdn.bsky.app')) return url.replace(/@jpeg$/, '');
+  return url;
 }

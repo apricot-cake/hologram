@@ -233,8 +233,11 @@ ipcMain.handle('image-data-url', async (_e, image) => {
 ipcMain.handle('delete-post', async (_e, image) => {
   const folder = getSaveFolder();
   if (!folder || !image) return { ok: false };
-  const base = path.basename(image).replace(/\.jpe?g$/i, '');
-  const targets = new Set([`${base}.jpg`, `${base}.jpeg`, `${base}.json`]);
+  // Primary image is <captureId>.<ext>; ext is jpg for screenshots but png/webp/
+  // gif for illustration records (drag-save / Eagle migration). Strip any
+  // supported image ext to recover the base, and delete the primary of any ext.
+  const base = path.basename(image).replace(/\.(jpe?g|png|webp|gif)$/i, '');
+  const targets = new Set([`${base}.jpg`, `${base}.jpeg`, `${base}.png`, `${base}.webp`, `${base}.gif`, `${base}.json`]);
   // Original-media files: take the exact names from the sidecar, and also sweep
   // any `<base>-media-*` on disk (covers a missing/partial sidecar). The literal
   // `-media-` anchor prevents matching a different post whose id is a prefix.
@@ -260,7 +263,7 @@ ipcMain.handle('delete-post', async (_e, image) => {
 });
 
 ipcMain.handle('update-tags', async (_e, image, tags) => {
-  const base = path.basename(image || '').replace(/\.jpe?g$/i, '');
+  const base = path.basename(image || '').replace(/\.(jpe?g|png|webp|gif)$/i, '');
   const jsonPath = resolveInFolder(`${base}.json`);
   if (!jsonPath) return { ok: false };
   try {

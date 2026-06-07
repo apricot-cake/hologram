@@ -80,20 +80,19 @@ const MAX_MEDIA = 12;                       // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;   // skip anything larger
 const MEDIA_TIMEOUT_MS = 12000;             // per-image abort
 
-// Download one still image to <base>-media-<i>.<ext>. Returns the post-download
-// descriptor (with `file`) on success, or null on any failure (caller drops it).
-async function downloadOneMedia(entry, dir, base, i) {
-  if (!entry || typeof entry.url !== 'string' || !/^https:\/\//i.test(entry.url)) return null;
+// Fetch one still image and return { buf, ext } on success, or null on any
+// failure. pixiv originals on i.pximg.net 403 without a pixiv Referer; callers
+// pass a referer for those. Other hosts omit it.
+async function fetchStillImage(url, referer) {
+  if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
   if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
   try {
-    // pixiv originals on i.pximg.net 403 without a pixiv Referer; the metadata
-    // builder sets entry.referer for those. Other platforms omit it.
-    const headers = (typeof entry.referer === 'string' && /^https:\/\//i.test(entry.referer))
-      ? { Referer: entry.referer }
+    const headers = (typeof referer === 'string' && /^https:\/\//i.test(referer))
+      ? { Referer: referer }
       : undefined;
-    const res = await fetch(entry.url, { signal: ctrl.signal, redirect: 'follow', headers });
+    const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers });
     if (!res.ok) return null;
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     const ext = MEDIA_MIME_EXT[ct];
@@ -102,20 +101,29 @@ async function downloadOneMedia(entry, dir, base, i) {
     if (Number.isFinite(declared) && declared > MAX_MEDIA_BYTES) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (!buf.length || buf.length > MAX_MEDIA_BYTES) return null;
-    const file = `${base}-media-${i}.${ext}`;
-    fs.writeFileSync(path.join(dir, file), buf);
-    return {
-      url: entry.url,
-      alt: entry.alt != null ? String(entry.alt) : null,
-      width: Number.isFinite(entry.width) ? entry.width : null,
-      height: Number.isFinite(entry.height) ? entry.height : null,
-      file
-    };
+    return { buf, ext };
   } catch {
-    return null; // network/abort/parse failure — drop this entry
+    return null; // network/abort/parse failure
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Download one still image to <base>-media-<i>.<ext>. Returns the post-download
+// descriptor (with `file`) on success, or null on any failure (caller drops it).
+async function downloadOneMedia(entry, dir, base, i) {
+  if (!entry) return null;
+  const got = await fetchStillImage(entry.url, entry.referer);
+  if (!got) return null;
+  const file = `${base}-media-${i}.${got.ext}`;
+  fs.writeFileSync(path.join(dir, file), got.buf);
+  return {
+    url: entry.url,
+    alt: entry.alt != null ? String(entry.alt) : null,
+    width: Number.isFinite(entry.width) ? entry.width : null,
+    height: Number.isFinite(entry.height) ? entry.height : null,
+    file
+  };
 }
 
 async function downloadMedia(mediaList, dir, base) {
@@ -169,6 +177,33 @@ async function handleSave(msg) {
   return { ok: true, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length };
 }
 
+// Image-drag save: no screenshot. The bridge downloads the dragged illustration
+// itself (any supported still type, with an optional pixiv Referer) and that file
+// IS the record's primary image. media[] is left empty (the image is the content;
+// duplicating it in media[] would double it in the viewer's lightbox). This is the
+// same "illustration record" shape the Eagle migration produces. captureId is the
+// normal epochMillis-hex form, so it passes SAFE_ID.
+async function handleSaveDragged(msg) {
+  const captureId = sanitizeCaptureId(msg.captureId);
+  if (!captureId) throw new Error('Invalid captureId');
+  if (typeof msg.imageUrl !== 'string' || !msg.imageUrl) throw new Error('Missing image URL');
+
+  const saveFolder = readSaveFolder();
+  fs.mkdirSync(saveFolder, { recursive: true });
+  const base = uniqueBase(saveFolder, captureId);
+
+  const got = await fetchStillImage(msg.imageUrl, msg.imageReferer);
+  if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
+  const imageFile = `${base}.${got.ext}`;
+  fs.writeFileSync(path.join(saveFolder, imageFile), got.buf);
+
+  const meta = msg.metadata || {};
+  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [] });
+  fs.writeFileSync(path.join(saveFolder, `${base}.json`), JSON.stringify(record, null, 2), 'utf8');
+
+  return { ok: true, file: imageFile, saveFolder };
+}
+
 // --- stdin reader: buffer bytes and process complete messages ---
 // Only act as a real native-messaging host when executed directly. When this
 // module is require()'d (by a test), skip the reader and expose internals.
@@ -196,6 +231,8 @@ process.stdin.on('data', (chunk) => {
         // async (downloads original media) — ack is sent once it settles. The
         // process drains naturally so the pending fetch keeps it alive.
         handleSave(msg).then(sendMessage).catch((err) => sendMessage({ ok: false, error: err.message }));
+      } else if (msg.type === 'saveDragged') {
+        handleSaveDragged(msg).then(sendMessage).catch((err) => sendMessage({ ok: false, error: err.message }));
       } else if (msg.type === 'ping') {
         sendMessage({ ok: true, pong: true });
       } else {
@@ -212,4 +249,4 @@ process.stdin.on('data', (chunk) => {
 // naturally rather than calling process.exit(), so any pending stdout write
 // (the ack) is flushed before the process terminates.
 
-module.exports = { handleSave, downloadMedia };
+module.exports = { handleSave, handleSaveDragged, downloadMedia, fetchStillImage };
