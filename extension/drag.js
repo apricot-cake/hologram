@@ -1,29 +1,94 @@
-// Persistent content script (declared in manifest content_scripts for x / bsky /
-// pixiv). Watches dragstart on images and sends the dragged image's identity to
-// the background, which fetches the same post metadata and saves the dragged
-// illustration itself (no post screenshot) via the native host. Ported from
-// eagle-info-plus's drag detection, minus all Eagle coupling.
+// Persistent content script (manifest content_scripts for x / bsky / pixiv).
+// Eagle-for-Chrome style: when the user starts dragging an image, a drop zone
+// appears; the image is saved to Corpus ONLY if dropped into that zone. Dragging
+// an image anywhere else (to disk, to reorder, etc.) does nothing — no accidental
+// saves. On drop, the background fetches the post metadata and saves the dragged
+// illustration itself (no screenshot) via the native host. Identity extraction is
+// ported from eagle-info-plus, minus all Eagle coupling.
 (() => {
   const siteConfig = getDragSiteConfig();
   if (!siteConfig) return;
   if (window.__corpusDragActive) return; // avoid double-binding on re-injection
   window.__corpusDragActive = true;
 
+  let pending = null;        // {platform, postUrl, imageUrls} captured at dragstart
+  let overlay = null;
+  let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
+
+  const HINT = 'ここにドロップで Corpus に保存';
+  const BG_IDLE = 'rgba(29,155,240,0.96)';
+  const BG_OVER = 'rgba(0,186,124,0.96)';
+  const BG_BUSY = 'rgba(83,100,113,0.96)';
+  const BG_FAIL = 'rgba(244,33,46,0.96)';
+
+  function ensureOverlay() {
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = '__corpusDropZone';
+    overlay.style.cssText = [
+      'position:fixed', 'right:24px', 'bottom:24px', 'z-index:2147483647',
+      'width:220px', 'min-height:120px', 'box-sizing:border-box', 'display:none',
+      'align-items:center', 'justify-content:center', 'padding:20px',
+      'border-radius:16px', 'border:3px dashed rgba(255,255,255,0.75)',
+      `background:${BG_IDLE}`, 'color:#fff',
+      'font:600 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      'text-align:center', 'box-shadow:0 8px 28px rgba(0,0,0,0.35)',
+      'pointer-events:auto', 'transition:transform .12s, background .12s'
+    ].join(';');
+    overlay.textContent = HINT;
+    overlay.addEventListener('dragenter', (e) => { e.preventDefault(); overlay.style.transform = 'scale(1.05)'; overlay.style.background = BG_OVER; });
+    overlay.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+    overlay.addEventListener('dragleave', () => { overlay.style.transform = ''; overlay.style.background = BG_IDLE; });
+    overlay.addEventListener('drop', onDrop, true);
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function showOverlay() {
+    ensureOverlay();
+    overlay.textContent = HINT;
+    overlay.style.background = BG_IDLE;
+    overlay.style.transform = '';
+    overlay.style.display = 'flex';
+  }
+  function hideOverlay() { if (overlay) overlay.style.display = 'none'; }
+
   document.addEventListener('dragstart', (e) => {
     if (!chrome.runtime?.id) return;
     const img = e.target.closest?.('img') || (e.target.tagName === 'IMG' ? e.target : null);
     if (!img) return;
-
     const identity = siteConfig.extractIdentity(img);
     if (!identity || !identity.link) return;
-
-    chrome.runtime.sendMessage({
-      type: 'imageDragged',
-      platform: siteConfig.platform,
-      postUrl: identity.link,
-      imageUrls: collectImageUrls(img, siteConfig.platform)
-    });
+    pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform) };
+    showOverlay();
   }, true);
+
+  // Drag ended without dropping into the zone (dropped elsewhere or cancelled).
+  document.addEventListener('dragend', () => {
+    if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
+    pending = null;
+    hideOverlay();
+  }, true);
+
+  function onDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const p = pending;
+    pending = null;
+    if (!p) { hideOverlay(); return; }
+    savingViaDrop = true;
+    overlay.textContent = '保存中…';
+    overlay.style.background = BG_BUSY;
+    overlay.style.transform = '';
+    chrome.runtime.sendMessage(p, (res) => {
+      const ok = res && res.ok;
+      overlay.textContent = ok ? '保存しました' : ('保存に失敗' + (res && res.error ? `: ${res.error}` : ''));
+      overlay.style.background = ok ? BG_OVER : BG_FAIL;
+      setTimeout(() => { hideOverlay(); savingViaDrop = false; }, 1400);
+    });
+  }
+
+  // === identity (per platform; ported from eagle-info-plus) ===
 
   function collectImageUrls(img, platform) {
     const urls = new Set();
@@ -119,8 +184,8 @@
     };
   }
 
-  // Nearest candidate link by DOM distance (avoids picking a neighboring post's
-  // link on grids where several candidates share an ancestor).
+  // Nearest candidate link by DOM distance (avoids a neighboring post's link on
+  // grids where several candidates share an ancestor).
   function findAncestorContainerLink(img, selector) {
     let el = img.parentElement;
     while (el && el !== document.body) {
