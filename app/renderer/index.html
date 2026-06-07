@@ -396,6 +396,21 @@
     .post-card:hover .edit-btn { opacity: 1; }
     .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
 
+    /* --- 📁 add-to-default-folder button on card (one-click from hover) --- */
+    .fold-btn {
+      position: absolute; top: 8px; right: 104px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
+      z-index: 1;
+    }
+    .fold-btn:hover { background: rgba(29,155,240,0.8); }
+    .post-card:hover .fold-btn { opacity: 1; }
+    .fold-btn.in { opacity: 1; background: #1d9bf0; }
+    .fold-btn.added { background: #2ecc71; }
+    .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
+
     /* --- Query field --- */
     .query-field-row { margin-bottom: 12px; }
     .query-field {
@@ -649,6 +664,13 @@
           <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
+
+        <!-- Folders (shared with image-view via folders.json) -->
+        <div class="sb-section">
+          <div class="sb-title">フォルダ</div>
+          <div class="sb-chips" id="postFolderChips"></div>
+          <button class="iv-folder-manage" id="postFolderManage" type="button">フォルダを管理…</button>
+        </div>
       </div>
 
       <!-- Hashtags controls -->
@@ -803,20 +825,6 @@
       <div class="iv-detail-box" id="ivDetailBox"></div>
     </div>
 
-    <!-- Folder management modal (set default + create/rename/delete) -->
-    <div id="ivFolderModal" class="iv-detail-overlay" hidden>
-      <div class="iv-detail-box">
-        <button class="iv-insp-close" id="ivFolderClose" type="button">×</button>
-        <div class="iv-insp-title">フォルダを管理</div>
-        <div class="iv-folder-new">
-          <input type="text" id="ivFolderNewName" class="search-box" placeholder="新しいフォルダ名" maxlength="60">
-          <button class="iv-htbtn" id="ivFolderCreate" type="button">作成</button>
-        </div>
-        <div id="ivFolderList" class="iv-folder-list"></div>
-        <div class="iv-folder-modalhint">★ = タイルの 📁 ワンクリックで追加される先（デフォルト）</div>
-      </div>
-    </div>
-
     <div id="ivViewer" class="iv-viewer" hidden>
       <button class="iv-nav" id="ivPrev" type="button">&#8249;</button>
       <img id="ivViewerImg" class="iv-viewer-img" alt="">
@@ -829,6 +837,20 @@
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
   <div id="ivToast" class="iv-toast"></div>
+
+  <!-- Folder management modal (shared by both modes) — set default + create/rename/delete -->
+  <div id="ivFolderModal" class="iv-detail-overlay" hidden>
+    <div class="iv-detail-box">
+      <button class="iv-insp-close" id="ivFolderClose" type="button">×</button>
+      <div class="iv-insp-title">フォルダを管理</div>
+      <div class="iv-folder-new">
+        <input type="text" id="ivFolderNewName" class="search-box" placeholder="新しいフォルダ名" maxlength="60">
+        <button class="iv-htbtn" id="ivFolderCreate" type="button">作成</button>
+      </div>
+      <div id="ivFolderList" class="iv-folder-list"></div>
+      <div class="iv-folder-modalhint">★ = 📁 ワンクリックで追加される先（デフォルト）</div>
+    </div>
+  </div>
 
   <!-- Delete confirmation -->
   <div class="confirm-overlay" id="confirmOverlay">
@@ -1061,6 +1083,7 @@
 
   <script src="../vendor/jszip.min.js"></script>
   <script src="i18n.js"></script>
+  <script src="folders.js"></script>
   <script src="viewer.js"></script>
   <script src="image-viewer.js"></script>
   <script src="shell.js"></script>

@@ -663,6 +663,8 @@
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
   const usersPlatformFilter = new Set(); // Users tab: selected platform chips (local)
+  let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
+  const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Tabs ---
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -808,12 +810,21 @@
     const { posts } = await window.corpus.listPosts();
     allPosts = posts || [];
     renderPosts();
+    reconcileFolders();
+    renderPostFolders();
   }
+  function reconcileFolders() { if (CF()) CF().reconcile(new Set(allPosts.map(p => p.captureId))); }
 
   function getFilteredPosts() {
     // 投稿閲覧 = SNS投稿（URLあり）。URLなしのライブラリ参照画像（Eagle移行の素材等）は
     // 画像閲覧モード専用なので、ここでは出さない（数千件で投稿一覧が埋もれるのを防ぐ）。
     let posts = allPosts.filter(p => p.url);
+    // Folder filter (shared folders.json, keyed by captureId)
+    if (folderFilter && CF()) {
+      const f = CF().byId(folderFilter);
+      const set = new Set(f ? f.items : []);
+      posts = posts.filter(p => set.has(p.captureId));
+    }
     const query = document.getElementById('searchBox').value.trim().toLowerCase();
     const sort = sortSelect.value;
 
@@ -978,6 +989,7 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check">${isSelected ? '✓' : ''}</div>
+        <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}">📁</button>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
@@ -1116,13 +1128,56 @@
     openEditOverlay(post);
   });
 
+  // 📁 button on card: one-click add/remove this post to the default folder.
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.fold-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    if (!CF()) return;
+    const post = getFilteredPosts()[parseInt(btn.dataset.fold, 10)];
+    if (!post || !post.captureId) return;
+    const res = CF().toggleDefault([post.captureId], post.captureId);   // persists + toast + notify; null=no default→manager
+    if (!res) return;
+    btn.classList.toggle('in', res === 'added');
+    if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
+    // If filtering by the default folder and we removed it, drop the card (no full re-render = no flicker).
+    if (res === 'removed' && folderFilter === CF().defaultId()) {
+      const card = btn.closest('.post-card');
+      if (card) card.remove();
+    }
+  });
+
+  // Sidebar folder chips (shared folders.json): count + ★default + single-select filter.
+  function renderPostFolders() {
+    const host = document.getElementById('postFolderChips');
+    if (!host || !CF()) return;
+    const list = CF().all();
+    const def = CF().defaultId();
+    const existing = new Set(allPosts.filter(p => p.url).map(p => p.captureId));
+    if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
+    host.innerHTML = list.map(f => {
+      const n = f.items.filter(c => existing.has(c)).length;
+      const star = f.id === def ? '<span class="iv-foldstar">★</span>' : '';
+      return `<button class="sb-chip${folderFilter === f.id ? ' active' : ''}" data-fid="${escapeAttr(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+    }).join('');
+  }
+  document.getElementById('postFolderChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.sb-chip');
+    if (!chip) return;
+    const fid = chip.dataset.fid;
+    folderFilter = folderFilter === fid ? '' : fid;
+    renderPostFolders();
+    renderPosts();
+  });
+  document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
+
   // Click the card body (anything but the image, the post/edit/delete buttons,
   // or the expandable text) to select it. Plain click selects only that card;
   // Ctrl/Cmd-click toggles one; Shift-click selects the range from the anchor.
   document.getElementById('postGrid').addEventListener('click', (e) => {
     if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') ||
         e.target.closest('.open-btn') || e.target.closest('.card-img') ||
-        e.target.closest('.text')) return;
+        e.target.closest('.fold-btn') || e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
     const filtered = getFilteredPosts();
@@ -1720,6 +1775,9 @@ render()
   }
 
   // --- Init ---
+  // Shared folder changes: refresh chips on any change; re-render cards (📁 states)
+  // when the folder list/default changes.
+  if (CF()) CF().onChange((kind) => { renderPostFolders(); if (kind === 'list') renderPosts(); });
   if (window.corpus.onPostsChanged) {
     window.corpus.onPostsChanged(async () => {
       await loadPosts();
@@ -1727,5 +1785,6 @@ render()
     });
   }
   renderQueryChips();
+  if (CF()) await CF().load();   // load folders before first render so 📁/chips are correct
   loadPosts();
 })();

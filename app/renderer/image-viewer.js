@@ -27,8 +27,9 @@
   let tagGroups = [];   // [{ id, name, tags:[] }] migrated from Eagle (tag-groups.json)
   let ungrouped = new Set();    // 永続: グループ化しない投稿キー（ungrouped.json）
   let manualGroups = [];        // 永続: 手動グループ [[captureId,…],…]（manual-groups.json）
-  let folders = [];             // 永続: ユーザーフォルダ [{id,name,items:[captureId]}]（folders.json）
-  let defaultFolderId = null;   // 📁 ワンクリック追加先
+  // ユーザーフォルダ（作成/デフォルト/メンバーシップ）は共有モジュール window.corpusFolders が所有。
+  // ここでは state.folder（絞り込み対象）だけローカルに持つ。
+  const CF = () => window.corpusFolders;
   let selectMode = false;       // 選択モード（手動グループ化用）
   const selected = new Set();   // 選択中のグループキー
   let selectAnchor = null;      // Shift範囲選択の起点（view内インデックス）
@@ -102,15 +103,6 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  // 一時トースト（フォルダ追加/解除などの反応）。連打しても1つだけ。
-  let toastTimer = null;
-  function toast(msg) {
-    const el = $('ivToast'); if (!el) return;
-    el.textContent = msg;
-    el.classList.add('show');
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
-  }
 
   // いいねのパーセンタイル順 (info+ の likesPercentile)。プラットフォームごとに順位化し、
   // 「そのSNSの中で相対的に伸びた投稿」を上位に。実数だとXばかり上位に来る問題を緩和。
@@ -131,7 +123,7 @@
   function applyFilters() {
     const q = state.search.trim().toLowerCase();
     let list = allPosts.filter((p) => recordImageFiles(p).length || p.video); // 描画できる画像、または動画(ポスター無しでも)
-    if (state.folder) { const f = folderById(state.folder); const set = new Set(f ? f.items : []); list = list.filter((p) => set.has(p.captureId)); }
+    if (state.folder) { const f = CF() && CF().byId(state.folder); const set = new Set(f ? f.items : []); list = list.filter((p) => set.has(p.captureId)); }
     if (state.platform) list = list.filter((p) => p.platform === state.platform);
     if (state.minLikes > 0) list = list.filter((p) => (p.likes || 0) >= state.minLikes);
     if (state.tags.size) {
@@ -206,8 +198,9 @@
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
       // 📁 = add this tile to the default folder in one click (hover → click). 'in' if already there.
-      const inDefault = defaultFolderId && folderHas(defaultFolderId, p.captureId);
-      const foldBtn = `<button class="iv-act fold${inDefault ? ' in' : ''}" data-act="fold" title="${defaultFolderId ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}">📁</button>`;
+      const hasDefault = !!(CF() && CF().defaultId());
+      const inDefault = CF() && CF().inDefault(p.captureId);
+      const foldBtn = `<button class="iv-act fold${inDefault ? ' in' : ''}" data-act="fold" title="${hasDefault ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}">📁</button>`;
       const playOverlay = (g.isVideo || p.mediaType === 'gif')
         ? `<div class="iv-play"><span>${g.isVideo ? '▶' : 'GIF'}</span></div>` : '';
       const card = document.createElement('div');
@@ -297,81 +290,36 @@
   // === 手動グループ化（選択モードで任意の画像をまとめる） ===
   function persistManual() { if (window.corpus.setManualGroups) window.corpus.setManualGroups(manualGroups).catch(() => { /* best-effort */ }); }
 
-  // === ユーザーフォルダ（一次資料コレクション等。タグとは別の明示的なコンテナ） ===
-  function folderById(id) { return folders.find((f) => f.id === id) || null; }
-  function folderHas(id, cid) { const f = folderById(id); return !!(f && f.items.includes(cid)); }
-  function genFolderId() { return 'f-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
-  function persistFolders() { if (window.corpus.setFolders) window.corpus.setFolders({ folders, defaultId: defaultFolderId }).catch(() => { /* best-effort */ }); }
-  // 削除等で消えた captureId をフォルダから掃除（読み込み時/更新時に呼ぶ）。
-  function reconcileFolders() {
-    if (!folders.length) return;
-    const existing = new Set(allPosts.map((p) => p.captureId));
-    let changed = false;
-    folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
-    if (changed) persistFolders();
-  }
+  // === ユーザーフォルダ（共有モジュール corpusFolders 経由。タグとは別の明示的なコンテナ） ===
   // サイドバーのフォルダチップ（件数つき・★=デフォルト・クリックで単一フィルタ）。
   function renderFolderFilter() {
     const host = $('ivFolderChips'); if (!host) return;
+    const cf = CF(); const list = cf ? cf.all() : [];
+    const def = cf ? cf.defaultId() : null;
     const existing = new Set(allPosts.filter((p) => recordImageFiles(p).length || p.video).map((p) => p.captureId));
-    if (!folders.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
-    host.innerHTML = folders.map((f) => {
+    if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
+    host.innerHTML = list.map((f) => {
       const n = f.items.filter((c) => existing.has(c)).length;
-      const star = f.id === defaultFolderId ? '<span class="iv-foldstar">★</span>' : '';
+      const star = f.id === def ? '<span class="iv-foldstar">★</span>' : '';
       return `<button class="sb-chip${state.folder === f.id ? ' active' : ''}" data-fid="${escapeHtml(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   // タイルの 📁 ワンクリック: デフォルトフォルダへ追加/解除（グループ全レコードに適用）。
-  // デフォルト未設定なら管理モーダルを開いて作成を促す。
   function toggleFolder(g, btn) {
-    if (!defaultFolderId) { openFolderModal(); return; }
-    const f = folderById(defaultFolderId); if (!f || !g) return;
+    if (!g || !CF()) return;
     const ids = g.records.map((r) => r.captureId);
-    const wasIn = f.items.includes(g.rep.captureId);
-    if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
-    else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
-    persistFolders();
-    if (btn) {                                          // 即時の見た目反映（フルrender無し＝ホバーが外れない）
-      btn.classList.toggle('in', !wasIn);
-      if (!wasIn) { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
+    const res = CF().toggleDefault(ids, g.rep.captureId);   // persists + toast + notify; null=デフォ未設定→管理を開く
+    if (!res) return;
+    if (btn) {                                              // 即時の見た目反映（フルrender無し＝ホバーが外れない）
+      btn.classList.toggle('in', res === 'added');
+      if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
     }
-    toast(wasIn ? `「${f.name}」から削除` : `「${f.name}」に追加`);
-    renderFolderFilter();                               // サイドバーの件数だけ更新（グリッドは触らない）
     // このフォルダで絞り込み中に解除したら、そのタイル1枚だけ取り除く（全再描画しない）。
-    if (wasIn && state.folder === defaultFolderId && btn) {
+    if (res === 'removed' && state.folder === CF().defaultId() && btn) {
       const card = btn.closest('.iv-card');
       if (card) card.remove();
       $('ivCount').textContent = $('ivGrid').querySelectorAll('.iv-card').length + ' 件';
     }
-  }
-
-  // --- フォルダ管理モーダル（デフォルト設定・作成・改名・削除） ---
-  function openFolderModal() { renderFolderModal(); $('ivFolderModal').hidden = false; setTimeout(() => { try { $('ivFolderNewName').focus(); } catch { /* ignore */ } }, 0); }
-  function closeFolderModal() { $('ivFolderModal').hidden = true; }
-  function renderFolderModal() {
-    const host = $('ivFolderList'); if (!host) return;
-    const existing = new Set(allPosts.map((p) => p.captureId));
-    host.innerHTML = folders.length ? folders.map((f) => {
-      const n = f.items.filter((c) => existing.has(c)).length;
-      const on = f.id === defaultFolderId ? ' on' : '';
-      return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}">` +
-        `<button class="iv-fold-def${on}" data-fact="default" title="デフォルトに設定">★</button>` +
-        `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
-        `<span class="iv-fold-n">${n}</span>` +
-        `<button class="iv-fold-btn" data-fact="rename" title="名前変更">✎</button>` +
-        `<button class="iv-fold-btn" data-fact="delete" title="削除">🗑</button>` +
-        `</div>`;
-    }).join('') : '<div class="iv-folder-empty">フォルダがありません。下の欄から作成してください。</div>';
-  }
-  function createFolder() {
-    const inp = $('ivFolderNewName'); const name = (inp.value || '').trim();
-    if (!name) return;
-    const f = { id: genFolderId(), name, items: [] };
-    folders.push(f);
-    if (!defaultFolderId) defaultFolderId = f.id;   // 最初のフォルダは自動でデフォルト
-    inp.value = '';
-    persistFolders();
-    renderFolderModal(); renderFolderFilter(); render();   // render: デフォルト出現でタイルの📁が有効化
   }
   function updateSelBar() {
     $('ivSelCount').textContent = selected.size + ' 件選択';
@@ -531,27 +479,8 @@
       renderFolderFilter();
       render();
     });
-    $('ivFolderManage').addEventListener('click', openFolderModal);
-    $('ivFolderClose').addEventListener('click', closeFolderModal);
-    $('ivFolderModal').addEventListener('click', (e) => { if (e.target === $('ivFolderModal')) closeFolderModal(); });
-    $('ivFolderCreate').addEventListener('click', createFolder);
-    $('ivFolderNewName').addEventListener('keydown', (e) => { if (e.key === 'Enter') createFolder(); });
-    // 管理モーダル内のフォルダ操作（デフォルト設定・改名・削除）。
-    $('ivFolderList').addEventListener('click', (e) => {
-      const row = e.target.closest('.iv-folder-row'); if (!row) return;
-      const act = e.target.closest('[data-fact]'); if (!act) return;
-      const fid = row.dataset.fid; const f = folderById(fid); if (!f) return;
-      if (act.dataset.fact === 'default') { defaultFolderId = defaultFolderId === fid ? null : fid; }
-      else if (act.dataset.fact === 'rename') { const name = window.prompt('フォルダ名', f.name); if (name && name.trim()) f.name = name.trim(); }
-      else if (act.dataset.fact === 'delete') {
-        if (!window.confirm(`フォルダ「${f.name}」を削除しますか？（中の画像自体は消えません）`)) return;
-        folders = folders.filter((x) => x.id !== fid);
-        if (defaultFolderId === fid) defaultFolderId = null;
-        if (state.folder === fid) state.folder = '';
-      }
-      persistFolders();
-      renderFolderModal(); renderFolderFilter(); render();
-    });
+    // 作成/改名/削除/デフォルト設定は共有モジュールの管理モーダルが担当。
+    $('ivFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
     const tile = $('ivTile');
     const applyTile = () => { $('mode-image').style.setProperty('--iv-tile', (tile.value || 180) + 'px'); };
@@ -587,7 +516,7 @@
     $('ivViewer').addEventListener('click', (e) => { if (e.target === $('ivViewer') || e.target === $('ivViewerImg')) closeViewer(); });
     $('ivDetail').addEventListener('click', (e) => { if (e.target === $('ivDetail')) closeDetail(); });  // backdrop click closes popup
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('ivFolderModal').hidden) { closeFolderModal(); return; }
+      if (e.key === 'Escape' && CF() && CF().isManagerOpen()) { CF().closeManager(); return; }
       if (e.key === 'Escape' && !$('ivDetail').hidden) { closeDetail(); return; }
       if ($('ivViewer').hidden) return;
       if (e.key === 'Escape') closeViewer();
@@ -616,17 +545,16 @@
     catch { manualGroups = []; }
   }
 
-  async function loadFolders() {
-    try { const r = window.corpus.getFolders ? await window.corpus.getFolders() : null; folders = (r && r.folders) || []; defaultFolderId = (r && r.defaultId) || null; }
-    catch { folders = []; defaultFolderId = null; }
-  }
+  function reconcileFolders() { if (CF()) CF().reconcile(new Set(allPosts.map((p) => p.captureId))); }
 
   async function init() {
     if (inited) return;
     inited = true;
     bind();
+    // 共有フォルダの変更通知: 一覧/デフォルト変更ならグリッドも更新（📁状態反映）、件数のみなら軽更新。
+    if (CF()) CF().onChange((kind) => { renderFolderFilter(); if (kind === 'list') render(); });
     if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(() => { reconcileFolders(); render(); renderTagFilter(); renderFolderFilter(); }); });
-    await Promise.all([load(), loadTagGroups(), loadUngrouped(), loadManualGroups(), loadFolders()]);
+    await Promise.all([load(), loadTagGroups(), loadUngrouped(), loadManualGroups(), CF() ? CF().load() : Promise.resolve()]);
     reconcileFolders();
     render();
     renderTagFilter();
