@@ -672,7 +672,7 @@
       document.getElementById(`panel${capitalize(btn.dataset.tab)}`).classList.add('active');
       if (btn.dataset.tab === 'tags') renderHashtags();
       if (btn.dataset.tab === 'users') renderUsers();
-      updateToolbar();
+      updateTopbar();
     });
   });
 
@@ -796,33 +796,51 @@
   // On the Posts tab the toolbar scrolls away normally; once scrolled past the
   // top, a centered pill lets you re-float it as a card on demand. It closes when
   // you click outside it or scroll back to the top.
+  const tabsEl = document.querySelector('.tabs');
+  const panelPostsEl = document.getElementById('panelPosts');
   const postsToolbar = document.getElementById('postsToolbar');
   const toolbarToggle = document.getElementById('toolbarToggle');
   const tbLabel = toolbarToggle.querySelector('.tb-label');
   let tbFloating = false;
-  function updateToolbar() {
-    const onPosts = document.getElementById('panelPosts').classList.contains('active');
+  function updateTopbar() {
     const scrolled = window.scrollY > 48;
-    if (!onPosts || !scrolled) {
+    if (!scrolled) {
       tbFloating = false;
+      tabsEl.classList.remove('floating');
       postsToolbar.classList.remove('floating');
+      postsToolbar.style.top = '';
       toolbarToggle.hidden = true;
       toolbarToggle.style.top = '';
       return;
     }
-    postsToolbar.classList.toggle('floating', tbFloating);
+    const onPosts = panelPostsEl.classList.contains('active');
     toolbarToggle.hidden = false;
     toolbarToggle.classList.toggle('open', tbFloating);
     tbLabel.textContent = tbFloating ? MSG.barClose : MSG.barOpen;
-    // Closed: top-center (CSS top:12px). Open: just below the floated toolbar.
-    toolbarToggle.style.top = tbFloating ? (postsToolbar.getBoundingClientRect().bottom + 8) + 'px' : '';
+    // Float the tabs always, and the toolbar too when on the Posts tab; stack
+    // them (tabs, then toolbar, then the toggle pill just below the lowest one).
+    tabsEl.classList.toggle('floating', tbFloating);
+    postsToolbar.classList.toggle('floating', tbFloating && onPosts);
+    if (tbFloating) {
+      let bottom = tabsEl.getBoundingClientRect().bottom;
+      if (onPosts) {
+        postsToolbar.style.top = (bottom + 8) + 'px';
+        bottom = postsToolbar.getBoundingClientRect().bottom;
+      } else {
+        postsToolbar.style.top = '';
+      }
+      toolbarToggle.style.top = (bottom + 8) + 'px';
+    } else {
+      postsToolbar.style.top = '';
+      toolbarToggle.style.top = '';
+    }
   }
-  window.addEventListener('scroll', updateToolbar, { passive: true });
-  toolbarToggle.addEventListener('click', (e) => { e.stopPropagation(); tbFloating = !tbFloating; updateToolbar(); });
+  window.addEventListener('scroll', updateTopbar, { passive: true });
+  toolbarToggle.addEventListener('click', (e) => { e.stopPropagation(); tbFloating = !tbFloating; updateTopbar(); });
   document.addEventListener('click', (e) => {
-    if (tbFloating && !postsToolbar.contains(e.target) && !toolbarToggle.contains(e.target)) {
+    if (tbFloating && !tabsEl.contains(e.target) && !postsToolbar.contains(e.target) && !toolbarToggle.contains(e.target)) {
       tbFloating = false;
-      updateToolbar();
+      updateTopbar();
     }
   });
 

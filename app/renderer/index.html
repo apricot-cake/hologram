@@ -39,6 +39,13 @@
     }
     .tab-btn:hover { color: #555; }
     .tab-btn.active { color: #1d9bf0; border-bottom-color: #1d9bf0; }
+    /* Floated together with the toolbar via the scroll toggle. */
+    .tabs.floating {
+      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 30;
+      margin: 0; padding: 4px 12px 0;
+      background: #fff; border: 1px solid #ddd; border-radius: 10px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
