@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>Post Snap</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 14px/1.6 -apple-system, 'Segoe UI', sans-serif;
+      background: #f5f5f5; color: #333;
+      padding: 24px 32px; overflow-x: hidden;
+    }
+
+    /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
+       `scrollbar-width` property disables these ::-webkit-scrollbar rules in
+       Chromium, so style scrollable areas via padding, not scrollbar-width. --- */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #c4cad0; border-radius: 8px;
+      border: 2px solid transparent; background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #9aa2ab; background-clip: padding-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
+    #panelSettings { max-width: 720px; }
+
+    /* --- Tabs (vertical, in the sidebar) --- */
+    .tabs {
+      display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px;
+    }
+    .tab-btn {
+      background: none; border: none; border-left: 3px solid transparent;
+      padding: 8px 12px; font-size: 14px; font-weight: 500;
+      color: #888; cursor: pointer; text-align: left; border-radius: 0 6px 6px 0;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .tab-btn:hover { color: #555; background: #ececec; }
+    .tab-btn.active { color: #1d9bf0; border-left-color: #1d9bf0; background: #e8f4fd; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Per-tab control set in the sidebar; only the active tab's controls show. */
+    .tab-controls { display: none; }
+    .tab-controls.active { display: block; }
+
+    /* --- Toolbar (stacked in the sidebar) --- */
+    .toolbar {
+      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+      margin-bottom: 8px;
+    }
+    .toolbar select { width: 100%; }
+    .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
+    .toolbar-row {
+      display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+      margin-bottom: 12px;
+    }
+    .search-box {
+      width: 100%; box-sizing: border-box;
+      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+    }
+    .search-box:focus { border-color: #1d9bf0; }
+    select {
+      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; background: #fff; outline: none; cursor: pointer;
+    }
+    .post-count {
+      font-size: 12px; color: #999;
+    }
+
+    /* --- Chip buttons --- */
+    .chip {
+      background: #fff; border: 1px solid #ddd; border-radius: 16px;
+      padding: 4px 14px; font-size: 13px; color: #555;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .date-input {
+      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; outline: none; cursor: pointer;
+    }
+    .date-input:focus { border-color: #1d9bf0; }
+    .engagement-select {
+      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; background: #fff; outline: none; cursor: pointer;
+    }
+    .engagement-input {
+      width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; color: #555; outline: none;
+    }
+    .engagement-input:focus { border-color: #1d9bf0; }
+
+    /* --- View toggle --- */
+    .view-toggle {
+      display: flex; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;
+    }
+    .view-toggle button {
+      background: #fff; border: none; padding: 6px 10px;
+      cursor: pointer; color: #888; font-size: 14px; line-height: 1;
+      transition: all 0.15s;
+    }
+    .view-toggle button:not(:last-child) { border-right: 1px solid #ddd; }
+    .view-toggle button.active { background: #1d9bf0; color: #fff; }
+
+    /* --- Post grid --- */
+    .post-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .post-card {
+      background: #fff; border-radius: 8px; overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      cursor: pointer; transition: box-shadow 0.15s;
+      position: relative;
+    }
+    .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .post-card img {
+      width: 100%; display: block;
+      max-height: 300px; object-fit: cover; cursor: zoom-in;
+    }
+    .open-btn {
+      position: absolute; top: 8px; right: 72px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .open-btn:hover { background: rgba(29,155,240,0.8); }
+    .post-card:hover .open-btn { opacity: 1; }
+    .post-meta {
+      padding: 12px;
+    }
+    .post-meta .user {
+      font-weight: 600; font-size: 13px;
+      margin-bottom: 4px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .platform-badge {
+      font-size: 10px; font-weight: 500;
+      padding: 1px 6px; border-radius: 3px;
+      color: #fff; text-transform: uppercase;
+    }
+    .platform-badge.x { background: #000; }
+    .platform-badge.bluesky { background: #0085ff; }
+    .platform-badge.misskey { background: #96d04a; color: #333; }
+    .platform-badge.mastodon { background: #6364ff; }
+    .post-meta .text {
+      font-size: 13px; color: #555;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+      overflow: hidden; margin-bottom: 6px; cursor: pointer;
+    }
+    .post-meta .text.expanded {
+      -webkit-line-clamp: unset; display: block;
+    }
+    .post-meta .text { position: relative; }
+    .text-hint {
+      position: absolute; bottom: 0; right: 0;
+      font-size: 10px; color: #999;
+      background: rgba(255,255,255,0.85); padding: 0 4px;
+      border-radius: 3px; pointer-events: none;
+      display: none;
+    }
+    .post-meta .text.truncated:hover .text-hint { display: block; }
+    .post-meta .text.expanded .text-hint { display: none; }
+    .post-meta .stats {
+      display: flex; gap: 12px; font-size: 12px; color: #999;
+    }
+    .post-meta .date {
+      font-size: 11px; color: #bbb; margin-top: 4px;
+    }
+
+    /* --- Delete button on card --- */
+    .delete-btn {
+      position: absolute; top: 8px; right: 8px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      font-size: 16px; line-height: 28px; text-align: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .delete-btn:hover { background: rgba(244,33,46,0.8); }
+    .post-card:hover .delete-btn { opacity: 1; }
+    .post-card.selected { outline: 3px solid #1d9bf0; outline-offset: -3px; }
+    .post-card .select-check {
+      position: absolute; top: 8px; left: 8px;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(255,255,255,0.85); border: 2px solid #ccc;
+      display: none; cursor: pointer; z-index: 1;
+      text-align: center; line-height: 20px; font-size: 14px; color: #1d9bf0;
+    }
+    .post-card.selected .select-check { display: block; background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+
+    /* --- List view: text-first (scanning post text is the point of the list) --- */
+    .post-grid.list-view {
+      display: flex; flex-direction: column; gap: 4px;
+      grid-template-columns: unset;
+    }
+    .post-grid.list-view .post-card {
+      display: flex; flex-direction: row; border-radius: 6px;
+      overflow: hidden; align-items: stretch;
+    }
+    .post-grid.list-view .post-card img {
+      width: 88px; min-width: 88px; align-self: stretch;
+      height: auto; max-height: 110px; object-fit: cover;
+    }
+    .post-grid.list-view .post-meta {
+      display: flex; flex-wrap: wrap; align-items: baseline;
+      gap: 3px 10px; padding: 9px 14px; flex: 1; min-width: 0;
+    }
+    /* text is the hero: full width, up to 2 lines, darker and a touch larger */
+    .post-grid.list-view .post-meta .text {
+      order: 0; flex-basis: 100%; width: 100%;
+      -webkit-line-clamp: 2; margin-bottom: 2px;
+      font-size: 14px; line-height: 1.45; color: #0f1419;
+    }
+    /* secondary line: user · stats · date, small and muted */
+    .post-grid.list-view .post-meta .user {
+      order: 1; margin-bottom: 0; white-space: nowrap;
+      font-size: 12px; font-weight: 500; color: #536471;
+    }
+    .post-grid.list-view .post-meta .stats { order: 2; white-space: nowrap; font-size: 11px; }
+    .post-grid.list-view .post-meta .date { order: 3; white-space: nowrap; margin-top: 0; margin-left: auto; }
+    .post-grid.list-view .post-meta .date-captured { display: none; }
+    .post-grid.list-view .post-meta .tags-label { display: none; }
+    .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
+    .post-grid.list-view .open-btn { top: 50%; right: 72px; transform: translateY(-50%); }
+
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: #999;
+    }
+    .empty-state p { margin-bottom: 8px; }
+
+    /* --- Settings --- */
+    .section {
+      background: #fff; border-radius: 8px;
+      padding: 16px 20px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .section h2 {
+      font-size: 13px; font-weight: 600; color: #666;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid #ddd; border-radius: 6px;
+      font-size: 14px; outline: none; transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #1d9bf0; }
+    .hint { font-size: 12px; color: #999; margin-top: 6px; }
+    .actions { display: flex; align-items: center; margin-top: 16px; }
+    .link-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+
+    /* --- Buttons --- */
+    .btn {
+      background: #1d9bf0; color: #fff; border: none; border-radius: 6px;
+      padding: 8px 20px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn:hover { background: #1a8cd8; }
+    .btn-outline {
+      background: #fff; color: #333; border: 1px solid #ddd;
+      border-radius: 6px; padding: 7px 16px; font-size: 13px;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-outline:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .btn-danger {
+      background: #fff; color: #f4212e; border: 1px solid #f4212e;
+      border-radius: 6px; padding: 7px 16px; font-size: 13px;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-danger:hover { background: #fef2f2; }
+
+    .status-msg {
+      font-size: 13px; margin-left: 12px;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .status-msg.show { opacity: 1; }
+    a { color: #1d9bf0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* --- Data management --- */
+    .data-section {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    }
+    .data-hint {
+      width: 100%; font-size: 12px; color: #999; margin-top: 8px;
+    }
+    .file-input-hidden { display: none; }
+
+    /* --- Image lightbox --- */
+    .lightbox-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85); z-index: 11000;
+      justify-content: center; align-items: center;
+      cursor: zoom-out;
+    }
+    .lightbox-overlay.show { display: flex; }
+    .lightbox-overlay img {
+      max-width: 95vw; max-height: 95vh; object-fit: contain;
+      border-radius: 4px;
+    }
+    .lb-nav {
+      position: fixed; top: 50%; transform: translateY(-50%);
+      width: 48px; height: 64px; border: none; border-radius: 6px;
+      background: rgba(0,0,0,0.4); color: #fff; font-size: 32px; line-height: 1;
+      cursor: pointer; z-index: 11001; display: none;
+    }
+    .lb-nav:hover { background: rgba(255,255,255,0.18); }
+    .lb-prev { left: 16px; }
+    .lb-next { right: 16px; }
+    .lightbox-overlay.multi .lb-nav { display: block; }
+    .lb-counter {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      color: #fff; font-size: 13px; background: rgba(0,0,0,0.4);
+      padding: 4px 10px; border-radius: 12px; display: none;
+    }
+    .lightbox-overlay.multi .lb-counter { display: block; }
+
+    /* --- Original-media thumbnail strip (grid view) --- */
+
+    /* --- Delete confirm --- */
+    .confirm-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 10000;
+      justify-content: center; align-items: center;
+    }
+    .confirm-overlay.show { display: flex; }
+    .confirm-box {
+      background: #fff; border-radius: 12px;
+      padding: 24px; max-width: 360px; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .confirm-box p { margin-bottom: 16px; font-size: 14px; }
+    .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
+
+    /* --- Tags --- */
+    .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .tag-chip { font-size: 10px; background: #f0f0f0; border-radius: 10px; padding: 1px 8px; color: #666; }
+    .post-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+    .post-flag { font-size: 10px; border-radius: 3px; padding: 1px 6px; line-height: 1.5; }
+    .post-flag.flag-type { background: #f0e8fd; color: #6b46c1; }
+    .post-flag.flag-media { background: #e8f0fd; color: #2563a8; }
+    .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
+    .edit-btn {
+      position: absolute; top: 8px; right: 40px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .edit-btn:hover { background: rgba(29,155,240,0.8); }
+    .post-card:hover .edit-btn { opacity: 1; }
+    .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
+
+    /* --- Query field --- */
+    .query-field-row { margin-bottom: 12px; }
+    .query-field {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+      min-height: 36px; padding: 4px 8px;
+      border: 1px solid #ddd; border-radius: 8px; background: #fff;
+    }
+    .query-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+    .query-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #f0f4f8; border: 1px solid #d0d8e0; border-radius: 14px;
+      padding: 3px 10px; font-size: 12px; color: #333;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .query-chip:hover { background: #e0e8f0; border-color: #b0b8c0; }
+    .query-chip.qc-platform { background: #e8f4fd; border-color: #b0d4f1; }
+    .query-chip.qc-postType { background: #f0e8fd; border-color: #c8b0f1; }
+    .query-chip.qc-date { background: #e8fdf0; border-color: #b0f1c8; }
+    .query-chip.qc-engagement { background: #fdf0e8; border-color: #f1c8b0; }
+    .query-chip.qc-media { background: #e8f0fd; border-color: #b0c8f1; }
+    .query-add-btn {
+      background: none; border: 1px solid #ddd; border-radius: 50%;
+      width: 28px; height: 28px; font-size: 16px; line-height: 26px;
+      color: #999; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+    }
+    .query-add-btn:hover { border-color: #1d9bf0; color: #1d9bf0; }
+
+    /* --- Filter menus --- */
+    .qf-menu, .qf-submenu {
+      position: fixed; background: #fff; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15); padding: 4px 0;
+      z-index: 1000; min-width: 160px;
+    }
+    .qf-menu-item {
+      padding: 8px 16px; font-size: 13px; color: #333;
+      cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    }
+    .qf-menu-item:hover { background: #f5f5f5; }
+    .qf-menu-item .arrow { color: #999; font-size: 10px; }
+
+    /* --- Popovers --- */
+    .qf-popover {
+      position: fixed; background: #fff; border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18); padding: 16px;
+      z-index: 1001; min-width: 260px;
+    }
+    .qf-backdrop {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 999; background: transparent;
+    }
+
+    /* --- App layout: persistent left sidebar (nav + controls) + content --- */
+    .app-layout {
+      display: flex; gap: 24px; align-items: flex-start;
+    }
+    .app-sidebar {
+      width: 250px; flex-shrink: 0;
+      /* Match body's 24px top padding so the sticky bar doesn't jump up / crowd
+         the tabs against the window edge when the content scrolls. */
+      position: sticky; top: 24px; align-self: flex-start;
+      max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
+      padding-right: 8px;
+    }
+    .app-sidebar input, .app-sidebar select {
+      max-width: 100%; box-sizing: border-box;
+    }
+    .app-content { flex: 1; min-width: 0; }
+
+    .sb-section {
+      background: #fff; border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .sb-title {
+      font-size: 11px; font-weight: 600; color: #888;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sb-tag-filter {
+      width: 100%; margin-bottom: 6px; padding: 5px 8px;
+      border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none;
+    }
+    .sb-tag-filter:focus { border-color: #1d9bf0; }
+    .sb-chip {
+      background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 12px;
+      padding: 3px 10px; font-size: 11px; color: #555;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .sb-chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .sb-chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+
+    .sb-active-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      border-radius: 12px; padding: 2px 8px; font-size: 11px;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .sb-active-chip:hover { opacity: 0.7; }
+    .sb-active-chip.qc-platform { background: #e8f4fd; border: 1px solid #b0d4f1; color: #333; }
+    .sb-active-chip.qc-postType { background: #f0e8fd; border: 1px solid #c8b0f1; color: #333; }
+    .sb-active-chip.qc-date { background: #e8fdf0; border: 1px solid #b0f1c8; color: #333; }
+    .sb-active-chip.qc-engagement { background: #fdf0e8; border: 1px solid #f1c8b0; color: #333; }
+    .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
+    .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
+    .sb-active-chip.qc-user { background: #fde8f4; border: 1px solid #f1b0d4; color: #333; }
+  #panelTags { max-width: 960px; }
+  #panelUsers { max-width: 960px; }
+  .users-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .users-controls .ht-search { margin-bottom: 0; max-width: 280px; }
+  .user-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+  .user-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 12px; border: 1px solid #eee; border-radius: 8px; background: #fff;
+    cursor: pointer; text-align: left; font: inherit;
+    transition: background .15s, border-color .15s;
+  }
+  .user-row:hover { background: #f7fbff; border-color: #1d9bf0; }
+  .user-row .user-name { font-weight: 600; color: #0f1419; }
+  .user-row .user-handle { color: #8b98a5; font-size: 13px; }
+  .user-row .user-count { margin-left: auto; font-size: 12px; color: #666; background: #f0f0f0; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+  .user-empty { color: #999; padding: 40px 8px; }
+  .ht-search {
+    width: 100%; max-width: 360px; display: block; margin-bottom: 8px;
+    padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 14px; outline: none; transition: border-color 0.15s;
+  }
+  .ht-search:focus { border-color: #1d9bf0; }
+  .hashtag-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+  .hashtag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 999px; background: #fff; color: #1d9bf0; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
+  .hashtag-chip:hover { background: #e8f5fe; border-color: #1d9bf0; }
+  .hashtag-chip .ht-count { font-size: 11px; color: #999; background: #f0f0f0; padding: 1px 7px; border-radius: 999px; }
+  .hashtag-empty { color: #999; padding: 40px 8px; }
+  .sb-subtitle { font-size: 11px; color: #8b98a5; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
+        <button class="tab-btn" data-tab="tags" id="tabTags"></button>
+        <button class="tab-btn" data-tab="users" id="tabUsers"></button>
+        <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
+      </nav>
+
+      <!-- Posts controls -->
+      <div class="tab-controls active" id="controls-posts">
+        <div class="toolbar" id="postsToolbar">
+          <input type="text" class="search-box" id="searchBox">
+          <select id="sortSelect">
+            <option value="date-desc"></option>
+            <option value="date-asc"></option>
+            <option value="likes-desc"></option>
+            <option value="reposts-desc"></option>
+            <option value="replies-desc"></option>
+            <option value="captured-desc"></option>
+          </select>
+          <div class="view-toggle">
+            <button data-view="grid" id="viewGrid" class="active"></button>
+            <button data-view="list" id="viewList"></button>
+          </div>
+          <span class="post-count" id="postCount"></span>
+        </div>
+        <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
+          <button class="chip" id="selectAllBtn"></button>
+          <span class="post-count" id="selectedCount"></span>
+          <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
+          <button class="chip" id="cancelSelectBtn"></button>
+        </div>
+        <!-- Active filters display -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbActiveTitle"></div>
+          <div class="sb-chips" id="queryChips"></div>
+        </div>
+
+        <!-- Platform -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbPlatformTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="x">X</button>
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="bluesky">Bluesky</button>
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="misskey">Misskey</button>
+            <button class="sb-chip" data-filter-type="platform" data-filter-value="mastodon">Mastodon</button>
+          </div>
+          <div id="sbInstanceWrap" style="display:none; margin-top:8px;">
+            <div class="sb-subtitle" id="sbInstanceTitle"></div>
+            <div class="sb-chips" id="sbInstanceChips"></div>
+          </div>
+        </div>
+
+        <!-- Post type -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbPostTypeTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="post" id="sbPost"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="reply" id="sbReply"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="quote" id="sbQuote"></button>
+            <button class="sb-chip" data-filter-type="postType" data-filter-value="thread" id="sbThread"></button>
+          </div>
+        </div>
+
+        <!-- Media -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbMediaTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="media" data-filter-value="image" id="sbImage"></button>
+            <button class="sb-chip" data-filter-type="media" data-filter-value="video" id="sbVideo"></button>
+            <button class="sb-chip" data-filter-type="media" data-filter-value="gif" id="sbGif"></button>
+          </div>
+        </div>
+
+        <!-- Date -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbDateTitle"></div>
+          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding:2px 4px;border:1px solid #ddd;border-radius:6px;color:#555;background:#fff;outline:none;cursor:pointer;">
+            <option value="date" id="sbDateOptPost"></option>
+            <option value="capturedAt" id="sbDateOptCapture"></option>
+          </select>
+          <div style="display:flex;flex-direction:column;gap:2px;margin-top:8px;">
+            <label style="font-size:10px;color:#999;" id="sbDateFromLabel"></label>
+            <input type="date" class="date-input" id="sbDateFrom" style="width:75%;font-size:11px;">
+            <label style="font-size:10px;color:#999;margin-top:6px;" id="sbDateToLabel"></label>
+            <input type="date" class="date-input" id="sbDateTo" style="width:75%;font-size:11px;">
+          </div>
+        </div>
+
+        <!-- Engagement -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbEngTitle"></div>
+          <select class="engagement-select" id="sbEngType" style="width:100%;margin-bottom:6px;font-size:11px;"></select>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="flex:1;font-size:11px;">
+            <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;"></button>
+          </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="sb-section">
+          <div class="sb-title" id="sbTagTitle"></div>
+          <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
+          <div class="sb-chips" id="sbTagChips"></div>
+        </div>
+      </div>
+
+      <!-- Hashtags controls -->
+      <div class="tab-controls" id="controls-tags">
+        <input type="text" class="ht-search" id="hashtagSearch">
+      </div>
+
+      <!-- Users controls -->
+      <div class="tab-controls" id="controls-users">
+        <input type="text" class="ht-search" id="userSearch">
+        <div class="sb-chips" id="userPlatformChips"></div>
+      </div>
+    </aside>
+
+    <div class="app-content">
+      <!-- Posts tab -->
+      <div class="tab-panel active" id="panelPosts">
+        <div id="postGrid" class="post-grid"></div>
+        <div id="emptyState" class="empty-state" style="display:none;"></div>
+        <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
+      </div>
+
+      <!-- Hashtags tab -->
+      <div class="tab-panel" id="panelTags">
+        <div id="hashtagList" class="hashtag-list"></div>
+      </div>
+
+      <!-- Users tab -->
+      <div class="tab-panel" id="panelUsers">
+        <div id="userList" class="user-list"></div>
+      </div>
+
+  <!-- Settings tab -->
+  <div class="tab-panel" id="panelSettings">
+    <div class="section">
+      <h2 id="settingsSaveFolderTitle">Save folder</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:#555;background:#f5f5f5;padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+        <button class="btn" id="chooseFolderBtn"></button>
+      </div>
+      <div class="hint" id="hintSaveFolder" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsLangTitle">Language</h2>
+      <select id="langSelect" style="width:100%;">
+        <option value="auto" id="langAuto"></option>
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
+      <div class="hint" id="hintLang"></div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsDataTitle">Data</h2>
+      <div class="data-section">
+        <button class="btn-outline" id="exportZip"></button>
+        <button class="btn-outline" id="exportHtml"></button>
+        <button class="btn-outline" id="importHtml"></button>
+        <div class="data-hint" id="hintExport"></div>
+      </div>
+      <input type="file" id="importHtmlInput" class="file-input-hidden" accept=".html">
+    </div>
+
+    <div class="section">
+      <h2 id="settingsDangerTitle"></h2>
+      <div style="margin-bottom: 12px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="resetDeleteConfirm">
+          <span id="labelResetDeleteConfirm"></span>
+        </label>
+        <div class="hint" id="hintResetDeleteConfirm"></div>
+      </div>
+      <button class="btn-danger" id="clearData"></button>
+    </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirmation -->
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+      <p id="confirmMsg"></p>
+      <label id="confirmSkipLabel" style="display:none; font-size:12px; color:#888; margin-bottom:12px; cursor:pointer; justify-content:center; align-items:center; gap:6px;">
+        <input type="checkbox" id="confirmSkip">
+        <span id="confirmSkipText"></span>
+      </label>
+      <div class="confirm-actions">
+        <button class="btn-outline" id="confirmCancel"></button>
+        <button class="btn-danger" id="confirmOk"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image lightbox / gallery -->
+  <div class="lightbox-overlay" id="lightbox">
+    <button class="lb-nav lb-prev" id="lbPrev" type="button">&#8249;</button>
+    <img id="lightboxImg" src="" alt="">
+    <button class="lb-nav lb-next" id="lbNext" type="button">&#8250;</button>
+    <div class="lb-counter" id="lbCounter"></div>
+  </div>
+
+  <!-- Edit tags overlay -->
+  <div class="confirm-overlay" id="editOverlay">
+    <div class="confirm-box" style="max-width:360px;">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:13px;font-weight:600;" id="editTagsLabel"></label>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <input type="text" id="editTagInput" style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          <button class="btn-outline" id="editTagAdd" style="padding:6px 12px;"></button>
+        </div>
+        <div id="editTagsList" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"></div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn-outline" id="editCancel"></button>
+        <button class="btn-outline" id="editSave" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Date edit popover -->
+  <div class="qf-popover" id="qfDatePopover" style="display:none;">
+    <div style="margin-bottom:8px;">
+      <button class="chip" id="qfDateType"></button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="date" class="date-input" id="qfDateFrom">
+      <span style="font-size:12px;color:#999;">〜</span>
+      <input type="date" class="date-input" id="qfDateTo">
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
+      <button class="btn-outline" id="qfDateApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+    </div>
+  </div>
+
+  <!-- Engagement edit popover -->
+  <div class="qf-popover" id="qfEngPopover" style="display:none;">
+    <div style="margin-bottom:8px;">
+      <select class="engagement-select" id="qfEngType" style="width:100%;"></select>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="number" class="engagement-input" id="qfEngMin" min="0" placeholder="0" style="flex:1;">
+      <button class="chip" id="qfEngOp" style="min-width:40px;text-align:center;"></button>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
+      <button class="btn-outline" id="qfEngApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+    </div>
+  </div>
+
+  <script src="../vendor/jszip.min.js"></script>
+  <script src="i18n.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

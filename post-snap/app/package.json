@@ -1,0 +1,40 @@
+{
+  "name": "post-snap-app",
+  "version": "1.0.0",
+  "description": "Post Snap desktop viewer",
+  "main": "main.js",
+  "author": "apricot-cake",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "register-host": "node ../native-host/install.js",
+    "unregister-host": "node ../native-host/install.js uninstall"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.postsnap.app",
+    "productName": "Post Snap",
+    "directories": { "output": "dist" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "vendor/**/*"
+    ],
+    "extraResources": [
+      { "from": "../native-host", "to": "native-host" }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "../icons/icon256.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}

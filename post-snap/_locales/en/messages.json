@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "Post Snap",
+    "description": "Extension name shown in Web Store and browser"
+  },
+  "extDesc": {
+    "message": "Capture posts from X, Bluesky, Misskey, and Mastodon, then browse and search them in a desktop app",
+    "description": "Extension description shown in Web Store"
+  },
+  "actionTitle": {
+    "message": "Save post",
+    "description": "Toolbar button tooltip"
+  },
+  "cmdActivate": {
+    "message": "Start capturing a post",
+    "description": "Keyboard command description (Alt+S)"
+  }
+}

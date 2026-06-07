@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "Post Snap",
+    "description": "Extension name shown in Web Store and browser"
+  },
+  "extDesc": {
+    "message": "X・Bluesky・Misskey・Mastodonの投稿を画像としてキャプチャし、デスクトップアプリで閲覧・検索",
+    "description": "Extension description shown in Web Store"
+  },
+  "actionTitle": {
+    "message": "投稿を保存",
+    "description": "Toolbar button tooltip"
+  },
+  "cmdActivate": {
+    "message": "投稿の保存を開始",
+    "description": "Keyboard command description (Alt+S)"
+  }
+}
