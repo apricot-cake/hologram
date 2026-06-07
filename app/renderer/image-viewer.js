@@ -227,7 +227,7 @@
     const img = $('ivViewerImg'), vid = $('ivViewerVid');
     if (vIsVideo) {
       img.hidden = true; img.src = '';
-      vid.hidden = false; vid.src = vItems[0] || ''; vid.play().catch(() => { /* autoplay may be blocked */ });
+      vid.hidden = false; vid.muted = true; vid.src = vItems[0] || ''; vid.play().catch(() => { /* autoplay may be blocked */ });
       $('ivViewerIndex').textContent = '';
       $('ivPrev').style.visibility = 'hidden'; $('ivNext').style.visibility = 'hidden';
       return;
