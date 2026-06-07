@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('corpus', {
   getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
   getUngrouped: () => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys) => ipcRenderer.invoke('set-ungrouped', keys),
+  getManualGroups: () => ipcRenderer.invoke('get-manual-groups'),
+  setManualGroups: (groups) => ipcRenderer.invoke('set-manual-groups', groups),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getPrefs: () => ipcRenderer.invoke('get-prefs'),
   setPref: (key, value) => ipcRenderer.invoke('set-pref', key, value),

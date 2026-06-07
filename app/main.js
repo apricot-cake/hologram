@@ -87,7 +87,7 @@ function listPosts() {
   const posts = [];
   for (const f of files) {
     if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json') continue;
+    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
       // Keep records with an image, a (poster-less) video, or downloaded media.
@@ -254,6 +254,31 @@ ipcMain.handle('set-ungrouped', (_e, keys) => {
   try {
     fs.writeFileSync(path.join(folder, 'ungrouped.json'),
       JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// Manual image groups (image-view): user-defined groups of captureIds that should
+// collapse into one tile (for images not auto-grouped by post URL). Lives as
+// <saveFolder>/manual-groups.json: { groups: [ [captureId, …], … ] }.
+ipcMain.handle('get-manual-groups', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { groups: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'manual-groups.json'), 'utf8'));
+    return { groups: Array.isArray(j.groups) ? j.groups : [] };
+  } catch {
+    return { groups: [] };
+  }
+});
+ipcMain.handle('set-manual-groups', (_e, groups) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    const clean = Array.isArray(groups) ? groups.filter((g) => Array.isArray(g) && g.length > 1).map((g) => g.map(String)) : [];
+    fs.writeFileSync(path.join(folder, 'manual-groups.json'), JSON.stringify({ groups: clean }, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };
@@ -436,7 +461,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }

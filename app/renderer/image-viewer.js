@@ -25,7 +25,10 @@
 
   const state = { search: '', platform: '', sort: 'captured', minLikes: 0, multiOnly: false, expandAll: false, tags: new Set() };
   let tagGroups = [];   // [{ id, name, tags:[] }] migrated from Eagle (tag-groups.json)
-  let ungrouped = new Set();   // 永続: グループ化しない投稿キー（ungrouped.json）
+  let ungrouped = new Set();    // 永続: グループ化しない投稿キー（ungrouped.json）
+  let manualGroups = [];        // 永続: 手動グループ [[captureId,…],…]（manual-groups.json）
+  let selectMode = false;       // 選択モード（手動グループ化用）
+  const selected = new Set();   // 選択中のグループキー
 
   // 画像閲覧に出す「実際の絵」のファイル名配列。
   //  - media[] の原本があれば常にそれ（投稿キャプチャの原寸画像・pixiv原寸など＝表示OK）。
@@ -63,12 +66,19 @@
   // 同じ投稿(postKey)のレコードを1グループに集約。url無し/parse不可は各自単独グループ。
   // グループ内のページ順は captureId（≒保存順）でソート。返り値: [{ rep, records[], files[], isVideo }]
   function groupRecords(list) {
+    const manualOf = new Map();   // captureId → 'manual:idx'（手動グループ優先）
+    manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
     const map = new Map(); const order = []; let solo = 0;
     for (const p of list) {
-      const k = state.expandAll ? null : postKeyOf(p.url);   // expandAll=全展開 / ungrouped=個別指定
-      const key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
+      let key;
+      const mg = manualOf.get(p.captureId);
+      if (mg && !state.expandAll) key = mg;                 // 手動グループ最優先
+      else {
+        const k = state.expandAll ? null : postKeyOf(p.url); // expandAll=全展開 / ungrouped=個別指定
+        key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
+      }
       let g = map.get(key);
-      if (!g) { g = { records: [] }; map.set(key, g); order.push(g); }
+      if (!g) { g = { key, records: [] }; map.set(key, g); order.push(g); }
       g.records.push(p);
     }
     for (const g of order) {
@@ -177,21 +187,21 @@
     view.forEach((g, i) => {
       const p = g.rep;
       const badges = [`<span class="iv-badge ${escapeHtml(p.platform || '')}">${escapeHtml((p.platform || '').toUpperCase())}</span>`];
-      if (g.files.length > 1) badges.push(`<span class="iv-badge count">×${g.files.length}</span>`);
+      const ntag = g.files.length > 1 ? `<div class="iv-ntag">×${g.files.length}</div>` : '';
       const author = p.displayName || p.screenName || p.title || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
       const playOverlay = (g.isVideo || p.mediaType === 'gif')
         ? `<div class="iv-play"><span>${g.isVideo ? '▶' : 'GIF'}</span></div>` : '';
       const card = document.createElement('div');
-      card.className = 'iv-card';
+      card.className = 'iv-card' + (selected.has(g.key) ? ' selected' : '');
       card.dataset.idx = String(i);
       // poster-less video (recovered orphan mp4): no thumbnail to show → placeholder tile.
       const thumb = g.files.length
         ? `<img src="${thumbUrl(g.files[0])}" alt="" loading="lazy" decoding="async">`
         : `<div class="iv-noposter"></div>`;
       card.innerHTML =
-        thumb + playOverlay +
+        thumb + playOverlay + ntag +
         `<div class="iv-badges">${badges.join('')}</div>` +
         `<div class="iv-actions">` +
           `<button class="iv-act" data-act="detail" title="詳細">ℹ</button>${openBtn}` +
@@ -226,11 +236,14 @@
     // このタイルの投稿に「まとめられる別レコード」が存在するか（グループ化解除/再開ボタンの可否）
     const gkey = postKeyOf(p.url);
     const potential = gkey ? allPosts.filter((q) => postKeyOf(q.url) === gkey).length : 0;
-    const groupBtn = potential > 1
-      ? (ungrouped.has(gkey)
-        ? `<a class="iv-insp-open" id="ivRegroup">🔗 この投稿をまとめる（再グループ化）</a>`
-        : `<a class="iv-insp-open" id="ivUngroup">✂ この投稿のグループ化を解除（個別表示）</a>`)
-      : '';
+    const isManual = !!(g.key && g.key.indexOf('manual:') === 0);
+    const groupBtn = isManual
+      ? `<a class="iv-insp-open" id="ivUngroupManual">🔗 グループ解除（手動グループ）</a>`
+      : (potential > 1
+        ? (ungrouped.has(gkey)
+          ? `<a class="iv-insp-open" id="ivRegroup">🔗 この投稿をまとめる（再グループ化）</a>`
+          : `<a class="iv-insp-open" id="ivUngroup">✂ この投稿のグループ化を解除（個別表示）</a>`)
+        : '');
     box.innerHTML =
       `<button class="iv-insp-close" id="ivInspClose" title="閉じる">×</button>` +
       (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
@@ -251,6 +264,7 @@
     const o = $('ivInspOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
     const ug = $('ivUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
     const rg = $('ivRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
+    const um = $('ivUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(g.key.split(':')[1], 10));
   }
 
   // 投稿キーのグループ化解除/再開（永続）。
@@ -258,6 +272,45 @@
     if (!key) return;
     if (ungroup) ungrouped.add(key); else ungrouped.delete(key);
     if (window.corpus.setUngrouped) window.corpus.setUngrouped([...ungrouped]).catch(() => { /* best-effort */ });
+    closeDetail();
+    render();
+  }
+
+  // === 手動グループ化（選択モードで任意の画像をまとめる） ===
+  function persistManual() { if (window.corpus.setManualGroups) window.corpus.setManualGroups(manualGroups).catch(() => { /* best-effort */ }); }
+  function updateSelBar() {
+    $('ivSelCount').textContent = selected.size + ' 件選択';
+    $('ivGroupBtn').disabled = selected.size < 2;
+  }
+  function setSelectMode(on) {
+    selectMode = on;
+    if (!on) selected.clear();
+    $('ivSelectBtn').textContent = on ? '選択終了' : '選択';
+    $('ivSelectBtn').classList.toggle('active', on);
+    ['ivSelCount', 'ivGroupBtn', 'ivSelClear'].forEach((id) => { $(id).hidden = !on; });
+    updateSelBar();
+    render();
+  }
+  function toggleSelect(g, card) {
+    if (selected.has(g.key)) { selected.delete(g.key); card.classList.remove('selected'); }
+    else { selected.add(g.key); card.classList.add('selected'); }
+    updateSelBar();
+  }
+  function groupSelected() {
+    if (selected.size < 2) return;
+    const members = [];
+    view.forEach((g) => { if (selected.has(g.key)) g.records.forEach((r) => members.push(r.captureId)); });
+    if (members.length < 2) return;
+    // 対象 captureId を既存の手動グループから外してから新グループを追加（重複所属を防止）
+    manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
+    manualGroups.push(members);
+    persistManual();
+    setSelectMode(false);   // re-renders grouped
+  }
+  function ungroupManual(idx) {
+    if (!(idx >= 0 && idx < manualGroups.length)) return;
+    manualGroups.splice(idx, 1);
+    persistManual();
     closeDetail();
     render();
   }
@@ -329,6 +382,9 @@
     $('ivMultiOnly').addEventListener('change', (e) => { state.multiOnly = e.target.checked; render(); });
     $('ivExpandAll').addEventListener('change', (e) => { state.expandAll = e.target.checked; render(); });
     $('ivReset').addEventListener('click', resetFilters);
+    $('ivSelectBtn').addEventListener('click', () => setSelectMode(!selectMode));
+    $('ivGroupBtn').addEventListener('click', groupSelected);
+    $('ivSelClear').addEventListener('click', () => { selected.clear(); render(); updateSelBar(); });
 
     // プラットフォームチップ: 単一選択 (同じものを再クリックで解除)。
     $('ivPlatformChips').addEventListener('click', (e) => {
@@ -369,6 +425,7 @@
         else if (act.dataset.act === 'del') doDelete(g);
         return;
       }
+      if (selectMode) { toggleSelect(g, card); return; }   // 選択モード中はクリックで選択トグル
       openViewer(idx);
     });
     $('ivPrev').addEventListener('click', () => step(-1));
@@ -399,12 +456,17 @@
     catch { ungrouped = new Set(); }
   }
 
+  async function loadManualGroups() {
+    try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; }
+    catch { manualGroups = []; }
+  }
+
   async function init() {
     if (inited) return;
     inited = true;
     bind();
     if (window.corpus.onPostsChanged) window.corpus.onPostsChanged(() => { load().then(() => { render(); renderTagFilter(); }); });
-    await Promise.all([load(), loadTagGroups(), loadUngrouped()]);
+    await Promise.all([load(), loadTagGroups(), loadUngrouped(), loadManualGroups()]);
     render();
     renderTagFilter();
   }
