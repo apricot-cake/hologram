@@ -90,7 +90,8 @@ function listPosts() {
     if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
-      if (rec && rec.image) posts.push(rec);
+      // Keep records with an image, a (poster-less) video, or downloaded media.
+      if (rec && (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length))) posts.push(rec);
     } catch {
       // Skip corrupt/partial sidecar.
     }

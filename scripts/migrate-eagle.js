@@ -172,7 +172,7 @@ const tagGroups = (Array.isArray(libMeta.tagsGroups) ? libMeta.tagsGroups : [])
 const saveFolder = resolveSaveFolder(args.save);
 
 const stats = {
-  scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0, unreadable: 0,
+  scanned: 0, deleted: 0, nonViewable: 0, imageMissing: 0, unreadable: 0, orphan: 0,
   skippedExisting: 0, skippedUntagged: 0, wouldWrite: 0, withTags: 0, withUrl: 0, video: 0,
   byPlatform: {}
 };
@@ -184,9 +184,25 @@ catch (e) { abort(`cannot read images dir: ${e.message}`); }
 
 for (const d of dirs) {
   const id = d.replace(/\.info$/, '');
-  const meta = readJson(path.join(imagesDir, d, 'metadata.json'));
+  let meta = readJson(path.join(imagesDir, d, 'metadata.json'));
   stats.scanned++;
-  if (!meta) { stats.unreadable++; continue; }   // missing/corrupt metadata.json — count, don't silently drop
+  let isOrphan = false;
+  if (!meta) {
+    // No metadata.json (orphan / interrupted import). Recover instead of dropping
+    // if the .info dir still holds a viewable original — synthesize a minimal meta
+    // from the file itself (name/ext from the filename, btime from fs mtime, no tags/url).
+    const orphanFile = resolveImage(args.lib, id, null, null);   // directory-scan only
+    if (!orphanFile) { stats.unreadable++; continue; }           // truly empty/corrupt → skip
+    let st = null; try { st = fs.statSync(orphanFile); } catch { /* ignore */ }
+    meta = {
+      name: path.basename(orphanFile, path.extname(orphanFile)),
+      ext: path.extname(orphanFile).slice(1).toLowerCase(),
+      btime: st ? st.mtimeMs : 0, mtime: st ? st.mtimeMs : 0,
+      tags: [], url: null, annotation: '', isDeleted: false
+    };
+    isOrphan = true;
+    stats.orphan++;
+  }
   if (meta.isDeleted) { stats.deleted++; continue; }
   const ext = String(meta.ext || '').toLowerCase().replace(/^\./, '');
   if (!isViewable(ext)) { stats.nonViewable++; continue; }        // exe / archives / etc.
@@ -219,6 +235,7 @@ for (const d of dirs) {
   const parsed = url ? parsePostUrl(url) : null;
   const platform = ov.platform || (parsed && parsed.platform) || null;
   const rec = buildRecord(id, meta, ov, platform, { captureId, image, video, mediaType }, parsed);
+  if (isOrphan) rec.orphan = true;                 // recovered without an Eagle metadata.json
   plan.push({ id, captureId, platform, srcMain, destMain, srcPoster, destPoster, rec });
   stats.wouldWrite++;
   if (tagged) stats.withTags++;
@@ -273,8 +290,9 @@ function printPlan() {
   console.log('skipped      : non-viewable(exe等)=' + stats.nonViewable,
     '| image-missing=' + stats.imageMissing, '| unreadable-meta=' + stats.unreadable, '| already-migrated=' + stats.skippedExisting,
     (args.taggedOnly ? '| untagged-skipped=' + stats.skippedUntagged : ''));
-  if (stats.unreadable) console.log('  ⚠ WARNING: ' + stats.unreadable + ' item(s) had missing/corrupt metadata.json and were skipped');
-  console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| SNS url:', stats.withUrl, '| video:', stats.video + ')');
+  if (stats.unreadable) console.log('  ⚠ WARNING: ' + stats.unreadable + ' item(s) had missing/corrupt metadata.json AND no recoverable media — skipped');
+  if (stats.orphan) console.log('  ↪ recovered ' + stats.orphan + ' orphan(s): media present but no metadata.json (filename→title, no tags/url)');
+  console.log('WOULD WRITE  :', stats.wouldWrite, 'sidecars  (tagged:', stats.withTags, '| SNS url:', stats.withUrl, '| video:', stats.video, '| orphan:', stats.orphan + ')');
   console.log('             by platform:', JSON.stringify(stats.byPlatform));
   if (args.limit) console.log('LIMIT        : --limit ' + args.limit + ' → writing only first ' + toWrite.length + ' of ' + stats.wouldWrite);
   console.log('tag groups   :', tagGroups.length, tagGroups.map((g) => `${g.name}(${g.tags.length})`).join(' '));

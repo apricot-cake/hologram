@@ -72,7 +72,7 @@
 
   function applyFilters() {
     const q = state.search.trim().toLowerCase();
-    let list = allPosts.filter((p) => recordImageFiles(p).length); // 描画できる画像がある物だけ
+    let list = allPosts.filter((p) => recordImageFiles(p).length || p.video); // 描画できる画像、または動画(ポスター無しでも)
     if (state.platform) list = list.filter((p) => p.platform === state.platform);
     if (state.minLikes > 0) list = list.filter((p) => (p.likes || 0) >= state.minLikes);
     if (state.multiOnly) list = list.filter((p) => recordImageFiles(p).length > 1);
@@ -142,7 +142,7 @@
       const files = recordImageFiles(p);
       const badges = [`<span class="iv-badge ${escapeHtml(p.platform || '')}">${escapeHtml((p.platform || '').toUpperCase())}</span>`];
       if (files.length > 1) badges.push(`<span class="iv-badge count">×${files.length}</span>`);
-      const author = p.displayName || p.screenName || '';
+      const author = p.displayName || p.screenName || p.title || '';
       const likes = p.likes != null ? `❤ ${fmtNum(p.likes)}` : '';
       const openBtn = p.url ? `<button class="iv-act" data-act="open" title="元投稿を開く">↗</button>` : '';
       const playOverlay = (p.mediaType === 'video' || p.mediaType === 'gif')
@@ -150,8 +150,12 @@
       const card = document.createElement('div');
       card.className = 'iv-card';
       card.dataset.idx = String(i);
+      // poster-less video (e.g. recovered orphan mp4): no thumbnail to show → placeholder tile.
+      const thumb = files.length
+        ? `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">`
+        : `<div class="iv-noposter"></div>`;
       card.innerHTML =
-        `<img src="${thumbUrl(files[0])}" alt="" loading="lazy" decoding="async">` + playOverlay +
+        thumb + playOverlay +
         `<div class="iv-badges">${badges.join('')}</div>` +
         `<div class="iv-actions">` +
           `<button class="iv-act" data-act="detail" title="詳細">ℹ</button>${openBtn}` +
