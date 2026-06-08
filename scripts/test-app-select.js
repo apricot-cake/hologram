@@ -52,7 +52,6 @@ const evalJs = `(async () => {
   click(circleAt(0), false);
   const enteredMode = grid.classList.contains('selecting');
   const afterFirst = selCount();
-  const btnText = document.getElementById('ivSelectBtn').textContent;
   // 2) Shift+click ○ on tile 2 → range-selects 0,1,2
   click(circleAt(2), true);
   const afterRange = selCount();
@@ -66,8 +65,7 @@ const evalJs = `(async () => {
   click(circleAt(2), false);
   const afterEmpty = selCount();
   const exitedMode = !grid.classList.contains('selecting');
-  const btnAfterExit = document.getElementById('ivSelectBtn').textContent;
-  return { total, enteredMode, afterFirst, btnText, afterRange, countLabel, afterToggle, tile1Selected, afterEmpty, exitedMode, btnAfterExit };
+  return { total, enteredMode, afterFirst, afterRange, countLabel, afterToggle, tile1Selected, afterEmpty, exitedMode };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -84,10 +82,10 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.total === 4 && r.enteredMode === true && r.afterFirst === 1 &&
-    r.btnText === '選択終了' && r.afterRange === 3 && /3/.test(r.countLabel || '') &&
+    r.afterRange === 3 && /3/.test(r.countLabel || '') &&
     r.afterToggle === 2 && r.tile1Selected === false &&
-    r.afterEmpty === 0 && r.exitedMode === true && r.btnAfterExit === '選択';
-  console.log(`total=${r.total} enter=${r.enteredMode} first=${r.afterFirst} btn=${r.btnText} range=${r.afterRange} label=${r.countLabel} toggle=${r.afterToggle} tile1=${r.tile1Selected} empty=${r.afterEmpty} exited=${r.exitedMode} btn2=${r.btnAfterExit}`);
+    r.afterEmpty === 0 && r.exitedMode === true;
+  console.log(`total=${r.total} enter=${r.enteredMode} first=${r.afterFirst} range=${r.afterRange} label=${r.countLabel} toggle=${r.afterToggle} tile1=${r.tile1Selected} empty=${r.afterEmpty} exited=${r.exitedMode}`);
   console.log(ok ? 'SELECT_TEST_PASS' : 'SELECT_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

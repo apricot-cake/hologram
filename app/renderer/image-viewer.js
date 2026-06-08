@@ -378,8 +378,8 @@
   function setSelectMode(on) {
     selectMode = on;
     $('ivGrid').classList.toggle('selecting', on);   // CSS: show every ○ while selecting
-    $('ivSelectBtn').textContent = on ? '選択終了' : '選択';
-    $('ivSelectBtn').classList.toggle('active', on);
+    const sbtn = $('ivSelectBtn');                   // 「選択」ボタンは撤去済み（○オーバーレイで選択モードへ）。残存時のみ更新。
+    if (sbtn) { sbtn.textContent = on ? '選択終了' : '選択'; sbtn.classList.toggle('active', on); }
     ['ivSelCount', 'ivGroupBtn', 'ivSelClear'].forEach((id) => { $(id).hidden = !on; });
     if (!on) { selected.clear(); selectAnchor = null; clearSelectClasses(); }
     updateSelBar();
@@ -511,7 +511,7 @@
     $('ivMultiOnly').addEventListener('change', (e) => { state.multiOnly = e.target.checked; render(); });
     $('ivExpandAll').addEventListener('change', (e) => { state.expandAll = e.target.checked; render(); });
     $('ivReset').addEventListener('click', resetFilters);
-    $('ivSelectBtn').addEventListener('click', () => setSelectMode(!selectMode));
+    { const sbtn = $('ivSelectBtn'); if (sbtn) sbtn.addEventListener('click', () => setSelectMode(!selectMode)); }
     $('ivGroupBtn').addEventListener('click', groupSelected);
     $('ivSelClear').addEventListener('click', () => setSelectMode(false));   // 全クリア=選択モード終了
 
