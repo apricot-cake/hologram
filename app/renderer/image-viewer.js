@@ -143,15 +143,26 @@
       });
     }
     if (q) {
-      list = list.filter((p) =>
-        (p.text || '').toLowerCase().includes(q) ||
-        (p.title || '').toLowerCase().includes(q) ||
-        (p.eagleName || '').toLowerCase().includes(q) ||
-        (p.displayName || '').toLowerCase().includes(q) ||
-        (p.screenName || '').toLowerCase().includes(q) ||
-        (Array.isArray(p.hashtags) && p.hashtags.some((h) => String(h).toLowerCase().includes(q))) ||
-        (Array.isArray(p.tags) && p.tags.some((t) => String(t).toLowerCase().includes(q)))
-      );
+      const fuzzy = window.corpusSearch && window.corpusSearch.isFuzzy();
+      if (fuzzy) {
+        list = list.filter((p) => {
+          const hay = [p.text, p.title, p.eagleName, p.displayName, p.screenName]
+            .concat(Array.isArray(p.hashtags) ? p.hashtags : [])
+            .concat(Array.isArray(p.tags) ? p.tags : [])
+            .map((x) => (x == null ? '' : String(x))).join(' ').toLowerCase();
+          return window.corpusSearch.fuzzy(hay, state.search);
+        });
+      } else {
+        list = list.filter((p) =>
+          (p.text || '').toLowerCase().includes(q) ||
+          (p.title || '').toLowerCase().includes(q) ||
+          (p.eagleName || '').toLowerCase().includes(q) ||
+          (p.displayName || '').toLowerCase().includes(q) ||
+          (p.screenName || '').toLowerCase().includes(q) ||
+          (Array.isArray(p.hashtags) && p.hashtags.some((h) => String(h).toLowerCase().includes(q))) ||
+          (Array.isArray(p.tags) && p.tags.some((t) => String(t).toLowerCase().includes(q)))
+        );
+      }
     }
     if (state.sort === 'likes') list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
     else if (state.sort === 'likesPct') { const pct = percentileFn(list); list.sort((a, b) => pct(b) - pct(a)); }
@@ -476,8 +487,24 @@
     render();
   }
 
+  // 検索方式トグル（通常 / あいまい）。corpusSearch がモードを集約し投稿モードと共有。
+  function syncImgSearchToggle() {
+    const btn = $('ivSearchModeToggle');
+    if (!btn || !window.corpusSearch) return;
+    const fuzzy = window.corpusSearch.isFuzzy();
+    btn.textContent = fuzzy ? 'あいまい' : '通常';
+    btn.classList.toggle('active', fuzzy);
+    btn.title = '検索方式を切替（通常 / あいまい）';
+  }
+
   function bind() {
     $('ivSearch').addEventListener('input', (e) => { state.search = e.target.value || ''; render(); });
+    const smBtn = $('ivSearchModeToggle');
+    if (smBtn && window.corpusSearch) {
+      smBtn.addEventListener('click', () => window.corpusSearch.toggle());
+      window.corpusSearch.onChange(() => { syncImgSearchToggle(); render(); });
+      syncImgSearchToggle();
+    }
     $('ivSort').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
     $('ivMinLikes').addEventListener('input', (e) => { state.minLikes = parseInt(e.target.value, 10) || 0; render(); });
     $('ivMultiOnly').addEventListener('change', (e) => { state.multiOnly = e.target.checked; render(); });

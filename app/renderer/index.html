@@ -97,6 +97,16 @@
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
     .search-box:focus { border-color: #1d9bf0; }
+    /* 検索方式トグル（通常 / あいまい）。active＝あいまい時。 */
+    .search-mode-toggle {
+      font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer;
+      padding: 5px 10px; border: 1px solid #ddd; border-radius: 999px;
+      background: #fff; color: #666; transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .search-mode-toggle:hover { background: #f5f5f5; }
+    .search-mode-toggle.active { background: var(--accent, #1d9bf0); border-color: var(--accent, #1d9bf0); color: #fff; }
+    .toolbar > .search-mode-toggle { align-self: flex-start; }   /* 投稿側ツールバー（縦flex）で全幅化させずコンパクトに */
+    .sb-section > .search-mode-toggle { margin-top: 6px; }
     select {
       padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
       font-size: 13px; background: #fff; outline: none; cursor: pointer;
@@ -599,6 +609,7 @@
       <div class="tab-controls active" id="controls-posts">
         <div class="toolbar" id="postsToolbar">
           <input type="text" class="search-box" id="searchBox">
+          <button type="button" class="search-mode-toggle" id="searchModeToggle"></button>
           <select id="sortSelect">
             <option value="date-desc"></option>
             <option value="date-asc"></option>
@@ -721,6 +732,7 @@
     <div id="side-image" class="side-controls" style="display:none">
       <div class="sb-section">
         <input type="search" id="ivSearch" class="search-box" placeholder="検索（作者・本文・タグ）">
+        <button type="button" class="search-mode-toggle" id="ivSearchModeToggle"></button>
       </div>
       <div class="sb-section collapsible">
         <div class="sb-title">プラットフォーム</div>
@@ -1146,6 +1158,7 @@
   <script src="../vendor/jszip.min.js"></script>
   <script src="i18n.js"></script>
   <script src="folders.js"></script>
+  <script src="search.js"></script>
   <script src="viewer.js"></script>
   <script src="image-viewer.js"></script>
   <script src="shell.js"></script>

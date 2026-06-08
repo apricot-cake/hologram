@@ -47,6 +47,7 @@
   (async () => {
     try {
       const prefs = window.corpus.getPrefs ? await window.corpus.getPrefs() : null;
+      if (prefs && window.corpusSearch) window.corpusSearch.applyMode(prefs.searchMode);   // 検索方式(通常/あいまい)を両モードへ反映
       if (prefs && prefs.mode === 'image') setMode('image', false);
     } catch { /* default post */ }
   })();

@@ -149,7 +149,10 @@
     qfEngViews: _s('qfEngViews'),
     qfEngSuffix: _s('qfEngSuffix'),
     qfEngGte: _s('qfEngGte'),
-    qfEngLte: _s('qfEngLte')
+    qfEngLte: _s('qfEngLte'),
+    searchExact: _s('searchExact'),
+    searchFuzzy: _s('searchFuzzy'),
+    searchModeTitle: _s('searchModeTitle')
   };
 
   // --- Apply i18n to static elements ---
@@ -883,19 +886,30 @@
       const set = new Set(f ? f.items : []);
       posts = posts.filter(p => set.has(p.captureId));
     }
-    const query = document.getElementById('searchBox').value.trim().toLowerCase();
+    const rawQuery = document.getElementById('searchBox').value.trim();
+    const query = rawQuery.toLowerCase();
     const sort = sortSelect.value;
 
-    // Text search (unchanged)
+    // Text search: 通常＝部分一致 / あいまい＝サブシーケンス一致（corpusSearch が方式を保持）
     if (query) {
-      posts = posts.filter(p =>
-        (p.text || '').toLowerCase().includes(query) ||
-        (p.title || '').toLowerCase().includes(query) ||
-        (p.eagleName || '').toLowerCase().includes(query) ||
-        (p.screenName || '').toLowerCase().includes(query) ||
-        (p.displayName || '').toLowerCase().includes(query) ||
-        (p.tags || []).some(t => t.toLowerCase().includes(query))
-      );
+      const fuzzy = window.corpusSearch && window.corpusSearch.isFuzzy();
+      if (fuzzy) {
+        posts = posts.filter(p => {
+          const hay = [p.text, p.title, p.eagleName, p.screenName, p.displayName]
+            .concat(p.tags || [])
+            .map(x => (x == null ? '' : String(x))).join(' ').toLowerCase();
+          return window.corpusSearch.fuzzy(hay, rawQuery);
+        });
+      } else {
+        posts = posts.filter(p =>
+          (p.text || '').toLowerCase().includes(query) ||
+          (p.title || '').toLowerCase().includes(query) ||
+          (p.eagleName || '').toLowerCase().includes(query) ||
+          (p.screenName || '').toLowerCase().includes(query) ||
+          (p.displayName || '').toLowerCase().includes(query) ||
+          (p.tags || []).some(t => t.toLowerCase().includes(query))
+        );
+      }
     }
 
     // Group filters by type
@@ -1460,6 +1474,21 @@
     window.corpus.setPref('sortBy', sortSelect.value);
     renderPosts();
   });
+
+  // 検索方式トグル（通常 / あいまい）。corpusSearch がモードを集約し、両モードで共有する。
+  const searchModeBtn = document.getElementById('searchModeToggle');
+  function syncSearchToggle() {
+    if (!searchModeBtn || !window.corpusSearch) return;
+    const fuzzy = window.corpusSearch.isFuzzy();
+    searchModeBtn.textContent = fuzzy ? MSG.searchFuzzy : MSG.searchExact;
+    searchModeBtn.classList.toggle('active', fuzzy);
+    searchModeBtn.title = MSG.searchModeTitle;
+  }
+  if (searchModeBtn && window.corpusSearch) {
+    searchModeBtn.addEventListener('click', () => window.corpusSearch.toggle());
+    window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
+    syncSearchToggle();
+  }
 
   // --- Settings: save folder ---
   const saveFolderPath = document.getElementById('saveFolderPath');

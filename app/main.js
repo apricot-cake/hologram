@@ -332,7 +332,7 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
 
 ipcMain.handle('get-prefs', () => {
@@ -343,7 +343,8 @@ ipcMain.handle('get-prefs', () => {
     skipDeleteConfirm: !!cfg.skipDeleteConfirm,
     sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
     mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
-    imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null)   // image-view tile px
+    imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // image-view tile px
+    searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal'   // 検索方式: 通常 / あいまい
   };
 });
 
