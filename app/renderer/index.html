@@ -28,7 +28,7 @@
       width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 30;
       background: var(--surface); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; padding: 12px 10px 0; gap: 2px;
-      overflow-y: auto; overflow-x: hidden;
+      overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
     }
     .brand { font-size: 15px; font-weight: 700; color: var(--fg-strong); padding: 6px 8px 10px; letter-spacing: .02em; }
     .mode-nav { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
@@ -42,7 +42,10 @@
     .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
     .nav-item.active { background: #e8f4fd; color: var(--accent); }
     .nav-item.active svg { color: var(--accent); }
-    .side-controls { display: flex; flex-direction: column; }
+    .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
+       固定フッターにして、スクロールバーがバーに被らないようにする。 */
+    .sb-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
     #appMain { flex: 1; min-width: 0; }
@@ -78,7 +81,7 @@
     .tab-panel.active { display: block; }
     /* Per-tab control set in the sidebar; only the active tab's controls show. */
     .tab-controls { display: none; }
-    .tab-controls.active { display: block; }
+    .tab-controls.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
     /* --- Toolbar (stacked in the sidebar) --- */
     .toolbar {
@@ -513,12 +516,11 @@
     .sb-manage-link:hover { text-decoration: underline; }
     /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
        pills + AND/OR toggle + reset. Shown only when at least one filter is active. */
+    /* アクティブフィルタバーは .sb-scroll の外側の固定フッター（スクロールしない）。
+       sticky をやめたことでスクロール時の再描画も無くなる＝カクつき低減。 */
     .sb-activebar {
-      position: sticky; bottom: 0; margin: 8px -10px 0; padding: 8px 10px;
+      flex-shrink: 0; margin: 8px -10px 0; padding: 8px 10px;
       background: var(--surface); border-top: 1px solid var(--border);
-      /* 独立した合成レイヤへ昇格させ、スクロール時にメインスレッドで再描画されないように
-         する（bottom固定バーのスクロールカクつき対策）。contain でレイアウト/描画も隔離。 */
-      will-change: transform; contain: layout paint;
     }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
@@ -615,6 +617,7 @@
 
       <!-- Posts controls -->
       <div class="tab-controls active" id="controls-posts">
+        <div class="sb-scroll">
         <div class="toolbar" id="postsToolbar">
           <input type="text" class="search-box" id="searchBox">
           <button type="button" class="search-mode-toggle" id="searchModeToggle"></button>
@@ -712,8 +715,9 @@
           <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
           <div class="sb-chips" id="postFolderChips"></div>
         </div>
+        </div><!-- /sb-scroll -->
 
-        <!-- Active-filter bar: pinned to the sidebar bottom; shown only when ≥1 filter is active -->
+        <!-- Active-filter bar: スクロール領域の外に出した固定フッター（スクロールバーがバーに被らない） -->
         <div id="postActiveBar" class="sb-activebar" style="display:none">
           <div class="sb-activebar-head">
             <span class="sb-activebar-title" id="sbActiveTitle"></span>
@@ -738,6 +742,7 @@
 
     <!-- Image-view controls (shown in image mode) -->
     <div id="side-image" class="side-controls" style="display:none">
+      <div class="sb-scroll">
       <div class="sb-section">
         <input type="search" id="ivSearch" class="search-box" placeholder="検索（作者・本文・タグ）">
         <button type="button" class="search-mode-toggle" id="ivSearchModeToggle"></button>
@@ -785,8 +790,9 @@
         <div class="sb-title">フォルダ <button class="sb-manage-link" id="ivFolderManage" type="button">管理</button></div>
         <div class="sb-chips" id="ivFolderChips"></div>
       </div>
+      </div><!-- /sb-scroll -->
 
-      <!-- Active-filter bar: pinned to the sidebar bottom; shown only when ≥1 filter is active -->
+      <!-- Active-filter bar: スクロール領域の外に出した固定フッター（スクロールバーがバーに被らない） -->
       <div id="ivActiveBar" class="sb-activebar" style="display:none">
         <div class="sb-activebar-head">
           <span class="sb-activebar-title">適用中のフィルタ</span>
