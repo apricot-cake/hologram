@@ -547,6 +547,13 @@
     } else {
       sbEngMin.value = '';
     }
+    // 値が入っているフィルタ欄をハイライト（検索 / 日付 from・to / 最低エンゲージ）
+    const hl = (el, on) => { if (el) el.classList.toggle('has-value', !!on); };
+    const sb = document.getElementById('searchBox');
+    hl(sb, sb && sb.value.trim());
+    hl(sbDateFrom, sbDateFrom.value);
+    hl(sbDateTo, sbDateTo.value);
+    hl(sbEngMin, sbEngMin.value && parseInt(sbEngMin.value, 10) > 0);
     updateSidebarTags();
     updateSidebarInstances();
   }

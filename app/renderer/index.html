@@ -508,6 +508,8 @@
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
     .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
+    /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
+    .has-value { border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent); }
     /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
     .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; display: block; position: relative; }
     .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; }

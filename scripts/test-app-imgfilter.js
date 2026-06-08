@@ -52,7 +52,12 @@ const evalJs = `(async () => {
   document.getElementById('ivReset').click();
   await new Promise(r => setTimeout(r, 30));
   const afterReset = bar.style.display === 'none';
-  return { before, shown, pills, afterPill, afterReset };
+  // 値が入っているフィルタ欄のハイライト（検索）
+  const sb = document.getElementById('ivSearch');
+  sb.value = 'x'; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 30));
+  const searchHl = sb.classList.contains('has-value');
+  return { before, shown, pills, afterPill, afterReset, searchHl };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -64,8 +69,8 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.before === false && r.shown === true && r.pills === 1 && r.afterPill === true && r.afterReset === true;
-  console.log(`before=${r.before} shown=${r.shown} pills=${r.pills} afterPill=${r.afterPill} afterReset=${r.afterReset}`);
+  const ok = r.before === false && r.shown === true && r.pills === 1 && r.afterPill === true && r.afterReset === true && r.searchHl === true;
+  console.log(`before=${r.before} shown=${r.shown} pills=${r.pills} afterPill=${r.afterPill} afterReset=${r.afterReset} searchHl=${r.searchHl}`);
   console.log(ok ? 'IMGFILTER_TEST_PASS' : 'IMGFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

@@ -192,6 +192,7 @@
 
   function render() {
     renderImageActiveChips();                           // 下部固定バー（アクティブフィルタ）を毎回同期
+    updateImgHighlights();                              // 値ありフィルタ欄のハイライト
     let groups = groupRecords(applyFilters());          // 同一投稿の複数画像を1タイルに集約
     if (state.multiOnly) groups = groups.filter((g) => g.files.length > 1);
     view = groups;
@@ -327,6 +328,12 @@
     bar.style.display = items.length ? '' : 'none';
     $('ivTagMode').style.display = state.tags.size > 0 ? '' : 'none';
     host.innerHTML = items.map((c) => `<span class="sb-active-chip ${c.cls}" data-k="${c.k}" data-val="${escapeHtml(c.val || '')}">${escapeHtml(c.label)} ×</span>`).join('');
+  }
+
+  // 値が入っているフィルタ欄（検索・最低いいね）をハイライト。
+  function updateImgHighlights() {
+    const s = $('ivSearch'); if (s) s.classList.toggle('has-value', !!state.search);
+    const m = $('ivMinLikes'); if (m) m.classList.toggle('has-value', state.minLikes > 0);
   }
   // タイルの 📁 ワンクリック: デフォルトフォルダへ追加/解除（グループ全レコードに適用）。
   function toggleFolder(g, btn) {
