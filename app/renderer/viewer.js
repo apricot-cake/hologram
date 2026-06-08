@@ -689,7 +689,8 @@
   function updateSidebarTags() {
     const container = document.getElementById('sbTagChips');
     const searchInput = document.getElementById('sbTagSearch');
-    const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
+    // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
+    const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
     // Show the filter input only once the list is long enough to benefit.
     searchInput.style.display = allTags.length > 6 ? '' : 'none';
     if (allTags.length === 0) {
