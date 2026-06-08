@@ -138,15 +138,19 @@ async function getThumbnail(resolved, name, w) {
   if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
   let st;
   try { st = await fs.promises.stat(resolved); } catch { return null; }
-  // q2 in the key invalidates the older lower-quality cache so high-res art is
-  // re-downscaled with the best resampler (small tiles were showing jaggies).
-  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q2.jpg`.replace(/[^\w.\-]/g, '_');
+  // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
+  // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
+  // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
+  const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.\-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try { return await fs.promises.readFile(cachePath); } catch { /* cache miss */ }
   try {
     let img = nativeImage.createFromPath(resolved);
     if (img.isEmpty()) return null;
-    if (img.getSize().width > w) img = img.resize({ width: w, quality: 'best' });
+    const sz = img.getSize();
+    if (Math.min(sz.width, sz.height) > w) {
+      img = (sz.width >= sz.height) ? img.resize({ height: w, quality: 'best' }) : img.resize({ width: w, quality: 'best' });
+    }
     const buf = img.toJPEG(90);
     fs.promises.mkdir(thumbCacheDir(), { recursive: true })
       .then(() => fs.promises.writeFile(cachePath, buf)).catch(() => { /* cache best-effort */ });
