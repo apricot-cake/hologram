@@ -404,9 +404,10 @@ ipcMain.handle('delete-post', async (_e, image) => {
   // <base>-media-* and <base>-poster.* (covers a missing/partial sidecar). The
   // anchors prevent matching a different post whose id is a prefix.
   const jsonPath = resolveInFolder(`${base}.json`);
+  let rec = null;
   if (jsonPath) {
     try {
-      const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+      rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
       if (rec.image) targets.add(path.basename(rec.image));
       if (rec.video) targets.add(path.basename(rec.video));
       for (const m of (rec.media || [])) { if (m && m.file) targets.add(path.basename(m.file)); }
@@ -423,8 +424,11 @@ ipcMain.handle('delete-post', async (_e, image) => {
       try { await fs.promises.unlink(f); } catch { /* may not exist */ }
     }
   }
-  // UIでの明示削除はバックアップ出力先へも伝播（設定時のみ）。
-  try { await removeFromBackup(targets); } catch { /* best-effort */ }
+  // UIでの明示削除はバックアップ出力先へも伝播（設定時のみ）。投稿フォルダの中の該当ファイルを消す。
+  if (rec) {
+    const relDir = path.join(monthFolderOf(rec), rec.captureId || base);
+    try { await removeFromBackup(relDir, [...targets]); } catch { /* best-effort */ }
+  }
   return { ok: true };
 });
 
@@ -545,6 +549,46 @@ const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungroupe
 // 数千ファイルがぶちまけられないようにするための安全策（再発防止）。
 const BACKUP_SUBDIR = 'Corpus-backup';
 function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
+
+// 出力は「人間が取り出しやすい」形にする: 月別フォルダ(YYYY-MM) + 可読ファイル名。
+// 同一投稿の画像/原寸/JSONは同じ「ベース名」を共有し隣接させる。captureId は
+// ベース名の末尾6文字として埋め込み、復元時に内部のcaptureIdで正準名へ戻せる。
+// captureId（ファイル名のID部）を取り出す: <id>.jpg / <id>.json / <id>-media-N.ext / <id>-poster.ext。
+function captureIdOf(name) {
+  let b = path.basename(name || '');
+  b = b.replace(/-media-\d+\.[A-Za-z0-9]+$/i, '');
+  b = b.replace(/-poster\.[A-Za-z0-9]+$/i, '');
+  b = b.replace(/\.[A-Za-z0-9]+$/i, '');
+  return b;
+}
+function sanitizeNamePart(s, max) {
+  if (s == null) return '';
+  let t = String(s).replace(/[\\/:*?"<>|]/g, '').replace(/[ -]/g, '').replace(/\s+/g, ' ').trim();
+  if (t.length > max) t = t.slice(0, max).trim();
+  return t;
+}
+function recDate(rec) {
+  const iso = rec.capturedAt || rec.date || '';
+  const d = iso ? new Date(iso) : null;
+  return (d && !isNaN(d.getTime())) ? d : null;
+}
+function monthFolderOf(rec) {
+  const d = recDate(rec);
+  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : '0000-00';
+}
+// 例: 2026-04-03_pixiv_作者名_作品タイトル_ab12cd
+function friendlyBase(rec, captureId) {
+  const d = recDate(rec);
+  const ymd = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '0000-00-00';
+  const platform = sanitizeNamePart(rec.platform || (rec.source === 'eagle-migration' ? 'library' : ''), 16);
+  const author = sanitizeNamePart(rec.displayName || rec.screenName || '', 24);
+  const title = sanitizeNamePart(rec.title || rec.text || '', 40);
+  const id6 = String(captureId || '').replace(/[^A-Za-z0-9]/g, '').slice(-6) || 'xxxxxx';
+  let base = [ymd, platform, author, title].filter(Boolean).join('_').replace(/_+/g, '_');
+  if (base.length > 100) base = base.slice(0, 100);
+  return `${base}_${id6}`;
+}
+
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
   content: 'meta',        // 'media' | 'meta'
@@ -592,16 +636,29 @@ async function runBackup(reason) {
     await fs.promises.mkdir(dest, { recursive: true });
     let names = [];
     try { names = await fs.promises.readdir(src); } catch { names = []; }
+    // サイドカーから captureId → month(YYYY-MM) を作る（投稿フォルダ名は captureId で管理しやすく）。
+    const monthOf = new Map();
+    for (const name of names) {
+      if (!/\.json$/i.test(name) || LIBRARY_JSON.includes(name)) continue;
+      try {
+        const rec = JSON.parse(await fs.promises.readFile(path.join(src, name), 'utf8'));
+        monthOf.set(rec.captureId || captureIdOf(name), monthFolderOf(rec));
+      } catch { /* skip */ }
+    }
     const includeJson = b.content === 'meta';
     for (const name of names) {
-      if (name === 'config.json') continue;                 // 機微: 出力しない
+      if (name === 'config.json' || LIBRARY_JSON.includes(name)) continue;   // 機微/ライブラリjsonは出さない
       const isJson = /\.json$/i.test(name);
       const isViewable = VIEWABLE_RE.test(name);
       if (isJson && !includeJson) continue;
       if (!isJson && !isViewable) continue;                 // 未知ファイルは対象外
       result.total++;
+      // <月>/<captureId>/ の中へ。同一captureIdのスクショ・原寸・metaが1フォルダに揃う（セット）。
+      const id = captureIdOf(name);
+      const relDir = path.join(monthOf.get(id) || '0000-00', id);
       const sp = path.join(src, name);
-      const dp = path.join(dest, name);
+      const destDir = path.join(dest, relDir);
+      const dp = path.join(destDir, name);
       try {
         const sst = await fs.promises.stat(sp);
         if (!sst.isFile()) { result.skipped++; continue; }
@@ -612,6 +669,7 @@ async function runBackup(reason) {
           if (dst.size === sst.size && Math.abs(dst.mtimeMs - sst.mtimeMs) < 2000) need = false;
         } catch { /* 出力先に無い → コピー */ }
         if (!need) { result.skipped++; continue; }
+        await fs.promises.mkdir(destDir, { recursive: true });
         // 原子的に: 一時ファイルへコピー → mtime を元に合わせて → rename（同期クライアントが半端を見ない）
         const tmp = dp + '.tmp-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
         await fs.promises.copyFile(sp, tmp);
@@ -634,17 +692,19 @@ async function runBackup(reason) {
 }
 
 // UIでの明示削除を出力先へ伝播（runBackup は消さない＝こちらだけが削除を行う）。
-async function removeFromBackup(names) {
+// relDir = <month>/<投稿フォルダ>。その中の該当ファイルを消し、空なら投稿フォルダを掃除。
+async function removeFromBackup(relDir, names) {
   const b = readBackupConfig();
-  if (!b.dir) return;
+  if (!b.dir || !relDir) return;
   const dest = backupDest(b.dir);
+  const folderPath = path.resolve(path.join(dest, relDir));
+  if (!folderPath.startsWith(path.resolve(dest))) return;   // 出力先の外には触れない
   for (const name of names) {
     const base = path.basename(name || '');
     if (!base || base === 'config.json') continue;
-    const p = path.resolve(path.join(dest, base));
-    if (!p.startsWith(path.resolve(dest))) continue;        // 出力先の外には触れない
-    try { await fs.promises.unlink(p); } catch { /* 無ければ無視 */ }
+    try { await fs.promises.unlink(path.join(folderPath, base)); } catch { /* 無ければ無視 */ }
   }
+  try { const left = await fs.promises.readdir(folderPath); if (!left.length) await fs.promises.rmdir(folderPath); } catch { /* ignore */ }
 }
 
 let backupIntervalTimer = null;
@@ -704,20 +764,36 @@ ipcMain.handle('import-from-folder', async (_e, dir) => {
       } catch { /* skip */ }
     }
   } catch { /* empty */ }
-  let names = [];
-  try { names = await fs.promises.readdir(dir); } catch { return { imported: 0, skipped: 0, error: 'read' }; }
+  // 月別/投稿ごとのサブフォルダを再帰的に走査して .json を集める（フラット構造にも対応）。
+  const jsons = [];   // { dir, name }
+  async function walk(d, depth) {
+    if (depth > 6) return;
+    let ents;
+    try { ents = await fs.promises.readdir(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) await walk(full, depth + 1);
+      else if (/\.json$/i.test(e.name) && !LIBRARY_JSON.includes(e.name)) jsons.push({ dir: d, name: e.name });
+    }
+  }
+  await walk(dir, 0);
   let imported = 0, skipped = 0;
-  for (const jn of names) {
-    if (!/\.json$/i.test(jn) || LIBRARY_JSON.includes(jn)) continue;
+  for (const jf of jsons) {
     let rec;
-    try { rec = JSON.parse(await fs.promises.readFile(path.join(dir, jn), 'utf8')); } catch { skipped++; continue; }
-    const id = rec.captureId || baseOf(jn);
+    try { rec = JSON.parse(await fs.promises.readFile(path.join(jf.dir, jf.name), 'utf8')); } catch { skipped++; continue; }
+    const id = rec.captureId;
+    if (!id) { skipped++; continue; }
     if (existingIds.has(id) || (rec.url && existingUrls.has(rec.url))) { skipped++; continue; }
-    const base = baseOf(jn);
-    const related = names.filter((n) => n === jn || n.startsWith(base + '.') || n.startsWith(base + '-'));
+    // 投稿フォルダ内の、この captureId に属するファイル（正準名のまま）を保存先へコピー。
+    let sibs = [];
+    try { sibs = await fs.promises.readdir(jf.dir); } catch { /* ignore */ }
     try {
-      for (const rn of related) {
-        await fs.promises.copyFile(path.join(dir, rn), path.join(folder, path.basename(rn)));
+      for (const rn of sibs) {
+        if (captureIdOf(rn) !== id && !rn.startsWith(id)) continue;
+        const full = path.join(jf.dir, rn);
+        const st = await fs.promises.stat(full).catch(() => null);
+        if (!st || !st.isFile()) continue;
+        await fs.promises.copyFile(full, path.join(folder, path.basename(rn)));
       }
       existingIds.add(id); if (rec.url) existingUrls.add(rec.url);
       imported++;
