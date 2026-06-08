@@ -65,6 +65,29 @@
     confirmCancel: _s('confirmCancel'),
     cleared: _s('cleared'),
 
+    // settings > backup（指定フォルダへの増分エクスポート）
+    backupTitle: _s('backupTitle'),
+    hintBackup: _s('hintBackup'),
+    backupDirNone: _s('backupDirNone'),
+    backupChoose: _s('backupChoose'),
+    backupClear: _s('backupClear'),
+    backupContentTitle: _s('backupContentTitle'),
+    backupContentMeta: _s('backupContentMeta'),
+    backupContentMedia: _s('backupContentMedia'),
+    backupScheduleTitle: _s('backupScheduleTitle'),
+    backupOnStart: _s('backupOnStart'),
+    backupInterval: _s('backupInterval'),
+    backupIntervalUnit: _s('backupIntervalUnit'),
+    backupOnChange: _s('backupOnChange'),
+    backupRunNow: _s('backupRunNow'),
+    backupRestore: _s('backupRestore'),
+    backupRunning: _s('backupRunning'),
+    backupNotSet: _s('backupNotSet'),
+    backupOverlap: _s('backupOverlap'),
+    backupLastLabel: _s('backupLastLabel'),
+    backupItemsUnit: _s('backupItemsUnit'),
+    backupSkipLabel: _s('backupSkipLabel'),
+
     // export/import toasts
     exporting: _s('exporting'),
     exported: _s('exported'),
@@ -189,6 +212,20 @@
   setText('importImages', MSG.importImages);
   setText('importHtml', MSG.importHtml);
   setText('hintExport', MSG.hintExport);
+  setText('settingsBackupTitle', MSG.backupTitle);
+  setText('hintBackup', MSG.hintBackup);
+  setText('chooseBackupDir', MSG.backupChoose);
+  setText('clearBackupDir', MSG.backupClear);
+  setText('backupContentLabel', MSG.backupContentTitle);
+  setText('backupContentMetaLabel', MSG.backupContentMeta);
+  setText('backupContentMediaLabel', MSG.backupContentMedia);
+  setText('backupScheduleLabel', MSG.backupScheduleTitle);
+  setText('backupOnStartLabel', MSG.backupOnStart);
+  setText('backupIntervalLabel', MSG.backupInterval);
+  setText('backupIntervalUnit', MSG.backupIntervalUnit);
+  setText('backupOnChangeLabel', MSG.backupOnChange);
+  setText('runBackupBtn', MSG.backupRunNow);
+  setText('importFolderBtn', MSG.backupRestore);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1646,6 +1683,106 @@
       e.target.value = '';
     }
   });
+
+  // --- バックアップ / 指定フォルダへの増分エクスポート ---
+  (function setupBackup() {
+    const $ = (id) => document.getElementById(id);
+    const pathEl = $('backupDirPath');
+    const statusEl = $('backupStatus');
+    if (!pathEl) return;
+    let cfg = null;
+
+    const fmtTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    function renderStatus() {
+      if (!cfg || !cfg.dir) { statusEl.textContent = ''; return; }
+      const r = cfg.lastResult;
+      if (!r) { statusEl.textContent = ''; return; }
+      let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}（+${r.copied}${MSG.backupItemsUnit}`;
+      if (r.skipped) s += ` / ${MSG.backupSkipLabel}${r.skipped}`;
+      if (r.failed) s += ` / ✗${r.failed}`;
+      statusEl.textContent = s + '）';
+    }
+    function render() {
+      if (!cfg) return;
+      pathEl.textContent = cfg.dir || MSG.backupDirNone;
+      if (cfg.content === 'media') $('backupContentMedia').checked = true; else $('backupContentMeta').checked = true;
+      $('backupOnStart').checked = !!cfg.onStart;
+      $('backupInterval').checked = !!cfg.interval;
+      $('backupIntervalHours').value = cfg.intervalHours || 24;
+      $('backupOnChange').checked = !!cfg.onChange;
+      renderStatus();
+    }
+    async function load() {
+      try { cfg = await window.corpus.getBackup(); } catch { cfg = null; }
+      render();
+    }
+    async function save(patch) {
+      try {
+        const res = await window.corpus.setBackup(patch);
+        if (res && res.ok === false && res.error === 'overlap') showToast(MSG.backupOverlap);
+        if (res && res.backup) cfg = res.backup;
+      } catch { /* ignore */ }
+      render();
+    }
+
+    $('chooseBackupDir').addEventListener('click', async () => {
+      try {
+        const res = await window.corpus.pickBackupDir();
+        if (res && res.error === 'overlap') { showToast(MSG.backupOverlap); return; }
+        if (res && res.backup) { cfg = res.backup; render(); }
+      } catch { /* ignore */ }
+    });
+    $('clearBackupDir').addEventListener('click', () => save({ dir: null }));
+    document.querySelectorAll('input[name="backupContent"]').forEach((r) => {
+      r.addEventListener('change', () => { if (r.checked) save({ content: r.value }); });
+    });
+    $('backupOnStart').addEventListener('change', (e) => save({ onStart: e.target.checked }));
+    $('backupInterval').addEventListener('change', (e) => save({ interval: e.target.checked }));
+    $('backupIntervalHours').addEventListener('change', (e) => {
+      const v = Math.max(1, Math.min(720, parseInt(e.target.value, 10) || 24));
+      e.target.value = v; save({ intervalHours: v });
+    });
+    $('backupOnChange').addEventListener('change', (e) => save({ onChange: e.target.checked }));
+
+    $('runBackupBtn').addEventListener('click', async () => {
+      if (!cfg || !cfg.dir) { showToast(MSG.backupNotSet); return; }
+      showToast(MSG.backupRunning);
+      try {
+        const r = await window.corpus.runBackup();
+        if (r && r.ok) {
+          cfg.lastResult = { copied: r.copied, skipped: r.skipped, failed: r.failed, total: r.total, at: r.at };
+          renderStatus();
+          showToast(MSG.imported(r.copied));
+        } else {
+          showToast(MSG.importFailed);
+        }
+      } catch { showToast(MSG.importFailed); }
+    });
+
+    $('importFolderBtn').addEventListener('click', async () => {
+      try {
+        const pick = await window.corpus.pickImportFolder();
+        if (!pick || !pick.ok || !pick.dir) return;
+        showToast(MSG.importing);
+        const { imported, skipped } = await window.corpus.importFromFolder(pick.dir);
+        await loadPosts();
+        if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
+        else showToast(MSG.imported(imported));
+      } catch { showToast(MSG.importFailed); }
+    });
+
+    if (window.corpus.onBackupDone) {
+      window.corpus.onBackupDone((_e, r) => { if (cfg && r) { cfg.lastResult = r; renderStatus(); } });
+    }
+
+    load();
+  })();
 
   // --- Clear data ---
   document.getElementById('clearData').addEventListener('click', () => {

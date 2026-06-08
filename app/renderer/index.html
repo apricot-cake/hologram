@@ -107,6 +107,9 @@
     .search-mode-toggle.active { background: var(--accent, #1d9bf0); border-color: var(--accent, #1d9bf0); color: #fff; }
     .toolbar > .search-mode-toggle { align-self: flex-start; }   /* 投稿側ツールバー（縦flex）で全幅化させずコンパクトに */
     .sb-section > .search-mode-toggle { margin-top: 6px; }
+    /* バックアップ設定のラジオ/チェック行 */
+    .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
+    .radio-line input { cursor: pointer; }
     select {
       padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
       font-size: 13px; background: #fff; outline: none; cursor: pointer;
@@ -840,6 +843,32 @@
         <div class="data-hint" id="hintExport"></div>
       </div>
       <input type="file" id="importHtmlInput" class="file-input-hidden" accept=".html">
+    </div>
+
+    <div class="section">
+      <h2 id="settingsBackupTitle"></h2>
+      <div class="hint" id="hintBackup"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;">
+        <code id="backupDirPath" style="flex:1;min-width:200px;font-size:12px;color:#555;background:#f5f5f5;padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+        <button class="btn-outline" id="chooseBackupDir"></button>
+        <button class="btn-outline" id="clearBackupDir"></button>
+      </div>
+      <div style="margin:10px 0;">
+        <div style="font-size:12px;color:#666;margin-bottom:4px;" id="backupContentLabel"></div>
+        <label class="radio-line"><input type="radio" name="backupContent" value="meta" id="backupContentMeta"> <span id="backupContentMetaLabel"></span></label>
+        <label class="radio-line"><input type="radio" name="backupContent" value="media" id="backupContentMedia"> <span id="backupContentMediaLabel"></span></label>
+      </div>
+      <div style="margin:10px 0;">
+        <div style="font-size:12px;color:#666;margin-bottom:4px;" id="backupScheduleLabel"></div>
+        <label class="radio-line"><input type="checkbox" id="backupOnStart"> <span id="backupOnStartLabel"></span></label>
+        <label class="radio-line"><input type="checkbox" id="backupInterval"> <span id="backupIntervalLabel"></span> <input type="number" id="backupIntervalHours" min="1" max="720" style="width:60px;font-size:12px;padding:2px 4px;"> <span id="backupIntervalUnit"></span></label>
+        <label class="radio-line"><input type="checkbox" id="backupOnChange"> <span id="backupOnChangeLabel"></span></label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
+        <button class="btn-outline" id="runBackupBtn"></button>
+        <button class="btn-outline" id="importFolderBtn"></button>
+      </div>
+      <div class="hint" id="backupStatus" style="margin-top:8px;"></div>
     </div>
 
     <div class="section">

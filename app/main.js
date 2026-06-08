@@ -66,6 +66,14 @@ function watchSaveFolder() {
       watchDebounce = setTimeout(() => {
         if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
       }, 400);
+      // バックアップ「変更時」: 連続書き込みをまとめるため長め(90s)にデバウンス。
+      if (!SMOKE) {
+        const b = readBackupConfig();
+        if (b.dir && b.onChange) {
+          clearTimeout(backupChangeDebounce);
+          backupChangeDebounce = setTimeout(() => { runBackup('change'); }, 90000);
+        }
+      }
     });
   } catch (err) {
     console.error('Failed to watch save folder:', err);
@@ -415,6 +423,8 @@ ipcMain.handle('delete-post', async (_e, image) => {
       try { await fs.promises.unlink(f); } catch { /* may not exist */ }
     }
   }
+  // UIでの明示削除はバックアップ出力先へも伝播（設定時のみ）。
+  try { await removeFromBackup(targets); } catch { /* best-effort */ }
   return { ok: true };
 });
 
@@ -524,6 +534,192 @@ ipcMain.handle('export-save', async (_e, filename, bytes) => {
   }
 });
 
+// --- バックアップ / 指定フォルダへの増分エクスポート ---------------------------
+// 保存先フォルダ自体をクラウド同期の対象にすると（ライブ書き込み中の同期で）壊れやすい。
+// ここでは「安全な吐き出し先」へ増分コピーする。クラウドはその出力先だけを同期すればよい。
+//   content 'media' … 表示できる画像/動画ファイルのみ（スクショ＋原寸）
+//   content 'meta'  … 上記 + サイドカー .json（config.json は機微なので常に除外）
+// 削除は「アプリUIで明示削除したとき」だけ出力先へ伝播（runBackup 自体は消さない＝増分追加）。
+const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json'];
+const BACKUP_DEFAULTS = {
+  dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
+  content: 'meta',        // 'media' | 'meta'
+  onStart: false,         // 起動時に1回
+  interval: false,        // 一定間隔
+  intervalHours: 24,
+  onChange: false,        // 保存先変更時（デバウンス）
+  lastRunAt: null,
+  lastResult: null
+};
+function readBackupConfig() {
+  const b = readConfig().backup || {};
+  return Object.assign({}, BACKUP_DEFAULTS, b);
+}
+function writeBackupConfig(patch) {
+  const cfg = readConfig();
+  cfg.backup = Object.assign({}, BACKUP_DEFAULTS, cfg.backup || {}, patch || {});
+  writeConfig(cfg);
+  return cfg.backup;
+}
+function pathIsInside(child, parent) {
+  const c = path.resolve(child), p = path.resolve(parent);
+  return c === p || c.startsWith(p + path.sep);
+}
+// 出力先が保存先と入れ子/同一だと、出力→watch→再エクスポートのループや破壊が起きる。
+function validateBackupDir(dir) {
+  if (!dir) return { ok: true };
+  const src = getSaveFolder();
+  if (src && (pathIsInside(dir, src) || pathIsInside(src, dir))) return { ok: false, error: 'overlap' };
+  return { ok: true };
+}
+
+let backupRunning = false;
+const VIEWABLE_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + ')$', 'i');
+async function runBackup(reason) {
+  const b = readBackupConfig();
+  const src = getSaveFolder();
+  if (!src || !b.dir) return { ok: false, error: 'not-configured' };
+  if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
+  if (backupRunning) return { ok: false, error: 'busy' };
+  backupRunning = true;
+  const result = { ok: true, copied: 0, skipped: 0, failed: 0, total: 0, reason: reason || 'manual' };
+  try {
+    await fs.promises.mkdir(b.dir, { recursive: true });
+    let names = [];
+    try { names = await fs.promises.readdir(src); } catch { names = []; }
+    const includeJson = b.content === 'meta';
+    for (const name of names) {
+      if (name === 'config.json') continue;                 // 機微: 出力しない
+      const isJson = /\.json$/i.test(name);
+      const isViewable = VIEWABLE_RE.test(name);
+      if (isJson && !includeJson) continue;
+      if (!isJson && !isViewable) continue;                 // 未知ファイルは対象外
+      result.total++;
+      const sp = path.join(src, name);
+      const dp = path.join(b.dir, name);
+      try {
+        const sst = await fs.promises.stat(sp);
+        if (!sst.isFile()) { result.skipped++; continue; }
+        let need = true;
+        try {
+          const dst = await fs.promises.stat(dp);
+          // 同一とみなす: サイズ一致かつ mtime がほぼ一致（コピー時に mtime を写すので冪等）
+          if (dst.size === sst.size && Math.abs(dst.mtimeMs - sst.mtimeMs) < 2000) need = false;
+        } catch { /* 出力先に無い → コピー */ }
+        if (!need) { result.skipped++; continue; }
+        // 原子的に: 一時ファイルへコピー → mtime を元に合わせて → rename（同期クライアントが半端を見ない）
+        const tmp = dp + '.tmp-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+        await fs.promises.copyFile(sp, tmp);
+        try { await fs.promises.utimes(tmp, sst.atime, sst.mtime); } catch { /* ignore */ }
+        await fs.promises.rename(tmp, dp);
+        result.copied++;
+      } catch {
+        result.failed++;
+      }
+    }
+  } catch (err) {
+    result.ok = false; result.error = err.message;
+  } finally {
+    backupRunning = false;
+  }
+  const summary = { copied: result.copied, skipped: result.skipped, failed: result.failed, total: result.total, reason: result.reason, at: new Date().toISOString() };
+  try { writeBackupConfig({ lastRunAt: summary.at, lastResult: summary }); } catch { /* ignore */ }
+  if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: summary.at }));
+  return result;
+}
+
+// UIでの明示削除を出力先へ伝播（runBackup は消さない＝こちらだけが削除を行う）。
+async function removeFromBackup(names) {
+  const b = readBackupConfig();
+  if (!b.dir) return;
+  for (const name of names) {
+    const base = path.basename(name || '');
+    if (!base || base === 'config.json') continue;
+    const p = path.resolve(path.join(b.dir, base));
+    if (!p.startsWith(path.resolve(b.dir))) continue;       // 出力先の外には触れない
+    try { await fs.promises.unlink(p); } catch { /* 無ければ無視 */ }
+  }
+}
+
+let backupIntervalTimer = null;
+let backupChangeDebounce = null;
+function armBackupSchedule() {
+  if (backupIntervalTimer) { clearInterval(backupIntervalTimer); backupIntervalTimer = null; }
+  const b = readBackupConfig();
+  if (!b.dir) return;
+  if (b.interval) {
+    const ms = Math.max(0.05, Number(b.intervalHours) || 24) * 3600 * 1000;
+    backupIntervalTimer = setInterval(() => { runBackup('interval'); }, ms);
+  }
+  // onChange は watchSaveFolder のコールバックで（長めのデバウンスで）処理。
+}
+
+ipcMain.handle('get-backup', () => readBackupConfig());
+ipcMain.handle('set-backup', (_e, patch) => {
+  patch = patch || {};
+  if ('dir' in patch && patch.dir) {
+    const v = validateBackupDir(patch.dir);
+    if (!v.ok) return { ok: false, error: v.error, backup: readBackupConfig() };
+  }
+  const backup = writeBackupConfig(patch);
+  armBackupSchedule();
+  return { ok: true, backup };
+});
+ipcMain.handle('pick-backup-dir', async () => {
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+  const dir = res.filePaths[0];
+  const v = validateBackupDir(dir);
+  if (!v.ok) return { ok: false, error: v.error };
+  const backup = writeBackupConfig({ dir });
+  armBackupSchedule();
+  return { ok: true, backup };
+});
+ipcMain.handle('run-backup', () => runBackup('manual'));
+ipcMain.handle('pick-import-folder', async () => {
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+  return { ok: true, dir: res.filePaths[0] };
+});
+// バックアップフォルダ（メタデータ込みエクスポート）から保存先へ復元。
+// 既存と captureId / url が重複するものはスキップ。ライブラリjson（フォルダ/タグ等）は対象外。
+ipcMain.handle('import-from-folder', async (_e, dir) => {
+  const folder = getSaveFolder();
+  if (!folder || !dir) return { imported: 0, skipped: 0, error: 'no-folder' };
+  fs.mkdirSync(folder, { recursive: true });
+  const existingIds = new Set(), existingUrls = new Set();
+  try {
+    for (const f of await fs.promises.readdir(folder)) {
+      if (!/\.json$/i.test(f) || LIBRARY_JSON.includes(f)) continue;
+      try {
+        const r = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
+        if (r.captureId) existingIds.add(r.captureId);
+        if (r.url) existingUrls.add(r.url);
+      } catch { /* skip */ }
+    }
+  } catch { /* empty */ }
+  let names = [];
+  try { names = await fs.promises.readdir(dir); } catch { return { imported: 0, skipped: 0, error: 'read' }; }
+  let imported = 0, skipped = 0;
+  for (const jn of names) {
+    if (!/\.json$/i.test(jn) || LIBRARY_JSON.includes(jn)) continue;
+    let rec;
+    try { rec = JSON.parse(await fs.promises.readFile(path.join(dir, jn), 'utf8')); } catch { skipped++; continue; }
+    const id = rec.captureId || baseOf(jn);
+    if (existingIds.has(id) || (rec.url && existingUrls.has(rec.url))) { skipped++; continue; }
+    const base = baseOf(jn);
+    const related = names.filter((n) => n === jn || n.startsWith(base + '.') || n.startsWith(base + '-'));
+    try {
+      for (const rn of related) {
+        await fs.promises.copyFile(path.join(dir, rn), path.join(folder, path.basename(rn)));
+      }
+      existingIds.add(id); if (rec.url) existingUrls.add(rec.url);
+      imported++;
+    } catch { skipped++; }
+  }
+  return { imported, skipped };
+});
+
 // --- Window ---
 function createWindow(show = true) {
   win = new BrowserWindow({
@@ -571,6 +767,11 @@ if (!gotSingleInstanceLock) {
   const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
   createWindow(!SMOKE && !startMin);   // start-minimized → create hidden, then show inactive below
   watchSaveFolder();
+  if (!SMOKE) {
+    armBackupSchedule();                                  // interval スケジュールを起動
+    const bk = readBackupConfig();
+    if (bk.dir && bk.onStart) setTimeout(() => runBackup('startup'), 4000);   // 起動直後の負荷を避けて少し遅延
+  }
 
   if (SMOKE) {
     const shot = process.env.CORPUS_SMOKE_SHOT;
