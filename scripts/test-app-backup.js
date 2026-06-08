@@ -73,8 +73,12 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
 
   const ls = (dir) => { try { return fs.readdirSync(dir).filter((f) => !f.includes('.tmp-')); } catch { return []; } };
-  const metaFiles = ls(backupMeta);
-  const mediaFiles = ls(backupMedia);
+  // 出力は <dir>/Corpus-backup/ の中（直下に散らばらない再発防止）。
+  const metaFiles = ls(path.join(backupMeta, 'Corpus-backup'));
+  const mediaFiles = ls(path.join(backupMedia, 'Corpus-backup'));
+  // 指定先の直下には Corpus-backup フォルダだけ（データファイルが散らばっていない）。
+  const metaFlat = ls(backupMeta).filter((f) => f !== 'Corpus-backup');
+  const nestedOk = metaFlat.length === 0;
   fs.rmSync(tmp, { recursive: true, force: true });
 
   const has = (arr, n) => arr.includes(n);
@@ -92,8 +96,8 @@ child.on('close', () => {
   const mediaUntouched = has(mediaFiles, 'bk0.jpg') && has(mediaFiles, 'bk0-media-0.png');
 
   const ok = metaCountOk && mediaCountOk && mediaNoJson && idempotentOk &&
-    r.overlapRejected === true && deletePropagated && mediaUntouched;
-  console.log(`meta=${r.metaCopied}/${r.metaTotal} media=${r.mediaCopied}/${r.mediaTotal} mediaNoJson=${mediaNoJson} again=${r.againCopied}/${r.againSkipped} overlap=${r.overlapRejected} delProp=${deletePropagated} mediaUntouched=${mediaUntouched}`);
+    r.overlapRejected === true && deletePropagated && mediaUntouched && nestedOk;
+  console.log(`meta=${r.metaCopied}/${r.metaTotal} media=${r.mediaCopied}/${r.mediaTotal} mediaNoJson=${mediaNoJson} again=${r.againCopied}/${r.againSkipped} overlap=${r.overlapRejected} delProp=${deletePropagated} mediaUntouched=${mediaUntouched} nested=${nestedOk}`);
   console.log(`metaFiles=[${metaFiles.sort().join(',')}] mediaFiles=[${mediaFiles.sort().join(',')}]`);
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);

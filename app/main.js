@@ -541,6 +541,10 @@ ipcMain.handle('export-save', async (_e, filename, bytes) => {
 //   content 'meta'  … 上記 + サイドカー .json（config.json は機微なので常に除外）
 // 削除は「アプリUIで明示削除したとき」だけ出力先へ伝播（runBackup 自体は消さない＝増分追加）。
 const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json'];
+// 出力は必ずこのサブフォルダの中に書く。ユーザーがデスクトップ等を選んでも直下に
+// 数千ファイルがぶちまけられないようにするための安全策（再発防止）。
+const BACKUP_SUBDIR = 'Corpus-backup';
+function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
   content: 'meta',        // 'media' | 'meta'
@@ -584,7 +588,8 @@ async function runBackup(reason) {
   backupRunning = true;
   const result = { ok: true, copied: 0, skipped: 0, failed: 0, total: 0, reason: reason || 'manual' };
   try {
-    await fs.promises.mkdir(b.dir, { recursive: true });
+    const dest = backupDest(b.dir);                         // 直下ではなく Corpus-backup/ の中へ
+    await fs.promises.mkdir(dest, { recursive: true });
     let names = [];
     try { names = await fs.promises.readdir(src); } catch { names = []; }
     const includeJson = b.content === 'meta';
@@ -596,7 +601,7 @@ async function runBackup(reason) {
       if (!isJson && !isViewable) continue;                 // 未知ファイルは対象外
       result.total++;
       const sp = path.join(src, name);
-      const dp = path.join(b.dir, name);
+      const dp = path.join(dest, name);
       try {
         const sst = await fs.promises.stat(sp);
         if (!sst.isFile()) { result.skipped++; continue; }
@@ -632,11 +637,12 @@ async function runBackup(reason) {
 async function removeFromBackup(names) {
   const b = readBackupConfig();
   if (!b.dir) return;
+  const dest = backupDest(b.dir);
   for (const name of names) {
     const base = path.basename(name || '');
     if (!base || base === 'config.json') continue;
-    const p = path.resolve(path.join(b.dir, base));
-    if (!p.startsWith(path.resolve(b.dir))) continue;       // 出力先の外には触れない
+    const p = path.resolve(path.join(dest, base));
+    if (!p.startsWith(path.resolve(dest))) continue;        // 出力先の外には触れない
     try { await fs.promises.unlink(p); } catch { /* 無ければ無視 */ }
   }
 }

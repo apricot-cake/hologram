@@ -67,7 +67,7 @@
       hintExport: 'ZIP: データ取り出し用（画像 + メタデータJSON）。HTML: ブラウザで閲覧用（検索UI付き）。',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
       backupTitle: 'バックアップ / 自動エクスポート',
-      hintBackup: '保存先フォルダ自体をクラウド同期の対象にすると（書き込み中の同期で）壊れやすいので、別フォルダへ安全に増分コピーします。クラウドはその出力先だけを同期してください。',
+      hintBackup: '保存先フォルダ自体をクラウド同期の対象にすると（書き込み中の同期で）壊れやすいので、別フォルダへ安全に増分コピーします。選んだ場所の直下に「Corpus-backup」フォルダを作り、その中に書き出します（直下に散らばりません）。クラウドはその出力先だけを同期してください。',
       backupDirNone: '（出力先が未設定）',
       backupChoose: '出力先を選択',
       backupClear: '解除',
@@ -229,7 +229,7 @@
       hintExport: 'ZIP: for data extraction (images + metadata JSON). HTML: for viewing in browser (with search UI).',
       // viewer: settings > backup (incremental export to a chosen folder)
       backupTitle: 'Backup / auto-export',
-      hintBackup: 'Making the live save folder itself a cloud-sync target risks corruption, so this incrementally copies to a separate folder. Point your cloud at that output folder only.',
+      hintBackup: 'Making the live save folder itself a cloud-sync target risks corruption, so this incrementally copies to a separate folder. It writes into a "Corpus-backup" subfolder of the place you choose (never loose in the folder itself). Point your cloud at that output folder only.',
       backupDirNone: '(no output folder set)',
       backupChoose: 'Choose folder',
       backupClear: 'Clear',
