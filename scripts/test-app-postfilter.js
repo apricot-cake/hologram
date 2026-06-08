@@ -49,7 +49,17 @@ const evalJs = `(async () => {
   await new Promise(r => setTimeout(r, 50));
   const barAfter = bar.style.display === 'none';
   const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
-  return { barBefore, barShown, pills, cardsFiltered, barAfter, cardsAfter };
+  // 検索もアクティブバーにピル化される（検索単独でもバーが出る）
+  const sb = document.getElementById('searchBox');
+  sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 50));
+  const searchBarShown = bar.style.display !== 'none';
+  const searchPill = !!document.querySelector('#queryChips .sb-active-chip[data-special="search"]');
+  // 検索ピルをクリックで個別解除 → 検索クリア＆バー非表示
+  document.querySelector('#queryChips .sb-active-chip[data-special="search"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 50));
+  const searchCleared = sb.value === '' && bar.style.display === 'none';
+  return { barBefore, barShown, pills, cardsFiltered, barAfter, cardsAfter, searchBarShown, searchPill, searchCleared };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -62,8 +72,9 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.barBefore === false && r.barShown === true && r.pills === 1 &&
-    r.cardsFiltered === 3 && r.barAfter === true && r.cardsAfter === 3;
-  console.log(`barBefore=${r.barBefore} barShown=${r.barShown} pills=${r.pills} filtered=${r.cardsFiltered} barAfter=${r.barAfter} cardsAfter=${r.cardsAfter}`);
+    r.cardsFiltered === 3 && r.barAfter === true && r.cardsAfter === 3 &&
+    r.searchBarShown === true && r.searchPill === true && r.searchCleared === true;
+  console.log(`barBefore=${r.barBefore} barShown=${r.barShown} pills=${r.pills} filtered=${r.cardsFiltered} barAfter=${r.barAfter} cardsAfter=${r.cardsAfter} searchBarShown=${r.searchBarShown} searchPill=${r.searchPill} searchCleared=${r.searchCleared}`);
   console.log(ok ? 'POSTFILTER_TEST_PASS' : 'POSTFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

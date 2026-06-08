@@ -225,15 +225,23 @@
     const container = document.getElementById('queryChips');
     const bar = document.getElementById('postActiveBar');
     const tagModeBtn = document.getElementById('sbTagMode');
-    // バーは「アクティブなフィルタが1つでもあれば」だけ出す（無ければ非表示）。
-    if (activeFilters.length === 0) {
+    // 検索語・フォルダもアクティブフィルタとして扱う（画像モードと同様にピル化）。
+    const sbEl = document.getElementById('searchBox');
+    const searchVal = sbEl ? sbEl.value.trim() : '';
+    const folderObj = (folderFilter && CF()) ? CF().byId(folderFilter) : null;
+    // バーは「アクティブなフィルタ（検索・フォルダ含む）が1つでもあれば」だけ出す（無ければ非表示）。
+    if (activeFilters.length === 0 && !searchVal && !folderObj) {
       container.innerHTML = '';
       if (bar) bar.style.display = 'none';
       return;
     }
     if (bar) bar.style.display = '';
     if (tagModeBtn) tagModeBtn.style.display = activeFilters.some((f) => f.type === 'tag') ? '' : 'none';   // タグ絞り込み中のみ AND/OR
-    container.innerHTML = activeFilters.map((f, i) => {
+    // 検索・フォルダの特殊ピルを先頭に置き、続けて activeFilters のピルを並べる。
+    let special = '';
+    if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
+    if (folderObj) special += `<span class="sb-active-chip qc-folder" data-special="folder">${escapeHtml(folderObj.name)}</span>`;
+    container.innerHTML = special + activeFilters.map((f, i) => {
       let label = '';
       let cls = `qc-${f.type}`;
       switch (f.type) {
@@ -319,6 +327,19 @@
   document.getElementById('queryChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-active-chip');
     if (!chip) return;
+    // 特殊ピル（検索・フォルダ）はそれぞれの状態を解除して再描画。
+    if (chip.dataset.special === 'search') {
+      const sb = document.getElementById('searchBox');
+      if (sb) sb.value = '';
+      renderPosts();   // → updateSidebarState → renderQueryChips
+      return;
+    }
+    if (chip.dataset.special === 'folder') {
+      folderFilter = '';
+      renderPostFolders();
+      renderPosts();
+      return;
+    }
     const idx = parseInt(chip.dataset.filterIdx, 10);
     const filter = activeFilters[idx];
     if (!filter) return;
@@ -556,6 +577,7 @@
     hl(sbEngMin, sbEngMin.value && parseInt(sbEngMin.value, 10) > 0);
     updateSidebarTags();
     updateSidebarInstances();
+    renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
   // Sidebar date controls
