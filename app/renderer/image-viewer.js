@@ -182,10 +182,10 @@
       const tags = (g.tags || []).filter((t) => present.has(t));
       tags.forEach((t) => grouped.add(t));
       if (!tags.length) continue;
-      html += `<div class="sb-subtitle">${escapeHtml(g.name)}</div><div class="sb-chips">${tags.map(chip).join('')}</div>`;
+      html += `<div class="iv-taggroup"><div class="sb-subtitle iv-tagfold">${escapeHtml(g.name)}</div><div class="sb-chips">${tags.map(chip).join('')}</div></div>`;
     }
     const other = [...present].filter((t) => !grouped.has(t)).sort((a, b) => counts[b] - counts[a]);
-    if (other.length) html += `<div class="sb-subtitle">その他</div><div class="sb-chips">${other.map(chip).join('')}</div>`;
+    if (other.length) html += `<div class="iv-taggroup"><div class="sb-subtitle iv-tagfold">その他</div><div class="sb-chips">${other.map(chip).join('')}</div></div>`;
     host.innerHTML = html;
     host.querySelectorAll('.sb-chip').forEach((c) => c.classList.toggle('active', state.tags.has(c.dataset.tag)));
   }
@@ -493,6 +493,8 @@
 
     // タグチップ: 複数選択。クリックでトグル。結合(AND/OR)は ivTagMode で切替。
     $('ivTagGroups').addEventListener('click', (e) => {
+      const fold = e.target.closest('.iv-tagfold');   // グループ見出しクリックで、そのタググループだけ折りたたみ
+      if (fold) { const grp = fold.closest('.iv-taggroup'); if (grp) grp.classList.toggle('collapsed'); return; }
       const chip = e.target.closest('.sb-chip');
       if (!chip) return;
       const tag = chip.dataset.tag;

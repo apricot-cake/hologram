@@ -978,9 +978,14 @@
     /* Content + slide-in inspector. The filter controls live in the shared
        #sidebar (#side-image); reuse post-view's sb-section classes there. */
     .iv-main { display: flex; gap: 20px; align-items: flex-start; }
-    #ivTagGroups .sb-subtitle { margin-top: 8px; }
-    #ivTagGroups .sb-subtitle:first-child { margin-top: 0; }
+    #ivTagGroups .iv-taggroup { margin-top: 8px; }
+    #ivTagGroups .iv-taggroup:first-child { margin-top: 0; }
     #ivTagGroups .sb-chips { margin-bottom: 2px; }
+    /* タググループ単位の折りたたみ: 見出しクリックで、そのグループのタグだけ畳む */
+    .iv-taggroup .sb-subtitle.iv-tagfold { cursor: pointer; user-select: none; }
+    .iv-taggroup .sb-subtitle.iv-tagfold::after { content: ' ▾'; font-size: 8px; color: var(--muted); }
+    .iv-taggroup.collapsed .sb-subtitle.iv-tagfold::after { content: ' ▸'; }
+    .iv-taggroup.collapsed .sb-chips { display: none; }
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
     .iv-tilewrap { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
