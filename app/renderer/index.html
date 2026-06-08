@@ -27,7 +27,7 @@
     #sidebar {
       width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 30;
       background: var(--surface); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; padding: 12px 10px; gap: 2px;
+      display: flex; flex-direction: column; padding: 12px 10px 0; gap: 2px;
       overflow-y: auto; overflow-x: hidden;
     }
     .brand { font-size: 15px; font-weight: 700; color: var(--fg-strong); padding: 6px 8px 10px; letter-spacing: .02em; }
@@ -516,6 +516,9 @@
     .sb-activebar {
       position: sticky; bottom: 0; margin: 8px -10px 0; padding: 8px 10px;
       background: var(--surface); border-top: 1px solid var(--border);
+      /* 独立した合成レイヤへ昇格させ、スクロール時にメインスレッドで再描画されないように
+         する（bottom固定バーのスクロールカクつき対策）。contain でレイアウト/描画も隔離。 */
+      will-change: transform; contain: layout paint;
     }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
@@ -538,7 +541,9 @@
     .sb-chip {
       background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 12px;
       padding: 3px 10px; font-size: 11px; color: #555;
-      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+      cursor: pointer; white-space: nowrap;
+      /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
+      transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
     .sb-chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
     .sb-chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
@@ -546,7 +551,7 @@
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
       border-radius: 12px; padding: 2px 8px; font-size: 11px;
-      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+      cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
     }
     .sb-active-chip:hover { opacity: 0.7; }
     .sb-active-chip.qc-platform { background: #e8f4fd; border: 1px solid #b0d4f1; color: #333; }
