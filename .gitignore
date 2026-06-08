@@ -4,3 +4,4 @@ app/node_modules/
 app/dist/
 app/.smoke-shot*.png
 __pycache__/
+design-brief/
