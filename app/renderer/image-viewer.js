@@ -145,12 +145,13 @@
     if (q) {
       const fuzzy = window.corpusSearch && window.corpusSearch.isFuzzy();
       if (fuzzy) {
+        const matchHay = window.corpusSearch.compile(state.search);   // クエリは1回だけ正規化・前処理
         list = list.filter((p) => {
           const hay = [p.text, p.title, p.eagleName, p.displayName, p.screenName]
             .concat(Array.isArray(p.hashtags) ? p.hashtags : [])
             .concat(Array.isArray(p.tags) ? p.tags : [])
-            .map((x) => (x == null ? '' : String(x))).join(' ').toLowerCase();
-          return window.corpusSearch.fuzzy(hay, state.search);
+            .map((x) => (x == null ? '' : String(x))).join(' ');
+          return matchHay(hay);
         });
       } else {
         list = list.filter((p) =>

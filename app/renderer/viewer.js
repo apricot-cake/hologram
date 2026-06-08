@@ -894,11 +894,12 @@
     if (query) {
       const fuzzy = window.corpusSearch && window.corpusSearch.isFuzzy();
       if (fuzzy) {
+        const matchHay = window.corpusSearch.compile(rawQuery);   // クエリは1回だけ正規化・前処理
         posts = posts.filter(p => {
           const hay = [p.text, p.title, p.eagleName, p.screenName, p.displayName]
             .concat(p.tags || [])
-            .map(x => (x == null ? '' : String(x))).join(' ').toLowerCase();
-          return window.corpusSearch.fuzzy(hay, rawQuery);
+            .map(x => (x == null ? '' : String(x))).join(' ');
+          return matchHay(hay);
         });
       } else {
         posts = posts.filter(p =>
