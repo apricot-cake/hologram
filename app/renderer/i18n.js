@@ -61,10 +61,9 @@
       // viewer: settings > data / danger
       dataTitle: 'データ',
       exportZip: 'ZIP エクスポート',
-      exportHtml: 'HTML エクスポート',
-      importImages: 'フォルダから復元',
-      importHtml: 'HTML から復元',
-      hintExport: 'ZIP: データ取り出し用（画像 + メタデータJSON）。HTML: ブラウザで閲覧用（検索UI付き）。',
+      importZip: 'ZIP から復元',
+      importImages: '画像を取り込み',
+      hintExport: 'ZIP: 画像＋メタデータをまとめて書き出し／復元。画像を取り込み: 手持ちの画像（任意）をライブラリに追加。',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
       backupTitle: 'バックアップ / 自動エクスポート',
       hintBackup: '保存先フォルダ自体をクラウド同期の対象にすると（書き込み中の同期で）壊れやすいので、別フォルダへ安全に増分コピーします。選んだ場所の直下に「Corpus-backup」フォルダを作り、その中に書き出します（直下に散らばりません）。クラウドはその出力先だけを同期してください。',
@@ -223,10 +222,9 @@
 
       dataTitle: 'Data',
       exportZip: 'Export ZIP',
-      exportHtml: 'Export HTML',
-      importImages: 'Import from folder',
-      importHtml: 'Import from HTML',
-      hintExport: 'ZIP: for data extraction (images + metadata JSON). HTML: for viewing in browser (with search UI).',
+      importZip: 'Restore from ZIP',
+      importImages: 'Import images',
+      hintExport: 'ZIP: export/restore images + metadata together. Import images: add your own images to the library.',
       // viewer: settings > backup (incremental export to a chosen folder)
       backupTitle: 'Backup / auto-export',
       hintBackup: 'Making the live save folder itself a cloud-sync target risks corruption, so this incrementally copies to a separate folder. It writes into a "Corpus-backup" subfolder of the place you choose (never loose in the folder itself). Point your cloud at that output folder only.',

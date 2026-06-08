@@ -52,9 +52,8 @@
     // settings > data / danger
     dataTitle: _s('dataTitle'),
     exportZip: _s('exportZip'),
-    exportHtml: _s('exportHtml'),
+    importZip: _s('importZip'),
     importImages: _s('importImages'),
-    importHtml: _s('importHtml'),
     hintExport: _s('hintExport'),
     dangerTitle: _s('dangerTitle'),
     labelResetDeleteConfirm: _s('labelResetDeleteConfirm'),
@@ -208,9 +207,8 @@
   setText('hintShortcut', MSG.hintShortcut);
   setText('settingsDataTitle', MSG.dataTitle);
   setText('exportZip', MSG.exportZip);
-  setText('exportHtml', MSG.exportHtml);
+  setText('importZip', MSG.importZip);
   setText('importImages', MSG.importImages);
-  setText('importHtml', MSG.importHtml);
   setText('hintExport', MSG.hintExport);
   setText('settingsBackupTitle', MSG.backupTitle);
   setText('hintBackup', MSG.hintBackup);
@@ -1600,88 +1598,49 @@
     if (res.saved) showToast(MSG.exported);
   });
 
-  // --- Export HTML ---
-  document.getElementById('exportHtml').addEventListener('click', async () => {
-    if (allPosts.length === 0) {
-      showToast(MSG.noData);
-      return;
-    }
-    showToast(MSG.exporting);
-
-    const postsData = [];
-    for (const p of allPosts) {
-      const image = p.image ? await window.corpus.imageDataUrl(p.image) : null;
-      postsData.push({
-        url: p.url,
-        platform: p.platform,
-        text: p.text,
-        title: p.title ?? null,
-        displayName: p.displayName,
-        screenName: p.screenName,
-        userId: p.userId,
-        likes: p.likes,
-        reposts: p.reposts,
-        replies: p.replies,
-        bookmarks: p.bookmarks,
-        views: p.views ?? null,
-        mediaType: p.mediaType || null,
-        lang: p.lang || null,
-        isReply: p.isReply || null,
-        isQuote: p.isQuote || null,
-        isThread: p.isThread || null,
-        quotedUrl: p.quotedUrl || null,
-        date: p.date,
-        capturedAt: p.capturedAt,
-        updatedAt: p.updatedAt || null,
-        eagleName: p.eagleName || null,
-        tags: p.tags?.length ? p.tags : null,
-        hashtags: p.hashtags?.length ? p.hashtags : null,
-        image
-      });
-    }
-
-    const html = buildExportHtml(postsData);
-    const bytes = new TextEncoder().encode(html);
-    const res = await window.corpus.exportSave(`corpus-export-${formatExportDate()}.html`, bytes);
-    if (res.saved) showToast(MSG.exported);
+  // --- Import from ZIP（Corpusの ZIP エクスポート = images/ + metadata.json を復元）---
+  document.getElementById('importZip').addEventListener('click', () => {
+    document.getElementById('importZipInput').click();
   });
 
-  // --- Import from HTML ---
-  document.getElementById('importHtml').addEventListener('click', () => {
-    document.getElementById('importHtmlInput').click();
-  });
-
-  document.getElementById('importHtmlInput').addEventListener('change', async (e) => {
+  document.getElementById('importZipInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     showToast(MSG.importing);
-
     try {
-      const text = await readFileAsText(file);
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(text, 'text/html');
-      // Accept both the current id and the legacy post-snap id so HTML files
-      // exported by the pre-Corpus build remain importable (data migration path).
-      const scriptEl = doc.getElementById('corpusData') || doc.getElementById('postSnapData');
-      if (!scriptEl) {
-        showToast(MSG.importFailed);
-        e.target.value = '';
-        return;
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const zip = await JSZip.loadAsync(buf);
+      const metaEntry = zip.file('metadata.json');
+      if (!metaEntry) { showToast(MSG.importFailed); e.target.value = ''; return; }
+      const meta = JSON.parse(await metaEntry.async('string'));
+      const posts = [];
+      for (const m of (Array.isArray(meta) ? meta : [])) {
+        const f = m.imageFile && zip.file(m.imageFile);
+        if (!f) continue;
+        const b64 = await f.async('base64');
+        posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-
-      const postsData = JSON.parse(scriptEl.textContent);
-      const { imported, skipped } = await window.corpus.importPosts(postsData);
+      const { imported, skipped } = await window.corpus.importPosts(posts);
       await loadPosts();
       e.target.value = '';
-
-      if (skipped > 0) {
-        showToast(MSG.importSkipped(imported, skipped));
-      } else {
-        showToast(MSG.imported(imported));
-      }
+      if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
+      else showToast(MSG.imported(imported));
     } catch {
       showToast(MSG.importFailed);
       e.target.value = '';
+    }
+  });
+
+  // --- Import images（任意の画像ファイルをライブラリへ取り込み）---
+  document.getElementById('importImages').addEventListener('click', async () => {
+    try {
+      const res = await window.corpus.importImages();
+      if (!res || res.canceled) return;
+      await loadPosts();
+      if (res.skipped > 0) showToast(MSG.importSkipped(res.imported, res.skipped));
+      else showToast(MSG.imported(res.imported));
+    } catch {
+      showToast(MSG.importFailed);
     }
   });
 

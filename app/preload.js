@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('corpus', {
   runBackup: () => ipcRenderer.invoke('run-backup'),
   pickImportFolder: () => ipcRenderer.invoke('pick-import-folder'),
   importFromFolder: (dir) => ipcRenderer.invoke('import-from-folder', dir),
+  importImages: () => ipcRenderer.invoke('import-images'),
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
   onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb)
 });
