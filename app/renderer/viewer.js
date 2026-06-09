@@ -67,7 +67,8 @@
     exportZip: _s('exportZip'),
     importZip: _s('importZip'),
     importImages: _s('importImages'),
-    hintExport: _s('hintExport'),
+    hintZip: _s('hintZip'),
+    hintMedia: _s('hintMedia'),
     dangerTitle: _s('dangerTitle'),
     labelResetDeleteConfirm: _s('labelResetDeleteConfirm'),
     hintResetDeleteConfirm: _s('hintResetDeleteConfirm'),
@@ -230,7 +231,8 @@
   setText('exportZip', MSG.exportZip);
   setText('importZip', MSG.importZip);
   setText('importImages', MSG.importImages);
-  setText('hintExport', MSG.hintExport);
+  setText('hintZip', MSG.hintZip);
+  setText('hintMedia', MSG.hintMedia);
   setText('settingsBackupTitle', MSG.backupTitle);
   setText('hintBackup', MSG.hintBackup);
   setText('chooseBackupDir', MSG.backupChoose);
@@ -379,7 +381,7 @@
     folderFilter = '';
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
-    const tb = document.getElementById('sbTagMode'); if (tb) { tb.textContent = 'いずれか'; tb.classList.add('or'); }
+    const tb = document.getElementById('sbTagMode'); if (tb) { tb.textContent = '⇄ いずれか'; tb.classList.add('or'); }
     renderQueryChips();
     renderPostFolders();
     renderPosts();
@@ -826,7 +828,7 @@
   document.getElementById('sbTagMode').addEventListener('click', () => {
     tagMode = tagMode === 'or' ? 'and' : 'or';
     const b = document.getElementById('sbTagMode');
-    b.textContent = tagMode === 'or' ? 'いずれか' : 'すべて含む';
+    b.textContent = tagMode === 'or' ? '⇄ いずれか' : '⇄ すべて含む';
     b.classList.toggle('or', tagMode === 'or');
     renderPosts();
   });

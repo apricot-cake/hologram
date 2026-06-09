@@ -76,7 +76,8 @@
       exportZip: 'ZIP エクスポート',
       importZip: 'ZIP から復元',
       importImages: 'メディアをインポート',
-      hintExport: 'ZIP: 画像＋メタデータ＋整理情報をまとめて書き出し／復元。メディアをインポート: 手持ちの画像・動画を Corpus のライブラリに取り込む（自分のメディアの移行用）。',
+      hintZip: 'ZIP: 画像＋メタデータ＋整理情報をまとめて書き出し／そのまま復元。',
+      hintMedia: 'メディアをインポート: 手持ちの画像・動画を Corpus のライブラリに取り込む（自分のメディアの移行用）。',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
       backupTitle: 'バックアップ（完全エクスポート）',
       hintBackup: '選んだ場所に Corpus-export フォルダを作り、ライブラリ丸ごと（整理情報込み）を ZIP で書き出します。そのままインポートで復元でき、直近数世代だけ保持します。',
@@ -255,7 +256,8 @@
       exportZip: 'Export ZIP',
       importZip: 'Restore from ZIP',
       importImages: 'Import media',
-      hintExport: 'ZIP: export/restore images + metadata + organization together. Import media: bring your own images/videos into the Corpus library.',
+      hintZip: 'ZIP: export/restore images + metadata + organization together.',
+      hintMedia: 'Import media: bring your own images/videos into the Corpus library.',
       // viewer: settings > backup (incremental export to a chosen folder)
       backupTitle: 'Backup (full export)',
       hintBackup: 'Creates a "Corpus-export" folder where you choose and writes the whole library (organization included) as one ZIP. Re-importable to fully restore; only the latest few are kept.',

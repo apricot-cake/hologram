@@ -844,7 +844,7 @@
       <div id="postActiveBar" class="content-activebar" style="display:none">
         <span class="sb-activebar-title" id="sbActiveTitle"></span>
         <div class="sb-chips" id="queryChips"></div>
-        <button class="iv-andor or" id="sbTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">いずれか</button>
+        <button class="iv-andor or" id="sbTagMode" type="button" title="クリックでタグの結合を切替（すべて含む ⇄ いずれか）" style="display:none">⇄ いずれか</button>
         <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       </div>
       <!-- Posts tab -->
@@ -897,8 +897,11 @@
       <div class="data-section">
         <button class="btn-outline" id="exportZip"></button>
         <button class="btn-outline" id="importZip"></button>
+        <div class="data-hint" id="hintZip"></div>
+      </div>
+      <div class="data-section" style="margin-top:14px;">
         <button class="btn-outline" id="importImages"></button>
-        <div class="data-hint" id="hintExport"></div>
+        <div class="data-hint" id="hintMedia"></div>
       </div>
       <input type="file" id="importZipInput" class="file-input-hidden" accept=".zip">
     </div>
@@ -1186,9 +1189,9 @@
     }
     .iv-folder-manage:hover { border-color: var(--accent); color: var(--accent); }
     /* AND/OR toggle for multi-select filters (tags) */
-    .iv-andor { font-size: 10px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; margin-left: 4px; vertical-align: middle; }
-    .iv-andor:hover { border-color: var(--accent); color: var(--accent); }
-    .iv-andor.or { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .iv-andor { font-size: 11px; font-weight: 600; padding: 2px 9px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin-left: 4px; vertical-align: middle; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
+    .iv-andor:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
+    .iv-andor.or { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
     .iv-foldstar { color: var(--muted); margin-right: 3px; }
     .sb-chip.active .iv-foldstar { color: #fff; }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
