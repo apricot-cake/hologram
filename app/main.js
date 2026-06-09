@@ -754,12 +754,14 @@ ipcMain.handle('import-from-folder', async (_e, dir) => {
 // 任意の画像ファイルをライブラリ画像として取り込む（ユーザー自前の画像でもOK）。
 // source:'drag' を付けるので画像閲覧に出る。Corpusのメディアのみエクスポートの取り込みも兼ねる。
 const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
+const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
+const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 ipcMain.handle('import-images', async () => {
   const folder = getSaveFolder();
   if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
   const res = await dialog.showOpenDialog(win, {
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Images', extensions: IMPORTABLE_IMG }]
+    filters: [{ name: 'Media', extensions: IMPORTABLE_MEDIA }]
   });
   if (res.canceled || !res.filePaths || !res.filePaths.length) return { imported: 0, skipped: 0, canceled: true };
   fs.mkdirSync(folder, { recursive: true });
@@ -768,21 +770,23 @@ ipcMain.handle('import-images', async () => {
   for (const fp of res.filePaths) {
     try {
       const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
-      if (!IMPORTABLE_IMG.includes(ext)) { skipped++; continue; }
+      if (!IMPORTABLE_MEDIA.includes(ext)) { skipped++; continue; }
       const st = await fs.promises.stat(fp);
       if (!st.isFile()) { skipped++; continue; }
+      const isVid = IMPORTABLE_VID.includes(ext);
       const captureId = `drag-${stamp}-${String(seq++).padStart(4, '0')}`;
-      const img = `${captureId}.${ext}`;
+      const file = `${captureId}.${ext}`;
       const nowIso = new Date().toISOString();
       const mtimeIso = (st.mtime && !isNaN(st.mtime.getTime())) ? st.mtime.toISOString() : nowIso;
       const rec = {
-        captureId, image: img, source: 'drag', url: null, platform: null,
+        captureId, source: 'drag', url: null, platform: null,
         title: path.basename(fp, path.extname(fp)) || null, text: null,
-        displayName: null, screenName: null,
+        displayName: null, screenName: null, mediaType: isVid ? 'video' : 'image',
         capturedAt: nowIso, date: mtimeIso, updatedAt: nowIso,
         media: [], tags: [], hashtags: []
       };
-      await fs.promises.copyFile(fp, path.join(folder, img));
+      if (isVid) rec.video = file; else rec.image = file;
+      await fs.promises.copyFile(fp, path.join(folder, file));
       await fs.promises.writeFile(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
       imported++;
     } catch { skipped++; }
