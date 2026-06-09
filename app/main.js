@@ -542,6 +542,42 @@ ipcMain.handle('export-save', async (_e, filename, bytes) => {
   }
 });
 
+// --- Complete export (directly re-importable snapshot) ------------------------
+// One ZIP that mirrors the whole library under library/: every capture file
+// (jpg/json/media) PLUS the organization JSONs (folders/tag-groups/ungrouped/
+// manual-groups). Excludes config.json (machine-specific) and .index.json
+// (cache). Built in main so both manual export and the scheduled export share it.
+const archive = require(path.join(__dirname, 'lib-archive'));
+let _JSZip = null;
+function getJSZip() { return _JSZip || (_JSZip = require(path.join(__dirname, 'vendor', 'jszip.min.js'))); }
+function exportStamp() { return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19); }
+
+ipcMain.handle('export-complete', async () => {
+  let built;
+  try { built = await archive.buildCompleteZip(getJSZip(), getSaveFolder()); } catch (err) { return { saved: false, error: err.message }; }
+  if (built.fileCount === 0) return { saved: false, empty: true };
+  const res = await dialog.showSaveDialog(win, { defaultPath: `corpus-export-${exportStamp()}.zip` });
+  if (res.canceled || !res.filePath) return { saved: false };
+  try {
+    await fs.promises.writeFile(res.filePath, built.buffer);
+    return { saved: true, path: res.filePath, fileCount: built.fileCount };
+  } catch (err) {
+    return { saved: false, error: err.message };
+  }
+});
+
+// --- Complete import (restore a complete-export ZIP) --------------------------
+// Captures (jpg/json/media) are copied into the save folder, SKIPPING any that
+// already exist (by filename) — so re-importing is idempotent and importing into
+// a non-empty library merges rather than clobbers. The organization JSONs are
+// MERGED (union) so existing folders/tags are never wiped. (Legacy exports —
+// metadata.json + images/ — keep using the renderer's importPosts path.)
+
+ipcMain.handle('import-complete', async (_e, bytes) => {
+  try { return await archive.importCompleteZip(getJSZip(), getSaveFolder(), Buffer.from(bytes)); }
+  catch (err) { return { ok: false, error: err.message }; }
+});
+
 // --- バックアップ / 指定フォルダへの増分エクスポート ---------------------------
 // 保存先フォルダ自体をクラウド同期の対象にすると（ライブ書き込み中の同期で）壊れやすい。
 // ここでは「安全な吐き出し先」へ増分コピーする。クラウドはその出力先だけを同期すればよい。

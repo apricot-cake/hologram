@@ -116,6 +116,7 @@
       importSkipped: '$1 件インポート（$2 件は既存のためスキップ）',
       noData: 'エクスポートするデータがありません',
       importFailed: 'インポートに失敗しました',
+      exportFailed: 'エクスポートに失敗しました',
 
       // viewer: engagement labels (legacy, still referenced)
       engagementLikes: 'いいね（全SNS）',
@@ -290,6 +291,7 @@
       importSkipped: '$1 imported ($2 skipped as duplicates)',
       noData: 'No data to export',
       importFailed: 'Import failed',
+      exportFailed: 'Export failed',
 
       engagementLikes: 'Likes (all)',
       engagementReposts: 'Reposts (all)',

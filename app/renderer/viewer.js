@@ -108,6 +108,7 @@
     importSkipped: _f2('importSkipped'),
     noData: _s('noData'),
     importFailed: _s('importFailed'),
+    exportFailed: _s('exportFailed'),
 
     // engagement labels
     engagementLikes: _s('engagementLikes'),
@@ -1588,66 +1589,25 @@
     loadPosts();
   });
 
-  // --- Export ZIP ---
+  // --- Export (complete, directly re-importable) ---
+  // Built in main: a ZIP mirroring the whole library (captures + media + 整理情報)
+  // under library/. Re-importable via importZip below to fully restore.
   document.getElementById('exportZip').addEventListener('click', async () => {
-    if (allPosts.length === 0) {
-      showToast(MSG.noData);
-      return;
-    }
     showToast(MSG.exporting);
-
-    const zip = new JSZip();
-    const metadata = [];
-
-    for (let i = 0; i < allPosts.length; i++) {
-      const p = allPosts[i];
-      const filename = `${buildFilename(p, i)}.jpg`;
-
-      if (p.image) {
-        const dataUrl = await window.corpus.imageDataUrl(p.image);
-        const base64 = dataUrl ? dataUrl.split(',')[1] : '';
-        if (base64) {
-          zip.file(`images/${filename}`, base64, { base64: true });
-        }
-      }
-
-      metadata.push({
-        url: p.url,
-        platform: p.platform,
-        text: p.text,
-        title: p.title ?? null,
-        displayName: p.displayName,
-        screenName: p.screenName,
-        userId: p.userId,
-        likes: p.likes,
-        reposts: p.reposts,
-        replies: p.replies,
-        bookmarks: p.bookmarks,
-        views: p.views ?? null,
-        mediaType: p.mediaType || null,
-        lang: p.lang || null,
-        isReply: p.isReply || null,
-        isQuote: p.isQuote || null,
-        isThread: p.isThread || null,
-        quotedUrl: p.quotedUrl || null,
-        date: p.date,
-        capturedAt: p.capturedAt,
-        updatedAt: p.updatedAt || null,
-        eagleName: p.eagleName || null,
-        tags: p.tags?.length ? p.tags : null,
-        hashtags: p.hashtags?.length ? p.hashtags : null,
-        imageFile: `images/${filename}`
-      });
+    try {
+      const res = await window.corpus.exportComplete();
+      if (res && res.saved) showToast(MSG.exported);
+      else if (res && res.empty) showToast(MSG.noData);
+      else if (res && res.error) showToast(MSG.exportFailed || MSG.importFailed);
+    } catch {
+      showToast(MSG.exportFailed || MSG.importFailed);
     }
-
-    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
-
-    const bytes = await zip.generateAsync({ type: 'uint8array' });
-    const res = await window.corpus.exportSave(`corpus-export-${formatExportDate()}.zip`, bytes);
-    if (res.saved) showToast(MSG.exported);
   });
 
-  // --- Import from ZIP（Corpusの ZIP エクスポート = images/ + metadata.json を復元）---
+  // --- Import from ZIP ---
+  // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して
+  // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
+  // レンダラで読んで importPosts。
   document.getElementById('importZip').addEventListener('click', () => {
     document.getElementById('importZipInput').click();
   });
@@ -1659,6 +1619,16 @@
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const zip = await JSZip.loadAsync(buf);
+      const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
+      if (isComplete) {
+        const res = await window.corpus.importComplete(buf);
+        await loadPosts();
+        e.target.value = '';
+        if (!res || !res.ok) { showToast(MSG.importFailed); return; }
+        if (res.skipped > 0) showToast(MSG.importSkipped(res.imported, res.skipped));
+        else showToast(MSG.imported(res.imported));
+        return;
+      }
       const metaEntry = zip.file('metadata.json');
       if (!metaEntry) { showToast(MSG.importFailed); e.target.value = ''; return; }
       const meta = JSON.parse(await metaEntry.async('string'));
