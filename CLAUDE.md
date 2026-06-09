@@ -16,16 +16,20 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - Bluesky
 - Misskey
 - Mastodon
+- pixiv
 
 ## 構成
 
-- `manifest.json` — 拡張設定、権限（`nativeMessaging` / host_permissions: `cdn.syndication.twimg.com`）、キーボードショートカット
-- `background.js` — Service Worker。タブキャプチャ → クロップ → `metadata.js` で投稿URLから各プラットフォームのAPIでメタデータ取得 → Native Messaging でブリッジへ送信（EXIF/storage 廃止、**DOMスクレイピング廃止＝安定API由来のみ**）
-- `content.js` — コンテンツスクリプト。投稿選択UI・投稿要素の特定・パーマリンク抽出・クロップ（**メタデータのDOM抽出は廃止**しAPIへ移行）
-- `metadata.js`（ルート）— 投稿URLから X（`cdn.syndication.twimg.com` の syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）でメタデータを取得・正規化。background が importScripts、node でもテスト可能。Xはリポスト/ブックマーク/閲覧数を含まない
+- `extension/` — Chrome拡張一式（MV3。**以前はリポジトリ直下だったが `extension/` 配下へ移動済み**）:
+  - `manifest.json` — 権限（`nativeMessaging` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、ショートカット `Alt+S`、`default_locale`/`_locales`
+  - `background.js` — Service Worker。タブキャプチャ → クロップ → `metadata.js` でAPI取得 → Native Messaging 送信。**クリック保存** と **画像ドラッグ保存**(`drag.js`) の2経路（`pickPrimaryImage` で原寸を選択）。EXIF/storage廃止・DOMスクレイピング廃止＝安定API由来のみ
+  - `content.js` — 投稿選択UI・要素特定・パーマリンク抽出・クロップ（メタのDOM抽出は廃止しAPIへ）
+  - `drag.js` — 画像のドラッグ保存（投稿の原寸画像を直接保存）
+  - `metadata.js` — 投稿URLから X（syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）/ **pixiv** でメタ取得・正規化。**失敗時は空レコードを返す（throwしない）**。node でもテスト可。Xはリポスト/ブックマーク/閲覧数を含まない
+  - `i18n.js` — content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js`）
+  - `_locales/`（en/ja）、`icons/`
 - `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）を**ベストエフォートでDLし `<id>-media-N.<ext>` に保存**＝静止画のみ・https限定・25MB/12s/12件上限・失敗時dropで保存自体は失敗させない）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
 - `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`（`index.html`・`viewer.js`・`i18n.js`）、`vendor/jszip.min.js`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録。画像は `psimg://` プロトコルで遅延読込
-- `i18n.js`（ルート）— content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js` を使用）
 - `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`backfill-metadata.js`（保存先の欠損メタを保存URLから再取得）、`test-metadata.js`（メタデータAPI取得の実地検証）、`test-mastodon-url.js`（Mastodonの非Mastodon由来canonical URLフォールバックの単体テスト＝モックfetch）、`test-bridge.js`/`test-media.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`/`test-app-watch.js`/`test-app-media.js`/`test-app-users.js`/`test-app-instances.js`（ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示/ユーザータブ/インスタンスフィルタのスモークテスト）、`make-icons.js`（アイコン生成）
 
 ## キーボードショートカット
