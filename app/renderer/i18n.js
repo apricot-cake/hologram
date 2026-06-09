@@ -53,9 +53,9 @@
       saved: '保存しました',
 
       // settings > save folder (app)
-      saveFolderTitle: '保存先フォルダ',
+      saveFolderTitle: '保存先フォルダ（上級設定）',
       chooseFolder: 'フォルダを選択',
-      hintSaveFolder: 'キャプチャした画像とメタデータの保存先。変更すると次回キャプチャ分から新しい場所に保存されます。',
+      hintSaveFolder: '通常は自動で管理されます。別のドライブや場所にライブラリを置きたいときだけ変更してください。変更すると次回キャプチャ分から新しい場所に保存されます。',
 
       // viewer: settings > language / shortcut
       langTitle: '言語',
@@ -230,9 +230,9 @@
       saved: 'Saved',
 
       // settings > save folder (app)
-      saveFolderTitle: 'Save folder',
+      saveFolderTitle: 'Save folder (advanced)',
       chooseFolder: 'Choose folder',
-      hintSaveFolder: 'Where captured images and metadata are stored. Changing it affects future captures.',
+      hintSaveFolder: 'Managed automatically by default. Change this only to keep the library on another drive or location. Changing it affects future captures.',
 
       langTitle: 'Language',
       langAuto: 'Auto (follow system language)',

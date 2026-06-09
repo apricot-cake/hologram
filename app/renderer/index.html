@@ -856,12 +856,16 @@
   <!-- Settings (moved into #settingsView overlay at runtime, opened by the gear) -->
   <div class="tab-panel" id="panelSettings">
     <div class="section">
-      <h2 id="settingsSaveFolderTitle">Save folder</h2>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:var(--text);background:var(--surface-2);padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
-        <button class="btn" id="chooseFolderBtn"></button>
-      </div>
-      <div class="hint" id="hintSaveFolder" style="margin-top:8px;"></div>
+      <details id="advSaveFolder">
+        <summary id="settingsSaveFolderTitle" style="cursor:pointer;font-weight:600;">Save folder (advanced)</summary>
+        <div style="margin-top:10px;">
+          <div class="hint" id="hintSaveFolder" style="margin-bottom:8px;"></div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:var(--text);background:var(--surface-2);padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+            <button class="btn" id="chooseFolderBtn"></button>
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="section">
