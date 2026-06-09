@@ -25,6 +25,7 @@
     kindTitle: _s('kindTitle'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
+    multiOnly: _s('multiOnly'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -558,6 +559,7 @@
   setText('sbKindTitle', MSG.kindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
+  setText('multiOnlyLabel', MSG.multiOnly);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
@@ -769,6 +771,7 @@
   let allPosts = [];
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
+  let multiOnly = false;      // show only items with more than one image
   let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
   const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
@@ -1043,6 +1046,9 @@
       const values = byType.media.map(f => f.value);
       posts = posts.filter(p => values.includes(p.mediaType));
     }
+
+    // Multi-image only (items carrying more than one original image)
+    if (multiOnly) posts = posts.filter(p => mediaFilesOf(p).length > 1);
 
     // Sort (unchanged)
     switch (sort) {
@@ -1518,6 +1524,8 @@
   }
   document.getElementById('tileMinus').addEventListener('click', () => setTileSize(tileSize - TILE_STEP));
   document.getElementById('tilePlus').addEventListener('click', () => setTileSize(tileSize + TILE_STEP));
+
+  document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
