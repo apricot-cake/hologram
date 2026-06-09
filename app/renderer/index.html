@@ -912,7 +912,7 @@
       </div>
       <div style="margin:10px 0;">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;" id="backupScheduleLabel"></div>
-        <label class="radio-line"><input type="checkbox" id="backupInterval"> <span id="backupIntervalLabel"></span> <input type="number" id="backupIntervalHours" min="1" max="720" style="width:60px;font-size:12px;padding:2px 4px;"> <span id="backupIntervalUnit"></span></label>
+        <label class="radio-line"><input type="checkbox" id="backupInterval"> <span id="backupIntervalLabel"></span> <input type="number" id="backupIntervalValue" min="1" max="999" style="width:56px;font-size:12px;padding:2px 4px;"> <select id="backupIntervalUnit" style="font-size:12px;padding:2px 4px;"><option value="day" id="unitDay"></option><option value="week" id="unitWeek"></option><option value="year" id="unitYear"></option></select> <span id="backupIntervalEvery"></span></label>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
         <button class="btn-outline" id="runBackupBtn"></button>

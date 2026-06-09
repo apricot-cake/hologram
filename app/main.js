@@ -589,7 +589,8 @@ const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
   retention: 5,           // 直近何世代の ZIP を残すか
   interval: false,        // 一定間隔
-  intervalHours: 24,
+  intervalValue: 1,       // 間隔の数
+  intervalUnit: 'day',    // 'day' | 'week' | 'year'
   lastRunAt: null,
   lastResult: null
 };
@@ -662,7 +663,8 @@ function armBackupSchedule() {
   const b = readBackupConfig();
   if (!b.dir) return;
   if (b.interval) {
-    const ms = Math.max(0.05, Number(b.intervalHours) || 24) * 3600 * 1000;
+    const unitMs = { day: 86400000, week: 604800000, year: 31536000000 };
+    const ms = Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
     backupIntervalTimer = setInterval(() => { runBackup('interval'); }, ms);
   }
 }

@@ -89,6 +89,9 @@
     backupScheduleTitle: _s('backupScheduleTitle'),
     backupInterval: _s('backupInterval'),
     backupIntervalUnit: _s('backupIntervalUnit'),
+    unitDay: _s('unitDay'),
+    unitWeek: _s('unitWeek'),
+    unitYear: _s('unitYear'),
     backupRunNow: _s('backupRunNow'),
     backupRestore: _s('backupRestore'),
     backupRunning: _s('backupRunning'),
@@ -238,7 +241,10 @@
   setText('backupContentMediaLabel', MSG.backupContentMedia);
   setText('backupScheduleLabel', MSG.backupScheduleTitle);
   setText('backupIntervalLabel', MSG.backupInterval);
-  setText('backupIntervalUnit', MSG.backupIntervalUnit);
+  setText('backupIntervalEvery', MSG.backupIntervalUnit);
+  setText('unitDay', MSG.unitDay);
+  setText('unitWeek', MSG.unitWeek);
+  setText('unitYear', MSG.unitYear);
   setText('runBackupBtn', MSG.backupRunNow);
   setText('importFolderBtn', MSG.backupRestore);
   setText('settingsDangerTitle', MSG.dangerTitle);
@@ -1706,7 +1712,8 @@
       if (!cfg) return;
       pathEl.textContent = cfg.dir || MSG.backupDirNone;
       $('backupInterval').checked = !!cfg.interval;
-      $('backupIntervalHours').value = cfg.intervalHours || 24;
+      $('backupIntervalValue').value = cfg.intervalValue || 1;
+      $('backupIntervalUnit').value = cfg.intervalUnit || 'day';
       renderStatus();
     }
     async function load() {
@@ -1731,10 +1738,11 @@
     });
     $('clearBackupDir').addEventListener('click', () => save({ dir: null }));
     $('backupInterval').addEventListener('change', (e) => save({ interval: e.target.checked }));
-    $('backupIntervalHours').addEventListener('change', (e) => {
-      const v = Math.max(1, Math.min(720, parseInt(e.target.value, 10) || 24));
-      e.target.value = v; save({ intervalHours: v });
+    $('backupIntervalValue').addEventListener('change', (e) => {
+      const v = Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1));
+      e.target.value = v; save({ intervalValue: v });
     });
+    $('backupIntervalUnit').addEventListener('change', (e) => save({ intervalUnit: e.target.value }));
 
     $('runBackupBtn').addEventListener('click', async () => {
       if (!cfg || !cfg.dir) { showToast(MSG.backupNotSet); return; }
