@@ -22,6 +22,9 @@
     emptyUsers: _s('emptyUsers'),
     sidebarAuthors: _s('sidebarAuthors'),
     searchAuthors: _s('searchAuthors'),
+    kindTitle: _s('kindTitle'),
+    kindPost: _s('kindPost'),
+    kindImage: _s('kindImage'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -292,6 +295,9 @@
       let label = '';
       let cls = `qc-${f.type}`;
       switch (f.type) {
+        case 'kind':
+          label = f.value === 'post' ? MSG.kindPost : MSG.kindImage;
+          break;
         case 'platform':
           label = ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
           break;
@@ -547,6 +553,9 @@
 
   // Sidebar i18n
   setText('sbActiveTitle', getMessage('sbActiveTitle'));
+  setText('sbKindTitle', MSG.kindTitle);
+  setText('sbKindPost', MSG.kindPost);
+  setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
@@ -884,9 +893,9 @@
   function reconcileFolders() { if (CF()) CF().reconcile(new Set(allPosts.map(p => p.captureId))); }
 
   function getFilteredPosts() {
-    // 投稿閲覧 = SNS投稿（URLあり）。URLなしのライブラリ参照画像（Eagle移行の素材等）は
-    // 画像閲覧モード専用なので、ここでは出さない（数千件で投稿一覧が埋もれるのを防ぐ）。
-    let posts = allPosts.filter(p => p.url);
+    // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
+    // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
+    let posts = allPosts.filter(p => p.image || mediaFilesOf(p).length || p.text || p.title);
     // Folder filter (shared folders.json, keyed by captureId)
     if (folderFilter && CF()) {
       const f = CF().byId(folderFilter);
@@ -924,6 +933,15 @@
     const byType = {};
     for (const f of activeFilters) {
       (byType[f.type] = byType[f.type] || []).push(f);
+    }
+
+    // Kind: SNS投稿（スクショあり）/ 画像（ライブラリ）。OR within group.
+    if (byType.kind) {
+      const kinds = byType.kind.map(f => f.value);
+      posts = posts.filter(p => {
+        const isPost = isScreenshot(p);
+        return (kinds.includes('post') && isPost) || (kinds.includes('image') && !isPost);
+      });
     }
 
     // Platform: OR within group

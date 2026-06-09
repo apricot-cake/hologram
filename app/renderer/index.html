@@ -611,6 +611,7 @@
     .sb-active-chip.qc-media { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
     .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
+    .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
   </style>
 </head>
@@ -655,6 +656,15 @@
           <button class="chip" id="deleteSelectedBtn" style="background:var(--danger);color:#fff;border-color:var(--danger);"></button>
           <button class="chip" id="cancelSelectBtn"></button>
         </div>
+        <!-- Kind: SNS posts (screenshot captures) vs library images -->
+        <div class="sb-section collapsible">
+          <div class="sb-title" id="sbKindTitle"></div>
+          <div class="sb-chips">
+            <button class="sb-chip" data-filter-type="kind" data-filter-value="post" id="sbKindPost"></button>
+            <button class="sb-chip" data-filter-type="kind" data-filter-value="image" id="sbKindImage"></button>
+          </div>
+        </div>
+
         <!-- Platform -->
         <div class="sb-section collapsible">
           <div class="sb-title" id="sbPlatformTitle"></div>
