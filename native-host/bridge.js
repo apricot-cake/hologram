@@ -16,9 +16,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const { configDir } = require('./paths');
+const { configDir, defaultLibraryDir } = require('./paths');
 
 // --- Save folder resolution (shared config with the desktop app) ---
+// MUST stay in lockstep with the app's getSaveFolder(): explicit config wins,
+// otherwise both fall back to the SAME shared default (defaultLibraryDir).
 function readSaveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
@@ -26,9 +28,9 @@ function readSaveFolder() {
       return cfg.saveFolder;
     }
   } catch {
-    // No config yet — fall back to a sensible default.
+    // No config yet — fall back to the shared default.
   }
-  return path.join(os.homedir(), 'Corpus');
+  return defaultLibraryDir();
 }
 
 // --- Native messaging framing (4-byte LE length prefix + UTF-8 JSON) ---

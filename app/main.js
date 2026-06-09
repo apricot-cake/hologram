@@ -9,7 +9,7 @@ const path = require('path');
 const nativeHostDir = app.isPackaged
   ? path.join(process.resourcesPath, 'native-host')
   : path.join(__dirname, '..', 'native-host');
-const { configDir } = require(path.join(nativeHostDir, 'paths'));
+const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
 
 // Pin userData to the SAME directory the native host reads its config from, so
@@ -42,9 +42,12 @@ function writeConfig(cfg) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
 }
 
+// Explicit config wins; otherwise fall back to the shared default library dir
+// (same resolution as the bridge's readSaveFolder). Never returns null now —
+// a fresh install just uses defaultLibraryDir() without the user picking one.
 function getSaveFolder() {
   const folder = readConfig().saveFolder;
-  return (typeof folder === 'string' && folder.trim()) ? folder : null;
+  return (typeof folder === 'string' && folder.trim()) ? folder : defaultLibraryDir();
 }
 
 // Watch the save folder and tell the renderer to refresh when files change
@@ -892,6 +895,10 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(() => {
+  // Fresh install (no explicit save folder): make sure the default library dir
+  // exists so folder/tag writes don't fail before the first capture. Explicit
+  // user-picked folders are left untouched.
+  try { if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true }); } catch { /* ignore */ }
   if (!SMOKE) ensureHostRegistered();
   registerImageProtocol();
   const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';

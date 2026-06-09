@@ -28,4 +28,24 @@ function configDir() {
   return path.join(base, APP_NAME);
 }
 
-module.exports = { configDir, APP_NAME };
+// Default library (capture) folder, used by BOTH the bridge and the app when the
+// user hasn't picked an explicit save folder. Kept SEPARATE from configDir():
+// the library can grow large (screenshots + original media), so it lives under
+// the local (non-roaming) app-data area, not in Roaming/config.
+//
+// Windows : %LOCALAPPDATA%/Corpus/library
+// macOS   : ~/Library/Application Support/Corpus/library
+// Linux   : $XDG_DATA_HOME/Corpus/library (or ~/.local/share/Corpus/library)
+function defaultLibraryDir() {
+  if (process.platform === 'win32') {
+    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(base, APP_NAME, 'library');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME, 'library');
+  }
+  const base = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return path.join(base, APP_NAME, 'library');
+}
+
+module.exports = { configDir, defaultLibraryDir, APP_NAME };
