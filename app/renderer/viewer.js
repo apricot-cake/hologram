@@ -31,6 +31,7 @@
     sortReposts: _s('sortReposts'),
     sortReplies: _s('sortReplies'),
     sortCaptured: _s('sortCaptured'),
+    sortLikesPct: _s('sortLikesPct'),
     filterAll: _s('filterAll'),
     postCount: _f1('postCount'),
 
@@ -261,6 +262,7 @@
   sortSelect.options[3].textContent = MSG.sortReposts;
   sortSelect.options[4].textContent = MSG.sortReplies;
   sortSelect.options[5].textContent = MSG.sortCaptured;
+  sortSelect.options[6].textContent = MSG.sortLikesPct;
 
   // --- Query Field ---
   const ENG_TYPE_LABELS = {
@@ -888,6 +890,22 @@
     return density === 'tile' ? (art || cap) : (cap || art);
   }
 
+  // Likes percentile within each platform — ranks "did well for its SNS" so X's
+  // raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
+  function percentileFn(list) {
+    const byPlat = {};
+    list.forEach((p) => { const k = p.platform || ''; (byPlat[k] || (byPlat[k] = [])).push(p.likes || 0); });
+    Object.values(byPlat).forEach((a) => a.sort((x, y) => x - y));
+    return (p) => {
+      const arr = byPlat[p.platform || ''] || [];
+      if (arr.length <= 1) return 1;
+      const v = p.likes || 0;
+      let lo = 0, hi = arr.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= v) lo = m + 1; else hi = m; }
+      return (lo - 1) / (arr.length - 1);
+    };
+  }
+
   const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
   // Stable per-author key: prefer the platform user id, fall back to the handle.
   const userKey = (p) => p.platform + ':' + (p.userId || ('@' + (p.screenName || '')));
@@ -1034,6 +1052,7 @@
       case 'reposts-desc': posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0)); break;
       case 'replies-desc': posts.sort((a, b) => (b.replies || 0) - (a.replies || 0)); break;
       case 'captured-desc': posts.sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || '')); break;
+      case 'likes-pct': { const pct = percentileFn(posts); posts.sort((a, b) => pct(b) - pct(a)); break; }
     }
 
     return posts;

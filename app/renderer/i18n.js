@@ -37,6 +37,7 @@
       sortReposts: 'リポスト順',
       sortReplies: '返信順',
       sortCaptured: 'キャプチャ日時順',
+      sortLikesPct: '人気順（SNS内）',
       filterAll: 'すべて',
       postCount: '$1 件',
 
@@ -211,6 +212,7 @@
       sortReposts: 'Most reposted',
       sortReplies: 'Most replied',
       sortCaptured: 'Captured date',
+      sortLikesPct: 'Top (within SNS)',
       filterAll: 'All',
       postCount: '$1 posts',
 

@@ -341,7 +341,7 @@ ipcMain.handle('open-external', (_event, url) => {
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode', 'theme'];
-const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
+const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 ipcMain.handle('get-prefs', () => {
   const cfg = readConfig();
