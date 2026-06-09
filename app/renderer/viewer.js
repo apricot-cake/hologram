@@ -87,10 +87,8 @@
     backupContentMeta: _s('backupContentMeta'),
     backupContentMedia: _s('backupContentMedia'),
     backupScheduleTitle: _s('backupScheduleTitle'),
-    backupOnStart: _s('backupOnStart'),
     backupInterval: _s('backupInterval'),
     backupIntervalUnit: _s('backupIntervalUnit'),
-    backupOnChange: _s('backupOnChange'),
     backupRunNow: _s('backupRunNow'),
     backupRestore: _s('backupRestore'),
     backupRunning: _s('backupRunning'),
@@ -239,10 +237,8 @@
   setText('backupContentMetaLabel', MSG.backupContentMeta);
   setText('backupContentMediaLabel', MSG.backupContentMedia);
   setText('backupScheduleLabel', MSG.backupScheduleTitle);
-  setText('backupOnStartLabel', MSG.backupOnStart);
   setText('backupIntervalLabel', MSG.backupInterval);
   setText('backupIntervalUnit', MSG.backupIntervalUnit);
-  setText('backupOnChangeLabel', MSG.backupOnChange);
   setText('runBackupBtn', MSG.backupRunNow);
   setText('importFolderBtn', MSG.backupRestore);
   setText('settingsDangerTitle', MSG.dangerTitle);
@@ -1709,10 +1705,8 @@
     function render() {
       if (!cfg) return;
       pathEl.textContent = cfg.dir || MSG.backupDirNone;
-      $('backupOnStart').checked = !!cfg.onStart;
       $('backupInterval').checked = !!cfg.interval;
       $('backupIntervalHours').value = cfg.intervalHours || 24;
-      $('backupOnChange').checked = !!cfg.onChange;
       renderStatus();
     }
     async function load() {
@@ -1736,13 +1730,11 @@
       } catch { /* ignore */ }
     });
     $('clearBackupDir').addEventListener('click', () => save({ dir: null }));
-    $('backupOnStart').addEventListener('change', (e) => save({ onStart: e.target.checked }));
     $('backupInterval').addEventListener('change', (e) => save({ interval: e.target.checked }));
     $('backupIntervalHours').addEventListener('change', (e) => {
       const v = Math.max(1, Math.min(720, parseInt(e.target.value, 10) || 24));
       e.target.value = v; save({ intervalHours: v });
     });
-    $('backupOnChange').addEventListener('change', (e) => save({ onChange: e.target.checked }));
 
     $('runBackupBtn').addEventListener('click', async () => {
       if (!cfg || !cfg.dir) { showToast(MSG.backupNotSet); return; }

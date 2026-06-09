@@ -69,14 +69,6 @@ function watchSaveFolder() {
       watchDebounce = setTimeout(() => {
         if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
       }, 400);
-      // バックアップ「変更時」: 連続書き込みをまとめるため長め(90s)にデバウンス。
-      if (!SMOKE) {
-        const b = readBackupConfig();
-        if (b.dir && b.onChange) {
-          clearTimeout(backupChangeDebounce);
-          backupChangeDebounce = setTimeout(() => { runBackup('change'); }, 90000);
-        }
-      }
     });
   } catch (err) {
     console.error('Failed to watch save folder:', err);
@@ -596,10 +588,8 @@ function captureIdOf(name) {
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
   retention: 5,           // 直近何世代の ZIP を残すか
-  onStart: false,         // 起動時に1回
   interval: false,        // 一定間隔
   intervalHours: 24,
-  onChange: false,        // 保存先変更時（デバウンス）
   lastRunAt: null,
   lastResult: null
 };
@@ -667,7 +657,6 @@ async function runBackup(reason) {
 }
 
 let backupIntervalTimer = null;
-let backupChangeDebounce = null;
 function armBackupSchedule() {
   if (backupIntervalTimer) { clearInterval(backupIntervalTimer); backupIntervalTimer = null; }
   const b = readBackupConfig();
@@ -676,7 +665,6 @@ function armBackupSchedule() {
     const ms = Math.max(0.05, Number(b.intervalHours) || 24) * 3600 * 1000;
     backupIntervalTimer = setInterval(() => { runBackup('interval'); }, ms);
   }
-  // onChange は watchSaveFolder のコールバックで（長めのデバウンスで）処理。
 }
 
 ipcMain.handle('get-backup', () => readBackupConfig());
@@ -861,8 +849,6 @@ if (!gotSingleInstanceLock) {
   watchSaveFolder();
   if (!SMOKE) {
     armBackupSchedule();                                  // interval スケジュールを起動
-    const bk = readBackupConfig();
-    if (bk.dir && bk.onStart) setTimeout(() => runBackup('startup'), 4000);   // 起動直後の負荷を避けて少し遅延
   }
 
   if (SMOKE) {
