@@ -110,7 +110,8 @@
     engagementSuffix: _s('engagementSuffix'),
 
     // view toggle + selection
-    viewGrid: _s('viewGrid'),
+    viewCard: _s('viewCard'),
+    viewTile: _s('viewTile'),
     viewList: _s('viewList'),
     selectAll: _s('selectAll'),
     deselectAll: _s('deselectAll'),
@@ -193,7 +194,8 @@
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
-  setText('viewGrid', MSG.viewGrid);
+  setText('viewCard', MSG.viewCard);
+  setText('viewTile', MSG.viewTile);
   setText('viewList', MSG.viewList);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
   setText('chooseFolderBtn', MSG.chooseFolder);
@@ -755,7 +757,7 @@
   // --- State ---
   let allPosts = [];
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
-  let currentView = 'grid';
+  let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
@@ -849,6 +851,24 @@
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
+  // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
+  const fileSrc = (file, w) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? ('?w=' + w) : '') : '');
+
+  // Per-density image source. A post may carry both a capture (screenshot) and
+  // real media/artwork; the density decides which leads:
+  //   tile → artwork preferred (clean image grid), capture as fallback
+  //   card / list → capture preferred (the post as it looked), artwork as fallback
+  const SS_EXT = /\.jpe?g$/i;
+  const mediaFilesOf = (p) => (Array.isArray(p.media) ? p.media.filter((m) => m && m.file).map((m) => m.file) : []);
+  // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
+  const isScreenshot = (p) => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
+  const captureFile = (p) => (isScreenshot(p) ? p.image : '');
+  const artworkFile = (p) => { const m = mediaFilesOf(p); if (m.length) return m[0]; return (p.image && !isScreenshot(p)) ? p.image : ''; };
+  function densityImage(p, density) {
+    const cap = captureFile(p), art = artworkFile(p);
+    return density === 'tile' ? (art || cap) : (cap || art);
+  }
+
   const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
   // Stable per-author key: prefer the platform user id, fall back to the handle.
   const userKey = (p) => p.platform + ':' + (p.userId || ('@' + (p.screenName || '')));
@@ -1017,6 +1037,7 @@
 
     grid.style.display = currentView === 'list' ? 'flex' : 'grid';
     grid.classList.toggle('list-view', currentView === 'list');
+    grid.classList.toggle('tile-view', currentView === 'tile');
     empty.style.display = 'none';
     if (noteEl) noteEl.style.display = 'block';
 
@@ -1030,9 +1051,12 @@
 
       const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
-      const userName = p.displayName || p.screenName || '';
+      const userName = p.displayName || p.screenName || p.title || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || p.title || '');
+      const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
+      const nImg = mediaFilesOf(p).length;            // ×N badge (tile) when a post has multiple images
+      const likesOv = p.likes != null ? `<span class="ov-likes">❤ ${MSG.likes(p.likes)}</span>` : '';
 
       // Post-type + media flags (grid view only; hidden in the compact list view).
       const flags = [];
@@ -1054,7 +1078,9 @@
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
-        ${p.image ? `<img class="card-img" src="${imgSrc(p)}" alt="" loading="lazy">` : ''}
+        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? 360 : 0)}" alt="" loading="lazy">` : ''}
+        ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
+        <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
           <div class="user">
             <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
@@ -1438,10 +1464,9 @@
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
   window.corpus.getPrefs().then((prefs) => {
-    if (prefs.viewMode === 'list') {
-      currentView = 'list';
-      document.getElementById('viewGrid').classList.remove('active');
-      document.getElementById('viewList').classList.add('active');
+    if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
+      currentView = prefs.viewMode;
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
     if (prefs.sortBy) sortSelect.value = prefs.sortBy;
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;

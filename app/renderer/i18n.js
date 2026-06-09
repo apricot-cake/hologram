@@ -118,7 +118,8 @@
       engagementSuffix: '以上',
 
       // viewer: view toggle + selection
-      viewGrid: 'グリッド',
+      viewCard: 'カード',
+      viewTile: 'タイル',
       viewList: 'リスト',
       selectAll: 'すべて選択',
       deselectAll: '選択解除',
@@ -281,7 +282,8 @@
       engagementViews: 'Views (X only)',
       engagementSuffix: 'or more',
 
-      viewGrid: 'Grid',
+      viewCard: 'Cards',
+      viewTile: 'Tiles',
       viewList: 'List',
       selectAll: 'Select all',
       deselectAll: 'Deselect all',

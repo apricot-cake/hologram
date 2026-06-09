@@ -308,6 +308,32 @@
     .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
     .post-grid.list-view .open-btn { top: 50%; right: 72px; transform: translateY(-50%); }
 
+    /* --- Tile density: a post-card with its info section hidden + a compact
+       author/❤ overlay on the image. Purely presentational (reuses the card's
+       buttons + select), so card⇄tile⇄list is just like grid/list. --- */
+    .post-grid.tile-view {
+      grid-template-columns: repeat(auto-fill, minmax(var(--tile-size, 180px), 1fr));
+      gap: 8px;
+    }
+    .post-grid.tile-view .post-card { aspect-ratio: 1; border-color: var(--border); box-shadow: none; }
+    .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
+    .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
+    .post-grid.tile-view .post-meta { display: none; }
+    .card-overlay, .card-ntag { display: none; }
+    .post-grid.tile-view .card-overlay {
+      display: flex; align-items: center; gap: 8px;
+      position: absolute; left: 0; right: 0; bottom: 0; padding: 8px;
+      background: var(--scrim-grad); color: #fff; font-size: 11px; pointer-events: none;
+    }
+    .post-grid.tile-view .card-overlay .ov-author { flex: 1; min-width: 0; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .post-grid.tile-view .card-overlay .ov-likes { flex-shrink: 0; }
+    .post-grid.tile-view .card-ntag {
+      display: block; position: absolute; top: 6px; right: 6px; z-index: 2;
+      padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600;
+      background: rgba(0,0,0,0.8); color: #fff; transition: opacity .1s;
+    }
+    .post-grid.tile-view .post-card:hover .card-ntag { opacity: 0; }
+
     .empty-state {
       text-align: center; padding: 60px 20px; color: var(--text-subtle);
     }
@@ -617,7 +643,8 @@
             <option value="captured-desc"></option>
           </select>
           <div class="view-toggle">
-            <button data-view="grid" id="viewGrid" class="active"></button>
+            <button data-view="card" id="viewCard" class="active"></button>
+            <button data-view="tile" id="viewTile"></button>
             <button data-view="list" id="viewList"></button>
           </div>
           <span class="post-count" id="postCount"></span>

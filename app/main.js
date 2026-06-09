@@ -347,7 +347,7 @@ ipcMain.handle('get-prefs', () => {
   const cfg = readConfig();
   return {
     language: cfg.language || 'auto',
-    viewMode: cfg.viewMode === 'list' ? 'list' : 'grid',
+    viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card',   // display density
     skipDeleteConfirm: !!cfg.skipDeleteConfirm,
     sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
     mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
