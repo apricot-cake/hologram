@@ -781,6 +781,13 @@
   let multiOnly = false;      // show only items with more than one image
   let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
   const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
+  // Windowed rendering: render only the first `renderLimit` filtered posts and
+  // grow as a bottom sentinel nears the viewport. Rendering all (thousands) at
+  // once froze the UI and starved image (psimg) loads. Reset to one page on any
+  // filter/view/search change; the load-more path passes keepLimit=true.
+  const RENDER_PAGE = 150;
+  let renderLimit = RENDER_PAGE;
+  let moreObserver = null;
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   function applyTileLayout() {
@@ -1071,7 +1078,8 @@
     return posts;
   }
 
-  function renderPosts() {
+  function renderPosts(keepLimit) {
+    if (!keepLimit) renderLimit = RENDER_PAGE;
     updateSidebarState();
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
@@ -1102,7 +1110,7 @@
     empty.style.display = 'none';
     if (noteEl) noteEl.style.display = 'block';
 
-    grid.innerHTML = posts.map((p, i) => {
+    grid.innerHTML = posts.slice(0, renderLimit).map((p, i) => {
       const statsHtml = [
         p.likes != null ? `<span>\u2764 ${MSG.likes(p.likes)}</span>` : '',
         p.reposts != null ? `<span>\ud83d\udd01 ${MSG.reposts(p.reposts)}</span>` : '',
@@ -1156,6 +1164,18 @@
         </div>
       </div>`;
     }).join('');
+
+    // Load-more: render the next page when a bottom sentinel nears the viewport.
+    if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
+    if (posts.length > renderLimit) {
+      const sentinel = document.createElement('div');
+      sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
+      grid.appendChild(sentinel);
+      moreObserver = new IntersectionObserver((entries) => {
+        if (entries.some((en) => en.isIntersecting)) { renderLimit += RENDER_PAGE; renderPosts(true); }
+      }, { rootMargin: '800px' });
+      moreObserver.observe(sentinel);
+    }
 
     // Mark truncated text elements
     requestAnimationFrame(() => {
