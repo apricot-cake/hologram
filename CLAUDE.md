@@ -2,6 +2,8 @@
 
 SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするChrome拡張（Manifest V3）と、保存・閲覧を担うデスクトップアプリ（Electron）。
 
+> **【厳守】ユーザーに見える文章はすべて日本語**（最終応答 ＋ ツール呼び出し前の一文＝プログレス narration を含む）。コードのコメントやツールの `description` フィールドは英語のままで可。これは何度も指摘されているので、ツールを連打している最中でも必ず日本語で書くこと。
+
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
 > - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
