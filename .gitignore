@@ -3,5 +3,9 @@ node_modules/
 app/node_modules/
 app/dist/
 app/.smoke-shot*.png
+app/.theme-*.png
+app/.ia-*.png
 __pycache__/
 design-brief/
+design-export/
+scripts/_*.js

@@ -340,7 +340,7 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode', 'theme'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc'];
 
 ipcMain.handle('get-prefs', () => {
@@ -352,7 +352,8 @@ ipcMain.handle('get-prefs', () => {
     sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
     mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
     imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // image-view tile px
-    searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal'   // 検索方式: 通常 / あいまい
+    searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal',   // 検索方式: 通常 / あいまい
+    theme: cfg.theme === 'dark' ? 'dark' : 'light'   // ライト / ダーク
   };
 });
 
@@ -843,11 +844,15 @@ ipcMain.handle('import-images', async () => {
 
 // --- Window ---
 function createWindow(show = true) {
+  // Resolve the theme from config up front so the first paint (and the window's
+  // backdrop) match it — no flash, and SMOKE captures reflect it. Passed to the
+  // page as a ?theme= query that theme.js reads synchronously during <head>.
+  const theme = readConfig().theme === 'dark' ? 'dark' : 'light';
   win = new BrowserWindow({
     width: 1100,
     height: 820,
     show,
-    backgroundColor: '#0f1419',
+    backgroundColor: theme === 'dark' ? '#0c0e12' : '#f6f7f9',
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
     webPreferences: {
@@ -858,7 +863,7 @@ function createWindow(show = true) {
     }
   });
   win.removeMenu();
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme } });
 }
 
 // Side-effect-free launch check: skips host registration, hides the window,

@@ -1,9 +1,10 @@
 'use strict';
 
-// Verifies the Users tab (Phase 1, derived from post author fields, no extra
-// fetching): seeds posts for several authors across platforms, opens the tab,
-// and checks the grouped user list, the search and platform filters, and that
-// clicking a user jumps to the Posts tab filtered to that user.
+// Verifies the sidebar 作者 (authors) section (derived from post author fields,
+// no extra fetching; replaced the old Users tab): seeds posts for several authors,
+// checks the author chips are grouped + ranked by post count, that the author
+// search filters them (ignoring a leading "@"), and that clicking an author chip
+// applies a `user` filter (pill + narrowed grid).
 //
 //   node scripts/test-app-users.js
 
@@ -40,34 +41,26 @@ writePost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const names = () => [...document.querySelectorAll('#userList .user-row .user-name')].map(e => e.textContent);
-  document.querySelector('.tab-btn[data-tab="users"]').click();
-  await sleep(120);
-  const allNames = names();
-  const platformChips = [...document.querySelectorAll('#userPlatformChips .sb-chip')].map(c => c.dataset.pl).sort();
+  const labels = () => [...document.querySelectorAll('#sbAuthorChips .sb-chip')].map(c => c.dataset.userLabel);
+  await sleep(150);
+  const allNames = labels();   // ranked by post count: Alice(2), then Bob, Carol
 
   // search (plain, and with a leading "@" which should be ignored)
-  const us = document.getElementById('userSearch');
-  us.value = 'bob'; us.dispatchEvent(new Event('input')); await sleep(40);
-  const searchNames = names();
-  us.value = '@bob'; us.dispatchEvent(new Event('input')); await sleep(40);
-  const atSearchNames = names();
-  us.value = ''; us.dispatchEvent(new Event('input')); await sleep(40);
+  const as = document.getElementById('sbAuthorSearch');
+  as.value = 'bob'; as.dispatchEvent(new Event('input')); await sleep(40);
+  const searchNames = labels();
+  as.value = '@bob'; as.dispatchEvent(new Event('input')); await sleep(40);
+  const atSearchNames = labels();
+  as.value = ''; as.dispatchEvent(new Event('input')); await sleep(40);
 
-  // platform filter (click the 'x' chip, read, then toggle off)
-  const xChip = () => [...document.querySelectorAll('#userPlatformChips .sb-chip')].find(c => c.dataset.pl === 'x');
-  xChip().click(); await sleep(40);
-  const xNames = names();
-  xChip().click(); await sleep(40);
-
-  // click Alice -> jump to Posts tab filtered to that user
-  [...document.querySelectorAll('#userList .user-row')].find(r => r.querySelector('.user-name').textContent === 'Alice').click();
+  // click Alice -> apply a user filter (no tabs; stays in post view)
+  [...document.querySelectorAll('#sbAuthorChips .sb-chip')].find(c => c.dataset.userLabel === 'Alice').click();
   await sleep(140);
-  const postsActive = document.getElementById('panelPosts').classList.contains('active');
   const chipText = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-user')].map(c => c.textContent);
   const cardCount = document.querySelectorAll('#postGrid .post-card').length;
+  const aliceActive = !![...document.querySelectorAll('#sbAuthorChips .sb-chip')].find(c => c.dataset.userLabel === 'Alice' && c.classList.contains('active'));
 
-  return { allNames, platformChips, searchNames, atSearchNames, xNames, postsActive, chipText, cardCount };
+  return { allNames, searchNames, atSearchNames, chipText, cardCount, aliceActive };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -91,14 +84,12 @@ child.on('close', () => {
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('users grouped + sorted by post count (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
-  check('platform chips for present platforms (bluesky, misskey, x)', eq(r.platformChips, ['bluesky', 'misskey', 'x']));
-  check('user search filters the list (bob -> Bob)', eq(r.searchNames, ['Bob']));
-  check('user search ignores a leading @ (@bob -> Bob)', eq(r.atSearchNames, ['Bob']));
-  check('platform filter narrows the list (x -> Alice)', eq(r.xNames, ['Alice']));
-  check('clicking a user jumps to the Posts tab', r.postsActive === true);
+  check('authors grouped + ranked by post count (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
+  check('author search filters the chips (bob -> Bob)', eq(r.searchNames, ['Bob']));
+  check('author search ignores a leading @ (@bob -> Bob)', eq(r.atSearchNames, ['Bob']));
   check('the active filter chip shows the user (Alice)', eq(r.chipText, ['Alice']));
   check("posts are filtered to that user's 2 posts", r.cardCount === 2);
+  check('the clicked author chip becomes active', r.aliceActive === true);
   console.log('\n' + (ok ? 'USERS_TEST_PASS' : 'USERS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

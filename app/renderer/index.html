@@ -4,20 +4,18 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <title>Corpus</title>
+  <link rel="stylesheet" href="design-tokens.css">
+  <script src="theme.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* --- Unified light theme tokens. Both modes read these, so converging the
-       look (and a future dark mode) is a one-place value swap. Light-only for now
-       per the user's request. --- */
-    :root {
-      --bg: #f5f5f5; --surface: #fff; --fg: #333; --fg-strong: #0f1419;
-      --muted: #888; --muted2: #999; --accent: #1d9bf0; --accent-fg: #fff;
-      --border: #ddd; --border-soft: #eee; --hover: #f0f0f0;
-    }
+    /* --- Design tokens (colours, type, spacing, light/dark) live in
+       design-tokens.css, linked above. Legacy var names (--fg / --muted /
+       --border-soft …) are aliased there onto the new semantic tokens, so the
+       rules below keep working while picking up the new palette + dark mode. --- */
 
     body {
-      font: 14px/1.6 -apple-system, 'Segoe UI', sans-serif;
+      font: 14px/1.6 var(--font-sans);
       background: var(--bg); color: var(--fg);
       display: flex; min-height: 100vh; overflow-x: hidden;
     }
@@ -30,7 +28,40 @@
       display: flex; flex-direction: column; padding: 12px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
     }
-    .brand { font-size: 15px; font-weight: 700; color: var(--fg-strong); padding: 6px 8px 10px; letter-spacing: .02em; }
+    /* Settings gear pinned bottom-left of the sidebar (title/theme button removed;
+       theme moved into Settings). */
+    .sidebar-footer { flex-shrink: 0; display: flex; align-items: center; margin: 4px -10px 0; padding: 8px 10px; border-top: 1px solid var(--border); }
+    .icon-btn {
+      flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .icon-btn:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
+    .icon-btn svg { width: 15px; height: 15px; }
+
+    /* Settings overlay (opened by the brand-bar gear; floats above either mode) */
+    .settings-view { position: fixed; inset: 0; z-index: 11000; background: var(--bg); overflow-y: auto; }
+    .settings-view[hidden] { display: none; }
+    .settings-view-inner { max-width: 720px; margin: 0 auto; padding: 20px 32px 56px; }
+    .settings-view-head {
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; background: var(--bg); padding: 12px 0 14px;
+      border-bottom: 1px solid var(--border-subtle); z-index: 1; margin-bottom: 4px;
+    }
+    .settings-view-title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); color: var(--text-strong); }
+    .settings-view-head .icon-btn { width: 30px; height: 30px; }
+    .settings-view-head .icon-btn svg { width: 17px; height: 17px; }
+    .settings-view #panelSettings { display: block; max-width: none; }
+    /* Toggle switch (Settings → 外観) */
+    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+    .switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; }
+    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .switch-track { position: absolute; inset: 0; background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; transition: background .15s, border-color .15s; }
+    .switch-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-xs); transition: transform .15s; }
+    .switch input:checked + .switch-track { background: var(--accent); border-color: var(--accent); }
+    .switch input:checked + .switch-track::after { transform: translateX(16px); background: #fff; }
+    .switch input:focus-visible + .switch-track { box-shadow: var(--ring); }
     .mode-nav { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
     .nav-item {
       display: flex; align-items: center; gap: 10px; width: 100%;
@@ -40,7 +71,7 @@
     }
     .nav-item:hover { background: var(--hover); }
     .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
-    .nav-item.active { background: #e8f4fd; color: var(--accent); }
+    .nav-item.active { background: var(--accent-subtle); color: var(--accent); }
     .nav-item.active svg { color: var(--accent); }
     .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
@@ -57,26 +88,16 @@
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: #c4cad0; border-radius: 8px;
+      background: color-mix(in oklch, var(--text-subtle) 55%, transparent); border-radius: 8px;
       border: 2px solid transparent; background-clip: padding-box;
     }
-    ::-webkit-scrollbar-thumb:hover { background: #9aa2ab; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
 
     #panelSettings { max-width: 720px; }
 
-    /* --- Tabs (vertical, in the sidebar) --- */
-    .tabs {
-      display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px;
-    }
-    .tab-btn {
-      background: none; border: none; border-left: 3px solid transparent;
-      padding: 8px 12px; font-size: 14px; font-weight: 500;
-      color: #888; cursor: pointer; text-align: left; border-radius: 0 6px 6px 0;
-      transition: color 0.15s, border-color 0.15s, background 0.15s;
-    }
-    .tab-btn:hover { color: #555; background: #ececec; }
-    .tab-btn.active { color: #1d9bf0; border-left-color: #1d9bf0; background: #e8f4fd; }
+    /* The tab row was removed (one post view). #panelPosts keeps .tab-panel and
+       #controls-posts keeps .tab-controls as the single always-active set. */
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     /* Per-tab control set in the sidebar; only the active tab's controls show. */
@@ -96,65 +117,65 @@
     }
     .search-box {
       width: 100%; box-sizing: border-box;
-      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
-    .search-box:focus { border-color: #1d9bf0; }
+    .search-box:focus { border-color: var(--accent); }
     /* 検索方式トグル（通常 / あいまい）。active＝あいまい時。 */
     .search-mode-toggle {
       font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer;
-      padding: 5px 10px; border: 1px solid #ddd; border-radius: 999px;
-      background: #fff; color: #666; transition: background 0.15s, color 0.15s, border-color 0.15s;
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface); color: var(--text-muted); transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    .search-mode-toggle:hover { background: #f5f5f5; }
-    .search-mode-toggle.active { background: var(--accent, #1d9bf0); border-color: var(--accent, #1d9bf0); color: #fff; }
+    .search-mode-toggle:hover { background: var(--hover); }
+    .search-mode-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .toolbar > .search-mode-toggle { align-self: flex-start; }   /* 投稿側ツールバー（縦flex）で全幅化させずコンパクトに */
     .sb-section > .search-mode-toggle { margin-top: 6px; }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
     .radio-line input { cursor: pointer; }
     select {
-      padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
-      font-size: 13px; background: #fff; outline: none; cursor: pointer;
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; background: var(--surface); outline: none; cursor: pointer;
     }
     .post-count {
-      font-size: 12px; color: #999;
+      font-size: 12px; color: var(--text-subtle);
     }
 
     /* --- Chip buttons --- */
     .chip {
-      background: #fff; border: 1px solid #ddd; border-radius: 16px;
-      padding: 4px 14px; font-size: 13px; color: #555;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 4px 14px; font-size: 13px; color: var(--text);
       cursor: pointer; transition: all 0.15s; white-space: nowrap;
     }
-    .chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
-    .chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .date-input {
-      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
-      font-size: 12px; color: #555; outline: none; cursor: pointer;
+      padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; color: var(--text); outline: none; cursor: pointer;
     }
-    .date-input:focus { border-color: #1d9bf0; }
+    .date-input:focus { border-color: var(--accent); }
     .engagement-select {
-      padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
-      font-size: 12px; color: #555; background: #fff; outline: none; cursor: pointer;
+      padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; color: var(--text); background: var(--surface); outline: none; cursor: pointer;
     }
     .engagement-input {
-      width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
-      font-size: 12px; color: #555; outline: none;
+      width: 80px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; color: var(--text); outline: none;
     }
-    .engagement-input:focus { border-color: #1d9bf0; }
+    .engagement-input:focus { border-color: var(--accent); }
 
     /* --- View toggle --- */
     .view-toggle {
-      display: flex; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;
+      display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
     }
     .view-toggle button {
-      background: #fff; border: none; padding: 6px 10px;
-      cursor: pointer; color: #888; font-size: 14px; line-height: 1;
+      background: var(--surface); border: none; padding: 6px 10px;
+      cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1;
       transition: all 0.15s;
     }
-    .view-toggle button:not(:last-child) { border-right: 1px solid #ddd; }
-    .view-toggle button.active { background: #1d9bf0; color: #fff; }
+    .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+    .view-toggle button.active { background: var(--accent); color: #fff; }
 
     /* --- Post grid --- */
     .post-grid {
@@ -163,12 +184,12 @@
       gap: 16px;
     }
     .post-card {
-      background: #fff; border-radius: 8px; overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      cursor: pointer; transition: box-shadow 0.15s;
+      background: var(--surface); border-radius: 8px; overflow: hidden;
+      border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
+      cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
       position: relative;
     }
-    .post-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); }
     .post-card img {
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
@@ -181,7 +202,7 @@
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
-    .open-btn:hover { background: rgba(29,155,240,0.8); }
+    .open-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .open-btn { opacity: 1; }
     .post-meta {
       padding: 12px;
@@ -196,13 +217,13 @@
       padding: 1px 6px; border-radius: 3px;
       color: #fff; text-transform: uppercase;
     }
-    .platform-badge.x { background: #000; }
+    .platform-badge.x { background: var(--brand-x); color: var(--surface); }
     .platform-badge.bluesky { background: #0085ff; }
-    .platform-badge.misskey { background: #96d04a; color: #333; }
+    .platform-badge.misskey { background: #96d04a; color: #16191e; }
     .platform-badge.mastodon { background: #6364ff; }
     .platform-badge.pixiv { background: #0096fa; }
     .post-meta .text {
-      font-size: 13px; color: #555;
+      font-size: 13px; color: var(--text);
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
       overflow: hidden; margin-bottom: 6px; cursor: pointer;
     }
@@ -212,18 +233,18 @@
     .post-meta .text { position: relative; }
     .text-hint {
       position: absolute; bottom: 0; right: 0;
-      font-size: 10px; color: #999;
-      background: rgba(255,255,255,0.85); padding: 0 4px;
+      font-size: 10px; color: var(--text-subtle);
+      background: color-mix(in oklch, var(--surface) 88%, transparent); padding: 0 4px;
       border-radius: 3px; pointer-events: none;
       display: none;
     }
     .post-meta .text.truncated:hover .text-hint { display: block; }
     .post-meta .text.expanded .text-hint { display: none; }
     .post-meta .stats {
-      display: flex; gap: 12px; font-size: 12px; color: #999;
+      display: flex; gap: 12px; font-size: 12px; color: var(--text-subtle);
     }
     .post-meta .date {
-      font-size: 11px; color: #bbb; margin-top: 4px;
+      font-size: 11px; color: var(--text-subtle); margin-top: 4px;
     }
 
     /* --- Delete button on card --- */
@@ -235,9 +256,9 @@
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
-    .delete-btn:hover { background: rgba(244,33,46,0.8); }
+    .delete-btn:hover { background: color-mix(in oklch, var(--danger) 82%, transparent); }
     .post-card:hover .delete-btn { opacity: 1; }
-    .post-card.selected { outline: 3px solid #1d9bf0; outline-offset: -3px; }
+    .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
     .post-card .select-check {
       position: absolute; top: 8px; left: 8px;
       width: 24px; height: 24px; border-radius: 50%;
@@ -245,7 +266,7 @@
       display: none; cursor: pointer; z-index: 1;
       align-items: center; justify-content: center;
     }
-    .post-card.selected .select-check { display: flex; background: #1d9bf0; border-color: #1d9bf0; }
+    .post-card.selected .select-check { display: flex; background: var(--accent); border-color: var(--accent); }
     /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph) */
     .post-card.selected .select-check::after {
       content: ''; width: 5px; height: 10px; margin-top: -1px;
@@ -273,12 +294,12 @@
     .post-grid.list-view .post-meta .text {
       order: 0; flex-basis: 100%; width: 100%;
       -webkit-line-clamp: 2; margin-bottom: 2px;
-      font-size: 14px; line-height: 1.45; color: #0f1419;
+      font-size: 14px; line-height: 1.45; color: var(--text-strong);
     }
     /* secondary line: user · stats · date, small and muted */
     .post-grid.list-view .post-meta .user {
       order: 1; margin-bottom: 0; white-space: nowrap;
-      font-size: 12px; font-weight: 500; color: #536471;
+      font-size: 12px; font-weight: 500; color: var(--text-muted);
     }
     .post-grid.list-view .post-meta .stats { order: 2; white-space: nowrap; font-size: 11px; }
     .post-grid.list-view .post-meta .date { order: 3; white-space: nowrap; margin-top: 0; margin-left: auto; }
@@ -288,58 +309,58 @@
     .post-grid.list-view .open-btn { top: 50%; right: 72px; transform: translateY(-50%); }
 
     .empty-state {
-      text-align: center; padding: 60px 20px; color: #999;
+      text-align: center; padding: 60px 20px; color: var(--text-subtle);
     }
     .empty-state p { margin-bottom: 8px; }
 
     /* --- Settings --- */
     .section {
-      background: #fff; border-radius: 8px;
+      background: var(--surface); border-radius: 8px;
       padding: 16px 20px; margin-bottom: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
     }
     .section h2 {
-      font-size: 13px; font-weight: 600; color: #666;
+      font-size: 13px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 12px;
     }
-    label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+    label { display: block; font-size: 13px; color: var(--text); margin-bottom: 6px; }
     input[type="text"] {
       width: 100%; padding: 8px 12px;
-      border: 1px solid #ddd; border-radius: 6px;
+      border: 1px solid var(--border); border-radius: 6px;
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
-    input[type="text"]:focus { border-color: #1d9bf0; }
-    .hint { font-size: 12px; color: #999; margin-top: 6px; }
+    input[type="text"]:focus { border-color: var(--accent); }
+    .hint { font-size: 12px; color: var(--text-subtle); margin-top: 6px; }
     .actions { display: flex; align-items: center; margin-top: 16px; }
     .link-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
 
     /* --- Buttons --- */
     .btn {
-      background: #1d9bf0; color: #fff; border: none; border-radius: 6px;
+      background: var(--accent); color: #fff; border: none; border-radius: 6px;
       padding: 8px 20px; font-size: 14px; font-weight: 600;
       cursor: pointer; transition: background 0.15s;
     }
-    .btn:hover { background: #1a8cd8; }
+    .btn:hover { background: var(--accent-hover); }
     .btn-outline {
-      background: #fff; color: #333; border: 1px solid #ddd;
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
       border-radius: 6px; padding: 7px 16px; font-size: 13px;
       cursor: pointer; transition: border-color 0.15s, color 0.15s;
     }
-    .btn-outline:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
     .btn-danger {
-      background: #fff; color: #f4212e; border: 1px solid #f4212e;
+      background: var(--surface); color: var(--danger); border: 1px solid var(--danger);
       border-radius: 6px; padding: 7px 16px; font-size: 13px;
       cursor: pointer; transition: background 0.15s;
     }
-    .btn-danger:hover { background: #fef2f2; }
+    .btn-danger:hover { background: var(--danger-bg); }
 
     .status-msg {
       font-size: 13px; margin-left: 12px;
       opacity: 0; transition: opacity 0.2s;
     }
     .status-msg.show { opacity: 1; }
-    a { color: #1d9bf0; text-decoration: none; }
+    a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* --- Data management --- */
@@ -347,7 +368,7 @@
       display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
     }
     .data-hint {
-      width: 100%; font-size: 12px; color: #999; margin-top: 8px;
+      width: 100%; font-size: 12px; color: var(--text-subtle); margin-top: 8px;
     }
     .file-input-hidden { display: none; }
 
@@ -390,20 +411,20 @@
     }
     .confirm-overlay.show { display: flex; }
     .confirm-box {
-      background: #fff; border-radius: 12px;
+      background: var(--surface); border-radius: 12px;
       padding: 24px; max-width: 360px; text-align: center;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border: 1px solid var(--border); box-shadow: var(--shadow-lg);
     }
     .confirm-box p { margin-bottom: 16px; font-size: 14px; }
     .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
 
     /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
-    .tag-chip { font-size: 10px; background: #f0f0f0; border-radius: 10px; padding: 1px 8px; color: #666; }
+    .tag-chip { font-size: 10px; background: var(--surface-3); border-radius: 10px; padding: 1px 8px; color: var(--text-muted); }
     .post-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
     .post-flag { font-size: 10px; border-radius: 3px; padding: 1px 6px; line-height: 1.5; }
-    .post-flag.flag-type { background: #f0e8fd; color: #6b46c1; }
-    .post-flag.flag-media { background: #e8f0fd; color: #2563a8; }
+    .post-flag.flag-type { background: var(--tint-purple-bg); color: var(--text); }
+    .post-flag.flag-media { background: var(--tint-blue-bg); color: var(--text); }
     .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
     .edit-btn {
       position: absolute; top: 8px; right: 40px;
@@ -413,7 +434,7 @@
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
-    .edit-btn:hover { background: rgba(29,155,240,0.8); }
+    .edit-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .edit-btn { opacity: 1; }
     .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
 
@@ -426,10 +447,10 @@
       cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
       z-index: 1;
     }
-    .fold-btn:hover { background: rgba(29,155,240,0.8); }
+    .fold-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .fold-btn { opacity: 1; }
-    .fold-btn.in { opacity: 1; background: #1d9bf0; }
-    .fold-btn.added { background: #2ecc71; }
+    .fold-btn.in { opacity: 1; background: var(--accent); }
+    .fold-btn.added { background: var(--success); }
     .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
 
     /* --- Query field --- */
@@ -437,45 +458,45 @@
     .query-field {
       display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
       min-height: 36px; padding: 4px 8px;
-      border: 1px solid #ddd; border-radius: 8px; background: #fff;
+      border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
     }
     .query-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
     .query-chip {
       display: inline-flex; align-items: center; gap: 4px;
-      background: #f0f4f8; border: 1px solid #d0d8e0; border-radius: 14px;
-      padding: 3px 10px; font-size: 12px; color: #333;
+      background: var(--surface-3); border: 1px solid var(--border); border-radius: 14px;
+      padding: 3px 10px; font-size: 12px; color: var(--text);
       cursor: pointer; transition: all 0.15s; white-space: nowrap;
     }
-    .query-chip:hover { background: #e0e8f0; border-color: #b0b8c0; }
-    .query-chip.qc-platform { background: #e8f4fd; border-color: #b0d4f1; }
-    .query-chip.qc-postType { background: #f0e8fd; border-color: #c8b0f1; }
-    .query-chip.qc-date { background: #e8fdf0; border-color: #b0f1c8; }
-    .query-chip.qc-engagement { background: #fdf0e8; border-color: #f1c8b0; }
-    .query-chip.qc-media { background: #e8f0fd; border-color: #b0c8f1; }
+    .query-chip:hover { background: var(--hover); border-color: var(--border-strong); }
+    .query-chip.qc-platform { background: var(--tint-blue-bg); border-color: var(--tint-blue-bd); }
+    .query-chip.qc-postType { background: var(--tint-purple-bg); border-color: var(--tint-purple-bd); }
+    .query-chip.qc-date { background: var(--tint-green-bg); border-color: var(--tint-green-bd); }
+    .query-chip.qc-engagement { background: var(--tint-orange-bg); border-color: var(--tint-orange-bd); }
+    .query-chip.qc-media { background: var(--tint-blue-bg); border-color: var(--tint-blue-bd); }
     .query-add-btn {
-      background: none; border: 1px solid #ddd; border-radius: 50%;
+      background: none; border: 1px solid var(--border); border-radius: 50%;
       width: 28px; height: 28px; font-size: 16px; line-height: 26px;
-      color: #999; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+      color: var(--text-subtle); cursor: pointer; transition: all 0.15s; flex-shrink: 0;
     }
-    .query-add-btn:hover { border-color: #1d9bf0; color: #1d9bf0; }
+    .query-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
     /* --- Filter menus --- */
     .qf-menu, .qf-submenu {
-      position: fixed; background: #fff; border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15); padding: 4px 0;
+      position: fixed; background: var(--surface); border-radius: 8px;
+      box-shadow: var(--shadow-pop); border: 1px solid var(--border); padding: 4px 0;
       z-index: 1000; min-width: 160px;
     }
     .qf-menu-item {
-      padding: 8px 16px; font-size: 13px; color: #333;
+      padding: 8px 16px; font-size: 13px; color: var(--text);
       cursor: pointer; display: flex; align-items: center; justify-content: space-between;
     }
-    .qf-menu-item:hover { background: #f5f5f5; }
-    .qf-menu-item .arrow { color: #999; font-size: 10px; }
+    .qf-menu-item:hover { background: var(--hover); }
+    .qf-menu-item .arrow { color: var(--text-subtle); font-size: 10px; }
 
     /* --- Popovers --- */
     .qf-popover {
-      position: fixed; background: #fff; border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.18); padding: 16px;
+      position: fixed; background: var(--surface); border-radius: 10px;
+      box-shadow: var(--shadow-pop); border: 1px solid var(--border); padding: 16px;
       z-index: 1001; min-width: 260px;
     }
     .qf-backdrop {
@@ -504,7 +525,7 @@
        見出し(sb-title)だけでグループを区切る。 */
     .sb-section { padding: 6px 2px; margin-bottom: 6px; }
     .sb-title {
-      font-size: 11px; font-weight: 600; color: #888;
+      font-size: 11px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 6px;
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -523,7 +544,7 @@
       background: var(--surface); border-top: 1px solid var(--border);
     }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-    .sb-activebar-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
+    .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
     .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
     /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
@@ -537,18 +558,18 @@
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 8px;
-      border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none;
+      border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
     }
-    .sb-tag-filter:focus { border-color: #1d9bf0; }
+    .sb-tag-filter:focus { border-color: var(--accent); }
     .sb-chip {
-      background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 12px;
-      padding: 3px 10px; font-size: 11px; color: #555;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 3px 10px; font-size: 11px; color: var(--text);
       cursor: pointer; white-space: nowrap;
       /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
-    .sb-chip:hover { border-color: #1d9bf0; color: #1d9bf0; }
-    .sb-chip.active { background: #1d9bf0; border-color: #1d9bf0; color: #fff; }
+    .sb-chip:hover { border-color: var(--accent); color: var(--accent); }
+    .sb-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
@@ -556,47 +577,19 @@
       cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
     }
     .sb-active-chip:hover { opacity: 0.7; }
-    .sb-active-chip.qc-platform { background: #e8f4fd; border: 1px solid #b0d4f1; color: #333; }
-    .sb-active-chip.qc-postType { background: #f0e8fd; border: 1px solid #c8b0f1; color: #333; }
-    .sb-active-chip.qc-date { background: #e8fdf0; border: 1px solid #b0f1c8; color: #333; }
-    .sb-active-chip.qc-engagement { background: #fdf0e8; border: 1px solid #f1c8b0; color: #333; }
-    .sb-active-chip.qc-tag { background: #f0f8e8; border: 1px solid #c8e0b0; color: #333; }
-    .sb-active-chip.qc-media { background: #e8f0fd; border: 1px solid #b0c8f1; color: #333; }
-    .sb-active-chip.qc-user { background: #fde8f4; border: 1px solid #f1b0d4; color: #333; }
+    .sb-active-chip.qc-platform { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
+    .sb-active-chip.qc-postType { background: var(--tint-purple-bg); border: 1px solid var(--tint-purple-bd); color: var(--text); }
+    .sb-active-chip.qc-date { background: var(--tint-green-bg); border: 1px solid var(--tint-green-bd); color: var(--text); }
+    .sb-active-chip.qc-engagement { background: var(--tint-orange-bg); border: 1px solid var(--tint-orange-bd); color: var(--text); }
+    .sb-active-chip.qc-tag { background: var(--tint-olive-bg); border: 1px solid var(--tint-olive-bd); color: var(--text); }
+    .sb-active-chip.qc-media { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
+    .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
-  #panelTags { max-width: 960px; }
-  #panelUsers { max-width: 960px; }
-  .users-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .users-controls .ht-search { margin-bottom: 0; max-width: 280px; }
-  .user-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
-  .user-row {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    padding: 8px 12px; border: 1px solid #eee; border-radius: 8px; background: #fff;
-    cursor: pointer; text-align: left; font: inherit;
-    transition: background .15s, border-color .15s;
-  }
-  .user-row:hover { background: #f7fbff; border-color: #1d9bf0; }
-  .user-row .user-name { font-weight: 600; color: #0f1419; }
-  .user-row .user-handle { color: #8b98a5; font-size: 13px; }
-  .user-row .user-count { margin-left: auto; font-size: 12px; color: #666; background: #f0f0f0; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
-  .user-empty { color: #999; padding: 40px 8px; }
-  .ht-search {
-    width: 100%; max-width: 360px; display: block; margin-bottom: 8px;
-    padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
-    font-size: 14px; outline: none; transition: border-color 0.15s;
-  }
-  .ht-search:focus { border-color: #1d9bf0; }
-  .hashtag-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
-  .hashtag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 999px; background: #fff; color: #1d9bf0; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
-  .hashtag-chip:hover { background: #e8f5fe; border-color: #1d9bf0; }
-  .hashtag-chip .ht-count { font-size: 11px; color: #999; background: #f0f0f0; padding: 1px 7px; border-radius: 999px; }
-  .hashtag-empty { color: #999; padding: 40px 8px; }
-  .sb-subtitle { font-size: 11px; color: #8b98a5; margin-bottom: 4px; }
+  .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
   </style>
 </head>
 <body>
   <aside id="sidebar">
-    <div class="brand">Corpus</div>
     <nav class="mode-nav">
       <button id="modePostBtn" class="nav-item active" type="button" data-mode="post">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
@@ -608,14 +601,8 @@
       </button>
     </nav>
     <div id="side-post" class="side-controls">
-      <nav class="tabs">
-        <button class="tab-btn active" data-tab="posts" id="tabPosts"></button>
-        <button class="tab-btn" data-tab="tags" id="tabTags"></button>
-        <button class="tab-btn" data-tab="users" id="tabUsers"></button>
-        <button class="tab-btn" data-tab="settings" id="tabSettings"></button>
-      </nav>
-
-      <!-- Posts controls -->
+      <!-- Posts controls (the only post-mode view; hashtags/users folded into the
+           sidebar's タグ/作者 sections + search, settings moved to the gear) -->
       <div class="tab-controls active" id="controls-posts">
         <div class="sb-scroll">
         <div class="toolbar" id="postsToolbar">
@@ -638,7 +625,7 @@
         <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
           <button class="chip" id="selectAllBtn"></button>
           <span class="post-count" id="selectedCount"></span>
-          <button class="chip" id="deleteSelectedBtn" style="background:#f4212e;color:#fff;border-color:#f4212e;"></button>
+          <button class="chip" id="deleteSelectedBtn" style="background:var(--danger);color:#fff;border-color:var(--danger);"></button>
           <button class="chip" id="cancelSelectBtn"></button>
         </div>
         <!-- Platform -->
@@ -681,14 +668,14 @@
         <!-- Date -->
         <div class="sb-section">
           <div class="sb-title" id="sbDateTitle"></div>
-          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding:2px 4px;border:1px solid #ddd;border-radius:6px;color:#555;background:#fff;outline:none;cursor:pointer;">
+          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:6px;color:var(--text);background:var(--surface);outline:none;cursor:pointer;">
             <option value="date" id="sbDateOptPost"></option>
             <option value="capturedAt" id="sbDateOptCapture"></option>
           </select>
           <div style="display:flex;flex-direction:column;gap:2px;margin-top:8px;">
-            <label style="font-size:10px;color:#999;" id="sbDateFromLabel"></label>
+            <label style="font-size:10px;color:var(--text-subtle);" id="sbDateFromLabel"></label>
             <input type="date" class="date-input" id="sbDateFrom" style="width:75%;font-size:11px;">
-            <label style="font-size:10px;color:#999;margin-top:6px;" id="sbDateToLabel"></label>
+            <label style="font-size:10px;color:var(--text-subtle);margin-top:6px;" id="sbDateToLabel"></label>
             <input type="date" class="date-input" id="sbDateTo" style="width:75%;font-size:11px;">
           </div>
         </div>
@@ -710,6 +697,13 @@
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
 
+        <!-- Authors (top creators by post count; replaces the old Users tab) -->
+        <div class="sb-section collapsible">
+          <div class="sb-title"><span id="sbAuthorTitle">作者</span></div>
+          <input type="text" class="sb-tag-filter" id="sbAuthorSearch" style="display:none">
+          <div class="sb-chips" id="sbAuthorChips"></div>
+        </div>
+
         <!-- Folders (shared with image-view via folders.json) -->
         <div class="sb-section collapsible">
           <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
@@ -728,16 +722,6 @@
         </div>
       </div>
 
-      <!-- Hashtags controls -->
-      <div class="tab-controls" id="controls-tags">
-        <input type="text" class="ht-search" id="hashtagSearch">
-      </div>
-
-      <!-- Users controls -->
-      <div class="tab-controls" id="controls-users">
-        <input type="text" class="ht-search" id="userSearch">
-        <div class="sb-chips" id="userPlatformChips"></div>
-      </div>
     </div><!-- /side-post -->
 
     <!-- Image-view controls (shown in image mode) -->
@@ -802,6 +786,11 @@
         <div class="sb-chips" id="ivActiveChips"></div>
       </div>
     </div>
+    <div class="sidebar-footer">
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" title="設定">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
   </aside><!-- /sidebar -->
 
   <div id="appMain">
@@ -814,25 +803,24 @@
         <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
       </div>
 
-      <!-- Hashtags tab -->
-      <div class="tab-panel" id="panelTags">
-        <div id="hashtagList" class="hashtag-list"></div>
-      </div>
-
-      <!-- Users tab -->
-      <div class="tab-panel" id="panelUsers">
-        <div id="userList" class="user-list"></div>
-      </div>
-
-  <!-- Settings tab -->
+  <!-- Settings (moved into #settingsView overlay at runtime, opened by the gear) -->
   <div class="tab-panel" id="panelSettings">
     <div class="section">
       <h2 id="settingsSaveFolderTitle">Save folder</h2>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:#555;background:#f5f5f5;padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+        <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:var(--text);background:var(--surface-2);padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
         <button class="btn" id="chooseFolderBtn"></button>
       </div>
       <div class="hint" id="hintSaveFolder" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="section">
+      <h2 id="settingsThemeTitle">外観</h2>
+      <label class="setting-row">
+        <span id="settingsThemeLabel">ダークテーマ</span>
+        <span class="switch"><input type="checkbox" id="themeDarkToggle"><span class="switch-track" aria-hidden="true"></span></span>
+      </label>
+      <div class="hint" id="hintTheme"></div>
     </div>
 
     <div class="section">
@@ -860,17 +848,17 @@
       <h2 id="settingsBackupTitle"></h2>
       <div class="hint" id="hintBackup"></div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;">
-        <code id="backupDirPath" style="flex:1;min-width:200px;font-size:12px;color:#555;background:#f5f5f5;padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+        <code id="backupDirPath" style="flex:1;min-width:200px;font-size:12px;color:var(--text);background:var(--surface-2);padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
         <button class="btn-outline" id="chooseBackupDir"></button>
         <button class="btn-outline" id="clearBackupDir"></button>
       </div>
       <div style="margin:10px 0;">
-        <div style="font-size:12px;color:#666;margin-bottom:4px;" id="backupContentLabel"></div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;" id="backupContentLabel"></div>
         <label class="radio-line"><input type="radio" name="backupContent" value="meta" id="backupContentMeta"> <span id="backupContentMetaLabel"></span></label>
         <label class="radio-line"><input type="radio" name="backupContent" value="media" id="backupContentMedia"> <span id="backupContentMediaLabel"></span></label>
       </div>
       <div style="margin:10px 0;">
-        <div style="font-size:12px;color:#666;margin-bottom:4px;" id="backupScheduleLabel"></div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;" id="backupScheduleLabel"></div>
         <label class="radio-line"><input type="checkbox" id="backupOnStart"> <span id="backupOnStartLabel"></span></label>
         <label class="radio-line"><input type="checkbox" id="backupInterval"> <span id="backupIntervalLabel"></span> <input type="number" id="backupIntervalHours" min="1" max="720" style="width:60px;font-size:12px;padding:2px 4px;"> <span id="backupIntervalUnit"></span></label>
         <label class="radio-line"><input type="checkbox" id="backupOnChange"> <span id="backupOnChangeLabel"></span></label>
@@ -952,7 +940,7 @@
   <div class="confirm-overlay" id="confirmOverlay">
     <div class="confirm-box">
       <p id="confirmMsg"></p>
-      <label id="confirmSkipLabel" style="display:none; font-size:12px; color:#888; margin-bottom:12px; cursor:pointer; justify-content:center; align-items:center; gap:6px;">
+      <label id="confirmSkipLabel" style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:12px; cursor:pointer; justify-content:center; align-items:center; gap:6px;">
         <input type="checkbox" id="confirmSkip">
         <span id="confirmSkipText"></span>
       </label>
@@ -977,14 +965,14 @@
       <div style="margin-bottom:12px;">
         <label style="font-size:13px;font-weight:600;" id="editTagsLabel"></label>
         <div style="display:flex;gap:6px;margin-top:4px;">
-          <input type="text" id="editTagInput" style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          <input type="text" id="editTagInput" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
           <button class="btn-outline" id="editTagAdd" style="padding:6px 12px;"></button>
         </div>
         <div id="editTagsList" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;"></div>
       </div>
       <div class="confirm-actions">
         <button class="btn-outline" id="editCancel"></button>
-        <button class="btn-outline" id="editSave" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+        <button class="btn-outline" id="editSave" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
       </div>
     </div>
   </div>
@@ -996,12 +984,12 @@
     </div>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
       <input type="date" class="date-input" id="qfDateFrom">
-      <span style="font-size:12px;color:#999;">〜</span>
+      <span style="font-size:12px;color:var(--text-subtle);">〜</span>
       <input type="date" class="date-input" id="qfDateTo">
     </div>
     <div style="display:flex;gap:6px;justify-content:flex-end;">
-      <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
-      <button class="btn-outline" id="qfDateApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+      <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
+      <button class="btn-outline" id="qfDateApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
     </div>
   </div>
 
@@ -1015,8 +1003,8 @@
       <button class="chip" id="qfEngOp" style="min-width:40px;text-align:center;"></button>
     </div>
     <div style="display:flex;gap:6px;justify-content:flex-end;">
-      <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:#f4212e;border-color:#f4212e;display:none;"></button>
-      <button class="btn-outline" id="qfEngApply" style="background:#1d9bf0;color:#fff;border-color:#1d9bf0;"></button>
+      <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
+      <button class="btn-outline" id="qfEngApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
     </div>
   </div>
 
@@ -1097,7 +1085,7 @@
     .iv-detail-box {
       background: var(--surface); color: var(--fg); border-radius: 12px;
       padding: 18px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto;
-      font-size: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      font-size: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
     }
     .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
     .iv-insp-close:hover { color: var(--fg); }
@@ -1107,7 +1095,7 @@
     .iv-insp-k { color: var(--muted); flex: 0 0 72px; }
     .iv-insp-v { flex: 1; word-break: break-word; }
     .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: #666; }
+    .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
@@ -1118,7 +1106,7 @@
       content-visibility: auto; contain-intrinsic-size: auto 180px;
       transition: transform 0.05s, border-color 0.1s, box-shadow 0.1s;
     }
-    .iv-card:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: scale(1.02); }
+    .iv-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); transform: scale(1.02); }
     .iv-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .iv-card .iv-noposter { width: 100%; height: 100%; background: linear-gradient(135deg, #2a2a2a, #444); }
     /* ×N badge: top-right, fades out on hover so the action buttons (same corner) take over. */
@@ -1134,10 +1122,10 @@
       display: flex; align-items: center; justify-content: center; transition: background 0.1s;
     }
     .iv-act:hover { background: var(--accent); }
-    .iv-act.del:hover { background: #c0392b; }
+    .iv-act.del:hover { background: var(--danger); }
     /* 📁 add-to-default-folder: 'in' = tile already in default folder; 'added' = brief confirm flash */
     .iv-act.fold.in { background: var(--accent); }
-    .iv-act.added { background: #2ecc71; }
+    .iv-act.added { background: var(--success); }
 
     /* Folder sidebar + management modal */
     .iv-folder-manage {
@@ -1168,7 +1156,7 @@
       position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(8px);
       background: rgba(0,0,0,0.86); color: #fff; padding: 9px 18px; border-radius: 20px;
       font-size: 13px; z-index: 12000; opacity: 0; pointer-events: none;
-      transition: opacity .15s, transform .15s; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      transition: opacity .15s, transform .15s; box-shadow: var(--shadow-pop);
     }
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .iv-card .iv-stats {
@@ -1193,6 +1181,20 @@
     .iv-nav:disabled { opacity: 0.25; cursor: default; }
     .iv-index { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 12px; }
   </style>
+
+  <!-- Settings overlay: #panelSettings is relocated into here by viewer.js so it
+       floats above either mode (the gear opens it from anywhere). -->
+  <div id="settingsView" class="settings-view" hidden>
+    <div class="settings-view-inner">
+      <div class="settings-view-head">
+        <h1 class="settings-view-title" id="settingsViewTitle">設定</h1>
+        <button id="settingsClose" class="icon-btn" type="button" aria-label="閉じる" title="閉じる">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <!-- #panelSettings is appended here at runtime -->
+    </div>
+  </div>
 
   <script src="../vendor/jszip.min.js"></script>
   <script src="i18n.js"></script>

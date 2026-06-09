@@ -1,8 +1,9 @@
 'use strict';
 
-// Verifies the Hashtags tab and the chip-filter inputs: seeds posts with #tags
-// in text and user tags, checks the extracted/counted hashtag list, then that
-// the hashtag-tab search and the sidebar tag search filter their chip lists.
+// Verifies the sidebar tag filter and that hashtag browsing now lives in the
+// search box (the dedicated Hashtags tab was removed): seeds posts with #tags in
+// text and user tags, checks the sidebar タグ chips + their search input, then
+// that typing "#typescript" in the search box narrows the post grid.
 //
 //   node scripts/test-app-hashtags.js
 
@@ -36,26 +37,28 @@ writePost('p2', '別記事 #typescript の続き', ['delta', 'epsilon']);
 writePost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta']);
 
 const evalJs = `(async () => {
-  // Sidebar tag filter (the posts tab is active on load).
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // Sidebar tag filter (tags[] field; post view is the only view now).
   const sb = document.getElementById('sbTagSearch');
   const sbVisible = getComputedStyle(sb).display !== 'none';
   const sbAll = document.querySelectorAll('#sbTagChips .sb-chip').length;
   sb.value = 'the';
   sb.dispatchEvent(new Event('input'));
-  await new Promise(r => setTimeout(r, 50));
+  await sleep(50);
   const sbFiltered = [...document.querySelectorAll('#sbTagChips .sb-chip')].map(c => c.dataset.filterValue);
+  sb.value = '';
+  sb.dispatchEvent(new Event('input'));
+  await sleep(40);
 
-  // Hashtags tab + its filter input.
-  document.querySelector('.tab-btn[data-tab="tags"]').click();
-  await new Promise(r => setTimeout(r, 150));
-  const htChips = [...document.querySelectorAll('.hashtag-chip')].map(c => c.dataset.tag + ':' + c.querySelector('.ht-count').textContent);
-  const ht = document.getElementById('hashtagSearch');
-  ht.value = 'type';
-  ht.dispatchEvent(new Event('input'));
-  await new Promise(r => setTimeout(r, 50));
-  const htFiltered = [...document.querySelectorAll('.hashtag-chip')].map(c => c.dataset.tag);
+  // Hashtag browsing now lives in the search box: "#typescript" appears in two
+  // posts' text, so the grid should narrow to those two cards.
+  const search = document.getElementById('searchBox');
+  search.value = '#typescript';
+  search.dispatchEvent(new Event('input'));
+  await sleep(120);
+  const htCards = document.querySelectorAll('#postGrid .post-card').length;
 
-  return { sbVisible, sbAll, sbFiltered, htChips, htFiltered };
+  return { sbVisible, sbAll, sbFiltered, htCards };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -77,11 +80,9 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  const ht = r.htChips || [];
-  check('hashtags extracted + counted (#typescript:2, #プログラミング:1)', ht.includes('#typescript:2') && ht.includes('#プログラミング:1') && ht.length === 2);
-  check('hashtag search filters the list (type -> #typescript only)', JSON.stringify(r.htFiltered) === JSON.stringify(['#typescript']));
   check('sidebar tag filter shown for >6 tags, all 8 rendered', r.sbVisible === true && r.sbAll === 8);
   check('sidebar tag search filters chips (the -> theta only)', JSON.stringify(r.sbFiltered) === JSON.stringify(['theta']));
+  check('searching "#typescript" narrows the grid to its 2 posts', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

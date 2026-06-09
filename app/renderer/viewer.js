@@ -20,6 +20,8 @@
     tabUsers: _s('tabUsers'),
     searchUsers: _s('searchUsers'),
     emptyUsers: _s('emptyUsers'),
+    sidebarAuthors: _s('sidebarAuthors'),
+    searchAuthors: _s('searchAuthors'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -41,7 +43,10 @@
     chooseFolder: _s('chooseFolder'),
     hintSaveFolder: _s('hintSaveFolder'),
 
-    // settings > language / shortcut
+    // settings > appearance / language / shortcut
+    themeTitle: _s('themeTitle'),
+    themeDark: _s('themeDark'),
+    hintTheme: _s('hintTheme'),
     langTitle: _s('langTitle'),
     langAuto: _s('langAuto'),
     hintLang: _s('hintLang'),
@@ -181,19 +186,21 @@
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   const setAttr = (id, attr, val) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, val); };
 
-  setText('tabPosts', MSG.tabPosts);
-  setText('tabTags', MSG.tabTags);
-  setText('tabUsers', MSG.tabUsers);
-  setText('tabSettings', MSG.tabSettings);
+  setText('settingsViewTitle', MSG.tabSettings);
+  setAttr('settingsBtn', 'title', MSG.tabSettings);
+  setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
+  setText('sbAuthorTitle', MSG.sidebarAuthors);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
-  setAttr('hashtagSearch', 'placeholder', MSG.searchHashtags);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
-  setAttr('userSearch', 'placeholder', MSG.searchUsers);
+  setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
   setText('viewGrid', MSG.viewGrid);
   setText('viewList', MSG.viewList);
   setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
   setText('chooseFolderBtn', MSG.chooseFolder);
   setText('hintSaveFolder', MSG.hintSaveFolder);
+  setText('settingsThemeTitle', MSG.themeTitle);
+  setText('settingsThemeLabel', MSG.themeDark);
+  setText('hintTheme', MSG.hintTheme);
   setText('settingsLangTitle', MSG.langTitle);
   setText('langAuto', MSG.langAuto);
   setText('hintLang', MSG.hintLang);
@@ -614,6 +621,7 @@
     hl(sbDateTo, sbDateTo.value);
     hl(sbEngMin, sbEngMin.value && parseInt(sbEngMin.value, 10) > 0);
     updateSidebarTags();
+    updateSidebarAuthors();
     updateSidebarInstances();
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
@@ -751,67 +759,29 @@
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
-  const usersPlatformFilter = new Set(); // Users tab: selected platform chips (local)
   let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
   let tagMode = 'or';            // tag multi-select combine: 'or' (any) | 'and' (all)
   const CF = () => window.corpusFolders;   // shared folder module
 
-  // --- Tabs ---
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      document.getElementById(`panel${capitalize(tab)}`).classList.add('active');
-      // The per-tab controls live in the sidebar; show only the active tab's set.
-      document.querySelectorAll('.tab-controls').forEach(c => c.classList.remove('active'));
-      const ctrl = document.getElementById(`controls-${tab}`);
-      if (ctrl) ctrl.classList.add('active');
-      if (tab === 'tags') renderHashtags();
-      if (tab === 'users') renderUsers();
-    });
-  });
+  // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
+  // Relocate #panelSettings out of #mode-post (which is display:none in image mode)
+  // into the always-available overlay shell so the gear reaches it from anywhere.
+  (function setupSettingsView() {
+    const view = document.getElementById('settingsView');
+    const panel = document.getElementById('panelSettings');
+    const inner = view && view.querySelector('.settings-view-inner');
+    if (inner && panel) inner.appendChild(panel);
+    const close = () => { if (view) view.hidden = true; };
+    const open = () => { if (view) view.hidden = false; };
+    const btn = document.getElementById('settingsBtn');
+    const x = document.getElementById('settingsClose');
+    if (btn) btn.addEventListener('click', open);
+    if (x) x.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view && !view.hidden) close(); });
+  })();
 
-  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-  // --- Hashtags (extracted from post text) ---
-  function extractHashtags(text) {
-    return text ? (text.match(/#[\p{L}\p{N}_]+/gu) || []) : [];
-  }
-
-  function renderHashtags() {
-    const container = document.getElementById('hashtagList');
-    const counts = new Map();
-    for (const p of allPosts) {
-      const seen = new Set();
-      for (const tag of extractHashtags(p.text)) {
-        if (seen.has(tag)) continue;
-        seen.add(tag);
-        counts.set(tag, (counts.get(tag) || 0) + 1);
-      }
-    }
-    let entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    const filter = (document.getElementById('hashtagSearch').value || '').trim().toLowerCase();
-    if (filter) entries = entries.filter(([tag]) => tag.toLowerCase().includes(filter));
-    if (!entries.length) {
-      container.innerHTML = `<div class="hashtag-empty">${filter ? MSG.emptySearchTitle : MSG.emptyHashtags}</div>`;
-      return;
-    }
-    container.innerHTML = entries.map(([tag, n]) =>
-      `<button class="hashtag-chip" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<span class="ht-count">${n}</span></button>`
-    ).join('');
-  }
-
-  document.getElementById('hashtagList').addEventListener('click', (e) => {
-    const chip = e.target.closest('.hashtag-chip');
-    if (!chip) return;
-    document.querySelector('.tab-btn[data-tab="posts"]').click();
-    document.getElementById('searchBox').value = chip.dataset.tag;
-    renderPosts();
-  });
-
-  // Live filter for the hashtag-tab list and the sidebar tag chips.
-  document.getElementById('hashtagSearch').addEventListener('input', renderHashtags);
+  // Hashtag browsing is now covered by the sidebar タグ section + the search box
+  // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
   document.getElementById('sbTagMode').addEventListener('click', () => {
     tagMode = tagMode === 'or' ? 'and' : 'or';
@@ -821,14 +791,13 @@
     renderPosts();
   });
 
-  // --- Users tab (derived from post author fields; no extra fetching) ---
-  const PLATFORM_LABEL = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
-
+  // --- Authors (sidebar 作者 section; derived from post author fields, no fetching) ---
   // Group posts by author. Posts arrive newest-first, so the first occurrence
   // carries the latest display name / handle for that user.
   function buildUsers() {
     const map = new Map();
     for (const p of allPosts) {
+      if (!p.url) continue;   // SNS posts only — match the post-view dataset
       const key = userKey(p);
       let u = map.get(key);
       if (!u) {
@@ -842,58 +811,40 @@
     return [...map.values()];
   }
 
-  function renderUsers() {
-    const list = document.getElementById('userList');
-    const chipWrap = document.getElementById('userPlatformChips');
+  // Sidebar 作者 chips: top creators by post count; click toggles a `user` filter
+  // (reuses the existing filter machinery + pill). A search box appears once the
+  // list is long; without a query the chip list is capped so the sidebar stays
+  // compact (search reaches the long tail).
+  const AUTHOR_LIMIT = 40;
+  function updateSidebarAuthors() {
+    const container = document.getElementById('sbAuthorChips');
+    const searchInput = document.getElementById('sbAuthorSearch');
+    if (!container || !searchInput) return;
     let users = buildUsers();
-
-    // Platform filter chips — only platforms actually present.
-    const platforms = [...new Set(users.map(u => u.platform))].filter(Boolean);
-    chipWrap.innerHTML = platforms.map(pl =>
-      `<button class="sb-chip${usersPlatformFilter.has(pl) ? ' active' : ''}" data-pl="${escapeHtml(pl)}">${PLATFORM_LABEL[pl] || pl}</button>`
-    ).join('');
-    chipWrap.querySelectorAll('.sb-chip').forEach(chip => {
+    users.sort((a, b) => b.count - a.count ||
+      (a.displayName || a.screenName || '').localeCompare(b.displayName || b.screenName || ''));
+    searchInput.style.display = users.length > 8 ? '' : 'none';
+    const q = (searchInput.value || '').trim().toLowerCase().replace(/^@+/, '');
+    if (q) users = users.filter(u =>
+      (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
+    const shown = q ? users : users.slice(0, AUTHOR_LIMIT);
+    const activeKeys = activeFilters.filter(f => f.type === 'user').map(f => f.value);
+    container.innerHTML = shown.map(u => {
+      const name = u.displayName || u.screenName || '(unknown)';
+      const tip = u.screenName ? '@' + u.screenName : name;
+      return `<button class="sb-chip${activeKeys.includes(u.key) ? ' active' : ''}" data-user-key="${escapeHtml(u.key)}" data-user-label="${escapeHtml(name)}" title="${escapeHtml(tip)}">${escapeHtml(name)}</button>`;
+    }).join('');
+    container.querySelectorAll('.sb-chip').forEach(chip => {
       chip.addEventListener('click', () => {
-        const pl = chip.dataset.pl;
-        if (usersPlatformFilter.has(pl)) usersPlatformFilter.delete(pl); else usersPlatformFilter.add(pl);
-        renderUsers();
+        const key = chip.dataset.userKey;
+        const idx = activeFilters.findIndex(f => f.type === 'user' && f.value === key);
+        if (idx >= 0) removeFilter(idx);
+        else addFilter({ type: 'user', value: key, label: chip.dataset.userLabel });
+        updateSidebarState();
       });
     });
-
-    // Strip a leading "@" so typing a handle (e.g. "@alice") still matches.
-    const q = document.getElementById('userSearch').value.trim().toLowerCase().replace(/^@+/, '');
-    if (usersPlatformFilter.size) users = users.filter(u => usersPlatformFilter.has(u.platform));
-    if (q) users = users.filter(u =>
-      (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q)
-    );
-    users.sort((a, b) => b.count - a.count ||
-      (a.displayName || a.screenName).localeCompare(b.displayName || b.screenName));
-
-    if (!users.length) {
-      list.innerHTML = `<div class="user-empty">${MSG.emptyUsers}</div>`;
-      return;
-    }
-    list.innerHTML = users.map(u => {
-      const name = u.displayName || u.screenName || '(unknown)';
-      const handle = u.screenName ? '@' + u.screenName : '';
-      return `<button class="user-row" data-user-key="${escapeHtml(u.key)}" data-user-label="${escapeHtml(name)}">
-        <span class="platform-badge ${u.platform || ''}">${(u.platform || '').toUpperCase()}</span>
-        <span class="user-name">${escapeHtml(name)}</span>
-        ${handle ? `<span class="user-handle">${escapeHtml(handle)}</span>` : ''}
-        <span class="user-count">${MSG.postCount(u.count)}</span>
-      </button>`;
-    }).join('');
   }
-
-  document.getElementById('userSearch').addEventListener('input', renderUsers);
-  document.getElementById('userList').addEventListener('click', (e) => {
-    const row = e.target.closest('.user-row');
-    if (!row) return;
-    // Replace any existing user filter, then jump to the Posts tab.
-    activeFilters = activeFilters.filter(f => f.type !== 'user');
-    document.querySelector('.tab-btn[data-tab="posts"]').click();
-    addFilter({ type: 'user', value: row.dataset.userKey, label: row.dataset.userLabel });
-  });
+  document.getElementById('sbAuthorSearch').addEventListener('input', updateSidebarAuthors);
 
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
@@ -1974,7 +1925,6 @@ render()
   if (window.corpus.onPostsChanged) {
     window.corpus.onPostsChanged(async () => {
       await loadPosts();
-      if (document.getElementById('panelTags').classList.contains('active')) renderHashtags();
     });
   }
   renderQueryChips();
