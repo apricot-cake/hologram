@@ -1147,7 +1147,7 @@
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
-        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : ''}
+        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
@@ -1204,6 +1204,7 @@
   // Image lightbox / gallery (captured screenshot + downloaded originals)
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightboxImg');
+  const lightboxVideo = document.getElementById('lightboxVideo');
   const lbCounter = document.getElementById('lbCounter');
   const lbPrev = document.getElementById('lbPrev');
   const lbNext = document.getElementById('lbNext');
@@ -1213,22 +1214,33 @@
   let galleryIndex = 0;
 
   // Gallery items for a post: the screenshot first, then each original image.
+  const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
   function buildGalleryItems(p) {
     const items = [];
-    if (p.image) items.push({ src: imgSrc(p), alt: '' });
+    if (p.image) items.push({ src: imgSrc(p), alt: '', video: false });
+    if (p.video) items.push({ src: 'psimg://img/' + encodeURIComponent(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
       for (const m of p.media) {
-        if (m && m.file) items.push({ src: 'psimg://img/' + encodeURIComponent(m.file), alt: m.alt || '' });
+        if (m && m.file) items.push({ src: 'psimg://img/' + encodeURIComponent(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
       }
     }
     return items;
   }
 
+  function stopVideo() {
+    try { lightboxVideo.pause(); lightboxVideo.removeAttribute('src'); lightboxVideo.load(); } catch { /* ignore */ }
+  }
   function showGallerySlide() {
     const item = galleryItems[galleryIndex];
     if (!item) return;
-    lightboxImg.src = item.src;
-    lightboxImg.alt = item.alt || ''; // DOM property assignment — XSS-safe
+    if (item.video) {
+      lightboxImg.style.display = 'none'; lightboxImg.src = '';
+      lightboxVideo.style.display = ''; lightboxVideo.src = item.src;
+    } else {
+      stopVideo(); lightboxVideo.style.display = 'none';
+      lightboxImg.style.display = ''; lightboxImg.src = item.src;
+      lightboxImg.alt = item.alt || ''; // DOM property assignment — XSS-safe
+    }
     lbCounter.textContent = (galleryIndex + 1) + ' / ' + galleryItems.length;
     lightbox.classList.toggle('multi', galleryItems.length > 1);
   }
@@ -1250,6 +1262,7 @@
   function closeGallery() {
     lightbox.classList.remove('show', 'multi');
     lightboxImg.src = '';
+    stopVideo(); lightboxVideo.style.display = 'none'; lightboxImg.style.display = '';
     galleryItems = [];
   }
 
@@ -1274,7 +1287,7 @@
   lbPrev.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(-1); });
   lbNext.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(1); });
   lightbox.addEventListener('click', (e) => {
-    if (e.target.closest('.lb-nav')) return; // nav clicks don't close
+    if (e.target.closest('.lb-nav') || e.target.closest('#lightboxVideo')) return; // nav + video controls don't close
     closeGallery();
   });
   document.addEventListener('keydown', (e) => {
