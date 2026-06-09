@@ -428,11 +428,6 @@ ipcMain.handle('delete-post', async (_e, image) => {
       try { await fs.promises.unlink(f); } catch { /* may not exist */ }
     }
   }
-  // UIでの明示削除はバックアップ出力先へも伝播（設定時のみ）。投稿フォルダの中の該当ファイルを消す。
-  if (rec) {
-    const relDir = path.join(monthFolderOf(rec), rec.captureId || base);
-    try { await removeFromBackup(relDir, [...targets]); } catch { /* best-effort */ }
-  }
   return { ok: true };
 });
 
@@ -580,19 +575,15 @@ ipcMain.handle('import-complete', async (_e, bytes) => {
 
 // --- バックアップ / 指定フォルダへの増分エクスポート ---------------------------
 // 保存先フォルダ自体をクラウド同期の対象にすると（ライブ書き込み中の同期で）壊れやすい。
-// ここでは「安全な吐き出し先」へ増分コピーする。クラウドはその出力先だけを同期すればよい。
-//   content 'media' … 表示できる画像/動画ファイルのみ（スクショ＋原寸）
-//   content 'meta'  … 上記 + サイドカー .json（config.json は機微なので常に除外）
-// 削除は「アプリUIで明示削除したとき」だけ出力先へ伝播（runBackup 自体は消さない＝増分追加）。
+// ここでは「安全な吐き出し先」に、ライブラリ丸ごとを完全 ZIP（整理情報込み・そのまま
+// インポートで復元可能）として出力する。クラウドはその出力先だけ同期すればよい。
+// 出力は直近 retention 世代だけ残す（古い zip は自動削除）。
 const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json'];
 // 出力は必ずこのサブフォルダの中に書く。ユーザーがデスクトップ等を選んでも直下に
 // 数千ファイルがぶちまけられないようにするための安全策（再発防止）。
-const BACKUP_SUBDIR = 'Corpus-backup';
+const BACKUP_SUBDIR = 'Corpus-export';
 function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
 
-// 出力は「人間が取り出しやすい」形にする: 月別フォルダ(YYYY-MM) + 可読ファイル名。
-// 同一投稿の画像/原寸/JSONは同じ「ベース名」を共有し隣接させる。captureId は
-// ベース名の末尾6文字として埋め込み、復元時に内部のcaptureIdで正準名へ戻せる。
 // captureId（ファイル名のID部）を取り出す: <id>.jpg / <id>.json / <id>-media-N.ext / <id>-poster.ext。
 function captureIdOf(name) {
   let b = path.basename(name || '');
@@ -601,37 +592,10 @@ function captureIdOf(name) {
   b = b.replace(/\.[A-Za-z0-9]+$/i, '');
   return b;
 }
-function sanitizeNamePart(s, max) {
-  if (s == null) return '';
-  let t = String(s).replace(/[\\/:*?"<>|]/g, '').replace(/[ -]/g, '').replace(/\s+/g, ' ').trim();
-  if (t.length > max) t = t.slice(0, max).trim();
-  return t;
-}
-function recDate(rec) {
-  const iso = rec.capturedAt || rec.date || '';
-  const d = iso ? new Date(iso) : null;
-  return (d && !isNaN(d.getTime())) ? d : null;
-}
-function monthFolderOf(rec) {
-  const d = recDate(rec);
-  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : '0000-00';
-}
-// 例: 2026-04-03_pixiv_作者名_作品タイトル_ab12cd
-function friendlyBase(rec, captureId) {
-  const d = recDate(rec);
-  const ymd = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '0000-00-00';
-  const platform = sanitizeNamePart(rec.platform || (rec.source === 'eagle-migration' ? 'library' : ''), 16);
-  const author = sanitizeNamePart(rec.displayName || rec.screenName || '', 24);
-  const title = sanitizeNamePart(rec.title || rec.text || '', 40);
-  const id6 = String(captureId || '').replace(/[^A-Za-z0-9]/g, '').slice(-6) || 'xxxxxx';
-  let base = [ymd, platform, author, title].filter(Boolean).join('_').replace(/_+/g, '_');
-  if (base.length > 100) base = base.slice(0, 100);
-  return `${base}_${id6}`;
-}
 
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
-  content: 'meta',        // 'media' | 'meta'
+  retention: 5,           // 直近何世代の ZIP を残すか
   onStart: false,         // 起動時に1回
   interval: false,        // 一定間隔
   intervalHours: 24,
@@ -662,7 +626,6 @@ function validateBackupDir(dir) {
 }
 
 let backupRunning = false;
-const VIEWABLE_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + ')$', 'i');
 async function runBackup(reason) {
   const b = readBackupConfig();
   const src = getSaveFolder();
@@ -670,54 +633,25 @@ async function runBackup(reason) {
   if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
   if (backupRunning) return { ok: false, error: 'busy' };
   backupRunning = true;
-  const result = { ok: true, copied: 0, skipped: 0, failed: 0, total: 0, reason: reason || 'manual' };
+  const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: null, pruned: 0 };
   try {
-    const dest = backupDest(b.dir);                         // 直下ではなく Corpus-backup/ の中へ
+    const dest = backupDest(b.dir);                 // 直下ではなく Corpus-export/ の中へ（自動作成）
     await fs.promises.mkdir(dest, { recursive: true });
-    let names = [];
-    try { names = await fs.promises.readdir(src); } catch { names = []; }
-    // サイドカーから captureId → month(YYYY-MM) を作る（投稿フォルダ名は captureId で管理しやすく）。
-    const monthOf = new Map();
-    for (const name of names) {
-      if (!/\.json$/i.test(name) || LIBRARY_JSON.includes(name)) continue;
-      try {
-        const rec = JSON.parse(await fs.promises.readFile(path.join(src, name), 'utf8'));
-        monthOf.set(rec.captureId || captureIdOf(name), monthFolderOf(rec));
-      } catch { /* skip */ }
-    }
-    const includeJson = b.content === 'meta';
-    for (const name of names) {
-      if (name === 'config.json' || LIBRARY_JSON.includes(name)) continue;   // 機微/ライブラリjsonは出さない
-      const isJson = /\.json$/i.test(name);
-      const isViewable = VIEWABLE_RE.test(name);
-      if (isJson && !includeJson) continue;
-      if (!isJson && !isViewable) continue;                 // 未知ファイルは対象外
-      result.total++;
-      // <月>/<captureId>/ の中へ。同一captureIdのスクショ・原寸・metaが1フォルダに揃う（セット）。
-      const id = captureIdOf(name);
-      const relDir = path.join(monthOf.get(id) || '0000-00', id);
-      const sp = path.join(src, name);
-      const destDir = path.join(dest, relDir);
-      const dp = path.join(destDir, name);
-      try {
-        const sst = await fs.promises.stat(sp);
-        if (!sst.isFile()) { result.skipped++; continue; }
-        let need = true;
-        try {
-          const dst = await fs.promises.stat(dp);
-          // 同一とみなす: サイズ一致かつ mtime がほぼ一致（コピー時に mtime を写すので冪等）
-          if (dst.size === sst.size && Math.abs(dst.mtimeMs - sst.mtimeMs) < 2000) need = false;
-        } catch { /* 出力先に無い → コピー */ }
-        if (!need) { result.skipped++; continue; }
-        await fs.promises.mkdir(destDir, { recursive: true });
-        // 原子的に: 一時ファイルへコピー → mtime を元に合わせて → rename（同期クライアントが半端を見ない）
-        const tmp = dp + '.tmp-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
-        await fs.promises.copyFile(sp, tmp);
-        try { await fs.promises.utimes(tmp, sst.atime, sst.mtime); } catch { /* ignore */ }
-        await fs.promises.rename(tmp, dp);
-        result.copied++;
-      } catch {
-        result.failed++;
+    const built = await archive.buildCompleteZip(getJSZip(), src);
+    result.fileCount = built.fileCount;
+    if (built.fileCount > 0) {
+      const name = 'corpus-export-' + exportStamp() + '.zip';
+      const dp = path.join(dest, name);
+      const tmp = dp + '.tmp-' + Date.now();
+      await fs.promises.writeFile(tmp, built.buffer);   // アトミック: tmp→rename
+      await fs.promises.rename(tmp, dp);
+      result.written = name;
+      // 保持世代: 直近 N 個だけ残し、古い zip は削除
+      const keep = Math.max(1, Number(b.retention) || 5);
+      let zips = [];
+      try { zips = (await fs.promises.readdir(dest)).filter((n) => /^corpus-export-.*\.zip$/i.test(n)).sort(); } catch { zips = []; }
+      for (const old of zips.slice(0, Math.max(0, zips.length - keep))) {
+        try { await fs.promises.unlink(path.join(dest, old)); result.pruned++; } catch { /* ignore */ }
       }
     }
   } catch (err) {
@@ -725,26 +659,11 @@ async function runBackup(reason) {
   } finally {
     backupRunning = false;
   }
-  const summary = { copied: result.copied, skipped: result.skipped, failed: result.failed, total: result.total, reason: result.reason, at: new Date().toISOString() };
-  try { writeBackupConfig({ lastRunAt: summary.at, lastResult: summary }); } catch { /* ignore */ }
-  if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: summary.at }));
+  const at = new Date().toISOString();
+  const summary = { fileCount: result.fileCount, written: result.written, pruned: result.pruned, reason: result.reason, ok: result.ok, at: at };
+  try { writeBackupConfig({ lastRunAt: at, lastResult: summary }); } catch { /* ignore */ }
+  if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: at }));
   return result;
-}
-
-// UIでの明示削除を出力先へ伝播（runBackup は消さない＝こちらだけが削除を行う）。
-// relDir = <month>/<投稿フォルダ>。その中の該当ファイルを消し、空なら投稿フォルダを掃除。
-async function removeFromBackup(relDir, names) {
-  const b = readBackupConfig();
-  if (!b.dir || !relDir) return;
-  const dest = backupDest(b.dir);
-  const folderPath = path.resolve(path.join(dest, relDir));
-  if (!folderPath.startsWith(path.resolve(dest))) return;   // 出力先の外には触れない
-  for (const name of names) {
-    const base = path.basename(name || '');
-    if (!base || base === 'config.json') continue;
-    try { await fs.promises.unlink(path.join(folderPath, base)); } catch { /* 無ければ無視 */ }
-  }
-  try { const left = await fs.promises.readdir(folderPath); if (!left.length) await fs.promises.rmdir(folderPath); } catch { /* ignore */ }
 }
 
 let backupIntervalTimer = null;

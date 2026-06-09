@@ -1682,15 +1682,13 @@
       if (!cfg || !cfg.dir) { statusEl.textContent = ''; return; }
       const r = cfg.lastResult;
       if (!r) { statusEl.textContent = ''; return; }
-      let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}（+${r.copied}${MSG.backupItemsUnit}`;
-      if (r.skipped) s += ` / ${MSG.backupSkipLabel}${r.skipped}`;
-      if (r.failed) s += ` / ✗${r.failed}`;
-      statusEl.textContent = s + '）';
+      let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
+      if (r.written) s += `（${r.fileCount}${MSG.backupItemsUnit}）`;
+      statusEl.textContent = s;
     }
     function render() {
       if (!cfg) return;
       pathEl.textContent = cfg.dir || MSG.backupDirNone;
-      if (cfg.content === 'media') $('backupContentMedia').checked = true; else $('backupContentMeta').checked = true;
       $('backupOnStart').checked = !!cfg.onStart;
       $('backupInterval').checked = !!cfg.interval;
       $('backupIntervalHours').value = cfg.intervalHours || 24;
@@ -1718,9 +1716,6 @@
       } catch { /* ignore */ }
     });
     $('clearBackupDir').addEventListener('click', () => save({ dir: null }));
-    document.querySelectorAll('input[name="backupContent"]').forEach((r) => {
-      r.addEventListener('change', () => { if (r.checked) save({ content: r.value }); });
-    });
     $('backupOnStart').addEventListener('change', (e) => save({ onStart: e.target.checked }));
     $('backupInterval').addEventListener('change', (e) => save({ interval: e.target.checked }));
     $('backupIntervalHours').addEventListener('change', (e) => {

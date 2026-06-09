@@ -78,8 +78,8 @@
       importImages: '画像を取り込み',
       hintExport: 'ZIP: 画像＋メタデータをまとめて書き出し／復元。画像を取り込み: 手持ちの画像（任意）をライブラリに追加。',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
-      backupTitle: 'バックアップ / 自動エクスポート',
-      hintBackup: '保存先を直接クラウド同期すると壊れやすいので、選んだ場所の Corpus-backup フォルダへ安全に増分コピーします。',
+      backupTitle: 'バックアップ（完全エクスポート）',
+      hintBackup: '選んだ場所に Corpus-export フォルダを作り、ライブラリ丸ごと（整理情報込み）を ZIP で書き出します。そのままインポートで復元でき、直近数世代だけ保持します。',
       backupDirNone: '（出力先が未設定）',
       backupChoose: '出力先を選択',
       backupClear: '解除',
@@ -254,8 +254,8 @@
       importImages: 'Import images',
       hintExport: 'ZIP: export/restore images + metadata together. Import images: add your own images to the library.',
       // viewer: settings > backup (incremental export to a chosen folder)
-      backupTitle: 'Backup / auto-export',
-      hintBackup: 'Syncing the live save folder directly risks corruption, so this incrementally copies into a "Corpus-backup" folder at the place you choose.',
+      backupTitle: 'Backup (full export)',
+      hintBackup: 'Creates a "Corpus-export" folder where you choose and writes the whole library (organization included) as one ZIP. Re-importable to fully restore; only the latest few are kept.',
       backupDirNone: '(no output folder set)',
       backupChoose: 'Choose folder',
       backupClear: 'Clear',
