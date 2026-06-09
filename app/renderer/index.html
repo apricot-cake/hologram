@@ -569,6 +569,16 @@
       flex-shrink: 0; margin: 8px -10px 0; padding: 8px 10px;
       background: var(--surface); border-top: 1px solid var(--border);
     }
+    /* Active-filter bar pinned to the top of the content area (scroll-following). */
+    .content-activebar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin: -24px -32px 16px; padding: 10px 32px;
+      background: var(--bg); border-bottom: 1px solid var(--border);
+    }
+    .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+    .content-activebar #queryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+    .content-activebar .sb-reset, .content-activebar .iv-andor { flex-shrink: 0; }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
@@ -747,16 +757,6 @@
           <div class="sb-chips" id="postFolderChips"></div>
         </div>
         </div><!-- /sb-scroll -->
-
-        <!-- Active-filter bar: スクロール領域の外に出した固定フッター（スクロールバーがバーに被らない） -->
-        <div id="postActiveBar" class="sb-activebar" style="display:none">
-          <div class="sb-activebar-head">
-            <span class="sb-activebar-title" id="sbActiveTitle"></span>
-            <button class="iv-andor or" id="sbTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">いずれか</button>
-            <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
-          </div>
-          <div class="sb-chips" id="queryChips"></div>
-        </div>
       </div>
 
     </div><!-- /side-post -->
@@ -833,6 +833,13 @@
   <div id="appMain">
   <div id="mode-post">
     <div class="app-content">
+      <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
+      <div id="postActiveBar" class="content-activebar" style="display:none">
+        <span class="sb-activebar-title" id="sbActiveTitle"></span>
+        <div class="sb-chips" id="queryChips"></div>
+        <button class="iv-andor or" id="sbTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">いずれか</button>
+        <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
+      </div>
       <!-- Posts tab -->
       <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
