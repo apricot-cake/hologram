@@ -65,6 +65,7 @@
   --surface:       var(--gray-0);
   --surface-2:     var(--gray-50);
   --surface-3:     var(--gray-100);
+  --sidebar-bg:    var(--surface);
 
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
@@ -113,6 +114,7 @@
   --surface:       #14171c;
   --surface-2:     #1a1e24;
   --surface-3:     #222730;
+  --sidebar-bg:    #1e232b;
 
   --text:          var(--gray-200);
   --text-strong:   #f3f5f8;
