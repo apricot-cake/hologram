@@ -177,6 +177,12 @@
     .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
     .view-toggle button.active { background: var(--accent); color: #fff; }
 
+    /* Tile-size ± (shown only in the tile density) */
+    .tile-size { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; align-self: flex-start; }
+    .tile-size button { background: var(--surface); border: none; padding: 5px 11px; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; transition: background .12s, color .12s; }
+    .tile-size button:not(:last-child) { border-right: 1px solid var(--border); }
+    .tile-size button:hover { color: var(--accent); background: var(--hover); }
+
     /* --- Post grid --- */
     .post-grid {
       display: grid;
@@ -657,6 +663,10 @@
             <button data-view="card" id="viewCard" class="active"></button>
             <button data-view="tile" id="viewTile"></button>
             <button data-view="list" id="viewList"></button>
+          </div>
+          <div class="tile-size" id="tileSizeRow" style="display:none">
+            <button id="tileMinus" type="button" title="小さく">−</button>
+            <button id="tilePlus" type="button" title="大きく">＋</button>
           </div>
           <span class="post-count" id="postCount"></span>
         </div>

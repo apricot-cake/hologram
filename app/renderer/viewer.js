@@ -767,6 +767,16 @@
   let allPosts = [];
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
+  let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
+  const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
+  // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
+  const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
+  function applyTileLayout() {
+    const grid = document.getElementById('postGrid');
+    if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
+    const row = document.getElementById('tileSizeRow');
+    if (row) row.style.display = currentView === 'tile' ? '' : 'none';
+  }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
@@ -1056,6 +1066,7 @@
     grid.style.display = currentView === 'list' ? 'flex' : 'grid';
     grid.classList.toggle('list-view', currentView === 'list');
     grid.classList.toggle('tile-view', currentView === 'tile');
+    applyTileLayout();
     empty.style.display = 'none';
     if (noteEl) noteEl.style.display = 'block';
 
@@ -1096,7 +1107,7 @@
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
-        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? 360 : 0)}" alt="" loading="lazy">` : ''}
+        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
@@ -1479,6 +1490,16 @@
     });
   });
 
+  // Tile size ± (tile density only)
+  function setTileSize(px) {
+    tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, px));
+    window.corpus.setPref('imageTileSize', tileSize);
+    applyTileLayout();
+    if (currentView === 'tile') renderPosts();   // re-request thumbnails at the new size
+  }
+  document.getElementById('tileMinus').addEventListener('click', () => setTileSize(tileSize - TILE_STEP));
+  document.getElementById('tilePlus').addEventListener('click', () => setTileSize(tileSize + TILE_STEP));
+
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
   window.corpus.getPrefs().then((prefs) => {
@@ -1486,6 +1507,7 @@
       currentView = prefs.viewMode;
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
+    if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
     if (prefs.sortBy) sortSelect.value = prefs.sortBy;
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
