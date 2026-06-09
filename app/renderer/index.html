@@ -490,6 +490,19 @@
     .fold-btn.added { background: var(--success); }
     .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
 
+    /* --- ℹ detail-popup button on card (ported from image-view) --- */
+    .info-btn {
+      position: absolute; top: 8px; right: 136px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .info-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
+    .post-card:hover .info-btn { opacity: 1; }
+    .post-grid.list-view .info-btn { top: 50%; right: 136px; transform: translateY(-50%); }
+
     /* --- Query field --- */
     .query-field-row { margin-bottom: 12px; }
     .query-field {
@@ -669,6 +682,7 @@
         <div class="toolbar-row selection-bar" id="selectionBar" style="display:none;">
           <button class="chip" id="selectAllBtn"></button>
           <span class="post-count" id="selectedCount"></span>
+          <button class="chip" id="groupSelectedBtn"></button>
           <button class="chip" id="deleteSelectedBtn" style="background:var(--danger);color:#fff;border-color:var(--danger);"></button>
           <button class="chip" id="cancelSelectBtn"></button>
         </div>
@@ -717,6 +731,7 @@
             <button class="sb-chip" data-filter-type="media" data-filter-value="gif" id="sbGif"></button>
           </div>
           <label class="iv-check" style="margin-top:8px;"><input type="checkbox" id="multiOnly"> <span id="multiOnlyLabel">複数画像のみ</span></label>
+          <label class="iv-check" style="margin-top:4px;"><input type="checkbox" id="expandAllToggle"> <span id="expandAllLabel">グループを展開</span></label>
         </div>
 
         <!-- Date -->
@@ -1012,6 +1027,11 @@
     <video id="lightboxVideo" controls playsinline preload="metadata" style="display:none"></video>
     <button class="lb-nav lb-next" id="lbNext" type="button">&#8250;</button>
     <div class="lb-counter" id="lbCounter"></div>
+  </div>
+
+  <!-- Post detail popup (ℹ on a card; reuses image-view's iv-detail/iv-insp styles) -->
+  <div id="postDetail" class="iv-detail-overlay" hidden>
+    <div class="iv-detail-box" id="postDetailBox"></div>
   </div>
 
   <!-- Edit tags overlay -->

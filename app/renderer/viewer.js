@@ -26,6 +26,25 @@
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
     multiOnly: _s('multiOnly'),
+    expandAll: _s('expandAll'),
+    confirmDeleteGroup: _f1('confirmDeleteGroup'),
+    tipInfo: _s('tipInfo'),
+    detailPlatform: _s('detailPlatform'),
+    detailAuthor: _s('detailAuthor'),
+    detailUser: _s('detailUser'),
+    detailEngagement: _s('detailEngagement'),
+    detailPosted: _s('detailPosted'),
+    detailSaved: _s('detailSaved'),
+    detailUpdated: _s('detailUpdated'),
+    detailImages: _s('detailImages'),
+    detailTags: _s('detailTags'),
+    detailOpen: _s('detailOpen'),
+    imagesCount: _f1('imagesCount'),
+    groupUngroup: _s('groupUngroup'),
+    groupRegroup: _s('groupRegroup'),
+    groupUngroupManual: _s('groupUngroupManual'),
+    groupSelected: _s('groupSelected'),
+    grouped: _s('grouped'),
     sortDateDesc: _s('sortDateDesc'),
     sortDateAsc: _s('sortDateAsc'),
     sortLikes: _s('sortLikes'),
@@ -569,6 +588,7 @@
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
   setText('multiOnlyLabel', MSG.multiOnly);
+  setText('expandAllLabel', MSG.expandAll);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
@@ -790,6 +810,11 @@
   const RENDER_PAGE = 150;
   let renderLimit = RENDER_PAGE;
   let moreObserver = null;
+  // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
+  let manualGroups = [];        // [[captureId,…],…] — user-built groups (win over auto)
+  let ungrouped = new Set();    // post keys opted out of auto-grouping
+  let expandAll = false;        // session toggle: render every record individually
+  let viewGroups = [];          // current render result: [{ key, records, rep, files }]
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   function applyTileLayout() {
@@ -907,6 +932,52 @@
   function densityImage(p, density) {
     const cap = captureFile(p), art = artworkFile(p);
     return density === 'tile' ? (art || cap) : (cap || art);
+  }
+
+  // --- Grouping (ported from image-view) --------------------------------------
+  // Auto: records sharing the same post URL (multi-image drags, re-captures of
+  // one post) collapse into one card. Manual groups (manual-groups.json) win
+  // over auto. ungrouped.json opts individual post keys out; expandAll renders
+  // every record individually for this session.
+  const postIdKey = (p) => (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
+  // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
+  function postKeyOf(url) {
+    if (!url) return null;
+    let u; try { u = new URL(url); } catch { return null; }
+    const host = u.hostname, pa = u.pathname; let m;
+    if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
+    if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
+    if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
+    if ((m = pa.match(/^\/notes\/([^/?#]+)/))) return 'misskey:' + host + ':' + m[1];
+    if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = pa.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) return 'pixiv:' + m[1];
+    return null;
+  }
+  // The "artwork pages" of one record: original media, else the dragged/migrated image.
+  const groupFilesOf = (p) => { const m = mediaFilesOf(p); if (m.length) return m; const a = artworkFile(p); return a ? [a] : []; };
+  function groupRecords(list) {
+    const manualOf = new Map();   // captureId → 'manual:idx' (manual groups win)
+    manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
+    const map = new Map(); const order = []; let solo = 0;
+    for (const p of list) {
+      let key;
+      const mg = manualOf.get(p.captureId);
+      if (mg && !expandAll) key = mg;
+      else {
+        const k = expandAll ? null : postKeyOf(p.url);
+        key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
+      }
+      let g = map.get(key);
+      if (!g) { g = { key, records: [] }; map.set(key, g); order.push(g); }
+      g.records.push(p);
+    }
+    for (const g of order) {
+      g.records.sort((a, b) => String(a.captureId || '').localeCompare(String(b.captureId || '')));
+      // Card rep: prefer the click-capture (screenshot+full meta), then any record
+      // with text, then the earliest — drags often carry no text/stats.
+      g.rep = g.records.find(isScreenshot) || g.records.find((r) => r.text) || g.records[0];
+      g.files = g.records.flatMap(groupFilesOf);
+    }
+    return order;
   }
 
   // Likes percentile within each platform — ranks "did well for its SNS" so X's
@@ -1064,7 +1135,6 @@
     }
 
     // Multi-image only (items carrying more than one original image)
-    if (multiOnly) posts = posts.filter(p => mediaFilesOf(p).length > 1);
 
     // Sort (unchanged)
     switch (sort) {
@@ -1086,13 +1156,16 @@
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
-    const posts = getFilteredPosts();
+    // Group the filtered records (auto by post URL + manual groups); each group
+    // renders as ONE card. multiOnly now means "groups with more than one image".
+    viewGroups = groupRecords(getFilteredPosts());
+    if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1);
     const query = document.getElementById('searchBox').value.trim();
 
-    countEl.textContent = MSG.postCount(posts.length);
+    countEl.textContent = MSG.postCount(viewGroups.length);
 
     const noteEl = document.getElementById('statsNote');
-    if (posts.length === 0) {
+    if (viewGroups.length === 0) {
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
@@ -1112,7 +1185,8 @@
     empty.style.display = 'none';
     if (noteEl) noteEl.style.display = 'block';
 
-    grid.innerHTML = posts.slice(0, renderLimit).map((p, i) => {
+    grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
+      const p = g.rep;
       const statsHtml = [
         p.likes != null ? `<span>\u2764 ${MSG.likes(p.likes)}</span>` : '',
         p.reposts != null ? `<span>\ud83d\udd01 ${MSG.reposts(p.reposts)}</span>` : '',
@@ -1126,7 +1200,7 @@
       const handle = p.screenName ? `@${p.screenName}` : '';
       const textPreview = escapeHtml(p.text || p.title || '');
       const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
-      const nImg = mediaFilesOf(p).length;            // ×N badge (tile) when a post has multiple images
+      const nImg = g.files.length;                    // ×N badge: total images across the group
       const likesOv = p.likes != null ? `<span class="ov-likes">❤ ${MSG.likes(p.likes)}</span>` : '';
 
       // Post-type + media flags (grid view only; hidden in the compact list view).
@@ -1141,11 +1215,12 @@
         ? `<div class="post-flags">${flags.map(f => `<span class="post-flag flag-type">${escapeHtml(f)}</span>`).join('')}${mediaLabel ? `<span class="post-flag flag-media">${escapeHtml(mediaLabel)}</span>` : ''}</div>`
         : '';
 
-      const postKey = (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
+      const postKey = postIdKey(p);
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check"></div>
         <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}">ℹ</button>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
         ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
@@ -1169,7 +1244,7 @@
 
     // Load-more: render the next page when a bottom sentinel nears the viewport.
     if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
-    if (posts.length > renderLimit) {
+    if (viewGroups.length > renderLimit) {
       const sentinel = document.createElement('div');
       sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
       grid.appendChild(sentinel);
@@ -1217,6 +1292,18 @@
 
   // Gallery items for a post: the screenshot first, then each original image.
   const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+  // Gallery for a whole group: every record's items in captureId order, deduped by src.
+  function buildGroupGalleryItems(g) {
+    if (g.records.length === 1) return buildGalleryItems(g.rep);
+    const seen = new Set(); const items = [];
+    for (const r of g.records) {
+      for (const it of buildGalleryItems(r)) {
+        if (seen.has(it.src)) continue;
+        seen.add(it.src); items.push(it);
+      }
+    }
+    return items;
+  }
   function buildGalleryItems(p) {
     const items = [];
     if (p.image) items.push({ src: imgSrc(p), alt: '', video: false });
@@ -1277,12 +1364,12 @@
       if (url) window.corpus.openExternal(url);
       return;
     }
-    // Image -> open the gallery (screenshot + originals).
+    // Image -> open the gallery (screenshot + originals, whole group).
     const img = e.target.closest('.card-img');
     if (img) {
       e.stopPropagation();
-      const p = getFilteredPosts()[parseInt(img.closest('.post-card')?.dataset.index, 10)];
-      if (p) openGallery(buildGalleryItems(p), 0);
+      const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
+      if (g) openGallery(buildGroupGalleryItems(g), 0);
     }
   });
 
@@ -1304,11 +1391,9 @@
     const btn = e.target.closest('.edit-btn');
     if (!btn) return;
     e.stopPropagation();
-    const idx = parseInt(btn.dataset.edit, 10);
-    const filtered = getFilteredPosts();
-    const post = filtered[idx];
-    if (!post) return;
-    openEditOverlay(post);
+    const g = viewGroups[parseInt(btn.dataset.edit, 10)];
+    if (!g) return;
+    openEditOverlay(g.rep, g.records);
   });
 
   // 📁 button on card: one-click add/remove this post to the default folder.
@@ -1317,9 +1402,9 @@
     if (!btn) return;
     e.stopPropagation();
     if (!CF()) return;
-    const post = getFilteredPosts()[parseInt(btn.dataset.fold, 10)];
-    if (!post || !post.captureId) return;
-    const res = CF().toggleDefault([post.captureId], post.captureId);   // persists + toast + notify; null=no default→manager
+    const g = viewGroups[parseInt(btn.dataset.fold, 10)];
+    if (!g || !g.rep.captureId) return;
+    const res = CF().toggleDefault(g.records.map((r) => r.captureId), g.rep.captureId);   // whole group; persists + toast + notify; null=no default→manager
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
@@ -1360,11 +1445,10 @@
   document.getElementById('postGrid').addEventListener('click', (e) => {
     if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') ||
         e.target.closest('.open-btn') || e.target.closest('.card-img') ||
-        e.target.closest('.fold-btn') || e.target.closest('.text')) return;
+        e.target.closest('.fold-btn') || e.target.closest('.info-btn') ||
+        e.target.closest('.text')) return;
     const card = e.target.closest('.post-card');
     if (!card) return;
-    const filtered = getFilteredPosts();
-    const keyOf = (p) => (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
     const idx = parseInt(card.dataset.index, 10);
     const key = card.dataset.key;
 
@@ -1372,7 +1456,7 @@
       const lo = Math.min(selectionAnchor, idx);
       const hi = Math.max(selectionAnchor, idx);
       selectedSet.clear();
-      for (let i = lo; i <= hi; i++) { if (filtered[i]) selectedSet.add(keyOf(filtered[i])); }
+      for (let i = lo; i <= hi; i++) { if (viewGroups[i]) selectedSet.add(postIdKey(viewGroups[i].rep)); }
     } else if (e.ctrlKey || e.metaKey) {
       if (selectedSet.has(key)) selectedSet.delete(key); else selectedSet.add(key);
       selectionAnchor = idx;
@@ -1392,40 +1476,127 @@
     const btn = e.target.closest('.delete-btn');
     if (!btn) return;
     e.stopPropagation();
-    const idx = parseInt(btn.dataset.delete, 10);
-    const filtered = getFilteredPosts();
-    const post = filtered[idx];
-    if (!post) return;
+    const g = viewGroups[parseInt(btn.dataset.delete, 10)];
+    if (!g) return;
 
     if (skipDeleteConfirm) {
-      executeDeletePost(post);
+      executeDeleteGroup(g);
     } else {
-      pendingDeletePost = post;
-      document.getElementById('confirmMsg').textContent = MSG.confirmDeletePost;
+      pendingDeleteGroup = g;
+      document.getElementById('confirmMsg').textContent =
+        g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost;
       document.getElementById('confirmSkipLabel').style.display = 'flex';
       document.getElementById('confirmSkip').checked = false;
       document.getElementById('confirmOverlay').classList.add('show');
     }
   });
 
-  let pendingDeletePost = null;
+  let pendingDeleteGroup = null;
 
-  async function executeDeletePost(post) {
-    await window.corpus.deletePost(post.image || post.video);
-    const idx = allPosts.findIndex(p => p.captureId === post.captureId);
-    if (idx >= 0) allPosts.splice(idx, 1);
+  // Delete every record of the group (a group IS one post in the UI).
+  async function executeDeleteGroup(g) {
+    for (const r of g.records) {
+      try { await window.corpus.deletePost(r.image || r.video); } catch { /* keep going */ }
+      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
+      if (idx >= 0) allPosts.splice(idx, 1);
+    }
     renderPosts();
     reconcileFolders();   // 削除した captureId をフォルダから即時掃除
     renderPostFolders();
     showToast(MSG.deleted);
   }
 
+  // === Detail popup (ℹ on a card) + group/ungroup actions (ported from image-view) ===
+  function closeDetail() {
+    document.getElementById('postDetail').hidden = true;
+    document.getElementById('postDetailBox').innerHTML = '';
+  }
+  function persistManual() { if (window.corpus.setManualGroups) window.corpus.setManualGroups(manualGroups).catch(() => { /* best-effort */ }); }
+  // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
+  function setGroupKey(key, ungroup) {
+    if (!key) return;
+    if (ungroup) ungrouped.add(key); else ungrouped.delete(key);
+    if (window.corpus.setUngrouped) window.corpus.setUngrouped([...ungrouped]).catch(() => { /* best-effort */ });
+    closeDetail();
+    renderPosts();
+  }
+  function ungroupManual(idx) {
+    if (!(idx >= 0 && idx < manualGroups.length)) return;
+    manualGroups.splice(idx, 1);
+    persistManual();
+    closeDetail();
+    renderPosts();
+  }
+  function showDetail(g) {
+    if (!g) return;
+    const p = g.rep;
+    const box = document.getElementById('postDetailBox');
+    const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(k)}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
+    const eng = [];
+    if (p.likes != null) eng.push('❤ ' + formatCount(p.likes));
+    if (p.reposts != null) eng.push('🔁 ' + formatCount(p.reposts));
+    if (p.replies != null) eng.push('💬 ' + formatCount(p.replies));
+    if (p.bookmarks != null) eng.push('🔖 ' + formatCount(p.bookmarks));
+    if (p.views != null) eng.push('👁 ' + formatCount(p.views));
+    const tags = (Array.isArray(p.hashtags) ? p.hashtags : []).concat(Array.isArray(p.tags) ? p.tags : []);
+    const tagsHtml = tags.length
+      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
+      : '';
+    const heading = p.title || p.text || '';
+    const thumbFile = g.files[0] || captureFile(p);
+    // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
+    // (same post URL with siblings) toggle via the persisted ungrouped set.
+    const gkey = postKeyOf(p.url);
+    const potential = gkey ? allPosts.filter((q) => postKeyOf(q.url) === gkey).length : 0;
+    const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
+    const groupBtn = isManual
+      ? `<a class="iv-insp-open" id="pdUngroupManual">🔗 ${escapeHtml(MSG.groupUngroupManual)}</a>`
+      : (potential > 1
+        ? (ungrouped.has(gkey)
+          ? `<a class="iv-insp-open" id="pdRegroup">🔗 ${escapeHtml(MSG.groupRegroup)}</a>`
+          : `<a class="iv-insp-open" id="pdUngroup">✂ ${escapeHtml(MSG.groupUngroup)}</a>`)
+        : '');
+    box.innerHTML =
+      `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
+      (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
+      (thumbFile ? `<img class="iv-insp-thumb" src="${fileSrc(thumbFile, 480)}" alt="">` : '') +
+      row(MSG.detailPlatform, (p.platform || '').toUpperCase()) +
+      row(MSG.detailAuthor, p.displayName || '') +
+      row(MSG.detailUser, p.screenName ? '@' + p.screenName : '') +
+      row(MSG.detailEngagement, eng.join('   ')) +
+      row(MSG.detailPosted, p.date ? new Date(p.date).toLocaleString() : '') +
+      row(MSG.detailSaved, p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '') +
+      row(MSG.detailUpdated, p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
+      row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
+      tagsHtml +
+      (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
+      groupBtn;
+    document.getElementById('postDetail').hidden = false;
+    const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
+    const o = document.getElementById('pdOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
+    const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
+    const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
+    const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
+  }
+  document.getElementById('postDetail').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeDetail(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('postDetail').hidden) closeDetail(); });
+  // ℹ button on card → detail popup
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.info-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    showDetail(viewGroups[parseInt(btn.dataset.info, 10)]);
+  });
+
   // --- Edit overlay logic ---
+  // Editing a grouped card edits ALL its records (a group is one post in the UI).
   let editingPost = null;
+  let editingRecords = [];
   let editTags = [];
 
-  function openEditOverlay(post) {
+  function openEditOverlay(post, records) {
     editingPost = post;
+    editingRecords = (records && records.length) ? records : [post];
     editTags = [...(post.tags || [])];
     document.getElementById('editTagInput').value = '';
     renderEditTags();
@@ -1480,15 +1651,16 @@
     if (!editingPost) return;
     const tags = [...editTags];
 
-    // Persist to the sidecar, then update in memory
-    await window.corpus.updateTags(editingPost.image || editingPost.video, tags);
-    const idx = allPosts.findIndex(p => p.captureId === editingPost.captureId);
-    if (idx >= 0) {
-      allPosts[idx].tags = tags;
-      renderPosts();
+    // Persist to every record's sidecar, then update in memory
+    for (const r of editingRecords) {
+      try { await window.corpus.updateTags(r.image || r.video, tags); } catch { /* keep going */ }
+      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
+      if (idx >= 0) allPosts[idx].tags = tags;
     }
+    renderPosts();
 
     editingPost = null;
+    editingRecords = [];
     document.getElementById('editOverlay').classList.remove('show');
   });
 
@@ -1496,11 +1668,13 @@
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
   const selectionBar = document.getElementById('selectionBar');
   const selectAllBtn = document.getElementById('selectAllBtn');
+  const groupSelectedBtn = document.getElementById('groupSelectedBtn');
   const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
   const cancelSelectBtn = document.getElementById('cancelSelectBtn');
   const selectedCountEl = document.getElementById('selectedCount');
 
   selectAllBtn.textContent = MSG.selectAll;
+  groupSelectedBtn.textContent = MSG.groupSelected;
   deleteSelectedBtn.textContent = MSG.deleteSelected;
   cancelSelectBtn.textContent = MSG.cancelSelect;
 
@@ -1516,20 +1690,34 @@
     selectionBar.style.display = count > 0 ? '' : 'none';
     selectedCountEl.textContent = MSG.selectedCount(count);
     deleteSelectedBtn.disabled = count === 0;
-    const filtered = getFilteredPosts();
-    const allSelected = filtered.length > 0 && filtered.every(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
+    // Manual grouping needs at least two selected cards (groups).
+    groupSelectedBtn.disabled = viewGroups.filter(g => selectedSet.has(postIdKey(g.rep))).length < 2;
+    const allSelected = viewGroups.length > 0 && viewGroups.every(g => selectedSet.has(postIdKey(g.rep)));
     selectAllBtn.textContent = allSelected ? MSG.deselectAll : MSG.selectAll;
   }
 
   cancelSelectBtn.addEventListener('click', clearSelection);
 
+  // Manual grouping: merge every record of the selected cards into one persisted
+  // group (manual-groups.json). Members are first removed from any existing
+  // manual group so a record never belongs to two groups.
+  groupSelectedBtn.addEventListener('click', () => {
+    const members = [];
+    viewGroups.forEach((g) => { if (selectedSet.has(postIdKey(g.rep))) members.push(...g.records.map((r) => r.captureId).filter(Boolean)); });
+    if (members.length < 2) return;
+    manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
+    manualGroups.push(members);
+    persistManual();
+    clearSelection();   // re-renders the grid (now collapsed) + hides the bar
+    showToast(MSG.grouped);
+  });
+
   selectAllBtn.addEventListener('click', () => {
-    const filtered = getFilteredPosts();
-    const allSelected = filtered.every(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
+    const allSelected = viewGroups.every(g => selectedSet.has(postIdKey(g.rep)));
     if (allSelected) {
       selectedSet.clear();
     } else {
-      filtered.forEach(p => selectedSet.add((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
+      viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
     }
     renderPosts();
     updateSelectionBar();
@@ -1537,7 +1725,7 @@
 
   deleteSelectedBtn.addEventListener('click', () => {
     if (selectedSet.size === 0) return;
-    pendingDeletePost = null;
+    pendingDeleteGroup = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
     document.getElementById('confirmSkipLabel').style.display = 'none';
     document.getElementById('confirmOverlay').classList.add('show');
@@ -1568,6 +1756,7 @@
   document.getElementById('tilePlus').addEventListener('click', () => setTileSize(tileSize + TILE_STEP));
 
   document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
+  document.getElementById('expandAllToggle').addEventListener('change', (e) => { expandAll = e.target.checked; renderPosts(); });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
@@ -1781,14 +1970,14 @@
 
   // --- Clear data ---
   document.getElementById('clearData').addEventListener('click', () => {
-    pendingDeletePost = null;
+    pendingDeleteGroup = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmClear;
     document.getElementById('confirmSkipLabel').style.display = 'none';
     document.getElementById('confirmOverlay').classList.add('show');
   });
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
-    pendingDeletePost = null;
+    pendingDeleteGroup = null;
     pendingBulkDelete = false;
     document.getElementById('confirmOverlay').classList.remove('show');
   });
@@ -1797,8 +1986,9 @@
     document.getElementById('confirmOverlay').classList.remove('show');
 
     if (pendingBulkDelete) {
-      // Bulk delete selected posts — remove the files on disk
-      const toDelete = allPosts.filter(p => selectedSet.has((p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')))));
+      // Bulk delete selected groups — every record of each selected group
+      const toDelete = [];
+      viewGroups.forEach((g) => { if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records); });
       const count = toDelete.length;
       for (const p of toDelete) {
         await window.corpus.deletePost(p.image || p.video);
@@ -1809,14 +1999,14 @@
       updateSelectionBar();
       await loadPosts();
       showToast(MSG.deletedN(count));
-    } else if (pendingDeletePost) {
-      // Individual post delete
+    } else if (pendingDeleteGroup) {
+      // Individual post (group) delete
       if (document.getElementById('confirmSkip').checked) {
         skipDeleteConfirm = true;
         window.corpus.setPref('skipDeleteConfirm', true);
       }
-      await executeDeletePost(pendingDeletePost);
-      pendingDeletePost = null;
+      await executeDeleteGroup(pendingDeleteGroup);
+      pendingDeleteGroup = null;
     } else {
       // Clear all data (deletes every image + sidecar in the save folder)
       await window.corpus.clearAll();
@@ -1829,7 +2019,7 @@
   // Close overlay on background click
   document.getElementById('confirmOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
-      pendingDeletePost = null;
+      pendingDeleteGroup = null;
       pendingBulkDelete = false;
       e.currentTarget.classList.remove('show');
     }
@@ -2013,5 +2203,8 @@ render()
   }
   renderQueryChips();
   if (CF()) await CF().load();   // load folders before first render so 📁/chips are correct
+  // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
+  try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
+  try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   loadPosts();
 })();
