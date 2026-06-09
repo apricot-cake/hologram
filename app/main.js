@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -353,7 +353,7 @@ ipcMain.handle('get-prefs', () => {
     mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
     imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // image-view tile px
     searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal',   // 検索方式: 通常 / あいまい
-    theme: cfg.theme === 'dark' ? 'dark' : 'light'   // ライト / ダーク
+    theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto'   // システム / ライト / ダーク
   };
 });
 
@@ -845,14 +845,18 @@ ipcMain.handle('import-images', async () => {
 // --- Window ---
 function createWindow(show = true) {
   // Resolve the theme from config up front so the first paint (and the window's
-  // backdrop) match it — no flash, and SMOKE captures reflect it. Passed to the
-  // page as a ?theme= query that theme.js reads synchronously during <head>.
-  const theme = readConfig().theme === 'dark' ? 'dark' : 'light';
+  // backdrop) match it — no flash, and SMOKE captures reflect it. We pass the
+  // PREF (auto/light/dark) to the page as a ?theme= query that theme.js reads
+  // synchronously during <head>; 'auto' is resolved there via prefers-color-scheme
+  // (which follows nativeTheme). For the backdrop we resolve 'auto' here too.
+  const cfgTheme = readConfig().theme;
+  const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
+  const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
   win = new BrowserWindow({
     width: 1100,
     height: 820,
     show,
-    backgroundColor: theme === 'dark' ? '#0c0e12' : '#f6f7f9',
+    backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
     webPreferences: {

@@ -50,6 +50,9 @@
 
     // settings > appearance / language / shortcut
     themeTitle: _s('themeTitle'),
+    themeMode: _s('themeMode'),
+    themeAuto: _s('themeAuto'),
+    themeLight: _s('themeLight'),
     themeDark: _s('themeDark'),
     hintTheme: _s('hintTheme'),
     langTitle: _s('langTitle'),
@@ -206,7 +209,10 @@
   setText('chooseFolderBtn', MSG.chooseFolder);
   setText('hintSaveFolder', MSG.hintSaveFolder);
   setText('settingsThemeTitle', MSG.themeTitle);
-  setText('settingsThemeLabel', MSG.themeDark);
+  setText('settingsThemeLabel', MSG.themeMode);
+  setText('themeOptAuto', MSG.themeAuto);
+  setText('themeOptLight', MSG.themeLight);
+  setText('themeOptDark', MSG.themeDark);
   setText('hintTheme', MSG.hintTheme);
   setText('settingsLangTitle', MSG.langTitle);
   setText('langAuto', MSG.langAuto);
@@ -349,9 +355,9 @@
       return f.value === filter.value;
     });
     if (isDup) return;
-    // For date: replace existing
-    if (filter.type === 'date') {
-      activeFilters = activeFilters.filter(f => f.type !== 'date');
+    // date + kind are single-valued (択一): a new one replaces the existing.
+    if (filter.type === 'date' || filter.type === 'kind') {
+      activeFilters = activeFilters.filter(f => f.type !== filter.type);
     }
     activeFilters.push(filter);
     renderQueryChips();
