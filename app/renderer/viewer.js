@@ -93,7 +93,6 @@
     unitWeek: _s('unitWeek'),
     unitYear: _s('unitYear'),
     backupRunNow: _s('backupRunNow'),
-    backupRestore: _s('backupRestore'),
     backupRunning: _s('backupRunning'),
     backupNotSet: _s('backupNotSet'),
     backupOverlap: _s('backupOverlap'),
@@ -246,7 +245,6 @@
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
   setText('runBackupBtn', MSG.backupRunNow);
-  setText('importFolderBtn', MSG.backupRestore);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1756,18 +1754,6 @@
         } else {
           showToast(MSG.importFailed);
         }
-      } catch { showToast(MSG.importFailed); }
-    });
-
-    $('importFolderBtn').addEventListener('click', async () => {
-      try {
-        const pick = await window.corpus.pickImportFolder();
-        if (!pick || !pick.ok || !pick.dir) return;
-        showToast(MSG.importing);
-        const { imported, skipped } = await window.corpus.importFromFolder(pick.dir);
-        await loadPosts();
-        if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
-        else showToast(MSG.imported(imported));
       } catch { showToast(MSG.importFailed); }
     });
 

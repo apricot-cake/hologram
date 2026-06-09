@@ -29,8 +29,6 @@ contextBridge.exposeInMainWorld('corpus', {
   setBackup: (patch) => ipcRenderer.invoke('set-backup', patch),
   pickBackupDir: () => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: () => ipcRenderer.invoke('run-backup'),
-  pickImportFolder: () => ipcRenderer.invoke('pick-import-folder'),
-  importFromFolder: (dir) => ipcRenderer.invoke('import-from-folder', dir),
   importImages: () => ipcRenderer.invoke('import-images'),
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
   onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb)

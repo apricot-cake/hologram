@@ -576,14 +576,6 @@ const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungroupe
 const BACKUP_SUBDIR = 'Corpus-export';
 function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
 
-// captureId（ファイル名のID部）を取り出す: <id>.jpg / <id>.json / <id>-media-N.ext / <id>-poster.ext。
-function captureIdOf(name) {
-  let b = path.basename(name || '');
-  b = b.replace(/-media-\d+\.[A-Za-z0-9]+$/i, '');
-  b = b.replace(/-poster\.[A-Za-z0-9]+$/i, '');
-  b = b.replace(/\.[A-Za-z0-9]+$/i, '');
-  return b;
-}
 
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
@@ -658,15 +650,15 @@ async function runBackup(reason) {
 }
 
 let backupIntervalTimer = null;
+function backupIntervalMs(b) {
+  const unitMs = { day: 86400000, week: 604800000, year: 31536000000 };
+  return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
+}
 function armBackupSchedule() {
   if (backupIntervalTimer) { clearInterval(backupIntervalTimer); backupIntervalTimer = null; }
   const b = readBackupConfig();
   if (!b.dir) return;
-  if (b.interval) {
-    const unitMs = { day: 86400000, week: 604800000, year: 31536000000 };
-    const ms = Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
-    backupIntervalTimer = setInterval(() => { runBackup('interval'); }, ms);
-  }
+  if (b.interval) backupIntervalTimer = setInterval(() => { runBackup('interval'); }, backupIntervalMs(b));
 }
 
 ipcMain.handle('get-backup', () => readBackupConfig());
@@ -691,65 +683,6 @@ ipcMain.handle('pick-backup-dir', async () => {
   return { ok: true, backup };
 });
 ipcMain.handle('run-backup', () => runBackup('manual'));
-ipcMain.handle('pick-import-folder', async () => {
-  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
-  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
-  return { ok: true, dir: res.filePaths[0] };
-});
-// バックアップフォルダ（メタデータ込みエクスポート）から保存先へ復元。
-// 既存と captureId / url が重複するものはスキップ。ライブラリjson（フォルダ/タグ等）は対象外。
-ipcMain.handle('import-from-folder', async (_e, dir) => {
-  const folder = getSaveFolder();
-  if (!folder || !dir) return { imported: 0, skipped: 0, error: 'no-folder' };
-  fs.mkdirSync(folder, { recursive: true });
-  const existingIds = new Set(), existingUrls = new Set();
-  try {
-    for (const f of await fs.promises.readdir(folder)) {
-      if (!/\.json$/i.test(f) || LIBRARY_JSON.includes(f)) continue;
-      try {
-        const r = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
-        if (r.captureId) existingIds.add(r.captureId);
-        if (r.url) existingUrls.add(r.url);
-      } catch { /* skip */ }
-    }
-  } catch { /* empty */ }
-  // 月別/投稿ごとのサブフォルダを再帰的に走査して .json を集める（フラット構造にも対応）。
-  const jsons = [];   // { dir, name }
-  async function walk(d, depth) {
-    if (depth > 6) return;
-    let ents;
-    try { ents = await fs.promises.readdir(d, { withFileTypes: true }); } catch { return; }
-    for (const e of ents) {
-      const full = path.join(d, e.name);
-      if (e.isDirectory()) await walk(full, depth + 1);
-      else if (/\.json$/i.test(e.name) && !LIBRARY_JSON.includes(e.name)) jsons.push({ dir: d, name: e.name });
-    }
-  }
-  await walk(dir, 0);
-  let imported = 0, skipped = 0;
-  for (const jf of jsons) {
-    let rec;
-    try { rec = JSON.parse(await fs.promises.readFile(path.join(jf.dir, jf.name), 'utf8')); } catch { skipped++; continue; }
-    const id = rec.captureId;
-    if (!id) { skipped++; continue; }
-    if (existingIds.has(id) || (rec.url && existingUrls.has(rec.url))) { skipped++; continue; }
-    // 投稿フォルダ内の、この captureId に属するファイル（正準名のまま）を保存先へコピー。
-    let sibs = [];
-    try { sibs = await fs.promises.readdir(jf.dir); } catch { /* ignore */ }
-    try {
-      for (const rn of sibs) {
-        if (captureIdOf(rn) !== id && !rn.startsWith(id)) continue;
-        const full = path.join(jf.dir, rn);
-        const st = await fs.promises.stat(full).catch(() => null);
-        if (!st || !st.isFile()) continue;
-        await fs.promises.copyFile(full, path.join(folder, path.basename(rn)));
-      }
-      existingIds.add(id); if (rec.url) existingUrls.add(rec.url);
-      imported++;
-    } catch { skipped++; }
-  }
-  return { imported, skipped };
-});
 
 // 任意の画像ファイルをライブラリ画像として取り込む（ユーザー自前の画像でもOK）。
 // source:'drag' を付けるので画像閲覧に出る。Corpusのメディアのみエクスポートの取り込みも兼ねる。
@@ -855,6 +788,12 @@ if (!gotSingleInstanceLock) {
   watchSaveFolder();
   if (!SMOKE) {
     armBackupSchedule();                                  // interval スケジュールを起動
+    // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
+    const bk = readBackupConfig();
+    if (bk.dir && bk.interval) {
+      const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
+      if (!last || (Date.now() - last) >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
+    }
   }
 
   if (SMOKE) {
