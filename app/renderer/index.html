@@ -137,8 +137,9 @@
        sections below; space the controls inside each one. */
     #postsToolbar .sb-section { padding: 0; margin-bottom: 0; }
     #postsToolbar .sb-section > * + * { margin-top: 6px; }
-    /* 件数はサイドバー左下（設定の歯車の隣）に常駐 */
-    .sidebar-footer .post-count { font-size: 11px; }
+    /* 件数はサイドバー左下（設定の歯車の隣）に常駐。subtle だと読めないと
+       指摘があったので muted（セカンダリの標準）まで上げる */
+    .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
     .toolbar-row {
       display: flex; flex-direction: column; gap: 6px; align-items: stretch;
       margin-bottom: 12px;

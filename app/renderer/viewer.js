@@ -2056,19 +2056,23 @@
     if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
     closeDetail();
   }, true);
-  // Slide-over mode (narrow window): the panel covers the grid, so dismissal
-  // must be cheap — clicking empty content space closes it. Cards still swap,
-  // controls still work, and the inline mode (wide) stays persistent since it
-  // covers nothing there.
+  // Slide-over mode (narrow window): the panel covers the grid, so it acts
+  // like a scrim-less drawer — ANY click outside it inside the content area
+  // (cards and grid included) dismisses it, and the click is consumed so the
+  // card doesn't also react on the same press. ℹ buttons stay live as the
+  // explicit "show this one instead" entry. Inline mode (wide) keeps clicks:
+  // cards swap the content there since the panel covers nothing.
   document.addEventListener('click', (e) => {
     const insp = document.getElementById('postDetail');
     if (insp.hidden) return;
     if (!matchMedia('(max-width: 1279px)').matches) return;
     if (insp.contains(e.target)) return;
-    if (!e.target.closest('#mode-post')) return;   // sidebar/modals: leave it open
-    if (e.target.closest('.post-card, button, a, input, select, .sb-active-chip, .qc-zone')) return;
+    if (!e.target.closest('#mode-post')) return;   // sidebar/overlays: leave it open
+    if (e.target.closest('.info-btn')) return;     // ℹ = swap to that card
+    e.preventDefault();
+    e.stopPropagation();
     closeDetail();
-  });
+  }, true);
   // ℹ button on card → detail popup
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.info-btn');

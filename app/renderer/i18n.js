@@ -79,7 +79,7 @@
       sortCaptured: 'キャプチャ日時順',
       sortLikesPct: '人気順（SNS内）',
       filterAll: 'すべて',
-      postCount: '$1 件',
+      postCount: '$1件ヒット',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -329,7 +329,7 @@
       sortCaptured: 'Captured date',
       sortLikesPct: 'Top (within SNS)',
       filterAll: 'All',
-      postCount: '$1 posts',
+      postCount: '$1 hits',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',
