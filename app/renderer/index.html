@@ -41,9 +41,20 @@
     .icon-btn svg { width: 15px; height: 15px; }
 
     /* Settings overlay (opened by the brand-bar gear; floats above either mode) */
-    .settings-view { position: fixed; inset: 0; z-index: 11000; background: var(--bg); overflow-y: auto; }
+    /* Settings: centered modal over a dimmed backdrop (was a fullscreen page) */
+    .settings-view {
+      position: fixed; inset: 0; z-index: 11000; background: var(--overlay);
+      display: flex; align-items: center; justify-content: center; padding: 36px;
+    }
     .settings-view[hidden] { display: none; }
-    .settings-view-inner { max-width: 720px; margin: 0 auto; padding: 20px 32px 56px; }
+    .settings-view:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
+    .settings-view-inner {
+      width: 100%; max-width: 720px; max-height: 100%; overflow-y: auto;
+      background: var(--bg); border: 1px solid var(--border-strong);
+      border-radius: 16px; box-shadow: var(--shadow-lg);
+      padding: 4px 32px 40px;
+    }
+    .settings-view:not([hidden]) .settings-view-inner { animation: corpusPopIn .2s ease-out; }
     .settings-view-head {
       display: flex; align-items: center; justify-content: space-between;
       position: sticky; top: 0; background: var(--bg); padding: 12px 0 14px;
@@ -751,9 +762,18 @@
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
     .sb-chip:hover { border-color: var(--accent); color: var(--accent); }
-    .sb-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    /* tag chips cycle 解除→いずれか(OR)→すべて含む(AND): AND = darker fill + ＋ prefix */
-    .sb-chip.active.and { background: color-mix(in oklch, var(--accent) 72%, black); border-color: color-mix(in oklch, var(--accent) 72%, black); }
+    /* Active = tinted, not a solid saturated fill (淡色地＋アクセント文字＋細縁
+       — solid 単色のべた塗りはチープに見えるため、Linear/GitHub 系の選択表現に) */
+    .sb-chip.active {
+      background: var(--accent-subtle); border-color: var(--accent);
+      color: var(--accent-subtle-fg); font-weight: 600;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent);
+    }
+    /* tag chips cycle 解除→いずれか(OR)→すべて含む(AND): AND = 濃いめのティント + ＋ prefix */
+    .sb-chip.active.and {
+      background: color-mix(in srgb, var(--accent) 30%, var(--surface));
+      border-color: var(--accent); color: var(--accent-subtle-fg);
+    }
 
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
@@ -812,6 +832,9 @@
     }
     .qf-pop .qf-find:focus { border-color: var(--accent); }
     .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; color: var(--text-muted); padding: 6px 8px 2px; }
+    /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
+    .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
+    .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
     /* 📌 pin toggle on tag rows: pinned = always shown, others appear on hover */
     .qf-pop .qf-pin { flex-shrink: 0; margin-left: 4px; font-size: 11px; cursor: pointer; opacity: 0; filter: grayscale(1); transition: opacity .1s; }
     .qf-pop .fm-row:hover .qf-pin { opacity: .65; }
@@ -936,7 +959,6 @@
           <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="date"><span class="sb-row-name" id="sbDateTitle"></span><span class="sb-row-badge" data-badge="date"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="engagement"><span class="sb-row-name" id="sbEngTitle"></span><span class="sb-row-badge" data-badge="engagement"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="instance"><span class="sb-row-name" id="sbInstanceTitle"></span><span class="sb-row-badge" data-badge="instance"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="user"><span class="sb-row-name" id="sbAuthorTitle">作者</span><span class="sb-row-badge" data-badge="user"></span><span class="sb-row-arrow">▸</span></button>
           <label class="iv-check" style="margin-top:8px;"><input type="checkbox" id="multiOnly"> <span id="multiOnlyLabel">複数画像のみ</span></label>
         </div>
@@ -1207,7 +1229,7 @@
 
     /* Folder chips (★ default) + management modal */
     .iv-foldstar { color: var(--muted); margin-right: 3px; }
-    .sb-chip.active .iv-foldstar { color: #fff; }
+    .sb-chip.active .iv-foldstar { color: var(--accent-subtle-fg); }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
     .iv-folder-new .search-box { flex: 1; }
     .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }

@@ -44,25 +44,26 @@ const evalJs = `(async () => {
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   await waitFor(() => cards() >= 5);
 
-  // インスタンス行 → 両プラットフォームの全ホストが列挙される
-  document.querySelector('#filterRows [data-qfrow="instance"]').click(); await sleep(60);
+  // プラットフォーム行 → Misskey/Mastodon の直下にインスタンスがサブ行で並ぶ
+  document.querySelector('#filterRows [data-qfrow="platform"]').click(); await sleep(60);
   const pop = document.querySelector('.qf-pop');
-  const hosts = [...pop.querySelectorAll('[data-qfval]')].map(r => r.dataset.qfval).sort();
+  const hosts = [...pop.querySelectorAll('[data-qftype="instance"]')].map(r => r.dataset.qfval).sort();
+  const subIndented = !!pop.querySelector('.fm-sub[data-qfval="misskey.io"]');
 
-  // mastodon.social を選ぶ → 2件・行バッジ点灯・フライアウトは開いたまま
+  // mastodon.social を選ぶ → 2件・プラットフォーム行のバッジ点灯・開いたまま
   pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(120);
   const socialCount = cards();
-  const badgeOn = document.querySelector('#filterRows [data-badge="instance"]').classList.contains('on');
+  const badgeOn = document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');
   const stillOpen = pop.classList.contains('show');
 
   // もう一度クリックで解除 → 全5件・バッジ消灯
   pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(120);
   const cleared = cards();
-  const badgeOff = !document.querySelector('#filterRows [data-badge="instance"]').classList.contains('on');
+  const badgeOff = !document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');
 
-  return { hosts, socialCount, badgeOn, stillOpen, cleared, badgeOff };
+  return { hosts, subIndented, socialCount, badgeOn, stillOpen, cleared, badgeOff };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -79,8 +80,8 @@ child.on('close', () => {
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('instance flyout lists every host', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']));
-  check('picking mastodon.social filters to 2 (badge on, flyout stays)', r.socialCount === 2 && r.badgeOn === true && r.stillOpen === true);
+  check('platform flyout nests every host as indented sub-rows', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
+  check('picking mastodon.social filters to 2 (platform badge on, flyout stays)', r.socialCount === 2 && r.badgeOn === true && r.stillOpen === true);
   check('picking it again clears the filter (5 posts, badge off)', r.cleared === 5 && r.badgeOff === true);
   console.log('\n' + (ok ? 'INSTANCES_TEST_PASS' : 'INSTANCES_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

@@ -533,7 +533,23 @@
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
-      case 'platform': return ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'].map(v => ({ v, l: ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[v], on: act('platform', v) }));
+      case 'platform': {
+        // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
+        const names = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
+        const hostsOf = (plat) => {
+          const set = new Set();
+          for (const p of allPosts) if (p.platform === plat) { const h = hostOf(p.url); if (h) set.add(h); }
+          return [...set].sort();
+        };
+        const out = [];
+        for (const v of ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv']) {
+          out.push({ v, l: names[v], on: act('platform', v) });
+          if (v === 'misskey' || v === 'mastodon') {
+            for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true });
+          }
+        }
+        return out;
+      }
       case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
       case 'media': return [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
       case 'tag': {
@@ -578,7 +594,7 @@
     const items = qfValues(qfCat);
     // タグ行には📌（ピン留め/解除）を付ける — ピン済みは常時表示・他はホバーで
     const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
-    const rowOf = (it) => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">📌</span>` : ''}</div>`;
+    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">📌</span>` : ''}</div>`;
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
@@ -623,18 +639,19 @@
     const val = e.target.closest('[data-qfval]');
     if (val && qfCat) {
       const v = val.dataset.qfval;
-      const i = activeFilters.findIndex(f => f.type === qfCat && f.value === v);
+      const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
+      const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
       if (i >= 0) {
         removeFilter(i);
-      } else if (qfCat === 'tag' || qfCat === 'folder') {
-        addFilter({ type: qfCat, value: v, mode: 'or' });
-      } else if (qfCat === 'user') {
+      } else if (vtype === 'tag' || vtype === 'folder') {
+        addFilter({ type: vtype, value: v, mode: 'or' });
+      } else if (vtype === 'user') {
         const u = buildUsers().find(x => x.key === v);
         addFilter({ type: 'user', value: v, label: u ? (u.displayName || u.screenName) : v });
       } else {
-        addFilter({ type: qfCat, value: v });
+        addFilter({ type: vtype, value: v });
       }
-      if (qfCat === 'folder') renderPostFolders();
+      if (vtype === 'folder') renderPostFolders();
       updateSidebarState();
       renderQfPop();   // stays open so several values can be picked in a row
     }
@@ -865,10 +882,12 @@
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
-  // Row badges: number of active filters per category
+  // Row badges: number of active filters per category. Instance filters live
+  // inside the platform flyout, so they count toward the platform badge.
   function renderFilterBadges() {
     const counts = {};
     for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
+    counts.platform = (counts.platform || 0) + (counts.instance || 0);
     document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
       const n = counts[b.dataset.badge] || 0;
       b.textContent = n || '';
@@ -992,6 +1011,8 @@
     const x = document.getElementById('settingsClose');
     if (btn) btn.addEventListener('click', open);
     if (x) x.addEventListener('click', close);
+    // モーダル化に伴い、薄暗い背景のクリックでも閉じる
+    if (view) view.addEventListener('click', (e) => { if (e.target === view) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view && !view.hidden) close(); });
   })();
 
