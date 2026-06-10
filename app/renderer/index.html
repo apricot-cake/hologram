@@ -25,7 +25,7 @@
     #sidebar {
       width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 30;
       background: var(--sidebar-bg); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; padding: 12px 10px 0; gap: 2px;
+      display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
     }
     /* Settings gear pinned bottom-left of the sidebar (title/theme button removed;
@@ -111,6 +111,7 @@
     }
     .toolbar select { width: 100%; }
     .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
+    .toolbar .post-count { margin-left: 13px; }   /* bare text → the shared 23px axis */
     .toolbar-row {
       display: flex; flex-direction: column; gap: 6px; align-items: stretch;
       margin-bottom: 12px;
@@ -124,7 +125,7 @@
     /* 検索方式トグル（通常 / あいまい）。active＝あいまい時。 */
     .search-mode-toggle {
       font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer;
-      padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px;
+      padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
       background: var(--surface); color: var(--text-muted); transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
     .search-mode-toggle:hover { background: var(--hover); }
@@ -151,7 +152,7 @@
     .chip:hover { border-color: var(--accent); color: var(--accent); }
     .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .date-input {
-      padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 12px; color: var(--text); outline: none; cursor: pointer;
     }
     .date-input:focus { border-color: var(--accent); }
@@ -159,7 +160,7 @@
     /* --- Selection bar (pinned at the sidebar top while ≥1 card is selected) --- */
     .selection-bar {
       display: flex; flex-direction: column; gap: 6px; align-items: stretch;
-      margin-bottom: 10px; padding: 10px;
+      margin-bottom: 10px; padding: 10px 12px;
       background: var(--accent-subtle); border: 1px solid var(--accent-border);
       border-radius: 10px;
     }
@@ -178,6 +179,9 @@
     #sidebar .chip:not(.active):hover, #sidebar .search-mode-toggle:not(.active):hover,
     #sidebar .view-toggle button:not(.active):hover, #sidebar .tile-size button:hover { border-color: var(--accent); color: var(--accent); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus { border-color: var(--accent); }
+    /* checkbox rows: hang the box in the gutter so the LABEL text sits on the
+       shared 23px axis (box ≈13px + 6px gap → start the row at 4px) */
+    #sidebar .iv-check { margin-left: -6px; }
     .engagement-select {
       padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 12px; color: var(--text); background: var(--surface); outline: none; cursor: pointer;
@@ -193,7 +197,7 @@
       display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
     }
     .view-toggle button {
-      background: var(--surface); border: none; padding: 6px 10px;
+      background: var(--surface); border: none; padding: 6px 12px;
       cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1;
       transition: all 0.15s;
     }
@@ -202,7 +206,7 @@
 
     /* Tile-size ± (shown only in the tile density) */
     .tile-size { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; align-self: flex-start; }
-    .tile-size button { background: var(--surface); border: none; padding: 5px 11px; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; transition: background .12s, color .12s; }
+    .tile-size button { background: var(--surface); border: none; padding: 5px 12px; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; transition: background .12s, color .12s; }
     .tile-size button:not(:last-child) { border-right: 1px solid var(--border); }
     .tile-size button:hover { color: var(--accent); background: var(--hover); }
 
@@ -624,11 +628,15 @@
 
     /* フラットなサイドバー: セクションごとの白カード/影は低コントラストでノイズだったので撤去。
        見出し(sb-title)だけでグループを区切る。 */
-    .sb-section { padding: 6px 2px; margin-bottom: 6px; }
+    /* One left text-axis for the whole sidebar: boxed controls (search/select/
+       date) start their text at 10(sidebar pad)+1(border)+12(inner pad)=23px, so
+       bare text (titles, subtitles, counts) gets a 13px indent to land on the
+       same axis, and pills use a 12px inner pad. */
+    .sb-section { padding: 6px 0; margin-bottom: 6px; }
     .sb-title {
       font-size: 11px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
-      margin-bottom: 6px;
+      margin-bottom: 6px; padding-left: 13px;
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
     .sb-manage-link {
@@ -668,13 +676,13 @@
     .sb-section.collapsed > :not(.sb-title) { display: none; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
     .sb-tag-filter {
-      width: 100%; margin-bottom: 6px; padding: 5px 8px;
+      width: 100%; margin-bottom: 6px; padding: 5px 12px;
       border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
     }
     .sb-tag-filter:focus { border-color: var(--accent); }
     .sb-chip {
       background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 12px;
-      padding: 3px 10px; font-size: 11px; color: var(--text);
+      padding: 3px 12px; font-size: 11px; color: var(--text);
       cursor: pointer; white-space: nowrap;
       /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
@@ -697,7 +705,7 @@
     .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
-  .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
   </style>
 </head>
 <body>
