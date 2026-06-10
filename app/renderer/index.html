@@ -9,6 +9,11 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Reserve the viewport scrollbar gutter permanently: otherwise the bar
+       pops in/out as content grows and the grid width jumps ±10px, which
+       breaks the tile slider's exact column-fit math mid-drag. */
+    html { scrollbar-gutter: stable; }
+
     /* --- Design tokens (colours, type, spacing, light/dark) live in
        design-tokens.css, linked above. Legacy var names (--fg / --muted /
        --border-soft …) are aliased there onto the new semantic tokens, so the
@@ -988,7 +993,7 @@
             </div>
             <div class="tile-size" id="tileSizeRow" style="display:none">
               <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-              <input type="range" id="tileSlider" min="120" max="400" step="20" value="180" title="タイルの大きさ">
+              <input type="range" id="tileSlider" step="1" title="タイルの大きさ">
               <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
             </div>
           </div>

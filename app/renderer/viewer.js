@@ -1041,8 +1041,7 @@
     if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
     const row = document.getElementById('tileSizeRow');
     if (row) row.style.display = currentView === 'tile' ? '' : 'none';
-    const slider = document.getElementById('tileSlider');
-    if (slider && slider.value !== String(tileSize)) slider.value = String(tileSize);
+    refreshTileSlider();   // hoisted; keeps the column-count track in sync
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
@@ -2238,9 +2237,13 @@
     });
   });
 
-  // Tile size slider (tile density only). While dragging, only the CSS var
-  // updates (cheap live preview); persisting + re-requesting thumbnails at the
-  // new size happens on release (change), not on every input tick.
+  // Tile size slider (tile density only). The auto-fill grid quantizes the
+  // real tile width to "how many columns fit", so a px-range slider had long
+  // dead intervals where notches moved but nothing changed. Instead the track
+  // maps to COLUMN COUNTS for the current grid width — one detent = exactly
+  // one column step, so every notch visibly reflows (right = larger tiles).
+  // While dragging only the CSS var updates; persisting + re-requesting
+  // thumbnails at the new size happens on release (change).
   function setTileSize(px, commit = true) {
     tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, px));
     applyTileLayout();
@@ -2248,9 +2251,52 @@
     window.corpus.setPref('imageTileSize', tileSize);
     if (currentView === 'tile') renderPosts();   // re-request thumbnails at the new size
   }
+  function tileGridMetrics() {
+    const grid = document.getElementById('postGrid');
+    if (!grid) return null;
+    // floor of the FRACTIONAL width: clientWidth rounds up half-pixels, which
+    // makes an exact-fill size 1px too wide and silently drops a column.
+    const W = Math.floor(grid.getBoundingClientRect().width);
+    if (!W) return null;
+    const gv = parseFloat(getComputedStyle(grid).columnGap);
+    return { W, g: Number.isFinite(gv) ? gv : 8 };
+  }
+  const tileColsFor = (s, m) => Math.max(1, Math.floor((m.W + m.g) / (s + m.g)));
+  const tileSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
+  function refreshTileSlider() {
+    const sl = document.getElementById('tileSlider');
+    const m = tileGridMetrics();
+    if (!sl || !m || currentView !== 'tile') return;
+    // ceil = the FEWEST columns whose exact-fit size still stays ≤ TILE_MAX —
+    // floor here would offer a notch whose size clamps and never reflows.
+    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (TILE_MAX + m.g)));
+    const nSmall = Math.max(nBig, tileColsFor(TILE_MIN, m));  // many columns = small tiles
+    sl.min = String(nBig);
+    sl.max = String(nSmall);
+    sl.disabled = nBig === nSmall;
+    const n = Math.min(nSmall, Math.max(nBig, tileColsFor(tileSize, m)));
+    sl.value = String(nBig + nSmall - n);                     // inverted: right = larger
+  }
   const tileSlider = document.getElementById('tileSlider');
-  tileSlider.addEventListener('input', () => setTileSize(parseInt(tileSlider.value, 10), false));
-  tileSlider.addEventListener('change', () => setTileSize(parseInt(tileSlider.value, 10)));
+  function sliderCols() {
+    const nBig = parseInt(tileSlider.min, 10), nSmall = parseInt(tileSlider.max, 10);
+    return nBig + nSmall - parseInt(tileSlider.value, 10);
+  }
+  tileSlider.addEventListener('input', () => {
+    const m = tileGridMetrics();
+    if (m) setTileSize(tileSizeFor(sliderCols(), m), false);
+  });
+  tileSlider.addEventListener('change', () => {
+    const m = tileGridMetrics();
+    if (m) setTileSize(tileSizeFor(sliderCols(), m));
+  });
+  // Window resizes change how many columns fit → re-derive the track range.
+  let tileResizeT = 0;
+  window.addEventListener('resize', () => {
+    if (currentView !== 'tile') return;
+    clearTimeout(tileResizeT);
+    tileResizeT = setTimeout(refreshTileSlider, 150);
+  });
 
   document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
   document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
