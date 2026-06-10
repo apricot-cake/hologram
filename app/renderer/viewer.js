@@ -1152,6 +1152,8 @@
     return posts;
   }
 
+  const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
   function renderPosts(keepLimit) {
     if (!keepLimit) renderLimit = RENDER_PAGE;
     updateSidebarState();
@@ -1186,6 +1188,11 @@
     applyTileLayout();
     empty.style.display = 'none';
     if (noteEl) noteEl.style.display = 'block';
+
+    // Card entrance plays only on a fresh build (filter/sort/search), never on
+    // load-more (keepLimit) — otherwise every already-visible card re-animates
+    // on each scroll page. Skipped under prefers-reduced-motion.
+    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
@@ -1334,6 +1341,11 @@
     }
     lbCounter.textContent = (galleryIndex + 1) + ' / ' + galleryItems.length;
     lightbox.classList.toggle('multi', galleryItems.length > 1);
+    // Restart the slide-in animation on the visible element so both opening the
+    // gallery and stepping prev/next get the same quick fade (reduced-motion makes
+    // it instant via the global CSS neutralizer). offsetWidth forces a reflow.
+    const visEl = item.video ? lightboxVideo : lightboxImg;
+    visEl.classList.remove('lb-in'); void visEl.offsetWidth; visEl.classList.add('lb-in');
   }
 
   function openGallery(items, start) {

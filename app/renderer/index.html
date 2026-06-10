@@ -1065,6 +1065,38 @@
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
 
+  <!-- Motion: tasteful, fast entrance/open animations layered on top of the
+       existing hover transitions. Card entrance plays only on a fresh render
+       (viewer.js adds .anim-in; load-more / reduced-motion skip it). Everything
+       is neutralized under prefers-reduced-motion. -->
+  <style>
+    @keyframes corpusCardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes corpusFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+    @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+    /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
+    .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }
+
+    /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
+       removing [hidden] re-mounts the element (display:none -> flex). */
+    .iv-detail-overlay:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
+    .iv-detail-overlay:not([hidden]) .iv-detail-box { animation: corpusPopIn .2s ease-out; }
+
+    /* Lightbox: backdrop fades on open; the slide itself animates via .lb-in
+       (viewer.js restarts it on open AND on prev/next for a consistent feel). */
+    .lightbox-overlay.show { animation: corpusFadeIn .16s ease-out; }
+    .lightbox-overlay .lb-in { animation: corpusSlideIn .2s ease-out; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
+  </style>
+
   <!-- Settings overlay: #panelSettings is relocated into here by viewer.js so it
        floats above either mode (the gear opens it from anywhere). -->
   <div id="settingsView" class="settings-view" hidden>
