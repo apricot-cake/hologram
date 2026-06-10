@@ -335,7 +335,9 @@
       position: absolute; top: 8px; right: 8px;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(0,0,0,0.5); color: #fff; border: none;
-      font-size: 16px; line-height: 28px; text-align: center;
+      /* flex centering like every other card button — a fixed line-height
+         pushed the × low once the tile view shrank the button */
+      font-size: 16px; display: flex; align-items: center; justify-content: center;
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
@@ -422,7 +424,10 @@
     /* Tiles keep only ×・ℹ・📁 (tags via the selection bar, source link via ℹ),
        laid out horizontally top-right and scaled with the tile size so they
        never collide with the ○ ring even on small tiles. */
-    .post-grid.tile-view { --act: clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px); }
+    /* round() keeps the buttons on whole pixels — a fractional size (e.g.
+       180×0.13=23.4px) rounds width and height differently at fractional
+       display scaling and the circles render as slight ellipses */
+    .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
     .post-grid.tile-view .edit-btn, .post-grid.tile-view .open-btn { display: none; }
     .post-grid.tile-view .delete-btn, .post-grid.tile-view .info-btn, .post-grid.tile-view .fold-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
