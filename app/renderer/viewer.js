@@ -46,7 +46,6 @@
     qcOrLabel: _s('qcOrLabel'),
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
-    tipJoin: _s('tipJoin'),
     tileOverlay: _s('tileOverlay'),
     histBack: _s('histBack'),
     histFwd: _s('histFwd'),
@@ -58,8 +57,8 @@
     qbHelp3: _s('qbHelp3'),
     qbHelp4: _s('qbHelp4'),
     qbHelp5: _s('qbHelp5'),
+    qbHelp6: _s('qbHelp6'),
     tagGroupsTitle: _s('tagGroupsTitle'),
-    tipZone: _s('tipZone'),
     qfAdd: _s('qfAdd'),
     qfCatFolder: _s('qfCatFolder'),
     sbTopTip: _s('sbTopTip'),
@@ -429,10 +428,11 @@
       const body = pills.length
         ? pills.join(`<span class="qc-op">${escapeHtml(word)}</span>`)
         : `<span class="qc-zone-empty">${otherHas ? MSG.qcDropMove : MSG.qcDropHere}</span>`;
-      return `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">` +
+      // No hover tooltips here — the ⓘ help popover is the single explainer.
+      return `<span class="qc-zone" data-zone="${name}">` +
         `<span class="qc-zone-label">${escapeHtml(word)}</span>` + body + `</span>`;
     };
-    const joinSel = `<select class="qc-join-sel" id="qcJoinSel" title="${MSG.tipJoin}">` +
+    const joinSel = `<select class="qc-join-sel" id="qcJoinSel">` +
       `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
       `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
     container.innerHTML = special +
@@ -704,7 +704,7 @@
     e.stopPropagation();
     if (qbHelpPop.classList.contains('show')) { hideQbHelp(); return; }
     qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` +
-      [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5]
+      [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5, MSG.qbHelp6]
         .map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
     const r = e.currentTarget.getBoundingClientRect();
     qbHelpPop.style.left = r.left + 'px';
@@ -1943,6 +1943,7 @@
     document.getElementById('postDetailBox').innerHTML = '';
     inspectedKey = null;
     document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
+    document.getElementById('postGrid').classList.remove('insp-open');
     refreshTileSlider();   // the grid width grew back — re-derive the track
   }
   function persistManual() { if (window.corpus.setManualGroups) window.corpus.setManualGroups(manualGroups).catch(() => { /* best-effort */ }); }
@@ -2016,6 +2017,8 @@
       groupBtn +
       `</div>`;
     document.getElementById('postDetail').hidden = false;
+    // While open, a card click swaps the panel (not zoom) → plain pointer.
+    document.getElementById('postGrid').classList.add('insp-open');
     // Ring-mark the inspected card so swapping content stays traceable.
     inspectedKey = postIdKey(p);
     document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
@@ -2050,6 +2053,19 @@
     if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
     closeDetail();
   }, true);
+  // Slide-over mode (narrow window): the panel covers the grid, so dismissal
+  // must be cheap — clicking empty content space closes it. Cards still swap,
+  // controls still work, and the inline mode (wide) stays persistent since it
+  // covers nothing there.
+  document.addEventListener('click', (e) => {
+    const insp = document.getElementById('postDetail');
+    if (insp.hidden) return;
+    if (!matchMedia('(max-width: 1279px)').matches) return;
+    if (insp.contains(e.target)) return;
+    if (!e.target.closest('#mode-post')) return;   // sidebar/modals: leave it open
+    if (e.target.closest('.post-card, button, a, input, select, .sb-active-chip, .qc-zone')) return;
+    closeDetail();
+  });
   // ℹ button on card → detail popup
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.info-btn');
