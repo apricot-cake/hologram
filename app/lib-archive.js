@@ -91,6 +91,26 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
 }
 
+// Images-only ZIP: just the media files (jpg/png/webp/gif + video), flat at the
+// ZIP root — no sidecars, no organization JSONs, NOT re-importable as a library.
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
+async function buildImagesZip(JSZip, srcFolder) {
+  const zip = new JSZip();
+  let names = [];
+  try { names = await fs.promises.readdir(srcFolder); } catch { names = []; }
+  let fileCount = 0;
+  for (const name of names) {
+    if (EXPORT_SKIP.has(name) || isVolatile(name) || !IMAGE_EXT.test(name)) continue;
+    try {
+      const st = await fs.promises.stat(path.join(srcFolder, name));
+      if (!st.isFile()) continue;
+      zip.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
+      fileCount++;
+    } catch { /* skip unreadable */ }
+  }
+  return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
+}
+
 // --- Import / restore ----------------------------------------------------------
 async function importCompleteZip(JSZip, destFolder, buffer) {
   try { await fs.promises.mkdir(destFolder, { recursive: true }); } catch { /* ignore */ }
@@ -130,6 +150,6 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
 
 module.exports = {
   EXPORT_SKIP, ORG_MERGE,
-  buildCompleteZip, importCompleteZip,
+  buildCompleteZip, buildImagesZip, importCompleteZip,
   mergeFolders, mergeTagGroups, mergeUngrouped, mergeManualGroups
 };

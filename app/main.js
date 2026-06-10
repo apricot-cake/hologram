@@ -551,11 +551,16 @@ let _JSZip = null;
 function getJSZip() { return _JSZip || (_JSZip = require(path.join(__dirname, 'vendor', 'jszip.min.js'))); }
 function exportStamp() { return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19); }
 
-ipcMain.handle('export-complete', async () => {
+ipcMain.handle('export-complete', async (_e, mode) => {
+  const imagesOnly = mode === 'images';
   let built;
-  try { built = await archive.buildCompleteZip(getJSZip(), getSaveFolder()); } catch (err) { return { saved: false, error: err.message }; }
+  try {
+    built = imagesOnly
+      ? await archive.buildImagesZip(getJSZip(), getSaveFolder())
+      : await archive.buildCompleteZip(getJSZip(), getSaveFolder());
+  } catch (err) { return { saved: false, error: err.message }; }
   if (built.fileCount === 0) return { saved: false, empty: true };
-  const res = await dialog.showSaveDialog(win, { defaultPath: `corpus-export-${exportStamp()}.zip` });
+  const res = await dialog.showSaveDialog(win, { defaultPath: `corpus-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
   if (res.canceled || !res.filePath) return { saved: false };
   try {
     await fs.promises.writeFile(res.filePath, built.buffer);

@@ -49,6 +49,12 @@
     tileOverlay: _s('tileOverlay'),
     histBack: _s('histBack'),
     histFwd: _s('histFwd'),
+    qcDropHere: _s('qcDropHere'),
+    exportModeFull: _s('exportModeFull'),
+    exportModeImages: _s('exportModeImages'),
+    backupSubTitle: _s('backupSubTitle'),
+    deleteKeyword: _s('deleteKeyword'),
+    confirmKeywordPh: _s('confirmKeywordPh'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -248,9 +254,6 @@
   setText('viewCard', MSG.viewCard);
   setText('viewTile', MSG.viewTile);
   setText('viewList', MSG.viewList);
-  setText('settingsSaveFolderTitle', MSG.saveFolderTitle);
-  setText('chooseFolderBtn', MSG.chooseFolder);
-  setText('hintSaveFolder', MSG.hintSaveFolder);
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
@@ -272,22 +275,19 @@
   setText('exportZip', MSG.exportZip);
   setText('importZip', MSG.importZip);
   setText('importImages', MSG.importImages);
+  setText('exportModeFull', MSG.exportModeFull);
+  setText('exportModeImages', MSG.exportModeImages);
   setText('hintZip', MSG.hintZip);
   setText('hintMedia', MSG.hintMedia);
-  setText('settingsBackupTitle', MSG.backupTitle);
+  setText('backupSubTitle', MSG.backupSubTitle);
   setText('hintBackup', MSG.hintBackup);
   setText('chooseBackupDir', MSG.backupChoose);
   setText('clearBackupDir', MSG.backupClear);
-  setText('backupContentLabel', MSG.backupContentTitle);
-  setText('backupContentMetaLabel', MSG.backupContentMeta);
-  setText('backupContentMediaLabel', MSG.backupContentMedia);
-  setText('backupScheduleLabel', MSG.backupScheduleTitle);
   setText('backupIntervalLabel', MSG.backupInterval);
   setText('backupIntervalEvery', MSG.backupIntervalUnit);
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
-  setText('runBackupBtn', MSG.backupRunNow);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -343,25 +343,17 @@
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
     const bar = document.getElementById('postActiveBar');
-    // 検索語もアクティブフィルタとして扱う（ピル化）。フォルダは activeFilters の
-    // 通常エントリ（type:'folder'）としてタグと同じ かつ/または クラスタに並ぶ。
+    // クエリビルダ: 「かつ」「または」の2フィールドを常時表示し、全フィルタを
+    // 要素（ピル）として配置。ピルはドラッグで他方のフィールドへ移動できる。
+    // 式 = (かつフィールド) ⟨かつ/または⟩ (またはフィールド)。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
-    if (activeFilters.length === 0 && !searchVal) {
-      container.innerHTML = '';
-      if (bar) bar.style.display = 'none';
-      return;
-    }
     if (bar) bar.style.display = '';
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
-    // Tag pills are grouped into labeled fields —「かつ:」(all required) and
-    //「または:」(any matches) — joined by a clickable connector when both exist,
-    // so the whole formula reads (A AND B) ⟨かつ/または⟩ (C OR D).
-    const pill = (i, label, cls) => `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
-    const nonTag = [];
-    const andTags = [];
-    const orTags = [];
+    const pill = (i, label, cls) => `<span class="sb-active-chip ${cls}" draggable="true" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
+    const andPills = [];
+    const orPills = [];
     activeFilters.forEach((f, i) => {
       let label = '';
       const cls = `qc-${f.type}`;
@@ -386,12 +378,12 @@
           label = `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '\u2264' : '\u2265'} ${formatCount(f.min)}`;
           break;
         case 'tag':
-          (f.mode === 'and' ? andTags : orTags).push(pill(i, `#${f.value}`, cls));
-          return;
+          label = `#${f.value}`;
+          break;
         case 'folder': {
           const fobj = CF() && CF().byId(f.value);
-          (f.mode === 'and' ? andTags : orTags).push(pill(i, fobj ? fobj.name : f.value, cls));
-          return;
+          label = fobj ? fobj.name : f.value;
+          break;
         }
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
@@ -403,17 +395,17 @@
           label = f.label || f.value;
           break;
       }
-      nonTag.push(pill(i, label, cls));
+      (f.mode === 'or' ? orPills : andPills).push(pill(i, label, cls));
     });
-    let tagCluster = '';
-    if (andTags.length || orTags.length) {
-      const joinBtn = `<button class="qc-join-toggle" id="qcJoinToggle" type="button" title="${MSG.tipJoin}">${tagJoin === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd}</button>`;
-      tagCluster =
-        (andTags.length ? `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + andTags.join('') : '') +
-        (andTags.length && orTags.length ? joinBtn : '') +
-        (orTags.length ? `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + orTags.join('') : '');
-    }
-    container.innerHTML = special + nonTag.join('') + tagCluster;
+    const zone = (name, pills) =>
+      `<span class="qc-zone" data-zone="${name}">${pills.join('') || `<span class="qc-zone-empty">${MSG.qcDropHere}</span>`}</span>`;
+    const joinSel = `<select class="qc-join-sel" id="qcJoinSel" title="${MSG.tipJoin}">` +
+      `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
+      `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
+    container.innerHTML = special +
+      `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + zone('and', andPills) +
+      joinSel +
+      `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + zone('or', orPills);
   }
 
   function formatShortDate(dateStr) {
@@ -459,15 +451,49 @@
   }
   document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
 
+  // ⟨かつ/または⟩ connector (pulldown, delegated — the bar re-renders often)
+  document.getElementById('queryChips').addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'qcJoinSel') {
+      tagJoin = e.target.value === 'or' ? 'or' : 'and';
+      renderPosts();
+    }
+  });
+
+  // Drag a pill between the かつ/または fields to change how it combines.
+  const qcContainer = document.getElementById('queryChips');
+  qcContainer.addEventListener('dragstart', (e) => {
+    const p = e.target.closest && e.target.closest('.sb-active-chip[data-filter-idx]');
+    if (!p) return;
+    e.dataTransfer.setData('text/plain', p.dataset.filterIdx);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  qcContainer.addEventListener('dragover', (e) => {
+    const z = e.target.closest && e.target.closest('.qc-zone');
+    if (!z) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    z.classList.add('drag-over');
+  });
+  qcContainer.addEventListener('dragleave', (e) => {
+    const z = e.target.closest && e.target.closest('.qc-zone');
+    if (z) z.classList.remove('drag-over');
+  });
+  qcContainer.addEventListener('drop', (e) => {
+    const z = e.target.closest && e.target.closest('.qc-zone');
+    if (!z) return;
+    e.preventDefault();
+    z.classList.remove('drag-over');
+    const f = activeFilters[parseInt(e.dataTransfer.getData('text/plain'), 10)];
+    if (!f) return;
+    const mode = z.dataset.zone === 'or' ? 'or' : 'and';
+    if ((f.mode === 'or') === (mode === 'or')) return;   // same field
+    f.mode = mode;
+    renderPostFolders();   // ＋プレフィクス等の同期（タグ側は updateSidebarState 経由）
+    renderPosts();
+  });
+
   // Chip click handler
   document.getElementById('queryChips').addEventListener('click', (e) => {
-    // ⟨かつ/または⟩ connector between the two tag groups
-    if (e.target.closest('#qcJoinToggle')) {
-      tagJoin = tagJoin === 'and' ? 'or' : 'and';
-      renderQueryChips();
-      renderPosts();
-      return;
-    }
     const chip = e.target.closest('.sb-active-chip');
     if (!chip) return;
     // 特殊ピル（検索・フォルダ）はそれぞれの状態を解除して再描画。
@@ -638,7 +664,6 @@
   // --- Sidebar filter controls ---
 
   // Sidebar i18n
-  setText('sbActiveTitle', getMessage('sbActiveTitle'));
   setText('sbKindTitle', MSG.kindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
@@ -1115,108 +1140,68 @@
       }
     }
 
-    // Group filters by type
-    const byType = {};
-    for (const f of activeFilters) {
-      (byType[f.type] = byType[f.type] || []).push(f);
-    }
-
-    // Kind: SNS投稿（スクショあり）/ 画像（ライブラリ）。OR within group.
-    if (byType.kind) {
-      const kinds = byType.kind.map(f => f.value);
-      posts = posts.filter(p => {
-        const isPost = isScreenshot(p);
-        return (kinds.includes('post') && isPost) || (kinds.includes('image') && !isPost);
-      });
-    }
-
-    // Platform: OR within group
-    if (byType.platform) {
-      const values = byType.platform.map(f => f.value);
-      posts = posts.filter(p => values.includes(p.platform));
-    }
-
-    // User: OR within group (value is the userKey "platform:userId")
-    if (byType.user) {
-      const keys = byType.user.map(f => f.value);
-      posts = posts.filter(p => keys.includes(userKey(p)));
-    }
-
-    // Instance/server (Misskey + Mastodon): OR within group
-    if (byType.instance) {
-      const hosts = byType.instance.map(f => f.value);
-      posts = posts.filter(p => (p.platform === 'misskey' || p.platform === 'mastodon') && hosts.includes(hostOf(p.url)));
-    }
-
-    // Post type: OR within group
-    if (byType.postType) {
-      const values = byType.postType.map(f => f.value);
-      posts = posts.filter(p =>
-        (values.includes('post') && !p.isReply && !p.isQuote && !p.isThread) ||
-        (values.includes('reply') && p.isReply) ||
-        (values.includes('quote') && p.isQuote) ||
-        (values.includes('thread') && p.isThread)
-      );
-    }
-
-    // Date: use first date filter
-    if (byType.date) {
-      const f = byType.date[0];
-      const field = f.dateField || 'date';
-      if (f.from) {
-        const from = new Date(f.from + 'T00:00:00');
-        posts = posts.filter(p => p[field] && new Date(p[field]) >= from);
-      }
-      if (f.to) {
-        // Exclusive next-day bound so the whole selected end day is included
-        // regardless of the stored timestamps' sub-second precision.
-        const to = new Date(f.to + 'T00:00:00');
-        to.setDate(to.getDate() + 1);
-        posts = posts.filter(p => p[field] && new Date(p[field]) < to);
-      }
-    }
-
-    // Engagement: each filter applies independently (AND)
-    if (byType.engagement) {
-      for (const f of byType.engagement) {
-        if (f.min > 0) {
-          if (f.op === 'lte') {
-            posts = posts.filter(p => (p[f.engType] || 0) <= f.min);
-          } else {
-            posts = posts.filter(p => (p[f.engType] || 0) >= f.min);
-          }
+    // ---- Query-builder evaluation ----
+    // Every filter is an element with a predicate. AND field (mode !== 'or'):
+    // single-valued attributes (kind/platform/user/instance/postType/media) are
+    // OR'd within their type and AND'd across types (classic faceted search);
+    // tag/folder/date/engagement elements are individually required.
+    // OR field (mode === 'or') matches when ANY element matches.
+    // Both fields combine via the user-selected connector (tagJoin).
+    const SINGLE_VALUED = ['kind', 'platform', 'user', 'instance', 'postType', 'media'];
+    const predOf = (f) => {
+      switch (f.type) {
+        case 'kind': return (p) => (f.value === 'post') === isScreenshot(p);
+        case 'platform': return (p) => p.platform === f.value;
+        case 'user': return (p) => userKey(p) === f.value;
+        case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
+        case 'postType': return (p) =>
+          f.value === 'post' ? (!p.isReply && !p.isQuote && !p.isThread) :
+          f.value === 'reply' ? !!p.isReply :
+          f.value === 'quote' ? !!p.isQuote : !!p.isThread;
+        case 'media': return (p) => p.mediaType === f.value;
+        case 'tag': return (p) => (p.tags || []).includes(f.value);
+        case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
+        case 'date': {
+          const field = f.dateField || 'date';
+          const from = f.from ? new Date(f.from + 'T00:00:00') : null;
+          let to = null;
+          // Exclusive next-day bound so the whole selected end day is included.
+          if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
+          return (p) => {
+            if (!p[field]) return false;
+            const d = new Date(p[field]);
+            return (!from || d >= from) && (!to || d < to);
+          };
         }
+        case 'engagement': {
+          if (!(f.min > 0)) return () => true;
+          return (p) => f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min;
+        }
+        default: return () => true;
       }
-    }
-
-    // Tags + folders: two groups — AND(かつ) entries all required, OR(または)
-    // entries any-of — combined by the user-selectable connector:
-    // (A AND B) ⟨かつ/または⟩ (C OR D). A folder entry matches membership.
-    const boolFilters = [...(byType.tag || []), ...(byType.folder || [])];
-    if (boolFilters.length) {
-      const predOf = (f) => f.type === 'folder'
-        ? ((p) => !!(CF() && CF().has(f.value, p.captureId)))
-        : ((p) => (p.tags || []).includes(f.value));
-      const andPreds = boolFilters.filter(f => f.mode === 'and').map(predOf);
-      const orPreds = boolFilters.filter(f => f.mode !== 'and').map(predOf);
-      const andOk = (p) => andPreds.every(fn => fn(p));
-      const orOk = (p) => orPreds.some(fn => fn(p));
-      if (andPreds.length && orPreds.length) {
-        posts = posts.filter(tagJoin === 'or' ? (p) => andOk(p) || orOk(p) : (p) => andOk(p) && orOk(p));
-      } else if (andPreds.length) {
-        posts = posts.filter(andOk);
-      } else if (orPreds.length) {
-        posts = posts.filter(orOk);
+    };
+    const andElems = activeFilters.filter(f => f.mode !== 'or');
+    const orElems = activeFilters.filter(f => f.mode === 'or');
+    let andOk = null;
+    if (andElems.length) {
+      const groups = [];    // a group passes when SOME of its preds match
+      const singles = {};
+      for (const f of andElems) {
+        if (SINGLE_VALUED.includes(f.type)) (singles[f.type] = singles[f.type] || []).push(predOf(f));
+        else groups.push([predOf(f)]);   // individually required
       }
+      for (const t of Object.keys(singles)) groups.push(singles[t]);
+      andOk = (p) => groups.every(g => g.some(fn => fn(p)));
     }
-
-    // Media: OR within group
-    if (byType.media) {
-      const values = byType.media.map(f => f.value);
-      posts = posts.filter(p => values.includes(p.mediaType));
+    let orOk = null;
+    if (orElems.length) {
+      const preds = orElems.map(predOf);
+      orOk = (p) => preds.some(fn => fn(p));
     }
+    if (andOk && orOk) posts = posts.filter(tagJoin === 'or' ? (p) => andOk(p) || orOk(p) : (p) => andOk(p) && orOk(p));
+    else if (andOk) posts = posts.filter(andOk);
+    else if (orOk) posts = posts.filter(orOk);
 
-    // Multi-image only (items carrying more than one original image)
 
     // Sort (unchanged)
     switch (sort) {
@@ -1774,6 +1759,7 @@
         g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost;
       document.getElementById('confirmSkipLabel').style.display = 'flex';
       document.getElementById('confirmSkip').checked = false;
+      setConfirmKeywordMode(false);
       document.getElementById('confirmOverlay').classList.add('show');
     }
   });
@@ -2079,6 +2065,7 @@
     pendingDeleteGroup = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
     document.getElementById('confirmSkipLabel').style.display = 'none';
+    setConfirmKeywordMode(false);
     document.getElementById('confirmOverlay').classList.add('show');
     pendingBulkDelete = true;
   });
@@ -2161,25 +2148,14 @@
     syncSearchToggle();
   }
 
-  // --- Settings: save folder ---
-  const saveFolderPath = document.getElementById('saveFolderPath');
-  window.corpus.getConfig().then((cfg) => {
-    if (saveFolderPath) saveFolderPath.textContent = cfg.saveFolder || '';
-  });
-
-  document.getElementById('chooseFolderBtn').addEventListener('click', async () => {
-    const { saveFolder } = await window.corpus.pickSaveFolder();
-    if (saveFolderPath) saveFolderPath.textContent = saveFolder || '';
-    loadPosts();
-  });
-
-  // --- Export (complete, directly re-importable) ---
-  // Built in main: a ZIP mirroring the whole library (captures + media + 整理情報)
-  // under library/. Re-importable via importZip below to fully restore.
+  // --- Export ZIP ---
+  // モード select で切替: full = 完全エクスポート（library/ 丸ごと＋整理情報、
+  // そのまま再インポート可能）、images = 画像・動画ファイルだけ。
   document.getElementById('exportZip').addEventListener('click', async () => {
     showToast(MSG.exporting);
+    const mode = document.getElementById('exportZipMode').value;
     try {
-      const res = await window.corpus.exportComplete();
+      const res = await window.corpus.exportComplete(mode);
       if (res && res.saved) showToast(MSG.exported);
       else if (res && res.empty) showToast(MSG.noData);
       else if (res && res.error) showToast(MSG.exportFailed || MSG.importFailed);
@@ -2306,21 +2282,6 @@
     });
     $('backupIntervalUnit').addEventListener('change', (e) => save({ intervalUnit: e.target.value }));
 
-    $('runBackupBtn').addEventListener('click', async () => {
-      if (!cfg || !cfg.dir) { showToast(MSG.backupNotSet); return; }
-      showToast(MSG.backupRunning);
-      try {
-        const r = await window.corpus.runBackup();
-        if (r && r.ok) {
-          cfg.lastResult = { copied: r.copied, skipped: r.skipped, failed: r.failed, total: r.total, at: r.at };
-          renderStatus();
-          showToast(MSG.imported(r.copied));
-        } else {
-          showToast(MSG.importFailed);
-        }
-      } catch { showToast(MSG.importFailed); }
-    });
-
     if (window.corpus.onBackupDone) {
       window.corpus.onBackupDone((_e, r) => { if (cfg && r) { cfg.lastResult = r; renderStatus(); } });
     }
@@ -2329,16 +2290,31 @@
   })();
 
   // --- Clear data ---
+  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword)
+  // to enable the OK button — a stray click can't wipe everything.
+  const confirmKeywordEl = document.getElementById('confirmKeyword');
+  function setConfirmKeywordMode(on) {
+    confirmKeywordEl.style.display = on ? '' : 'none';
+    confirmKeywordEl.value = '';
+    document.getElementById('confirmOk').disabled = on;
+  }
+  confirmKeywordEl.addEventListener('input', () => {
+    document.getElementById('confirmOk').disabled = confirmKeywordEl.value.trim() !== MSG.deleteKeyword;
+  });
   document.getElementById('clearData').addEventListener('click', () => {
     pendingDeleteGroup = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmClear;
     document.getElementById('confirmSkipLabel').style.display = 'none';
+    confirmKeywordEl.placeholder = MSG.confirmKeywordPh;
+    setConfirmKeywordMode(true);
     document.getElementById('confirmOverlay').classList.add('show');
+    confirmKeywordEl.focus();
   });
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
     pendingDeleteGroup = null;
     pendingBulkDelete = false;
+    setConfirmKeywordMode(false);
     document.getElementById('confirmOverlay').classList.remove('show');
   });
 
@@ -2368,7 +2344,10 @@
       await executeDeleteGroup(pendingDeleteGroup);
       pendingDeleteGroup = null;
     } else {
-      // Clear all data (deletes every image + sidecar in the save folder)
+      // Clear all data (deletes every image + sidecar in the save folder).
+      // Double-checked: the OK button is disabled until the keyword matches.
+      if (confirmKeywordEl.value.trim() !== MSG.deleteKeyword) return;
+      setConfirmKeywordMode(false);
       await window.corpus.clearAll();
       allPosts = [];
       renderPosts();
@@ -2381,6 +2360,7 @@
     if (e.target === e.currentTarget) {
       pendingDeleteGroup = null;
       pendingBulkDelete = false;
+      setConfirmKeywordMode(false);
       e.currentTarget.classList.remove('show');
     }
   });

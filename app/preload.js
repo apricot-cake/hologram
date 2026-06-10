@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('corpus', {
   importPosts: (posts) => ipcRenderer.invoke('import-posts', posts),
   clearAll: () => ipcRenderer.invoke('clear-all'),
   exportSave: (filename, bytes) => ipcRenderer.invoke('export-save', filename, bytes),
-  exportComplete: () => ipcRenderer.invoke('export-complete'),
+  exportComplete: (mode) => ipcRenderer.invoke('export-complete', mode),
   importComplete: (bytes) => ipcRenderer.invoke('import-complete', bytes),
   getBackup: () => ipcRenderer.invoke('get-backup'),
   setBackup: (patch) => ipcRenderer.invoke('set-backup', patch),
