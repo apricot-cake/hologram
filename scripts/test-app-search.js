@@ -1,11 +1,11 @@
 'use strict';
 
-// Verifies the search-mode toggle (通常 / あいまい) end-to-end in the app, including
-// the あいまい enhancements:
+// Verifies the search-mode toggle (通常 / あいまい) end-to-end in the (unified
+// post-view) app, including the あいまい enhancements:
 //   通常: query "ねこ" does NOT substring-match the katakana body "ネコかわいい" → 0
 //   あいまい(B 正規化): "ねこ" matches "ネコかわいい" (カナ統一) → 1
 //   あいまい(C 編集距離): typo "こんにとは" matches "こんにちは世界" → 1
-//   切替は両モードで共有 → 画像モードのトグルも あいまい active になる
+//   トグルは active 表示（.active クラス）で現在の方式を示す
 //
 //   node scripts/test-app-search.js
 
@@ -40,7 +40,8 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  await wait(700);
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
+  await waitFor(() => cards() >= 3);   // post view loads async
   const sb = document.getElementById('searchBox');
   const btn = document.getElementById('searchModeToggle');
   // 通常（既定）: カタカナ本文にひらがなクエリは部分一致しない → 0
@@ -52,17 +53,12 @@ const evalJs = `(async () => {
   await wait(60);
   const fuzzyKana = cards();
   const labelAfter = btn.textContent.trim();
+  const toggleActive = btn.classList.contains('active');   // .active reflects 現在の方式
   // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致 → 1
   sb.value = 'こんにとは'; sb.dispatchEvent(new Event('input', { bubbles: true }));
   await wait(60);
   const fuzzyTypo = cards();
-  // 画像モードへ切替: 検索方式は両モードで共有 → 画像側トグルも あいまい active
-  document.getElementById('modeImageBtn').click();
-  await wait(700);
-  const ivBtn = document.getElementById('ivSearchModeToggle');
-  const ivActive = ivBtn.classList.contains('active');
-  const ivLabel = ivBtn.textContent.trim();
-  return { normalKana, fuzzyKana, fuzzyTypo, labelAfter, ivActive, ivLabel };
+  return { normalKana, fuzzyKana, fuzzyTypo, labelAfter, toggleActive };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -75,8 +71,8 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 &&
-    r.labelAfter === 'あいまい' && r.ivActive === true && r.ivLabel === 'あいまい';
-  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} label=${r.labelAfter} iv=${r.ivLabel}/${r.ivActive}`);
+    r.labelAfter === 'あいまい' && r.toggleActive === true;
+  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} label=${r.labelAfter} active=${r.toggleActive}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

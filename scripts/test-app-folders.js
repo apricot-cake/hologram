@@ -1,11 +1,11 @@
 'use strict';
 
-// Verifies the image-view folder feature end-to-end:
-//  - create a folder via the management modal (first folder auto-becomes default ★)
-//  - one-click add a tile to the default folder via its 📁 overlay button
+// Verifies the (unified post-view) folder feature end-to-end:
+//  - create a folder via the shared management modal (first folder auto-becomes default ★)
+//  - one-click add a post card to the default folder via its 📁 button
 //  - the sidebar folder chip shows the right count and filters the grid
 //  - folders.json is persisted (round-trip via get-folders)
-// Seeds 3 standalone illustration records (eagle-migration shape) → 3 tiles.
+// Seeds 3 standalone illustration records (eagle-migration shape) → 3 cards.
 //
 //   node scripts/test-app-folders.js
 
@@ -38,32 +38,37 @@ for (let i = 0; i < 3; i++) {
 }
 
 const evalJs = `(async () => {
-  document.getElementById('modeImageBtn').click();
-  await new Promise(r => setTimeout(r, 700));
-  const grid = document.getElementById('ivGrid');
-  const totalBefore = grid.querySelectorAll('.iv-card').length;
+  const grid = document.getElementById('postGrid');
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
 
-  // create a folder through the management modal UI
-  document.getElementById('ivFolderManage').click();
-  const modalOpen = !document.getElementById('ivFolderModal').hidden;
-  document.getElementById('ivFolderNewName').value = '一次資料';
-  document.getElementById('ivFolderCreate').click();
-  await new Promise(r => setTimeout(r, 50));
-  const chips = document.querySelectorAll('#ivFolderChips .sb-chip').length;
-  const hasStar = !!document.querySelector('#ivFolderChips .iv-foldstar');   // ★ marks the default folder chip
-  document.getElementById('ivFolderClose').click();
+  // wait for the 3 seeded posts to render as cards (post view loads async)
+  await waitFor(() => grid.querySelectorAll('.post-card').length >= 3);
+  const totalBefore = grid.querySelectorAll('.post-card').length;
 
-  // one-click add tile 0 to the (now default) folder via its 📁 overlay
-  const fold0 = grid.querySelector('.iv-card[data-idx="0"] .iv-act.fold');
+  // create a folder through the shared management modal UI
+  $('postFolderManage').click();
+  await sleep(30);
+  const modalOpen = !$('ivFolderModal').hidden;
+  $('ivFolderNewName').value = '一次資料';
+  $('ivFolderCreate').click();
+  await sleep(50);
+  const chips = document.querySelectorAll('#postFolderChips .sb-chip').length;
+  const hasStar = !!document.querySelector('#postFolderChips .iv-foldstar');   // ★ marks the default folder chip
+  $('ivFolderClose').click();
+
+  // one-click add card 0 to the (now default) folder via its 📁 button
+  const fold0 = grid.querySelector('.post-card[data-index="0"] .fold-btn');
   fold0.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 30));
+  await sleep(40);
   const foldIn = fold0.classList.contains('in');
-  const countText = (document.querySelector('#ivFolderChips .sb-chip .iv-tagn') || {}).textContent;
+  const countText = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
 
-  // filter by the folder chip → only the added tile remains
-  document.querySelector('#ivFolderChips .sb-chip').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 30));
-  const filteredCount = grid.querySelectorAll('.iv-card').length;
+  // filter by the folder chip → only the added card remains
+  document.querySelector('#postFolderChips .sb-chip').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(40);
+  const filteredCount = grid.querySelectorAll('.post-card').length;
 
   // persistence round-trip BEFORE further mutations (awaited → folders.json flushed)
   const rb = await window.corpus.getFolders();
@@ -72,22 +77,23 @@ const evalJs = `(async () => {
   const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
   const persistedDefault = rb.defaultId === f0.id;
 
-  // H2 regression: remove the tile from the folder WHILE filtering by it → the tile
-  // drops and remaining cards keep correct data-idx (view spliced, no crash).
-  const foldInBtn = grid.querySelector('.iv-card .iv-act.fold.in');
+  // H2 regression: remove the card from the folder WHILE filtering by it → the card
+  // drops and remaining cards keep correct data-index (view re-rendered, no crash).
+  const foldInBtn = grid.querySelector('.post-card .fold-btn.in');
   foldInBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 30));
-  const afterUnfilter = grid.querySelectorAll('.iv-card').length;
+  await sleep(40);
+  const afterUnfilter = grid.querySelectorAll('.post-card').length;
 
   // H4 regression: delete the folder WHILE it is the active filter → filter auto-clears,
-  // grid returns to all tiles (not a silent empty grid), chip disappears.
+  // grid returns to all cards (not a silent empty grid), chip disappears.
   window.confirm = () => true;
-  document.getElementById('ivFolderManage').click();
+  $('postFolderManage').click();
+  await sleep(20);
   document.querySelector('#ivFolderList [data-fact="delete"]').click();
-  await new Promise(r => setTimeout(r, 50));
-  if (!document.getElementById('ivFolderModal').hidden) document.getElementById('ivFolderClose').click();
-  const afterDelete = grid.querySelectorAll('.iv-card').length;
-  const chipsGone = document.querySelectorAll('#ivFolderChips .sb-chip').length;
+  await sleep(50);
+  if (!$('ivFolderModal').hidden) $('ivFolderClose').click();
+  const afterDelete = grid.querySelectorAll('.post-card').length;
+  const chipsGone = document.querySelectorAll('#postFolderChips .sb-chip').length;
 
   return { totalBefore, modalOpen, chips, hasStar, foldIn, countText, filteredCount,
     persistedFolders, persistedItems, persistedDefault, afterUnfilter, afterDelete, chipsGone };
