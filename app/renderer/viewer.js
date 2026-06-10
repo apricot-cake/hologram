@@ -56,6 +56,8 @@
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
+    freqTags: _s('freqTags'),
+    qfFindPh: _s('qfFindPh'),
     exportModeFull: _s('exportModeFull'),
     exportModeImages: _s('exportModeImages'),
     backupSubTitle: _s('backupSubTitle'),
@@ -429,6 +431,18 @@
     return y === thisYear ? `${parseInt(m)}/${parseInt(d)}` : `${y}/${parseInt(m)}/${parseInt(d)}`;
   }
 
+  // --- Tag frecency (使うほど上に出る「よく使うタグ」; 手動管理なし) ----------
+  // localStorage: { tag: { n: useCount, t: lastUsedMs } }; score halves every 30d.
+  const FREQ_KEY = 'corpus.tagFrecency';
+  function loadFreq() { try { return JSON.parse(localStorage.getItem(FREQ_KEY)) || {}; } catch { return {}; } }
+  function bumpTagFreq(tag) {
+    const f = loadFreq();
+    const e = f[tag] || { n: 0 };
+    e.n++; e.t = Date.now(); f[tag] = e;
+    try { localStorage.setItem(FREQ_KEY, JSON.stringify(f)); } catch { /* quota — non-fatal */ }
+  }
+  function freqScore(e) { return e.n * Math.pow(0.5, (Date.now() - (e.t || 0)) / 86400000 / 30); }
+
   function addFilter(filter) {
     // Prevent exact duplicates
     const isDup = activeFilters.some(f => {
@@ -437,6 +451,7 @@
       return f.value === filter.value;
     });
     if (isDup) return;
+    if (filter.type === 'tag') bumpTagFreq(filter.value);
     // date + kind are single-valued (択一): a new one replaces the existing.
     if (filter.type === 'date' || filter.type === 'kind') {
       activeFilters = activeFilters.filter(f => f.type !== filter.type);
@@ -524,7 +539,10 @@
       ['media', qfCatLabel('sbMediaTitle', 'メディア')],
       ['tag', qfCatLabel('sbTagTitle', 'タグ')],
       ['folder', MSG.qfCatFolder],
-      ['user', qfCatLabel('sbAuthorTitle', '作者')]
+      ['user', qfCatLabel('sbAuthorTitle', '作者')],
+      ['instance', qfCatLabel('sbInstanceTitle', 'インスタンス')],
+      ['date', qfCatLabel('sbDateTitle', '日付')],
+      ['engagement', qfCatLabel('sbEngTitle', 'エンゲージメント')]
     ];
   }
   function qfValues(cat) {
@@ -538,6 +556,15 @@
       case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
       case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
         .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', on: act('user', u.key) }));
+      case 'instance': {
+        const hosts = new Map();
+        for (const p of allPosts) {
+          if (p.platform !== 'misskey' && p.platform !== 'mastodon') continue;
+          const h = hostOf(p.url);
+          if (h) hosts.set(h, (hosts.get(h) || 0) + 1);
+        }
+        return [...hosts.keys()].sort().map(h => ({ v: h, l: h, on: act('instance', h) }));
+      }
       default: return [];
     }
   }
@@ -548,11 +575,43 @@
       return;
     }
     const items = qfValues(qfCat);
+    const rowOf = (it) => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}</div>`;
+    // タグはタググループの小見出し付きで並べる
+    let listHtml;
+    if (qfCat === 'tag' && tagGroups.length && items.length) {
+      const remaining = new Map(items.map((it) => [it.v, it]));
+      const parts = [];
+      for (const g of tagGroups) {
+        const own = (g.tags || []).filter((t) => remaining.has(t));
+        if (!own.length) continue;
+        parts.push(`<div class="qf-ghead">${escapeHtml(g.name || '')}</div>`);
+        own.forEach((t) => { parts.push(rowOf(remaining.get(t))); remaining.delete(t); });
+      }
+      if (remaining.size) {
+        parts.push(`<div class="qf-ghead">${escapeHtml(MSG.tagGroupOther)}</div>`);
+        remaining.forEach((it) => parts.push(rowOf(it)));
+      }
+      listHtml = parts.join('');
+    } else {
+      listHtml = items.map(rowOf).join('');
+    }
+    // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
+    const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
     qfPop.innerHTML = `<div class="fm-row qf-back" data-qfback="1">‹ ${escapeHtml(qfCats().find(([c]) => c === qfCat)[1])}</div>` +
-      `<div class="qf-vals">` + (items.length
-        ? items.map(it => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}</div>`).join('')
-        : `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
+      find +
+      `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
+    const fi = document.getElementById('qfFind');
+    if (fi) setTimeout(() => fi.focus(), 0);
   }
+  // 値リストの絞り込み（再描画せず行の表示/非表示だけ切替＝入力フォーカス維持）
+  qfPop.addEventListener('input', (e) => {
+    if (!e.target.classList.contains('qf-find')) return;
+    const q = e.target.value.trim().toLowerCase();
+    qfPop.querySelectorAll('.qf-vals .fm-row').forEach((row) => {
+      row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+    qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
+  });
   function showQfPop() {
     qfCat = null;
     renderQfPop();
@@ -569,7 +628,14 @@
   });
   qfPop.addEventListener('click', (e) => {
     const cat = e.target.closest('[data-qfcat]');
-    if (cat) { qfCat = cat.dataset.qfcat; renderQfPop(); return; }
+    if (cat) {
+      // 日付/エンゲージはパラメータ入力が要る → 既存の専用ポップオーバーへ
+      if (cat.dataset.qfcat === 'date') { hideQfPop(); openDatePopover(null); return; }
+      if (cat.dataset.qfcat === 'engagement') { hideQfPop(); openEngPopover(null); return; }
+      qfCat = cat.dataset.qfcat;
+      renderQfPop();
+      return;
+    }
     if (e.target.closest('[data-qfback]')) { qfCat = null; renderQfPop(); return; }
     const val = e.target.closest('[data-qfval]');
     if (val && qfCat) {
@@ -947,6 +1013,19 @@
     // Group by tag-groups.json; anything not covered goes under その他 at the end.
     const remaining = new Set(tags);
     const blocks = [];
+    // よく使うタグ: frecency 上位（未学習時はライブラリ内の付与数で代替）。
+    // 絞り込み入力中は出さない。
+    if (!filter && allTags.length > 6) {
+      const cnt = new Map();
+      for (const p of allPosts) if (p.url) for (const t of (p.tags || [])) cnt.set(t, (cnt.get(t) || 0) + 1);
+      const freq = loadFreq();
+      const top = [...allTags]
+        .sort((a, b) => ((freq[b] ? freqScore(freq[b]) : 0) - (freq[a] ? freqScore(freq[a]) : 0)) || ((cnt.get(b) || 0) - (cnt.get(a) || 0)))
+        .slice(0, 12);
+      if (top.length >= 3) {
+        blocks.push(`<div class="sb-taggroup"><div class="sb-subtitle">★ ${MSG.freqTags}</div><div class="sb-chips">${top.map(chip).join('')}</div></div>`);
+      }
+    }
     for (const g of tagGroups) {
       const own = (g.tags || []).filter((t) => remaining.has(t)).sort();
       if (!own.length) continue;
@@ -2309,6 +2388,92 @@
   // NOTE: not addEventListener('input', renderPosts) — the Event object would
   // arrive as a truthy keepLimit and skip the history push / fresh-render path.
   document.getElementById('searchBox').addEventListener('input', () => renderPosts());
+
+  // --- リアルタイム検索サジェスト -------------------------------------------
+  // タイプのたびに、本文検索と並行してタグ/作者/フォルダの候補を検索ボックス
+  // 直下に表示。クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
+  const suggestEl = document.createElement('div');
+  suggestEl.className = 'search-suggest';
+  document.body.appendChild(suggestEl);
+  let suggestIdx = -1;
+  let suggestItems = [];
+  const SUG_ICON = { tag: '\u{1F3F7}', user: '\u{1F464}', folder: '\u{1F4C1}' };
+  function hideSuggest() { suggestEl.style.display = 'none'; suggestIdx = -1; suggestItems = []; }
+  function buildSuggest(q) {
+    const norm = (s) => String(s || '').toLowerCase();
+    const fuzzyOn = window.corpusSearch && window.corpusSearch.isFuzzy();
+    const matcher = fuzzyOn ? window.corpusSearch.compile(q) : null;
+    const hit = (s) => (fuzzyOn ? matcher(String(s || '')) : norm(s).includes(norm(q)));
+    const items = [];
+    const counts = new Map();
+    for (const p of allPosts) if (p.url) for (const t of (p.tags || [])) counts.set(t, (counts.get(t) || 0) + 1);
+    [...counts.keys()].filter(hit).sort((a, b) => counts.get(b) - counts.get(a)).slice(0, 6)
+      .forEach((t) => items.push({ kind: 'tag', value: t, label: t, note: counts.get(t) }));
+    buildUsers().filter((u) => hit(u.displayName) || hit(u.screenName)).slice(0, 4)
+      .forEach((u) => items.push({ kind: 'user', value: u.key, label: u.displayName || u.screenName || '(unknown)', note: u.count }));
+    (CF() ? CF().all() : []).filter((f) => hit(f.name)).slice(0, 3)
+      .forEach((f) => items.push({ kind: 'folder', value: f.id, label: f.name, note: f.items.length }));
+    return items;
+  }
+  function renderSuggest() {
+    const sb = document.getElementById('searchBox');
+    const q = sb.value.trim();
+    if (!q) { hideSuggest(); return; }
+    suggestItems = buildSuggest(q);
+    if (!suggestItems.length) { hideSuggest(); return; }
+    if (suggestIdx >= suggestItems.length) suggestIdx = suggestItems.length - 1;
+    suggestEl.innerHTML = suggestItems.map((it, i) =>
+      `<div class="sg-row${i === suggestIdx ? ' sel' : ''}" data-sg="${i}"><span class="sg-ic">${SUG_ICON[it.kind]}</span><span class="sg-name">${escapeHtml(it.label)}</span><span class="sg-n">${it.note}</span></div>`
+    ).join('');
+    const r = sb.getBoundingClientRect();
+    suggestEl.style.left = r.left + 'px';
+    suggestEl.style.top = (r.bottom + 4) + 'px';
+    suggestEl.style.minWidth = r.width + 'px';
+    suggestEl.style.display = 'block';
+  }
+  function applySuggest(it) {
+    if (!it) return;
+    const sb = document.getElementById('searchBox');
+    sb.value = '';   // タイプした文字は「探すため」のもの — 本文検索には残さない
+    hideSuggest();
+    if (it.kind === 'tag') {
+      addFilter({ type: 'tag', value: it.value, mode: 'or' });
+    } else if (it.kind === 'user') {
+      addFilter({ type: 'user', value: it.value, label: it.label });
+    } else {
+      addFilter({ type: 'folder', value: it.value, mode: 'or' });
+      renderPostFolders();
+    }
+    updateSidebarState();
+  }
+  suggestEl.addEventListener('mousedown', (e) => {   // mousedown は blur より先に届く
+    const row = e.target.closest('.sg-row');
+    if (!row) return;
+    e.preventDefault();
+    applySuggest(suggestItems[parseInt(row.dataset.sg, 10)]);
+  });
+  {
+    const sb = document.getElementById('searchBox');
+    sb.addEventListener('input', () => { suggestIdx = -1; renderSuggest(); });
+    sb.addEventListener('focus', renderSuggest);
+    sb.addEventListener('blur', () => setTimeout(hideSuggest, 150));
+    sb.addEventListener('keydown', (e) => {
+      if (suggestEl.style.display === 'none') return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        suggestIdx = (suggestIdx + d + suggestItems.length) % suggestItems.length;
+        renderSuggest();
+      } else if (e.key === 'Enter' && suggestIdx >= 0) {
+        e.preventDefault();
+        applySuggest(suggestItems[suggestIdx]);
+      } else if (e.key === 'Escape') {
+        hideSuggest();
+      }
+    });
+    const scroller = document.querySelector('#controls-posts .sb-scroll');
+    if (scroller) scroller.addEventListener('scroll', hideSuggest, { passive: true });
+  }
   sortSelect.addEventListener('change', () => {
     window.corpus.setPref('sortBy', sortSelect.value);
     renderPosts();

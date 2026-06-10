@@ -44,7 +44,7 @@ const evalJs = `(async () => {
   document.getElementById('sbTagSearchBtn').click();
   await sleep(40);
   const sbVisible = getComputedStyle(sb).display !== 'none';
-  const sbAll = document.querySelectorAll('#sbTagChips .sb-chip').length;
+  const sbAll = new Set([...document.querySelectorAll('#sbTagChips .sb-chip')].map(c => c.dataset.filterValue)).size;   // よく使うタグの重複分を除いた一意数
   sb.value = 'the';
   sb.dispatchEvent(new Event('input'));
   await sleep(50);
@@ -83,7 +83,7 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('tag filter hidden until 🔍, then shown with all 8 chips', r.sbHiddenAtFirst === true && r.sbVisible === true && r.sbAll === 8);
+  check('tag filter hidden until 🔍, then shown with 8 unique tags', r.sbHiddenAtFirst === true && r.sbVisible === true && r.sbAll === 8);
   check('sidebar tag search filters chips (the -> theta only)', JSON.stringify(r.sbFiltered) === JSON.stringify(['theta']));
   check('searching "#typescript" narrows the grid to its 2 posts', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));
