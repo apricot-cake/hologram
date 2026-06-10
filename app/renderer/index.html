@@ -999,75 +999,20 @@
     </div>
   </div>
 
-  <!-- Image-view (info-plus tile display), now light + sharing the theme tokens.
-       Filter sidebar + tile overlays + inspector arrive in the next commit. -->
+  <!-- Styles that began life in the (now-removed) image-view but are reused by the
+       unified post-view: ℹ detail popup, AND/OR tag toggle, folder chips +
+       management modal, toast, and the multi-image / group-expand checkboxes.
+       The image-view tile grid, sidebar layout and fullscreen lightbox CSS went
+       away with that view. -->
   <style>
-    #mode-image {
-      --iv-tile: 180px;
-      padding: 16px 24px 32px; height: 100vh; overflow-y: auto;
-      background: var(--bg); color: var(--fg);
-    }
-    /* Content + slide-in inspector. The filter controls live in the shared
-       #sidebar (#side-image); reuse post-view's sb-section classes there. */
-    .iv-main { display: flex; gap: 20px; align-items: flex-start; }
-    #ivTagGroups .iv-taggroup { margin-top: 8px; }
-    #ivTagGroups .iv-taggroup:first-child { margin-top: 0; }
-    #ivTagGroups .sb-chips { margin-bottom: 2px; }
-    /* タググループ単位の折りたたみ: 見出しクリックで、そのグループのタグだけ畳む */
-    .iv-taggroup .sb-subtitle.iv-tagfold { cursor: pointer; user-select: none; }
-    .iv-taggroup .sb-subtitle.iv-tagfold::after { content: ' ▾'; font-size: 8px; color: var(--muted); }
-    .iv-taggroup.collapsed .sb-subtitle.iv-tagfold::after { content: ' ▸'; }
-    .iv-taggroup.collapsed .sb-chips { display: none; }
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
-    .iv-tilewrap { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-    .iv-tilebtns { display: flex; align-items: center; gap: 8px; }
-    .iv-tilebtns button { width: 30px; height: 26px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; transition: all .12s; }
-    .iv-tilebtns button:hover { border-color: var(--accent); color: var(--accent); }
-    .iv-tilebtns button:disabled { opacity: .4; cursor: default; }
-    #ivTileVal { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; color: var(--fg); }
-    .iv-reset {
-      width: 100%; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 7px; font-size: 12px; cursor: pointer; transition: all .15s;
-    }
-    .iv-reset:hover { border-color: var(--accent); color: var(--accent); }
-    .iv-content { flex: 1; min-width: 0; }
-    /* Sticky so the count + selection tools (クリア/選択終了/グループ化) stay reachable
-       while scrolling a long grid. The -16px/-16px negative margins + matching padding
-       let the bg cover the container's padding so tiles don't peek above it. */
-    .iv-headbar {
-      display: flex; align-items: center; min-height: 28px;
-      position: sticky; top: -16px; z-index: 10; background: var(--bg);
-      margin: -16px -24px 12px; padding: 16px 24px 10px;
-    }
-    .iv-count { color: var(--muted); font-size: 12px; }
-    .iv-headtools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-    .iv-selcount { font-size: 12px; color: var(--muted); }
     .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
     .iv-htbtn:hover { border-color: var(--accent); color: var(--accent); }
     .iv-htbtn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .iv-htbtn:disabled { opacity: .5; cursor: default; }
-    .iv-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
-    /* ○ select toggle — top-left hollow ring (no fill). A white ring with a soft dark
-       halo stays visible on any image; fills with the accent + ✓ only when selected.
-       Shows on hover; selected tiles keep it shown. */
-    .iv-card .iv-selcircle {
-      position: absolute; top: 6px; left: 6px; z-index: 5;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: transparent; border: 2px solid #fff; box-shadow: 0 0 2px 1px rgba(0,0,0,0.45);
-      cursor: pointer; opacity: 0; transition: opacity .1s, background .1s;
-      display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; line-height: 1;
-    }
-    .iv-card:hover .iv-selcircle { opacity: 1; }
-    .iv-card.selected .iv-selcircle { opacity: 1; background: var(--accent); border-color: #fff; }
-    /* sharp geometric check drawn with borders (avoids the hand-drawn ✓ glyph) */
-    .iv-card.selected .iv-selcircle::after {
-      content: ''; width: 5px; height: 9px; margin-top: -1px;
-      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
-    }
-    .iv-empty { padding: 60px 20px; text-align: center; color: var(--muted); }
 
-    /* Detail popup (ℹ action): centered modal over a dim backdrop, not a sidebar. */
+    /* Detail popup (ℹ action): centered modal over a dim backdrop. */
     .iv-detail-overlay {
       position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,0.5);
       display: flex; align-items: center; justify-content: center; padding: 24px;
@@ -1090,44 +1035,12 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
-    .iv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--iv-tile), 1fr)); gap: 8px; }
-    .iv-card {
-      position: relative; aspect-ratio: 1; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 6px; overflow: hidden; cursor: pointer;
-      content-visibility: auto; contain-intrinsic-size: auto 180px;
-      transition: transform 0.05s, border-color 0.1s, box-shadow 0.1s;
-    }
-    .iv-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); transform: scale(1.02); }
-    .iv-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .iv-card .iv-noposter { width: 100%; height: 100%; background: linear-gradient(135deg, #2a2a2a, #444); }
-    /* ×N badge: top-right, fades out on hover so the action buttons (same corner) take over. */
-    .iv-card .iv-ntag { position: absolute; top: 6px; right: 6px; z-index: 2; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: rgba(0,0,0,0.8); color: #fff; transition: opacity 0.1s; }
-    .iv-card:hover .iv-ntag { opacity: 0; }
-    .iv-card .iv-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-    .iv-card .iv-play span { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; padding-left: 3px; }
-    .iv-card .iv-actions { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; gap: 4px; opacity: 0; transition: opacity 0.1s; }
-    .iv-card:hover .iv-actions { opacity: 1; }
-    .iv-act {
-      width: 24px; height: 24px; padding: 0; border: none; border-radius: 5px;
-      background: rgba(0,0,0,0.62); color: #fff; font-size: 12px; line-height: 1; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; transition: background 0.1s;
-    }
-    .iv-act:hover { background: var(--accent); }
-    .iv-act.del:hover { background: var(--danger); }
-    /* 📁 add-to-default-folder: 'in' = tile already in default folder; 'added' = brief confirm flash */
-    .iv-act.fold.in { background: var(--accent); }
-    .iv-act.added { background: var(--success); }
-
-    /* Folder sidebar + management modal */
-    .iv-folder-manage {
-      margin-top: 8px; width: 100%; background: none; border: 1px dashed var(--border);
-      border-radius: 6px; padding: 6px; font-size: 11px; color: var(--muted); cursor: pointer; transition: all .15s;
-    }
-    .iv-folder-manage:hover { border-color: var(--accent); color: var(--accent); }
     /* AND/OR toggle for multi-select filters (tags) */
     .iv-andor { font-size: 11px; font-weight: 600; padding: 2px 9px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin-left: 4px; vertical-align: middle; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
     .iv-andor:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
     .iv-andor.or { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+    /* Folder chips (★ default) + management modal */
     .iv-foldstar { color: var(--muted); margin-right: 3px; }
     .sb-chip.active .iv-foldstar { color: #fff; }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
@@ -1150,27 +1063,6 @@
       transition: opacity .15s, transform .15s; box-shadow: var(--shadow-pop);
     }
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .iv-card .iv-stats {
-      position: absolute; bottom: 0; left: 0; right: 0; padding: 8px;
-      background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff; font-size: 11px;
-      pointer-events: none;
-    }
-    .iv-card .iv-stats .iv-author { color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    /* Fullscreen viewer stays dark — conventional for an image lightbox. */
-    .iv-viewer {
-      position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,0.92);
-      display: flex; align-items: center; justify-content: center; gap: 12px;
-    }
-    .iv-viewer[hidden] { display: none; }
-    .iv-viewer-img { max-width: 80vw; max-height: 92vh; object-fit: contain; }
-    .iv-nav {
-      flex-shrink: 0; width: 56px; height: 56px; border-radius: 50%; border: none;
-      background: rgba(255,255,255,0.12); color: #fff; font-size: 26px; cursor: pointer;
-    }
-    .iv-nav:hover { background: rgba(255,255,255,0.28); }
-    .iv-nav:disabled { opacity: 0.25; cursor: default; }
-    .iv-index { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 12px; }
   </style>
 
   <!-- Settings overlay: #panelSettings is relocated into here by viewer.js so it
