@@ -109,6 +109,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     isQuote: meta.isQuote,
     isThread: meta.isThread,
     quotedUrl: meta.quotedUrl,
+    replyToId: meta.replyToId,
     hashtags: meta.hashtags || [],
     tags: meta.tags || []
   };
@@ -233,6 +234,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
     isQuote: meta.isQuote,
     isThread: meta.isThread,
     quotedUrl: meta.quotedUrl,
+    replyToId: meta.replyToId,
     hashtags: meta.hashtags || [],
     tags: meta.tags || [],
     // Which image of a multi-image post this is (1-based) + the total. Only

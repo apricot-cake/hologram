@@ -1186,8 +1186,8 @@
   function groupRecords(list) {
     const manualOf = new Map();   // captureId → 'manual:idx' (manual groups win)
     manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
-    const map = new Map(); const order = []; let solo = 0;
-    for (const p of list) {
+    let solo = 0;
+    const base = list.map((p) => {
       let key;
       const mg = manualOf.get(p.captureId);
       if (mg) key = mg;
@@ -1195,9 +1195,37 @@
         const k = postKeyOf(p.url);
         key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
       }
+      return { p, key };
+    });
+    // Self-reply chains: a record replying (replyToId) to another record IN THE
+    // LIBRARY by the SAME author joins that record's group, so リプ元＋セルフリプ
+    // render as one card. The platform-local own-id is the last segment of the
+    // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
+    // suppress the merge for either side.
+    const pidOf = (p) => { const k = postKeyOf(p.url); return k ? k.split(/[/:]/).pop() : null; };
+    const idIndex = new Map();    // userId + '|' + ownPostId → entry
+    for (const e of base) {
+      const id = pidOf(e.p);
+      if (id && e.p.userId) idIndex.set(e.p.userId + '|' + id, e);
+    }
+    const alias = new Map();      // child group key → parent group key
+    for (const e of base) {
+      const p = e.p;
+      if (!p.replyToId || !p.userId) continue;
+      const ownKey = postKeyOf(p.url);
+      if (!ownKey || ungrouped.has(ownKey)) continue;
+      const parent = idIndex.get(p.userId + '|' + String(p.replyToId));
+      if (!parent || parent.key === e.key) continue;
+      if (String(parent.key).indexOf('__solo') === 0) continue;   // parent opted out / unkeyed
+      alias.set(e.key, parent.key);
+    }
+    const resolveKey = (k) => { let n = 0; while (alias.has(k) && n++ < 10) k = alias.get(k); return k; };
+    const map = new Map(); const order = [];
+    for (const e of base) {
+      const key = resolveKey(e.key);
       let g = map.get(key);
       if (!g) { g = { key, records: [] }; map.set(key, g); order.push(g); }
-      g.records.push(p);
+      g.records.push(e.p);
     }
     for (const g of order) {
       g.records.sort((a, b) => String(a.captureId || '').localeCompare(String(b.captureId || '')));
@@ -1971,9 +1999,11 @@
     const gkey = postKeyOf(p.url);
     const potential = gkey ? allPosts.filter((q) => postKeyOf(q.url) === gkey).length : 0;
     const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
+    // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
+    // rep's key out stops the self-reply merge at this parent, splitting the card.
     const groupBtn = isManual
       ? `<a class="iv-insp-open" id="pdUngroupManual">🔗 ${escapeHtml(MSG.groupUngroupManual)}</a>`
-      : (potential > 1
+      : (gkey && (potential > 1 || g.records.length > 1)
         ? (ungrouped.has(gkey)
           ? `<a class="iv-insp-open" id="pdRegroup">🔗 ${escapeHtml(MSG.groupRegroup)}</a>`
           : `<a class="iv-insp-open" id="pdUngroup">✂ ${escapeHtml(MSG.groupUngroup)}</a>`)

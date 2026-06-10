@@ -46,6 +46,10 @@ function emptyRecord(url, platform) {
     likes: null, reposts: null, replies: null, bookmarks: null, views: null,
     date: null, mediaType: null, media: [], lang: null,
     isReply: null, isQuote: null, isThread: null, quotedUrl: null,
+    // Reply parent's platform-local post id (tweet id / rkey / note id / status
+    // id). Lets the viewer group a self-reply with its parent when both are in
+    // the library.
+    replyToId: null,
     hashtags: [], tags: []
   };
 }
@@ -104,6 +108,7 @@ async function fetchXTweet(parsed, url) {
     rec.media = xMedia(j.mediaDetails);
     if (j.in_reply_to_screen_name) {
       rec.isReply = true;
+      rec.replyToId = j.in_reply_to_status_id_str || null;
       // self-reply (thread): promote to thread and clear isReply, so the four
       // platforms categorize mutually-exclusively (a self-thread is not a reply).
       if (j.in_reply_to_user_id_str && j.user && j.in_reply_to_user_id_str === j.user.id_str) {
@@ -200,6 +205,8 @@ async function fetchBlueskyPost(parsed, url) {
       // self-reply (thread): parent author DID matches this author
       const parentUri = record.reply.parent && record.reply.parent.uri;
       const m = parentUri && parentUri.match(/^at:\/\/(did:[^/]+)\//);
+      const pm = parentUri && parentUri.match(/\/app\.bsky\.feed\.post\/([^/?#]+)/);
+      rec.replyToId = pm ? pm[1] : null;
       if (m && post.author && m[1] === post.author.did) { rec.isThread = true; rec.isReply = null; }
     }
     const embType = (post.embed && post.embed.$type) || (record.embed && record.embed.$type) || '';
@@ -270,6 +277,7 @@ async function fetchMisskeyNote(parsed, url) {
     rec.media = misskeyMedia(note.files);
     if (note.replyId) {
       rec.isReply = true;
+      rec.replyToId = note.replyId;
       if (note.reply && note.reply.userId && note.reply.userId === note.userId) { rec.isThread = true; rec.isReply = null; }
     }
     if (note.renoteId && note.text) {
@@ -354,6 +362,7 @@ async function fetchMastodonStatus(parsed, url) {
     rec.media = mastodonMedia(s.media_attachments);
     if (s.in_reply_to_id) {
       rec.isReply = true;
+      rec.replyToId = String(s.in_reply_to_id);
       if (s.account && s.in_reply_to_account_id && s.in_reply_to_account_id === s.account.id) {
         rec.isThread = true;
         rec.isReply = null;
