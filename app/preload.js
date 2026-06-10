@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('corpus', {
   getFolders: () => ipcRenderer.invoke('get-folders'),
   setFolders: (data) => ipcRenderer.invoke('set-folders', data),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openImageWindow: (image) => ipcRenderer.invoke('open-image-window', image),
   getPrefs: () => ipcRenderer.invoke('get-prefs'),
   setPref: (key, value) => ipcRenderer.invoke('set-pref', key, value),
   imageDataUrl: (image) => ipcRenderer.invoke('image-data-url', image),

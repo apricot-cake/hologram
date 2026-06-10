@@ -206,6 +206,13 @@
        not the accent (an accent fill made it float against the monotone sidebar). */
     .view-toggle button.active { background: var(--border-strong); color: var(--text-strong); }
 
+    /* Browser-style back/forward over the filter & view state */
+    .hist-nav { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; align-self: flex-start; }
+    .hist-nav button { background: var(--surface); border: none; padding: 4px 12px; cursor: pointer; color: var(--text-muted); font-size: 13px; line-height: 1; transition: background .12s, color .12s; }
+    .hist-nav button:not(:last-child) { border-right: 1px solid var(--border); }
+    .hist-nav button:hover:not(:disabled) { color: var(--accent); background: var(--hover); }
+    .hist-nav button:disabled { opacity: .35; cursor: default; }
+
     /* Tile-size ± (shown only in the tile density) */
     .tile-size { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; align-self: flex-start; }
     .tile-size button { background: var(--surface); border: none; padding: 5px 12px; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; transition: background .12s, color .12s; }
@@ -394,6 +401,11 @@
     }
     .post-grid.tile-view .card-overlay .ov-author { flex: 1; min-width: 0; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .post-grid.tile-view .card-overlay .ov-likes { flex-shrink: 0; }
+    /* tile info overlay is optional (表示 > タイルに情報を表示) */
+    .post-grid.tile-view.no-overlay .card-overlay { display: none; }
+    /* the ❤ count on tiles only matters while sorting/filtering by engagement */
+    .post-grid.tile-view .card-overlay .ov-likes { display: none; }
+    .post-grid.tile-view.show-eng .card-overlay .ov-likes { display: block; }
     .post-grid.tile-view .card-ntag {
       display: block; position: absolute; top: 6px; right: 6px; z-index: 2;
       padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600;
@@ -797,6 +809,11 @@
         </div>
         <div class="sb-scroll">
         <div class="toolbar" id="postsToolbar">
+          <!-- Browser-style history over the filter/view state -->
+          <div class="hist-nav">
+            <button id="histBack" type="button" title="戻る" disabled>←</button>
+            <button id="histFwd" type="button" title="進む" disabled>→</button>
+          </div>
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
             <div class="view-toggle">
@@ -808,6 +825,7 @@
               <button id="tileMinus" type="button" title="小さく">−</button>
               <button id="tilePlus" type="button" title="大きく">＋</button>
             </div>
+            <label class="iv-check" id="tileOverlayRow" style="display:none;margin-top:2px;"><input type="checkbox" id="tileOverlayToggle" checked> <span id="tileOverlayLabel"></span></label>
             <span class="post-count" id="postCount"></span>
           </div>
           <div class="sb-section">

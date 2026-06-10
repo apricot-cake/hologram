@@ -334,8 +334,20 @@ ipcMain.handle('open-external', (_event, url) => {
   }
 });
 
+// Open one library image in its own frameless-ish window (middle-click on a
+// card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
+// Chromium's built-in image view (zoom/fit for free).
+ipcMain.handle('open-image-window', (_event, image) => {
+  if (typeof image !== 'string' || !image || image.includes('..') || image.includes('/') || image.includes('\\')) return;
+  const w = new BrowserWindow({
+    width: 1100, height: 850, autoHideMenuBar: true, backgroundColor: '#101113',
+    webPreferences: { sandbox: true }
+  });
+  w.loadURL('psimg://img/' + encodeURIComponent(image));
+});
+
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode', 'theme'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'searchMode', 'theme', 'tileOverlay'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 ipcMain.handle('get-prefs', () => {

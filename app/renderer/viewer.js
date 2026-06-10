@@ -46,6 +46,9 @@
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
     tipJoin: _s('tipJoin'),
+    tileOverlay: _s('tileOverlay'),
+    histBack: _s('histBack'),
+    histFwd: _s('histFwd'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -314,6 +317,9 @@
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   document.getElementById('sbTagSearchBtn').title = MSG.sbFilterTip;
   document.getElementById('sbAuthorSearchBtn').title = MSG.sbFilterTip;
+  setText('tileOverlayLabel', MSG.tileOverlay);
+  document.getElementById('histBack').title = MSG.histBack;
+  document.getElementById('histFwd').title = MSG.histFwd;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -337,21 +343,18 @@
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
     const bar = document.getElementById('postActiveBar');
-    // 検索語・フォルダもアクティブフィルタとして扱う（画像モードと同様にピル化）。
+    // 検索語もアクティブフィルタとして扱う（ピル化）。フォルダは activeFilters の
+    // 通常エントリ（type:'folder'）としてタグと同じ かつ/または クラスタに並ぶ。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
-    const folderObj = (folderFilter && CF()) ? CF().byId(folderFilter) : null;
-    // バーは「アクティブなフィルタ（検索・フォルダ含む）が1つでもあれば」だけ出す（無ければ非表示）。
-    if (activeFilters.length === 0 && !searchVal && !folderObj) {
+    if (activeFilters.length === 0 && !searchVal) {
       container.innerHTML = '';
       if (bar) bar.style.display = 'none';
       return;
     }
     if (bar) bar.style.display = '';
-    // 検索・フォルダの特殊ピルを先頭に置き、続けて activeFilters のピルを並べる。
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
-    if (folderObj) special += `<span class="sb-active-chip qc-folder" data-special="folder">${escapeHtml(folderObj.name)}</span>`;
     // Tag pills are grouped into labeled fields —「かつ:」(all required) and
     //「または:」(any matches) — joined by a clickable connector when both exist,
     // so the whole formula reads (A AND B) ⟨かつ/または⟩ (C OR D).
@@ -385,6 +388,11 @@
         case 'tag':
           (f.mode === 'and' ? andTags : orTags).push(pill(i, `#${f.value}`, cls));
           return;
+        case 'folder': {
+          const fobj = CF() && CF().byId(f.value);
+          (f.mode === 'and' ? andTags : orTags).push(pill(i, fobj ? fobj.name : f.value, cls));
+          return;
+        }
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
           break;
@@ -442,7 +450,6 @@
   // タグ結合・日付・エンゲージも含めて消す。renderPosts() が sidebar の active 状態も同期。
   function resetAllFilters() {
     activeFilters = [];
-    folderFilter = '';
     tagJoin = 'and';
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
@@ -470,12 +477,6 @@
       renderPosts();   // → updateSidebarState → renderQueryChips
       return;
     }
-    if (chip.dataset.special === 'folder') {
-      folderFilter = '';
-      renderPostFolders();
-      renderPosts();
-      return;
-    }
     const idx = parseInt(chip.dataset.filterIdx, 10);
     const filter = activeFilters[idx];
     if (!filter) return;
@@ -485,7 +486,9 @@
     } else if (filter.type === 'engagement') {
       openEngPopover(idx);
     } else {
+      const wasFolder = filter.type === 'folder';
       removeFilter(idx);
+      if (wasFolder) renderPostFolders();   // sync the sidebar folder chips
     }
   });
 
@@ -862,6 +865,7 @@
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let multiOnly = false;      // show only items with more than one image
+  let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
   const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
   // Windowed rendering: render only the first `renderLimit` filtered posts and
@@ -883,12 +887,13 @@
     if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
     const row = document.getElementById('tileSizeRow');
     if (row) row.style.display = currentView === 'tile' ? '' : 'none';
+    const ovRow = document.getElementById('tileOverlayRow');
+    if (ovRow) ovRow.style.display = currentView === 'tile' ? '' : 'none';
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
-  let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
-  let tagJoin = 'and';           // connector between the AND-tags group and the OR-tags group
+  let tagJoin = 'and';           // connector between the AND group and the OR group (tags+folders)
   const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
@@ -1083,12 +1088,6 @@
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
     // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
     let posts = allPosts.filter(p => p.image || mediaFilesOf(p).length || p.text || p.title);
-    // Folder filter (shared folders.json, keyed by captureId)
-    if (folderFilter && CF()) {
-      const f = CF().byId(folderFilter);
-      const set = new Set(f ? f.items : []);
-      posts = posts.filter(p => set.has(p.captureId));
-    }
     const rawQuery = document.getElementById('searchBox').value.trim();
     const query = rawQuery.toLowerCase();
     const sort = sortSelect.value;
@@ -1190,18 +1189,23 @@
       }
     }
 
-    // Tag: two groups — AND(かつ) tags all required, OR(または) tags any-of —
-    // combined by the user-selectable connector: (A AND B) ⟨かつ/または⟩ (C OR D).
-    if (byType.tag) {
-      const andValues = byType.tag.filter(f => f.mode === 'and').map(f => f.value);
-      const orValues = byType.tag.filter(f => f.mode !== 'and').map(f => f.value);
-      const andOk = (p) => andValues.every(v => (p.tags || []).includes(v));
-      const orOk = (p) => (p.tags || []).some(t => orValues.includes(t));
-      if (andValues.length && orValues.length) {
+    // Tags + folders: two groups — AND(かつ) entries all required, OR(または)
+    // entries any-of — combined by the user-selectable connector:
+    // (A AND B) ⟨かつ/または⟩ (C OR D). A folder entry matches membership.
+    const boolFilters = [...(byType.tag || []), ...(byType.folder || [])];
+    if (boolFilters.length) {
+      const predOf = (f) => f.type === 'folder'
+        ? ((p) => !!(CF() && CF().has(f.value, p.captureId)))
+        : ((p) => (p.tags || []).includes(f.value));
+      const andPreds = boolFilters.filter(f => f.mode === 'and').map(predOf);
+      const orPreds = boolFilters.filter(f => f.mode !== 'and').map(predOf);
+      const andOk = (p) => andPreds.every(fn => fn(p));
+      const orOk = (p) => orPreds.some(fn => fn(p));
+      if (andPreds.length && orPreds.length) {
         posts = posts.filter(tagJoin === 'or' ? (p) => andOk(p) || orOk(p) : (p) => andOk(p) && orOk(p));
-      } else if (andValues.length) {
+      } else if (andPreds.length) {
         posts = posts.filter(andOk);
-      } else if (orValues.length) {
+      } else if (orPreds.length) {
         posts = posts.filter(orOk);
       }
     }
@@ -1227,6 +1231,89 @@
 
     return posts;
   }
+
+  // --- Browser-style history over the filter & view state (back/forward) ---
+  const histBackBtn = document.getElementById('histBack');
+  const histFwdBtn = document.getElementById('histFwd');
+  let viewHistory = [];
+  let histIdx = -1;
+  let restoringState = false;
+  let lastHistPush = 0;
+  function snapshotState() {
+    return {
+      f: JSON.parse(JSON.stringify(activeFilters)),
+      join: tagJoin,
+      search: document.getElementById('searchBox').value,
+      sort: sortSelect.value,
+      view: currentView,
+      multi: multiOnly,
+      expand: expandAll
+    };
+  }
+  function updateHistButtons() {
+    if (histBackBtn) histBackBtn.disabled = histIdx <= 0;
+    if (histFwdBtn) histFwdBtn.disabled = histIdx >= viewHistory.length - 1;
+  }
+  // Called from every fresh renderPosts(). Captures the state AFTER the change;
+  // rapid search typing coalesces into one entry instead of one per keystroke.
+  function pushHistory() {
+    if (restoringState) return;
+    const snap = snapshotState();
+    const ser = JSON.stringify(snap);
+    if (histIdx >= 0 && JSON.stringify(viewHistory[histIdx]) === ser) return;
+    const now = Date.now();
+    // typing continuation (both entries already searching) replaces in place;
+    // the FIRST keystroke still gets its own entry (so ← returns to no-search)
+    if (histIdx >= 0 && now - lastHistPush < 900) {
+      const prev = viewHistory[histIdx];
+      if (prev.search && snap.search &&
+          JSON.stringify({ ...prev, search: '' }) === JSON.stringify({ ...snap, search: '' })) {
+        viewHistory[histIdx] = snap; lastHistPush = now; return;
+      }
+    }
+    viewHistory = viewHistory.slice(0, histIdx + 1);
+    viewHistory.push(snap);
+    if (viewHistory.length > 100) viewHistory.shift();
+    histIdx = viewHistory.length - 1;
+    lastHistPush = now;
+    updateHistButtons();
+  }
+  function applyState(s) {
+    restoringState = true;
+    activeFilters = JSON.parse(JSON.stringify(s.f));
+    tagJoin = s.join;
+    document.getElementById('searchBox').value = s.search;
+    sortSelect.value = s.sort;
+    if (currentView !== s.view) {
+      currentView = s.view;
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+    }
+    multiOnly = !!s.multi;
+    document.getElementById('multiOnly').checked = multiOnly;
+    expandAll = !!s.expand;
+    document.getElementById('expandAllToggle').checked = expandAll;
+    renderPostFolders();
+    renderQueryChips();
+    renderPosts();
+    restoringState = false;
+    updateHistButtons();
+  }
+  function histGo(d) {
+    const ni = histIdx + d;
+    if (ni < 0 || ni >= viewHistory.length) return;
+    histIdx = ni;
+    applyState(viewHistory[histIdx]);
+  }
+  if (histBackBtn) histBackBtn.addEventListener('click', () => histGo(-1));
+  if (histFwdBtn) histFwdBtn.addEventListener('click', () => histGo(1));
+  // Alt+←/→ mirror the buttons (skipped while typing in a field)
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+    histGo(e.key === 'ArrowLeft' ? -1 : 1);
+  });
 
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -1255,6 +1342,7 @@
       } else {
         empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>`;
       }
+      if (!keepLimit) pushHistory();   // 0件の状態も履歴対象
       return;
     }
 
@@ -1271,6 +1359,12 @@
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selectedSet.size > 0);
+    // Tile overlay (author/❤) is optional; the ❤ count only shows while an
+    // engagement sort or filter is active (otherwise it's noise).
+    grid.classList.toggle('no-overlay', !tileOverlay);
+    grid.classList.toggle('show-eng',
+      ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) ||
+      activeFilters.some(f => f.type === 'engagement'));
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
@@ -1347,6 +1441,8 @@
         el.classList.toggle('truncated', el.scrollHeight > el.clientHeight);
       });
     });
+
+    if (!keepLimit) pushHistory();   // capture the filter/view state for ←/→
   }
 
   // Text expand/collapse on click
@@ -1465,6 +1561,23 @@
     }
   });
 
+  // Middle-click an image → open it full-size in its own window (Chromium's
+  // built-in image view via a bare psimg:// load).
+  document.getElementById('postGrid').addEventListener('auxclick', (e) => {
+    if (e.button !== 1) return;
+    const img = e.target.closest('.card-img');
+    if (!img) return;
+    e.preventDefault();
+    const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
+    if (!g) return;
+    const file = densityImage(g.rep, currentView);
+    if (file && window.corpus.openImageWindow) window.corpus.openImageWindow(file);
+  });
+  // suppress the middle-click autoscroll on card images
+  document.getElementById('postGrid').addEventListener('mousedown', (e) => {
+    if (e.button === 1 && e.target.closest('.card-img')) e.preventDefault();
+  });
+
   lbPrev.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(-1); });
   lbNext.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(1); });
   lightbox.addEventListener('click', (e) => {
@@ -1500,9 +1613,9 @@
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
-    // If filtering by the default folder and we removed it, re-render so EVERY card's
-    // data-index stays in sync with getFilteredPosts() (other handlers read by index).
-    if (res === 'removed' && folderFilter === CF().defaultId()) {
+    // If any folder filter is active, membership changes can drop cards out of
+    // the view — re-render so every card's data-index stays in sync.
+    if (activeFilters.some((f) => f.type === 'folder')) {
       renderPosts();
     }
   });
@@ -1565,7 +1678,9 @@
   document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
 
-  // Sidebar folder chips (shared folders.json): count + ★default + single-select filter.
+  // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
+  // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
+  // かつ/または expression as the tags.
   function renderPostFolders() {
     const host = document.getElementById('postFolderChips');
     if (!host || !CF()) return;
@@ -1573,19 +1688,30 @@
     const def = CF().defaultId();
     const existing = new Set(allPosts.filter(p => p.url).map(p => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
+    const state = new Map(activeFilters.filter(f => f.type === 'folder').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;
       const star = f.id === def ? '<span class="iv-foldstar" title="デフォルトフォルダ">★</span>' : '';
-      return `<button class="sb-chip${folderFilter === f.id ? ' active' : ''}" data-fid="${escapeAttr(f.id)}">${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      const st = state.get(f.id);
+      const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
+      return `<button class="sb-chip${cls}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   document.getElementById('postFolderChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip');
     if (!chip) return;
     const fid = chip.dataset.fid;
-    folderFilter = folderFilter === fid ? '' : fid;
+    const existIdx = activeFilters.findIndex(f => f.type === 'folder' && f.value === fid);
+    if (existIdx < 0) {
+      addFilter({ type: 'folder', value: fid, mode: 'or' });
+    } else if (activeFilters[existIdx].mode !== 'and') {
+      activeFilters[existIdx].mode = 'and';
+      renderQueryChips();
+      renderPosts();
+    } else {
+      removeFilter(existIdx);
+    }
     renderPostFolders();
-    renderPosts();
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
@@ -1982,6 +2108,11 @@
 
   document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
   document.getElementById('expandAllToggle').addEventListener('change', (e) => { expandAll = e.target.checked; renderPosts(); });
+  document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
+    tileOverlay = e.target.checked;
+    window.corpus.setPref('tileOverlay', tileOverlay);
+    renderPosts(true);   // class toggle only — no history entry, no anim replay
+  });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
@@ -1991,6 +2122,10 @@
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
+    if (prefs.tileOverlay === false) {
+      tileOverlay = false;
+      document.getElementById('tileOverlayToggle').checked = false;
+    }
     if (prefs.sortBy) sortSelect.value = prefs.sortBy;
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
@@ -2005,7 +2140,9 @@
   });
 
   // Search / sort events
-  document.getElementById('searchBox').addEventListener('input', renderPosts);
+  // NOTE: not addEventListener('input', renderPosts) — the Event object would
+  // arrive as a truthy keepLimit and skip the history push / fresh-render path.
+  document.getElementById('searchBox').addEventListener('input', () => renderPosts());
   sortSelect.addEventListener('change', () => {
     window.corpus.setPref('sortBy', sortSelect.value);
     renderPosts();
@@ -2414,8 +2551,10 @@ render()
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)
   // when the folder list/default changes.
   if (CF()) CF().onChange((kind) => {
-    // 絞り込み中のフォルダが削除されたらフィルタを解除（一覧が原因不明に空になるのを防ぐ）。
-    if (folderFilter && !CF().byId(folderFilter)) folderFilter = '';
+    // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
+    const before = activeFilters.length;
+    activeFilters = activeFilters.filter((f) => f.type !== 'folder' || CF().byId(f.value));
+    if (activeFilters.length !== before) renderQueryChips();
     renderPostFolders();
     if (kind === 'list') renderPosts();
   });
