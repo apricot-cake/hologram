@@ -942,17 +942,13 @@
   // 行ボタン（押すとそのグループのタグがフライアウトで開く）。タグ本体は
   // 青天井に増えるが、グループはユーザーが作る有限リストなので常設できる。
   let tagGroups = [];   // {id,name,tags[]} from tag-groups.json (loaded at startup)
-  function cycleTagFilter(value) {
+  // 3状態サイクルは全廃: チップは単純トグル（追加=「または」/解除）。
+  // 「すべて含む（かつ）」にしたいときはビルダのピルを「かつ」へドラッグ。
+  // チップの ＋/濃色表示は状態の反映としてだけ残る。
+  function toggleTagFilter(value) {
     const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
-    if (existIdx < 0) {
-      addFilter({ type: 'tag', value, mode: 'or' });
-    } else if (activeFilters[existIdx].mode !== 'and') {
-      activeFilters[existIdx].mode = 'and';
-      renderQueryChips();
-      renderPosts();
-    } else {
-      removeFilter(existIdx);
-    }
+    if (existIdx < 0) addFilter({ type: 'tag', value, mode: 'or' });
+    else removeFilter(existIdx);
     updateSidebarState();
   }
   function updateSidebarTags() {
@@ -994,7 +990,7 @@
   }
   document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip[data-filter-value]');
-    if (chip) cycleTagFilter(chip.dataset.filterValue);
+    if (chip) toggleTagFilter(chip.dataset.filterValue);
   });
   // 右クリックでピン解除
   document.getElementById('sbPinnedTags').addEventListener('contextmenu', (e) => {
@@ -1810,15 +1806,8 @@
     if (!chip) return;
     const fid = chip.dataset.fid;
     const existIdx = activeFilters.findIndex(f => f.type === 'folder' && f.value === fid);
-    if (existIdx < 0) {
-      addFilter({ type: 'folder', value: fid, mode: 'or' });
-    } else if (activeFilters[existIdx].mode !== 'and') {
-      activeFilters[existIdx].mode = 'and';
-      renderQueryChips();
-      renderPosts();
-    } else {
-      removeFilter(existIdx);
-    }
+    if (existIdx < 0) addFilter({ type: 'folder', value: fid, mode: 'or' });
+    else removeFilter(existIdx);
     renderPostFolders();
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
