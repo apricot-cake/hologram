@@ -76,7 +76,13 @@
     .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
        固定フッターにして、スクロールバーがバーに被らないようにする。 */
-    .sb-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+    /* 左: ガター6px（チェックボックスの negative margin が overflow で見切れない
+       よう padding 側に逃がす。位置は margin-left で相殺＝従来どおり）。
+       右: コンテンツとスクロールバーの間に 8px の余白。 */
+    .sb-scroll {
+      flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+      margin-left: -6px; padding-left: 6px; padding-right: 8px;
+    }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
     #appMain { flex: 1; min-width: 0; }
