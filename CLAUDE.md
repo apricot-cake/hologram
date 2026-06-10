@@ -32,7 +32,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
   - `_locales/`（en/ja）、`icons/`
 - `native-host/` — Native Messaging ブリッジ。`bridge.js`（保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）を**ベストエフォートでDLし `<id>-media-N.<ext>` に保存**＝静止画のみ・https限定・25MB/12s/12件上限・失敗時dropで保存自体は失敗させない）、`install.js`（ホスト登録）、`paths.js`（共有configパス）
 - `app/` — Electron デスクトップアプリ。`main.js`/`preload.js`/`renderer/`（`index.html`・`viewer.js`・`i18n.js`）、`vendor/jszip.min.js`。サイドカー走査で閲覧、保存先選択・拡張ID設定・ホスト自動登録。画像は `psimg://` プロトコルで遅延読込
-- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`backfill-metadata.js`（保存先の欠損メタを保存URLから再取得）、`test-metadata.js`（メタデータAPI取得の実地検証）、`test-mastodon-url.js`（Mastodonの非Mastodon由来canonical URLフォールバックの単体テスト＝モックfetch）、`test-bridge.js`/`test-media.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`/`test-app-watch.js`/`test-app-media.js`/`test-app-users.js`/`test-app-instances.js`（ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示/ユーザータブ/インスタンスフィルタのスモークテスト）、`make-icons.js`（アイコン生成）
+- `scripts/` — `inject-dummy.js`（保存先に jpg+サイドカー生成）、`verify-store.py`（サイドカーをAPI照合）、`test-select-posts.js`（テスト対象投稿を公開APIから自動選別→セッションシート出力）、`test-watch-verify.js`（保存先を監視し新規キャプチャをAPI再照合・`--recent N` で一括点検）、`backfill-metadata.js`（保存先の欠損メタを保存URLから再取得）、`test-metadata.js`（メタデータAPI取得の実地検証）、`test-mastodon-url.js`（Mastodonの非Mastodon由来canonical URLフォールバックの単体テスト＝モックfetch）、`test-bridge.js`/`test-media.js`/`test-app-render.js`/`test-app-ipc.js`/`test-app-hashtags.js`/`test-app-watch.js`/`test-app-media.js`/`test-app-users.js`/`test-app-instances.js`（ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示/ユーザータブ/インスタンスフィルタのスモークテスト）、`make-icons.js`（アイコン生成）
 
 ## キーボードショートカット
 
@@ -76,13 +76,13 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - テストケース定義: `scripts/test-plan.md`
 - テスト進捗記録: `scripts/test-progress.md`
 
-### 手順（キャプチャテスト）
+### 手順（キャプチャテスト・半自動フロー）
 
-1. claude が in chrome でテスト対象ページを開く
-2. ユーザーが Alt+S → 投稿クリック
-3. claude が検証: 保存先フォルダの `<id>.jpg`+`<id>.json` 生成を確認し、`python scripts/verify-store.py --recent N` でAPI照合
-4. 結果を `scripts/test-progress.md` に記録
-5. 次のテストケースに進む
+1. `node scripts/test-select-posts.js` — テスト対象投稿を公開APIから自動選別（セルごとのURL・アクション・期待値のシートを出力）
+2. `node scripts/test-watch-verify.js` — 保存先フォルダの監視を開始（キャプチャごとにAPI再照合し PASS/FAIL ＋ test-progress 用の行を自動出力）
+3. claude が in chrome でシートのURLを開く → ユーザーが Alt+S → クリック（またはドラッグ）
+4. watcher の出力行を `scripts/test-progress.md` に記録
+5. 次のセルに進む（過去分の一括点検は `node scripts/test-watch-verify.js --recent N`）
 
 ### 注意
 

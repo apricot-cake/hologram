@@ -41,7 +41,14 @@ def save_folder():
             return cfg["saveFolder"]
     except Exception:
         pass
-    return os.path.join(os.path.expanduser("~"), "Corpus")
+    # default library dir — must match native-host/paths.js defaultLibraryDir()
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+        return os.path.join(base, "Corpus", "library")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus", "library")
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "Corpus", "library")
 
 
 def parse_post_url(url):
