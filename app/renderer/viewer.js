@@ -37,6 +37,8 @@
     sbSortTitle: _s('sbSortTitle'),
     sbViewTitle: _s('sbViewTitle'),
     tipTagCycle: _s('tipTagCycle'),
+    sbFilterTip: _s('sbFilterTip'),
+    engParticle: _s('engParticle'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -299,6 +301,12 @@
   setText('sbViewTitle', MSG.sbViewTitle);
   setText('searchModeOptNormal', MSG.searchExact);
   setText('searchModeOptFuzzy', MSG.searchFuzzy);
+  // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
+  setText('sbEngParticle', MSG.engParticle);
+  const engParticleEl = document.getElementById('sbEngParticle');
+  if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
+  document.getElementById('sbTagSearchBtn').title = MSG.sbFilterTip;
+  document.getElementById('sbAuthorSearchBtn').title = MSG.sbFilterTip;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -748,14 +756,15 @@
     updateSidebarState();
   }
 
-  // Sidebar tag chips (dynamic)
+  // Sidebar tag chips (dynamic). The filter input hides behind the 🔍 next to
+  // the section title (closing it clears the filter).
+  let tagSearchOpen = false;
   function updateSidebarTags() {
     const container = document.getElementById('sbTagChips');
     const searchInput = document.getElementById('sbTagSearch');
     // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
     const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-    // Show the filter input only once the list is long enough to benefit.
-    searchInput.style.display = allTags.length > 6 ? '' : 'none';
+    searchInput.style.display = tagSearchOpen ? '' : 'none';
     if (allTags.length === 0) {
       container.innerHTML = '';
       return;
@@ -870,6 +879,13 @@
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
   // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
+  document.getElementById('sbTagSearchBtn').addEventListener('click', () => {
+    tagSearchOpen = !tagSearchOpen;
+    document.getElementById('sbTagSearchBtn').classList.toggle('active', tagSearchOpen);
+    if (!tagSearchOpen) document.getElementById('sbTagSearch').value = '';   // closing clears the filter
+    updateSidebarTags();
+    if (tagSearchOpen) document.getElementById('sbTagSearch').focus();
+  });
 
   // --- Authors (sidebar 作者 section; derived from post author fields, no fetching) ---
   // Group posts by author. Posts arrive newest-first, so the first occurrence
@@ -896,6 +912,7 @@
   // list is long; without a query the chip list is capped so the sidebar stays
   // compact (search reaches the long tail).
   const AUTHOR_LIMIT = 40;
+  let authorSearchOpen = false;
   function updateSidebarAuthors() {
     const container = document.getElementById('sbAuthorChips');
     const searchInput = document.getElementById('sbAuthorSearch');
@@ -903,7 +920,7 @@
     let users = buildUsers();
     users.sort((a, b) => b.count - a.count ||
       (a.displayName || a.screenName || '').localeCompare(b.displayName || b.screenName || ''));
-    searchInput.style.display = users.length > 8 ? '' : 'none';
+    searchInput.style.display = authorSearchOpen ? '' : 'none';
     const q = (searchInput.value || '').trim().toLowerCase().replace(/^@+/, '');
     if (q) users = users.filter(u =>
       (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
@@ -925,6 +942,13 @@
     });
   }
   document.getElementById('sbAuthorSearch').addEventListener('input', updateSidebarAuthors);
+  document.getElementById('sbAuthorSearchBtn').addEventListener('click', () => {
+    authorSearchOpen = !authorSearchOpen;
+    document.getElementById('sbAuthorSearchBtn').classList.toggle('active', authorSearchOpen);
+    if (!authorSearchOpen) document.getElementById('sbAuthorSearch').value = '';   // closing clears the filter
+    updateSidebarAuthors();
+    if (authorSearchOpen) document.getElementById('sbAuthorSearch').focus();
+  });
 
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---

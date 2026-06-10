@@ -712,6 +712,15 @@
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
+  /* 🔍 toggle sitting right next to a section title: reveals that section's
+     filter input (tags / authors). margin-right:auto keeps it adjacent to the
+     title text instead of being pushed to the far right by space-between. */
+  .sb-search-ico {
+    display: inline-flex; align-items: center; margin-right: auto;
+    background: none; border: none; padding: 2px; border-radius: 4px;
+    color: var(--text-muted); cursor: pointer;
+  }
+  .sb-search-ico:hover, .sb-search-ico.active { color: var(--accent); }
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
   .sb-sub {
@@ -842,25 +851,29 @@
         <!-- Engagement -->
         <div class="sb-section">
           <div class="sb-title" id="sbEngTitle"></div>
-          <!-- Parameter-styled like the 日付 section (75% small select = a field,
-               not the sort dropdown); the threshold row sits tight below it. -->
+          <!-- Reads as a sentence:「いいね（全SNS）が 0 以上」— the particle row is
+               indented under the metric select (same sub-structure as 日付), which
+               keeps the select from scanning as a sort dropdown. -->
           <select class="engagement-select" id="sbEngType" style="width:75%;font-size:11px;padding-top:4px;padding-bottom:4px;"></select>
-          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
-            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:84px;font-size:11px;">
-            <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;flex-shrink:0;"></button>
+          <div class="sb-sub" style="margin-top:6px;">
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="sb-sublabel" id="sbEngParticle"></span>
+              <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:84px;font-size:11px;">
+              <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;flex-shrink:0;"></button>
+            </div>
           </div>
         </div>
 
         <!-- Tags -->
         <div class="sb-section">
-          <div class="sb-title"><span id="sbTagTitle"></span></div>
+          <div class="sb-title"><span id="sbTagTitle"></span><button class="sb-search-ico" id="sbTagSearchBtn" type="button"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></button></div>
           <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
           <div class="sb-chips" id="sbTagChips"></div>
         </div>
 
         <!-- Authors (top creators by post count; replaces the old Users tab) -->
         <div class="sb-section collapsible">
-          <div class="sb-title"><span id="sbAuthorTitle">作者</span></div>
+          <div class="sb-title"><span id="sbAuthorTitle">作者</span><button class="sb-search-ico" id="sbAuthorSearchBtn" type="button"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></button></div>
           <input type="text" class="sb-tag-filter" id="sbAuthorSearch" style="display:none">
           <div class="sb-chips" id="sbAuthorChips"></div>
         </div>
