@@ -553,6 +553,25 @@
     .post-grid.folder-filtered .fold-btn.in { opacity: 0; }
     .post-grid.folder-filtered .post-card:hover .fold-btn.in { opacity: 1; }
     .fold-btn.added { background: var(--success); }
+    /* Right-click menu on 📁: pick the destination folder / set the default (★) */
+    .fold-menu {
+      position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px; display: none;
+    }
+    .fold-menu.show { display: block; }
+    .fold-menu .fm-row {
+      display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+      border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
+    }
+    .fold-menu .fm-row:hover { background: var(--hover); }
+    .fm-star { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; line-height: 1; padding: 0 2px; border-radius: 4px; }
+    .fm-star:hover { color: var(--fg); background: var(--active); }
+    .fm-star.on { color: var(--fg); }
+    .fm-name { flex: 1; word-break: break-word; }
+    .fm-check { color: var(--accent); flex-shrink: 0; }
+    .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+    .fm-manage { color: var(--accent); }
     .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
 
     /* --- ℹ detail-popup button on card (ported from image-view) --- */

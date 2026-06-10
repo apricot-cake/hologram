@@ -5,7 +5,7 @@
 // (onChange) are notified after any mutation so each view refreshes its own chips.
 //
 //   window.corpusFolders.{ load, all, defaultId, byId, has, inDefault,
-//     reconcile, toggleDefault, addToDefault, openManager, closeManager, isManagerOpen,
+//     reconcile, toggleDefault, toggleIn, addToDefault, setDefault, openManager, closeManager, isManagerOpen,
 //     toast, onChange, isLoaded }
 (function () {
   'use strict';
@@ -48,12 +48,10 @@
     if (changed) { persist(); notify('list'); }
   }
 
-  // Toggle membership of captureIds[] in the default folder. anchorCid decides the
-  // current state (the tile's representative id). Returns 'added' | 'removed' | null
-  // (null = no default set → the manager is opened so the user can create one).
-  function toggleDefault(captureIds, anchorCid) {
-    if (!defaultId) { openManager(); return null; }
-    const f = byId(defaultId); if (!f) return null;
+  // Toggle membership of captureIds[] in folder fid. anchorCid decides the
+  // current state (the tile's representative id). Returns 'added' | 'removed' | null.
+  function toggleIn(fid, captureIds, anchorCid) {
+    const f = byId(fid); if (!f) return null;
     const ids = (captureIds || []).filter(Boolean);
     if (!ids.length) return null;
     const anchor = anchorCid != null ? anchorCid : ids[0];
@@ -64,6 +62,21 @@
     toast(wasIn ? `「${f.name}」から削除` : `「${f.name}」に追加`);
     notify('membership');
     return wasIn ? 'removed' : 'added';
+  }
+
+  // Same, against the default folder (null = no default set → manager opens).
+  function toggleDefault(captureIds, anchorCid) {
+    if (!defaultId) { openManager(); return null; }
+    return toggleIn(defaultId, captureIds, anchorCid);
+  }
+
+  // Make fid the default folder (★).
+  function setDefault(fid) {
+    const f = byId(fid); if (!f) return;
+    defaultId = fid;
+    persist(); renderModal();
+    toast(`「${f.name}」をデフォルトに設定`);
+    notify('list');
   }
 
   // Add captureIds[] to the default folder (pure add — never removes). Returns
@@ -141,7 +154,7 @@
 
   window.corpusFolders = {
     load, all: () => folders, defaultId: () => defaultId, byId, has, inDefault,
-    reconcile, toggleDefault, addToDefault, openManager, closeManager, isManagerOpen,
+    reconcile, toggleDefault, toggleIn, addToDefault, setDefault, openManager, closeManager, isManagerOpen,
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();

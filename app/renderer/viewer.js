@@ -39,6 +39,8 @@
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTip: _s('sbFilterTip'),
     engParticle: _s('engParticle'),
+    ctxSetDefault: _s('ctxSetDefault'),
+    ctxManage: _s('ctxManage'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -1269,7 +1271,7 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
-        <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除（右クリックでフォルダ選択）' : 'フォルダを作成して追加（右クリックでフォルダ選択）'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}">ℹ</button>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
@@ -1469,6 +1471,64 @@
       renderPosts();
     }
   });
+
+  // Right-click on a card's 📁: context menu listing every folder — click a row
+  // to add/remove THIS post (group) to that folder, ★ to make it the default.
+  const foldMenu = document.createElement('div');
+  foldMenu.className = 'fold-menu';
+  document.body.appendChild(foldMenu);
+  let foldMenuGroup = null;
+  function hideFoldMenu() { foldMenu.classList.remove('show'); foldMenuGroup = null; }
+  function showFoldMenu(g, x, y) {
+    if (!CF()) return;
+    foldMenuGroup = g;
+    const list = CF().all();
+    const def = CF().defaultId();
+    const rep = g.rep.captureId;
+    foldMenu.innerHTML = list.map((f) => {
+      const inF = CF().has(f.id, rep);
+      return `<div class="fm-row" data-fid="${escapeAttr(f.id)}">` +
+        `<button class="fm-star${f.id === def ? ' on' : ''}" data-star="${escapeAttr(f.id)}" title="${MSG.ctxSetDefault}">★</button>` +
+        `<span class="fm-name">${escapeHtml(f.name)}</span>` +
+        (inF ? '<span class="fm-check">✓</span>' : '') +
+        `</div>`;
+    }).join('') + (list.length ? '<div class="fm-sep"></div>' : '') +
+      `<div class="fm-row fm-manage" data-manage="1">${MSG.ctxManage}</div>`;
+    foldMenu.style.left = x + 'px';
+    foldMenu.style.top = y + 'px';
+    foldMenu.classList.add('show');
+    const r = foldMenu.getBoundingClientRect();   // clamp into the viewport
+    if (r.right > innerWidth - 8) foldMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
+    if (r.bottom > innerHeight - 8) foldMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+  }
+  document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
+    const btn = e.target.closest('.fold-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const g = viewGroups[parseInt(btn.dataset.fold, 10)];
+    if (g) showFoldMenu(g, e.clientX, e.clientY);
+  });
+  foldMenu.addEventListener('click', (e) => {
+    if (!CF()) { hideFoldMenu(); return; }
+    const star = e.target.closest('.fm-star');
+    if (star) {
+      e.stopPropagation();
+      CF().setDefault(star.dataset.star);
+      renderPosts(true);   // 📁 'in' states reflect the new default
+      hideFoldMenu();
+      return;
+    }
+    if (e.target.closest('[data-manage]')) { hideFoldMenu(); CF().openManager(); return; }
+    const row = e.target.closest('.fm-row[data-fid]');
+    if (row && foldMenuGroup) {
+      CF().toggleIn(row.dataset.fid, foldMenuGroup.records.map((r2) => r2.captureId), foldMenuGroup.rep.captureId);
+      renderPosts(true);
+    }
+    hideFoldMenu();
+  });
+  document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
 
   // Sidebar folder chips (shared folders.json): count + ★default + single-select filter.
   function renderPostFolders() {
