@@ -110,24 +110,26 @@
    SEMANTIC — DARK
    ========================================================================== */
 [data-theme="dark"] {
-  --bg:            var(--gray-950);
-  --surface:       #14171c;
-  --surface-2:     #1a1e24;
-  --surface-3:     #222730;
-  --sidebar-bg:    #1e232b;
+  /* Near-neutral grays: the original slate ramp had a strong blue bias
+     (B−R up to +19); these keep the same lightness with ~1/3 the bias. */
+  --bg:            #0e0f11;
+  --surface:       #16171a;
+  --surface-2:     #1c1e21;
+  --surface-3:     #25272b;
+  --sidebar-bg:    #202226;
 
-  --text:          var(--gray-200);
-  --text-strong:   #f3f5f8;
-  --text-muted:    #8b929e;
-  --text-subtle:   #626973;
+  --text:          #dadce0;
+  --text-strong:   #f4f5f7;
+  --text-muted:    #8e9298;
+  --text-subtle:   #65686e;
   --text-on-accent:#ffffff;
 
-  --border:        #262b33;
-  --border-strong: #323845;
-  --border-subtle: #1d2128;
+  --border:        #282a2e;
+  --border-strong: #36383d;
+  --border-subtle: #1f2124;
 
-  --hover:         #1e232b;
-  --active:        #262c35;
+  --hover:         #202226;
+  --active:        #292b30;
   --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
 
   --accent:         var(--blue-500);

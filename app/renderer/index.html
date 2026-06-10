@@ -830,10 +830,12 @@
         <!-- Engagement -->
         <div class="sb-section">
           <div class="sb-title" id="sbEngTitle"></div>
-          <select class="engagement-select" id="sbEngType" style="width:100%;margin-bottom:6px;font-size:11px;"></select>
-          <div style="display:flex;gap:4px;align-items:center;">
-            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="flex:1;font-size:11px;">
-            <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;"></button>
+          <!-- One condition row 「いいね（全SNS）｜0｜以上」: reads as a filter
+               condition, not a sort (a lone full-width select looked like 並び順). -->
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select class="engagement-select" id="sbEngType" style="flex:1;min-width:0;font-size:11px;padding-top:4px;padding-bottom:4px;"></select>
+            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:52px;flex-shrink:0;font-size:11px;">
+            <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;flex-shrink:0;"></button>
           </div>
         </div>
 
