@@ -268,17 +268,23 @@
     .delete-btn:hover { background: color-mix(in oklch, var(--danger) 82%, transparent); }
     .post-card:hover .delete-btn { opacity: 1; }
     .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+    /* ○ select ring — the ONLY selection entry point. A hollow white ring with a
+       soft dark halo (visible on any image), top-left, shown on hover; fills with
+       the accent + ✓ once selected (selected cards keep it shown). */
     .post-card .select-check {
       position: absolute; top: 8px; left: 8px;
-      width: 24px; height: 24px; border-radius: 50%;
-      background: rgba(255,255,255,0.85); border: 2px solid #ccc;
-      display: none; cursor: pointer; z-index: 1;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: transparent; border: 2px solid #fff;
+      box-shadow: 0 0 2px 1px rgba(0,0,0,0.45);
+      opacity: 0; transition: opacity .1s, background .1s;
+      display: flex; cursor: pointer; z-index: 5;
       align-items: center; justify-content: center;
     }
-    .post-card.selected .select-check { display: flex; background: var(--accent); border-color: var(--accent); }
+    .post-card:hover .select-check { opacity: 1; }
+    .post-card.selected .select-check { opacity: 1; background: var(--accent); border-color: #fff; }
     /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph) */
     .post-card.selected .select-check::after {
-      content: ''; width: 5px; height: 10px; margin-top: -1px;
+      content: ''; width: 5px; height: 9px; margin-top: -1px;
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
     }
 
@@ -336,8 +342,10 @@
     .post-grid:not(.tile-view) .card-ntag {
       display: block; position: absolute; top: 8px; left: 8px; z-index: 1;
       padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;
-      background: rgba(0,0,0,0.72); color: #fff;
+      background: rgba(0,0,0,0.72); color: #fff; transition: opacity .1s;
     }
+    /* the ○ select ring shares the top-left corner: it takes over on hover */
+    .post-grid:not(.tile-view) .post-card:hover .card-ntag { opacity: 0; }
     .post-card.selected .card-ntag { display: none; }
     .post-grid.tile-view .card-overlay {
       display: flex; align-items: center; gap: 8px;

@@ -29,6 +29,7 @@
     expandAll: _s('expandAll'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
     tipInfo: _s('tipInfo'),
+    tipSelect: _s('tipSelect'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -1227,7 +1228,7 @@
       const postKey = postIdKey(p);
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
-        <div class="select-check"></div>
+        <div class="select-check" title="${MSG.tipSelect}"></div>
         <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除' : 'フォルダを作成して追加'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}">ℹ</button>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
@@ -1453,15 +1454,15 @@
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
-  // Click the card body (anything but the image, the post/edit/delete buttons,
-  // or the expandable text) to select it. Plain click selects only that card;
-  // Ctrl/Cmd-click toggles one; Shift-click selects the range from the anchor.
+  // ○ select ring (top-left, shown on hover) — the ONLY way in or out of the
+  // selection. Click toggles the card; Shift-click additionally selects the
+  // range from the last-selected card (anchor), Google-Photos style. Clicking
+  // the card body no longer selects anything.
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    if (e.target.closest('.delete-btn') || e.target.closest('.edit-btn') ||
-        e.target.closest('.open-btn') || e.target.closest('.card-img') ||
-        e.target.closest('.fold-btn') || e.target.closest('.info-btn') ||
-        e.target.closest('.text')) return;
-    const card = e.target.closest('.post-card');
+    const ring = e.target.closest('.select-check');
+    if (!ring) return;
+    e.stopPropagation();
+    const card = ring.closest('.post-card');
     if (!card) return;
     const idx = parseInt(card.dataset.index, 10);
     const key = card.dataset.key;
@@ -1469,19 +1470,16 @@
     if (e.shiftKey && selectionAnchor !== null) {
       const lo = Math.min(selectionAnchor, idx);
       const hi = Math.max(selectionAnchor, idx);
-      selectedSet.clear();
       for (let i = lo; i <= hi; i++) { if (viewGroups[i]) selectedSet.add(postIdKey(viewGroups[i].rep)); }
-    } else if (e.ctrlKey || e.metaKey) {
-      if (selectedSet.has(key)) selectedSet.delete(key); else selectedSet.add(key);
       selectionAnchor = idx;
+    } else if (selectedSet.has(key)) {
+      selectedSet.delete(key);
+      selectionAnchor = null;
     } else {
-      // Plain click: select only this (clicking the sole selection clears it).
-      const only = selectedSet.size === 1 && selectedSet.has(key);
-      selectedSet.clear();
-      if (!only) selectedSet.add(key);
-      selectionAnchor = only ? null : idx;
+      selectedSet.add(key);
+      selectionAnchor = idx;
     }
-    renderPosts();
+    renderPosts(true);   // keepLimit: no scroll-window reset, no entrance-anim replay
     updateSelectionBar();
   });
 
@@ -1696,7 +1694,7 @@
   function clearSelection() {
     selectedSet.clear();
     selectionAnchor = null;
-    renderPosts();
+    renderPosts(true);
     updateSelectionBar();
   }
 
@@ -1734,7 +1732,25 @@
     } else {
       viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
     }
-    renderPosts();
+    renderPosts(true);
+    updateSelectionBar();
+  });
+
+  // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
+  // typing in a field or when a modal/overlay is open (native select-all there).
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
+    if (!document.getElementById('settingsView').hidden) return;
+    if (!document.getElementById('postDetail').hidden) return;
+    if (!document.getElementById('ivFolderModal').hidden) return;
+    if (viewGroups.length === 0) return;
+    e.preventDefault();
+    viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
+    selectionAnchor = null;
+    renderPosts(true);
     updateSelectionBar();
   });
 
