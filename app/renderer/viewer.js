@@ -52,6 +52,13 @@
     histFwd: _s('histFwd'),
     qcDropHere: _s('qcDropHere'),
     qcDropMove: _s('qcDropMove'),
+    qbHelpTitle: _s('qbHelpTitle'),
+    qbHelp1: _s('qbHelp1'),
+    qbHelp2: _s('qbHelp2'),
+    qbHelp3: _s('qbHelp3'),
+    qbHelp4: _s('qbHelp4'),
+    qbHelp5: _s('qbHelp5'),
+    tagGroupsTitle: _s('tagGroupsTitle'),
     tipZone: _s('tipZone'),
     qfAdd: _s('qfAdd'),
     qfCatFolder: _s('qfCatFolder'),
@@ -328,6 +335,7 @@
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('sbPinTitle', MSG.pinnedTags);
+  setText('sbGroupTitle', MSG.tagGroupsTitle);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
@@ -669,6 +677,29 @@
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
+  // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
+  const qbHelpPop = document.createElement('div');
+  qbHelpPop.className = 'qb-help-pop';
+  document.body.appendChild(qbHelpPop);
+  function hideQbHelp() { qbHelpPop.classList.remove('show'); }
+  document.getElementById('qbHelpBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (qbHelpPop.classList.contains('show')) { hideQbHelp(); return; }
+    qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` +
+      [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5]
+        .map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
+    const r = e.currentTarget.getBoundingClientRect();
+    qbHelpPop.style.left = r.left + 'px';
+    qbHelpPop.style.top = (r.bottom + 6) + 'px';
+    qbHelpPop.classList.add('show');
+    const pr = qbHelpPop.getBoundingClientRect();
+    if (pr.right > innerWidth - 8) qbHelpPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+  });
+  document.addEventListener('click', (e) => {
+    if (qbHelpPop.classList.contains('show') && !qbHelpPop.contains(e.target) && !e.target.closest('#qbHelpBtn')) hideQbHelp();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbHelp(); });
+
   // Chip click handler
   document.getElementById('queryChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-active-chip');
@@ -950,6 +981,8 @@
       rows.push(`<button class="sb-chip${activeN ? ' active' : ''}" data-tag-group="__other">${escapeHtml(MSG.tagGroupOther)}<span class="iv-tagn">${rest.length}</span><span class="sb-chip-arrow">▸</span></button>`);
     }
     groupHost.innerHTML = rows.join('');
+    const groupTitle = document.getElementById('sbGroupTitle');
+    if (groupTitle) groupTitle.style.display = rows.length ? '' : 'none';
   }
   document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip[data-filter-value]');

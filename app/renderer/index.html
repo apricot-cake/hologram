@@ -814,6 +814,23 @@
     }
     #queryChips .sb-active-chip { cursor: grab; }
     #queryChips .sb-active-chip:active { cursor: grabbing; }
+    /* ⓘ クエリビルダの使い方ヘルプ */
+    .qb-help {
+      flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border: none; border-radius: 50%;
+      background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
+    }
+    .qb-help:hover { color: var(--accent); }
+    .qb-help-pop {
+      position: fixed; z-index: 12000; display: none; max-width: 360px;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-radius: 10px; box-shadow: var(--shadow-pop); padding: 12px 14px;
+      font-size: 12px; line-height: 1.7; color: var(--text);
+    }
+    .qb-help-pop.show { display: block; animation: corpusPopIn .15s ease-out; }
+    .qb-help-pop .qh-title { font-weight: 700; margin-bottom: 6px; }
+    .qb-help-pop .qh-row { display: flex; gap: 7px; margin-top: 4px; }
+    .qb-help-pop .qh-row::before { content: '・'; color: var(--text-subtle); flex-shrink: 0; }
     /* grip dots = 「ドラッグで移せる」の定番アフォーダンス（pseudo なので
        textContent には乗らない） */
     #queryChips .sb-active-chip[draggable]::before {
@@ -889,7 +906,9 @@
   }
   .sb-row .sb-row-badge.on { display: inline-block; }
   .sb-row .sb-row-arrow { color: var(--text-subtle); font-size: 10px; }
-  /* tag-group buttons: chip look + ▸ (they open a flyout, not toggle) */
+  /* tag-group buttons: squared corners + ▸ so they read as「開くもの」—
+     丸ピル（タグ実体）との境界をはっきりさせる */
+  #sbTagGroupRows .sb-chip { border-radius: 6px; }
   .sb-chip .sb-chip-arrow { margin-left: 4px; color: var(--text-subtle); font-size: 9px; }
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
@@ -982,7 +1001,8 @@
           <div class="sb-title"><span id="sbTagTitle"></span></div>
           <div class="sb-subtitle" id="sbPinTitle" style="display:none;"></div>
           <div class="sb-chips" id="sbPinnedTags"></div>
-          <div class="sb-chips" id="sbTagGroupRows" style="margin-top:8px;"></div>
+          <div class="sb-subtitle" id="sbGroupTitle" style="display:none; margin-top:10px;"></div>
+          <div class="sb-chips" id="sbTagGroupRows"></div>
         </div>
 
         <!-- Folders (shared with image-view via folders.json) -->
@@ -1011,6 +1031,7 @@
     <div class="app-content">
       <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
       <div id="postActiveBar" class="content-activebar" style="display:none">
+        <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
         <div class="sb-chips" id="queryChips"></div>
         <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       </div>
