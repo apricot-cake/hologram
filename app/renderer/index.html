@@ -81,7 +81,7 @@
        右: コンテンツとスクロールバーの間に 8px の余白。 */
     .sb-scroll {
       flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
-      margin-left: -6px; padding-left: 6px; padding-right: 8px;
+      margin-left: -6px; padding-left: 6px; padding-right: 8px; padding-bottom: 16px;
     }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
@@ -112,8 +112,8 @@
 
     /* --- Toolbar (stacked in the sidebar) --- */
     .toolbar {
-      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-      margin-bottom: 8px;
+      display: flex; flex-direction: column; align-items: stretch; gap: 22px;
+      margin-bottom: 22px;   /* same inter-section rhythm as .sb-section */
     }
     .toolbar select { width: 100%; }
     .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
@@ -180,9 +180,8 @@
     #sidebar .view-toggle button:not(.active):hover, #sidebar .tile-size button:hover { border-color: var(--accent); color: var(--accent); }
     #sidebar .icon-btn:hover { background: var(--hover); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
-    /* checkbox rows: hang the box in the gutter so the LABEL text sits on the
-       shared 23px axis (box ≈13px + 6px gap → start the row at 4px) */
-    #sidebar .iv-check { margin-left: -6px; }
+    /* checkbox rows: the BOX aligns with the control edge (same x as the pill
+       chips above), like any other control in the column */
     .engagement-select {
       padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 12px; color: var(--text); background: var(--surface); outline: none; cursor: pointer;
@@ -633,7 +632,9 @@
        date) start their text at 10(sidebar pad)+1(border)+12(inner pad)=23px, so
        bare text (titles, subtitles, counts) gets a 13px indent to land on the
        same axis, and pills use a 12px inner pad. */
-    .sb-section { padding: 6px 0; margin-bottom: 6px; }
+    /* Rhythm: generous space BETWEEN sections, tight spacing inside them
+       (title→content 6px, rows 4-8px) — Linear-style grouping. */
+    .sb-section { padding: 0; margin-bottom: 22px; }
     .sb-title {
       font-size: 11px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
@@ -709,6 +710,15 @@
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
+  /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
+     the 23px text axis, labels at readable contrast. */
+  .sb-sub {
+    display: flex; flex-direction: column; gap: 2px;
+    margin-left: 13px; padding-left: 10px;
+    border-left: 2px solid var(--border-strong);
+  }
+  .sb-sublabel { font-size: 11px; color: var(--text-muted); }
+  .sb-sub .date-input { width: 100%; }
   </style>
 </head>
 <body>
@@ -819,22 +829,22 @@
             <option value="date" id="sbDateOptPost"></option>
             <option value="capturedAt" id="sbDateOptCapture"></option>
           </select>
-          <div style="display:flex;flex-direction:column;gap:2px;margin-top:8px;">
-            <label style="font-size:10px;color:var(--text-subtle);" id="sbDateFromLabel"></label>
-            <input type="date" class="date-input" id="sbDateFrom" style="width:75%;font-size:11px;">
-            <label style="font-size:10px;color:var(--text-subtle);margin-top:6px;" id="sbDateToLabel"></label>
-            <input type="date" class="date-input" id="sbDateTo" style="width:75%;font-size:11px;">
+          <div class="sb-sub" style="margin-top:8px;">
+            <label class="sb-sublabel" id="sbDateFromLabel"></label>
+            <input type="date" class="date-input" id="sbDateFrom" style="font-size:11px;">
+            <label class="sb-sublabel" style="margin-top:8px;" id="sbDateToLabel"></label>
+            <input type="date" class="date-input" id="sbDateTo" style="font-size:11px;">
           </div>
         </div>
 
         <!-- Engagement -->
         <div class="sb-section">
           <div class="sb-title" id="sbEngTitle"></div>
-          <!-- One condition row 「いいね（全SNS）｜0｜以上」: reads as a filter
-               condition, not a sort (a lone full-width select looked like 並び順). -->
-          <div style="display:flex;gap:6px;align-items:center;">
-            <select class="engagement-select" id="sbEngType" style="flex:1;min-width:0;font-size:11px;padding-top:4px;padding-bottom:4px;"></select>
-            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:52px;flex-shrink:0;font-size:11px;">
+          <!-- Parameter-styled like the 日付 section (75% small select = a field,
+               not the sort dropdown); the threshold row sits tight below it. -->
+          <select class="engagement-select" id="sbEngType" style="width:75%;font-size:11px;padding-top:4px;padding-bottom:4px;"></select>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+            <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:84px;font-size:11px;">
             <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;flex-shrink:0;"></button>
           </div>
         </div>
