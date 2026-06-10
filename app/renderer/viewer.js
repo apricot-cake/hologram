@@ -57,7 +57,8 @@
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
-    freqTags: _s('freqTags'),
+    pinnedTags: _s('pinnedTags'),
+    tipPin: _s('tipPin'),
     qfFindPh: _s('qfFindPh'),
     exportModeFull: _s('exportModeFull'),
     exportModeImages: _s('exportModeImages'),
@@ -325,7 +326,7 @@
   const engParticleEl = document.getElementById('sbEngParticle');
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
-  setText('sbFreqTitle', '★ ' + MSG.freqTags);
+  setText('sbPinTitle', '📌 ' + MSG.pinnedTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
@@ -426,17 +427,18 @@
     return y === thisYear ? `${parseInt(m)}/${parseInt(d)}` : `${y}/${parseInt(m)}/${parseInt(d)}`;
   }
 
-  // --- Tag frecency (使うほど上に出る「よく使うタグ」; 手動管理なし) ----------
-  // localStorage: { tag: { n: useCount, t: lastUsedMs } }; score halves every 30d.
-  const FREQ_KEY = 'corpus.tagFrecency';
-  function loadFreq() { try { return JSON.parse(localStorage.getItem(FREQ_KEY)) || {}; } catch { return {}; } }
-  function bumpTagFreq(tag) {
-    const f = loadFreq();
-    const e = f[tag] || { n: 0 };
-    e.n++; e.t = Date.now(); f[tag] = e;
-    try { localStorage.setItem(FREQ_KEY, JSON.stringify(f)); } catch { /* quota — non-fatal */ }
+  // --- Pinned tags (📌 ユーザーが明示的に選んだタグだけサイドバーに常駐) -------
+  // 自動の「よく使うタグ」は中身が予測できず認知負荷が高い、という判断で
+  // ピン留め式に置換。ピンが無ければセクションごと出ない。
+  const PIN_KEY = 'corpus.pinnedTags';
+  function loadPins() { try { return JSON.parse(localStorage.getItem(PIN_KEY)) || []; } catch { return []; } }
+  function togglePin(tag) {
+    const pins = loadPins();
+    const i = pins.indexOf(tag);
+    if (i >= 0) pins.splice(i, 1); else pins.push(tag);
+    try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch { /* quota — non-fatal */ }
+    updateSidebarTags();
   }
-  function freqScore(e) { return e.n * Math.pow(0.5, (Date.now() - (e.t || 0)) / 86400000 / 30); }
 
   function addFilter(filter) {
     // Prevent exact duplicates
@@ -446,7 +448,6 @@
       return f.value === filter.value;
     });
     if (isDup) return;
-    if (filter.type === 'tag') bumpTagFreq(filter.value);
     // date + kind are single-valued (択一): a new one replaces the existing.
     if (filter.type === 'date' || filter.type === 'kind') {
       activeFilters = activeFilters.filter(f => f.type !== filter.type);
@@ -575,7 +576,9 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    const rowOf = (it) => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}</div>`;
+    // タグ行には📌（ピン留め/解除）を付ける — ピン済みは常時表示・他はホバーで
+    const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
+    const rowOf = (it) => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">📌</span>` : ''}</div>`;
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
@@ -610,6 +613,13 @@
     if (pr.bottom > innerHeight - 8) qfPop.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
   }
   qfPop.addEventListener('click', (e) => {
+    // 📌 ピン留めトグル（行クリックの選択とは独立）
+    const pin = e.target.closest('.qf-pin');
+    if (pin) {
+      togglePin(pin.dataset.pinval);
+      renderQfPop();
+      return;
+    }
     const val = e.target.closest('[data-qfval]');
     if (val && qfCat) {
       const v = val.dataset.qfval;
@@ -884,28 +894,23 @@
     updateSidebarState();
   }
   function updateSidebarTags() {
-    const freqHost = document.getElementById('sbFreqTags');
+    const pinHost = document.getElementById('sbPinnedTags');
     const groupHost = document.getElementById('sbTagGroupRows');
-    if (!freqHost || !groupHost) return;
+    if (!pinHost || !groupHost) return;
     // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
     const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-    const freqTitle = document.getElementById('sbFreqTitle');
-    if (freqTitle) freqTitle.style.display = allTags.length ? '' : 'none';
-    if (!allTags.length) { freqHost.innerHTML = ''; groupHost.innerHTML = ''; return; }
+    if (!allTags.length) { pinHost.innerHTML = ''; groupHost.innerHTML = ''; return; }
     const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     const chip = (t) => {
       const st = tagState.get(t);
       const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
       return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
     };
-    // よく使うタグ: frecency 上位（未学習時はライブラリ内の付与数で代替）
-    const cnt = new Map();
-    for (const p of allPosts) if (p.url) for (const t of (p.tags || [])) cnt.set(t, (cnt.get(t) || 0) + 1);
-    const freq = loadFreq();
-    const top = [...allTags]
-      .sort((a, b) => ((freq[b] ? freqScore(freq[b]) : 0) - (freq[a] ? freqScore(freq[a]) : 0)) || ((cnt.get(b) || 0) - (cnt.get(a) || 0)))
-      .slice(0, 12);
-    freqHost.innerHTML = top.map(chip).join('');
+    // 📌 ピン留めタグ: ユーザーが明示的に選んだものだけ（無ければ見出しごと非表示）
+    const pins = loadPins().filter((t) => allTags.includes(t));
+    const pinTitle = document.getElementById('sbPinTitle');
+    if (pinTitle) pinTitle.style.display = pins.length ? '' : 'none';
+    pinHost.innerHTML = pins.map(chip).join('');
     // タググループ行: グループ内に存在するタグ数 ＋ 適用中なら active。
     const grouped = new Set();
     const rows = [];
@@ -923,9 +928,16 @@
     }
     groupHost.innerHTML = rows.join('');
   }
-  document.getElementById('sbFreqTags').addEventListener('click', (e) => {
+  document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip[data-filter-value]');
     if (chip) cycleTagFilter(chip.dataset.filterValue);
+  });
+  // 右クリックでピン解除
+  document.getElementById('sbPinnedTags').addEventListener('contextmenu', (e) => {
+    const chip = e.target.closest('.sb-chip[data-filter-value]');
+    if (!chip) return;
+    e.preventDefault();
+    togglePin(chip.dataset.filterValue);
   });
   document.getElementById('sbTagGroupRows').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tag-group]');

@@ -129,8 +129,9 @@
       qfCatFolder: 'フォルダ',
       sbTopTip: '最上部へ',
       ungroupDone: 'グループを解除しました',
-      tagGroupOther: 'その他',
-      freqTags: 'よく使うタグ',
+      tagGroupOther: '未分類',
+      pinnedTags: 'ピン留め',
+      tipPin: 'サイドバーにピン留め/解除',
       qfFindPh: '絞り込み…',
       sbFilterTitle: 'フィルタ',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
@@ -365,8 +366,9 @@
       qfCatFolder: 'Folders',
       sbTopTip: 'Back to top',
       ungroupDone: 'Ungrouped',
-      tagGroupOther: 'Other',
-      freqTags: 'Frequent tags',
+      tagGroupOther: 'Uncategorized',
+      pinnedTags: 'Pinned',
+      tipPin: 'Pin to / unpin from the sidebar',
       qfFindPh: 'Filter…',
       sbFilterTitle: 'Filters',
       // viewer: settings > backup (incremental export to a chosen folder)

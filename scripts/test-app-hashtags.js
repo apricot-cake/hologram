@@ -40,8 +40,6 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-  // タグ面: ★よく使うタグのチップ（一意8個）＋「その他」グループボタン → フライアウト
-  const sbAll = new Set([...document.querySelectorAll('#sbFreqTags .sb-chip')].map(c => c.dataset.filterValue)).size;
   document.querySelector('#sbTagGroupRows [data-tag-group="__other"]').click();
   await sleep(60);
   const pop = document.querySelector('.qf-pop');
@@ -56,7 +54,7 @@ const evalJs = `(async () => {
   await sleep(120);
   const htCards = document.querySelectorAll('#postGrid .post-card').length;
 
-  return { sbAll, flyTags, htCards };
+  return { flyTags, htCards };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -78,7 +76,6 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('frequent-tag chips cover all 8 unique tags', r.sbAll === 8);
   check('その他 group flyout lists the 8 tags', r.flyTags === 8);
   check('searching "#typescript" narrows the grid to its 2 posts', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));

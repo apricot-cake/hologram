@@ -812,6 +812,11 @@
     }
     .qf-pop .qf-find:focus { border-color: var(--accent); }
     .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; color: var(--text-muted); padding: 6px 8px 2px; }
+    /* 📌 pin toggle on tag rows: pinned = always shown, others appear on hover */
+    .qf-pop .qf-pin { flex-shrink: 0; margin-left: 4px; font-size: 11px; cursor: pointer; opacity: 0; filter: grayscale(1); transition: opacity .1s; }
+    .qf-pop .fm-row:hover .qf-pin { opacity: .65; }
+    .qf-pop .qf-pin:hover { opacity: 1; }
+    .qf-pop .qf-pin.on { opacity: 1; filter: none; }
     /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者/フォルダ候補） */
     .search-suggest {
       position: fixed; z-index: 12000; display: none; max-height: 300px; overflow-y: auto;
@@ -936,12 +941,12 @@
           <label class="iv-check" style="margin-top:8px;"><input type="checkbox" id="multiOnly"> <span id="multiOnlyLabel">複数画像のみ</span></label>
         </div>
 
-        <!-- Tags: frequent chips (1 click) + tag-group buttons (flyout per group).
-             Groups are user-curated and bounded — unlike the tag list itself. -->
+        <!-- Tags: 📌 pinned chips (user-curated, hidden when none) + tag-group
+             buttons (flyout per group). Groups are bounded, unlike tags. -->
         <div class="sb-section">
           <div class="sb-title"><span id="sbTagTitle"></span></div>
-          <div class="sb-subtitle" id="sbFreqTitle"></div>
-          <div class="sb-chips" id="sbFreqTags"></div>
+          <div class="sb-subtitle" id="sbPinTitle" style="display:none;"></div>
+          <div class="sb-chips" id="sbPinnedTags"></div>
           <div class="sb-chips" id="sbTagGroupRows" style="margin-top:8px;"></div>
         </div>
 
