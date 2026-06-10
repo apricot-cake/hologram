@@ -21,7 +21,12 @@ function parsePostUrl(url) {
   if (host === 'bsky.app' && (m = u.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) {
     return { platform: 'bluesky', handle: m[1], rkey: m[2] };
   }
-  if ((host === 'x.com' || host === 'twitter.com') && (m = u.pathname.match(/\/status\/(\d+)/))) {
+  // Subdomains (pro.x.com, mobile.twitter.com …) serve the same web UI and are
+  // accepted by content.js's host match — accept them here too, otherwise the
+  // capture saves with platform-only metadata. (audit 2026-06-11)
+  if ((host === 'x.com' || host === 'twitter.com' ||
+       host.endsWith('.x.com') || host.endsWith('.twitter.com')) &&
+      (m = u.pathname.match(/\/status\/(\d+)/))) {
     return { platform: 'x', id: m[1], screenName: (u.pathname.match(/^\/([^/]+)\/status/) || [])[1] || null };
   }
   // Mastodon web URL: /@user/<numericId> (id starts with a digit; excludes
@@ -74,12 +79,14 @@ function xMediaType(details) {
 }
 
 // Original-resolution still images only (skip video/animated_gif).
+// The bare pbs.twimg.com URL serves the MEDIUM variant; ?name=orig is required
+// for the actual original (verified empirically — audit 2026-06-11).
 function xMedia(details) {
   if (!Array.isArray(details)) return [];
   return details
     .filter((m) => m && m.type === 'photo' && m.media_url_https)
     .map((m) => ({
-      url: m.media_url_https,
+      url: m.media_url_https + (m.media_url_https.includes('?') ? '' : '?name=orig'),
       alt: m.ext_alt_text || null,
       width: (m.original_info && m.original_info.width) || null,
       height: (m.original_info && m.original_info.height) || null
@@ -89,6 +96,10 @@ function xMedia(details) {
 async function fetchXTweet(parsed, url) {
   const rec = emptyRecord(url, 'x');
   rec.screenName = parsed.screenName;
+  // Canonical permalink: anchors on the page can carry /photo/N, /analytics or
+  // query strings, and subdomain hosts (pro.x.com) may not resolve as a status
+  // page — rebuild the bare https://x.com/<user>/status/<id> form.
+  if (parsed.screenName) rec.url = `https://x.com/${parsed.screenName}/status/${parsed.id}`;
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
     const res = await fetch(api, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -99,6 +110,7 @@ async function fetchXTweet(parsed, url) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;
       rec.userId = j.user.id_str || null;
+      if (j.user.screen_name) rec.url = `https://x.com/${j.user.screen_name}/status/${parsed.id}`;
     }
     rec.likes = j.favorite_count ?? null;
     rec.replies = j.conversation_count ?? null;
@@ -216,7 +228,10 @@ async function fetchBlueskyPost(parsed, url) {
       const quri = rec2.uri || (rec2.record && rec2.record.uri);
       if (quri) {
         const qm = quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/);
-        const qhandle = (post.embed && post.embed.record && post.embed.record.author && post.embed.record.author.handle);
+        // recordWithMedia nests the quoted ViewRecord one level deeper
+        // (embed.record.record) — read the handle from whichever level has it.
+        const qhandle = (rec2.author && rec2.author.handle) ||
+          (rec2.record && rec2.record.author && rec2.record.author.handle);
         if (qm) rec.quotedUrl = `https://bsky.app/profile/${qhandle || qm[1]}/post/${qm[2]}`;
       }
     }
@@ -263,7 +278,12 @@ async function fetchMisskeyNote(parsed, url) {
     rec.date = toIso(note.createdAt);
     if (note.user) {
       rec.displayName = note.user.name || null;
-      rec.screenName = note.user.username || null;
+      // Federated remote authors carry their home server in user.host — keep it
+      // (user@host, like Mastodon's acct) so same-named users on different
+      // instances don't collapse into one identity.
+      rec.screenName = note.user.username
+        ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username)
+        : null;
       rec.userId = note.user.id || null;
     }
     if (note.reactions) {
@@ -280,7 +300,12 @@ async function fetchMisskeyNote(parsed, url) {
       rec.replyToId = note.replyId;
       if (note.reply && note.reply.userId && note.reply.userId === note.userId) { rec.isThread = true; rec.isReply = null; }
     }
-    if (note.renoteId && note.text) {
+    // A renote counts as a QUOTE when it adds anything of its own — text, CW,
+    // files or a poll (misskey-js isPureRenote semantics). Text-only checks
+    // missed image-only quotes. (audit 2026-06-11)
+    if (note.renoteId && (note.text || note.cw ||
+        (Array.isArray(note.files) && note.files.length) ||
+        (Array.isArray(note.fileIds) && note.fileIds.length) || note.poll)) {
       rec.isQuote = true;
       // Prefer the quoted note's own canonical URL — a federated remote note
       // exposes url/uri; a note local to this instance has neither, so fall back
@@ -368,10 +393,14 @@ async function fetchMastodonStatus(parsed, url) {
         rec.isReply = null;
       }
     }
-    // Mastodon core has no quotes; some forks expose `quote`.
-    if (s.quote && (s.quote.url || s.quote.uri)) {
+    // Quotes: forks (Fedibird/glitch-soc) put a full status directly in
+    // `quote`; mainline Mastodon 4.4+ wraps it as { state, quoted_status }
+    // (ShallowQuote: { state, quoted_status_id }). Handle all three shapes.
+    const q = s.quote;
+    if (q && (q.url || q.uri || q.quoted_status || q.quoted_status_id)) {
       rec.isQuote = true;
-      rec.quotedUrl = s.quote.url || s.quote.uri;
+      rec.quotedUrl = q.url || q.uri ||
+        (q.quoted_status && (q.quoted_status.url || q.quoted_status.uri)) || null;
     }
   } catch {
     // keep partial
@@ -413,6 +442,8 @@ async function fetchPixivIllust(parsed, url) {
     if (data.error) return rec;
     const il = data.body || {};
     rec.title = il.illustTitle || null;
+    // Caption (HTML) → text, so caption words are searchable in the viewer.
+    rec.text = htmlToText(il.illustComment || il.description || '');
     rec.displayName = il.userName || null;
     rec.screenName = il.userId || null;   // pixiv has no @handle; userId is the stable id
     rec.userId = il.userId || null;
@@ -424,6 +455,28 @@ async function fetchPixivIllust(parsed, url) {
     rec.hashtags = (il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t.tag).filter(Boolean);
     rec.mediaType = 'image';   // ugoira (animation) originals are zip — not handled here
     rec.media = pixivMedia(il);
+    // Multi-page works can MIX file formats per page (p0=.jpg, p2=.png …), so
+    // the _p0→_pN substitution above can 404. Prefer the per-page originals
+    // from /ajax/illust/<id>/pages; keep the substitution as the fallback.
+    if ((il.pageCount || 1) > 1) {
+      try {
+        const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
+        if (pres.ok) {
+          const pdata = await pres.json();
+          if (!pdata.error && Array.isArray(pdata.body) && pdata.body.length) {
+            rec.media = pdata.body
+              .map((p) => ({
+                url: p.urls && p.urls.original,
+                alt: null,
+                width: p.width || null,
+                height: p.height || null,
+                referer: 'https://www.pixiv.net/'
+              }))
+              .filter((m) => m.url);
+          }
+        }
+      } catch { /* keep the substituted fallback */ }
+    }
   } catch {
     // network/parse failure — keep what we have (URL only)
   }

@@ -25,6 +25,7 @@
   let isCleanedUp = false;
   let restoreCaptureState = null;
   let savedScrollPosition = null;
+  let lastCapturedPost = null;   // re-measured at crop time (scroll/layout drift)
 
   // === UI要素 ===
 
@@ -127,9 +128,13 @@
     if (preRect.top < 0 || preRect.bottom > window.innerHeight) {
       savedScrollPosition = { x: window.scrollX, y: window.scrollY };
       post.scrollIntoView({ block: 'start', behavior: 'instant' });
+      // X/Bluesky overlay a sticky header (~50px) at the top of the column —
+      // block:'start' would pin the author row underneath it.
+      window.scrollBy(0, -64);
     }
 
     // 再描画を待ってからキャプチャ
+    lastCapturedPost = post;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const rect = getPostRect(post);
@@ -209,20 +214,33 @@
   function onRuntimeMessage(msg, _sender, sendResponse) {
     // クロップ要求
     if (msg.type === 'cropImage') {
-      const { dataUrl, rect } = msg;
+      const { dataUrl } = msg;
       const dpr = window.devicePixelRatio || 1;
+
+      // Re-measure the post NOW (the screenshot was taken moments ago, not at
+      // click time — inertial scroll / lazy-image relayout can shift it), then
+      // clamp to the viewport: captureVisibleTab only has visible pixels, and
+      // an overflowing rect would encode the missing area as black bands.
+      let rect = msg.rect;
+      if (lastCapturedPost && lastCapturedPost.isConnected) {
+        try { rect = getPostRect(lastCapturedPost); } catch { rect = msg.rect; }
+      }
+      const cx = Math.max(0, rect.x);
+      const cy = Math.max(0, rect.y);
+      const cw = Math.max(1, Math.min(rect.x + rect.width, window.innerWidth) - cx);
+      const ch = Math.max(1, Math.min(rect.y + rect.height, window.innerHeight) - cy);
 
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const w = Math.round(rect.width * dpr);
-        const h = Math.round(rect.height * dpr);
+        const w = Math.round(cw * dpr);
+        const h = Math.round(ch * dpr);
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(
           img,
-          Math.round(rect.x * dpr), Math.round(rect.y * dpr), w, h,
+          Math.round(cx * dpr), Math.round(cy * dpr), w, h,
           0, 0, w, h
         );
         sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
@@ -473,7 +491,13 @@ function resolvePixivTarget(target) {
   }
 
   const locId = (location.pathname.match(/\/artworks\/(\d+)/) || [])[1];
-  if (locId) return { id: locId, el: fig || el };
+  if (locId) {
+    // Anchor the fallback to the artwork itself, not the raw click target —
+    // otherwise clicking a commenter avatar / tag pill saved THAT element's
+    // pixels under the artwork's metadata. (audit 2026-06-11)
+    const mainImg = document.querySelector('main figure img, figure img[src*="i.pximg.net"]');
+    return { id: locId, el: fig || (mainImg ? (mainImg.closest('figure') || mainImg) : el) };
+  }
   return null;
 }
 
@@ -501,7 +525,13 @@ function getXPostLink(post) {
     ? Array.from(post.querySelectorAll('a[href*="/status/"]'))
     : [];
 
-  const preferredLink = links.find((link) => link.querySelector('time')) || links[0];
+  // Prefer the timestamp anchor; failing that, a bare /user/status/<id> anchor
+  // — the article's first /status/ link can be a /photo/N or /analytics one.
+  const preferredLink = links.find((link) => link.querySelector('time'))
+    || links.find((link) => {
+      try { return /^\/[^/]+\/status\/\d+\/?$/.test(new URL(link.href, location.origin).pathname); } catch { return false; }
+    })
+    || links[0];
   return preferredLink ? parseXPostLink(preferredLink.href) : null;
 }
 
@@ -511,7 +541,9 @@ function parseXPostLink(href) {
     let match = url.pathname.match(/^\/([^/]+)\/status\/([^/?#]+)/);
     if (match) {
       return {
-        url: url.href,
+        // Canonical permalink: strip /photo/N, /analytics, query and hash —
+        // the raw href is whatever anchor happened to be picked.
+        url: `${url.origin}/${match[1]}/status/${match[2]}`,
         screenName: decodeURIComponent(match[1]),
         postId: decodeURIComponent(match[2])
       };
@@ -523,7 +555,7 @@ function parseXPostLink(href) {
     }
 
     return {
-      url: url.href,
+      url: `${url.origin}/i/web/status/${match[1]}`,
       screenName: null,
       postId: decodeURIComponent(match[1])
     };
@@ -544,8 +576,22 @@ function getBlueskyAuthorHandle(post) {
 
 function getBlueskyPostLink(post) {
   const authorHandle = getBlueskyAuthorHandle(post);
+  // Exclude anchors that belong to an embedded quote card (a nested
+  // [role="link"]) or to rich-text links in the post body — on a thread's
+  // anchor post (which has NO self-permalink anchor) those were the only
+  // candidates left and the QUOTED post's URL got saved. With them excluded,
+  // returning null lets getPermalink fall back to location.href, which on a
+  // detail page IS the clicked post. (audit 2026-06-11)
   const links = post instanceof Element
     ? Array.from(post.querySelectorAll('a[href]'))
+      .filter((link) => {
+        // Start from the parent: the anchor itself may carry role="link"
+        // (react-native-web) and closest() would match it, excluding everything.
+        const roleLink = link.parentElement && link.parentElement.closest('[role="link"]');
+        if (roleLink && roleLink !== post && post.contains(roleLink)) return false;
+        if (link.closest('[data-testid="postText"]')) return false;
+        return true;
+      })
       .map((link) => parseBlueskyPostLink(link.href))
       .filter(Boolean)
     : [];
@@ -636,13 +682,19 @@ function getMisskeyCaptureRect(post) {
 }
 
 function getMisskeyPermalink(post) {
-  const timeLink = getMisskeyTimeLink(post);
+  // Scope the link scan to the note's own <article>: the reply-parent preview
+  // (MkNoteSub) and a detail page's ancestor chain render BEFORE the article,
+  // so a document-order scan over the whole root returned the PARENT note's
+  // permalink for any reply. (audit 2026-06-11)
+  const scope = getMisskeyPrimaryArticle(post) || post;
+
+  const timeLink = getMisskeyTimeLink(scope);
   if (timeLink) {
     return timeLink.url;
   }
 
-  const links = post instanceof Element
-    ? Array.from(post.querySelectorAll('a[href]'))
+  const links = scope instanceof Element
+    ? Array.from(scope.querySelectorAll('a[href]'))
     : [];
 
   for (const link of links) {
@@ -656,12 +708,12 @@ function getMisskeyPermalink(post) {
   return currentPageNote?.url || '';
 }
 
-function getMisskeyTimeLink(post) {
-  if (!(post instanceof Element)) {
+function getMisskeyTimeLink(scope) {
+  if (!(scope instanceof Element)) {
     return null;
   }
 
-  const links = Array.from(post.querySelectorAll('a[href]'));
+  const links = Array.from(scope.querySelectorAll('a[href]'));
   for (const link of links) {
     if (!link.querySelector('time')) {
       continue;
@@ -734,6 +786,9 @@ function getMastodonStatusLink(post) {
   let parsed = timeLink ? parseMastodonStatusLink(timeLink.getAttribute('href') || '') : null;
   if (parsed) return parsed;
   for (const link of post.querySelectorAll('a[href]')) {
+    // Never take a link that belongs to an embedded quote preview (4.4+):
+    // that's the QUOTED post's URL, not this status's.
+    if (link.closest('.status__quote')) continue;
     parsed = parseMastodonStatusLink(link.getAttribute('href') || '');
     if (parsed) return parsed;
   }
@@ -743,7 +798,12 @@ function getMastodonStatusLink(post) {
 function findMastodonPostElement(target) {
   let el = target instanceof Element ? target : target?.parentElement;
   while (el) {
-    if (el.matches?.('.status__wrapper, .status, .detailed-status, article') && getMastodonStatusLink(el)) {
+    // Skip status elements nested inside a quote preview (Mastodon 4.4+ quotes
+    // render a full StatusContainer inside .status__quote) — keep walking so a
+    // click inside the preview selects the QUOTING post, like X/Bluesky/Misskey.
+    if (el.matches?.('.status__wrapper, .status, .detailed-status, article')
+      && !el.closest('.status__quote')
+      && getMastodonStatusLink(el)) {
       return el;
     }
     el = el.parentElement;

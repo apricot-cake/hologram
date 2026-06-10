@@ -134,33 +134,49 @@
     return {
       platform: 'x',
       extractIdentity(img) {
-        const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
-        const link = !viewer && (img.closest('a[href*="/status/"]') || findAncestorContainerLink(img, 'a[href*="/status/"]'));
+        // The image's own enclosing /status/ anchor is ground truth. The URL
+        // bar (photo viewer / detail page) only identifies anchor-less images
+        // OUTSIDE any post container — with the lightbox open, every image on
+        // the page (replies, recommendations) would otherwise be attributed
+        // to the lightbox post. (audit 2026-06-11)
+        const link = img.closest('a[href*="/status/"]')
+          || findAncestorContainerLink(img, 'a[href*="/status/"]', 'article');
         const parsedAnchor = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
+        const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
         const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
-        let screenName, postId, baseUrl;
-        if (viewer) { [, screenName, postId] = viewer; baseUrl = location.href; }
-        else if (parsedAnchor) { [, screenName, postId] = parsedAnchor.match; baseUrl = parsedAnchor.url; }
-        else if (parsedLoc) { [, screenName, postId] = parsedLoc; baseUrl = location.href; }
+        let screenName, postId;
+        if (parsedAnchor) { [, screenName, postId] = parsedAnchor.match; }
+        else if ((viewer || parsedLoc) && !img.closest('article')) {
+          [, screenName, postId] = viewer || parsedLoc;
+        }
         else return null;
         const sn = decodeURIComponent(screenName);
         const pid = decodeURIComponent(postId);
-        let origin = 'https://x.com';
-        try { origin = new URL(baseUrl).origin; } catch { /* ignore */ }
-        return { postId: pid, link: `${origin}/${sn}/status/${pid}` };
+        return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
       }
     };
   }
 
   function blueskyConfig() {
+    const POST_CONTAINER = '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]';
     return {
       platform: 'bluesky',
       extractIdentity(img) {
-        const link = img.closest('a[href*="/post/"]') || findAncestorContainerLink(img, 'a[href*="/post/"]');
+        const link = img.closest('a[href*="/post/"]')
+          || findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER);
         const parsed = link ? parseUrlPath(link.href, /^\/profile\/([^/]+)\/post\/([^/?#]+)/) : null;
-        if (!parsed) return null;
-        const [, , postId] = parsed.match;
-        return { postId: decodeURIComponent(postId), link: parsed.url };
+        let handle, postId;
+        if (parsed) { [, handle, postId] = parsed.match; }
+        else {
+          // Anchor-less image outside any post container (e.g. the image
+          // viewer) on a post detail page — the URL bar identifies it.
+          const loc = location.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/);
+          if (!loc || img.closest(POST_CONTAINER)) return null;
+          [, handle, postId] = loc;
+        }
+        // Canonical permalink — anchors can carry /liked-by, /reposted-by,
+        // /quotes suffixes (engagement-count links on the thread anchor post).
+        return { postId: decodeURIComponent(postId), link: `https://bsky.app/profile/${handle}/post/${postId}` };
       }
     };
   }
@@ -178,7 +194,8 @@
           if (m) { postId = m[1]; break; }
         }
         if (!postId) {
-          const link = img.closest('a[href*="/artworks/"]') || findAncestorContainerLink(img, 'a[href*="/artworks/"]');
+          const link = img.closest('a[href*="/artworks/"]')
+            || findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure');
           if (link) { const parsed = parseUrlPath(link.href, ARTWORK_PATH); if (parsed) postId = parsed.match[1]; }
         }
         if (!postId) { const m = location.pathname.match(ARTWORK_PATH); if (m) postId = m[1]; }
@@ -189,13 +206,21 @@
   }
 
   // Nearest candidate link by DOM distance (avoids a neighboring post's link on
-  // grids where several candidates share an ancestor).
-  function findAncestorContainerLink(img, selector) {
+  // grids where several candidates share an ancestor). The walk is BOUNDED by
+  // the nearest post container (boundarySel): walking past it would attribute
+  // the image to whatever unrelated post is DOM-nearest — avatars, banners and
+  // sidebar images must yield no identity instead of a fabricated record.
+  // (audit 2026-06-11)
+  function findAncestorContainerLink(img, selector, boundarySel) {
     let el = img.parentElement;
     while (el && el !== document.body) {
       const candidates = el.querySelectorAll(selector);
-      if (candidates.length === 1) return candidates[0];
-      if (candidates.length > 1) {
+      if (candidates.length) {
+        // Bounded: only trust a candidate while still inside a post container.
+        // Once the widening search escapes it (avatar/banner/sidebar images),
+        // the nearest match belongs to some unrelated post — give up instead.
+        if (boundarySel && !el.closest(boundarySel)) return null;
+        if (candidates.length === 1) return candidates[0];
         let best = null, bestDist = Infinity;
         for (const link of candidates) {
           const d = treeDistance(img, link);
@@ -203,6 +228,7 @@
         }
         return best;
       }
+      if (boundarySel && el.matches(boundarySel)) return null;   // container exhausted — stop
       el = el.parentElement;
     }
     return null;

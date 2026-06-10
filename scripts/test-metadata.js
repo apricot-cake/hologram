@@ -64,6 +64,21 @@ async function recentMastodonUrl() {
   return s ? `https://mastodon.social/@${s.account.acct}/${s.id}` : null;
 }
 
+// pixiv: daily ranking JSON is publicly readable; prefer a multi-page entry so
+// the /ajax/illust/<id>/pages path (mixed-extension safe) is exercised.
+async function recentPixivUrl() {
+  const r = await fetch('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', {
+    headers: { Referer: 'https://www.pixiv.net/' }
+  });
+  if (!r.ok) return null;
+  const j = await r.json();
+  const items = Array.isArray(j.contents) ? j.contents : [];
+  const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';   // exclude ugoira
+  const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
+  const any = multi || items.find(ok);
+  return any ? { url: `https://www.pixiv.net/artworks/${any.illust_id}`, pages: Number(any.illust_page_count) || 1 } : null;
+}
+
 // media[] must always be an array; when the post is an image post, it must be
 // populated with url-bearing descriptors.
 function mediaOk(r) {
@@ -78,6 +93,27 @@ function mediaOk(r) {
   const x = await fetchPostMetadata('https://x.com/jack/status/20');
   show('X (jack/status/20)', x);
   if (!(x.text && x.screenName === 'jack' && x.likes > 0 && x.date && mediaOk(x))) { pass = false; console.log('  X FAIL'); }
+
+  // X: the saved url must be the canonical permalink — /photo/N suffixes and
+  // subdomain hosts (pro.x.com) are rebuilt to https://x.com/<user>/status/<id>.
+  try {
+    const xp = await fetchPostMetadata('https://x.com/jack/status/20/photo/1');
+    const xs = await fetchPostMetadata('https://pro.x.com/jack/status/20');
+    console.log(`\n=== X canonical === photo-suffix -> ${xp.url} / subdomain -> ${xs.url} (platform ${xs.platform})`);
+    if (!(xp.url === 'https://x.com/jack/status/20' && xs.platform === 'x' && xs.url === 'https://x.com/jack/status/20')) {
+      pass = false; console.log('  X canonical FAIL');
+    }
+  } catch (e) { pass = false; console.log('X canonical ERR', e.message); }
+
+  // X: media[] must point at the true original (?name=orig — the bare pbs URL
+  // serves the medium variant).
+  try {
+    const xm = await fetchPostMetadata('https://x.com/BarackObama/status/266031293945503744');
+    if (xm.media && xm.media.length) {
+      console.log(`=== X media orig === ${xm.media[0].url}`);
+      if (!xm.media.every((m) => /name=orig/.test(m.url))) { pass = false; console.log('  X media orig FAIL'); }
+    } else console.log('X media post: no media returned (skip orig check)');
+  } catch (e) { console.log('X media ERR', e.message); }
 
   try {
     const burl = await recentBlueskyUrl();
@@ -105,6 +141,17 @@ function mediaOk(r) {
       if (!(a.platform === 'mastodon' && a.screenName && a.date && a.userId && mediaOk(a))) { pass = false; console.log('  Mastodon FAIL'); }
     } else { console.log('Mastodon: no recent status (skip)'); }
   } catch (e) { console.log('Mastodon ERR', e.message); }
+
+  try {
+    const pinfo = await recentPixivUrl();
+    if (pinfo) {
+      const p = await fetchPostMetadata(pinfo.url);
+      show(`pixiv (${pinfo.url}, ${pinfo.pages}p)`, p);
+      const pOk = p.platform === 'pixiv' && p.title && p.userId && Array.isArray(p.media) &&
+        p.media.length === pinfo.pages && p.media.every((m) => m && m.url && m.referer);
+      if (!pOk) { pass = false; console.log('  pixiv FAIL'); }
+    } else console.log('pixiv: no ranking entry found (skip)');
+  } catch (e) { console.log('pixiv ERR', e.message); }
 
   console.log('\n' + (pass ? 'METADATA_TEST_PASS' : 'METADATA_TEST_FAIL'));
   process.exit(pass ? 0 : 1);

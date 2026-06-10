@@ -73,6 +73,12 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   const captureId = generateCaptureId();
   const capturedAt = new Date().toISOString();
 
+  // captureVisibleTab shoots the window's ACTIVE tab, not the sender — if the
+  // user switched tabs in the click→capture gap, a different page would be
+  // saved under this post's metadata. Verify and bail instead.
+  const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  if (!active || active.id !== tab.id) throw new Error('Tab changed before capture');
+
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
   const response = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect });
   if (!response?.croppedDataUrl) throw new Error('Cropping failed');
@@ -99,7 +105,9 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     replies: meta.replies,
     bookmarks: meta.bookmarks,
     views: meta.views,
-    date: meta.date || capturedAt,
+    // No silent fallback to capture time: a fabricated "post date" pollutes the
+    // viewer's date sort/filter. The viewer handles null dates.
+    date: meta.date || null,
     capturedAt,
     updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
     mediaType: meta.mediaType,
@@ -225,7 +233,8 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
     replies: meta.replies,
     bookmarks: meta.bookmarks,
     views: meta.views,
-    date: meta.date || capturedAt,
+    // No silent fallback to capture time (same as the click path).
+    date: meta.date || null,
     capturedAt,
     updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
     mediaType: 'image',
@@ -261,9 +270,12 @@ function pickPrimaryImage(platform, imageUrls, meta) {
     let pidx = -1;
     for (const u of imageUrls) { const m = u && u.match(/\/\d+_p(\d+)[._]/); if (m) { pidx = parseInt(m[1], 10); break; } }
     const i = (pidx >= 0 && pidx < media.length) ? pidx : (media.length === 1 ? 0 : -1);
-    const pick = media[i >= 0 ? i : 0];
+    // Only substitute the API original when the dragged page was actually
+    // matched — silently saving p0 for an unmatched drag asserted an image the
+    // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
+    const pick = i >= 0 ? media[i] : null;
     if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/', index: i };
-    return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: i };
+    return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: -1 };
   }
   const i = matchMediaIndex(platform, imageUrls, media);
   if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
