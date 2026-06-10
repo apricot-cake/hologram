@@ -256,7 +256,7 @@
     /* --- Post grid --- */
     .post-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(var(--card-size, 280px), 1fr));
       gap: 16px;
     }
     .post-card {
@@ -380,8 +380,8 @@
       contain-intrinsic-size: auto 104px;
     }
     .post-grid.list-view .post-card img {
-      width: 88px; min-width: 88px; align-self: stretch;
-      height: auto; max-height: 110px; object-fit: cover;
+      width: var(--list-thumb, 88px); min-width: var(--list-thumb, 88px); align-self: stretch;
+      height: auto; max-height: calc(var(--list-thumb, 88px) * 1.25); object-fit: cover;
     }
     .post-grid.list-view .post-meta {
       display: flex; flex-wrap: wrap; align-items: baseline;

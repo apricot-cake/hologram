@@ -1020,8 +1020,12 @@
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let multiOnly = false;      // show only items with more than one image
   let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
-  let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
+  let tileSize = 180;         // tile view: edge px (pref imageTileSize)
+  let cardSize = 280;         // card view: min column width px (pref cardSize)
+  let listThumb = 88;         // list view: thumbnail width px (pref listThumb)
   const TILE_MIN = 120, TILE_MAX = 400;
+  const CARD_MIN = 240, CARD_MAX = 560;
+  const LIST_MIN = 56, LIST_MAX = 200;
   // Windowed rendering: render only the first `renderLimit` filtered posts and
   // grow as a bottom sentinel nears the viewport. Rendering all (thousands) at
   // once froze the UI and starved image (psimg) loads. Reset to one page on any
@@ -1039,10 +1043,14 @@
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   function applyTileLayout() {
     const grid = document.getElementById('postGrid');
-    if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
+    if (grid) {
+      grid.style.setProperty('--tile-size', tileSize + 'px');
+      grid.style.setProperty('--card-size', cardSize + 'px');
+      grid.style.setProperty('--list-thumb', listThumb + 'px');
+    }
     const row = document.getElementById('tileSizeRow');
-    if (row) row.style.display = currentView === 'tile' ? '' : 'none';
-    refreshTileSlider();   // hoisted; keeps the column-count track in sync
+    if (row) row.style.display = '';   // every density has a size slider now
+    refreshTileSlider();   // hoisted; keeps the track in sync with the view
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
@@ -2288,19 +2296,24 @@
     });
   });
 
-  // Tile size slider (tile density only). The auto-fill grid quantizes the
-  // real tile width to "how many columns fit", so a px-range slider had long
-  // dead intervals where notches moved but nothing changed. Instead the track
-  // maps to COLUMN COUNTS for the current grid width — one detent = exactly
-  // one column step, so every notch visibly reflows (right = larger tiles).
-  // While dragging only the CSS var updates; persisting + re-requesting
-  // thumbnails at the new size happens on release (change).
-  function setTileSize(px, commit = true) {
-    tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, px));
+  // View-size slider — every density has one. The auto-fill grids (tile/card)
+  // quantize the real width to "how many columns fit", so their track maps to
+  // COLUMN COUNTS (one detent = exactly one column, no dead notches). The
+  // list is a full-width stack, so its track maps straight to the thumbnail
+  // px. Right = larger, Eagle/Lightroom style. While dragging only the CSS
+  // vars update; persisting + re-requesting thumbnails happens on release.
+  function viewSizeState() {
+    if (currentView === 'card') return { get: () => cardSize, set: (v) => { cardSize = v; }, min: CARD_MIN, max: CARD_MAX, pref: 'cardSize', columns: true };
+    if (currentView === 'list') return { get: () => listThumb, set: (v) => { listThumb = v; }, min: LIST_MIN, max: LIST_MAX, pref: 'listThumb', columns: false };
+    return { get: () => tileSize, set: (v) => { tileSize = v; }, min: TILE_MIN, max: TILE_MAX, pref: 'imageTileSize', columns: true };
+  }
+  function setViewSize(px, commit = true) {
+    const st = viewSizeState();
+    st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout();
     if (!commit) return;
-    window.corpus.setPref('imageTileSize', tileSize);
-    if (currentView === 'tile') renderPosts();   // re-request thumbnails at the new size
+    window.corpus.setPref(st.pref, st.get());
+    renderPosts();   // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
     const grid = document.getElementById('postGrid');
@@ -2316,35 +2329,44 @@
   const tileSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
   function refreshTileSlider() {
     const sl = document.getElementById('tileSlider');
+    if (!sl) return;
+    const st = viewSizeState();
+    if (!st.columns) {            // list: direct px track
+      sl.step = '8';
+      sl.min = String(st.min);
+      sl.max = String(st.max);
+      sl.disabled = false;
+      sl.value = String(st.get());
+      return;
+    }
     const m = tileGridMetrics();
-    if (!sl || !m || currentView !== 'tile') return;
-    // ceil = the FEWEST columns whose exact-fit size still stays ≤ TILE_MAX —
+    if (!m) return;
+    sl.step = '1';
+    // ceil = the FEWEST columns whose exact-fit size still stays ≤ max —
     // floor here would offer a notch whose size clamps and never reflows.
-    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (TILE_MAX + m.g)));
-    const nSmall = Math.max(nBig, tileColsFor(TILE_MIN, m));  // many columns = small tiles
+    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g)));
+    const nSmall = Math.max(nBig, tileColsFor(st.min, m));   // many columns = small
     sl.min = String(nBig);
     sl.max = String(nSmall);
     sl.disabled = nBig === nSmall;
-    const n = Math.min(nSmall, Math.max(nBig, tileColsFor(tileSize, m)));
-    sl.value = String(nBig + nSmall - n);                     // inverted: right = larger
+    const n = Math.min(nSmall, Math.max(nBig, tileColsFor(st.get(), m)));
+    sl.value = String(nBig + nSmall - n);                    // inverted: right = larger
   }
   const tileSlider = document.getElementById('tileSlider');
   function sliderCols() {
     const nBig = parseInt(tileSlider.min, 10), nSmall = parseInt(tileSlider.max, 10);
     return nBig + nSmall - parseInt(tileSlider.value, 10);
   }
-  tileSlider.addEventListener('input', () => {
+  function onSliderMove(commit) {
+    if (!viewSizeState().columns) { setViewSize(parseInt(tileSlider.value, 10), commit); return; }
     const m = tileGridMetrics();
-    if (m) setTileSize(tileSizeFor(sliderCols(), m), false);
-  });
-  tileSlider.addEventListener('change', () => {
-    const m = tileGridMetrics();
-    if (m) setTileSize(tileSizeFor(sliderCols(), m));
-  });
+    if (m) setViewSize(tileSizeFor(sliderCols(), m), commit);
+  }
+  tileSlider.addEventListener('input', () => onSliderMove(false));
+  tileSlider.addEventListener('change', () => onSliderMove(true));
   // Window resizes change how many columns fit → re-derive the track range.
   let tileResizeT = 0;
   window.addEventListener('resize', () => {
-    if (currentView !== 'tile') return;
     clearTimeout(tileResizeT);
     tileResizeT = setTimeout(refreshTileSlider, 150);
   });
@@ -2364,6 +2386,8 @@
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
+    if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
+    if (Number.isFinite(prefs.listThumb)) listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
     if (prefs.tileOverlay === false) {
       tileOverlay = false;
       document.getElementById('tileOverlayToggle').checked = false;
