@@ -369,8 +369,11 @@
     // 式 = (かつフィールド) ⟨かつ/または⟩ (またはフィールド)。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
-    // ビルダは常時表示（＋フィルタの入口を兼ねるため、空でもバーを出す）
+    // ビルダは常時表示（＋フィルタの入口を兼ねるため、空でもバーを出す）。
+    // リセットは「消すものがある」ときだけ（空のバーにボタンが浮かない）。
     if (bar) bar.style.display = '';
+    const resetBtn = document.getElementById('postResetBtn');
+    if (resetBtn) resetBtn.style.display = (activeFilters.length || searchVal) ? '' : 'none';
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
     const pill = (i, label, cls) => `<span class="sb-active-chip ${cls}" draggable="true" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
@@ -1507,7 +1510,10 @@
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
       const userName = p.displayName || p.screenName || p.title || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
-      const textPreview = escapeHtml(p.text || p.title || '');
+      // Library images carry the filename as BOTH title and text — showing it
+      // twice (user line + body) is pure noise, so drop the duplicate body.
+      const textRaw = p.text || p.title || '';
+      const textPreview = textRaw === userName ? '' : escapeHtml(textRaw);
       const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
       const nImg = g.files.length;                    // ×N badge: total images across the group
       const likesOv = p.likes != null ? `<span class="ov-likes">❤ ${MSG.likes(p.likes)}</span>` : '';
@@ -1537,10 +1543,7 @@
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
-          <div class="user">
-            <span class="platform-badge ${p.platform || ''}">${(p.platform || '').toUpperCase()}</span>
-            ${escapeHtml(userName)}${handle ? ` <span style="color:#999;font-weight:400">${escapeHtml(handle)}</span>` : ''}
-          </div>
+          <div class="user">${p.platform ? `<span class="platform-badge ${p.platform}">${p.platform.toUpperCase()}</span>` : ''}${escapeHtml(userName)}${handle ? ` <span style="color:#999;font-weight:400">${escapeHtml(handle)}</span>` : ''}</div>
           ${flagsHtml}
           ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
           <div class="stats">${statsHtml}</div>

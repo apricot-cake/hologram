@@ -193,7 +193,9 @@
     }
     /* re-assert the accent hover/focus the block above would otherwise shadow */
     #sidebar .chip:not(.active):hover,
-    #sidebar .view-toggle button:not(.active):hover { border-color: var(--accent); color: var(--accent); }
+    /* Segmented control hover: monotone like its active state — an accent
+       border here only showed up as a stray blue divider line. */
+    #sidebar .view-toggle button:not(.active):hover { background: var(--active); color: var(--text-strong); }
     #sidebar .icon-btn:hover { background: var(--hover); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
@@ -764,8 +766,11 @@
       background: var(--bg); border-bottom: 1px solid var(--border);
     }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
-    .content-activebar #queryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; justify-content: flex-start; align-items: center; }
-    .content-activebar .sb-reset, .content-activebar .iv-andor { flex-shrink: 0; margin-left: auto; }
+    /* Reset sits right NEXT to the builder (small gap), not parked at the far
+       edge — chips don't flex-grow so the button hugs the last zone. */
+    .content-activebar #queryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; min-width: 0; justify-content: flex-start; align-items: center; }
+    .content-activebar .sb-reset { flex-shrink: 0; margin-left: 10px; }
+    .content-activebar .iv-andor { flex-shrink: 0; margin-left: auto; }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
