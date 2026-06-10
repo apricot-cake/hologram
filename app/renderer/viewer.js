@@ -358,12 +358,7 @@
     // 式 = (かつフィールド) ⟨かつ/または⟩ (またはフィールド)。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
-    // フィルタも検索も無いときはバーごと非表示（ビルダは使うときだけ出る）
-    if (activeFilters.length === 0 && !searchVal) {
-      container.innerHTML = '';
-      if (bar) bar.style.display = 'none';
-      return;
-    }
+    // ビルダは常時表示（＋フィルタの入口を兼ねるため、空でもバーを出す）
     if (bar) bar.style.display = '';
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
