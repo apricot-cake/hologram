@@ -662,6 +662,11 @@
     .info-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .info-btn { opacity: 1; }
     .post-grid.list-view .info-btn { top: 50%; right: 136px; transform: translateY(-50%); }
+    /* No source link → no jump button: pull the outer buttons inward so the
+       hover row stays packed (otherwise a hole gapes at the open slot).
+       Tile view keeps its own --act offsets (open isn't in its row). */
+    .post-grid:not(.tile-view) .post-card.no-url .fold-btn { right: 72px; }
+    .post-grid:not(.tile-view) .post-card.no-url .info-btn { right: 104px; }
 
     /* --- Query field --- */
     .query-field-row { margin-bottom: 12px; }
@@ -880,10 +885,9 @@
     .qb-help-pop .qh-row::before { content: '・'; color: var(--text-subtle); flex-shrink: 0; }
     /* grip dots = 「ドラッグで移せる」の定番アフォーダンス（pseudo なので
        textContent には乗らない） */
-    #queryChips .sb-active-chip[draggable]::before {
-      content: '⋮⋮'; font-size: 9px; letter-spacing: -1.5px;
-      opacity: .55; margin-right: 5px; align-self: center;
-    }
+    /* No permanent drag-grip glyph on pills: draggability is signalled by the
+       grab cursor, the empty-zone "ここへドラッグで移動" hint and the ⓘ help.
+       (The tiny ⋮⋮ read as a squashed 三 and added noise to every pill.) */
     /* ＋フィルタ (Linear-style popover trigger) */
     .qf-add {
       font-size: 11px; padding: 3px 10px; border-radius: 12px; flex-shrink: 0;

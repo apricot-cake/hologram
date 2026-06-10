@@ -1532,7 +1532,7 @@
 
       const postKey = postIdKey(p);
       const isSelected = selectedSet.has(postKey);
-      return `<div class="post-card${isSelected ? ' selected' : ''}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
+      return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
         <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除（右クリックでフォルダ選択）' : 'フォルダを作成して追加（右クリックでフォルダ選択）'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
