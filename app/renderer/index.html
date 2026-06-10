@@ -515,8 +515,9 @@
     /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
     .tag-chip { font-size: 10px; background: var(--surface-3); border-radius: 10px; padding: 1px 8px; color: var(--text-muted); }
-    /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に */
-    #editTagsList .tag-chip:hover { background: var(--danger-bg); color: var(--danger); }
+    /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に
+       （srgb 混合 — oklch でサーフェスと混ぜると紫に寄って見える） */
+    #editTagsList .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
     .post-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
     .post-flag { font-size: 10px; border-radius: 3px; padding: 1px 6px; line-height: 1.5; }
     .post-flag.flag-type { background: var(--tint-purple-bg); color: var(--text); }
@@ -545,13 +546,12 @@
     }
     .fold-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .fold-btn { opacity: 1; }
-    .fold-btn.in { opacity: 1; background: var(--accent); }
-    /* clicking an .in button REMOVES from the folder → subdued red on hover */
-    .fold-btn.in:hover { background: color-mix(in oklch, var(--danger) 62%, var(--surface)); }
-    /* while filtering by a folder every card is a member: the always-on accent 📁
-       on each card is noise — show it on hover only */
-    .post-grid.folder-filtered .fold-btn.in { opacity: 0; }
-    .post-grid.folder-filtered .post-card:hover .fold-btn.in { opacity: 1; }
+    /* membership ('in') tints the button blue but does NOT keep it visible at
+       rest — like every other card action it appears on hover only */
+    .fold-btn.in { background: var(--accent); }
+    /* clicking an .in button REMOVES from the folder → plain red on hover
+       (srgb mix: an oklch mix with the dark surface read as purple) */
+    .fold-btn.in:hover { background: var(--danger); }
     .fold-btn.added { background: var(--success); }
     /* Right-click menu on 📁: pick the destination folder / set the default (★) */
     .fold-menu {
@@ -747,6 +747,16 @@
       background: var(--surface-3); border: 1px solid var(--border-strong);
       color: var(--text); border-radius: 6px;
     }
+    /* タグ式のフィールド分け: 「かつ:」グループ ⟨接続トグル⟩ 「または:」グループ。
+       接続トグルは両グループがあるときだけ現れ、クリックで かつ⇄または。 */
+    .qc-join-label { font-size: 10px; font-weight: 600; color: var(--text-muted); margin: 0 1px 0 6px; align-self: center; }
+    .qc-join-toggle {
+      font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 10px;
+      border: 1px solid var(--accent-border); background: var(--accent-subtle);
+      color: var(--accent-subtle-fg); cursor: pointer; margin: 0 4px;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .qc-join-toggle:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
   /* 🔍 toggle sitting right next to a section title: reveals that section's
      filter input (tags / authors). margin-right:auto keeps it adjacent to the

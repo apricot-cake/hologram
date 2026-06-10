@@ -41,6 +41,11 @@
     engParticle: _s('engParticle'),
     ctxSetDefault: _s('ctxSetDefault'),
     ctxManage: _s('ctxManage'),
+    qcAndLabel: _s('qcAndLabel'),
+    qcOrLabel: _s('qcOrLabel'),
+    qcJoinAnd: _s('qcJoinAnd'),
+    qcJoinOr: _s('qcJoinOr'),
+    tipJoin: _s('tipJoin'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -347,9 +352,16 @@
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
     if (folderObj) special += `<span class="sb-active-chip qc-folder" data-special="folder">${escapeHtml(folderObj.name)}</span>`;
-    container.innerHTML = special + activeFilters.map((f, i) => {
+    // Tag pills are grouped into labeled fields —「かつ:」(all required) and
+    //「または:」(any matches) — joined by a clickable connector when both exist,
+    // so the whole formula reads (A AND B) ⟨かつ/または⟩ (C OR D).
+    const pill = (i, label, cls) => `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
+    const nonTag = [];
+    const andTags = [];
+    const orTags = [];
+    activeFilters.forEach((f, i) => {
       let label = '';
-      let cls = `qc-${f.type}`;
+      const cls = `qc-${f.type}`;
       switch (f.type) {
         case 'kind':
           label = f.value === 'post' ? MSG.kindPost : MSG.kindImage;
@@ -371,8 +383,8 @@
           label = `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '\u2264' : '\u2265'} ${formatCount(f.min)}`;
           break;
         case 'tag':
-          label = `${f.mode === 'and' ? '＋' : ''}#${f.value}`;
-          break;
+          (f.mode === 'and' ? andTags : orTags).push(pill(i, `#${f.value}`, cls));
+          return;
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
           break;
@@ -383,8 +395,17 @@
           label = f.label || f.value;
           break;
       }
-      return `<span class="sb-active-chip ${cls}" data-filter-idx="${i}">${escapeHtml(label)}</span>`;
-    }).join('');
+      nonTag.push(pill(i, label, cls));
+    });
+    let tagCluster = '';
+    if (andTags.length || orTags.length) {
+      const joinBtn = `<button class="qc-join-toggle" id="qcJoinToggle" type="button" title="${MSG.tipJoin}">${tagJoin === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd}</button>`;
+      tagCluster =
+        (andTags.length ? `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + andTags.join('') : '') +
+        (andTags.length && orTags.length ? joinBtn : '') +
+        (orTags.length ? `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + orTags.join('') : '');
+    }
+    container.innerHTML = special + nonTag.join('') + tagCluster;
   }
 
   function formatShortDate(dateStr) {
@@ -422,6 +443,7 @@
   function resetAllFilters() {
     activeFilters = [];
     folderFilter = '';
+    tagJoin = 'and';
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     renderQueryChips();
@@ -432,6 +454,13 @@
 
   // Chip click handler
   document.getElementById('queryChips').addEventListener('click', (e) => {
+    // ⟨かつ/または⟩ connector between the two tag groups
+    if (e.target.closest('#qcJoinToggle')) {
+      tagJoin = tagJoin === 'and' ? 'or' : 'and';
+      renderQueryChips();
+      renderPosts();
+      return;
+    }
     const chip = e.target.closest('.sb-active-chip');
     if (!chip) return;
     // 特殊ピル（検索・フォルダ）はそれぞれの状態を解除して再描画。
@@ -859,6 +888,7 @@
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
   let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
+  let tagJoin = 'and';           // connector between the AND-tags group and the OR-tags group
   const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
@@ -1160,13 +1190,20 @@
       }
     }
 
-    // Tag: per-chip mode, mixable — every AND(すべて含む) tag must be present,
-    // and (if any OR tags are set) at least one OR(いずれか) tag must match.
+    // Tag: two groups — AND(かつ) tags all required, OR(または) tags any-of —
+    // combined by the user-selectable connector: (A AND B) ⟨かつ/または⟩ (C OR D).
     if (byType.tag) {
       const andValues = byType.tag.filter(f => f.mode === 'and').map(f => f.value);
       const orValues = byType.tag.filter(f => f.mode !== 'and').map(f => f.value);
-      if (andValues.length) posts = posts.filter(p => andValues.every(v => (p.tags || []).includes(v)));
-      if (orValues.length) posts = posts.filter(p => (p.tags || []).some(t => orValues.includes(t)));
+      const andOk = (p) => andValues.every(v => (p.tags || []).includes(v));
+      const orOk = (p) => (p.tags || []).some(t => orValues.includes(t));
+      if (andValues.length && orValues.length) {
+        posts = posts.filter(tagJoin === 'or' ? (p) => andOk(p) || orOk(p) : (p) => andOk(p) && orOk(p));
+      } else if (andValues.length) {
+        posts = posts.filter(andOk);
+      } else if (orValues.length) {
+        posts = posts.filter(orOk);
+      }
     }
 
     // Media: OR within group
@@ -1234,8 +1271,6 @@
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selectedSet.size > 0);
-    // Folder filter active: the 📁 'in' marker becomes hover-only (CSS).
-    grid.classList.toggle('folder-filtered', !!folderFilter);
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
