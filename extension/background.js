@@ -234,7 +234,11 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
     isThread: meta.isThread,
     quotedUrl: meta.quotedUrl,
     hashtags: meta.hashtags || [],
-    tags: meta.tags || []
+    tags: meta.tags || [],
+    // Which image of a multi-image post this is (1-based) + the total. Only
+    // recorded for multi-image posts; imageIndex is null when undeterminable.
+    imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
+    imageIndex: ((meta.media || []).length > 1 && primary.index >= 0) ? primary.index + 1 : null
     // image + media[] are set by the bridge (image = downloaded original, media = [])
   };
 
@@ -243,33 +247,43 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
 
 // Choose which original to save for a dragged image, preferring the platform
 // API's original (matched to the dragged image) so we store full resolution.
-// Returns { url, referer }.
+// Returns { url, referer, index } where index = the 0-based position of the
+// chosen image within the post's media[] (-1 if we couldn't determine it).
 function pickPrimaryImage(platform, imageUrls, meta) {
   const media = (meta && meta.media) || [];
   if (platform === 'pixiv') {
-    let idx = 0;
-    for (const u of imageUrls) { const m = u && u.match(/\/\d+_p(\d+)[._]/); if (m) { idx = parseInt(m[1], 10); break; } }
-    const pick = media[idx] || media[0];
-    if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/' };
-    return { url: imageUrls[0], referer: 'https://www.pixiv.net/' };
+    let pidx = -1;
+    for (const u of imageUrls) { const m = u && u.match(/\/\d+_p(\d+)[._]/); if (m) { pidx = parseInt(m[1], 10); break; } }
+    const i = (pidx >= 0 && pidx < media.length) ? pidx : (media.length === 1 ? 0 : -1);
+    const pick = media[i >= 0 ? i : 0];
+    if (pick && pick.url) return { url: pick.url, referer: pick.referer || 'https://www.pixiv.net/', index: i };
+    return { url: imageUrls[0], referer: 'https://www.pixiv.net/', index: i };
   }
-  const matched = matchMedia(platform, imageUrls, media);
-  if (matched && matched.url) return { url: matched.url, referer: matched.referer };
-  return { url: hiRes(platform, imageUrls[0]), referer: undefined };
+  const i = matchMediaIndex(platform, imageUrls, media);
+  if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
+  return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
 }
 
 function mediaKey(platform, url) {
   if (!url) return null;
   if (platform === 'x') return (url.match(/pbs\.twimg\.com\/media\/([^.?]+)/) || [])[1] || null;
   if (platform === 'bluesky') return (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null;
+  if (platform === 'misskey' || platform === 'mastodon') {
+    // Misskey/Mastodon serve direct file URLs; a thumbnail and its original share
+    // the file id / hash (the URL basename, minus query and extension). Match on that.
+    const base = (url.split(/[?#]/)[0].match(/([^/]+)$/) || [])[1] || '';
+    return base.replace(/\.[a-z0-9]+$/i, '') || null;
+  }
   return null;
 }
 
-function matchMedia(platform, imageUrls, media) {
+// Index (0-based) of the post's media[] entry that the dragged image came from,
+// matched by mediaKey. -1 if none matched (or the platform has no key scheme).
+function matchMediaIndex(platform, imageUrls, media) {
   const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
-  if (!keys.length) return null;
-  for (const m of media) { const k = mediaKey(platform, m.url); if (k && keys.includes(k)) return m; }
-  return null;
+  if (!keys.length) return -1;
+  for (let i = 0; i < media.length; i++) { const k = mediaKey(platform, media[i].url); if (k && keys.includes(k)) return i; }
+  return -1;
 }
 
 function hiRes(platform, url) {

@@ -37,6 +37,8 @@
     detailSaved: _s('detailSaved'),
     detailUpdated: _s('detailUpdated'),
     detailImages: _s('detailImages'),
+    detailImageOf: _s('detailImageOf'),
+    imageOf: _f2('imageOf'),
     detailTags: _s('detailTags'),
     detailOpen: _s('detailOpen'),
     imagesCount: _f1('imagesCount'),
@@ -1568,6 +1570,7 @@
       row(MSG.detailSaved, p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '') +
       row(MSG.detailUpdated, p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
       row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
+      row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
       tagsHtml +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
       groupBtn;
