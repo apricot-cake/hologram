@@ -515,6 +515,8 @@
     /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
     .tag-chip { font-size: 10px; background: var(--surface-3); border-radius: 10px; padding: 1px 8px; color: var(--text-muted); }
+    /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に */
+    #editTagsList .tag-chip:hover { background: var(--danger-bg); color: var(--danger); }
     .post-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
     .post-flag { font-size: 10px; border-radius: 3px; padding: 1px 6px; line-height: 1.5; }
     .post-flag.flag-type { background: var(--tint-purple-bg); color: var(--text); }
@@ -544,6 +546,12 @@
     .fold-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .fold-btn { opacity: 1; }
     .fold-btn.in { opacity: 1; background: var(--accent); }
+    /* clicking an .in button REMOVES from the folder → subdued red on hover */
+    .fold-btn.in:hover { background: color-mix(in oklch, var(--danger) 62%, var(--surface)); }
+    /* while filtering by a folder every card is a member: the always-on accent 📁
+       on each card is noise — show it on hover only */
+    .post-grid.folder-filtered .fold-btn.in { opacity: 0; }
+    .post-grid.folder-filtered .post-card:hover .fold-btn.in { opacity: 1; }
     .fold-btn.added { background: var(--success); }
     .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
 
@@ -671,7 +679,11 @@
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
     .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
     /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
-    .has-value { border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent); }
+    /* 値が入っている欄の強調はパステルに（強い青の二重リングは主張しすぎ） */
+    .has-value {
+      border-color: color-mix(in oklch, var(--accent) 45%, var(--border)) !important;
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
+    }
     /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
     .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; display: block; position: relative; }
     .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; }
@@ -711,6 +723,11 @@
     .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
+    /* 検索/フォルダの特殊ピル: 裸テキストだったのでチップ化（角丸の四角） */
+    .sb-active-chip.qc-search, .sb-active-chip.qc-folder {
+      background: var(--surface-3); border: 1px solid var(--border-strong);
+      color: var(--text); border-radius: 6px;
+    }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
   /* 🔍 toggle sitting right next to a section title: reveals that section's
      filter input (tags / authors). margin-right:auto keeps it adjacent to the

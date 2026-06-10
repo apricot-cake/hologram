@@ -1232,6 +1232,8 @@
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selectedSet.size > 0);
+    // Folder filter active: the 📁 'in' marker becomes hover-only (CSS).
+    grid.classList.toggle('folder-filtered', !!folderFilter);
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
