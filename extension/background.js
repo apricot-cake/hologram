@@ -242,7 +242,11 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
     // image + media[] are set by the bridge (image = downloaded original, media = [])
   };
 
-  return sendDraggedToBridge(captureId, primary.url, primary.referer, record);
+  const ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record);
+  // Surface metadata-fetch failure to the drop overlay (same partial-success
+  // signal as the click-save banner) so a screenshot-less illustration that
+  // saved without post info isn't shown as a plain success.
+  return { ...ack, metaOk: metaFetched(meta) };
 }
 
 // Choose which original to save for a dragged image, preferring the platform

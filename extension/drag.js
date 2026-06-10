@@ -20,6 +20,7 @@
   const BG_OVER = 'rgba(0,186,124,0.96)';
   const BG_BUSY = 'rgba(83,100,113,0.96)';
   const BG_FAIL = 'rgba(244,33,46,0.96)';
+  const BG_PARTIAL = 'rgba(245,158,11,0.96)'; // saved, but post metadata was unavailable
 
   function ensureOverlay() {
     if (overlay) return overlay;
@@ -82,9 +83,12 @@
     overlay.style.transform = '';
     chrome.runtime.sendMessage(p, (res) => {
       const ok = res && res.ok;
-      overlay.textContent = ok ? '保存しました' : ('保存に失敗' + (res && res.error ? `: ${res.error}` : ''));
-      overlay.style.background = ok ? BG_OVER : BG_FAIL;
-      setTimeout(() => { hideOverlay(); savingViaDrop = false; }, 1400);
+      const partial = ok && res.metaOk === false; // saved, but no post metadata
+      overlay.textContent = partial
+        ? '保存（投稿情報なし）'
+        : (ok ? '保存しました' : ('保存に失敗' + (res && res.error ? `: ${res.error}` : '')));
+      overlay.style.background = partial ? BG_PARTIAL : (ok ? BG_OVER : BG_FAIL);
+      setTimeout(() => { hideOverlay(); savingViaDrop = false; }, partial ? 2600 : 1400);
     });
   }
 
