@@ -5,7 +5,7 @@
 // (onChange) are notified after any mutation so each view refreshes its own chips.
 //
 //   window.corpusFolders.{ load, all, defaultId, byId, has, inDefault,
-//     reconcile, toggleDefault, openManager, closeManager, isManagerOpen,
+//     reconcile, toggleDefault, addToDefault, openManager, closeManager, isManagerOpen,
 //     toast, onChange, isLoaded }
 (function () {
   'use strict';
@@ -64,6 +64,21 @@
     toast(wasIn ? `「${f.name}」から削除` : `「${f.name}」に追加`);
     notify('membership');
     return wasIn ? 'removed' : 'added';
+  }
+
+  // Add captureIds[] to the default folder (pure add — never removes). Returns
+  // the number of newly added ids, or null when no default folder is set
+  // (the manager opens so the user can create one, same as toggleDefault).
+  function addToDefault(captureIds) {
+    if (!defaultId) { openManager(); return null; }
+    const f = byId(defaultId); if (!f) return null;
+    const ids = (captureIds || []).filter(Boolean);
+    if (!ids.length) return 0;
+    let added = 0;
+    ids.forEach((c) => { if (!f.items.includes(c)) { f.items.push(c); added++; } });
+    if (added) { persist(); notify('membership'); }
+    toast(`「${f.name}」に追加`);
+    return added;
   }
 
   // --- toast (shared, top-level #ivToast) ---
@@ -126,7 +141,7 @@
 
   window.corpusFolders = {
     load, all: () => folders, defaultId: () => defaultId, byId, has, inDefault,
-    reconcile, toggleDefault, openManager, closeManager, isManagerOpen,
+    reconcile, toggleDefault, addToDefault, openManager, closeManager, isManagerOpen,
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();

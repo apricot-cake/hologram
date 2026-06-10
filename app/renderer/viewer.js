@@ -30,6 +30,9 @@
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
     tipInfo: _s('tipInfo'),
     tipSelect: _s('tipSelect'),
+    tagSelected: _s('tagSelected'),
+    folderSelected: _s('folderSelected'),
+    tagSelectedTitle: _s('tagSelectedTitle'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -1622,11 +1625,14 @@
   let editingPost = null;
   let editingRecords = [];
   let editTags = [];
+  let editAdditive = false;   // true = bulk "タグを追加": merge into each record's tags
 
   function openEditOverlay(post, records) {
     editingPost = post;
     editingRecords = (records && records.length) ? records : [post];
     editTags = [...(post.tags || [])];
+    editAdditive = false;
+    document.getElementById('editTagsLabel').textContent = MSG.tagsLabel;
     document.getElementById('editTagInput').value = '';
     renderEditTags();
     document.getElementById('editOverlay').classList.add('show');
@@ -1666,12 +1672,14 @@
 
   document.getElementById('editCancel').addEventListener('click', () => {
     editingPost = null;
+    editAdditive = false;
     document.getElementById('editOverlay').classList.remove('show');
   });
 
   document.getElementById('editOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       editingPost = null;
+      editAdditive = false;
       e.currentTarget.classList.remove('show');
     }
   });
@@ -1680,16 +1688,20 @@
     if (!editingPost) return;
     const tags = [...editTags];
 
-    // Persist to every record's sidecar, then update in memory
+    // Persist to every record's sidecar, then update in memory.
+    // Additive (bulk タグを追加): union with each record's existing tags;
+    // normal edit: the list replaces the record's tags.
     for (const r of editingRecords) {
-      try { await window.corpus.updateTags(r.image || r.video, tags); } catch { /* keep going */ }
+      const next = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags;
+      try { await window.corpus.updateTags(r.image || r.video, next); } catch { /* keep going */ }
       const idx = allPosts.findIndex(p => p.captureId === r.captureId);
-      if (idx >= 0) allPosts[idx].tags = tags;
+      if (idx >= 0) allPosts[idx].tags = next;
     }
-    renderPosts();
+    renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
 
     editingPost = null;
     editingRecords = [];
+    editAdditive = false;
     document.getElementById('editOverlay').classList.remove('show');
   });
 
@@ -1697,15 +1709,51 @@
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
   const selectionBar = document.getElementById('selectionBar');
   const selectAllBtn = document.getElementById('selectAllBtn');
+  const tagSelectedBtn = document.getElementById('tagSelectedBtn');
+  const folderSelectedBtn = document.getElementById('folderSelectedBtn');
   const groupSelectedBtn = document.getElementById('groupSelectedBtn');
   const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
   const cancelSelectBtn = document.getElementById('cancelSelectBtn');
   const selectedCountEl = document.getElementById('selectedCount');
 
   selectAllBtn.textContent = MSG.selectAll;
+  tagSelectedBtn.textContent = MSG.tagSelected;
+  folderSelectedBtn.textContent = MSG.folderSelected;
   groupSelectedBtn.textContent = MSG.groupSelected;
   deleteSelectedBtn.textContent = MSG.deleteSelected;
   cancelSelectBtn.textContent = MSG.cancelSelect;
+
+  // Every record of every selected group (bulk actions operate on records).
+  function selectedRecords() {
+    const records = [];
+    viewGroups.forEach((g) => { if (selectedSet.has(postIdKey(g.rep))) records.push(...g.records); });
+    return records;
+  }
+
+  // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
+  // merged into each selected record's existing tags (nothing is replaced).
+  tagSelectedBtn.addEventListener('click', () => {
+    const records = selectedRecords();
+    if (!records.length) return;
+    editingPost = records[0];
+    editingRecords = records;
+    editTags = [];
+    editAdditive = true;
+    document.getElementById('editTagsLabel').textContent = MSG.tagSelectedTitle;
+    document.getElementById('editTagInput').value = '';
+    renderEditTags();
+    document.getElementById('editOverlay').classList.add('show');
+  });
+
+  // フォルダに追加: add every selected record to the default folder (pure add,
+  // no toggle). Without a default folder the manager opens, same as the 📁 button.
+  folderSelectedBtn.addEventListener('click', () => {
+    if (!CF()) return;
+    const ids = selectedRecords().map((r) => r.captureId).filter(Boolean);
+    if (!ids.length) return;
+    if (CF().addToDefault(ids) == null) return;   // no default → manager opened
+    renderPosts(true);                            // refresh 📁 'in' states
+  });
 
   function clearSelection() {
     selectedSet.clear();
