@@ -783,68 +783,6 @@
 
     </div><!-- /side-post -->
 
-    <!-- Image-view controls (shown in image mode) -->
-    <div id="side-image" class="side-controls" style="display:none">
-      <div class="sb-scroll">
-      <div class="sb-section">
-        <input type="search" id="ivSearch" class="search-box" placeholder="検索（作者・本文・タグ）">
-        <button type="button" class="search-mode-toggle" id="ivSearchModeToggle"></button>
-      </div>
-      <div class="sb-section collapsible">
-        <div class="sb-title">プラットフォーム</div>
-        <div class="sb-chips" id="ivPlatformChips">
-          <button class="sb-chip" data-pf="x">X</button>
-          <button class="sb-chip" data-pf="bluesky">Bluesky</button>
-          <button class="sb-chip" data-pf="misskey">Misskey</button>
-          <button class="sb-chip" data-pf="mastodon">Mastodon</button>
-          <button class="sb-chip" data-pf="pixiv">pixiv</button>
-        </div>
-      </div>
-      <div class="sb-section">
-        <div class="sb-title">並び替え</div>
-        <select id="ivSort">
-          <option value="captured">最近保存</option>
-          <option value="updated">更新日 ↓</option>
-          <option value="likesPct">いいね ↓（ランク）</option>
-          <option value="likes">いいね ↓（実数）</option>
-          <option value="date">投稿日 ↓</option>
-        </select>
-      </div>
-      <div class="sb-section">
-        <div class="sb-title">最低いいね数</div>
-        <input type="number" id="ivMinLikes" class="search-box" min="0" placeholder="0">
-      </div>
-      <div class="sb-section">
-        <div class="sb-title">表示オプション</div>
-        <label class="iv-check"><input type="checkbox" id="ivMultiOnly"> 複数画像のみ</label>
-        <label class="iv-check"><input type="checkbox" id="ivExpandAll"> グループを展開（一時）</label>
-        <div class="iv-tilewrap"><span>タイルサイズ</span>
-          <div class="iv-tilebtns">
-            <button id="ivTileMinus" type="button" title="小さく">−</button>
-            <button id="ivTilePlus" type="button" title="大きく">＋</button>
-          </div>
-        </div>
-      </div>
-      <div class="sb-section" id="ivTagSection" style="display:none">
-        <div class="sb-title">タグ</div>
-        <div id="ivTagGroups"></div>
-      </div>
-      <div class="sb-section collapsible" id="ivFolderSection">
-        <div class="sb-title">フォルダ <button class="sb-manage-link" id="ivFolderManage" type="button">管理</button></div>
-        <div class="sb-chips" id="ivFolderChips"></div>
-      </div>
-      </div><!-- /sb-scroll -->
-
-      <!-- Active-filter bar: スクロール領域の外に出した固定フッター（スクロールバーがバーに被らない） -->
-      <div id="ivActiveBar" class="sb-activebar" style="display:none">
-        <div class="sb-activebar-head">
-          <span class="sb-activebar-title">適用中のフィルタ</span>
-          <button class="iv-andor" id="ivTagMode" type="button" title="タグの結合（すべて含む / いずれか）" style="display:none">すべて含む</button>
-          <button class="sb-reset" id="ivReset" type="button">リセット</button>
-        </div>
-        <div class="sb-chips" id="ivActiveChips"></div>
-      </div>
-    </div>
     <div class="sidebar-footer">
       <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" title="設定">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -955,37 +893,6 @@
     </div>
   </div><!-- /mode-post -->
 
-  <!-- Image-view mode (info-plus style tile grid, light shell: sb-section filter
-       sidebar + tile overlay actions + inspector) -->
-  <div id="mode-image" style="display:none">
-    <div class="iv-main">
-      <div class="iv-content">
-        <div class="iv-headbar">
-          <span class="iv-count" id="ivCount"></span>
-          <div class="iv-headtools">
-            <span id="ivSelCount" class="iv-selcount" hidden></span>
-            <button id="ivGroupBtn" class="iv-htbtn" type="button" hidden>選択をグループ化</button>
-            <button id="ivSelClear" class="iv-htbtn" type="button" hidden>クリア</button>
-          </div>
-        </div>
-        <div id="ivGrid" class="iv-grid"></div>
-        <div id="ivEmpty" class="iv-empty" style="display:none">画像がありません</div>
-      </div>
-    </div>
-
-    <!-- Detail popup (ℹ button) — centered modal, not a sidebar -->
-    <div id="ivDetail" class="iv-detail-overlay" hidden>
-      <div class="iv-detail-box" id="ivDetailBox"></div>
-    </div>
-
-    <div id="ivViewer" class="iv-viewer" hidden>
-      <button class="iv-nav" id="ivPrev" type="button">&#8249;</button>
-      <img id="ivViewerImg" class="iv-viewer-img" alt="">
-      <video id="ivViewerVid" class="iv-viewer-img" controls muted hidden></video>
-      <button class="iv-nav" id="ivNext" type="button">&#8250;</button>
-      <div class="iv-index" id="ivViewerIndex"></div>
-    </div>
-  </div><!-- /mode-image -->
   </div><!-- /appMain -->
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
@@ -1276,7 +1183,6 @@
   <script src="folders.js"></script>
   <script src="search.js"></script>
   <script src="viewer.js"></script>
-  <script src="image-viewer.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

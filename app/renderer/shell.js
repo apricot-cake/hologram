@@ -1,10 +1,9 @@
 // Sidebar behaviour for the unified viewer: collapsible filter sections + the
 // saved search-mode (通常/あいまい) restore.
 //
-// The top-level 投稿閲覧/画像閲覧 mode switch was removed — the unified post-view
-// is the only view now. image-viewer.js stays loaded but dormant (never init()'d)
-// until its remaining features (○ select + manual grouping, ℹ detail) are ported
-// in and the file is retired.
+// The top-level 投稿閲覧/画像閲覧 mode switch and the separate image-view
+// (image-viewer.js) were removed — the unified post-view is the only view now
+// (grouping, ○ select + manual grouping, and ℹ detail all live in viewer.js).
 (function () {
   'use strict';
 

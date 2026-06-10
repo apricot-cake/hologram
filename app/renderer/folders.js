@@ -1,8 +1,7 @@
-// Shared folder store + management modal + toast, used by BOTH post-view
-// (viewer.js) and image-view (image-viewer.js). folders.json is library-level
-// (keyed by captureId) so both modes share the same folders. This module owns the
-// data, the management modal (#ivFolderModal), membership toggling, and the toast
-// (#ivToast); the "which folder is filtered" state stays per-view. Subscribers
+// Shared folder store + management modal + toast, used by the post-view
+// (viewer.js). folders.json is library-level (keyed by captureId). This module
+// owns the data, the management modal (#ivFolderModal), membership toggling, and
+// the toast (#ivToast); the "which folder is filtered" state stays per-view. Subscribers
 // (onChange) are notified after any mutation so each view refreshes its own chips.
 //
 //   window.corpusFolders.{ load, all, defaultId, byId, has, inDefault,
