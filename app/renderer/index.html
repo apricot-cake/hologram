@@ -798,14 +798,21 @@
     /* クエリビルダ: 「かつ」「または」の2フィールドを常時表示。全フィルタが
        要素（ピル）で、ドラッグで他方のフィールドへ移せる。間の接続は
        プルダウン（かつ/または）。 */
-    .qc-join-label { font-size: 10px; font-weight: 600; color: var(--text-muted); margin: 0 1px 0 6px; align-self: center; }
     .qc-zone {
       display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center;
-      min-height: 26px; min-width: 64px; padding: 2px 4px;
-      border: 1px dashed var(--border); border-radius: 8px;
-      transition: border-color .12s, background .12s;
+      min-height: 28px; min-width: 88px; padding: 3px 6px 3px 4px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; transition: border-color .12s, background .12s;
     }
     .qc-zone.drag-over { border-color: var(--accent); background: var(--accent-subtle); }
+    /* フィールド見出しは箱の中（仕切り線つき）＝「この箱の中は全部この演算子」 */
+    .qc-zone-label {
+      font-size: 10px; font-weight: 700; color: var(--text-muted);
+      padding: 0 7px 0 4px; margin-right: 2px; align-self: stretch;
+      display: inline-flex; align-items: center;
+      border-right: 1px solid var(--border);
+    }
+    .qc-op { font-size: 9px; color: var(--text-subtle); align-self: center; margin: 0 1px; pointer-events: none; }
     .qc-zone-empty { font-size: 10px; color: var(--text-subtle); padding: 0 4px; pointer-events: none; }
     .qc-join-sel {
       font-size: 10px; font-weight: 700; padding: 2px 4px; width: auto;

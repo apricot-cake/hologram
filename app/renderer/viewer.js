@@ -418,17 +418,25 @@
       }
       (f.mode === 'or' ? orPills : andPills).push(pill(i, label, cls));
     });
-    // 空フィールド: 反対側にピルがある（＝ドラッグできるものがある）ときは
-    // 「ここへドラッグで移動」、何も無ければ「（なし）」
-    const zone = (name, pills, otherHas) =>
-      `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">${pills.join('') || `<span class="qc-zone-empty">${otherHas ? MSG.qcDropMove : MSG.qcDropHere}</span>`}</span>`;
+    // フィールドはラベルを箱の中に持つ（外置きだと束ねている感が出ない）。
+    // さらにピルの間に小さく「かつ/または」を挟み、「この箱の中は全部この
+    // 演算子で結合」だと一目で読めるようにする。
+    // 空フィールド: 反対側にピルがあれば「ここへドラッグで移動」、無ければ（なし）。
+    const zone = (name, pills, otherHas) => {
+      const word = name === 'and' ? MSG.qcJoinAnd : MSG.qcJoinOr;
+      const body = pills.length
+        ? pills.join(`<span class="qc-op">${escapeHtml(word)}</span>`)
+        : `<span class="qc-zone-empty">${otherHas ? MSG.qcDropMove : MSG.qcDropHere}</span>`;
+      return `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">` +
+        `<span class="qc-zone-label">${escapeHtml(word)}</span>` + body + `</span>`;
+    };
     const joinSel = `<select class="qc-join-sel" id="qcJoinSel" title="${MSG.tipJoin}">` +
       `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
       `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
     container.innerHTML = special +
-      `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + zone('and', andPills, orPills.length > 0) +
+      zone('and', andPills, orPills.length > 0) +
       joinSel +
-      `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + zone('or', orPills, andPills.length > 0);
+      zone('or', orPills, andPills.length > 0);
   }
 
   function formatShortDate(dateStr) {
