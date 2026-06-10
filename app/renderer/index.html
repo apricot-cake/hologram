@@ -101,8 +101,8 @@
     }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
-    #appMain { flex: 1; min-width: 0; }
-    #mode-post { padding: 24px 32px; }
+    #appMain { flex: 1; min-width: 0; display: flex; }
+    #mode-post { flex: 1; min-width: 0; padding: 24px 32px; }
 
     /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
        `scrollbar-width` property disables these ::-webkit-scrollbar rules in
@@ -1162,6 +1162,12 @@
     </div>
   </div><!-- /mode-post -->
 
+  <!-- Post inspector (ℹ on a card): persistent right column / slide-over.
+       Reuses the iv-insp-* content styles from the old centered popup. -->
+  <aside id="postDetail" class="inspector" hidden>
+    <div id="postDetailBox"></div>
+  </aside>
+
   </div><!-- /appMain -->
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
@@ -1204,11 +1210,6 @@
     <video id="lightboxVideo" controls playsinline preload="metadata" style="display:none"></video>
     <button class="lb-nav lb-next" id="lbNext" type="button">&#8250;</button>
     <div class="lb-counter" id="lbCounter"></div>
-  </div>
-
-  <!-- Post detail popup (ℹ on a card; reuses image-view's iv-detail/iv-insp styles) -->
-  <div id="postDetail" class="iv-detail-overlay" hidden>
-    <div class="iv-detail-box" id="postDetailBox"></div>
   </div>
 
   <!-- Edit tags overlay -->
@@ -1296,6 +1297,30 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
+    /* Inspector (ℹ): an inline right column at wide widths; below the
+       breakpoint the SAME panel floats over the grid as a slide-over — it
+       never disappears, only the layering changes. Esc/× closes; clicking a
+       card while it is open swaps the content (double-click → gallery). */
+    .inspector {
+      width: 320px; flex-shrink: 0; position: sticky; top: 0; height: 100vh;
+      overflow-y: auto; overscroll-behavior: contain; z-index: 25;
+      background: var(--surface); border-left: 1px solid var(--border);
+      padding: 16px 18px; font-size: 12px;
+    }
+    .inspector[hidden] { display: none; }
+    .inspector:not([hidden]) { animation: corpusPanelIn .2s ease-out; }
+    @media (max-width: 1279px) {
+      .inspector {
+        position: fixed; top: 0; right: 0;
+        border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+        z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
+      }
+    }
+    .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
+    .iv-insp-actions .iv-insp-open { margin-top: 0; }
+    /* The card currently shown in the inspector — tinted ring, not solid */
+    .post-card.inspected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+
     /* AND/OR toggle for multi-select filters (tags) */
     .iv-andor { font-size: 11px; font-weight: 600; padding: 2px 9px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin-left: 4px; vertical-align: middle; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
     .iv-andor:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
@@ -1335,6 +1360,7 @@
     @keyframes corpusFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+    @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
     .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }

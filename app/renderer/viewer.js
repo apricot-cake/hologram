@@ -1033,6 +1033,7 @@
   let manualGroups = [];        // [[captureId,…],…] — user-built groups (win over auto)
   let ungrouped = new Set();    // post keys opted out of auto-grouping
   const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
+  let inspectedKey = null;      // postIdKey of the group shown in the inspector (ring marker)
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
@@ -1561,6 +1562,15 @@
       });
     });
 
+    // Re-apply the inspected-card ring (innerHTML rebuilds drop the class)
+    if (inspectedKey) {
+      const ii = viewGroups.findIndex((g2) => postIdKey(g2.rep) === inspectedKey);
+      if (ii >= 0) {
+        const el = grid.querySelector('.post-card[data-index="' + ii + '"]');
+        if (el) el.classList.add('inspected');
+      }
+    }
+
     if (!keepLimit) pushHistory();   // capture the filter/view state for ←/→
   }
 
@@ -1672,12 +1682,22 @@
       return;
     }
     // Image -> open the gallery (screenshot + originals, whole group).
+    // While the inspector is open, a single click swaps its content instead
+    // (Eagle-style browsing); the gallery is then reached by double-click.
     const img = e.target.closest('.card-img');
     if (img) {
       e.stopPropagation();
       const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
-      if (g) openGallery(buildGroupGalleryItems(g), 0);
+      if (!g) return;
+      if (!document.getElementById('postDetail').hidden) { showDetail(g); return; }
+      openGallery(buildGroupGalleryItems(g), 0);
     }
+  });
+  document.getElementById('postGrid').addEventListener('dblclick', (e) => {
+    const img = e.target.closest('.card-img');
+    if (!img || document.getElementById('postDetail').hidden) return;
+    const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
+    if (g) openGallery(buildGroupGalleryItems(g), 0);
   });
 
   // Middle-click an image → open it full-size in its own window (Chromium's
@@ -1897,6 +1917,7 @@
 
   // Delete every record of the group (a group IS one post in the UI).
   async function executeDeleteGroup(g) {
+    if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try { await window.corpus.deletePost(r.image || r.video); } catch { /* keep going */ }
       const idx = allPosts.findIndex(p => p.captureId === r.captureId);
@@ -1908,10 +1929,13 @@
     showToast(MSG.deleted);
   }
 
-  // === Detail popup (ℹ on a card) + group/ungroup actions (ported from image-view) ===
+  // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     document.getElementById('postDetail').hidden = true;
     document.getElementById('postDetailBox').innerHTML = '';
+    inspectedKey = null;
+    document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
+    refreshTileSlider();   // the grid width grew back — re-derive the track
   }
   function persistManual() { if (window.corpus.setManualGroups) window.corpus.setManualGroups(manualGroups).catch(() => { /* best-effort */ }); }
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
@@ -1978,17 +2002,46 @@
       row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
       row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
       tagsHtml +
+      `<div class="iv-insp-actions">` +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
-      groupBtn;
+      `<a class="iv-insp-open" id="pdEdit">${escapeHtml(MSG.tipEdit)}</a>` +
+      groupBtn +
+      `</div>`;
     document.getElementById('postDetail').hidden = false;
+    // Ring-mark the inspected card so swapping content stays traceable.
+    inspectedKey = postIdKey(p);
+    document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
+    const gi = viewGroups.indexOf(g);
+    if (gi >= 0) {
+      const card = document.querySelector('.post-card[data-index="' + gi + '"]');
+      if (card) card.classList.add('inspected');
+    }
+    refreshTileSlider();   // inline column narrows the grid — re-derive the track
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const o = document.getElementById('pdOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
+    const ed = document.getElementById('pdEdit'); if (ed) ed.onclick = () => openEditOverlay(g.rep, g.records);
     const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
     const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
     const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
   }
-  document.getElementById('postDetail').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeDetail(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('postDetail').hidden) closeDetail(); });
+  // Esc closes the inspector — registered in CAPTURE phase so it can check
+  // what else is open BEFORE those handlers dismiss themselves on the same
+  // press (lightbox/popovers/modals win the first Esc, the panel the next).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('postDetail').hidden) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (lightbox.classList.contains('show')) return;
+    if (!document.getElementById('settingsView').hidden) return;
+    if (!document.getElementById('ivFolderModal').hidden) return;
+    if (document.querySelector('.confirm-overlay.show')) return;
+    if (document.querySelector('.fold-menu.show')) return;
+    const dp = document.getElementById('qfDatePopover');
+    const ep = document.getElementById('qfEngPopover');
+    if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
+    closeDetail();
+  }, true);
   // ℹ button on card → detail popup
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.info-btn');
@@ -2186,7 +2239,6 @@
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
-    if (!document.getElementById('postDetail').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (viewGroups.length === 0) return;
     e.preventDefault();
@@ -2206,7 +2258,6 @@
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
-    if (!document.getElementById('postDetail').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     e.preventDefault();
     const sb = document.getElementById('searchBox');
