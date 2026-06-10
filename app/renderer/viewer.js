@@ -38,6 +38,7 @@
     sbViewTitle: _s('sbViewTitle'),
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTip: _s('sbFilterTip'),
+    sbFilterTitle: _s('sbFilterTitle'),
     engParticle: _s('engParticle'),
     ctxSetDefault: _s('ctxSetDefault'),
     ctxManage: _s('ctxManage'),
@@ -323,12 +324,11 @@
   setText('sbEngParticle', MSG.engParticle);
   const engParticleEl = document.getElementById('sbEngParticle');
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
-  document.getElementById('sbTagSearchBtn').title = MSG.sbFilterTip;
-  document.getElementById('sbAuthorSearchBtn').title = MSG.sbFilterTip;
+  setText('sbFilterTitle', MSG.sbFilterTitle);
+  setText('sbFreqTitle', '★ ' + MSG.freqTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
-  setText('addFilterBtn', MSG.qfAdd);
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
@@ -516,30 +516,18 @@
     renderPosts();
   });
 
-  // --- ＋フィルタ popover (Linear-style): add any filter from one place -------
+  // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く ----
   const qfPop = document.createElement('div');
   qfPop.className = 'fold-menu qf-pop';
   document.body.appendChild(qfPop);
   let qfCat = null;
-  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; }
+  let qfTagGroup = null;   // tag flyout を特定グループに限定（'__other' = 未所属）
+  let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
+  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfTagGroup = null; qfAnchor = null; }
   const qfCatLabel = (id, fallback) => {
     const el = document.getElementById(id);
     return (el && el.textContent.trim()) || fallback;
   };
-  function qfCats() {
-    return [
-      ['kind', qfCatLabel('sbKindTitle', '種別')],
-      ['platform', qfCatLabel('sbPlatformTitle', 'プラットフォーム')],
-      ['postType', qfCatLabel('sbTypeTitle', '投稿タイプ')],
-      ['media', qfCatLabel('sbMediaTitle', 'メディア')],
-      ['tag', qfCatLabel('sbTagTitle', 'タグ')],
-      ['folder', MSG.qfCatFolder],
-      ['user', qfCatLabel('sbAuthorTitle', '作者')],
-      ['instance', qfCatLabel('sbInstanceTitle', 'インスタンス')],
-      ['date', qfCatLabel('sbDateTitle', '日付')],
-      ['engagement', qfCatLabel('sbEngTitle', 'エンゲージメント')]
-    ];
-  }
   function qfValues(cat) {
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
@@ -547,7 +535,18 @@
       case 'platform': return ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'].map(v => ({ v, l: ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[v], on: act('platform', v) }));
       case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
       case 'media': return [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
-      case 'tag': return [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort().map(t => ({ v: t, l: t, on: act('tag', t) }));
+      case 'tag': {
+        let tags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
+        if (qfTagGroup === '__other') {
+          const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
+          tags = tags.filter(t => !grouped.has(t));
+        } else if (qfTagGroup) {
+          const g = tagGroups.find(g2 => g2.id === qfTagGroup);
+          const own = new Set((g && g.tags) || []);
+          tags = tags.filter(t => own.has(t));
+        }
+        return tags.map(t => ({ v: t, l: t, on: act('tag', t) }));
+      }
       case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
       case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
         .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', on: act('user', u.key) }));
@@ -563,36 +562,24 @@
       default: return [];
     }
   }
-  function renderQfPop() {
-    if (!qfCat) {
-      qfPop.innerHTML = qfCats().map(([c, l]) =>
-        `<div class="fm-row" data-qfcat="${c}"><span class="fm-name">${escapeHtml(l)}</span><span class="qf-arrow">›</span></div>`).join('');
-      return;
+  function qfHeading() {
+    if (qfCat !== 'tag' || !qfTagGroup) {
+      const ids = { kind: 'sbKindTitle', platform: 'sbPlatformTitle', postType: 'sbPostTypeTitle', media: 'sbMediaTitle', tag: 'sbTagTitle', user: 'sbAuthorTitle', instance: 'sbInstanceTitle' };
+      if (qfCat === 'folder') return MSG.qfCatFolder;
+      return qfCatLabel(ids[qfCat] || '', qfCat);
     }
+    if (qfTagGroup === '__other') return MSG.tagGroupOther;
+    const g = tagGroups.find(g2 => g2.id === qfTagGroup);
+    return (g && g.name) || '';
+  }
+  function renderQfPop() {
+    if (!qfCat) return;
     const items = qfValues(qfCat);
     const rowOf = (it) => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}</div>`;
-    // タグはタググループの小見出し付きで並べる
-    let listHtml;
-    if (qfCat === 'tag' && tagGroups.length && items.length) {
-      const remaining = new Map(items.map((it) => [it.v, it]));
-      const parts = [];
-      for (const g of tagGroups) {
-        const own = (g.tags || []).filter((t) => remaining.has(t));
-        if (!own.length) continue;
-        parts.push(`<div class="qf-ghead">${escapeHtml(g.name || '')}</div>`);
-        own.forEach((t) => { parts.push(rowOf(remaining.get(t))); remaining.delete(t); });
-      }
-      if (remaining.size) {
-        parts.push(`<div class="qf-ghead">${escapeHtml(MSG.tagGroupOther)}</div>`);
-        remaining.forEach((it) => parts.push(rowOf(it)));
-      }
-      listHtml = parts.join('');
-    } else {
-      listHtml = items.map(rowOf).join('');
-    }
+    const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
-    qfPop.innerHTML = `<div class="fm-row qf-back" data-qfback="1">‹ ${escapeHtml(qfCats().find(([c]) => c === qfCat)[1])}</div>` +
+    qfPop.innerHTML = `<div class="fm-row qf-back">${escapeHtml(qfHeading())}</div>` +
       find +
       `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
     const fi = document.getElementById('qfFind');
@@ -607,31 +594,22 @@
     });
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
   });
-  function showQfPop() {
-    qfCat = null;
+  // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
+  function showQfPopAt(cat, anchorEl, tagGroupId) {
+    if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
+    qfCat = cat;
+    qfTagGroup = tagGroupId || null;
+    qfAnchor = anchorEl;
     renderQfPop();
-    const r = document.getElementById('addFilterBtn').getBoundingClientRect();
-    qfPop.style.left = r.left + 'px';
-    qfPop.style.top = (r.bottom + 4) + 'px';
+    const r = anchorEl.getBoundingClientRect();
+    qfPop.style.left = (r.right + 8) + 'px';
+    qfPop.style.top = r.top + 'px';
     qfPop.classList.add('show');
     const pr = qfPop.getBoundingClientRect();
     if (pr.right > innerWidth - 8) qfPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    if (pr.bottom > innerHeight - 8) qfPop.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
   }
-  document.getElementById('addFilterBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (qfPop.classList.contains('show')) hideQfPop(); else showQfPop();
-  });
   qfPop.addEventListener('click', (e) => {
-    const cat = e.target.closest('[data-qfcat]');
-    if (cat) {
-      // 日付/エンゲージはパラメータ入力が要る → 既存の専用ポップオーバーへ
-      if (cat.dataset.qfcat === 'date') { hideQfPop(); openDatePopover(null); return; }
-      if (cat.dataset.qfcat === 'engagement') { hideQfPop(); openEngPopover(null); return; }
-      qfCat = cat.dataset.qfcat;
-      renderQfPop();
-      return;
-    }
-    if (e.target.closest('[data-qfback]')) { qfCat = null; renderQfPop(); return; }
     const val = e.target.closest('[data-qfval]');
     if (val && qfCat) {
       const v = val.dataset.qfval;
@@ -655,7 +633,8 @@
     // a row click re-renders the popover, detaching e.target — that's an INSIDE
     // click even though contains() can no longer see it
     if (!document.contains(e.target)) return;
-    if (qfPop.classList.contains('show') && !qfPop.contains(e.target) && !e.target.closest('#addFilterBtn')) hideQfPop();
+    if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
+        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) hideQfPop();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
@@ -851,235 +830,107 @@
   setText('sbGif', MSG.qfGif);
 
   // Sidebar chip toggle (platform, postType, media)
-  document.querySelectorAll('.sb-chip[data-filter-type]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const type = chip.dataset.filterType;
-      const value = chip.dataset.filterValue;
-      const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
-      if (existIdx >= 0) {
-        removeFilter(existIdx);
-        // Deselecting a host-based platform can orphan instance filters; keep only
-        // those whose host still belongs to a selected host-based platform.
-        if (type === 'platform' && ['misskey', 'mastodon'].includes(value)) {
-          const activeIP = activeFilters.filter(f => f.type === 'platform' && ['misskey', 'mastodon'].includes(f.value)).map(f => f.value);
-          const validHosts = new Set(allPosts.filter(p => activeIP.includes(p.platform)).map(p => hostOf(p.url)));
-          const before = activeFilters.length;
-          activeFilters = activeFilters.filter(f => f.type !== 'instance' || validHosts.has(f.value));
-          if (activeFilters.length !== before) { renderQueryChips(); renderPosts(); }
-        }
-      } else {
-        addFilter({ type, value });
-      }
-      updateSidebarState();
-    });
+  // Filter rows: click a row → flyout with that category's values beside it.
+  // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
+  document.getElementById('filterRows').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-qfrow]');
+    if (!row) return;
+    const cat = row.dataset.qfrow;
+    if (cat === 'date') { hideQfPop(); openDatePopover(null); return; }
+    if (cat === 'engagement') { hideQfPop(); openEngPopover(null); return; }
+    showQfPopAt(cat, row);
   });
 
-  // Update sidebar chip active states
+  // Update sidebar state (chip actives, row badges, tag area, active bar)
   function updateSidebarState() {
     document.querySelectorAll('.sb-chip[data-filter-type]').forEach(chip => {
       const type = chip.dataset.filterType;
       const value = chip.dataset.filterValue;
-      const isActive = activeFilters.some(f => f.type === type && f.value === value);
-      chip.classList.toggle('active', isActive);
+      chip.classList.toggle('active', activeFilters.some(f => f.type === type && f.value === value));
     });
-    // Sync sidebar date controls with active date filter
-    const dateFilter = activeFilters.find(f => f.type === 'date');
-    if (dateFilter) {
-      sbDateFrom.value = dateFilter.from || '';
-      sbDateTo.value = dateFilter.to || '';
-      sbDateFieldSel.value = dateFilter.dateField || 'date';
-    } else {
-      sbDateFrom.value = '';
-      sbDateTo.value = '';
-    }
-    // Sync sidebar engagement controls — show first engagement filter if any
-    const engFilter = activeFilters.find(f => f.type === 'engagement');
-    if (engFilter) {
-      sbEngType.value = engFilter.engType || 'likes';
-      sbEngMin.value = engFilter.min || '';
-      sbEngOp.dataset.op = engFilter.op || 'gte';
-      sbEngOp.textContent = engFilter.op === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
-      sbEngOp.classList.toggle('active', engFilter.op === 'lte');
-    } else {
-      sbEngMin.value = '';
-    }
-    // 値が入っているフィルタ欄をハイライト（検索 / 日付 from・to / 最低エンゲージ）
-    const hl = (el, on) => { if (el) el.classList.toggle('has-value', !!on); };
     const sb = document.getElementById('searchBox');
-    hl(sb, sb && sb.value.trim());
-    hl(sbDateFrom, sbDateFrom.value);
-    hl(sbDateTo, sbDateTo.value);
-    hl(sbEngMin, sbEngMin.value && parseInt(sbEngMin.value, 10) > 0);
+    if (sb) sb.classList.toggle('has-value', !!sb.value.trim());
+    renderFilterBadges();
     updateSidebarTags();
-    updateSidebarAuthors();
-    updateSidebarInstances();
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
-  // Sidebar date controls
-  const sbDateFieldSel = document.getElementById('sbDateField');
-  const sbDateFrom = document.getElementById('sbDateFrom');
-  const sbDateTo = document.getElementById('sbDateTo');
-
-  document.getElementById('sbDateOptPost').textContent = MSG.qfDatePost;
-  document.getElementById('sbDateOptCapture').textContent = MSG.qfDateCaptured;
-  document.getElementById('sbDateFromLabel').textContent = MSG.qfDateFrom;
-  document.getElementById('sbDateToLabel').textContent = MSG.qfDateTo;
-
-  sbDateFieldSel.addEventListener('change', applySidebarDateFilter);
-
-  sbDateFrom.addEventListener('change', applySidebarDateFilter);
-  sbDateTo.addEventListener('change', applySidebarDateFilter);
-
-  function applySidebarDateFilter() {
-    const from = sbDateFrom.value;
-    const to = sbDateTo.value;
-    const dateField = sbDateFieldSel.value;
-    // Remove existing date filter
-    activeFilters = activeFilters.filter(f => f.type !== 'date');
-    if (from || to) {
-      activeFilters.push({ type: 'date', dateField, from, to });
-    }
-    renderQueryChips();
-    renderPosts();
-    updateSidebarState();
+  // Row badges: number of active filters per category
+  function renderFilterBadges() {
+    const counts = {};
+    for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
+    document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
+      const n = counts[b.dataset.badge] || 0;
+      b.textContent = n || '';
+      b.classList.toggle('on', n > 0);
+    });
   }
 
-  // Sidebar engagement controls
-  const sbEngType = document.getElementById('sbEngType');
-  const sbEngMin = document.getElementById('sbEngMin');
-  const sbEngOp = document.getElementById('sbEngOp');
-
-  sbEngType.innerHTML = Object.entries(ENG_TYPE_LABELS).map(([k, v]) =>
-    `<option value="${k}">${escapeHtml(v)}</option>`
-  ).join('');
-  sbEngOp.textContent = MSG.qfEngGte;
-  sbEngOp.dataset.op = 'gte';
-
-  sbEngOp.addEventListener('click', function() {
-    const next = this.dataset.op === 'gte' ? 'lte' : 'gte';
-    this.dataset.op = next;
-    this.textContent = next === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
-    this.classList.toggle('active', next === 'lte');
-    applySidebarEngFilter();
-  });
-
-  sbEngType.addEventListener('change', applySidebarEngFilter);
-  sbEngMin.addEventListener('input', applySidebarEngFilter);
-
-  function applySidebarEngFilter() {
-    const engType = sbEngType.value;
-    const min = parseInt(sbEngMin.value, 10);
-    const op = sbEngOp.dataset.op;
-    // Remove existing filter for same engType
-    activeFilters = activeFilters.filter(f => !(f.type === 'engagement' && f.engType === engType));
-    if (min > 0) {
-      activeFilters.push({ type: 'engagement', engType, min, op });
-    }
-    renderQueryChips();
-    renderPosts();
-    updateSidebarState();
-  }
-
-  // Sidebar tag chips (dynamic), grouped by tag-groups.json. The filter input
-  // hides behind the 🔍 next to the section title (closing it clears the filter).
-  let tagSearchOpen = false;
+  // --- Tag area: ★よく使うタグ（チップ直置き・3状態サイクル）＋タググループの
+  // 行ボタン（押すとそのグループのタグがフライアウトで開く）。タグ本体は
+  // 青天井に増えるが、グループはユーザーが作る有限リストなので常設できる。
   let tagGroups = [];   // {id,name,tags[]} from tag-groups.json (loaded at startup)
+  function cycleTagFilter(value) {
+    const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
+    if (existIdx < 0) {
+      addFilter({ type: 'tag', value, mode: 'or' });
+    } else if (activeFilters[existIdx].mode !== 'and') {
+      activeFilters[existIdx].mode = 'and';
+      renderQueryChips();
+      renderPosts();
+    } else {
+      removeFilter(existIdx);
+    }
+    updateSidebarState();
+  }
   function updateSidebarTags() {
-    const container = document.getElementById('sbTagChips');
-    const searchInput = document.getElementById('sbTagSearch');
+    const freqHost = document.getElementById('sbFreqTags');
+    const groupHost = document.getElementById('sbTagGroupRows');
+    if (!freqHost || !groupHost) return;
     // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
     const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-    searchInput.style.display = tagSearchOpen ? '' : 'none';
-    if (allTags.length === 0) {
-      container.innerHTML = '';
-      return;
-    }
-    const filter = (searchInput.value || '').trim().toLowerCase();
-    const tags = filter ? allTags.filter(t => t.toLowerCase().includes(filter)) : allTags;
-    // Each tag chip cycles 解除 → いずれか(OR) → すべて含む(AND) → 解除, so OR and
-    // AND tags can be mixed: every AND tag must match, plus at least one OR tag.
+    const freqTitle = document.getElementById('sbFreqTitle');
+    if (freqTitle) freqTitle.style.display = allTags.length ? '' : 'none';
+    if (!allTags.length) { freqHost.innerHTML = ''; groupHost.innerHTML = ''; return; }
     const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     const chip = (t) => {
       const st = tagState.get(t);
       const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
       return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
     };
-    // Group by tag-groups.json; anything not covered goes under その他 at the end.
-    const remaining = new Set(tags);
-    const blocks = [];
-    // よく使うタグ: frecency 上位（未学習時はライブラリ内の付与数で代替）。
-    // 絞り込み入力中は出さない。
-    if (!filter && allTags.length > 6) {
-      const cnt = new Map();
-      for (const p of allPosts) if (p.url) for (const t of (p.tags || [])) cnt.set(t, (cnt.get(t) || 0) + 1);
-      const freq = loadFreq();
-      const top = [...allTags]
-        .sort((a, b) => ((freq[b] ? freqScore(freq[b]) : 0) - (freq[a] ? freqScore(freq[a]) : 0)) || ((cnt.get(b) || 0) - (cnt.get(a) || 0)))
-        .slice(0, 12);
-      if (top.length >= 3) {
-        blocks.push(`<div class="sb-taggroup"><div class="sb-subtitle">★ ${MSG.freqTags}</div><div class="sb-chips">${top.map(chip).join('')}</div></div>`);
-      }
-    }
+    // よく使うタグ: frecency 上位（未学習時はライブラリ内の付与数で代替）
+    const cnt = new Map();
+    for (const p of allPosts) if (p.url) for (const t of (p.tags || [])) cnt.set(t, (cnt.get(t) || 0) + 1);
+    const freq = loadFreq();
+    const top = [...allTags]
+      .sort((a, b) => ((freq[b] ? freqScore(freq[b]) : 0) - (freq[a] ? freqScore(freq[a]) : 0)) || ((cnt.get(b) || 0) - (cnt.get(a) || 0)))
+      .slice(0, 12);
+    freqHost.innerHTML = top.map(chip).join('');
+    // タググループ行: グループ内に存在するタグ数 ＋ 適用中なら active。
+    const grouped = new Set();
+    const rows = [];
     for (const g of tagGroups) {
-      const own = (g.tags || []).filter((t) => remaining.has(t)).sort();
+      const own = (g.tags || []).filter((t) => allTags.includes(t));
       if (!own.length) continue;
-      own.forEach((t) => remaining.delete(t));
-      blocks.push(`<div class="sb-taggroup"><div class="sb-subtitle">${escapeHtml(g.name || '')}</div><div class="sb-chips">${own.map(chip).join('')}</div></div>`);
+      own.forEach((t) => grouped.add(t));
+      const activeN = own.filter((t) => tagState.has(t)).length;
+      rows.push(`<button class="sb-chip${activeN ? ' active' : ''}" data-tag-group="${escapeAttr(g.id)}">${escapeHtml(g.name || '')}<span class="iv-tagn">${own.length}</span><span class="sb-chip-arrow">▸</span></button>`);
     }
-    const rest = [...remaining].sort();
+    const rest = allTags.filter((t) => !grouped.has(t));
     if (rest.length) {
-      blocks.push(blocks.length
-        ? `<div class="sb-taggroup"><div class="sb-subtitle">${MSG.tagGroupOther}</div><div class="sb-chips">${rest.map(chip).join('')}</div></div>`
-        : rest.map(chip).join(''));
+      const activeN = rest.filter((t) => tagState.has(t)).length;
+      rows.push(`<button class="sb-chip${activeN ? ' active' : ''}" data-tag-group="__other">${escapeHtml(MSG.tagGroupOther)}<span class="iv-tagn">${rest.length}</span><span class="sb-chip-arrow">▸</span></button>`);
     }
-    container.innerHTML = blocks.join('');
-    container.querySelectorAll('.sb-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const value = chip.dataset.filterValue;
-        const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
-        if (existIdx < 0) {
-          addFilter({ type: 'tag', value, mode: 'or' });
-        } else if (activeFilters[existIdx].mode !== 'and') {
-          activeFilters[existIdx].mode = 'and';
-          renderQueryChips();
-          renderPosts();
-        } else {
-          removeFilter(existIdx);
-        }
-        updateSidebarState();
-      });
-    });
+    groupHost.innerHTML = rows.join('');
   }
-
-  // Sidebar: instances/servers for Misskey + Mastodon (expands under the Platform
-  // section when one of those host-based platforms is selected).
-  function updateSidebarInstances() {
-    const wrap = document.getElementById('sbInstanceWrap');
-    const container = document.getElementById('sbInstanceChips');
-    const activePlatforms = activeFilters
-      .filter(f => f.type === 'platform' && ['misskey', 'mastodon'].includes(f.value))
-      .map(f => f.value);
-    const instances = [...new Set(allPosts.filter(p => activePlatforms.includes(p.platform)).map(p => hostOf(p.url)).filter(Boolean))].sort();
-    if (activePlatforms.length === 0 || instances.length === 0) {
-      wrap.style.display = 'none';
-      container.innerHTML = '';
-      return;
-    }
-    wrap.style.display = '';
-    const activeValues = activeFilters.filter(f => f.type === 'instance').map(f => f.value);
-    container.innerHTML = instances.map(h =>
-      `<button class="sb-chip${activeValues.includes(h) ? ' active' : ''}" data-filter-type="instance" data-filter-value="${escapeHtml(h)}">${escapeHtml(h)}</button>`
-    ).join('');
-    container.querySelectorAll('.sb-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const value = chip.dataset.filterValue;
-        const idx = activeFilters.findIndex(f => f.type === 'instance' && f.value === value);
-        if (idx >= 0) removeFilter(idx); else addFilter({ type: 'instance', value });
-        updateSidebarState();
-      });
-    });
-  }
+  document.getElementById('sbFreqTags').addEventListener('click', (e) => {
+    const chip = e.target.closest('.sb-chip[data-filter-value]');
+    if (chip) cycleTagFilter(chip.dataset.filterValue);
+  });
+  document.getElementById('sbTagGroupRows').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tag-group]');
+    if (b) showQfPopAt('tag', b, b.dataset.tagGroup);
+  });
 
   // --- State ---
   let allPosts = [];
@@ -1145,16 +996,7 @@
     btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
   })();
 
-  document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
-  document.getElementById('sbTagSearchBtn').addEventListener('click', () => {
-    tagSearchOpen = !tagSearchOpen;
-    document.getElementById('sbTagSearchBtn').classList.toggle('active', tagSearchOpen);
-    if (!tagSearchOpen) document.getElementById('sbTagSearch').value = '';   // closing clears the filter
-    updateSidebarTags();
-    if (tagSearchOpen) document.getElementById('sbTagSearch').focus();
-  });
-
-  // --- Authors (sidebar 作者 section; derived from post author fields, no fetching) ---
+  // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
   // Group posts by author. Posts arrive newest-first, so the first occurrence
   // carries the latest display name / handle for that user.
   function buildUsers() {
@@ -1173,50 +1015,6 @@
     }
     return [...map.values()];
   }
-
-  // Sidebar 作者 chips: top creators by post count; click toggles a `user` filter
-  // (reuses the existing filter machinery + pill). A search box appears once the
-  // list is long; without a query the chip list is capped so the sidebar stays
-  // compact (search reaches the long tail).
-  const AUTHOR_LIMIT = 40;
-  let authorSearchOpen = false;
-  function updateSidebarAuthors() {
-    const container = document.getElementById('sbAuthorChips');
-    const searchInput = document.getElementById('sbAuthorSearch');
-    if (!container || !searchInput) return;
-    let users = buildUsers();
-    users.sort((a, b) => b.count - a.count ||
-      (a.displayName || a.screenName || '').localeCompare(b.displayName || b.screenName || ''));
-    searchInput.style.display = authorSearchOpen ? '' : 'none';
-    const q = (searchInput.value || '').trim().toLowerCase().replace(/^@+/, '');
-    if (q) users = users.filter(u =>
-      (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
-    const shown = q ? users : users.slice(0, AUTHOR_LIMIT);
-    const activeKeys = activeFilters.filter(f => f.type === 'user').map(f => f.value);
-    container.innerHTML = shown.map(u => {
-      const name = u.displayName || u.screenName || '(unknown)';
-      const tip = u.screenName ? '@' + u.screenName : name;
-      return `<button class="sb-chip${activeKeys.includes(u.key) ? ' active' : ''}" data-user-key="${escapeHtml(u.key)}" data-user-label="${escapeHtml(name)}" title="${escapeHtml(tip)}">${escapeHtml(name)}</button>`;
-    }).join('');
-    container.querySelectorAll('.sb-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const key = chip.dataset.userKey;
-        const idx = activeFilters.findIndex(f => f.type === 'user' && f.value === key);
-        if (idx >= 0) removeFilter(idx);
-        else addFilter({ type: 'user', value: key, label: chip.dataset.userLabel });
-        updateSidebarState();
-      });
-    });
-  }
-  document.getElementById('sbAuthorSearch').addEventListener('input', updateSidebarAuthors);
-  document.getElementById('sbAuthorSearchBtn').addEventListener('click', () => {
-    authorSearchOpen = !authorSearchOpen;
-    document.getElementById('sbAuthorSearchBtn').classList.toggle('active', authorSearchOpen);
-    if (!authorSearchOpen) document.getElementById('sbAuthorSearch').value = '';   // closing clears the filter
-    updateSidebarAuthors();
-    if (authorSearchOpen) document.getElementById('sbAuthorSearch').focus();
-  });
-
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');

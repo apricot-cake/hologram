@@ -41,26 +41,25 @@ writePost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const labels = () => [...document.querySelectorAll('#sbAuthorChips .sb-chip')].map(c => c.dataset.userLabel);
-  await sleep(150);
-  const allNames = labels();   // ranked by post count: Alice(2), then Bob, Carol
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 4);
 
-  // search (plain, and with a leading "@" which should be ignored)
-  const as = document.getElementById('sbAuthorSearch');
-  as.value = 'bob'; as.dispatchEvent(new Event('input')); await sleep(40);
-  const searchNames = labels();
-  as.value = '@bob'; as.dispatchEvent(new Event('input')); await sleep(40);
-  const atSearchNames = labels();
-  as.value = ''; as.dispatchEvent(new Event('input')); await sleep(40);
+  // 作者行 → フライアウトに投稿数順で列挙される
+  document.querySelector('#filterRows [data-qfrow="user"]').click(); await sleep(60);
+  const pop = document.querySelector('.qf-pop');
+  const rows = () => [...pop.querySelectorAll('[data-qfval]')];
+  const allNames = rows().map(r => r.querySelector('.fm-name').textContent);   // Alice(2), Bob, Carol
 
-  // click Alice -> apply a user filter (no tabs; stays in post view)
-  [...document.querySelectorAll('#sbAuthorChips .sb-chip')].find(c => c.dataset.userLabel === 'Alice').click();
+  // click Alice -> apply a user filter (flyout stays open, row shows ✓)
+  rows().find(r => r.querySelector('.fm-name').textContent === 'Alice')
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(140);
   const chipText = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-user')].map(c => c.textContent);
   const cardCount = document.querySelectorAll('#postGrid .post-card').length;
-  const aliceActive = !![...document.querySelectorAll('#sbAuthorChips .sb-chip')].find(c => c.dataset.userLabel === 'Alice' && c.classList.contains('active'));
+  const aliceActive = !!rows().find(r => r.querySelector('.fm-name').textContent === 'Alice' && r.querySelector('.fm-check'));
+  const badgeOn = document.querySelector('#filterRows [data-badge="user"]').classList.contains('on');
 
-  return { allNames, searchNames, atSearchNames, chipText, cardCount, aliceActive };
+  return { allNames, chipText, cardCount, aliceActive, badgeOn };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -84,12 +83,10 @@ child.on('close', () => {
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('authors grouped + ranked by post count (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
-  check('author search filters the chips (bob -> Bob)', eq(r.searchNames, ['Bob']));
-  check('author search ignores a leading @ (@bob -> Bob)', eq(r.atSearchNames, ['Bob']));
+  check('authors ranked by post count in the flyout (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
   check('the active filter chip shows the user (Alice)', eq(r.chipText, ['Alice']));
   check("posts are filtered to that user's 2 posts", r.cardCount === 2);
-  check('the clicked author chip becomes active', r.aliceActive === true);
+  check('the picked author row shows ✓ and the row badge lights', r.aliceActive === true && r.badgeOn === true);
   console.log('\n' + (ok ? 'USERS_TEST_PASS' : 'USERS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

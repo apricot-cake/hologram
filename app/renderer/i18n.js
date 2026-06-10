@@ -132,6 +132,7 @@
       tagGroupOther: 'その他',
       freqTags: 'よく使うタグ',
       qfFindPh: '絞り込み…',
+      sbFilterTitle: 'フィルタ',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
       backupTitle: 'バックアップ（完全エクスポート）',
       hintBackup: '選んだフォルダへ一定間隔で完全ZIPを書き出します（直近数世代を保持）。',
@@ -367,6 +368,7 @@
       tagGroupOther: 'Other',
       freqTags: 'Frequent tags',
       qfFindPh: 'Filter…',
+      sbFilterTitle: 'Filters',
       // viewer: settings > backup (incremental export to a chosen folder)
       backupTitle: 'Backup (full export)',
       hintBackup: 'Writes a complete ZIP to the chosen folder on a schedule (latest few are kept).',

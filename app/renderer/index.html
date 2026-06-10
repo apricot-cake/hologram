@@ -830,15 +830,26 @@
     .sb-taggroup { margin-top: 8px; }
     .sb-taggroup:first-child { margin-top: 0; }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
-  /* 🔍 toggle sitting right next to a section title: reveals that section's
-     filter input (tags / authors). margin-right:auto keeps it adjacent to the
-     title text instead of being pushed to the far right by space-between. */
-  .sb-search-ico {
-    display: inline-flex; align-items: center; margin-right: auto;
-    background: none; border: none; padding: 2px; border-radius: 4px;
-    color: var(--text-muted); cursor: pointer;
+  /* Filter rows: one-line category buttons; a flyout with the values opens
+     beside the row. Badge = number of active filters of that type. */
+  .sb-row {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 7px 12px; margin-bottom: 4px; text-align: left;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+    border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer;
+    transition: border-color .12s, color .12s;
   }
-  .sb-search-ico:hover, .sb-search-ico.active { color: var(--accent); }
+  .sb-row:hover { border-color: var(--accent); }
+  .sb-row .sb-row-name { flex: 1; }
+  .sb-row .sb-row-badge {
+    display: none; min-width: 16px; height: 16px; padding: 0 5px;
+    border-radius: 8px; background: var(--accent); color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  }
+  .sb-row .sb-row-badge.on { display: inline-block; }
+  .sb-row .sb-row-arrow { color: var(--text-subtle); font-size: 10px; }
+  /* tag-group buttons: chip look + ▸ (they open a flyout, not toggle) */
+  .sb-chip .sb-chip-arrow { margin-left: 4px; color: var(--text-subtle); font-size: 9px; }
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
   .sb-sub {
@@ -907,96 +918,31 @@
             </select>
           </div>
         </div>
-        <!-- Kind: SNS posts (screenshot captures) vs library images -->
-        <div class="sb-section collapsible">
-          <div class="sb-title" id="sbKindTitle"></div>
-          <div class="sb-chips">
-            <button class="sb-chip" data-filter-type="kind" data-filter-value="post" id="sbKindPost"></button>
-            <button class="sb-chip" data-filter-type="kind" data-filter-value="image" id="sbKindImage"></button>
-          </div>
-        </div>
-
-        <!-- Platform -->
-        <div class="sb-section collapsible">
-          <div class="sb-title" id="sbPlatformTitle"></div>
-          <div class="sb-chips">
-            <button class="sb-chip" data-filter-type="platform" data-filter-value="x">X</button>
-            <button class="sb-chip" data-filter-type="platform" data-filter-value="bluesky">Bluesky</button>
-            <button class="sb-chip" data-filter-type="platform" data-filter-value="misskey">Misskey</button>
-            <button class="sb-chip" data-filter-type="platform" data-filter-value="mastodon">Mastodon</button>
-            <button class="sb-chip" data-filter-type="platform" data-filter-value="pixiv">pixiv</button>
-          </div>
-          <div id="sbInstanceWrap" style="display:none; margin-top:8px;">
-            <div class="sb-subtitle" id="sbInstanceTitle"></div>
-            <div class="sb-chips" id="sbInstanceChips"></div>
-          </div>
-        </div>
-
-        <!-- Post type -->
-        <div class="sb-section collapsible">
-          <div class="sb-title" id="sbPostTypeTitle"></div>
-          <div class="sb-chips">
-            <button class="sb-chip" data-filter-type="postType" data-filter-value="post" id="sbPost"></button>
-            <button class="sb-chip" data-filter-type="postType" data-filter-value="reply" id="sbReply"></button>
-            <button class="sb-chip" data-filter-type="postType" data-filter-value="quote" id="sbQuote"></button>
-            <button class="sb-chip" data-filter-type="postType" data-filter-value="thread" id="sbThread"></button>
-          </div>
-        </div>
-
-        <!-- Media -->
-        <div class="sb-section">
-          <div class="sb-title" id="sbMediaTitle"></div>
-          <div class="sb-chips">
-            <button class="sb-chip" data-filter-type="media" data-filter-value="image" id="sbImage"></button>
-            <button class="sb-chip" data-filter-type="media" data-filter-value="video" id="sbVideo"></button>
-            <button class="sb-chip" data-filter-type="media" data-filter-value="gif" id="sbGif"></button>
-          </div>
+        <!-- Filters: one compact row per category — clicking a row opens a flyout
+             with that category's values (multi-select, stays open). The badge
+             shows how many filters of that type are active. Categories are few
+             and fixed, so they earn permanent sidebar spots (spatial memory);
+             the unbounded lists (tags/authors/instances) live in the flyouts. -->
+        <div class="sb-section" id="filterRows">
+          <div class="sb-title" id="sbFilterTitle"></div>
+          <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="date"><span class="sb-row-name" id="sbDateTitle"></span><span class="sb-row-badge" data-badge="date"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="engagement"><span class="sb-row-name" id="sbEngTitle"></span><span class="sb-row-badge" data-badge="engagement"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="instance"><span class="sb-row-name" id="sbInstanceTitle"></span><span class="sb-row-badge" data-badge="instance"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="user"><span class="sb-row-name" id="sbAuthorTitle">作者</span><span class="sb-row-badge" data-badge="user"></span><span class="sb-row-arrow">▸</span></button>
           <label class="iv-check" style="margin-top:8px;"><input type="checkbox" id="multiOnly"> <span id="multiOnlyLabel">複数画像のみ</span></label>
         </div>
 
-        <!-- Date -->
+        <!-- Tags: frequent chips (1 click) + tag-group buttons (flyout per group).
+             Groups are user-curated and bounded — unlike the tag list itself. -->
         <div class="sb-section">
-          <div class="sb-title" id="sbDateTitle"></div>
-          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding-top:4px;padding-bottom:4px;">
-            <option value="date" id="sbDateOptPost"></option>
-            <option value="capturedAt" id="sbDateOptCapture"></option>
-          </select>
-          <div class="sb-sub" style="margin-top:8px;">
-            <label class="sb-sublabel" id="sbDateFromLabel"></label>
-            <input type="date" class="date-input" id="sbDateFrom" style="font-size:11px;">
-            <label class="sb-sublabel" style="margin-top:8px;" id="sbDateToLabel"></label>
-            <input type="date" class="date-input" id="sbDateTo" style="font-size:11px;">
-          </div>
-        </div>
-
-        <!-- Engagement -->
-        <div class="sb-section">
-          <div class="sb-title" id="sbEngTitle"></div>
-          <!-- Reads as a sentence:「いいね（全SNS）が 0 以上」— the particle row is
-               indented under the metric select (same sub-structure as 日付), which
-               keeps the select from scanning as a sort dropdown. -->
-          <select class="engagement-select" id="sbEngType" style="width:75%;font-size:11px;padding-top:4px;padding-bottom:4px;"></select>
-          <div class="sb-sub" style="margin-top:6px;">
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span class="sb-sublabel" id="sbEngParticle"></span>
-              <input type="number" class="engagement-input" id="sbEngMin" min="0" placeholder="0" style="width:84px;font-size:11px;">
-              <button class="chip" id="sbEngOp" style="font-size:11px;padding:2px 8px;min-width:32px;text-align:center;flex-shrink:0;"></button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tags -->
-        <div class="sb-section">
-          <div class="sb-title"><span id="sbTagTitle"></span><button class="sb-search-ico" id="sbTagSearchBtn" type="button"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></button></div>
-          <input type="text" class="sb-tag-filter" id="sbTagSearch" style="display:none">
-          <div class="sb-chips" id="sbTagChips"></div>
-        </div>
-
-        <!-- Authors (top creators by post count; replaces the old Users tab) -->
-        <div class="sb-section collapsible">
-          <div class="sb-title"><span id="sbAuthorTitle">作者</span><button class="sb-search-ico" id="sbAuthorSearchBtn" type="button"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></button></div>
-          <input type="text" class="sb-tag-filter" id="sbAuthorSearch" style="display:none">
-          <div class="sb-chips" id="sbAuthorChips"></div>
+          <div class="sb-title"><span id="sbTagTitle"></span></div>
+          <div class="sb-subtitle" id="sbFreqTitle"></div>
+          <div class="sb-chips" id="sbFreqTags"></div>
+          <div class="sb-chips" id="sbTagGroupRows" style="margin-top:8px;"></div>
         </div>
 
         <!-- Folders (shared with image-view via folders.json) -->
@@ -1025,7 +971,6 @@
     <div class="app-content">
       <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
       <div id="postActiveBar" class="content-activebar" style="display:none">
-        <button class="qf-add" id="addFilterBtn" type="button"></button>
         <div class="sb-chips" id="queryChips"></div>
         <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       </div>

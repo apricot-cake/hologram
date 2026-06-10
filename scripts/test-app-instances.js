@@ -1,9 +1,9 @@
 'use strict';
 
-// Verifies the sidebar instance/server filter for the host-based platforms
-// (Misskey + Mastodon): selecting the platform expands its server list, picking
-// a server filters the posts, and deselecting the platform clears the orphaned
-// instance filter.
+// Verifies the インスタンス filter (Misskey/Mastodon hosts), now served by the
+// sidebar row → flyout: the flyout lists every host across both platforms,
+// picking one filters the grid (and lights the row badge), picking it again
+// clears it. (The old platform-chip-expands-servers UI was retired.)
 //
 //   node scripts/test-app-instances.js
 
@@ -40,38 +40,32 @@ writePost('k2', 'misskey', 'https://nijimiss.moe/notes/bbb', '2026-01-01T00:00:0
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const pchip = (v) => document.querySelector('.sb-chip[data-filter-type="platform"][data-filter-value="' + v + '"]');
-  const instChips = () => [...document.querySelectorAll('#sbInstanceChips .sb-chip')].map(c => c.dataset.filterValue).sort();
-  const instVisible = () => getComputedStyle(document.getElementById('sbInstanceWrap')).display !== 'none';
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  await waitFor(() => cards() >= 5);
 
-  // Mastodon -> its two servers expand
-  pchip('mastodon').click(); await sleep(90);
-  const mastoVisible = instVisible();
-  const mastoInstances = instChips();
-  // Pick mastodon.social -> 2 posts
-  document.querySelector('#sbInstanceChips .sb-chip[data-filter-value="mastodon.social"]').click(); await sleep(90);
-  const mastoSocialCount = cards();
-  // Deselect Mastodon -> section hides, orphaned instance filter cleared -> all 5
-  pchip('mastodon').click(); await sleep(90);
-  const afterDeselectVisible = instVisible();
-  const afterDeselectCount = cards();
+  // インスタンス行 → 両プラットフォームの全ホストが列挙される
+  document.querySelector('#filterRows [data-qfrow="instance"]').click(); await sleep(60);
+  const pop = document.querySelector('.qf-pop');
+  const hosts = [...pop.querySelectorAll('[data-qfval]')].map(r => r.dataset.qfval).sort();
 
-  // Misskey -> its two instances
-  pchip('misskey').click(); await sleep(90);
-  const misskeyInstances = instChips();
-  pchip('misskey').click(); await sleep(90);
+  // mastodon.social を選ぶ → 2件・行バッジ点灯・フライアウトは開いたまま
+  pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(120);
+  const socialCount = cards();
+  const badgeOn = document.querySelector('#filterRows [data-badge="instance"]').classList.contains('on');
+  const stillOpen = pop.classList.contains('show');
 
-  return { mastoVisible, mastoInstances, mastoSocialCount, afterDeselectVisible, afterDeselectCount, misskeyInstances };
+  // もう一度クリックで解除 → 全5件・バッジ消灯
+  pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(120);
+  const cleared = cards();
+  const badgeOff = !document.querySelector('#filterRows [data-badge="instance"]').classList.contains('on');
+
+  return { hosts, socialCount, badgeOn, stillOpen, cleared, badgeOff };
 })()`;
 
-const shot = path.join(appDir, '.smoke-shot.png');
-try { fs.unlinkSync(shot); } catch {}
-
-const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs, CORPUS_SMOKE_SHOT: shot
-});
-
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
@@ -79,17 +73,15 @@ child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); }
 child.on('close', () => {
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r = {};
-  try { r = JSON.parse(m[1]); } catch {}
-  try { fs.unlinkSync(shot); } catch {}
+  try { r = JSON.parse(m[1]); } catch { /* ignore */ }
   fs.rmSync(tmp, { recursive: true, force: true });
 
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('Mastodon expands its server list', r.mastoVisible === true && eq(r.mastoInstances, ['mastodon.social', 'mstdn.jp']));
-  check('picking a Mastodon server filters posts (mastodon.social -> 2)', r.mastoSocialCount === 2);
-  check('deselecting Mastodon hides the section and clears the instance filter', r.afterDeselectVisible === false && r.afterDeselectCount === 5);
-  check('Misskey expands its instance list', eq(r.misskeyInstances, ['misskey.io', 'nijimiss.moe']));
+  check('instance flyout lists every host', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']));
+  check('picking mastodon.social filters to 2 (badge on, flyout stays)', r.socialCount === 2 && r.badgeOn === true && r.stillOpen === true);
+  check('picking it again clears the filter (5 posts, badge off)', r.cleared === 5 && r.badgeOff === true);
   console.log('\n' + (ok ? 'INSTANCES_TEST_PASS' : 'INSTANCES_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });
