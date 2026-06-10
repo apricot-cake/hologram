@@ -51,6 +51,7 @@
     histBack: _s('histBack'),
     histFwd: _s('histFwd'),
     qcDropHere: _s('qcDropHere'),
+    qcDropMove: _s('qcDropMove'),
     tipZone: _s('tipZone'),
     qfAdd: _s('qfAdd'),
     qfCatFolder: _s('qfCatFolder'),
@@ -326,7 +327,7 @@
   const engParticleEl = document.getElementById('sbEngParticle');
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
-  setText('sbPinTitle', '📌 ' + MSG.pinnedTags);
+  setText('sbPinTitle', MSG.pinnedTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
@@ -409,15 +410,17 @@
       }
       (f.mode === 'or' ? orPills : andPills).push(pill(i, label, cls));
     });
-    const zone = (name, pills) =>
-      `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">${pills.join('') || `<span class="qc-zone-empty">${MSG.qcDropHere}</span>`}</span>`;
+    // 空フィールド: 反対側にピルがある（＝ドラッグできるものがある）ときは
+    // 「ここへドラッグで移動」、何も無ければ「（なし）」
+    const zone = (name, pills, otherHas) =>
+      `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">${pills.join('') || `<span class="qc-zone-empty">${otherHas ? MSG.qcDropMove : MSG.qcDropHere}</span>`}</span>`;
     const joinSel = `<select class="qc-join-sel" id="qcJoinSel" title="${MSG.tipJoin}">` +
       `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
       `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
     container.innerHTML = special +
-      `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + zone('and', andPills) +
+      `<span class="qc-join-label">${MSG.qcAndLabel}</span>` + zone('and', andPills, orPills.length > 0) +
       joinSel +
-      `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + zone('or', orPills);
+      `<span class="qc-join-label">${MSG.qcOrLabel}</span>` + zone('or', orPills, andPills.length > 0);
   }
 
   function formatShortDate(dateStr) {
@@ -592,9 +595,10 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    // タグ行には📌（ピン留め/解除）を付ける — ピン済みは常時表示・他はホバーで
+    // タグ行にはピン（留め/解除）を付ける — ピン済みは塗り・他はホバーで輪郭
     const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
-    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">📌</span>` : ''}</div>`;
+    const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
+    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';

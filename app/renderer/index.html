@@ -814,6 +814,12 @@
     }
     #queryChips .sb-active-chip { cursor: grab; }
     #queryChips .sb-active-chip:active { cursor: grabbing; }
+    /* grip dots = 「ドラッグで移せる」の定番アフォーダンス（pseudo なので
+       textContent には乗らない） */
+    #queryChips .sb-active-chip[draggable]::before {
+      content: '⋮⋮'; font-size: 8px; letter-spacing: -1.5px;
+      opacity: .55; margin-right: 5px; align-self: center;
+    }
     /* ＋フィルタ (Linear-style popover trigger) */
     .qf-add {
       font-size: 11px; padding: 3px 10px; border-radius: 12px; flex-shrink: 0;
@@ -835,11 +841,16 @@
     /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
     .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
     .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
-    /* 📌 pin toggle on tag rows: pinned = always shown, others appear on hover */
-    .qf-pop .qf-pin { flex-shrink: 0; margin-left: 4px; font-size: 11px; cursor: pointer; opacity: 0; filter: grayscale(1); transition: opacity .1s; }
-    .qf-pop .fm-row:hover .qf-pin { opacity: .65; }
-    .qf-pop .qf-pin:hover { opacity: 1; }
-    .qf-pop .qf-pin.on { opacity: 1; filter: none; }
+    /* pin toggle on tag rows (monotone SVG): pinned = filled & always shown,
+       others = outline, appearing on hover */
+    .qf-pop .qf-pin {
+      flex-shrink: 0; display: inline-flex; align-items: center; margin-left: 4px;
+      cursor: pointer; opacity: 0; color: var(--text-subtle); transition: opacity .1s, color .1s;
+    }
+    .qf-pop .fm-row:hover .qf-pin { opacity: 1; }
+    .qf-pop .qf-pin:hover { color: var(--text); }
+    .qf-pop .qf-pin.on { opacity: 1; color: var(--text); }
+    .qf-pop .qf-pin.on svg { fill: currentColor; }
     /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者/フォルダ候補） */
     .search-suggest {
       position: fixed; z-index: 12000; display: none; max-height: 300px; overflow-y: auto;
@@ -870,9 +881,11 @@
   .sb-row:hover { border-color: var(--accent); }
   .sb-row .sb-row-name { flex: 1; }
   .sb-row .sb-row-badge {
-    display: none; min-width: 16px; height: 16px; padding: 0 5px;
-    border-radius: 8px; background: var(--accent); color: #fff;
-    font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+    display: none; min-width: 17px; height: 16px; padding: 0 5px;
+    border-radius: 8px; background: var(--accent-subtle);
+    border: 1px solid var(--accent-border); color: var(--accent-subtle-fg);
+    font-size: 10px; font-weight: 700; line-height: 14px; text-align: center;
+    box-sizing: border-box;
   }
   .sb-row .sb-row-badge.on { display: inline-block; }
   .sb-row .sb-row-arrow { color: var(--text-subtle); font-size: 10px; }
