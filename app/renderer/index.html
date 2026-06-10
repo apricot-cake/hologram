@@ -294,6 +294,10 @@
     .post-grid.selecting .info-btn, .post-grid.selecting .fold-btn,
     .post-grid.selecting .open-btn { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
+    /* every click selects now — plain pointer everywhere (no zoom-in over images,
+       no "click to expand" hint on the text) */
+    .post-grid.selecting .post-card, .post-grid.selecting .post-card img { cursor: pointer; }
+    .post-grid.selecting .post-meta .text.truncated:hover .text-hint { display: none; }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
