@@ -114,7 +114,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   };
 
   await sendToBridge(captureId, jpegBase64, record);
-  notify(tab.id, true);
+  notify(tab.id, true, { metaOk: metaFetched(meta) });
 }
 
 // Send a message to the native messaging host (which writes the sidecar + image
@@ -170,6 +170,14 @@ function sendDraggedToBridge(captureId, imageUrl, imageReferer, record) {
 
 function notify(tabId, success, extra = {}) {
   chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
+}
+
+// A metadata fetch "succeeded" if the platform API returned any identifying
+// field. An empty record (fetch failed / API down / unparseable URL) has null
+// author/date/text and no media — the screenshot still saved, but the user
+// should be told the post info is missing rather than seeing a plain success.
+function metaFetched(meta) {
+  return !!(meta && (meta.screenName || meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length)));
 }
 
 function generateCaptureId() {

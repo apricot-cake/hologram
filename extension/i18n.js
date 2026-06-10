@@ -152,6 +152,7 @@
       bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
       bannerSaving: '保存中...',
       bannerSaved: '画像を保存しました',
+      bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
       bannerFailed: '保存に失敗しました'
     },
 
@@ -282,6 +283,7 @@
       bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
       bannerSaving: 'Saving...',
       bannerSaved: 'Image saved',
+      bannerSavedNoMeta: 'Saved (post info unavailable)',
       bannerFailed: 'Save failed'
     }
   };

@@ -6,6 +6,7 @@
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
     saved: getMessage('bannerSaved'),
+    savedNoMeta: getMessage('bannerSavedNoMeta'),
     failed: getMessage('bannerFailed')
   };
 
@@ -235,9 +236,12 @@
 
     // 結果通知
     if (msg.type === 'notify') {
-      banner.textContent = msg.success ? MSG.saved : MSG.failed;
-      banner.style.background = msg.success ? '#00ba7c' : '#f4212e';
-      setTimeout(cleanup, 1500);
+      // Saved but the post-info API returned nothing → amber "partial" state so
+      // the user notices (rather than a plain green success). Held longer.
+      const partial = msg.success && msg.metaOk === false;
+      banner.textContent = partial ? MSG.savedNoMeta : (msg.success ? MSG.saved : MSG.failed);
+      banner.style.background = partial ? '#f59e0b' : (msg.success ? '#00ba7c' : '#f4212e');
+      setTimeout(cleanup, partial ? 2800 : 1500);
     }
   }
 
