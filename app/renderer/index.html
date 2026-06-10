@@ -432,9 +432,10 @@
     .post-grid.tile-view .delete-btn, .post-grid.tile-view .info-btn, .post-grid.tile-view .fold-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
+    /* Same relative order as card/list (ℹ → 📁 → ×, left to right) */
     .post-grid.tile-view .delete-btn { right: 6px; }
-    .post-grid.tile-view .info-btn { right: calc(6px + var(--act) + 4px); }
-    .post-grid.tile-view .fold-btn { right: calc(6px + (var(--act) + 4px) * 2); }
+    .post-grid.tile-view .fold-btn { right: calc(6px + var(--act) + 4px); }
+    .post-grid.tile-view .info-btn { right: calc(6px + (var(--act) + 4px) * 2); }
     .post-grid.tile-view .fold-btn svg, .post-grid.tile-view .info-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
