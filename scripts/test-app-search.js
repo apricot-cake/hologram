@@ -5,7 +5,7 @@
 //   通常: query "ねこ" does NOT substring-match the katakana body "ネコかわいい" → 0
 //   あいまい(B 正規化): "ねこ" matches "ネコかわいい" (カナ統一) → 1
 //   あいまい(C 編集距離): typo "こんにとは" matches "こんにちは世界" → 1
-//   トグルは active 表示（.active クラス）で現在の方式を示す
+//   方式はプルダウン（#searchModeSel: normal/fuzzy）で切替
 //
 //   node scripts/test-app-search.js
 
@@ -43,22 +43,22 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);   // post view loads async
   const sb = document.getElementById('searchBox');
-  const btn = document.getElementById('searchModeToggle');
+  const sel = document.getElementById('searchModeSel');
   // 通常（既定）: カタカナ本文にひらがなクエリは部分一致しない → 0
   sb.value = 'ねこ'; sb.dispatchEvent(new Event('input', { bubbles: true }));
   await wait(60);
   const normalKana = cards();
+  const defaultMode = sel.value;
   // あいまいON（B 正規化）: 'ねこ' が 'ネコかわいい' に一致 → 1
-  btn.click();
+  sel.value = 'fuzzy'; sel.dispatchEvent(new Event('change', { bubbles: true }));
   await wait(60);
   const fuzzyKana = cards();
-  const labelAfter = btn.textContent.trim();
-  const toggleActive = btn.classList.contains('active');   // .active reflects 現在の方式
+  const selValue = sel.value;
   // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致 → 1
   sb.value = 'こんにとは'; sb.dispatchEvent(new Event('input', { bubbles: true }));
   await wait(60);
   const fuzzyTypo = cards();
-  return { normalKana, fuzzyKana, fuzzyTypo, labelAfter, toggleActive };
+  return { normalKana, fuzzyKana, fuzzyTypo, defaultMode, selValue };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -71,8 +71,8 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 &&
-    r.labelAfter === 'あいまい' && r.toggleActive === true;
-  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} label=${r.labelAfter} active=${r.toggleActive}`);
+    r.defaultMode === 'normal' && r.selValue === 'fuzzy';
+  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} default=${r.defaultMode} sel=${r.selValue}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

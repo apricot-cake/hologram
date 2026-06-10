@@ -112,6 +112,11 @@
     .toolbar select { width: 100%; }
     .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
     .toolbar .post-count { margin-left: 13px; }   /* bare text → the shared 23px axis */
+    /* The toolbar is split into titled sections (検索/並び順/表示) like the filter
+       sections below; space the controls inside each one. */
+    #postsToolbar .sb-section { padding: 0; margin-bottom: 0; }
+    #postsToolbar .sb-section > * + * { margin-top: 6px; }
+    #postsToolbar .post-count { display: inline-block; }
     .toolbar-row {
       display: flex; flex-direction: column; gap: 6px; align-items: stretch;
       margin-bottom: 12px;
@@ -122,16 +127,6 @@
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
     .search-box:focus { border-color: var(--accent); }
-    /* 検索方式トグル（通常 / あいまい）。active＝あいまい時。 */
-    .search-mode-toggle {
-      font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer;
-      padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
-      background: var(--surface); color: var(--text-muted); transition: background 0.15s, color 0.15s, border-color 0.15s;
-    }
-    .search-mode-toggle:hover { background: var(--hover); }
-    .search-mode-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .toolbar > .search-mode-toggle { align-self: flex-start; }   /* 投稿側ツールバー（縦flex）で全幅化させずコンパクトに */
-    .sb-section > .search-mode-toggle { margin-top: 6px; }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
     .radio-line input { cursor: pointer; }
@@ -170,15 +165,15 @@
        is LIGHTER than --surface, so surface-colored controls look sunken/dark.
        Raise them to --surface-3 + --border-strong (same fix as the sb-chips). --- */
     #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
-    #sidebar .date-input, #sidebar input[type="number"],
-    #sidebar .search-mode-toggle:not(.active),
-    #sidebar .view-toggle button:not(.active), #sidebar .tile-size button {
+    #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter,
+    #sidebar .view-toggle button:not(.active), #sidebar .tile-size button, #sidebar .icon-btn {
       background: var(--surface-3); border-color: var(--border-strong); color: var(--text);
     }
     /* re-assert the accent hover/focus the block above would otherwise shadow */
-    #sidebar .chip:not(.active):hover, #sidebar .search-mode-toggle:not(.active):hover,
+    #sidebar .chip:not(.active):hover,
     #sidebar .view-toggle button:not(.active):hover, #sidebar .tile-size button:hover { border-color: var(--accent); color: var(--accent); }
-    #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus { border-color: var(--accent); }
+    #sidebar .icon-btn:hover { background: var(--hover); }
+    #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* checkbox rows: hang the box in the gutter so the LABEL text sits on the
        shared 23px axis (box ≈13px + 6px gap → start the row at 4px) */
     #sidebar .iv-check { margin-left: -6px; }
@@ -689,6 +684,8 @@
     }
     .sb-chip:hover { border-color: var(--accent); color: var(--accent); }
     .sb-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    /* tag chips cycle 解除→いずれか(OR)→すべて含む(AND): AND = darker fill + ＋ prefix */
+    .sb-chip.active.and { background: color-mix(in oklch, var(--accent) 72%, black); border-color: color-mix(in oklch, var(--accent) 72%, black); }
 
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
@@ -727,27 +724,39 @@
         </div>
         <div class="sb-scroll">
         <div class="toolbar" id="postsToolbar">
-          <input type="text" class="search-box" id="searchBox">
-          <button type="button" class="search-mode-toggle" id="searchModeToggle"></button>
-          <select id="sortSelect">
-            <option value="date-desc"></option>
-            <option value="date-asc"></option>
-            <option value="likes-desc"></option>
-            <option value="reposts-desc"></option>
-            <option value="replies-desc"></option>
-            <option value="captured-desc"></option>
-            <option value="likes-pct"></option>
-          </select>
-          <div class="view-toggle">
-            <button data-view="card" id="viewCard" class="active"></button>
-            <button data-view="tile" id="viewTile"></button>
-            <button data-view="list" id="viewList"></button>
+          <div class="sb-section">
+            <div class="sb-title" id="sbSearchTitle"></div>
+            <input type="text" class="search-box" id="searchBox">
+            <select id="searchModeSel">
+              <option value="normal" id="searchModeOptNormal"></option>
+              <option value="fuzzy" id="searchModeOptFuzzy"></option>
+            </select>
           </div>
-          <div class="tile-size" id="tileSizeRow" style="display:none">
-            <button id="tileMinus" type="button" title="小さく">−</button>
-            <button id="tilePlus" type="button" title="大きく">＋</button>
+          <div class="sb-section">
+            <div class="sb-title" id="sbSortTitle"></div>
+            <select id="sortSelect">
+              <option value="date-desc"></option>
+              <option value="date-asc"></option>
+              <option value="likes-desc"></option>
+              <option value="reposts-desc"></option>
+              <option value="replies-desc"></option>
+              <option value="captured-desc"></option>
+              <option value="likes-pct"></option>
+            </select>
           </div>
-          <span class="post-count" id="postCount"></span>
+          <div class="sb-section">
+            <div class="sb-title" id="sbViewTitle"></div>
+            <div class="view-toggle">
+              <button data-view="card" id="viewCard" class="active"></button>
+              <button data-view="tile" id="viewTile"></button>
+              <button data-view="list" id="viewList"></button>
+            </div>
+            <div class="tile-size" id="tileSizeRow" style="display:none">
+              <button id="tileMinus" type="button" title="小さく">−</button>
+              <button id="tilePlus" type="button" title="大きく">＋</button>
+            </div>
+            <span class="post-count" id="postCount"></span>
+          </div>
         </div>
         <!-- Kind: SNS posts (screenshot captures) vs library images -->
         <div class="sb-section collapsible">
@@ -800,7 +809,7 @@
         <!-- Date -->
         <div class="sb-section">
           <div class="sb-title" id="sbDateTitle"></div>
-          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:6px;color:var(--text);background:var(--surface);outline:none;cursor:pointer;">
+          <select id="sbDateField" style="width:75%;margin-bottom:6px;font-size:11px;padding-top:4px;padding-bottom:4px;">
             <option value="date" id="sbDateOptPost"></option>
             <option value="capturedAt" id="sbDateOptCapture"></option>
           </select>
@@ -860,7 +869,6 @@
       <div id="postActiveBar" class="content-activebar" style="display:none">
         <span class="sb-activebar-title" id="sbActiveTitle"></span>
         <div class="sb-chips" id="queryChips"></div>
-        <button class="iv-andor or" id="sbTagMode" type="button" title="クリックでタグの結合を切替（すべて含む ⇄ いずれか）" style="display:none">⇄ いずれか</button>
         <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       </div>
       <!-- Posts tab -->

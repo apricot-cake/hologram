@@ -33,6 +33,10 @@
     tagSelected: _s('tagSelected'),
     folderSelected: _s('folderSelected'),
     tagSelectedTitle: _s('tagSelectedTitle'),
+    sbSearchTitle: _s('sbSearchTitle'),
+    sbSortTitle: _s('sbSortTitle'),
+    sbViewTitle: _s('sbViewTitle'),
+    tipTagCycle: _s('tipTagCycle'),
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
@@ -289,6 +293,13 @@
   document.getElementById('editCancel').textContent = MSG.confirmCancel;
   document.getElementById('editSave').textContent = MSG.save;
 
+  // Toolbar section titles (検索 / 並び順 / 表示) + search-mode select options
+  setText('sbSearchTitle', MSG.sbSearchTitle);
+  setText('sbSortTitle', MSG.sbSortTitle);
+  setText('sbViewTitle', MSG.sbViewTitle);
+  setText('searchModeOptNormal', MSG.searchExact);
+  setText('searchModeOptFuzzy', MSG.searchFuzzy);
+
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
   sortSelect.options[0].textContent = MSG.sortDateDesc;
@@ -311,7 +322,6 @@
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
     const bar = document.getElementById('postActiveBar');
-    const tagModeBtn = document.getElementById('sbTagMode');
     // 検索語・フォルダもアクティブフィルタとして扱う（画像モードと同様にピル化）。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
@@ -323,7 +333,6 @@
       return;
     }
     if (bar) bar.style.display = '';
-    if (tagModeBtn) tagModeBtn.style.display = activeFilters.some((f) => f.type === 'tag') ? '' : 'none';   // タグ絞り込み中のみ AND/OR
     // 検索・フォルダの特殊ピルを先頭に置き、続けて activeFilters のピルを並べる。
     let special = '';
     if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">\u{1F50D} ${escapeHtml(searchVal)}</span>`;
@@ -352,7 +361,7 @@
           label = `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '\u2264' : '\u2265'} ${formatCount(f.min)}`;
           break;
         case 'tag':
-          label = `#${f.value}`;
+          label = `${f.mode === 'and' ? '＋' : ''}#${f.value}`;
           break;
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
@@ -402,11 +411,9 @@
   // タグ結合・日付・エンゲージも含めて消す。renderPosts() が sidebar の active 状態も同期。
   function resetAllFilters() {
     activeFilters = [];
-    tagMode = 'or';
     folderFilter = '';
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
-    const tb = document.getElementById('sbTagMode'); if (tb) { tb.textContent = '⇄ いずれか'; tb.classList.add('or'); }
     renderQueryChips();
     renderPostFolders();
     renderPosts();
@@ -755,18 +762,26 @@
     }
     const filter = (searchInput.value || '').trim().toLowerCase();
     const tags = filter ? allTags.filter(t => t.toLowerCase().includes(filter)) : allTags;
-    const activeValues = activeFilters.filter(f => f.type === 'tag').map(f => f.value);
-    container.innerHTML = tags.map(t =>
-      `<button class="sb-chip${activeValues.includes(t) ? ' active' : ''}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}">${escapeHtml(t)}</button>`
-    ).join('');
+    // Each tag chip cycles 解除 → いずれか(OR) → すべて含む(AND) → 解除, so OR and
+    // AND tags can be mixed: every AND tag must match, plus at least one OR tag.
+    const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
+    container.innerHTML = tags.map(t => {
+      const st = tagState.get(t);
+      const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
+      return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
+    }).join('');
     container.querySelectorAll('.sb-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const value = chip.dataset.filterValue;
         const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
-        if (existIdx >= 0) {
-          removeFilter(existIdx);
+        if (existIdx < 0) {
+          addFilter({ type: 'tag', value, mode: 'or' });
+        } else if (activeFilters[existIdx].mode !== 'and') {
+          activeFilters[existIdx].mode = 'and';
+          renderQueryChips();
+          renderPosts();
         } else {
-          addFilter({ type: 'tag', value });
+          removeFilter(existIdx);
         }
         updateSidebarState();
       });
@@ -833,7 +848,6 @@
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
   let folderFilter = '';         // active folder id (shared folders.json); '' = no folder filter
-  let tagMode = 'or';            // tag multi-select combine: 'or' (any) | 'and' (all)
   const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
@@ -856,13 +870,6 @@
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
   // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
-  document.getElementById('sbTagMode').addEventListener('click', () => {
-    tagMode = tagMode === 'or' ? 'and' : 'or';
-    const b = document.getElementById('sbTagMode');
-    b.textContent = tagMode === 'or' ? '⇄ いずれか' : '⇄ すべて含む';
-    b.classList.toggle('or', tagMode === 'or');
-    renderPosts();
-  });
 
   // --- Authors (sidebar 作者 section; derived from post author fields, no fetching) ---
   // Group posts by author. Posts arrive newest-first, so the first occurrence
@@ -1127,11 +1134,13 @@
       }
     }
 
-    // Tag: AND (all selected) or OR (any selected), per the sbTagMode toggle
+    // Tag: per-chip mode, mixable — every AND(すべて含む) tag must be present,
+    // and (if any OR tags are set) at least one OR(いずれか) tag must match.
     if (byType.tag) {
-      const values = byType.tag.map(f => f.value);
-      if (tagMode === 'and') posts = posts.filter(p => values.every(v => (p.tags || []).includes(v)));
-      else posts = posts.filter(p => (p.tags || []).some(t => values.includes(t)));
+      const andValues = byType.tag.filter(f => f.mode === 'and').map(f => f.value);
+      const orValues = byType.tag.filter(f => f.mode !== 'and').map(f => f.value);
+      if (andValues.length) posts = posts.filter(p => andValues.every(v => (p.tags || []).includes(v)));
+      if (orValues.length) posts = posts.filter(p => (p.tags || []).some(t => orValues.includes(t)));
     }
 
     // Media: OR within group
@@ -1882,16 +1891,14 @@
   });
 
   // 検索方式トグル（通常 / あいまい）。corpusSearch がモードを集約し、両モードで共有する。
-  const searchModeBtn = document.getElementById('searchModeToggle');
+  const searchModeSel = document.getElementById('searchModeSel');
   function syncSearchToggle() {
-    if (!searchModeBtn || !window.corpusSearch) return;
-    const fuzzy = window.corpusSearch.isFuzzy();
-    searchModeBtn.textContent = fuzzy ? MSG.searchFuzzy : MSG.searchExact;
-    searchModeBtn.classList.toggle('active', fuzzy);
-    searchModeBtn.title = MSG.searchModeTitle;
+    if (!searchModeSel || !window.corpusSearch) return;
+    searchModeSel.value = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'normal';
+    searchModeSel.title = MSG.searchModeTitle;
   }
-  if (searchModeBtn && window.corpusSearch) {
-    searchModeBtn.addEventListener('click', () => window.corpusSearch.toggle());
+  if (searchModeSel && window.corpusSearch) {
+    searchModeSel.addEventListener('change', () => window.corpusSearch.setMode(searchModeSel.value));
     window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
     syncSearchToggle();
   }
