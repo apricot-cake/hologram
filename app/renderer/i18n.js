@@ -87,6 +87,8 @@
       emptyDesc: 'SNSで投稿を保存すると、ここに表示されます。',
       emptySearchTitle: '見つかりませんでした',
       emptySearchDesc: '検索条件を変更してください。',
+      emptyCaptureHint: 'ブラウザで <kbd>Alt</kbd>+<kbd>S</kbd> → 投稿をクリックで保存できます。',
+      emptyResetBtn: 'フィルタをリセット',
 
       // viewer: common
       save: '保存',
@@ -335,6 +337,8 @@
       emptyDesc: 'Save a post from SNS and it will appear here.',
       emptySearchTitle: 'No results found',
       emptySearchDesc: 'Try changing your search terms.',
+      emptyCaptureHint: 'Press <kbd>Alt</kbd>+<kbd>S</kbd> in your browser, then click a post to save it.',
+      emptyResetBtn: 'Reset filters',
 
       save: 'Save',
       saved: 'Saved',

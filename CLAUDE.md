@@ -4,6 +4,8 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 > **【厳守】ユーザーに見える文章はすべて日本語**（最終応答 ＋ ツール呼び出し前の一文＝プログレス narration を含む）。コードのコメントやツールの `description` フィールドは英語のままで可。これは何度も指摘されているので、ツールを連打している最中でも必ず日本語で書くこと。
 
+> **UI 変更時は `DESIGN.md`（デザイン言語）に従うこと**。形＝意味の対応（ピル=値/角丸四角=操作）、tint によるアクティブ表示（ソリッド塗り禁止）、23px テキスト軸、22px/6–8px の余白リズム、モーション規約、却下済みデザイン一覧を定義している。新しい見た目・操作を追加する前に必ず参照。
+
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
 > - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。

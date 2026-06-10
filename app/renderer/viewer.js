@@ -106,6 +106,8 @@
     emptyDesc: _s('emptyDesc'),
     emptySearchTitle: _s('emptySearchTitle'),
     emptySearchDesc: _s('emptySearchDesc'),
+    emptyCaptureHint: _s('emptyCaptureHint'),
+    emptyResetBtn: _s('emptyResetBtn'),
 
     save: _s('save'),       // tag editor save button
     saved: _s('saved'),     // settings status toast
@@ -494,6 +496,14 @@
     renderPosts();
   }
   document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
+
+  // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
+  document.getElementById('emptyState').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.id === 'emptyResetBtn') resetAllFilters();
+    else if (btn.id === 'emptyImportBtn') document.getElementById('importZipInput').click();
+  });
 
   // ⟨かつ/または⟩ connector (pulldown, delegated — the bar re-renders often)
   document.getElementById('queryChips').addEventListener('change', (e) => {
@@ -1011,7 +1021,7 @@
   let multiOnly = false;      // show only items with more than one image
   let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180;         // tile density: edge px (±), persisted as imageTileSize
-  const TILE_MIN = 120, TILE_MAX = 400, TILE_STEP = 40;
+  const TILE_MIN = 120, TILE_MAX = 400;
   // Windowed rendering: render only the first `renderLimit` filtered posts and
   // grow as a bottom sentinel nears the viewport. Rendering all (thousands) at
   // once froze the UI and starved image (psimg) loads. Reset to one page on any
@@ -1031,6 +1041,8 @@
     if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
     const row = document.getElementById('tileSizeRow');
     if (row) row.style.display = currentView === 'tile' ? '' : 'none';
+    const slider = document.getElementById('tileSlider');
+    if (slider && slider.value !== String(tileSize)) slider.value = String(tileSize);
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
@@ -1439,10 +1451,16 @@
       grid.style.display = 'none';
       empty.style.display = 'block';
       if (noteEl) noteEl.style.display = 'none';
+      // Empty states carry a "what to do next" affordance: the capture
+      // shortcut + ZIP restore on first run, a one-click reset when filters
+      // ate everything. Buttons are re-created each render → delegated below.
       if (allPosts.length === 0 && !query) {
-        empty.innerHTML = `<p><strong>${MSG.emptyTitle}</strong></p><p>${MSG.emptyDesc}</p>`;
+        empty.innerHTML = `<p><strong>${MSG.emptyTitle}</strong></p><p>${MSG.emptyDesc}</p>` +
+          `<p>${MSG.emptyCaptureHint}</p>` +
+          `<button type="button" class="empty-cta" id="emptyImportBtn">${MSG.importZip}</button>`;
       } else {
-        empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>`;
+        empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` +
+          `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
       }
       if (!keepLimit) pushHistory();   // 0件の状態も履歴対象
       return;
@@ -2179,6 +2197,24 @@
     updateSelectionBar();
   });
 
+  // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
+  // Same guards as Ctrl+A: never steal keys from fields or open overlays.
+  document.addEventListener('keydown', (e) => {
+    const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
+    const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
+    if (!slash && !ctrlK) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
+    if (!document.getElementById('settingsView').hidden) return;
+    if (!document.getElementById('postDetail').hidden) return;
+    if (!document.getElementById('ivFolderModal').hidden) return;
+    e.preventDefault();
+    const sb = document.getElementById('searchBox');
+    sb.focus();
+    sb.select();
+  });
+
   deleteSelectedBtn.addEventListener('click', () => {
     if (selectedSet.size === 0) return;
     pendingDeleteGroup = null;
@@ -2202,15 +2238,19 @@
     });
   });
 
-  // Tile size ± (tile density only)
-  function setTileSize(px) {
+  // Tile size slider (tile density only). While dragging, only the CSS var
+  // updates (cheap live preview); persisting + re-requesting thumbnails at the
+  // new size happens on release (change), not on every input tick.
+  function setTileSize(px, commit = true) {
     tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, px));
-    window.corpus.setPref('imageTileSize', tileSize);
     applyTileLayout();
+    if (!commit) return;
+    window.corpus.setPref('imageTileSize', tileSize);
     if (currentView === 'tile') renderPosts();   // re-request thumbnails at the new size
   }
-  document.getElementById('tileMinus').addEventListener('click', () => setTileSize(tileSize - TILE_STEP));
-  document.getElementById('tilePlus').addEventListener('click', () => setTileSize(tileSize + TILE_STEP));
+  const tileSlider = document.getElementById('tileSlider');
+  tileSlider.addEventListener('input', () => setTileSize(parseInt(tileSlider.value, 10), false));
+  tileSlider.addEventListener('change', () => setTileSize(parseInt(tileSlider.value, 10)));
 
   document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
   document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {

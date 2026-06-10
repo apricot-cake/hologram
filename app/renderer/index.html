@@ -183,12 +183,12 @@
        Raise them to --surface-3 + --border-strong (same fix as the sb-chips). --- */
     #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
     #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter,
-    #sidebar .view-toggle button:not(.active), #sidebar .tile-size button, #sidebar .icon-btn {
+    #sidebar .view-toggle button:not(.active), #sidebar .icon-btn {
       background: var(--surface-3); border-color: var(--border-strong); color: var(--text);
     }
     /* re-assert the accent hover/focus the block above would otherwise shadow */
     #sidebar .chip:not(.active):hover,
-    #sidebar .view-toggle button:not(.active):hover, #sidebar .tile-size button:hover { border-color: var(--accent); color: var(--accent); }
+    #sidebar .view-toggle button:not(.active):hover { border-color: var(--accent); color: var(--accent); }
     #sidebar .icon-btn:hover { background: var(--hover); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
@@ -229,10 +229,24 @@
     .hist-nav button:disabled { opacity: .3; cursor: default; }
 
     /* Tile-size ± (shown only in the tile density) */
-    .tile-size { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; align-self: flex-start; }
-    .tile-size button { background: var(--surface); border: none; padding: 5px 12px; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; transition: background .12s, color .12s; }
-    .tile-size button:not(:last-child) { border-right: 1px solid var(--border); }
-    .tile-size button:hover { color: var(--accent); background: var(--hover); }
+    /* Tile size: thin slider (Eagle/Lightroom style), small→large glyphs at the ends */
+    .tile-size { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
+    .tile-size .ts-ico { width: 12px; height: 12px; flex-shrink: 0; color: var(--text-subtle); }
+    .tile-size input[type="range"] {
+      flex: 1; min-width: 0; -webkit-appearance: none; appearance: none;
+      height: 14px; margin: 0; background: transparent; cursor: pointer;
+    }
+    .tile-size input[type="range"]::-webkit-slider-runnable-track {
+      height: 3px; border-radius: 2px; background: var(--border-strong);
+    }
+    .tile-size input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+      background: var(--text-muted); margin-top: -4.5px; transition: background .12s;
+    }
+    .tile-size input[type="range"]:hover::-webkit-slider-thumb,
+    .tile-size input[type="range"]:active::-webkit-slider-thumb { background: var(--accent); }
+    .tile-size input[type="range"]:focus-visible { outline: none; }
+    .tile-size input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring); }
 
     /* --- Post grid --- */
     .post-grid {
@@ -444,6 +458,19 @@
       text-align: center; padding: 60px 20px; color: var(--text-subtle);
     }
     .empty-state p { margin-bottom: 8px; }
+    .empty-state kbd {
+      display: inline-block; padding: 1px 7px; border: 1px solid var(--border-strong);
+      border-bottom-width: 2px; border-radius: 4px; background: var(--surface);
+      color: var(--text); font: 12px/1.6 var(--font-sans);
+    }
+    /* "What to do next" affordance — rounded square = action, per DESIGN.md */
+    .empty-cta {
+      margin-top: 12px; padding: 7px 18px; border-radius: 6px;
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--text); font-size: 13px; cursor: pointer;
+      transition: border-color .12s, color .12s, background .12s;
+    }
+    .empty-cta:hover { border-color: var(--accent); color: var(--accent); background: var(--hover); }
 
     /* --- Settings --- */
     .section {
@@ -960,8 +987,9 @@
               <button data-view="list" id="viewList"></button>
             </div>
             <div class="tile-size" id="tileSizeRow" style="display:none">
-              <button id="tileMinus" type="button" title="小さく">−</button>
-              <button id="tilePlus" type="button" title="大きく">＋</button>
+              <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <input type="range" id="tileSlider" min="120" max="400" step="20" value="180" title="タイルの大きさ">
+              <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
             </div>
           </div>
           <div class="sb-section">
