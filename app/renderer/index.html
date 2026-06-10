@@ -287,6 +287,13 @@
       content: ''; width: 5px; height: 9px; margin-top: -1px;
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
     }
+    /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
+       every ring stays visible and the per-card hover actions step aside. */
+    .post-grid.selecting .select-check { opacity: 1; }
+    .post-grid.selecting .delete-btn, .post-grid.selecting .edit-btn,
+    .post-grid.selecting .info-btn, .post-grid.selecting .fold-btn,
+    .post-grid.selecting .open-btn { display: none; }
+    .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {

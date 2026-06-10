@@ -1194,6 +1194,8 @@
     // load-more (keepLimit) — otherwise every already-visible card re-animates
     // on each scroll page. Skipped under prefers-reduced-motion.
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
+    // Selection mode: rings stay visible on every card, hover actions hide (CSS).
+    grid.classList.toggle('selecting', selectedSet.size > 0);
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
@@ -1454,20 +1456,12 @@
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
-  // ○ select ring (top-left, shown on hover) — the ONLY way in or out of the
-  // selection. Click toggles the card; Shift-click additionally selects the
-  // range from the last-selected card (anchor), Google-Photos style. Clicking
-  // the card body no longer selects anything.
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const ring = e.target.closest('.select-check');
-    if (!ring) return;
-    e.stopPropagation();
-    const card = ring.closest('.post-card');
-    if (!card) return;
+  // Toggle a card in/out of the selection; Shift additionally selects the range
+  // from the last-selected card (anchor), Google-Photos style.
+  function toggleCardSelection(card, shiftKey) {
     const idx = parseInt(card.dataset.index, 10);
     const key = card.dataset.key;
-
-    if (e.shiftKey && selectionAnchor !== null) {
+    if (shiftKey && selectionAnchor !== null) {
       const lo = Math.min(selectionAnchor, idx);
       const hi = Math.max(selectionAnchor, idx);
       for (let i = lo; i <= hi; i++) { if (viewGroups[i]) selectedSet.add(postIdKey(viewGroups[i].rep)); }
@@ -1481,7 +1475,29 @@
     }
     renderPosts(true);   // keepLimit: no scroll-window reset, no entrance-anim replay
     updateSelectionBar();
+  }
+
+  // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
+  // Clicking the card body does not select while nothing is selected yet.
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const ring = e.target.closest('.select-check');
+    if (!ring) return;
+    e.stopPropagation();
+    const card = ring.closest('.post-card');
+    if (card) toggleCardSelection(card, e.shiftKey);
   });
+
+  // Selection mode (≥1 selected): a click ANYWHERE on a card toggles it.
+  // Capture phase so it pre-empts every other card action (gallery, text
+  // expand, ℹ/edit/delete/📁/open) until the selection is cleared.
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    if (selectedSet.size === 0) return;
+    const card = e.target.closest('.post-card');
+    if (!card) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCardSelection(card, e.shiftKey);
+  }, true);
 
   // Delete button on card
   document.getElementById('postGrid').addEventListener('click', (e) => {
