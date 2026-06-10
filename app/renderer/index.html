@@ -216,6 +216,7 @@
       display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
     }
     .view-toggle button {
+      flex: 1;   /* fill the control: content-sized buttons left a dead sliver at the edge that ignored hover */
       background: var(--surface); border: none; padding: 6px 12px;
       cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1;
       transition: all 0.15s;
@@ -659,6 +660,9 @@
       cursor: pointer; opacity: 0; transition: opacity 0.15s;
       z-index: 1;
     }
+    /* block display kills the inline-baseline slack; even 16px in the even
+       28px button avoids the half-pixel that nudged the icon bottom-right */
+    .info-btn svg { display: block; }
     .info-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .info-btn { opacity: 1; }
     .post-grid.list-view .info-btn { top: 50%; right: 136px; transform: translateY(-50%); }

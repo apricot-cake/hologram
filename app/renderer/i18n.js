@@ -79,7 +79,7 @@
       sortCaptured: 'キャプチャ日時順',
       sortLikesPct: '人気順（SNS内）',
       filterAll: 'すべて',
-      postCount: '$1件ヒット',
+      postCount: '$1 件ヒット',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
