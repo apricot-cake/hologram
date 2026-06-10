@@ -116,13 +116,13 @@
       margin-bottom: 22px;   /* same inter-section rhythm as .sb-section */
     }
     .toolbar select { width: 100%; }
-    .toolbar .view-toggle, .toolbar > .chip, .toolbar .post-count { align-self: flex-start; }
-    .toolbar .post-count { margin-left: 13px; }   /* bare text → the shared 23px axis */
+    .toolbar .view-toggle, .toolbar > .chip { align-self: flex-start; }
     /* The toolbar is split into titled sections (検索/並び順/表示) like the filter
        sections below; space the controls inside each one. */
     #postsToolbar .sb-section { padding: 0; margin-bottom: 0; }
     #postsToolbar .sb-section > * + * { margin-top: 6px; }
-    #postsToolbar .post-count { display: inline-block; }
+    /* 件数はサイドバー左下（設定の歯車の隣）に常駐 */
+    .sidebar-footer .post-count { font-size: 11px; }
     .toolbar-row {
       display: flex; flex-direction: column; gap: 6px; align-items: stretch;
       margin-bottom: 12px;
@@ -789,6 +789,20 @@
     }
     #queryChips .sb-active-chip { cursor: grab; }
     #queryChips .sb-active-chip:active { cursor: grabbing; }
+    /* ＋フィルタ (Linear-style popover trigger) */
+    .qf-add {
+      font-size: 11px; padding: 3px 10px; border-radius: 12px; flex-shrink: 0;
+      border: 1px dashed var(--border-strong); background: transparent;
+      color: var(--text-muted); cursor: pointer; white-space: nowrap;
+      transition: color .12s, border-color .12s;
+    }
+    .qf-add:hover { color: var(--accent); border-color: var(--accent); }
+    .qf-pop .qf-vals { max-height: 320px; overflow-y: auto; }
+    .qf-pop .qf-back { color: var(--text-muted); font-weight: 600; }
+    .qf-pop .qf-arrow { color: var(--text-subtle); }
+    /* サイドバーのタグ節: タググループごとの小見出し付きブロック */
+    .sb-taggroup { margin-top: 8px; }
+    .sb-taggroup:first-child { margin-top: 0; }
   .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
   /* 🔍 toggle sitting right next to a section title: reveals that section's
      filter input (tags / authors). margin-right:auto keeps it adjacent to the
@@ -845,8 +859,6 @@
               <button id="tileMinus" type="button" title="小さく">−</button>
               <button id="tilePlus" type="button" title="大きく">＋</button>
             </div>
-            <label class="iv-check" id="tileOverlayRow" style="display:none;margin-top:2px;"><input type="checkbox" id="tileOverlayToggle" checked> <span id="tileOverlayLabel"></span></label>
-            <span class="post-count" id="postCount"></span>
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbSearchTitle"></div>
@@ -914,7 +926,6 @@
             <button class="sb-chip" data-filter-type="media" data-filter-value="gif" id="sbGif"></button>
           </div>
           <label class="iv-check" style="margin-top:8px;"><input type="checkbox" id="multiOnly"> <span id="multiOnlyLabel">複数画像のみ</span></label>
-          <label class="iv-check" style="margin-top:4px;"><input type="checkbox" id="expandAllToggle"> <span id="expandAllLabel">グループを展開</span></label>
         </div>
 
         <!-- Date -->
@@ -972,10 +983,14 @@
 
     </div><!-- /side-post -->
 
+    <!-- Back-to-top: floats above the footer once the filter column is scrolled -->
+    <button id="sbTop" class="icon-btn" type="button" style="position:absolute; right:12px; bottom:52px; display:none; z-index:5; box-shadow: var(--shadow-md);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
+
     <div class="sidebar-footer">
       <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" title="設定">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
+      <span class="post-count" id="postCount" style="margin-left:auto;"></span>
     </div>
   </aside><!-- /sidebar -->
 
@@ -984,6 +999,7 @@
     <div class="app-content">
       <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
       <div id="postActiveBar" class="content-activebar" style="display:none">
+        <button class="qf-add" id="addFilterBtn" type="button"></button>
         <div class="sb-chips" id="queryChips"></div>
         <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       </div>
@@ -1007,6 +1023,10 @@
         </select>
       </div>
       <div class="hint" id="hintTheme"></div>
+      <div class="setting-row" style="margin-top:10px;">
+        <span id="tileOverlayLabel"></span>
+        <input type="checkbox" id="tileOverlayToggle" checked>
+      </div>
     </div>
 
     <div class="section">

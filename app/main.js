@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -339,8 +339,19 @@ ipcMain.handle('open-external', (_event, url) => {
 // Chromium's built-in image view (zoom/fit for free).
 ipcMain.handle('open-image-window', (_event, image) => {
   if (typeof image !== 'string' || !image || image.includes('..') || image.includes('/') || image.includes('\\')) return;
+  // Size the window to the image's aspect ratio (fit within ~85% of the work area).
+  let width = 1100; let height = 850;
+  try {
+    const sz = nativeImage.createFromPath(path.join(getSaveFolder(), image)).getSize();
+    if (sz.width > 0 && sz.height > 0) {
+      const wa = screen.getPrimaryDisplay().workAreaSize;
+      const scale = Math.min(1, (wa.width * 0.85) / sz.width, (wa.height * 0.85) / sz.height);
+      width = Math.max(320, Math.round(sz.width * scale));
+      height = Math.max(240, Math.round(sz.height * scale));
+    }
+  } catch { /* keep defaults (e.g. webp not decodable by nativeImage) */ }
   const w = new BrowserWindow({
-    width: 1100, height: 850, autoHideMenuBar: true, backgroundColor: '#101113',
+    width, height, useContentSize: true, autoHideMenuBar: true, backgroundColor: '#101113',
     webPreferences: { sandbox: true }
   });
   w.loadURL('psimg://img/' + encodeURIComponent(image));

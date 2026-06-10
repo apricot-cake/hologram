@@ -50,6 +50,12 @@
     histBack: _s('histBack'),
     histFwd: _s('histFwd'),
     qcDropHere: _s('qcDropHere'),
+    tipZone: _s('tipZone'),
+    qfAdd: _s('qfAdd'),
+    qfCatFolder: _s('qfCatFolder'),
+    sbTopTip: _s('sbTopTip'),
+    ungroupDone: _s('ungroupDone'),
+    tagGroupOther: _s('tagGroupOther'),
     exportModeFull: _s('exportModeFull'),
     exportModeImages: _s('exportModeImages'),
     backupSubTitle: _s('backupSubTitle'),
@@ -320,6 +326,8 @@
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
+  setText('addFilterBtn', MSG.qfAdd);
+  document.getElementById('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
   const sortSelect = document.getElementById('sortSelect');
@@ -398,7 +406,7 @@
       (f.mode === 'or' ? orPills : andPills).push(pill(i, label, cls));
     });
     const zone = (name, pills) =>
-      `<span class="qc-zone" data-zone="${name}">${pills.join('') || `<span class="qc-zone-empty">${MSG.qcDropHere}</span>`}</span>`;
+      `<span class="qc-zone" data-zone="${name}" title="${MSG.tipZone}">${pills.join('') || `<span class="qc-zone-empty">${MSG.qcDropHere}</span>`}</span>`;
     const joinSel = `<select class="qc-join-sel" id="qcJoinSel" title="${MSG.tipJoin}">` +
       `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
       `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
@@ -491,6 +499,98 @@
     renderPostFolders();   // ＋プレフィクス等の同期（タグ側は updateSidebarState 経由）
     renderPosts();
   });
+
+  // --- ＋フィルタ popover (Linear-style): add any filter from one place -------
+  const qfPop = document.createElement('div');
+  qfPop.className = 'fold-menu qf-pop';
+  document.body.appendChild(qfPop);
+  let qfCat = null;
+  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; }
+  const qfCatLabel = (id, fallback) => {
+    const el = document.getElementById(id);
+    return (el && el.textContent.trim()) || fallback;
+  };
+  function qfCats() {
+    return [
+      ['kind', qfCatLabel('sbKindTitle', '種別')],
+      ['platform', qfCatLabel('sbPlatformTitle', 'プラットフォーム')],
+      ['postType', qfCatLabel('sbTypeTitle', '投稿タイプ')],
+      ['media', qfCatLabel('sbMediaTitle', 'メディア')],
+      ['tag', qfCatLabel('sbTagTitle', 'タグ')],
+      ['folder', MSG.qfCatFolder],
+      ['user', qfCatLabel('sbAuthorTitle', '作者')]
+    ];
+  }
+  function qfValues(cat) {
+    const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
+    switch (cat) {
+      case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
+      case 'platform': return ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'].map(v => ({ v, l: ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[v], on: act('platform', v) }));
+      case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
+      case 'media': return [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
+      case 'tag': return [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort().map(t => ({ v: t, l: t, on: act('tag', t) }));
+      case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
+      case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
+        .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', on: act('user', u.key) }));
+      default: return [];
+    }
+  }
+  function renderQfPop() {
+    if (!qfCat) {
+      qfPop.innerHTML = qfCats().map(([c, l]) =>
+        `<div class="fm-row" data-qfcat="${c}"><span class="fm-name">${escapeHtml(l)}</span><span class="qf-arrow">›</span></div>`).join('');
+      return;
+    }
+    const items = qfValues(qfCat);
+    qfPop.innerHTML = `<div class="fm-row qf-back" data-qfback="1">‹ ${escapeHtml(qfCats().find(([c]) => c === qfCat)[1])}</div>` +
+      `<div class="qf-vals">` + (items.length
+        ? items.map(it => `<div class="fm-row" data-qfval="${escapeAttr(it.v)}"><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}</div>`).join('')
+        : `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
+  }
+  function showQfPop() {
+    qfCat = null;
+    renderQfPop();
+    const r = document.getElementById('addFilterBtn').getBoundingClientRect();
+    qfPop.style.left = r.left + 'px';
+    qfPop.style.top = (r.bottom + 4) + 'px';
+    qfPop.classList.add('show');
+    const pr = qfPop.getBoundingClientRect();
+    if (pr.right > innerWidth - 8) qfPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+  }
+  document.getElementById('addFilterBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (qfPop.classList.contains('show')) hideQfPop(); else showQfPop();
+  });
+  qfPop.addEventListener('click', (e) => {
+    const cat = e.target.closest('[data-qfcat]');
+    if (cat) { qfCat = cat.dataset.qfcat; renderQfPop(); return; }
+    if (e.target.closest('[data-qfback]')) { qfCat = null; renderQfPop(); return; }
+    const val = e.target.closest('[data-qfval]');
+    if (val && qfCat) {
+      const v = val.dataset.qfval;
+      const i = activeFilters.findIndex(f => f.type === qfCat && f.value === v);
+      if (i >= 0) {
+        removeFilter(i);
+      } else if (qfCat === 'tag' || qfCat === 'folder') {
+        addFilter({ type: qfCat, value: v, mode: 'or' });
+      } else if (qfCat === 'user') {
+        const u = buildUsers().find(x => x.key === v);
+        addFilter({ type: 'user', value: v, label: u ? (u.displayName || u.screenName) : v });
+      } else {
+        addFilter({ type: qfCat, value: v });
+      }
+      if (qfCat === 'folder') renderPostFolders();
+      updateSidebarState();
+      renderQfPop();   // stays open so several values can be picked in a row
+    }
+  });
+  document.addEventListener('click', (e) => {
+    // a row click re-renders the popover, detaching e.target — that's an INSIDE
+    // click even though contains() can no longer see it
+    if (!document.contains(e.target)) return;
+    if (qfPop.classList.contains('show') && !qfPop.contains(e.target) && !e.target.closest('#addFilterBtn')) hideQfPop();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
   // Chip click handler
   document.getElementById('queryChips').addEventListener('click', (e) => {
@@ -668,7 +768,6 @@
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
   setText('multiOnlyLabel', MSG.multiOnly);
-  setText('expandAllLabel', MSG.expandAll);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
@@ -815,9 +914,10 @@
     updateSidebarState();
   }
 
-  // Sidebar tag chips (dynamic). The filter input hides behind the 🔍 next to
-  // the section title (closing it clears the filter).
+  // Sidebar tag chips (dynamic), grouped by tag-groups.json. The filter input
+  // hides behind the 🔍 next to the section title (closing it clears the filter).
   let tagSearchOpen = false;
+  let tagGroups = [];   // {id,name,tags[]} from tag-groups.json (loaded at startup)
   function updateSidebarTags() {
     const container = document.getElementById('sbTagChips');
     const searchInput = document.getElementById('sbTagSearch');
@@ -833,11 +933,27 @@
     // Each tag chip cycles 解除 → いずれか(OR) → すべて含む(AND) → 解除, so OR and
     // AND tags can be mixed: every AND tag must match, plus at least one OR tag.
     const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
-    container.innerHTML = tags.map(t => {
+    const chip = (t) => {
       const st = tagState.get(t);
       const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
       return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
-    }).join('');
+    };
+    // Group by tag-groups.json; anything not covered goes under その他 at the end.
+    const remaining = new Set(tags);
+    const blocks = [];
+    for (const g of tagGroups) {
+      const own = (g.tags || []).filter((t) => remaining.has(t)).sort();
+      if (!own.length) continue;
+      own.forEach((t) => remaining.delete(t));
+      blocks.push(`<div class="sb-taggroup"><div class="sb-subtitle">${escapeHtml(g.name || '')}</div><div class="sb-chips">${own.map(chip).join('')}</div></div>`);
+    }
+    const rest = [...remaining].sort();
+    if (rest.length) {
+      blocks.push(blocks.length
+        ? `<div class="sb-taggroup"><div class="sb-subtitle">${MSG.tagGroupOther}</div><div class="sb-chips">${rest.map(chip).join('')}</div></div>`
+        : rest.map(chip).join(''));
+    }
+    container.innerHTML = blocks.join('');
     container.querySelectorAll('.sb-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const value = chip.dataset.filterValue;
@@ -903,7 +1019,7 @@
   // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
   let manualGroups = [];        // [[captureId,…],…] — user-built groups (win over auto)
   let ungrouped = new Set();    // post keys opted out of auto-grouping
-  let expandAll = false;        // session toggle: render every record individually
+  const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
@@ -912,8 +1028,6 @@
     if (grid) grid.style.setProperty('--tile-size', tileSize + 'px');
     const row = document.getElementById('tileSizeRow');
     if (row) row.style.display = currentView === 'tile' ? '' : 'none';
-    const ovRow = document.getElementById('tileOverlayRow');
-    if (ovRow) ovRow.style.display = currentView === 'tile' ? '' : 'none';
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
@@ -940,6 +1054,17 @@
 
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
   // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
+  // Back-to-top: floats in the sidebar corner once the filter column is scrolled.
+  (function setupSbTop() {
+    const btn = document.getElementById('sbTop');
+    const scroller = document.querySelector('#controls-posts .sb-scroll');
+    if (!btn || !scroller) return;
+    scroller.addEventListener('scroll', () => {
+      btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none';
+    }, { passive: true });
+    btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
+  })();
+
   document.getElementById('sbTagSearch').addEventListener('input', updateSidebarTags);
   document.getElementById('sbTagSearchBtn').addEventListener('click', () => {
     tagSearchOpen = !tagSearchOpen;
@@ -1036,8 +1161,7 @@
   // --- Grouping (ported from image-view) --------------------------------------
   // Auto: records sharing the same post URL (multi-image drags, re-captures of
   // one post) collapse into one card. Manual groups (manual-groups.json) win
-  // over auto. ungrouped.json opts individual post keys out; expandAll renders
-  // every record individually for this session.
+  // over auto. ungrouped.json opts individual post keys out.
   const postIdKey = (p) => (p.captureId || ((p.url || '') + '|' + (p.capturedAt || '')));
   // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
   function postKeyOf(url) {
@@ -1060,9 +1184,9 @@
     for (const p of list) {
       let key;
       const mg = manualOf.get(p.captureId);
-      if (mg && !expandAll) key = mg;
+      if (mg) key = mg;
       else {
-        const k = expandAll ? null : postKeyOf(p.url);
+        const k = postKeyOf(p.url);
         key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
       }
       let g = map.get(key);
@@ -1103,6 +1227,7 @@
   async function loadPosts() {
     const { posts } = await window.corpus.listPosts();
     allPosts = posts || [];
+    stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
     renderPosts();
     reconcileFolders();
     renderPostFolders();
@@ -1202,6 +1327,13 @@
     else if (andOk) posts = posts.filter(andOk);
     else if (orOk) posts = posts.filter(orOk);
 
+    // Sticky records: items un-matched by a recent mutation stay visible
+    // (cleared on the next filter change / data refresh).
+    if (stickyRecs.size) {
+      const have = new Set(posts.map((p) => p.captureId));
+      for (const p of allPosts) if (stickyRecs.has(p.captureId) && !have.has(p.captureId)) posts.push(p);
+    }
+
 
     // Sort (unchanged)
     switch (sort) {
@@ -1230,9 +1362,7 @@
       join: tagJoin,
       search: document.getElementById('searchBox').value,
       sort: sortSelect.value,
-      view: currentView,
-      multi: multiOnly,
-      expand: expandAll
+      multi: multiOnly
     };
   }
   function updateHistButtons() {
@@ -1269,20 +1399,21 @@
     tagJoin = s.join;
     document.getElementById('searchBox').value = s.search;
     sortSelect.value = s.sort;
-    if (currentView !== s.view) {
-      currentView = s.view;
-      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
-    }
     multiOnly = !!s.multi;
     document.getElementById('multiOnly').checked = multiOnly;
-    expandAll = !!s.expand;
-    document.getElementById('expandAllToggle').checked = expandAll;
     renderPostFolders();
     renderQueryChips();
     renderPosts();
     restoringState = false;
     updateHistButtons();
   }
+  // Mutations (untag, unfold, ungroup) can make a visible card stop matching the
+  // active filter. Instead of vanishing instantly, the card stays until the next
+  // filter change / data refresh — call this BEFORE the mutation re-render.
+  function keepCurrentVisible() {
+    viewGroups.forEach((g) => g.records.forEach((r) => { if (r.captureId) stickyRecs.add(r.captureId); }));
+  }
+
   function histGo(d) {
     const ni = histIdx + d;
     if (ni < 0 || ni >= viewHistory.length) return;
@@ -1304,6 +1435,12 @@
 
   function renderPosts(keepLimit) {
     if (!keepLimit) renderLimit = RENDER_PAGE;
+    // A genuine filter/search/sort change drops the sticky survivors (they only
+    // outlive in-place mutations, not user-driven view changes).
+    if (!keepLimit && stickyRecs.size && histIdx >= 0 &&
+        JSON.stringify(snapshotState()) !== JSON.stringify(viewHistory[histIdx])) {
+      stickyRecs.clear();
+    }
     updateSidebarState();
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
@@ -1311,7 +1448,7 @@
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
     viewGroups = groupRecords(getFilteredPosts());
-    if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1);
+    if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
     const query = document.getElementById('searchBox').value.trim();
 
     countEl.textContent = MSG.postCount(viewGroups.length);
@@ -1594,6 +1731,7 @@
     if (!CF()) return;
     const g = viewGroups[parseInt(btn.dataset.fold, 10)];
     if (!g || !g.rep.captureId) return;
+    keepCurrentVisible();   // removal can un-match an active folder filter
     const res = CF().toggleDefault(g.records.map((r) => r.captureId), g.rep.captureId);   // whole group; persists + toast + notify; null=no default→manager
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
@@ -1655,6 +1793,7 @@
     if (e.target.closest('[data-manage]')) { hideFoldMenu(); CF().openManager(); return; }
     const row = e.target.closest('.fm-row[data-fid]');
     if (row && foldMenuGroup) {
+      keepCurrentVisible();
       CF().toggleIn(row.dataset.fid, foldMenuGroup.records.map((r2) => r2.captureId), foldMenuGroup.rep.captureId);
       renderPosts(true);
     }
@@ -1788,17 +1927,21 @@
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
   function setGroupKey(key, ungroup) {
     if (!key) return;
+    keepCurrentVisible();   // 複数画像のみ等のフィルタから外れても即消えしない
     if (ungroup) ungrouped.add(key); else ungrouped.delete(key);
     if (window.corpus.setUngrouped) window.corpus.setUngrouped([...ungrouped]).catch(() => { /* best-effort */ });
     closeDetail();
     renderPosts();
+    if (ungroup) showToast(MSG.ungroupDone);
   }
   function ungroupManual(idx) {
     if (!(idx >= 0 && idx < manualGroups.length)) return;
+    keepCurrentVisible();
     manualGroups.splice(idx, 1);
     persistManual();
     closeDetail();
     renderPosts();
+    showToast(MSG.ungroupDone);
   }
   function showDetail(g) {
     if (!g) return;
@@ -1928,6 +2071,7 @@
 
   document.getElementById('editSave').addEventListener('click', async () => {
     if (!editingPost) return;
+    keepCurrentVisible();   // removing a tag can un-match an active tag filter
     const tags = [...editTags];
 
     // Persist to every record's sidecar, then update in memory.
@@ -2094,7 +2238,6 @@
   document.getElementById('tilePlus').addEventListener('click', () => setTileSize(tileSize + TILE_STEP));
 
   document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
-  document.getElementById('expandAllToggle').addEventListener('change', (e) => { expandAll = e.target.checked; renderPosts(); });
   document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
     tileOverlay = e.target.checked;
     window.corpus.setPref('tileOverlay', tileOverlay);
@@ -2548,5 +2691,6 @@ render()
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
+  try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   loadPosts();
 })();

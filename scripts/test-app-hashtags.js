@@ -38,8 +38,11 @@ writePost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta']);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  // Sidebar tag filter (tags[] field; post view is the only view now).
+  // Sidebar tag filter: hidden behind the 🔍 next to the section title.
   const sb = document.getElementById('sbTagSearch');
+  const sbHiddenAtFirst = getComputedStyle(sb).display === 'none';
+  document.getElementById('sbTagSearchBtn').click();
+  await sleep(40);
   const sbVisible = getComputedStyle(sb).display !== 'none';
   const sbAll = document.querySelectorAll('#sbTagChips .sb-chip').length;
   sb.value = 'the';
@@ -58,7 +61,7 @@ const evalJs = `(async () => {
   await sleep(120);
   const htCards = document.querySelectorAll('#postGrid .post-card').length;
 
-  return { sbVisible, sbAll, sbFiltered, htCards };
+  return { sbHiddenAtFirst, sbVisible, sbAll, sbFiltered, htCards };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -80,7 +83,7 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('sidebar tag filter shown for >6 tags, all 8 rendered', r.sbVisible === true && r.sbAll === 8);
+  check('tag filter hidden until 🔍, then shown with all 8 chips', r.sbHiddenAtFirst === true && r.sbVisible === true && r.sbAll === 8);
   check('sidebar tag search filters chips (the -> theta only)', JSON.stringify(r.sbFiltered) === JSON.stringify(['theta']));
   check('searching "#typescript" narrows the grid to its 2 posts', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));

@@ -77,12 +77,13 @@ const evalJs = `(async () => {
   const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
   const persistedDefault = rb.defaultId === f0.id;
 
-  // H2 regression: remove the card from the folder WHILE filtering by it → the card
-  // drops and remaining cards keep correct data-index (view re-rendered, no crash).
+  // H2 (updated for sticky-visible): removing the card from the folder WHILE
+  // filtering by it no longer makes it vanish — it stays until the next filter
+  // change (mutation-survivor behavior).
   const foldInBtn = grid.querySelector('.post-card .fold-btn.in');
   foldInBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(40);
-  const afterUnfilter = grid.querySelectorAll('.post-card').length;
+  const afterUnfilter = grid.querySelectorAll('.post-card').length;   // sticky → still 1
 
   // H4 regression: delete the folder WHILE it is the active filter → filter auto-clears,
   // grid returns to all cards (not a silent empty grid), chip disappears.
@@ -115,7 +116,7 @@ child.on('close', () => {
   const ok = r.totalBefore === 3 && r.modalOpen === true && r.chips === 1 && r.hasStar === true &&
     r.foldIn === true && r.countText === '1' && r.filteredCount === 1 &&
     r.persistedFolders === 1 && r.persistedItems === 1 && r.persistedDefault === true &&
-    r.afterUnfilter === 0 && r.afterDelete === 3 && r.chipsGone === 0;
+    r.afterUnfilter === 1 && r.afterDelete === 3 && r.chipsGone === 0;
   console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} star=${r.hasStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault} unfilter=${r.afterUnfilter} delete=${r.afterDelete} chipsGone=${r.chipsGone}`);
   console.log(ok ? 'FOLDERS_TEST_PASS' : 'FOLDERS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
