@@ -57,10 +57,17 @@ const evalJs = `(async () => {
   const noStar = !document.querySelector('#postFolderChips .iv-foldstar');   // default removed → no ★
   click($('ivFolderClose')); await sleep(20);
 
-  // 📁 on card 0 now OPENS a picker; click the folder row to add
-  click(grid.querySelector('.post-card[data-index="0"] .fold-btn')); await sleep(40);
-  const menuOpen = !!document.querySelector('.fold-menu.show');
-  click(document.querySelector('.fold-menu .fm-row[data-fid]')); await sleep(50);
+  // hover keeps only the ⚡/ℹ pair — folder/edit/delete/open moved off the card
+  const hoverPair = !!grid.querySelector('.post-card .ws-btn') && !!grid.querySelector('.post-card .info-btn') &&
+    !grid.querySelector('.post-card .fold-btn, .post-card .edit-btn, .post-card .delete-btn, .post-card .open-btn');
+
+  // folders are reached via the card context menu: right-click → フォルダに追加 → picker row
+  grid.querySelector('.post-card[data-index="0"]').dispatchEvent(
+    new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })); await sleep(40);
+  const ctxOpen = !!document.querySelector('.card-menu.show .fm-row[data-act="folder"]');
+  click(document.querySelector('.card-menu .fm-row[data-act="folder"]')); await sleep(40);
+  const menuOpen = !!document.querySelector('.fold-menu.show:not(.card-menu)');
+  click(document.querySelector('.fold-menu.show:not(.card-menu) .fm-row[data-fid]')); await sleep(50);
   const countText = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
 
   // filter by the folder chip → only the added card
@@ -95,7 +102,7 @@ const evalJs = `(async () => {
   const wsCleared = (rb3.workspace || []).length === 0 &&
     ($('wsChip').querySelector('.iv-tagn') || {}).textContent === '0';
 
-  return { totalBefore, modalOpen, chips, noStar, menuOpen, countText, filteredCount,
+  return { totalBefore, modalOpen, chips, noStar, hoverPair, ctxOpen, menuOpen, countText, filteredCount,
     persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, wsCleared };
 })()`;
 
@@ -112,9 +119,9 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'menuOpen', 'countText', 'filteredCount',
+  const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'hoverPair', 'ctxOpen', 'menuOpen', 'countText', 'filteredCount',
     'persistedFolders', 'persistedItems', 'noDefaultId', 'wsIn', 'wsCount', 'wsFiltered', 'wsPill', 'wsPersist', 'wsCleared'];
-  const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, menuOpen: true, countText: '1',
+  const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, hoverPair: true, ctxOpen: true, menuOpen: true, countText: '1',
     filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, wsIn: true, wsCount: '1',
     wsFiltered: 1, wsPill: true, wsPersist: true, wsCleared: true };
   const ok = keys.every((k) => r[k] === expect[k]);

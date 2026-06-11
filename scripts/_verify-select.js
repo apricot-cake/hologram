@@ -150,8 +150,8 @@ const evalJs = `(async () => {
   const folderPillChip = !!fpCs && fpCs.borderRadius === '6px' && fpCs.backgroundColor !== 'rgba(0, 0, 0, 0)';
 
   console.log('CHK sec-ctx');
-  // --- 📁 picker (left-click): choose destination folder (no ★/default) ---
-  // create a 2nd folder G, clear the folder filter, then click a card's 📁
+  // --- card context menu → フォルダに追加 → picker (no ★/default) ---
+  // create a 2nd folder G, clear the folder filter, then right-click a card
   document.getElementById('postFolderManage').click(); await wait(30);
   document.getElementById('ivFolderNewName').value = 'G';
   document.getElementById('ivFolderCreate').click(); await wait(50);
@@ -159,11 +159,16 @@ const evalJs = `(async () => {
   // clear the F filter (チップは単純トグル)
   document.querySelector('#postFolderChips .sb-chip.active').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(80);
-  console.log('CHK pre-fbtn cards=' + grid.querySelectorAll('.post-card').length);
-  const fbtn = grid.querySelector('.post-card .fold-btn');
-  fbtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  console.log('CHK pre-ctx cards=' + grid.querySelectorAll('.post-card').length);
+  grid.querySelector('.post-card').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
   await wait(40);
-  const menu = document.querySelector('.fold-menu:not(.qf-pop)');
+  const cm = document.querySelector('.card-menu');
+  const ctxShown = !!cm && cm.classList.contains('show') &&
+    !!cm.querySelector('.fm-row[data-act="open"]') && !!cm.querySelector('.fm-row[data-act="edit"]') &&
+    !!cm.querySelector('.fm-row[data-act="ws"]') && !!cm.querySelector('.fm-row[data-act="delete"].fm-danger');
+  cm.querySelector('.fm-row[data-act="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await wait(40);
+  const menu = document.querySelector('.fold-menu:not(.qf-pop):not(.card-menu)');
   const menuShown = !!menu && menu.classList.contains('show') &&
     menu.querySelectorAll('.fm-row[data-fid]').length === 2 &&
     !menu.querySelector('.fm-star');   // ★ default removed
@@ -204,7 +209,7 @@ const evalJs = `(async () => {
     modeOn, bodyTogglesInMode, imgTogglesInMode, ringAlwaysOn, btnsHidden, imgCursorPointer, modeExits,
     barAtTop, newBtnsVisible, bulkOverlayOpen, bulkTagAdds, stillSelected, bulkFolderAdds,
     folderPillChip,
-    menuShown, addedToG, noDefaultId, menuClosed,
+    ctxShown, menuShown, addedToG, noDefaultId, menuClosed,
     fOr, fgOr, gAndF, gOrF };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -220,7 +225,7 @@ child.on('close', () => {
     'modeOn', 'bodyTogglesInMode', 'imgTogglesInMode', 'ringAlwaysOn', 'btnsHidden', 'imgCursorPointer', 'modeExits',
     'barAtTop', 'newBtnsVisible', 'bulkOverlayOpen', 'bulkTagAdds', 'stillSelected', 'bulkFolderAdds',
     'folderPillChip',
-    'menuShown', 'addedToG', 'noDefaultId', 'menuClosed',
+    'ctxShown', 'menuShown', 'addedToG', 'noDefaultId', 'menuClosed',
     'fOr', 'fgOr', 'gAndF', 'gOrF'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));

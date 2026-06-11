@@ -41,8 +41,9 @@
     sbFilterTip: _s('sbFilterTip'),
     sbFilterTitle: _s('sbFilterTitle'),
     engParticle: _s('engParticle'),
-    ctxSetDefault: _s('ctxSetDefault'),
     ctxManage: _s('ctxManage'),
+    ctxWsAdd: _s('ctxWsAdd'),
+    ctxWsRemove: _s('ctxWsRemove'),
     qcAndLabel: _s('qcAndLabel'),
     qcOrLabel: _s('qcOrLabel'),
     qcJoinAnd: _s('qcJoinAnd'),
@@ -1593,11 +1594,7 @@
       return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="${CF() && CF().inWorkspace(p.captureId) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
-        <button class="fold-btn" data-fold="${i}" title="${MSG.tipFolder}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
-        <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
-        ${p.url ? `<button class="open-btn" title="${MSG.tipOpen}" aria-label="${MSG.tipOpen}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` : ''}
         ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
@@ -1743,14 +1740,6 @@
   }
 
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    // Dedicated button -> jump to the source post.
-    const openBtn = e.target.closest('.open-btn');
-    if (openBtn) {
-      e.stopPropagation();
-      const url = openBtn.closest('.post-card')?.dataset.url;
-      if (url) window.corpus.openExternal(url);
-      return;
-    }
     // Image -> open the gallery (screenshot + originals, whole group).
     // While the inspector is open, a single click swaps its content instead
     // (Eagle-style browsing); the gallery is then reached by double-click.
@@ -1800,16 +1789,6 @@
     else if (e.key === 'ArrowRight') galleryStep(1);
   });
 
-  // Edit button on card
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.edit-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const g = viewGroups[parseInt(btn.dataset.edit, 10)];
-    if (!g) return;
-    openEditOverlay(g.rep, g.records);
-  });
-
   // ⚡ workspace button: one-click add/remove this post to the single ephemeral
   // tray (no picking). Filled bookmark = in. (Default folder was removed.)
   document.getElementById('postGrid').addEventListener('click', (e) => {
@@ -1830,18 +1809,8 @@
     if (activeFilters.some((f) => f.type === 'workspace')) renderPosts();
   });
 
-  // 📁 button on card: open the folder picker (choose destination — no default).
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.fold-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const g = viewGroups[parseInt(btn.dataset.fold, 10)];
-    if (!g || !g.rep.captureId) return;
-    const r = btn.getBoundingClientRect();
-    showFoldMenu(g, r.left, r.bottom + 4);
-  });
-
-  // Right-click on a card's 📁 also opens the same folder picker.
+  // Folder picker flyout (destinations) — opened from the card context menu
+  // and the bulk 「フォルダに追加」 button.
   const foldMenu = document.createElement('div');
   foldMenu.className = 'fold-menu';
   document.body.appendChild(foldMenu);
@@ -1867,14 +1836,6 @@
     if (r.right > innerWidth - 8) foldMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
     if (r.bottom > innerHeight - 8) foldMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
   }
-  document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
-    const btn = e.target.closest('.fold-btn');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const g = viewGroups[parseInt(btn.dataset.fold, 10)];
-    if (g) showFoldMenu(g, e.clientX, e.clientY);
-  });
   foldMenu.addEventListener('click', (e) => {
     if (!CF()) { hideFoldMenu(); return; }
     if (e.target.closest('[data-manage]')) { hideFoldMenu(); CF().openManager(); return; }
@@ -1888,6 +1849,69 @@
   });
   document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
+
+  // --- Card context menu: the labeled table of contents of per-card actions.
+  // Hover keeps only the two rapid-fire buttons (⚡ workspace / ℹ info);
+  // everything else (open, tag edit, folders, delete) lives here.
+  const cardMenu = document.createElement('div');
+  cardMenu.className = 'fold-menu card-menu';
+  document.body.appendChild(cardMenu);
+  let cardMenuGroup = null;
+  function hideCardMenu() { cardMenu.classList.remove('show'); cardMenuGroup = null; }
+  const CM_IC = {
+    open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
+    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+  };
+  function showCardMenu(g, x, y) {
+    cardMenuGroup = g;
+    const inWs = !!(CF() && CF().inWorkspace(g.rep.captureId));
+    const row = (act, ic, label, cls) =>
+      `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span></div>`;
+    cardMenu.innerHTML =
+      (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
+      row('edit', CM_IC.edit, MSG.tipEdit) +
+      row('folder', CM_IC.folder, MSG.tipFolder) +
+      (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
+      row('info', CM_IC.info, MSG.tipInfo) +
+      '<div class="fm-sep"></div>' +
+      row('delete', CM_IC.del, MSG.tipDelete, 'fm-danger');
+    cardMenu.style.left = x + 'px';
+    cardMenu.style.top = y + 'px';
+    cardMenu.classList.add('show');
+    const r = cardMenu.getBoundingClientRect();   // clamp into the viewport
+    if (r.right > innerWidth - 8) cardMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
+    if (r.bottom > innerHeight - 8) cardMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+  }
+  document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
+    const card = e.target.closest('.post-card');
+    if (!card) return;
+    e.preventDefault();
+    if (document.getElementById('postGrid').classList.contains('selecting')) return;  // selection bar owns bulk actions
+    hideFoldMenu();
+    const g = viewGroups[parseInt(card.dataset.index, 10)];
+    if (g) showCardMenu(g, e.clientX, e.clientY);
+  });
+  cardMenu.addEventListener('click', (e) => {
+    e.stopPropagation();   // keep the fold-menu we may open below alive past the document hider
+    const rowEl = e.target.closest('.fm-row');
+    const g = cardMenuGroup;
+    const pos = cardMenu.getBoundingClientRect();
+    hideCardMenu();
+    if (!rowEl || !g) return;
+    const act = rowEl.dataset.act;
+    if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
+    else if (act === 'edit') openEditOverlay(g.rep, g.records);
+    else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
+    else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
+    else if (act === 'info') showDetail(g);
+    else if (act === 'delete') requestDeleteGroup(g);
+  });
+  document.addEventListener('click', (e) => { if (cardMenu.classList.contains('show') && !cardMenu.contains(e.target)) hideCardMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCardMenu(); });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
@@ -1992,14 +2016,8 @@
     toggleCardSelection(card, e.shiftKey);
   }, true);
 
-  // Delete button on card
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.delete-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const g = viewGroups[parseInt(btn.dataset.delete, 10)];
-    if (!g) return;
-
+  // Delete a card group (reached via the card context menu): confirm unless skipped.
+  function requestDeleteGroup(g) {
     if (skipDeleteConfirm) {
       executeDeleteGroup(g);
     } else {
@@ -2011,7 +2029,7 @@
       setConfirmKeywordMode(false);
       document.getElementById('confirmOverlay').classList.add('show');
     }
-  });
+  }
 
   let pendingDeleteGroup = null;
 

@@ -64,13 +64,14 @@ const evalSeeded = `(async () => {
   const dedupOk = !!imgCard && !imgCard.querySelector('.post-meta .text');
   const noBadge = !!imgCard && !imgCard.querySelector('.platform-badge') &&
     imgCard.querySelector('.user').textContent.trim() === 'IMG_123';
-  // no url → no jump button, and the outer hover buttons close the gap
-  const noUrlPacked = !!imgCard && !imgCard.querySelector('.open-btn') &&
-    getComputedStyle(imgCard.querySelector('.fold-btn')).right === '72px' &&
-    getComputedStyle(imgCard.querySelector('.info-btn')).right === '104px';
+  // hover keeps only the ⚡/ℹ pair (the rest lives in the right-click menu)
+  const noUrlPacked = !!imgCard &&
+    !imgCard.querySelector('.open-btn, .fold-btn, .edit-btn, .delete-btn') &&
+    getComputedStyle(imgCard.querySelector('.info-btn')).right === '8px' &&
+    getComputedStyle(imgCard.querySelector('.ws-btn')).right === '40px';
   const urlCard = grid.querySelector('.post-card[data-url^="https"]');
-  const urlRow = !!urlCard && !!urlCard.querySelector('.open-btn') &&
-    getComputedStyle(urlCard.querySelector('.info-btn')).right === '136px';
+  const urlRow = !!urlCard && !urlCard.querySelector('.open-btn') &&
+    getComputedStyle(urlCard.querySelector('.info-btn')).right === '8px';
 
   // --- reset button: hidden while nothing to reset, hugs the builder ---
   const resetBtn = document.getElementById('postResetBtn');
@@ -95,7 +96,7 @@ const evalSeeded = `(async () => {
   document.getElementById('viewTile').click(); await wait(120);
   const sliderShown = row.style.display !== 'none' && !!sl;
   // tile action buttons: flex-centered glyphs, whole-pixel square (true circle)
-  const dcs = getComputedStyle(grid.querySelector('.post-card .delete-btn'));
+  const dcs = getComputedStyle(grid.querySelector('.post-card .info-btn'));
   const tileBtnRound = dcs.display === 'flex' && dcs.width === dcs.height &&
     Number.isInteger(parseFloat(dcs.width));
   const tileWalk = await walk();

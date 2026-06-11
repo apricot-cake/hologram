@@ -277,16 +277,6 @@
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
     }
-    .open-btn {
-      position: absolute; top: 8px; right: 72px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(0,0,0,0.5); color: #fff; border: none;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s;
-      z-index: 1;
-    }
-    .open-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
-    .post-card:hover .open-btn { opacity: 1; }
     .post-meta {
       padding: 12px;
     }
@@ -330,19 +320,6 @@
       font-size: 11px; color: var(--text-subtle); margin-top: 4px;
     }
 
-    /* --- Delete button on card --- */
-    .delete-btn {
-      position: absolute; top: 8px; right: 8px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(0,0,0,0.5); color: #fff; border: none;
-      /* flex centering like every other card button — a fixed line-height
-         pushed the × low once the tile view shrank the button */
-      font-size: 16px; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s;
-      z-index: 1;
-    }
-    .delete-btn:hover { background: color-mix(in oklch, var(--danger) 82%, transparent); }
-    .post-card:hover .delete-btn { opacity: 1; }
     .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
     /* ○ select ring — the ONLY selection entry point. A hollow white ring with a
        soft dark halo (visible on any image), top-left, shown on hover; fills with
@@ -366,9 +343,7 @@
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .delete-btn, .post-grid.selecting .edit-btn,
-    .post-grid.selecting .info-btn, .post-grid.selecting .fold-btn,
-    .post-grid.selecting .ws-btn, .post-grid.selecting .open-btn { display: none; }
+    .post-grid.selecting .info-btn, .post-grid.selecting .ws-btn { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -410,8 +385,6 @@
     .post-grid.list-view .post-meta .date { order: 3; white-space: nowrap; margin-top: 0; margin-left: auto; }
     .post-grid.list-view .post-meta .date-captured { display: none; }
     .post-grid.list-view .post-meta .tags-label { display: none; }
-    .post-grid.list-view .delete-btn { top: 50%; right: 8px; transform: translateY(-50%); }
-    .post-grid.list-view .open-btn { top: 50%; right: 72px; transform: translateY(-50%); }
 
     /* --- Tile density: a post-card with its info section hidden + a compact
        author/❤ overlay on the image. Purely presentational (reuses the card's
@@ -421,23 +394,20 @@
       gap: 8px;
     }
     .post-grid.tile-view .post-card { aspect-ratio: 1; border-color: var(--border); box-shadow: none; contain-intrinsic-size: auto var(--tile-size, 180px); }
-    /* Tiles keep only ×・ℹ・📁 (tags via the selection bar, source link via ℹ),
-       laid out horizontally top-right and scaled with the tile size so they
-       never collide with the ○ ring even on small tiles. */
+    /* Tiles keep the same hover pair as cards (⚡・ℹ — everything else lives
+       in the right-click menu), laid out horizontally top-right and scaled
+       with the tile size so they never collide with the ○ ring. */
     /* round() keeps the buttons on whole pixels — a fractional size (e.g.
        180×0.13=23.4px) rounds width and height differently at fractional
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .edit-btn, .post-grid.tile-view .open-btn { display: none; }
-    .post-grid.tile-view .delete-btn, .post-grid.tile-view .info-btn, .post-grid.tile-view .fold-btn, .post-grid.tile-view .ws-btn {
+    .post-grid.tile-view .info-btn, .post-grid.tile-view .ws-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
-    /* Same relative order as card/list (⚡ → ℹ → 📁 → ×, left to right) */
-    .post-grid.tile-view .delete-btn { right: 6px; }
-    .post-grid.tile-view .fold-btn { right: calc(6px + var(--act) + 4px); }
-    .post-grid.tile-view .info-btn { right: calc(6px + (var(--act) + 4px) * 2); }
-    .post-grid.tile-view .ws-btn { right: calc(6px + (var(--act) + 4px) * 3); }
-    .post-grid.tile-view .fold-btn svg, .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg { width: 60%; height: 60%; }
+    /* Same relative order as card/list (⚡ → ℹ, left to right) */
+    .post-grid.tile-view .info-btn { right: 6px; }
+    .post-grid.tile-view .ws-btn { right: calc(6px + var(--act) + 4px); }
+    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -607,42 +577,10 @@
     .post-flag.flag-type { background: var(--tint-purple-bg); color: var(--text); }
     .post-flag.flag-media { background: var(--tint-blue-bg); color: var(--text); }
     .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
-    .edit-btn {
-      position: absolute; top: 8px; right: 40px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(0,0,0,0.5); color: #fff; border: none;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s;
-      z-index: 1;
-    }
-    .edit-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
-    .post-card:hover .edit-btn { opacity: 1; }
-    .post-grid.list-view .edit-btn { top: 50%; right: 40px; transform: translateY(-50%); }
-
-    /* --- 📁 add-to-default-folder button on card (one-click from hover) --- */
-    .fold-btn {
-      position: absolute; top: 8px; right: 104px;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
-      z-index: 1;
-    }
-    .fold-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
-    .post-card:hover .fold-btn { opacity: 1; }
-    /* membership ('in') tints the button blue but does NOT keep it visible at
-       rest — like every other card action it appears on hover only */
-    /* No persistent blue when a post is in the default folder: it can live in
-       MANY folders, so a stuck-blue 📁 misleads ("only one?"). Membership shows
-       in the right-click menu (✓); the 📁 just stays a neutral add control.
-       The green flash confirms the add; hovering an already-in one is red so a
-       click reads as "remove" (srgb mix — an oklch mix read as purple on dark). */
-    .fold-btn.in:hover { background: var(--danger); }
-    .fold-btn.added { background: var(--success); }
     /* ⚡ workspace button: like the other hover actions, but its 'in' state IS
        meaningful (single tray, so a persistent filled bookmark is correct). */
     .ws-btn {
-      position: absolute; top: 8px; right: 168px;
+      position: absolute; top: 8px; right: 40px;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(0,0,0,0.5); color: #fff; border: none;
       display: flex; align-items: center; justify-content: center;
@@ -653,10 +591,9 @@
     .post-card:hover .ws-btn { opacity: 1; }
     .ws-btn.in { background: var(--accent); opacity: 1; }   /* in the tray → always visible + filled */
     .ws-btn.added { background: var(--success); }
-    .post-grid.list-view .ws-btn { top: 50%; right: 168px; transform: translateY(-50%); }
-    /* no source link → no jump button: pull workspace inward with the rest */
-    .post-grid:not(.tile-view) .post-card.no-url .ws-btn { right: 136px; }
-    /* Right-click menu on 📁: pick the destination folder / set the default (★) */
+    .post-grid.list-view .ws-btn { top: 50%; right: 40px; transform: translateY(-50%); }
+    /* Flyout menus: the card context menu (full action list) and the folder
+       picker it opens share one look. */
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
       background: var(--surface); border: 1px solid var(--border-strong);
@@ -668,18 +605,20 @@
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
     }
     .fold-menu .fm-row:hover { background: var(--hover); }
-    .fm-star { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; line-height: 1; padding: 0 2px; border-radius: 4px; }
-    .fm-star:hover { color: var(--fg); background: var(--active); }
-    .fm-star.on { color: var(--fg); }
     .fm-name { flex: 1; word-break: break-word; }
     .fm-check { color: var(--accent); flex-shrink: 0; }
     .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
     .fm-manage { color: var(--accent); }
-    .post-grid.list-view .fold-btn { top: 50%; right: 104px; transform: translateY(-50%); }
+    .fm-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
+    .fm-ic svg { display: block; }
+    /* destructive row: quiet red, stronger on hover (srgb mix — oklch turns purple on dark) */
+    .fold-menu .fm-row.fm-danger { color: var(--danger); }
+    .fold-menu .fm-row.fm-danger .fm-ic { color: var(--danger); }
+    .fold-menu .fm-row.fm-danger:hover { background: color-mix(in srgb, var(--red-500) 14%, transparent); }
 
     /* --- ℹ detail-popup button on card (ported from image-view) --- */
     .info-btn {
-      position: absolute; top: 8px; right: 136px;
+      position: absolute; top: 8px; right: 8px;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(0,0,0,0.5); color: #fff; border: none; font-size: 14px;
       display: flex; align-items: center; justify-content: center;
@@ -691,12 +630,7 @@
     .info-btn svg { display: block; }
     .info-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .info-btn { opacity: 1; }
-    .post-grid.list-view .info-btn { top: 50%; right: 136px; transform: translateY(-50%); }
-    /* No source link → no jump button: pull the outer buttons inward so the
-       hover row stays packed (otherwise a hole gapes at the open slot).
-       Tile view keeps its own --act offsets (open isn't in its row). */
-    .post-grid:not(.tile-view) .post-card.no-url .fold-btn { right: 72px; }
-    .post-grid:not(.tile-view) .post-card.no-url .info-btn { right: 104px; }
+    .post-grid.list-view .info-btn { top: 50%; right: 8px; transform: translateY(-50%); }
 
     /* --- Query field --- */
     .query-field-row { margin-bottom: 12px; }
@@ -1498,8 +1432,6 @@
     .iv-andor.or { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
     /* Folder chips (★ default) + management modal */
-    .iv-foldstar { color: var(--muted); margin-right: 3px; }
-    .sb-chip.active .iv-foldstar { color: var(--accent-subtle-fg); }
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
     .iv-folder-new .search-box { flex: 1; }
     .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
@@ -1507,9 +1439,8 @@
     .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); }
     .iv-fold-name { flex: 1; word-break: break-word; }
     .iv-fold-n { color: var(--muted); font-size: 11px; }
-    .iv-fold-def, .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
-    .iv-fold-def:hover, .iv-fold-btn:hover { background: var(--hover); }
-    .iv-fold-def.on { color: var(--fg); }
+    .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
+    .iv-fold-btn:hover { background: var(--hover); }
     .iv-folder-modalhint { margin-top: 12px; color: var(--muted); font-size: 11px; }
 
     /* transient toast (e.g. "added to folder") — shared, top-level, fixed */

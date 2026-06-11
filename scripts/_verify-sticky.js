@@ -52,8 +52,11 @@ const evalJs = `(async () => {
   click(tagChip()); await wait(80);
   const filtered = cards() === 2;
   const card0 = grid.querySelector('.post-card[data-index="0"]');
-  console.log('CHK card0=' + !!card0 + ' edit=' + !!(card0 && card0.querySelector('.edit-btn')));
-  card0.querySelector('.edit-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  console.log('CHK card0=' + !!card0);
+  // tag edit moved into the card context menu (hover keeps only ⚡/ℹ)
+  card0.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
+  await wait(40);
+  document.querySelector('.card-menu.show .fm-row[data-act="edit"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(60);
   const rm = document.querySelector('#editTagsList [data-remove-tag]');
   console.log('CHK rm=' + !!rm);
