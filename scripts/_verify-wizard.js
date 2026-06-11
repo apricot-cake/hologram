@@ -1,7 +1,12 @@
 'use strict';
-// Throwaway: tagging wizard — walks UNTAGGED posts, shows tag-group chips,
-// toggles tags + a plain/media flag, saves to the sidecar and advances.
-// Seeds 3 posts: 2 untagged (p0,p1), 1 already tagged (p2 → excluded from queue).
+// Throwaway: tagging wizard — one image LARGE + ONE group per step:
+//  - stepper lists every visible group (+未分類 +非表示チップ), clickable jump
+//  - only the current group's tags render; selecting shows a stepper badge
+//  - per-step "このグループを今後表示しない" hides the group (persisted),
+//    the 非表示 panel un-hides it
+//  - 未分類 step: ungrouped library tags as chips + adder with group creation
+//  - 次へ/←→ walk; last step's 次へ and Ctrl+Enter save & go to next image
+// Seeds 3 posts: 2 untagged (p0,p1), 1 already tagged (p2 → excluded).
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -29,6 +34,14 @@ for (let i = 0; i < 3; i++) {
     tags: i === 2 ? ['既存'] : [], hashtags: []
   }, null, 2));
 }
+// one pre-existing UNGROUPED tag in the library (must appear on the 未分類 step)
+fs.writeFileSync(path.join(saveFolder, '1700000000003-tw3.jpg'), jpeg);
+fs.writeFileSync(path.join(saveFolder, '1700000000003-tw3.json'), JSON.stringify({
+  captureId: '1700000000003-tw3', image: '1700000000003-tw3.jpg', url: 'https://x.com/u/status/803',
+  platform: 'x', text: '本文3', displayName: '人3', screenName: 'u3', likes: 3,
+  capturedAt: '2026-03-01T12:00:00Z', date: '2026-03-01T10:00:00Z', media: [],
+  tags: ['野良タグ'], hashtags: []
+}, null, 2));
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
@@ -37,48 +50,70 @@ const evalJs = `(async () => {
   const body = document.getElementById('twBody');
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-  // launch from the sidebar tag-section link
+  // launch from the sidebar feature button
   click(document.getElementById('tagWizardBtn'));
   await waitFor(() => !view.hidden && /1 \\/ 2/.test(document.getElementById('twProgress').textContent));
   const opened = !view.hidden;
   const queueIs2 = document.getElementById('twProgress').textContent.trim() === '1 / 2';   // 2 untagged only
-  const bigImg = !!body.querySelector('img.tw-big');   // image shown large
-  // groups are y/n gates: headers present, tag chips hidden until expanded
-  const gateCollapsed = body.querySelectorAll('.tw-grp-head[data-grp]').length === 2
-    && body.querySelectorAll('.tw-chip[data-tag]').length === 0;
-  // expand ポーズ (g1) → its tags appear
-  click(body.querySelector('.tw-grp-head[data-grp="g1"]')); await wait(40);
-  const expandWorks = body.querySelectorAll('.tw-chip[data-tag]').length >= 2;
+  const bigImg = !!body.querySelector('img.tw-big');
+  // stepper: ポーズ・構図・未分類 + 非表示チップ; only group 1's tags render
+  const stepBtns = () => [...body.querySelectorAll('.tw-step[data-step]')];
+  const stepperOk = stepBtns().length === 3 && !!document.getElementById('twHiddenChip');
+  const onlyOneGroup = body.querySelectorAll('.tw-chip[data-tag]').length === 2 &&
+    [...body.querySelectorAll('.tw-chip[data-tag]')].every(c => ['立ち', '座り'].includes(c.dataset.tag));
 
-  // pick a tag + a kind
+  // pick a tag on step 1 + the kind (kind lives on the image side, any step)
   click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち')); await wait(40);
   click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
   const tagOn = [...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち').classList.contains('on');
   const kindOn = body.querySelector('.tw-chip[data-kind="media"]').classList.contains('on');
-  const badgeShown = (body.querySelector('.tw-grp .tw-grp-badge') || {}).textContent === '1';
-  // new tag INTO A NEW GROUP (group creation)
+  const badgeOn = (stepBtns()[0].querySelector('.tw-step-badge') || {}).textContent === '1';
+
+  // 次へ → step 2 (構図); selection persists across steps (badge on step 1)
+  click(document.getElementById('twNext')); await wait(50);
+  const step2 = stepBtns()[1].classList.contains('on') &&
+    [...body.querySelectorAll('.tw-chip[data-tag]')].every(c => ['俯瞰', 'あおり'].includes(c.dataset.tag));
+  const badgeKept = (stepBtns()[0].querySelector('.tw-step-badge') || {}).textContent === '1';
+
+  // stepper JUMP to 未分類 (index 2): existing ungrouped library tag appears
+  click(stepBtns()[2]); await wait(50);
+  const otherHasStray = [...body.querySelectorAll('.tw-chip[data-tag]')].some(c => c.dataset.tag === '野良タグ');
+  // create a NEW group from the 未分類 adder
   document.getElementById('twAddInput').value = '自作タグ';
   const gsel = document.getElementById('twAddGroup'); gsel.value = '__new'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
   await wait(30);
-  const newGroupInputShown = document.getElementById('twNewGroupName').style.display !== 'none';
   document.getElementById('twNewGroupName').value = '自作群';
   click(document.getElementById('twAddBtn'));
   await wait(80);
-  const customOn = [...body.querySelectorAll('.tw-chip[data-tag]')].some(c => c.dataset.tag === '自作タグ' && c.classList.contains('on'));
-  const newGroupAppears = [...body.querySelectorAll('.tw-grp-head')].some(h => h.textContent.includes('自作群'));
+  const newGroupStep = stepBtns().some(b => b.textContent.includes('自作群'));
 
-  click(document.getElementById('twSave'));
+  // hide 構図 from this step's panel? (the link is only on group steps) —
+  // jump to 構図 and hide it; the stepper loses it, the 非表示 chip counts 1
+  click(stepBtns().find(b => b.textContent.includes('構図'))); await wait(50);
+  click(body.querySelector('.tw-hide-link')); await wait(50);
+  const hiddenWorks = !stepBtns().some(b => b.textContent.includes('構図')) &&
+    document.getElementById('twHiddenChip').textContent.includes('1');
+  // the 非表示 panel can bring it back
+  click(document.getElementById('twHiddenChip')); await wait(50);
+  const visBox = body.querySelector('input[data-vis="g2"]');
+  const panelShows = !!visBox && !visBox.checked;
+  visBox.checked = true; visBox.dispatchEvent(new Event('change', { bubbles: true })); await wait(50);
+  const unhideWorks = stepBtns().some(b => b.textContent.includes('構図'));
+
+  // Ctrl+Enter = save & next image
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
   await waitFor(() => document.getElementById('twProgress').textContent.trim() === '2 / 2', 4000);
   const advanced = document.getElementById('twProgress').textContent.trim() === '2 / 2';
 
-  // second post: skip
+  // second post: skip → done; Esc closes
   click(document.getElementById('twSkip'));
   await wait(150);
   const doneShown = /お疲れ|done|ありません/i.test(body.textContent) && document.getElementById('twSave').style.display === 'none';
-  click(document.getElementById('twFinish'));
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await wait(150);
   const closed = view.hidden;
-  return { opened, queueIs2, bigImg, gateCollapsed, expandWorks, tagOn, kindOn, badgeShown, newGroupInputShown, customOn, newGroupAppears, advanced, doneShown, closed };
+  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindOn, badgeOn, step2, badgeKept,
+    otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, doneShown, closed };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -104,7 +139,8 @@ child.on('close', () => {
     newGroupSaved = (tg.groups || []).some((g) => g.name === '自作群' && (g.tags || []).includes('自作タグ'));
   } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['opened', 'queueIs2', 'bigImg', 'gateCollapsed', 'expandWorks', 'tagOn', 'kindOn', 'badgeShown', 'newGroupInputShown', 'customOn', 'newGroupAppears', 'advanced', 'doneShown', 'closed'];
+  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
+    'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'doneShown', 'closed'];
   const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
   console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);
   console.log(ok ? 'WIZARD_VERIFY_PASS' : 'WIZARD_VERIFY_FAIL');

@@ -1219,9 +1219,10 @@
       </div>
       <div id="twBody" class="tw-body"></div>
       <div class="tw-foot">
-        <button class="btn-outline" id="twSkip" type="button"></button>
+        <button class="btn-outline" id="twBack" type="button"></button>
+        <button class="btn-outline" id="twNext" type="button"></button>
         <span style="flex:1"></span>
-        <button class="btn-outline" id="twFinish" type="button"></button>
+        <button class="btn-outline" id="twSkip" type="button"></button>
         <button class="btn-outline" id="twSave" type="button" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
       </div>
     </div>
@@ -1355,35 +1356,48 @@
     .iv-insp-open:hover { text-decoration: underline; }
 
     /* --- Tagging wizard --- */
-    .tw-inner { max-width: 640px; display: flex; flex-direction: column; max-height: 100%; }
+    /* One image LARGE on the left; on the right ONE tag group at a time with a
+       clickable group stepper (no full-vocabulary scan, no collapse-and-peek). */
+    .tw-inner { max-width: 1100px; width: 100%; display: flex; flex-direction: column; max-height: 100%; }
     .tw-progress { font-size: var(--text-sm); color: var(--text-muted); font-weight: var(--weight-regular); }
-    .tw-body { flex: 1; overflow-y: auto; padding: 4px 2px 8px; }
-    /* one image at a time, shown LARGE (you must see the art to tag it) */
-    .tw-post { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
-    .tw-big-wrap { flex: 0 0 auto; width: 300px; max-width: 50%; }
-    .tw-big { width: 100%; max-height: 360px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); display: block; }
-    .tw-post-side { flex: 1; min-width: 0; font-size: 12px; color: var(--text-muted); }
-    .tw-post-side .tw-author { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-    .tw-post-side .tw-text { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.55; color: var(--text); }
-    .tw-kind { display: flex; gap: 8px; }
-    .tw-groups { margin-bottom: 12px; }
+    .tw-body { flex: 1; min-height: 460px; overflow: hidden; padding: 4px 2px 8px; display: flex; gap: 20px; }
+    .tw-left { flex: 1.25; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .tw-right { flex: 1; min-width: 320px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 2px; }
+    /* the image is the protagonist: as tall as the modal allows, zoomable */
+    .tw-big { width: 100%; flex: 1; min-height: 0; max-height: 70vh; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); display: block; cursor: zoom-in; }
+    .tw-meta { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+    .tw-meta .tw-author { font-size: 13px; font-weight: 600; color: var(--text); }
+    .tw-meta .tw-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.55; color: var(--text); }
+    .tw-kind { display: flex; gap: 8px; flex-shrink: 0; }
     .tw-group-name { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
     .tw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    /* group y/n gate: header toggles its tag chips */
-    .tw-grp { border-bottom: 1px solid var(--border-subtle); }
-    .tw-grp-head {
-      width: 100%; display: flex; align-items: center; gap: 8px; text-align: left;
-      background: none; border: none; cursor: pointer; color: var(--text);
-      padding: 9px 2px; font-size: 13px; font-weight: 500;
+    /* group stepper: every (visible) group is a clickable chip — the linear
+       次へ is just the default walk; jumping is always allowed, so "done" is
+       an informed choice rather than an order artifact */
+    .tw-steps { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+    .tw-step {
+      border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text-muted);
+      border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px;
+      transition: background .12s, color .12s, border-color .12s;
     }
-    .tw-grp-head:hover { color: var(--accent); }
-    .tw-grp-caret { color: var(--text-subtle); font-size: 10px; width: 12px; flex-shrink: 0; }
-    .tw-grp-badge {
-      margin-left: 6px; font-size: 11px; font-weight: 600; min-width: 18px; text-align: center;
+    .tw-step:hover { color: var(--text); border-color: var(--accent); }
+    .tw-step.on { background: var(--accent-subtle); color: var(--accent-subtle-fg); border-color: var(--accent-border); font-weight: 600; }
+    .tw-step-badge {
+      font-size: 10px; font-weight: 700; min-width: 16px; text-align: center;
       background: var(--accent-subtle); color: var(--accent-subtle-fg); border: 1px solid var(--accent-border);
-      border-radius: 999px; padding: 0 6px;
+      border-radius: 999px; padding: 0 5px;
     }
-    .tw-grp .tw-chips { padding: 0 2px 10px; }
+    .tw-step.on .tw-step-badge { background: var(--surface); }
+    .tw-step-hid { border-style: dashed; color: var(--text-subtle); }
+    /* current group's panel */
+    .tw-panel { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
+    .tw-panel-name { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+    .tw-hide-link { align-self: flex-start; background: none; border: none; padding: 0; font-size: 11px; color: var(--text-subtle); cursor: pointer; }
+    .tw-hide-link:hover { color: var(--accent); text-decoration: underline; }
+    /* group-visibility panel (opened from the 非表示 chip) */
+    .tw-hidpanel { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+    .tw-hidrow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
     .tw-chip {
       border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text);
       border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer;

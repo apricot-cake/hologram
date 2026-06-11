@@ -92,16 +92,20 @@
     twKindPlain: _s('twKindPlain'),
     twKindSkip: _s('twKindSkip'),
     twAddPlaceholder: _s('twAddPlaceholder'),
+    twAddToGroup: _s('twAddToGroup'),
     twAdd: _s('twAdd'),
+    twBack: _s('twBack'),
+    twNext: _s('twNext'),
     twSkip: _s('twSkip'),
     twSave: _s('twSave'),
-    twFinish: _s('twFinish'),
     twDone: _s('twDone'),
-    twOther: _s('twOther'),
     twNoGroups: _s('twNoGroups'),
     twNoGroup: _s('twNoGroup'),
     twNewGroup: _s('twNewGroup'),
     twNewGroupName: _s('twNewGroupName'),
+    twHidden: _s('twHidden'),
+    twShownTitle: _s('twShownTitle'),
+    twHide: _s('twHide'),
     imagesCount: _f1('imagesCount'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
@@ -327,9 +331,10 @@
   setText('unitYear', MSG.unitYear);
   setText('tagWizardLabel', MSG.twTitle);
   setText('twTitle', MSG.twTitle);
+  setText('twBack', MSG.twBack);
+  setText('twNext', MSG.twNext);
   setText('twSkip', MSG.twSkip);
   setText('twSave', MSG.twSave);
-  setText('twFinish', MSG.twFinish);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1963,55 +1968,82 @@
     showToast(MSG.deleted);
   }
 
-  // === Tagging wizard: walk untagged posts, present every group's tags as
-  // toggle chips (recognition over recall), set a plain/media flag, save→next ===
+  // === Tagging wizard: one image LARGE + ONE tag group per step. The group
+  // stepper shows every (visible) group and is clickable, so 次へ is just the
+  // default walk — finishing early is an informed choice, not an order
+  // artifact. Groups can be hidden from the wizard (persisted, reversible from
+  // the always-visible 非表示 chip). No recommendations, no collapse-and-peek:
+  // deterministic, user-controlled. ===
   (function setupTagWizard() {
     const view = document.getElementById('tagWizard');
     const body = document.getElementById('twBody');
     const prog = document.getElementById('twProgress');
     if (!view) return;
-    let queue = [];
-    let idx = 0;
+    const HIDDEN_KEY = 'corpus.wizardHiddenGroups';
+    const loadHidden = () => {
+      try { const a = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); return new Set(Array.isArray(a) ? a : []); } catch { return new Set(); }
+    };
+    let hidden = loadHidden();
+    const saveHidden = () => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ } };
+    let queue = [];             // untagged post groups (images)
+    let idx = 0;                // current image
+    let step = 0;               // current group step
     let sel = new Set();        // selected tags for the current post
     let kind = null;            // 'plain' | 'media' | null
-    let openGroups = new Set(); // tag groups expanded (y/n gate) for this post
+    let showHidPanel = false;   // group-visibility panel open?
 
     const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length));
+    // visible group steps + the trailing 未分類 step (ungrouped tags + adder)
+    const steps = () => tagGroups
+      .filter((grp) => (grp.tags || []).length && !hidden.has(grp.id))
+      .concat([{ id: '__other', name: MSG.tagGroupOther, tags: null }]);
+    // every existing ungrouped tag in the library (recognition, not recall)
+    function ungroupedTags() {
+      const grouped = new Set(tagGroups.flatMap((gr) => gr.tags || []));
+      const out = new Set();
+      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) out.add(t);
+      for (const t of sel) if (!grouped.has(t)) out.add(t);
+      return [...out].sort((a, b) => a.localeCompare(b, 'ja'));
+    }
 
     function open() {
       // untagged groups within the CURRENT filter (so the user can narrow first)
       queue = groupRecords(getFilteredPosts()).filter(isUntagged);
-      idx = 0;
       view.hidden = false;
-      gotoStep(0);
+      gotoImage(0);
     }
     function close() { view.hidden = true; body.innerHTML = ''; renderPosts(true); }
 
-    function gotoStep(i) {
+    function gotoImage(i) {
       idx = i;
+      step = 0;
+      showHidPanel = false;
       if (idx < queue.length) {
         const g = queue[idx];
         sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
         kind = g.rep.userKind || null;
-        // Start with every group collapsed (the y/n gate); groups that already
-        // carry a selected tag auto-open so existing tags stay visible.
-        openGroups = new Set(tagGroups.filter((grp) => (grp.tags || []).some((t) => sel.has(t))).map((grp) => grp.id));
       }
       paint();
     }
+    function setStep(i) { step = i; showHidPanel = false; paint(); }
+    function next() { const st = steps(); if (step < st.length - 1) setStep(step + 1); else saveNext(); }
+    function back() { if (step > 0) setStep(step - 1); }
+    async function saveNext() { await saveCurrent(); gotoImage(idx + 1); }
 
     function paint() {
-      const save = document.getElementById('twSave');
-      const skip = document.getElementById('twSkip');
-      if (idx >= queue.length) {
+      const atEnd = idx >= queue.length;
+      for (const id of ['twSave', 'twSkip', 'twBack', 'twNext']) {
+        const b = document.getElementById(id);
+        if (b) b.style.display = atEnd ? 'none' : '';
+      }
+      if (atEnd) {
         prog.textContent = '';
-        body.innerHTML = `<div class="tw-done">${escapeHtml(MSG.twDone)}</div>`;
-        if (save) save.style.display = 'none';
-        if (skip) skip.style.display = 'none';
+        body.innerHTML = `<div class="tw-done" style="margin:auto;">${escapeHtml(MSG.twDone)}</div>`;
         return;
       }
-      if (save) save.style.display = '';
-      if (skip) skip.style.display = '';
+      const st = steps();
+      if (step >= st.length) step = st.length - 1;
+      const cur = st[step];
       prog.textContent = `${idx + 1} / ${queue.length}`;
       const g = queue[idx];
       const p = g.rep;
@@ -2019,71 +2051,82 @@
       const author = p.displayName || p.screenName || p.title || '';
       const text = (p.text && p.text !== author) ? p.text : (p.title && p.title !== author ? p.title : '');
       const chip = (t, on) => `<button class="tw-chip${on ? ' on' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
-      // Coarse→fine: each group is a y/n gate. Collapsed by default; the header
-      // shows a selected-count badge. Open it only if this post needs that
-      // group, so you skip the rest of the vocabulary instead of scanning it.
-      let groupsHtml = '';
-      if (!tagGroups.length) {
-        groupsHtml = `<div class="tw-post-meta">${escapeHtml(MSG.twNoGroups)}</div>`;
-      } else {
-        for (const grp of tagGroups) {
-          if (!(grp.tags || []).length) continue;
-          const n = (grp.tags || []).filter((t) => sel.has(t)).length;
-          const isOpen = openGroups.has(grp.id);
-          const tagsHtml = isOpen ? `<div class="tw-chips">${grp.tags.map((t) => chip(t, sel.has(t))).join('')}</div>` : '';
-          groupsHtml += `<div class="tw-grp${isOpen ? ' open' : ''}">` +
-            `<button class="tw-grp-head" data-grp="${escapeAttr(grp.id)}"><span class="tw-grp-caret">${isOpen ? '▾' : '▸'}</span>${escapeHtml(grp.name)}${n ? `<span class="tw-grp-badge">${n}</span>` : ''}</button>` +
-            tagsHtml + `</div>`;
-        }
-      }
-      // tags on the post that belong to no group (incl. just-added) → "other"
-      const grouped = new Set(tagGroups.flatMap((gr) => gr.tags || []));
-      const others = [...sel].filter((t) => !grouped.has(t));
-      const otherHtml = others.length
-        ? `<div class="tw-grp open"><div class="tw-grp-head" style="cursor:default"><span class="tw-grp-caret">▾</span>${escapeHtml(MSG.twOther)}<span class="tw-grp-badge">${others.length}</span></div><div class="tw-chips">${others.map((t) => chip(t, true)).join('')}</div></div>`
-        : '';
-      // new-tag adder: tag + target group (existing / none / new)
-      const groupOpts = tagGroups.map((gr) => `<option value="${escapeAttr(gr.id)}">${escapeHtml(gr.name)}</option>`).join('');
-      const addHtml = `<div class="tw-add">` +
-        `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}">` +
-        `<select id="twAddGroup"><option value="">${escapeHtml(MSG.twNoGroup)}</option>${groupOpts}<option value="__new">${escapeHtml(MSG.twNewGroup)}</option></select>` +
-        `<input type="text" id="twNewGroupName" placeholder="${escapeAttr(MSG.twNewGroupName)}" style="display:none;">` +
-        `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
-      body.innerHTML =
-        `<div class="tw-post"><div class="tw-big-wrap">${thumb ? `<img class="tw-big" src="${fileSrc(thumb, 720)}" alt="">` : ''}</div>` +
-        `<div class="tw-post-side"><div class="tw-author">${escapeHtml(author)}</div>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}` +
-        `<div class="tw-group-name" style="margin-top:10px;">${escapeHtml(MSG.twKindQ)}</div>` +
+
+      const left =
+        `<div class="tw-left">` +
+        (thumb ? `<img class="tw-big" src="${fileSrc(thumb, 1080)}" alt="">` : '') +
+        `<div class="tw-meta"><span class="tw-author">${escapeHtml(author)}</span>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}</div>` +
         `<div class="tw-kind">` +
           `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
           `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
-        `</div></div></div>` +
-        `<div class="tw-groups">` + groupsHtml + otherHtml + `</div>` +
-        addHtml;
+        `</div></div>`;
+
+      // stepper: every visible group + the always-present 非表示 chip
+      const stepsHtml = st.map((s, i) => {
+        const tags = s.tags || ungroupedTags();
+        const n = tags.filter((t) => sel.has(t)).length;
+        return `<button class="tw-step${i === step ? ' on' : ''}" data-step="${i}">${escapeHtml(s.name)}${n ? `<span class="tw-step-badge">${n}</span>` : ''}</button>`;
+      }).join('') +
+        `<button class="tw-step tw-step-hid${showHidPanel ? ' on' : ''}" id="twHiddenChip">${escapeHtml(MSG.twHidden)} ${hidden.size}</button>`;
+
+      // group-visibility panel (open from the 非表示 chip; reversible anywhere)
+      const hidPanel = showHidPanel
+        ? `<div class="tw-hidpanel"><div class="tw-group-name">${escapeHtml(MSG.twShownTitle)}</div>` +
+          tagGroups.filter((gr) => (gr.tags || []).length).map((gr) =>
+            `<label class="tw-hidrow"><input type="checkbox" data-vis="${escapeAttr(gr.id)}"${hidden.has(gr.id) ? '' : ' checked'}> ${escapeHtml(gr.name)}</label>`
+          ).join('') + `</div>`
+        : '';
+
+      // current group's panel: ALL of its tags as chips (one small set per
+      // screen — recognition without scanning the whole vocabulary)
+      const isOther = cur.id === '__other';
+      const tags = isOther ? ungroupedTags() : cur.tags;
+      const chipsHtml = tags.length ? `<div class="tw-chips">${tags.map((t) => chip(t, sel.has(t))).join('')}</div>` : '';
+      const noGroupsNote = (!tagGroups.length && isOther) ? `<div class="tw-meta">${escapeHtml(MSG.twNoGroups)}</div>` : '';
+      const groupOpts = tagGroups.map((gr) => `<option value="${escapeAttr(gr.id)}">${escapeHtml(gr.name)}</option>`).join('');
+      const adder = isOther
+        ? `<div class="tw-add">` +
+          `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}">` +
+          `<select id="twAddGroup"><option value="">${escapeHtml(MSG.twNoGroup)}</option>${groupOpts}<option value="__new">${escapeHtml(MSG.twNewGroup)}</option></select>` +
+          `<input type="text" id="twNewGroupName" placeholder="${escapeAttr(MSG.twNewGroupName)}" style="display:none;">` +
+          `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`
+        : `<div class="tw-add">` +
+          `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddToGroup)}">` +
+          `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
+      const hideLink = isOther ? '' : `<button class="tw-hide-link" data-hide="${escapeAttr(cur.id)}">${escapeHtml(MSG.twHide)}</button>`;
+      const panel = `<div class="tw-panel"><div class="tw-panel-name">${escapeHtml(cur.name)}</div>${noGroupsNote}${chipsHtml}${adder}${hideLink}</div>`;
+
+      body.innerHTML = left + `<div class="tw-right"><div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
     }
 
-    async function addWithGroup() {
+    async function addTag() {
       const inp = document.getElementById('twAddInput');
       const v = (inp && inp.value || '').trim();
       if (!v) return;
       sel.add(v);
-      const gsel = document.getElementById('twAddGroup');
-      const choice = gsel ? gsel.value : '';
+      const st = steps();
+      const cur = st[step];
       let changed = false;
-      if (choice === '__new') {
-        const nameEl = document.getElementById('twNewGroupName');
-        const name = (nameEl && nameEl.value || '').trim();
-        if (name) {
-          const id = 'g' + Date.now().toString(36);
-          tagGroups.push({ id, name, tags: [v] });
-          openGroups.add(id);
-          changed = true;
+      if (cur.id !== '__other') {
+        // implicit: a tag created on a group's step joins that group
+        const grp = tagGroups.find((gr) => gr.id === cur.id);
+        if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) { grp.tags.push(v); changed = true; } }
+      } else {
+        const gsel = document.getElementById('twAddGroup');
+        const choice = gsel ? gsel.value : '';
+        if (choice === '__new') {
+          const nameEl = document.getElementById('twNewGroupName');
+          const name = (nameEl && nameEl.value || '').trim();
+          if (name) { tagGroups.push({ id: 'g' + Date.now().toString(36), name, tags: [v] }); changed = true; }
+        } else if (choice) {
+          const grp = tagGroups.find((gr) => gr.id === choice);
+          if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) grp.tags.push(v); changed = true; }
         }
-      } else if (choice) {
-        const grp = tagGroups.find((gr) => gr.id === choice);
-        if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) grp.tags.push(v); openGroups.add(grp.id); changed = true; }
       }
       if (changed && window.corpus.setTagGroups) { try { await window.corpus.setTagGroups(tagGroups); } catch { /* best-effort */ } }
       paint();
+      const again = document.getElementById('twAddInput');
+      if (again) again.focus();
     }
 
     async function saveCurrent() {
@@ -2100,24 +2143,53 @@
       if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
       const kindBtn = e.target.closest('.tw-chip[data-kind]');
       if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; paint(); return; }
-      const grpHead = e.target.closest('.tw-grp-head[data-grp]');
-      if (grpHead) { const id = grpHead.dataset.grp; if (openGroups.has(id)) openGroups.delete(id); else openGroups.add(id); paint(); return; }
-      if (e.target.closest('#twAddBtn')) addWithGroup();
+      const stepBtn = e.target.closest('.tw-step[data-step]');
+      if (stepBtn) { setStep(parseInt(stepBtn.dataset.step, 10)); return; }
+      if (e.target.closest('#twHiddenChip')) { showHidPanel = !showHidPanel; paint(); return; }
+      const hideBtn = e.target.closest('.tw-hide-link[data-hide]');
+      if (hideBtn) { hidden.add(hideBtn.dataset.hide); saveHidden(); paint(); return; }
+      const big = e.target.closest('.tw-big');
+      if (big) { openGallery(buildGroupGalleryItems(queue[idx]), 0); return; }
+      if (e.target.closest('#twAddBtn')) addTag();
     });
     body.addEventListener('change', (e) => {
       if (e.target.id === 'twAddGroup') {
         const el = document.getElementById('twNewGroupName');
         if (el) el.style.display = e.target.value === '__new' ? '' : 'none';
+        return;
+      }
+      const vis = e.target.closest('input[data-vis]');
+      if (vis) {
+        if (vis.checked) hidden.delete(vis.dataset.vis); else hidden.add(vis.dataset.vis);
+        saveHidden();
+        paint();
       }
     });
-    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.id === 'twAddInput' || e.target.id === 'twNewGroupName')) { e.preventDefault(); addWithGroup(); } });
+    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.id === 'twAddInput' || e.target.id === 'twNewGroupName')) { e.preventDefault(); e.stopPropagation(); addTag(); } });
 
-    document.getElementById('twSave').addEventListener('click', async () => { await saveCurrent(); gotoStep(idx + 1); });
-    document.getElementById('twSkip').addEventListener('click', () => gotoStep(idx + 1));
-    document.getElementById('twFinish').addEventListener('click', close);
+    document.getElementById('twSave').addEventListener('click', saveNext);
+    document.getElementById('twSkip').addEventListener('click', () => gotoImage(idx + 1));
+    document.getElementById('twBack').addEventListener('click', back);
+    document.getElementById('twNext').addEventListener('click', next);
     document.getElementById('twClose').addEventListener('click', close);
     view.addEventListener('click', (e) => { if (e.target === view) close(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !view.hidden) close(); });
+    // keyboard: ←/→ walk groups, Enter = 次へ, Ctrl+Enter = 保存して次の画像
+    // (tagging is high-frequency — keep hands off the mouse). Esc closes,
+    // except while the gallery zoom is on top.
+    document.addEventListener('keydown', (e) => {
+      if (view.hidden) return;
+      if (e.key === 'Escape') {
+        if (!lightbox.classList.contains('show')) close();
+        return;
+      }
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (idx >= queue.length) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNext(); }
+      else if (e.key === 'Enter') { e.preventDefault(); next(); }
+    });
     const launch = document.getElementById('tagWizardBtn');
     if (launch) launch.addEventListener('click', open);
   })();
