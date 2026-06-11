@@ -530,7 +530,10 @@
     /* --- Image lightbox --- */
     .lightbox-overlay {
       display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.85); z-index: 11000;
+      /* Quick Look-style: lighter dim + blur so the grid ghosts behind the
+         image instead of vanishing — keeps spatial context, image still pops. */
+      background: rgba(0,0,0,0.72); z-index: 11000;
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       justify-content: center; align-items: center;
       cursor: zoom-out;
     }
@@ -607,8 +610,9 @@
        picker it opens share one look. */
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
-      background: var(--surface); border: 1px solid var(--border-strong);
-      border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px; display: none;
+      background: var(--glass-bg); border: 1px solid var(--border-strong);
+      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
     .fold-menu.show { display: block; animation: corpusPopIn 150ms var(--ease-out) both; }
     .fold-menu .fm-row {
@@ -685,8 +689,9 @@
 
     /* --- Popovers --- */
     .qf-popover {
-      position: fixed; background: var(--surface); border-radius: 10px;
-      box-shadow: var(--shadow-pop); border: 1px solid var(--border); padding: 16px;
+      position: fixed; background: var(--glass-bg); border-radius: 10px;
+      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--border); padding: 16px;
       z-index: 1001; min-width: 260px;
     }
     .qf-backdrop {
@@ -744,7 +749,8 @@
       position: sticky; top: 0; z-index: 10;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       margin: -24px -32px 16px; padding: 12px 32px;
-      background: var(--bg); border-bottom: 1px solid var(--border);
+      background: var(--glass-bg-bar); border-bottom: 1px solid var(--border);
+      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
     }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far
@@ -1429,8 +1435,13 @@
     @media (max-width: 1279px) {
       .inspector {
         position: fixed; top: 0; right: 0;
-        border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+        border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg), var(--glass-edge);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
+        /* Floating over the grid -> glass. The inline (wide) column stays
+           solid: it sits BESIDE content, nothing to blur. High tint (88%)
+           because the panel is text-dense. */
+        background: var(--glass-bg-panel);
+        backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       }
     }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
@@ -1458,11 +1469,22 @@
     /* transient toast (e.g. "added to folder") — shared, top-level, fixed */
     .iv-toast {
       position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(8px);
-      background: rgba(0,0,0,0.86); color: #fff; padding: 9px 18px; border-radius: 20px;
+      background: rgba(20,22,26,0.68); color: #fff; padding: 9px 18px; border-radius: 20px;
+      backdrop-filter: blur(16px) saturate(130%); -webkit-backdrop-filter: blur(16px) saturate(130%);
+      border: 1px solid rgba(255,255,255,0.12);
       font-size: 13px; z-index: 12000; opacity: 0; pointer-events: none;
-      transition: opacity .15s, transform .15s; box-shadow: var(--shadow-pop);
+      transition: opacity .15s, transform .15s; box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,0.10);
     }
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* a11y escape hatch: solid surfaces when the OS asks for less transparency */
+    @media (prefers-reduced-transparency: reduce) {
+      .fold-menu, .qf-popover { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    }
   </style>
 
   <!-- Motion: tasteful, fast entrance/open animations layered on top of the

@@ -226,6 +226,23 @@
   --dur-fast: 0.1s;
   --dur-base: 0.15s;
   --dur-slow: 0.24s;
+
+  /* ---- Glass (frosted) — TRANSIENT floating surfaces only (menus/flyouts/
+     activebar/slide-over/toast). Persistent surfaces (sidebar, cards, inline
+     inspector) stay solid: glass needs rich content BEHIND it to read as
+     glass, and a flat --bg behind the sidebar gives nothing to blur.
+     Tint stays >=70% for 12px text legibility over busy thumbnails
+     (Fluent acrylic: 70-85% tint on menus). srgb mix per the red-mix rule. */
+  --glass-bg:      color-mix(in srgb, var(--surface) 78%, transparent);
+  --glass-bg-bar:  color-mix(in srgb, var(--bg) 70%, transparent);
+  --glass-bg-panel:color-mix(in srgb, var(--surface) 88%, transparent);
+  --glass-filter:  blur(24px) saturate(140%);
+  --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.35);
+}
+
+[data-theme="dark"] {
+  /* Dark glass: the white top-edge highlight is the main "glass" cue. */
+  --glass-edge: inset 0 1px 0 rgba(255,255,255,0.07);
 }
 
 [data-theme="dark"] {
