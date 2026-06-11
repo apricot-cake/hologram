@@ -86,6 +86,15 @@
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
+    detailUpload: _s('detailUpload'),
+    sauceTitle: _s('sauceTitle'),
+    sauceSearching: _s('sauceSearching'),
+    sauceNoKey: _s('sauceNoKey'),
+    sauceNoHits: _s('sauceNoHits'),
+    sauceErr: _s('sauceErr'),
+    sauceOpenSettings: _s('sauceOpenSettings'),
+    settingsSauceTitle: _s('settingsSauceTitle'),
+    hintSaucenao: _s('hintSaucenao'),
     imagesCount: _f1('imagesCount'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
@@ -309,6 +318,9 @@
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
+  setText('settingsSauceTitle', MSG.settingsSauceTitle);
+  setText('hintSaucenao', MSG.hintSaucenao);
+  setText('sauceTitle', MSG.sauceTitle);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1942,6 +1954,57 @@
     showToast(MSG.deleted);
   }
 
+  // === Reverse image search by upload (SauceNAO API) ===
+  function openSauceModal(html) {
+    document.getElementById('sauceBody').innerHTML = html;
+    document.getElementById('sauceModal').hidden = false;
+  }
+  function closeSauceModal() {
+    document.getElementById('sauceModal').hidden = true;
+    document.getElementById('sauceBody').innerHTML = '';
+  }
+  async function sauceUploadSearch(image) {
+    if (!image) return;
+    openSauceModal(`<div class="sauce-note">${escapeHtml(MSG.sauceSearching)}</div>`);
+    let res;
+    try { res = await window.corpus.saucenaoSearch(image); } catch (e) { res = { ok: false, error: e.message }; }
+    if (!res || !res.ok) {
+      if (res && res.error === 'no-key') {
+        openSauceModal(`<div class="sauce-note">${escapeHtml(MSG.sauceNoKey)}<br><a id="sauceToSettings">${escapeHtml(MSG.sauceOpenSettings)} →</a></div>`);
+        const go = document.getElementById('sauceToSettings');
+        if (go) go.onclick = () => { closeSauceModal(); document.getElementById('settingsBtn').click(); setTimeout(() => { const k = document.getElementById('saucenaoKey'); if (k) k.focus(); }, 150); };
+      } else {
+        openSauceModal(`<div class="sauce-note">${escapeHtml(MSG.sauceErr)}: ${escapeHtml((res && res.error) || '')}</div>`);
+      }
+      return;
+    }
+    if (!res.results.length) { openSauceModal(`<div class="sauce-note">${escapeHtml(MSG.sauceNoHits)}</div>`); return; }
+    const rows = res.results.map((r) => {
+      const name = [r.title, r.author].filter(Boolean).join(' / ');
+      return `<div class="sauce-row">` +
+        (r.thumbnail ? `<img src="${escapeAttr(r.thumbnail)}" alt="" referrerpolicy="no-referrer">` : '<div class="sauce-thumb-x"></div>') +
+        `<div class="sauce-meta"><div class="sauce-sim">${r.similarity.toFixed(1)}%</div><div class="sauce-name">${escapeHtml(name)}</div></div>` +
+        `<a class="sauce-open" data-url="${escapeAttr(r.url)}">${escapeHtml(MSG.detailOpen)} ↗</a></div>`;
+    }).join('');
+    openSauceModal(rows);
+    document.getElementById('sauceBody').querySelectorAll('.sauce-open').forEach((a) => {
+      a.onclick = () => window.corpus.openExternal(a.dataset.url);
+    });
+  }
+  (function setupSauceModal() {
+    const m = document.getElementById('sauceModal');
+    const x = document.getElementById('sauceClose');
+    if (x) x.onclick = closeSauceModal;
+    if (m) m.addEventListener('click', (e) => { if (e.target === m) closeSauceModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.hidden) closeSauceModal(); });
+    // Settings: load the saved SauceNAO API key and persist on edit.
+    const keyInput = document.getElementById('saucenaoKey');
+    if (keyInput && window.corpus.getConfig) {
+      window.corpus.getConfig().then((cfg) => { if (cfg && cfg.saucenaoApiKey) keyInput.value = cfg.saucenaoApiKey; }).catch(() => {});
+      keyInput.addEventListener('change', () => { window.corpus.setSaucenaoKey(keyInput.value); });
+    }
+  })();
+
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     document.getElementById('postDetail').hidden = true;
@@ -2027,6 +2090,7 @@
       `<a class="iv-insp-open" id="pdEdit">${escapeHtml(MSG.tipEdit)}</a>` +
       (srcImageUrl ? `<a class="iv-insp-open" id="pdSauce">${escapeHtml(MSG.detailSauce)} ↗</a>` : '') +
       (srcImageUrl ? `<a class="iv-insp-open" id="pdAscii">${escapeHtml(MSG.detailAscii)} ↗</a>` : '') +
+      `<a class="iv-insp-open" id="pdUpload">${escapeHtml(MSG.detailUpload)}</a>` +
       groupBtn +
       `</div>`;
     document.getElementById('postDetail').hidden = false;
@@ -2046,6 +2110,7 @@
     const ed = document.getElementById('pdEdit'); if (ed) ed.onclick = () => openEditOverlay(g.rep, g.records);
     const sa = document.getElementById('pdSauce'); if (sa) sa.onclick = () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl));
     const as = document.getElementById('pdAscii'); if (as) as.onclick = () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl));
+    const up = document.getElementById('pdUpload'); if (up) up.onclick = () => sauceUploadSearch(thumbFile || captureFile(p));
     const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
     const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
     const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));

@@ -66,6 +66,14 @@ const evalJs = `(async () => {
   const hasActions = !!document.getElementById('pdEdit') && !!document.getElementById('pdOpen') && !!document.getElementById('pdClose');
   // card 0 has a public original → both reverse-image-search links present
   const sauceShown = !!document.getElementById('pdSauce') && !!document.getElementById('pdAscii');
+  // upload search exists on every post; with no API key configured it opens the
+  // results modal with the "set your key" guidance (full IPC round-trip).
+  const uploadShown = !!document.getElementById('pdUpload');
+  document.getElementById('pdUpload').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await waitFor(() => { const m = document.getElementById('sauceModal'); return m && !m.hidden && /API|キー/.test(document.getElementById('sauceBody').textContent); }, 4000);
+  const uploadNoKey = !document.getElementById('sauceModal').hidden && !!document.getElementById('sauceToSettings');
+  // close the modal so it doesn't block later checks
+  document.getElementById('sauceClose').click(); await wait(60);
   const posMode = getComputedStyle(insp).position;
   const layoutOk = matchMedia('(max-width: 1279px)').matches ? posMode === 'fixed' : posMode === 'sticky';
 
@@ -119,7 +127,7 @@ const evalJs = `(async () => {
   const galleryNormal = lightbox.classList.contains('show');
   esc(); await wait(60);
 
-  return { isAside, opened, contentOk, ring0, cursorSwap, hasActions, sauceShown, sauceHiddenNoMedia, layoutOk, slashWorks,
+  return { isAside, opened, contentOk, ring0, cursorSwap, hasActions, sauceShown, uploadShown, uploadNoKey, sauceHiddenNoMedia, layoutOk, slashWorks,
     swapped, ringMoved, outsideCloses, editOpens, editBack, ringKept, escCloses, cursorBack, galleryNormal,
     dbg: JSON.stringify({ t0, c0: cardText(card0), t2, c2: cardText(card2), narrowMode }) };
 })()`;
@@ -132,7 +140,7 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['isAside', 'opened', 'contentOk', 'ring0', 'cursorSwap', 'hasActions', 'sauceShown', 'sauceHiddenNoMedia', 'layoutOk', 'slashWorks',
+  const keys = ['isAside', 'opened', 'contentOk', 'ring0', 'cursorSwap', 'hasActions', 'sauceShown', 'uploadShown', 'uploadNoKey', 'sauceHiddenNoMedia', 'layoutOk', 'slashWorks',
     'swapped', 'ringMoved', 'outsideCloses', 'editOpens', 'editBack', 'ringKept', 'escCloses', 'cursorBack', 'galleryNormal'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
