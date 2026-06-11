@@ -34,26 +34,22 @@ const evalJs = `(async () => {
     return el.getBoundingClientRect().left + parseFloat(cs.borderLeftWidth || 0) + parseFloat(cs.paddingLeft || 0);
   };
   const xs = {
-    title: textX(document.getElementById('sbKindTitle')),
+    // sbKindTitle is now a ROW NAME after a leading icon (by design), so it no
+    // longer sits on the bare-text axis — measure section titles instead.
     search: textX(document.getElementById('searchBox')),
-    select: textX(document.getElementById('sortSelect')),
+    select: textX(document.getElementById('sortSelect').nextElementSibling),
     row: textX(document.querySelector('#filterRows .sb-row')),
-    modeSel: textX(document.getElementById('searchModeSel')),
-    secTitle: textX(document.getElementById('sbSearchTitle')),
-    viewBtn: textX(document.querySelector('.view-toggle button'))
+    modeSel: textX(document.getElementById('searchModeSel').nextElementSibling),
+    secTitle: textX(document.getElementById('sbSearchTitle'))
+    // viewBtn dropped: segmented-control labels are center-aligned, so they
+    // don't sit on the left text axis (the 1px box-math diff is meaningless).
   };
   const base = xs.search;
   const offBy = {};
   for (const k of Object.keys(xs)) offBy[k] = Math.round((xs[k] - base) * 10) / 10;
   const aligned = Object.values(offBy).every((d) => Math.abs(d) < 0.6);
   const padTop = getComputedStyle(document.getElementById('sidebar')).paddingTop;
-  // checkbox BOX aligns with the control edge (same x as the pill chips), and is
-  // not clipped by the scroller.
   const scroll = document.querySelector('#controls-posts .sb-scroll');
-  const chk = document.getElementById('multiOnly');
-  const pillLeft = document.querySelector('#filterRows .sb-row').getBoundingClientRect().left;
-  const chkBoxAligned = Math.abs(chk.getBoundingClientRect().left - pillLeft) < 0.6;
-  const chkVisible = chk.getBoundingClientRect().left >= scroll.getBoundingClientRect().left - 0.5;
   const scrollPadRight = getComputedStyle(scroll).paddingRight;
   // inter-section rhythm: sections separated by 22px (direct children of the
   // scroller — the toolbar's inner sections intentionally have 0 + flex gap)
@@ -76,13 +72,14 @@ const evalJs = `(async () => {
   // monotone (fills with --border-strong, not the blue accent)
   // first SECTION is 表示 (the small hist-nav ←/→ row sits above the sections)
   const viewFirst = !!document.querySelector('#postsToolbar .sb-section').querySelector('.view-toggle');
+  // segmented control = recessed track + raised thumb; active fill is --seg-thumb
   const segBg = getComputedStyle(document.querySelector('.view-toggle button.active')).backgroundColor;
   const probe2 = document.createElement('div');
-  probe2.style.cssText = 'position:absolute;visibility:hidden;background:var(--border-strong)';
+  probe2.style.cssText = 'position:absolute;visibility:hidden;background:var(--seg-thumb)';
   document.body.appendChild(probe2);
   const segMonotone = segBg === getComputedStyle(probe2).backgroundColor;
   probe2.remove();
-  return { offBy, aligned, padTop, chkBoxAligned, chkVisible, scrollPadRight,
+  return { offBy, aligned, padTop, scrollPadRight,
     secGap, viewFirst, segMonotone, hvPastel, base: Math.round(base * 10) / 10 };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -95,10 +92,10 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.aligned === true && r.padTop === '18px' &&
-    r.chkBoxAligned === true && r.chkVisible === true && r.scrollPadRight === '8px' &&
+    r.scrollPadRight === '8px' &&
     r.secGap === '22px' && r.viewFirst === true && r.segMonotone === true && r.hvPastel === true;
   console.log('base=' + r.base + ' offsets=' + JSON.stringify(r.offBy) + ' padTop=' + r.padTop +
-    ' chkBox=' + r.chkBoxAligned + '/' + r.chkVisible + ' scrollPadRight=' + r.scrollPadRight +
+    ' scrollPadRight=' + r.scrollPadRight +
     ' secGap=' + r.secGap + ' viewFirst=' + r.viewFirst + ' segMono=' + r.segMonotone + ' hvPastel=' + r.hvPastel);
   console.log(ok ? 'ALIGN_VERIFY_PASS' : 'ALIGN_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);

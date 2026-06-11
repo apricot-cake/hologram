@@ -75,7 +75,10 @@ const evalJs = `(async () => {
   click(tagChip()); await wait(80);            // 後続テストのため解除
 
   // 3) 複数画像のみ + ungroup via the ℹ popup → the two singles stay (sticky)
-  document.getElementById('multiOnly').click(); await wait(120);
+  // 複数画像 is now a row inside the メディア flyout (folded from the old checkbox).
+  document.querySelector('#filterRows [data-qfrow="media"]').click(); await wait(80);
+  [...document.querySelectorAll('.qf-pop .fm-row[data-qfval]')].find((r) => r.dataset.qfval === '__multi').click();
+  await wait(120);
   const multiOne = cards() === 1;              // only the p2+p3 group
   grid.querySelector('.post-card .info-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(60);

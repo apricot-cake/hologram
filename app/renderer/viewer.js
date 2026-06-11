@@ -395,6 +395,62 @@
   sortSelect.options[5].textContent = MSG.sortCaptured;
   sortSelect.options[6].textContent = MSG.sortLikesPct;
 
+  // --- Custom glass dropdown: a native <select> popup is OS-drawn and can't
+  // be glassed, so we hide the select (keeping it as the value source — all
+  // existing change handlers still fire) and drive a field-styled trigger +
+  // a glass option list that matches the flyout menus. ---
+  const csHosts = [];
+  const csPop = document.createElement('div');
+  csPop.className = 'fold-menu cs-pop';
+  document.body.appendChild(csPop);
+  let csSel = null, csBtn = null;
+  function hideCsPop() { csPop.classList.remove('show'); csSel = null; csBtn = null; }
+  function csLabel(sel) { const o = sel.options[sel.selectedIndex]; return o ? o.textContent : ''; }
+  function refreshCustomSelects() { for (const s of csHosts) if (s.__csBtn) s.__csBtn.querySelector('.cs-label').textContent = csLabel(s); }
+  function openCsPop(sel, btn) {
+    if (csPop.classList.contains('show') && csSel === sel) { hideCsPop(); return; }
+    csSel = sel; csBtn = btn;
+    csPop.innerHTML = Array.from(sel.options).map((o, i) =>
+      `<div class="fm-row cs-opt${i === sel.selectedIndex ? ' cs-on' : ''}" data-i="${i}"><span class="fm-name">${escapeHtml(o.textContent)}</span>${i === sel.selectedIndex ? '<span class="fm-check">✓</span>' : ''}</div>`).join('');
+    const r = btn.getBoundingClientRect();
+    csPop.style.left = r.left + 'px';
+    csPop.style.top = (r.bottom + 4) + 'px';
+    csPop.style.minWidth = r.width + 'px';
+    csPop.classList.add('show');
+    const pr = csPop.getBoundingClientRect();
+    if (pr.bottom > innerHeight - 8) csPop.style.top = Math.max(8, r.top - pr.height - 4) + 'px';
+    if (pr.right > innerWidth - 8) csPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+  }
+  csPop.addEventListener('click', (e) => {
+    const opt = e.target.closest('.cs-opt');
+    if (!opt || !csSel) return;
+    const idx = parseInt(opt.dataset.i, 10);
+    if (idx !== csSel.selectedIndex) {
+      csSel.selectedIndex = idx;
+      csSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    refreshCustomSelects();
+    hideCsPop();
+  });
+  document.addEventListener('click', (e) => {
+    if (csPop.classList.contains('show') && !csPop.contains(e.target) && !(csBtn && csBtn.contains(e.target))) hideCsPop();
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCsPop(); });
+  function enhanceSelect(sel) {
+    if (!sel || sel.__csBtn) return;
+    sel.classList.add('cs-host');
+    csHosts.push(sel);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cs-btn';
+    btn.innerHTML = '<span class="cs-label"></span><span class="cs-arrow">▾</span>';
+    btn.querySelector('.cs-label').textContent = csLabel(sel);
+    sel.insertAdjacentElement('afterend', btn);
+    sel.__csBtn = btn;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openCsPop(sel, btn); });
+  }
+  enhanceSelect(sortSelect);
+
   // --- Query Field ---
   const ENG_TYPE_LABELS = {
     likes: MSG.qfEngLikes,
@@ -652,7 +708,14 @@
         return out;
       }
       case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
-      case 'media': return [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
+      case 'media': {
+        const out = [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
+        // 複数画像 = group-level (>1 image); the old standalone checkbox folded
+        // in here since it's an attachment property. Routed to multiOnly, not
+        // a per-record media filter (which is mediaType image/video/gif).
+        out.push({ v: '__multi', l: MSG.qfMultiImage, on: multiOnly });
+        return out;
+      }
       case 'tag': {
         let tags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
         if (qfTagGroup === '__other') {
@@ -741,6 +804,14 @@
     const val = e.target.closest('[data-qfval]');
     if (val && qfCat) {
       const v = val.dataset.qfval;
+      // 複数画像 (media flyout): toggles the group-level multiOnly, not a filter.
+      if (qfCat === 'media' && v === '__multi') {
+        multiOnly = !multiOnly;
+        renderQfPop();
+        renderFilterBadges();
+        renderPosts();
+        return;
+      }
       const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
       const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
       if (i >= 0) {
@@ -966,7 +1037,6 @@
   setText('sbUserKindTitle', MSG.userKindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
-  setText('multiOnlyLabel', MSG.multiOnly);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
@@ -1014,6 +1084,7 @@
     const counts = {};
     for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
     counts.platform = (counts.platform || 0) + (counts.instance || 0);
+    if (multiOnly) counts.media = (counts.media || 0) + 1;   // 複数画像 folded into メディア
     document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
       const n = counts[b.dataset.badge] || 0;
       b.textContent = n || '';
@@ -1488,8 +1559,8 @@
     tagJoin = s.join;
     document.getElementById('searchBox').value = s.search;
     sortSelect.value = s.sort;
+    refreshCustomSelects();
     multiOnly = !!s.multi;
-    document.getElementById('multiOnly').checked = multiOnly;
     renderPostFolders();
     renderQueryChips();
     renderPosts();
@@ -2810,7 +2881,6 @@
     tileResizeT = setTimeout(refreshTileSlider, 150);
   });
 
-  document.getElementById('multiOnly').addEventListener('change', (e) => { multiOnly = e.target.checked; renderPosts(); });
   document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
     tileOverlay = e.target.checked;
     window.corpus.setPref('tileOverlay', tileOverlay);
@@ -2831,7 +2901,7 @@
       tileOverlay = false;
       document.getElementById('tileOverlayToggle').checked = false;
     }
-    if (prefs.sortBy) sortSelect.value = prefs.sortBy;
+    if (prefs.sortBy) { sortSelect.value = prefs.sortBy; refreshCustomSelects(); }
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
     // Re-render once after applying the saved view mode + sort, so the initial
@@ -2945,8 +3015,10 @@
     if (!searchModeSel || !window.corpusSearch) return;
     searchModeSel.value = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'normal';
     searchModeSel.title = MSG.searchModeTitle;
+    refreshCustomSelects();
   }
   if (searchModeSel && window.corpusSearch) {
+    enhanceSelect(searchModeSel);
     searchModeSel.addEventListener('change', () => window.corpusSearch.setMode(searchModeSel.value));
     window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
     syncSearchToggle();
