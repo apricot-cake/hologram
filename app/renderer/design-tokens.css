@@ -81,6 +81,10 @@
   --active:        var(--gray-150);
   --focus-ring:    color-mix(in oklch, var(--blue-500) 45%, transparent);
 
+  /* segmented control (recessed track + raised thumb, macOS-style) */
+  --seg-track:     var(--gray-100);
+  --seg-thumb:     var(--gray-0);
+
   --accent:         var(--blue-600);
   --accent-hover:   var(--blue-700);
   --accent-fg:      #ffffff;
@@ -131,6 +135,10 @@
   --hover:         #202226;
   --active:        #292b30;
   --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
+
+  /* dark: track recessed below the sidebar (#202226), thumb raised above it */
+  --seg-track:     #1a1c20;
+  --seg-thumb:     #34373d;
 
   --accent:         var(--blue-500);
   --accent-hover:   var(--blue-400);

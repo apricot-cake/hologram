@@ -198,17 +198,19 @@
     /* --- Sidebar control readability: in dark mode the sidebar bg (--sidebar-bg)
        is LIGHTER than --surface, so surface-colored controls look sunken/dark.
        Raise them to --surface-3 + --border-strong (same fix as the sb-chips). --- */
+    /* Inputs (search/select/date/number): FILLED field + hairline border.
+       Outline-only transparent boxes read as wireframe (user-rejected);
+       borders are an input-only affordance and even there stay subtle. */
     #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
-    #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter,
-    #sidebar .view-toggle button:not(.active), #sidebar .icon-btn {
-      background: var(--surface-3); border-color: var(--border-strong); color: var(--text);
+    #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter {
+      background: var(--surface-3); border-color: var(--border-subtle); color: var(--text);
     }
-    /* re-assert the accent hover/focus the block above would otherwise shadow */
+    /* icon buttons (history ←→ etc.): ghost — bare glyph, fill on hover */
+    #sidebar .icon-btn { background: transparent; border-color: transparent; color: var(--text-muted); }
     #sidebar .chip:not(.active):hover,
-    /* Segmented control hover: monotone like its active state — an accent
-       border here only showed up as a stray blue divider line. */
+    /* Segmented control hover: subtle neutral inside the track */
     #sidebar .view-toggle button:not(.active):hover { background: var(--active); color: var(--text-strong); }
-    #sidebar .icon-btn:hover { background: var(--hover); }
+    #sidebar .icon-btn:hover { background: var(--hover); color: var(--text); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
        dense list, so tall bars waste vertical room (vertical padding only —
@@ -228,29 +230,29 @@
     .engagement-input:focus { border-color: var(--accent); }
 
     /* --- View toggle --- */
+    /* Segmented control = recessed track + raised thumb (macOS/iOS style).
+       No outer border, no dividers — outlined segments read as wireframe. */
     .view-toggle {
-      display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+      display: flex; border: none; border-radius: 8px;
+      background: var(--seg-track); padding: 2px; gap: 2px;
     }
     .view-toggle button {
       flex: 1;   /* fill the control: content-sized buttons left a dead sliver at the edge that ignored hover */
-      background: var(--surface); border: none; padding: 5px 12px;
+      background: transparent; border: none; padding: 4px 12px; border-radius: 6px;
       cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1;
-      transition: all 0.15s;
+      transition: background .15s, color .15s;
     }
-    .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
-    /* Monotone segmented control: the active segment is a lighter neutral fill,
-       not the accent (an accent fill made it float against the monotone sidebar). */
-    .view-toggle button.active { background: var(--border-strong); color: var(--text-strong); }
+    .view-toggle button.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--shadow-xs); }
 
     /* Browser-style back/forward over the filter & view state: two ghost
        square buttons matching the sidebar's control palette */
     .hist-nav { display: flex; gap: 6px; align-self: flex-start; }
     .hist-nav button {
       width: 30px; height: 27px; display: flex; align-items: center; justify-content: center;
-      background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 6px;
-      color: var(--text); cursor: pointer; transition: color .12s, border-color .12s, opacity .12s;
+      background: transparent; border: 1px solid transparent; border-radius: 6px;
+      color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s, opacity .12s;
     }
-    .hist-nav button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+    .hist-nav button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
     .hist-nav button:disabled { opacity: .3; cursor: default; }
 
     /* Tile-size ± (shown only in the tile density) */
@@ -832,14 +834,17 @@
       border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
     }
     .sb-tag-filter:focus { border-color: var(--accent); }
+    /* Value chips: FILLED pill, no outline (GitHub topics / Notion tags).
+       The transparent border keeps geometry so the active tint border can
+       appear without layout shift. Hover = neutral lift, never accent. */
     .sb-chip {
-      background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 12px;
+      background: var(--surface-3); border: 1px solid transparent; border-radius: 12px;
       padding: 3px 12px; font-size: 11px; color: var(--text);
       cursor: pointer; white-space: nowrap;
       /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
-    .sb-chip:hover { border-color: var(--accent); color: var(--accent); }
+    .sb-chip:hover { background: var(--active); color: var(--text-strong); }
     /* Active = tinted, not a solid saturated fill (淡色地＋アクセント文字＋細縁
        — solid 単色のべた塗りはチープに見えるため、Linear/GitHub 系の選択表現に) */
     .sb-chip.active {
