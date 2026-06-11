@@ -474,6 +474,9 @@ ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
       if ('userKind' in patch) {
         rec.userKind = (patch.userKind === 'plain' || patch.userKind === 'media') ? patch.userKind : null;
       }
+      // Tagging "session" marks a post reviewed even when it gets no tags, so
+      // it leaves the untagged queue instead of resurfacing every session.
+      if ('tagReviewed' in patch) rec.tagReviewed = !!patch.tagReviewed;
     }
     rec.updatedAt = new Date().toISOString();        // record was modified in Corpus
     await fs.promises.writeFile(jsonPath, JSON.stringify(rec, null, 2), 'utf8');

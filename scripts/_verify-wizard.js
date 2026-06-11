@@ -115,15 +115,22 @@ const evalJs = `(async () => {
   await waitFor(() => document.getElementById('twProgress').textContent.trim() === '2 / 2', 4000);
   const advanced = document.getElementById('twProgress').textContent.trim() === '2 / 2';
 
-  // second post: skip → done; Esc closes
-  click(document.getElementById('twSkip'));
-  await wait(150);
+  // second post: save WITHOUT tags → marks reviewed (no スキップ button)
+  const noSkipBtn = !document.getElementById('twSkip');
+  click(document.getElementById('twSave'));
+  await wait(200);
   const doneShown = /お疲れ|done|ありません/i.test(body.textContent) && document.getElementById('twSave').style.display === 'none';
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await wait(150);
   const closed = view.hidden;
+  // re-open: both posts are now handled (one tagged, one reviewed-no-tags) →
+  // the queue is empty, proving reviewed posts don't resurface
+  click(document.getElementById('tagWizardBtn'));
+  await wait(250);
+  const queueEmptied = /お疲れ|done|ありません/i.test(body.textContent);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindCollapsed, kindReexpand, kindOn, badgeOn, step2, badgeKept,
-    otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, doneShown, closed };
+    otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, noSkipBtn, doneShown, closed, queueEmptied };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -150,7 +157,7 @@ child.on('close', () => {
   } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
   const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindCollapsed', 'kindReexpand', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
-    'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'doneShown', 'closed'];
+    'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'noSkipBtn', 'doneShown', 'closed', 'queueEmptied'];
   const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
   console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);
   console.log(ok ? 'WIZARD_VERIFY_PASS' : 'WIZARD_VERIFY_FAIL');

@@ -96,7 +96,6 @@
     twAdd: _s('twAdd'),
     twBack: _s('twBack'),
     twNext: _s('twNext'),
-    twSkip: _s('twSkip'),
     twSave: _s('twSave'),
     twDone: _s('twDone'),
     twNoGroups: _s('twNoGroups'),
@@ -333,7 +332,6 @@
   setText('twTitle', MSG.twTitle);
   setText('twBack', MSG.twBack);
   setText('twNext', MSG.twNext);
-  setText('twSkip', MSG.twSkip);
   setText('twSave', MSG.twSave);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
@@ -1993,7 +1991,9 @@
     let kindEditing = false;    // force the kind choice expanded (re-select)
     let showHidPanel = false;   // group-visibility panel open?
 
-    const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length));
+    // Queue = posts not yet handled here: no tags AND not marked reviewed.
+    // Saving (even with no tags) sets tagReviewed so it stops resurfacing.
+    const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length) && !r.tagReviewed);
     // visible group steps + the trailing 未分類 step (ungrouped tags + adder)
     const steps = () => tagGroups
       .filter((grp) => (grp.tags || []).length && !hidden.has(grp.id))
@@ -2034,7 +2034,7 @@
 
     function paint() {
       const atEnd = idx >= queue.length;
-      for (const id of ['twSave', 'twSkip', 'twBack', 'twNext']) {
+      for (const id of ['twSave', 'twBack', 'twNext']) {
         const b = document.getElementById(id);
         if (b) b.style.display = atEnd ? 'none' : '';
       }
@@ -2144,8 +2144,10 @@
       const g = queue[idx];
       if (!g) return;
       const tags = [...sel];
-      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { userKind: kind })
-        .then(() => { r.tags = tags.slice(); r.userKind = kind; })
+      // Pressing save = "I handled this image" → mark reviewed so it leaves the
+      // queue even when it got no tags.
+      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { userKind: kind, tagReviewed: true })
+        .then(() => { r.tags = tags.slice(); r.userKind = kind; r.tagReviewed = true; })
         .catch(() => {})));
     }
 
@@ -2180,7 +2182,6 @@
     body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.id === 'twAddInput' || e.target.id === 'twNewGroupName')) { e.preventDefault(); e.stopPropagation(); addTag(); } });
 
     document.getElementById('twSave').addEventListener('click', saveNext);
-    document.getElementById('twSkip').addEventListener('click', () => gotoImage(idx + 1));
     document.getElementById('twBack').addEventListener('click', back);
     document.getElementById('twNext').addEventListener('click', next);
     document.getElementById('twClose').addEventListener('click', close);
