@@ -25,6 +25,7 @@ const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const puppeteer = require('puppeteer');
 const { configDir, defaultLibraryDir } = require('../native-host/paths');
+const { fetchXTweet } = require('../extension/metadata');
 
 const SRC_EXT_DIR = path.join(__dirname, '..', 'extension');
 const EXPECTED_ID = 'abmipnnhieahemoninjnhgoofahhhjjc'; // allowed_origins of com.corpus.host
@@ -64,13 +65,85 @@ async function j(url, opts) {
   return r.json();
 }
 
-async function pickPixiv() {
-  const r = await j('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', { headers: { Referer: 'https://www.pixiv.net/' } });
-  const items = Array.isArray(r.contents) ? r.contents : [];
-  const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';
-  const single = items.find((c) => ok(c) && Number(c.illust_page_count) === 1);
-  const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
-  return { single, multi };
+// Each cell: { id, platform, url, kind:'click'|'drag', waitSel, clickSel?, dragSel? }
+//  - waitSel  confirms the post DOM loaded
+//  - clickSel element to click (capturePost resolves the post by walking up)
+//  - dragSel  the post's own image to drag (drag-save cells)
+// Drag cells only exist where manifest content_scripts inject drag.js
+// (x / bsky / pixiv); Misskey & Mastodon are click-only by design.
+
+async function pickPixiv(cells) {
+  try {
+    const r = await j('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', { headers: { Referer: 'https://www.pixiv.net/' } });
+    const items = Array.isArray(r.contents) ? r.contents : [];
+    const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';
+    const single = items.find((c) => ok(c) && Number(c.illust_page_count) === 1);
+    const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
+    const url = (c) => `https://www.pixiv.net/artworks/${c.illust_id}`;
+    const W = 'main figure img', I = 'main figure img';
+    if (single) cells.push({ id: 'A-5a', platform: 'pixiv', url: url(single), kind: 'click', waitSel: W, clickSel: I });
+    if (multi) cells.push({ id: 'A-5b', platform: 'pixiv', url: url(multi), kind: 'click', waitSel: W, clickSel: I });
+    if (multi) cells.push({ id: 'A-5d', platform: 'pixiv', url: url(multi), kind: 'drag', waitSel: W, dragSel: I });
+  } catch (e) { console.log('pixiv 選別スキップ:', e.message); }
+}
+
+async function pickX(cells) {
+  // No public search API — validate evergreen posts via syndication, then drive
+  // the real pages. (x.com may gate logged-out views; cells fail gracefully.)
+  try {
+    const alive = async (id) => { try { const r = await fetchXTweet({ id, screenName: null }, `https://x.com/i/web/status/${id}`); return r && r.text; } catch { return false; } };
+    const photo = '266031293945503744';   // @BarackObama, single photo, evergreen
+    const W = 'article[data-testid="tweet"]';
+    if (await alive(photo)) {
+      const url = `https://x.com/BarackObama/status/${photo}`;
+      cells.push({ id: 'A-1l', platform: 'x', url, kind: 'click', waitSel: W, clickSel: W });
+      cells.push({ id: 'A-1m', platform: 'x', url, kind: 'drag', waitSel: `${W} img[src*="pbs.twimg.com/media"]`, dragSel: `${W} img[src*="pbs.twimg.com/media"]` });
+    }
+  } catch (e) { console.log('x 選別スキップ:', e.message); }
+}
+
+async function pickBluesky(cells) {
+  try {
+    const posts = [];
+    for (const actor of ['bsky.app', 'pfrazee.com', 'jay.bsky.team']) {
+      try { const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=60`); for (const it of f.feed || []) if (it.post) posts.push(it.post); } catch { /* next */ }
+    }
+    const urlOf = (p) => { const m = (p.uri || '').match(/\/app\.bsky\.feed\.post\/([^/]+)$/); return (m && p.author) ? `https://bsky.app/profile/${p.author.handle}/post/${m[1]}` : null; };
+    const imgs = (p) => { const e = p.embed || {}; return (e.$type || '').includes('recordWithMedia') ? ((e.media && e.media.images) || []) : (e.images || []); };
+    const single = posts.find((p) => urlOf(p) && imgs(p).length === 1);
+    const multi = posts.find((p) => urlOf(p) && imgs(p).length > 1);
+    const W = '[data-testid^="postThreadItem-by-"]';
+    const IMG = '[data-testid^="postThreadItem-by-"] img[src*="/img/feed_"]';
+    if (single) cells.push({ id: 'A-2b', platform: 'bluesky', url: urlOf(single), kind: 'click', waitSel: W, clickSel: W });
+    if (multi) cells.push({ id: 'A-2g', platform: 'bluesky', url: urlOf(multi), kind: 'click', waitSel: W, clickSel: W });
+    if (single) cells.push({ id: 'A-2i', platform: 'bluesky', url: urlOf(single), kind: 'drag', waitSel: IMG, dragSel: IMG });
+  } catch (e) { console.log('bluesky 選別スキップ:', e.message); }
+}
+
+async function pickMisskey(cells) {
+  try {
+    const notes = await j('https://misskey.io/api/notes/global-timeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 60 }) });
+    const arr = Array.isArray(notes) ? notes : [];
+    const img = (n) => (n.files || []).some((f) => f.type && f.type.startsWith('image/') && f.type !== 'image/gif');
+    const single = arr.find((n) => n && n.id && img(n) && !n.replyId && !n.renoteId);
+    // Click the detail page's main note root (first div[tabindex="0"]). A broad
+    // 'article' could match a timeline note still on screen during the SPA
+    // transition, so the runner also asserts the saved url == the intended one.
+    if (single) cells.push({ id: 'A-3b', platform: 'misskey', url: `https://misskey.io/notes/${single.id}`, kind: 'click', waitSel: 'div[tabindex="0"] article time', clickSel: 'div[tabindex="0"]' });
+  } catch (e) { console.log('misskey 選別スキップ:', e.message); }
+}
+
+async function pickMastodon(cells) {
+  try {
+    let media = [];
+    try { media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true'); } catch { /* fallback */ }
+    if (!Array.isArray(media) || !media.length) {
+      const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
+      media = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
+    }
+    const s = (media || []).find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((m) => m.type === 'image'));
+    if (s) cells.push({ id: 'A-4b', platform: 'mastodon', url: `https://mastodon.social/@${s.account.acct}/${s.id}`, kind: 'click', waitSel: '.detailed-status, .status', clickSel: '.detailed-status, .status' });
+  } catch (e) { console.log('mastodon 選別スキップ:', e.message); }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -95,13 +168,20 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 (async () => {
   const dir = saveFolder();
   console.log(`保存先: ${dir}`);
-  const { single, multi } = await pickPixiv();
-  if (!single && !multi) { console.error('pixivランキングから対象を選別できず'); process.exit(1); }
 
+  // Optional platform filter: node e2e-capture-test.js bluesky misskey
+  const only = process.argv.slice(2).map((s) => s.toLowerCase());
   const cells = [];
-  if (single) cells.push({ id: 'A-5a', url: `https://www.pixiv.net/artworks/${single.illust_id}`, kind: 'click', expectPages: 1 });
-  if (multi) cells.push({ id: 'A-5b', url: `https://www.pixiv.net/artworks/${multi.illust_id}`, kind: 'click', expectPages: Number(multi.illust_page_count) });
-  if (multi) cells.push({ id: 'A-5d', url: `https://www.pixiv.net/artworks/${multi.illust_id}`, kind: 'drag', expectPages: Number(multi.illust_page_count) });
+  await Promise.all([pickX(cells), pickPixiv(cells), pickBluesky(cells), pickMisskey(cells), pickMastodon(cells)]);
+  let active = only.length ? cells.filter((c) => only.includes(c.platform)) : cells;
+  // X gates logged-out views, so a fresh test profile can't load tweets — skip
+  // X unless explicitly requested. To run X cells, point the test at a Chrome
+  // profile already logged into x.com (a future --user-data-dir option).
+  if (!only.includes('x')) active = active.filter((c) => c.platform !== 'x');
+  else console.log('※ X はログイン必須。未ログインのテストプロファイルでは投稿が描画されず失敗します。');
+  active.sort((a, b) => a.id.localeCompare(b.id, 'en'));
+  if (!active.length) { console.error('対象セルを選別できず'); process.exit(1); }
+  console.log(`対象セル: ${active.map((c) => c.id + '(' + c.kind + ')').join(' ')}`);
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
   const EXT_DIR = stageExtension();
@@ -155,18 +235,20 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
     const page = await browser.newPage();
 
-    for (const cell of cells) {
-      console.log(`\n--- ${cell.id} ${cell.kind} ${cell.url}`);
+    for (const cell of active) {
+      console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}`);
       const before = listSidecars(dir);
       try {
-        // pixiv long-polls, so networkidle never fires — wait for the artwork img.
+        // SPAs (x/bsky/misskey/mastodon) and pixiv long-poll, so networkidle
+        // never fires — wait for the post DOM instead.
         await page.goto(cell.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await page.waitForSelector('main figure img', { timeout: 30000 });
-        await sleep(1000);
+        await page.waitForSelector(cell.waitSel, { timeout: 30000 });
+        await sleep(1200);
 
         if (cell.kind === 'click') {
           // Alt+S equivalent: inject the content scripts from the SW context
-          // (activeTab gestures can't be synthesized; pixiv is host-permitted)
+          // (activeTab gestures can't be synthesized; the staged extension has
+          // <all_urls> so executeScript works on every platform).
           const act = await sw.evaluate(async () => {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
@@ -178,17 +260,30 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             }
           });
           if (!act.ok) throw new Error(`activation failed on ${act.url}: ${act.err}`);
-          // The content script lives in an ISOLATED world — its globals aren't
-          // visible from the page. Wait for its banner DOM instead (z-index
-          // sentinel 2147483647).
+          // The content script lives in an ISOLATED world — wait for its banner
+          // DOM instead (z-index sentinel 2147483647).
           await page.waitForFunction(() => {
             return [...document.querySelectorAll('div')].some((d) => d.style.zIndex === '2147483647');
           }, { timeout: 8000 });
-          // Trusted click at the artwork's center (puppeteer scrolls into view).
-          // Whatever pixiv renders on top is what a real user would hit, and the
-          // content script walks UP from it to resolve the artwork.
-          const h = await page.$('main figure img');
-          if (!h) throw new Error('artwork img not found');
+          // Trusted click on a stable in-post element; capturePost resolves the
+          // post by walking up from the click target. For Misskey the detail
+          // page renders several div[tabindex="0"] notes (conversation chain +
+          // replies), so target the one whose permalink matches the URL id.
+          let h;
+          if (cell.platform === 'misskey') {
+            const id = (cell.url.match(/\/notes\/([^/?#]+)/) || [])[1];
+            h = (await page.evaluateHandle((noteId) => {
+              for (const root of document.querySelectorAll('div[tabindex="0"]')) {
+                const link = [...root.querySelectorAll('a[href*="/notes/"]')].find((a) => a.querySelector('time') && a.getAttribute('href').includes('/notes/' + noteId));
+                if (link) return root;
+              }
+              return null;
+            }, id)).asElement();
+            if (!h) throw new Error('main note element not found for id ' + id);
+          } else {
+            h = await page.$(cell.clickSel);
+            if (!h) throw new Error(`click target not found: ${cell.clickSel}`);
+          }
           await h.click();
           await h.dispose();
           // Capture the banner outcome before it auto-dismisses (success green
@@ -205,18 +300,20 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           });
           console.log(`   バナー: ${banner}`);
         } else {
-          // drag-save: synthetic dragstart on the artwork image → drop into the zone
-          const ok = await page.evaluate(async () => {
-            const img = document.querySelector('main figure img');
+          // drag-save: synthetic dragstart on the post image → drop into the zone
+          // (drag.js is a persistent content script, no activation needed)
+          const ok = await page.evaluate(async (sel) => {
+            const img = document.querySelector(sel);
             if (!img) return 'no-img';
+            img.scrollIntoView({ block: 'center' });
             const dt = new DataTransfer();
             img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-            await new Promise((r) => setTimeout(r, 300));
+            await new Promise((r) => setTimeout(r, 400));
             const zone = document.getElementById('__corpusDropZone');
             if (!zone || zone.style.display === 'none') return 'no-zone';
             zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
             return 'ok';
-          });
+          }, cell.dragSel);
           if (ok !== 'ok') throw new Error('drag setup failed: ' + ok);
         }
 
@@ -233,6 +330,13 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         created.push(file.replace(/\.json$/, ''));
         const rec = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
         console.log(`   保存: ${file} url=${rec.url} media=${(rec.media || []).length}${rec.imageCount ? ` imageIndex=${rec.imageIndex}/${rec.imageCount}` : ''}`);
+        // Assert the saved record is the post we intended to capture — not just
+        // a self-consistent record for some OTHER post (the API re-check alone
+        // can't catch wrong-post selection). Compare by stable id.
+        const idOf = (u) => (String(u || '').match(/\/status\/(\d+)|\/post\/([^/?#]+)|\/notes\/([^/?#]+)|\/(\d[\w-]*)\/?$|\/artworks\/(\d+)/) || []).slice(1).find(Boolean) || u;
+        if (idOf(rec.url) !== idOf(cell.url)) {
+          throw new Error(`別投稿が保存された: 期待 ${cell.url} / 実際 ${rec.url}`);
+        }
         results.push({ id: cell.id, ok: true, file });
       } catch (e) {
         console.log(`   ✗ ${e.message}`);
