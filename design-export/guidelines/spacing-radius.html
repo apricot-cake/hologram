@@ -1,0 +1,39 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Radius & elevation" subtitle="Corner radii and the whisper-soft shadow ladder" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { background:var(--bg); padding:20px 24px; display:flex; gap:34px; }
+  .grp { display:flex; flex-direction:column; gap:10px; }
+  .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:600; }
+  .row { display:flex; gap:14px; align-items:center; }
+  .item { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .sq { width:44px; height:44px; background:var(--surface); border:1px solid var(--border); }
+  .t { font-family:var(--font-mono); font-size:9px; color:var(--text-subtle); }
+  .sh { width:54px; height:44px; background:var(--surface); border-radius:var(--radius-md); border:1px solid var(--border); }
+</style>
+</head>
+<body>
+  <div class="grp">
+    <div class="lbl">Radius</div>
+    <div class="row">
+      <div class="item"><div class="sq" style="border-radius:var(--radius-xs)"></div><span class="t">xs 4</span></div>
+      <div class="item"><div class="sq" style="border-radius:var(--radius-sm)"></div><span class="t">sm 6</span></div>
+      <div class="item"><div class="sq" style="border-radius:var(--radius-md)"></div><span class="t">md 8</span></div>
+      <div class="item"><div class="sq" style="border-radius:var(--radius-lg)"></div><span class="t">lg 12</span></div>
+      <div class="item"><div class="sq" style="border-radius:var(--radius-pill)"></div><span class="t">pill</span></div>
+    </div>
+  </div>
+  <div class="grp">
+    <div class="lbl">Elevation</div>
+    <div class="row">
+      <div class="item"><div class="sh" style="box-shadow:var(--shadow-xs)"></div><span class="t">xs</span></div>
+      <div class="item"><div class="sh" style="box-shadow:var(--shadow-sm)"></div><span class="t">sm</span></div>
+      <div class="item"><div class="sh" style="box-shadow:var(--shadow-md)"></div><span class="t">md</span></div>
+      <div class="item"><div class="sh" style="box-shadow:var(--shadow-lg)"></div><span class="t">lg</span></div>
+    </div>
+  </div>
+</body>
+</html>

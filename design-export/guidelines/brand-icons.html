@@ -1,0 +1,39 @@
+<!-- @dsCard group="Brand" viewport="700x180" name="Iconography" subtitle="Lucide stroke icons + the functional emoji set" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  body { background:var(--surface); padding:18px 22px; }
+  .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:600; margin-bottom:10px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+  .ic { width:34px; height:34px; border-radius:var(--radius-sm); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--text); }
+  .ic svg { width:18px; height:18px; }
+  .em { width:34px; height:34px; border-radius:var(--radius-sm); background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-size:16px; }
+</style>
+</head>
+<body>
+  <div class="lbl">Lucide — stroke 1.75–2px</div>
+  <div class="row">
+    <span class="ic"><i data-lucide="folder"></i></span>
+    <span class="ic"><i data-lucide="external-link"></i></span>
+    <span class="ic"><i data-lucide="edit-3"></i></span>
+    <span class="ic"><i data-lucide="info"></i></span>
+    <span class="ic"><i data-lucide="trash-2"></i></span>
+    <span class="ic"><i data-lucide="rows-3"></i></span>
+    <span class="ic"><i data-lucide="layout-grid"></i></span>
+    <span class="ic"><i data-lucide="search"></i></span>
+    <span class="ic"><i data-lucide="settings"></i></span>
+    <span class="ic"><i data-lucide="star"></i></span>
+    <span class="ic"><i data-lucide="moon"></i></span>
+  </div>
+  <div class="lbl">Emoji — functional, dense layer</div>
+  <div class="row">
+    <span class="em">❤</span><span class="em">🔁</span><span class="em">💬</span><span class="em">🔖</span>
+    <span class="em">📁</span><span class="em">ℹ</span><span class="em">↗</span><span class="em">🗑</span><span class="em">★</span>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

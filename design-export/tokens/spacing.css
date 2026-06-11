@@ -1,0 +1,70 @@
+/* ============================================================================
+   Corpus — Spacing, radius, elevation, motion
+   A 4px base grid. Tool UIs live and die on consistent dense spacing, so the
+   small end (4–12) is where most of the work happens.
+   ============================================================================ */
+
+:root {
+  /* ---- Spacing scale (4px grid) ---- */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 32px;
+  --space-11: 40px;
+  --space-12: 48px;
+  --space-14: 64px;
+
+  /* ---- Radius ---- */
+  --radius-xs: 4px;    /* badges, small inset chips */
+  --radius-sm: 6px;    /* buttons, inputs, tiles */
+  --radius-md: 8px;    /* cards, selects */
+  --radius-lg: 12px;   /* modals, popovers */
+  --radius-xl: 16px;
+  --radius-pill: 999px;/* filter chips, tags */
+
+  /* ---- Control heights (keeps the toolbar rhythm consistent) ---- */
+  --control-sm: 28px;
+  --control-md: 34px;
+  --control-lg: 40px;
+
+  /* ---- Elevation — restrained, border-first like Linear/Vercel ----
+     Shadows are whisper-soft; structure comes from 1px borders, not drop
+     shadow. Each level pairs a hairline with a faint lift. */
+  --shadow-xs:  0 1px 2px rgba(16, 19, 26, 0.05);
+  --shadow-sm:  0 1px 3px rgba(16, 19, 26, 0.07), 0 1px 2px rgba(16, 19, 26, 0.04);
+  --shadow-md:  0 4px 12px rgba(16, 19, 26, 0.10);
+  --shadow-lg:  0 12px 32px rgba(16, 19, 26, 0.16);
+  --shadow-pop: 0 6px 24px rgba(16, 19, 26, 0.14);
+  /* focus halo (compose with box-shadow) */
+  --ring: 0 0 0 3px var(--focus-ring); /* @kind shadow */
+
+  /* ---- Motion ----
+     Short, mechanical, no bounce. Tool surfaces should feel instant. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1); /* @kind other */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --dur-fast: 0.1s; /* @kind other */
+  --dur-base: 0.15s; /* @kind other */
+  --dur-slow: 0.24s; /* @kind other */
+
+  /* ---- Z-index ladder ---- */
+  --z-sidebar: 30; /* @kind other */
+  --z-sticky: 10; /* @kind other */
+  --z-popover: 1000; /* @kind other */
+  --z-modal: 11000; /* @kind other */
+  --z-toast: 12000; /* @kind other */
+}
+
+[data-theme="dark"] {
+  --shadow-xs:  0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md:  0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-lg:  0 14px 36px rgba(0, 0, 0, 0.65);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+}

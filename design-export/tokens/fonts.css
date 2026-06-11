@@ -1,0 +1,13 @@
+/* ============================================================================
+   Corpus — Webfonts
+   Geist Sans (UI) + Geist Mono (numerals, metadata, code).
+   Geist is Vercel's typeface — a clean neo-grotesque that nails the
+   "tool-grade" register the brand targets, and a deliberate step up from the
+   app's original system stack.
+
+   NOTE: the binaries are loaded from the Google Fonts CDN via @import below
+   (each card/kit also links it in <head> for reliable rendering). The DS does
+   not yet ship self-hosted .woff2 files — see readme "Font substitution".
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');

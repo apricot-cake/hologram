@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="700x320" name="ImageTile" subtitle="Image-grid tile — scrim, ○ select, hover actions" -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { background: var(--bg); padding: 20px 22px; }
+  .hint { font-size:11px; color:var(--text-muted); margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; max-width:560px; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { ImageTile } = window.CorpusDesignSystem_59d196;
+    const imgs = [3,7,1,9,4,11,2,6].map(n=>`../../assets/sample/art-${String(n).padStart(2,'0')}.jpg`);
+    function Demo(){
+      const [sel,setSel] = React.useState(new Set([2]));
+      const toggle = (i)=>setSel(s=>{ const n=new Set(s); n.has(i)?n.delete(i):n.add(i); return n; });
+      return (
+        <>
+          <p className="hint">Hover a tile for actions. Tile 3 is selected; the first shows a ×3 group + folder state.</p>
+          <div className="grid">
+            <ImageTile src={imgs[0]} author="青空スケッチ" likes={12480} count={3} inFolder selected={sel.has(0)} onSelect={()=>toggle(0)} />
+            <ImageTile src={imgs[1]} author="machi" likes={842} media="video" selected={sel.has(1)} onSelect={()=>toggle(1)} />
+            <ImageTile src={imgs[2]} author="pixiv作家" likes={5300} selected={sel.has(2)} onSelect={()=>toggle(2)} />
+            <ImageTile src={imgs[3]} author="haru" likes={128} media="gif" selected={sel.has(3)} onSelect={()=>toggle(3)} />
+            <ImageTile src={imgs[4]} author="yoru" likes={64} selected={sel.has(4)} onSelect={()=>toggle(4)} />
+            <ImageTile src={imgs[5]} author="kumo" likes={2100} count={2} selected={sel.has(5)} onSelect={()=>toggle(5)} />
+            <ImageTile src={imgs[6]} author="mori" likes={9} selected={sel.has(6)} onSelect={()=>toggle(6)} />
+            <ImageTile src={imgs[7]} author="nami" likes={430} selected={sel.has(7)} onSelect={()=>toggle(7)} />
+          </div>
+        </>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+  </script>
+</body>
+</html>

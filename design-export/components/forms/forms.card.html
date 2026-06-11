@@ -1,0 +1,55 @@
+<!-- @dsCard group="Components" viewport="700x230" name="Forms — Input / Select" subtitle="Text, search, number & dropdown fields" -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { background: var(--surface); padding: 20px 22px; }
+  .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:600; margin:0 0 8px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px 20px; align-items:start; }
+  .col > * { margin-bottom:9px; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { Input, Select } = window.CorpusDesignSystem_59d196;
+    const Search = () => <i data-lucide="search"></i>;
+    function Demo(){
+      const [q,setQ] = React.useState('');
+      const [min,setMin] = React.useState('120');
+      const [sort,setSort] = React.useState('date-desc');
+      React.useEffect(()=>{ if(window.lucide) lucide.createIcons(); });
+      return (
+        <div className="grid">
+          <div className="col">
+            <p className="lbl">Search & text</p>
+            <Input type="search" icon={<Search/>} placeholder="テキスト・ユーザー名で検索" value={q} onChange={e=>setQ(e.target.value)} />
+            <Input placeholder="新しいフォルダ名" />
+            <Input type="number" size="sm" placeholder="0" value={min} hasValue onChange={e=>setMin(e.target.value)} />
+          </div>
+          <div className="col">
+            <p className="lbl">Select</p>
+            <Select value={sort} onChange={e=>setSort(e.target.value)}>
+              <option value="date-desc">新しい順</option>
+              <option value="date-asc">古い順</option>
+              <option value="likes-desc">いいね順</option>
+            </Select>
+            <Select defaultValue="date">
+              <option value="date">投稿日</option>
+              <option value="capturedAt">キャプチャ日</option>
+            </Select>
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+  </script>
+</body>
+</html>

@@ -7,6 +7,7 @@ app/.theme-*.png
 app/.ia-*.png
 app/.b1-*.png
 __pycache__/
-design-brief/
-design-export/
+# design-brief/ design-export/ は再生成不可なので追跡する（リモートが唯一のバックアップ）
+# 使い捨てスクリプトは _ 接頭辞で除外するが、検証ハーネス _verify-*.js は追跡する
 scripts/_*.js
+!scripts/_verify-*.js

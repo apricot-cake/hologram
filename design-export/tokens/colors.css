@@ -1,0 +1,138 @@
+/* ============================================================================
+   Corpus — Color tokens
+   Monotone (cool-gray) base + a single restrained indigo accent.
+   Linear/Vercel-grade tool palette, full light + dark parity.
+
+   Two layers:
+   1) Primitive scales (--gray-*, --indigo-*, platform brand colors) — raw,
+      theme-independent. Never reference these directly in components.
+   2) Semantic aliases (--bg, --surface, --text, --accent, …) — what components
+      consume. They flip between :root (light) and [data-theme="dark"].
+   ============================================================================ */
+
+:root {
+  /* ---- Primitive: neutral (cool slate) ---- */
+  --gray-0:   #ffffff;
+  --gray-25:  #fbfbfc;
+  --gray-50:  #f6f7f9;
+  --gray-100: #eceef2;
+  --gray-150: #e4e7ec;
+  --gray-200: #d8dce2;
+  --gray-300: #c3c9d2;
+  --gray-400: #9aa1ad;
+  --gray-500: #6c7280;
+  --gray-600: #4d535f;
+  --gray-700: #373c45;
+  --gray-800: #24282f;
+  --gray-900: #16191e;
+  --gray-950: #0c0e12;
+
+  /* ---- Primitive: indigo accent ---- */
+  --indigo-50:  #eef0ff;
+  --indigo-100: #e2e4ff;
+  --indigo-200: #c8caff;
+  --indigo-300: #a6a8fb;
+  --indigo-400: #8385f5;
+  --indigo-500: #6366f1;
+  --indigo-600: #4f46e5;
+  --indigo-700: #4338ca;
+  --indigo-800: #372fa6;
+
+  /* ---- Primitive: status ---- */
+  --red-500:    #e5484d;
+  --red-600:    #d13438;
+  --green-500:  #30a46c;
+  --amber-500:  #e8a13a;
+
+  /* ---- Primitive: platform brand (badges only; brand-locked) ---- */
+  --brand-x:        #0f1419;
+  --brand-bluesky:  #1185fe;
+  --brand-misskey:  #86b300;
+  --brand-mastodon: #6364ff;
+  --brand-pixiv:    #0096fa;
+
+  /* ========================================================================
+     SEMANTIC — LIGHT (default)
+     ======================================================================== */
+  --bg:            var(--gray-50);     /* app canvas */
+  --surface:       var(--gray-0);      /* cards, sidebar, panels */
+  --surface-2:     var(--gray-50);     /* inset wells, code blocks */
+  --surface-3:     var(--gray-100);    /* nested / pressed wells */
+
+  --text:          var(--gray-800);    /* body */
+  --text-strong:   var(--gray-950);    /* headings, names */
+  --text-muted:    var(--gray-500);    /* secondary, meta */
+  --text-subtle:   var(--gray-400);    /* timestamps, hints */
+  --text-on-accent:#ffffff;
+
+  --border:        var(--gray-150);    /* default hairline */
+  --border-strong: var(--gray-200);    /* inputs, dividers w/ emphasis */
+  --border-subtle: var(--gray-100);    /* faint internal rules */
+
+  --hover:         var(--gray-100);    /* row / item hover wash */
+  --active:        var(--gray-150);    /* pressed wash */
+  --focus-ring:    color-mix(in oklch, var(--indigo-500) 45%, transparent);
+
+  /* accent */
+  --accent:         var(--indigo-600);
+  --accent-hover:   var(--indigo-700);
+  --accent-fg:      #ffffff;
+  --accent-subtle:  var(--indigo-50);   /* tinted chip / active filter bg */
+  --accent-subtle-fg: var(--indigo-700);
+  --accent-border:  var(--indigo-200);
+
+  /* status semantics */
+  --danger:        var(--red-500);
+  --danger-bg:     #fdecec;
+  --success:       var(--green-500);
+
+  /* overlays */
+  --overlay:       color-mix(in oklch, var(--gray-950) 42%, transparent);
+  --scrim-grad:    linear-gradient(transparent, rgba(12,14,18,0.78)); /* @kind other */
+
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   SEMANTIC — DARK
+   Surfaces lift slightly with elevation; accent brightens one step so it
+   stays legible on near-black. Platform X badge inverts to light.
+   ========================================================================== */
+[data-theme="dark"] {
+  --bg:            var(--gray-950);
+  --surface:       #14171c;
+  --surface-2:     #1a1e24;
+  --surface-3:     #222730;
+
+  --text:          var(--gray-200);
+  --text-strong:   #f3f5f8;
+  --text-muted:    #8b929e;
+  --text-subtle:   #626973;
+  --text-on-accent:#ffffff;
+
+  --border:        #262b33;
+  --border-strong: #323845;
+  --border-subtle: #1d2128;
+
+  --hover:         #1e232b;
+  --active:        #262c35;
+  --focus-ring:    color-mix(in oklch, var(--indigo-400) 55%, transparent);
+
+  --accent:         var(--indigo-500);
+  --accent-hover:   var(--indigo-400);
+  --accent-fg:      #ffffff;
+  --accent-subtle:  color-mix(in oklch, var(--indigo-500) 18%, var(--surface));
+  --accent-subtle-fg: var(--indigo-300);
+  --accent-border:  color-mix(in oklch, var(--indigo-500) 40%, var(--border));
+
+  --danger:        #f0676b;
+  --danger-bg:     color-mix(in oklch, var(--red-500) 16%, var(--surface));
+  --success:       #43c585;
+
+  --brand-x:       #f3f5f8;
+
+  --overlay:       rgba(2,3,5,0.66);
+  --scrim-grad:    linear-gradient(transparent, rgba(0,0,0,0.82)); /* @kind other */
+
+  color-scheme: dark;
+}

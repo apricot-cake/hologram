@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Navigation — ModeNav / Tabs" subtitle="Mode switcher + sidebar tab strip" -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { background: var(--surface); padding: 20px 22px; }
+  .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:600; margin:0 0 9px; }
+  .cols { display:grid; grid-template-columns:230px 230px; gap:32px; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { ModeNav, Tabs } = window.CorpusDesignSystem_59d196;
+    const Icon = ({n}) => <i data-lucide={n}></i>;
+    function Demo(){
+      const [mode,setMode] = React.useState('post');
+      const [tab,setTab] = React.useState('posts');
+      React.useEffect(()=>{ if(window.lucide) lucide.createIcons(); });
+      return (
+        <div className="cols">
+          <div>
+            <p className="lbl">ModeNav</p>
+            <ModeNav value={mode} onChange={setMode} items={[
+              { id:'post',  label:'投稿閲覧', icon:<Icon n="rows-3" /> },
+              { id:'image', label:'画像閲覧', icon:<Icon n="layout-grid" /> },
+            ]} />
+          </div>
+          <div>
+            <p className="lbl">Tabs (vertical)</p>
+            <Tabs value={tab} onChange={setTab} items={[
+              { id:'posts', label:'投稿' },
+              { id:'tags', label:'ハッシュタグ' },
+              { id:'users', label:'ユーザー' },
+              { id:'settings', label:'設定' },
+            ]} />
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+  </script>
+</body>
+</html>
