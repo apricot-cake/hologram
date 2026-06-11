@@ -65,8 +65,10 @@
 
 | # | 状態 | 結果メモ |
 |---|------|---------|
-| A-5a | - | |
-| A-5b | - | ★修正検証（複数ページ拡張子混在） |
+| A-5a | OK | E2E自動（e2e-capture-test.js）。単ページ作品、media1枚原寸保存、API照合PASS |
+| A-5b | OK | E2E自動。複数ページ作品（pages API）、media2枚保存、API照合PASS。★修正検証OK |
 | A-5c | - | |
-| A-5d | - | |
+| A-5d | OK | E2E自動。ドラッグ保存、imageIndex=1/2、API照合PASS |
 | A-5e | - | ★修正検証（フォールバックcrop） |
+
+> A-5a/b/d は `node scripts/e2e-capture-test.js` で全自動検証（実Chrome＋拡張＋ブリッジ→API照合→後始末）。2026-06-11 拡張v1.1.0＋ランチャ修正後にALL PASS。

@@ -106,11 +106,11 @@ function listPosts() {
 // --- Native host registration (idempotent, on each launch) ---
 function ensureHostRegistered() {
   try {
-    // Don't clobber an existing registration: the launcher may have been written
-    // with a node binary on an ASCII path, whereas process.execPath here is the
-    // Electron binary (possibly under a non-ASCII path that cmd.exe would mangle
-    // in a .bat). Only do a full install when nothing is registered yet.
-    if (fs.existsSync(installer.manifestPath())) return;
+    // Always (re)write the launcher: install() now routes a non-ASCII Electron
+    // path through an ASCII directory junction (see native-host/install.js), so
+    // refreshing on every launch is safe and self-heals an old broken launcher
+    // that pointed straight at a mangled non-ASCII path. extensionId is read
+    // from config by install() when present.
     installer.install({ exe: process.execPath, runAsNode: true });
   } catch (err) {
     console.error('Failed to register native messaging host:', err);
