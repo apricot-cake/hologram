@@ -2052,14 +2052,18 @@
       const text = (p.text && p.text !== author) ? p.text : (p.title && p.title !== author ? p.title : '');
       const chip = (t, on) => `<button class="tw-chip${on ? ' on' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
 
+      // left = the reference (image + caption only); every DECISION lives in
+      // the right column so the eye walks one straight lane top→bottom
       const left =
         `<div class="tw-left">` +
         (thumb ? `<img class="tw-big" src="${fileSrc(thumb, 1080)}" alt="">` : '') +
         `<div class="tw-meta"><span class="tw-author">${escapeHtml(author)}</span>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}</div>` +
-        `<div class="tw-kind">` +
+        `</div>`;
+      const kindRow =
+        `<div class="tw-kind"><span class="tw-group-name">${escapeHtml(MSG.twKindQ)}</span>` +
           `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
           `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
-        `</div></div>`;
+        `</div>`;
 
       // stepper: every visible group + the always-present 非表示 chip
       const stepsHtml = st.map((s, i) => {
@@ -2096,7 +2100,7 @@
       const hideLink = isOther ? '' : `<button class="tw-hide-link" data-hide="${escapeAttr(cur.id)}">${escapeHtml(MSG.twHide)}</button>`;
       const panel = `<div class="tw-panel"><div class="tw-panel-name">${escapeHtml(cur.name)}</div>${noGroupsNote}${chipsHtml}${adder}${hideLink}</div>`;
 
-      body.innerHTML = left + `<div class="tw-right"><div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
+      body.innerHTML = left + `<div class="tw-right">${kindRow}<div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
     }
 
     async function addTag() {
