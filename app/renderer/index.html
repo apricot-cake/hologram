@@ -594,7 +594,10 @@
     }
     .ws-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
     .post-card:hover .ws-btn { opacity: 1; }
-    .ws-btn.in { background: var(--accent); opacity: 1; }   /* in the tray → always visible + filled */
+    /* membership shows on hover only (filled bookmark) — a persistent filled
+       button at rest read as clutter (user-rejected; same rule as folders).
+       Hovering an in-tray one is red so a click reads as "remove" (srgb mix). */
+    .ws-btn.in:hover { background: var(--danger); }
     .ws-btn.added { background: var(--success); }
     .post-grid.list-view .ws-btn { top: 50%; right: 40px; transform: translateY(-50%); }
     /* Flyout menus: the card context menu (full action list) and the folder
@@ -1048,8 +1051,8 @@
 
         <!-- Workspace: the single ephemeral tray (one-click ⚡ on cards) -->
         <div class="sb-section">
-          <div class="sb-title"><span id="sbWorkspaceTitle">ワークスペース</span> <button class="sb-manage-link" id="wsClear" type="button" style="display:none;">クリア</button></div>
-          <button class="sb-chip" id="wsChip" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span id="sbWorkspaceChip">ワークスペース</span><span class="iv-tagn">0</span></button>
+          <div class="sb-title"><span id="sbWorkspaceTitle">ワークスペース</span> <button class="sb-manage-link" id="wsClear" type="button" style="display:none;">空にする</button></div>
+          <button class="sb-chip" id="wsChip" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span id="sbWorkspaceChip">ワークスペース</span><span class="iv-tagn">0</span></button>
         </div>
 
         <!-- Folders (shared with image-view via folders.json) -->

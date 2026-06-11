@@ -115,6 +115,9 @@
     tipWorkspace: _s('tipWorkspace'),
     tipFolder: _s('tipFolder'),
     workspaceTitle: _s('workspaceTitle'),
+    wsEmpty: _s('wsEmpty'),
+    wsEmptyTip: _s('wsEmptyTip'),
+    wsEmptyConfirm: _s('wsEmptyConfirm'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -299,6 +302,9 @@
   setText('sbAuthorTitle', MSG.sidebarAuthors);
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
   setText('sbWorkspaceChip', MSG.workspaceTitle);
+  setText('wsClear', MSG.wsEmpty);
+  const wsClearEl = document.getElementById('wsClear');
+  if (wsClearEl) wsClearEl.title = MSG.wsEmptyTip;
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
@@ -1593,7 +1599,7 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
-        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="${CF() && CF().inWorkspace(p.captureId) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
         ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
@@ -1803,8 +1809,6 @@
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
-    const svg = btn.querySelector('svg');
-    if (svg) svg.setAttribute('fill', res === 'added' ? 'currentColor' : 'none');
     renderWorkspace();
     if (activeFilters.some((f) => f.type === 'workspace')) renderPosts();
   });
@@ -1862,7 +1866,7 @@
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     edit: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
   };
@@ -1955,7 +1959,8 @@
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
 
-  // Workspace: chip toggles a "show only the tray" filter; クリア empties it.
+  // Workspace: chip toggles a "show only the tray" filter; 空にする empties the
+  // tray itself (confirmed — it reads nothing like removing the filter).
   (function setupWorkspaceSidebar() {
     const chip = document.getElementById('wsChip');
     const clear = document.getElementById('wsClear');
@@ -1967,6 +1972,7 @@
     });
     if (clear) clear.addEventListener('click', () => {
       if (!CF()) return;
+      if (!window.confirm(MSG.wsEmptyConfirm)) return;
       keepCurrentVisible();
       CF().clearWorkspace();
       renderPosts();

@@ -95,8 +95,9 @@ const evalJs = `(async () => {
   // persisted to folders.json workspace[]
   const rb2 = await window.corpus.getFolders();
   const wsPersist = Array.isArray(rb2.workspace) && rb2.workspace.length === 1;
-  // クリア empties the tray (filter auto-clears via sticky → grid returns to all)
+  // 空にする empties the tray (confirmed; stub the dialog here)
   $('postResetBtn').click(); await sleep(40);
+  window.confirm = () => true;
   click($('wsClear')); await sleep(60);
   const rb3 = await window.corpus.getFolders();
   const wsCleared = (rb3.workspace || []).length === 0 &&
