@@ -89,6 +89,11 @@
      field reads as a well, not background (macOS search-field anatomy) */
   --field-bg:      var(--gray-100);
 
+  /* chips resting on the sidebar: the fill must clear a FULL step above the
+     sidebar bg — a barely-different fill reads as noise, not a pill */
+  --chip-bg:       var(--gray-100);
+  --chip-bg-hover: var(--gray-150);
+
   --accent:         var(--blue-600);
   --accent-hover:   var(--blue-700);
   --accent-fg:      #ffffff;
@@ -144,6 +149,9 @@
   --seg-track:     #1a1c20;
   --seg-thumb:     #34373d;
   --field-bg:      #1a1c20;
+  /* sidebar-bg is #202226 — chips need a clear step above it */
+  --chip-bg:       #2e333b;
+  --chip-bg-hover: #394049;
 
   --accent:         var(--blue-500);
   --accent-hover:   var(--blue-400);

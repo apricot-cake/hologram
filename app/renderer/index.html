@@ -867,13 +867,13 @@
        The transparent border keeps geometry so the active tint border can
        appear without layout shift. Hover = neutral lift, never accent. */
     .sb-chip {
-      background: var(--surface-3); border: 1px solid transparent; border-radius: 12px;
+      background: var(--chip-bg); border: 1px solid transparent; border-radius: 12px;
       padding: 3px 12px; font-size: 11px; color: var(--text);
       cursor: pointer; white-space: nowrap;
       /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
-    .sb-chip:hover { background: var(--active); color: var(--text-strong); }
+    .sb-chip:hover { background: var(--chip-bg-hover); color: var(--text-strong); }
     /* Active = tinted, not a solid saturated fill (淡色地＋アクセント文字＋細縁
        — solid 単色のべた塗りはチープに見えるため、Linear/GitHub 系の選択表現に) */
     .sb-chip.active {
