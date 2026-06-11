@@ -804,6 +804,18 @@
     .sb-section.collapsible > .sb-title > .sb-manage-link { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
     .sb-section.collapsed > :not(.sb-title) { display: none; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    /* Feature launcher (e.g. tagging wizard): a full-width tinted entry that
+       reads as "a feature lives here", unlike the small manage links */
+    .sb-feature {
+      width: 100%; display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; margin-bottom: 8px; border-radius: 8px;
+      border: 1px solid var(--accent-border); background: var(--accent-subtle);
+      color: var(--accent-subtle-fg); font-size: 13px; font-weight: 600;
+      cursor: pointer; text-align: left;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    .sb-feature:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+    .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 12px;
       border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
@@ -1060,7 +1072,12 @@
         <!-- Tags: 📌 pinned chips (user-curated, hidden when none) + tag-group
              buttons (flyout per group). Groups are bounded, unlike tags. -->
         <div class="sb-section">
-          <div class="sb-title"><span id="sbTagTitle"></span><button class="sb-manage-link" id="tagWizardBtn" type="button"></button></div>
+          <div class="sb-title"><span id="sbTagTitle"></span></div>
+          <!-- Feature entry (not a manage link): the tagging wizard launcher -->
+          <button class="sb-feature" id="tagWizardBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
+            <span id="tagWizardLabel"></span>
+          </button>
           <div class="sb-subtitle" id="sbPinTitle" style="display:none;"></div>
           <div class="sb-chips" id="sbPinnedTags"></div>
           <div class="sb-subtitle" id="sbGroupTitle" style="display:none; margin-top:10px;"></div>

@@ -68,7 +68,6 @@
       detailSauce: 'SauceNAOで検索',
       detailAscii: 'ascii2dで検索',
       // tagging wizard
-      tagWizardLink: 'ウィザード',
       twTitle: 'タグ付けウィザード',
       twProgress: '$1 / $2',
       twKindQ: 'この投稿は？',
@@ -339,7 +338,6 @@
       detailSauce: 'Search on SauceNAO',
       detailAscii: 'Search on ascii2d',
       // tagging wizard
-      tagWizardLink: 'Wizard',
       twTitle: 'Tagging wizard',
       twProgress: '$1 / $2',
       twKindQ: 'What is this post?',

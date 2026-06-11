@@ -86,7 +86,6 @@
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
-    tagWizardLink: _s('tagWizardLink'),
     twTitle: _s('twTitle'),
     twKindQ: _s('twKindQ'),
     twKindMedia: _s('twKindMedia'),
@@ -326,7 +325,7 @@
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
-  setText('tagWizardBtn', MSG.tagWizardLink);
+  setText('tagWizardLabel', MSG.twTitle);
   setText('twTitle', MSG.twTitle);
   setText('twSkip', MSG.twSkip);
   setText('twSave', MSG.twSave);
