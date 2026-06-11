@@ -1956,17 +1956,20 @@
   cardMenu.className = 'fold-menu card-menu';
   document.body.appendChild(cardMenu);
   let cardMenuGroup = null;
-  function hideCardMenu() { cardMenu.classList.remove('show'); cardMenuGroup = null; }
+  let cardMenuSrcUrl = '';
+  function hideCardMenu() { cardMenu.classList.remove('show'); cardMenuGroup = null; cardMenuSrcUrl = ''; }
   const CM_IC = {
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     edit: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
-    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
+    sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
   };
   function showCardMenu(g, x, y) {
     cardMenuGroup = g;
+    cardMenuSrcUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
     const inWs = !!(CF() && CF().inWorkspace(g.rep.captureId));
     const row = (act, ic, label, cls) =>
       `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span></div>`;
@@ -1976,6 +1979,7 @@
       row('folder', CM_IC.folder, MSG.tipFolder) +
       (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
+      (cardMenuSrcUrl ? '<div class="fm-sep"></div>' + row('sauce', CM_IC.sauce, MSG.detailSauce) + row('ascii', CM_IC.sauce, MSG.detailAscii) : '') +
       '<div class="fm-sep"></div>' +
       row('delete', CM_IC.del, MSG.tipDelete, 'fm-danger');
     cardMenu.style.left = x + 'px';
@@ -2007,6 +2011,8 @@
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
+    else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(cardMenuSrcUrl));
+    else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(cardMenuSrcUrl));
     else if (act === 'delete') requestDeleteGroup(g);
   });
   document.addEventListener('click', (e) => { if (cardMenu.classList.contains('show') && !cardMenu.contains(e.target)) hideCardMenu(); }, true);

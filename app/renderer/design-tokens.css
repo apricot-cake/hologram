@@ -106,7 +106,7 @@
   --success:       var(--green-500);
 
   --overlay:       color-mix(in oklch, var(--gray-950) 42%, transparent);
-  --scrim-grad:    linear-gradient(transparent, rgba(12,14,18,0.78));
+  --scrim-grad:    linear-gradient(transparent 0%, rgba(12,14,18,.02) 30%, rgba(12,14,18,.10) 50%, rgba(12,14,18,.26) 68%, rgba(12,14,18,.50) 84%, rgba(12,14,18,.78) 100%);
 
   /* ---- Category tints (filter chips / flags) — LIGHT ---- */
   --tint-blue-bg:     #e8f4fd;  --tint-blue-bd:   #b0d4f1;
@@ -167,7 +167,7 @@
   --brand-x:       #f3f5f8;
 
   --overlay:       rgba(2,3,5,0.66);
-  --scrim-grad:    linear-gradient(transparent, rgba(0,0,0,0.82));
+  --scrim-grad:    linear-gradient(transparent 0%, rgba(0,0,0,.02) 30%, rgba(0,0,0,.10) 50%, rgba(0,0,0,.28) 68%, rgba(0,0,0,.52) 84%, rgba(0,0,0,.82) 100%);
 
   /* ---- Category tints — DARK (muted, derived from the hue over surface) ---- */
   --tint-blue-bg:   color-mix(in oklch, #3b82f6 20%, var(--surface));  --tint-blue-bd:   color-mix(in oklch, #3b82f6 38%, var(--border));
