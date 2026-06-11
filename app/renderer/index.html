@@ -622,9 +622,18 @@
       backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%);
     }
     .post-card:hover .ws-btn { opacity: 1; }
-    /* membership shows on hover only (filled bookmark) — a persistent filled
-       button at rest read as clutter (user-rejected; same rule as folders).
-       Hovering an in-tray one is red so a click reads as "remove" (srgb mix). */
+    /* Membership: a small accent dot (GitHub starred / iOS hearted idiom —
+       accent = state). The earlier rejection was the loud SOLID-filled
+       button, not membership display itself; without any cue the hover-red
+       below read as "randomly turning red" (user report). */
+    .ws-btn.in::after {
+      content: ''; position: absolute; top: -1px; right: -1px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 2px rgba(20,22,26,0.55);
+    }
+    /* Hovering an in-tray one is red so a click reads as "remove" (same
+       hover-red-for-undo rule as folders). */
     .ws-btn.in:hover { background: var(--danger); }
     .ws-btn.added { background: var(--success); }
     .post-grid.list-view .ws-btn { top: 50%; right: 40px; transform: translateY(-50%); }
@@ -675,12 +684,15 @@
        button states (red=remove / green=added) still win visually. */
     .act-pill {
       position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
-      border-radius: 50%; pointer-events: none; z-index: 1; opacity: 0;
+      border-radius: 50%; pointer-events: none; z-index: 2; opacity: 0;
       /* NEUTRAL white, never accent: hover = "pointer is here" (iPadOS
          pointer / Fluent hover), accent = selected STATE. A translucent
-         accent blob gliding over thumbnails read as a color smear. */
-      background: rgba(255,255,255,0.26);
-      transition: right .18s var(--ease-out), top .18s var(--ease-out), opacity .12s;
+         accent blob gliding over thumbnails read as a color smear.
+         z-index 2 = ABOVE the buttons (iPadOS layers the highlight OVER
+         content); under the dark glass it was nearly invisible and the
+         glide could not be seen. */
+      background: rgba(255,255,255,0.25);
+      transition: right .22s var(--ease-out), top .22s var(--ease-out), opacity .12s;
     }
     .post-card:has(.ws-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
