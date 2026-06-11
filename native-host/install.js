@@ -55,14 +55,43 @@ function manifestPath() {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
+const isAscii = (s) => /^[\x00-\x7F]*$/.test(s);
+
+// cmd.exe reads a .bat in the console's OEM code page, so a launcher that
+// references a non-ASCII path (e.g. a repo under C:\…\ローカル\開発\) gets the
+// path mangled and the host fails to start with "Error when communicating with
+// the native messaging host" — capture silently never works. Point the .bat at
+// an ASCII-only directory junction (no admin needed) instead of the raw exe.
+function asciiExeRef(exe) {
+  if (isAscii(exe)) return exe;
+  const exeDir = path.dirname(exe);
+  const link = path.join(configDir(), 'runtime');   // configDir is ASCII
+  try {
+    let good = false;
+    if (fs.existsSync(link)) {
+      try {
+        const st = fs.lstatSync(link);
+        if (st.isSymbolicLink()) good = path.resolve(fs.readlinkSync(link)) === path.resolve(exeDir);
+      } catch { good = false; }
+      if (!good) fs.rmSync(link, { recursive: true, force: true });
+    }
+    if (!good) fs.symlinkSync(exeDir, link, 'junction');
+    // %~dp0 = the .bat's own (ASCII) dir, with a trailing backslash.
+    return `%~dp0runtime\\${path.basename(exe)}`;
+  } catch {
+    return exe;   // junction unavailable — fall back to the raw path
+  }
+}
+
 function writeLauncher({ exe, runAsNode, bridgePath }) {
   fs.mkdirSync(configDir(), { recursive: true });
   const p = launcherPath();
 
   if (process.platform === 'win32') {
+    const exeRef = asciiExeRef(exe);
     const lines = ['@echo off'];
     if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
-    lines.push(`"${exe}" "${bridgePath}" %*`);
+    lines.push(`"${exeRef}" "${bridgePath}" %*`);
     fs.writeFileSync(p, lines.join('\r\n') + '\r\n', 'utf8');
   } else {
     const lines = ['#!/bin/sh'];
