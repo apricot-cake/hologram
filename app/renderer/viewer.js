@@ -90,7 +90,9 @@
     twKindQ: _s('twKindQ'),
     twKindMedia: _s('twKindMedia'),
     twKindPlain: _s('twKindPlain'),
-    twKindSkip: _s('twKindSkip'),
+    twKindHelpMedia: _s('twKindHelpMedia'),
+    twKindHelpPost: _s('twKindHelpPost'),
+    twKindHelpNote: _s('twKindHelpNote'),
     twAddPlaceholder: _s('twAddPlaceholder'),
     twAddToGroup: _s('twAddToGroup'),
     twAdd: _s('twAdd'),
@@ -1989,6 +1991,7 @@
     let sel = new Set();        // selected tags for the current post
     let kind = null;            // 'plain' | 'media' | null
     let kindEditing = false;    // force the kind choice expanded (re-select)
+    let kindHelp = false;       // ⓘ explanation for メディア/ポスト shown?
     let showHidPanel = false;   // group-visibility panel open?
 
     // Queue = posts not yet handled here: no tags AND not marked reviewed.
@@ -2065,12 +2068,18 @@
       // (label ✎) so they stop competing for attention; clicking it (or its ✎)
       // expands the choice again. kindEditing forces the expanded state.
       const kindLabel = kind === 'media' ? MSG.twKindMedia : kind === 'plain' ? MSG.twKindPlain : '';
-      const kindRow = (kind && !kindEditing)
+      const collapsed = kind && !kindEditing;
+      const infoSvg = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>';
+      const kindRow = collapsed
         ? `<div class="tw-kind"><button class="tw-kind-set" id="twKindEdit">${escapeHtml(kindLabel)} <span class="tw-kind-pen">✎</span></button></div>`
         : `<div class="tw-kind"><span class="tw-group-name">${escapeHtml(MSG.twKindQ)}</span>` +
           `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
           `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
+          `<button class="tw-kind-info${kindHelp ? ' on' : ''}" id="twKindInfo" aria-label="?">${infoSvg}</button>` +
         `</div>`;
+      const kindHelpBlock = (kindHelp && !collapsed)
+        ? `<div class="tw-kind-help"><div>${escapeHtml(MSG.twKindHelpMedia)}</div><div>${escapeHtml(MSG.twKindHelpPost)}</div><div class="tw-kind-help-note">${escapeHtml(MSG.twKindHelpNote)}</div></div>`
+        : '';
 
       // stepper: every visible group + the always-present 非表示 chip
       const stepsHtml = st.map((s, i) => {
@@ -2107,7 +2116,7 @@
       const hideLink = isOther ? '' : `<button class="tw-hide-link" data-hide="${escapeAttr(cur.id)}">${escapeHtml(MSG.twHide)}</button>`;
       const panel = `<div class="tw-panel"><div class="tw-panel-name">${escapeHtml(cur.name)}</div>${noGroupsNote}${chipsHtml}${adder}${hideLink}</div>`;
 
-      body.innerHTML = left + `<div class="tw-right">${kindRow}<div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
+      body.innerHTML = left + `<div class="tw-right">${kindRow}${kindHelpBlock}<div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
     }
 
     async function addTag() {
@@ -2157,6 +2166,7 @@
       const kindBtn = e.target.closest('.tw-chip[data-kind]');
       if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; kindEditing = !kind; paint(); return; }
       if (e.target.closest('#twKindEdit')) { kindEditing = true; paint(); return; }
+      if (e.target.closest('#twKindInfo')) { kindHelp = !kindHelp; paint(); return; }
       const stepBtn = e.target.closest('.tw-step[data-step]');
       if (stepBtn) { setStep(parseInt(stepBtn.dataset.step, 10)); return; }
       if (e.target.closest('#twHiddenChip')) { showHidPanel = !showHidPanel; paint(); return; }

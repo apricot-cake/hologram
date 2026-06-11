@@ -65,6 +65,11 @@ const evalJs = `(async () => {
   // pick a tag on step 1
   click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち')); await wait(40);
   const tagOn = [...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち').classList.contains('on');
+  // ⓘ explains メディア/ポスト (toggles a help block); close it again
+  click(document.getElementById('twKindInfo')); await wait(40);
+  const kindHelpShown = !!body.querySelector('.tw-kind-help') && /ポスト/.test(body.querySelector('.tw-kind-help').textContent);
+  click(document.getElementById('twKindInfo')); await wait(40);
+  const kindHelpHidden = !body.querySelector('.tw-kind-help');
   // kind: pick メディア → the two buttons collapse into a compact pill (✎)
   click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
   const kindCollapsed = !body.querySelector('.tw-chip[data-kind]') &&
@@ -129,7 +134,7 @@ const evalJs = `(async () => {
   await wait(250);
   const queueEmptied = /お疲れ|done|ありません/i.test(body.textContent);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindCollapsed, kindReexpand, kindOn, badgeOn, step2, badgeKept,
+  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindHelpShown, kindHelpHidden, kindCollapsed, kindReexpand, kindOn, badgeOn, step2, badgeKept,
     otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, noSkipBtn, doneShown, closed, queueEmptied };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -156,7 +161,7 @@ child.on('close', () => {
     newGroupSaved = (tg.groups || []).some((g) => g.name === '自作群' && (g.tags || []).includes('自作タグ'));
   } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindCollapsed', 'kindReexpand', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
+  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindHelpShown', 'kindHelpHidden', 'kindCollapsed', 'kindReexpand', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
     'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'noSkipBtn', 'doneShown', 'closed', 'queueEmptied'];
   const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
   console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);

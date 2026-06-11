@@ -1381,6 +1381,18 @@
     }
     .tw-kind-set:hover { border-color: var(--accent); }
     .tw-kind-pen { font-size: 11px; opacity: .7; }
+    .tw-kind-info {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border: none; border-radius: 50%;
+      background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
+    }
+    .tw-kind-info:hover, .tw-kind-info.on { color: var(--accent); }
+    .tw-kind-help {
+      font-size: 12px; line-height: 1.7; color: var(--text);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px; flex-shrink: 0;
+    }
+    .tw-kind-help-note { color: var(--text-muted); margin-top: 4px; }
     .tw-group-name { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
     .tw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     /* group stepper: every (visible) group is a clickable chip — the linear
