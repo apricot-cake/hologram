@@ -195,56 +195,7 @@ function registerImageProtocol() {
 // --- IPC ---
 ipcMain.handle('get-config', () => {
   const cfg = readConfig();
-  return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null, saucenaoApiKey: cfg.saucenaoApiKey || '' };
-});
-
-ipcMain.handle('set-saucenao-key', (_event, key) => {
-  const cfg = readConfig();
-  cfg.saucenaoApiKey = (typeof key === 'string' ? key.trim() : '');
-  writeConfig(cfg);
-  return { ok: true };
-});
-
-// Reverse image search by UPLOAD (for posts with no public original URL, e.g.
-// screenshot-only captures). ascii2d's file endpoint is behind a Cloudflare JS
-// challenge so it can't be driven headlessly; SauceNAO's API is reachable and
-// returns JSON, so we POST the saved image to it (requires a free API key).
-ipcMain.handle('saucenao-search', async (_e, image) => {
-  const cfg = readConfig();
-  const key = (cfg.saucenaoApiKey || '').trim();
-  if (!key) return { ok: false, error: 'no-key' };
-  const p = resolveInFolder(image);
-  if (!p) return { ok: false, error: 'no-file' };
-  try {
-    const buf = await fs.promises.readFile(p);
-    const fd = new FormData();
-    fd.append('output_type', '2');
-    fd.append('numres', '8');
-    fd.append('api_key', key);
-    fd.append('db', '999');
-    fd.append('file', new Blob([buf]), 'image.jpg');
-    const r = await fetch('https://saucenao.com/search.php', { method: 'POST', body: fd });
-    const j = await r.json().catch(() => null);
-    if (!j || !j.header) return { ok: false, error: `HTTP ${r.status}` };
-    if (j.header.status > 0) return { ok: false, error: j.header.message || `status ${j.header.status}` };
-    if (j.header.status < 0) return { ok: false, error: j.header.message || 'API error' };
-    const results = (j.results || []).map((it) => {
-      const h = it.header || {}; const d = it.data || {};
-      const urls = Array.isArray(d.ext_urls) ? d.ext_urls : [];
-      const author = d.member_name || d.author_name || d.creator
-        || (Array.isArray(d.creators) ? d.creators.join(', ') : '') || '';
-      return {
-        similarity: parseFloat(h.similarity) || 0,
-        thumbnail: h.thumbnail || null,
-        title: d.title || d.source || d.material || '',
-        author,
-        url: urls[0] || null
-      };
-    }).filter((x) => x.url);
-    return { ok: true, results, remaining: j.header.long_remaining };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null };
 });
 
 ipcMain.handle('set-extension-id', (_event, id) => {

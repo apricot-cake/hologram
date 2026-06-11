@@ -1169,12 +1169,6 @@
     </div>
 
     <div class="section">
-      <h2 id="settingsSauceTitle">類似画像検索</h2>
-      <input type="password" id="saucenaoKey" class="search-box" style="width:100%;" autocomplete="off" placeholder="SauceNAO API key">
-      <div class="hint" id="hintSaucenao"></div>
-    </div>
-
-    <div class="section">
       <h2 id="settingsDangerTitle"></h2>
       <div style="margin-bottom: 12px;">
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -1197,15 +1191,6 @@
   </aside>
 
   </div><!-- /appMain -->
-
-  <!-- Reverse-image-search (SauceNAO upload) results modal -->
-  <div id="sauceModal" class="iv-detail-overlay" hidden>
-    <div class="iv-detail-box" style="max-width:560px;">
-      <button class="iv-insp-close" id="sauceClose" type="button">×</button>
-      <div class="iv-insp-title" id="sauceTitle">類似画像検索</div>
-      <div id="sauceBody"></div>
-    </div>
-  </div>
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
   <div id="ivToast" class="iv-toast"></div>
@@ -1334,16 +1319,6 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
-    /* Reverse-image-search results (SauceNAO upload) */
-    .sauce-row { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
-    .sauce-row img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; background: var(--surface-2); }
-    .sauce-meta { flex: 1; min-width: 0; font-size: 12px; }
-    .sauce-sim { font-weight: 600; color: var(--accent); }
-    .sauce-name { color: var(--text); word-break: break-word; }
-    .sauce-row a.sauce-open { flex-shrink: 0; color: var(--accent); font-size: 12px; cursor: pointer; }
-    .sauce-row a.sauce-open:hover { text-decoration: underline; }
-    .sauce-note { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
-    .sauce-note a { color: var(--accent); cursor: pointer; }
 
     /* Inspector (ℹ): an inline right column at wide widths; below the
        breakpoint the SAME panel floats over the grid as a slide-over — it

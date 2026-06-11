@@ -6,8 +6,6 @@ contextBridge.exposeInMainWorld('corpus', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   pickSaveFolder: () => ipcRenderer.invoke('pick-save-folder'),
   setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
-  setSaucenaoKey: (key) => ipcRenderer.invoke('set-saucenao-key', key),
-  saucenaoSearch: (image) => ipcRenderer.invoke('saucenao-search', image),
   listPosts: () => ipcRenderer.invoke('list-posts'),
   getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
   getUngrouped: () => ipcRenderer.invoke('get-ungrouped'),
