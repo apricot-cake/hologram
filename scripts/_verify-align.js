@@ -51,9 +51,10 @@ const evalJs = `(async () => {
   const padTop = getComputedStyle(document.getElementById('sidebar')).paddingTop;
   const scroll = document.querySelector('#controls-posts .sb-scroll');
   const scrollPadRight = getComputedStyle(scroll).paddingRight;
-  // inter-section rhythm: sections separated by 22px (direct children of the
-  // scroller — the toolbar's inner sections intentionally have 0 + flex gap)
-  const secGap = getComputedStyle(document.querySelector('.sb-scroll > .sb-section')).marginBottom;
+  // inter-section rhythm: scroll sections are separated by a hairline divider
+  // (border-top) + 18px padding-top, so they read as distinct bands.
+  const secCs = getComputedStyle(document.querySelector('.sb-scroll > .sb-section'));
+  const secGap = secCs.paddingTop === '18px' && parseFloat(secCs.borderTopWidth) >= 1 ? '22px' : secCs.paddingTop;
   // .has-value highlight is pastel now: soft ring (box-shadow set) and the border
   // is NOT the full-strength accent
   const sbox = document.getElementById('searchBox');

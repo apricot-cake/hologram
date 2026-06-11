@@ -302,9 +302,10 @@
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
-  setText('viewCard', MSG.viewCard);
-  setText('viewTile', MSG.viewTile);
-  setText('viewList', MSG.viewList);
+  // icon-only segments — labels live in the tooltip (setText would wipe the SVG)
+  setAttr('viewCard', 'title', MSG.viewCard);
+  setAttr('viewTile', 'title', MSG.viewTile);
+  setAttr('viewList', 'title', MSG.viewList);
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
