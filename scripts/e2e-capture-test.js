@@ -105,18 +105,37 @@ async function pickX(cells) {
 async function pickBluesky(cells) {
   try {
     const posts = [];
-    for (const actor of ['bsky.app', 'pfrazee.com', 'jay.bsky.team']) {
-      try { const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=60`); for (const it of f.feed || []) if (it.post) posts.push(it.post); } catch { /* next */ }
+    for (const actor of ['bsky.app', 'pfrazee.com', 'jay.bsky.team', 'danabra.mov']) {
+      try { const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=80&filter=posts_with_replies`); for (const it of f.feed || []) if (it.post) posts.push(it.post); } catch { /* next */ }
     }
     const urlOf = (p) => { const m = (p.uri || '').match(/\/app\.bsky\.feed\.post\/([^/]+)$/); return (m && p.author) ? `https://bsky.app/profile/${p.author.handle}/post/${m[1]}` : null; };
     const imgs = (p) => { const e = p.embed || {}; return (e.$type || '').includes('recordWithMedia') ? ((e.media && e.media.images) || []) : (e.images || []); };
-    const single = posts.find((p) => urlOf(p) && imgs(p).length === 1);
-    const multi = posts.find((p) => urlOf(p) && imgs(p).length > 1);
-    const W = '[data-testid^="postThreadItem-by-"]';
+    const isQuote = (p) => ((p.embed && p.embed.$type) || '').includes('app.bsky.embed.record');
+    const isReply = (p) => !!(p.record && p.record.reply);
+    const parentDid = (p) => { const u = p.record && p.record.reply && p.record.reply.parent && p.record.reply.parent.uri; const m = u && u.match(/^at:\/\/(did:[^/]+)\//); return m ? m[1] : null; };
+    // The thread/quote detail page renders several postThreadItem nodes (parents
+    // above, replies below). Target the anchor post by its AUTHOR handle so a
+    // reply isn't confused with its parent. (testid = postThreadItem-by-<handle>)
+    const sel = (p) => `[data-testid="postThreadItem-by-${p.author.handle}"]`;
+    const single = posts.find((p) => urlOf(p) && imgs(p).length === 1 && !isReply(p) && !isQuote(p));
+    const multi = posts.find((p) => urlOf(p) && imgs(p).length > 1 && !isReply(p));
+    const quote = posts.find((p) => urlOf(p) && isQuote(p) && !isReply(p));
+    // reply BY a different author than its parent, so the anchor post's testid is
+    // unique on the page (a self-thread would share the handle with the parent).
+    const reply = posts.find((p) => urlOf(p) && isReply(p) && parentDid(p) && parentDid(p) !== p.author.did);
     const IMG = '[data-testid^="postThreadItem-by-"] img[src*="/img/feed_"]';
-    if (single) cells.push({ id: 'A-2b', platform: 'bluesky', url: urlOf(single), kind: 'click', waitSel: W, clickSel: W });
-    if (multi) cells.push({ id: 'A-2g', platform: 'bluesky', url: urlOf(multi), kind: 'click', waitSel: W, clickSel: W });
+    if (single) cells.push({ id: 'A-2b', platform: 'bluesky', url: urlOf(single), kind: 'click', waitSel: sel(single), clickSel: sel(single) });
+    if (multi) cells.push({ id: 'A-2g', platform: 'bluesky', url: urlOf(multi), kind: 'click', waitSel: sel(multi), clickSel: sel(multi) });
     if (single) cells.push({ id: 'A-2i', platform: 'bluesky', url: urlOf(single), kind: 'drag', waitSel: IMG, dragSel: IMG });
+    // ★ regression: clicking a QUOTE post's detail must save the quoting post,
+    // not the quoted one (audit HIGH). expectUrl == the quoting post's url.
+    if (quote) cells.push({ id: 'A-2f', platform: 'bluesky', url: urlOf(quote), kind: 'click', waitSel: sel(quote), clickSel: sel(quote), regression: '引用→引用した側' });
+    // ★ regression: reply detail saves the reply itself, not the parent.
+    if (reply) cells.push({ id: 'A-2e', platform: 'bluesky', url: urlOf(reply), kind: 'click', waitSel: sel(reply), clickSel: sel(reply), regression: 'リプライ本人' });
+    // ★ regression: dragging the profile header avatar must NOT save anything
+    // (bounded ancestor walk → no identity → no drop zone). Profile page.
+    cells.push({ id: 'A-2k', platform: 'bluesky', url: 'https://bsky.app/profile/bsky.app', kind: 'drag-none',
+      waitSel: 'img[src*="/img/avatar"]', dragSel: 'img[src*="/img/avatar"]', notWithin: '[data-testid^="feedItem-by-"]', regression: 'アバターは保存しない' });
   } catch (e) { console.log('bluesky 選別スキップ:', e.message); }
 }
 
@@ -126,10 +145,14 @@ async function pickMisskey(cells) {
     const arr = Array.isArray(notes) ? notes : [];
     const img = (n) => (n.files || []).some((f) => f.type && f.type.startsWith('image/') && f.type !== 'image/gif');
     const single = arr.find((n) => n && n.id && img(n) && !n.replyId && !n.renoteId);
-    // Click the detail page's main note root (first div[tabindex="0"]). A broad
-    // 'article' could match a timeline note still on screen during the SPA
-    // transition, so the runner also asserts the saved url == the intended one.
-    if (single) cells.push({ id: 'A-3b', platform: 'misskey', url: `https://misskey.io/notes/${single.id}`, kind: 'click', waitSel: 'div[tabindex="0"] article time', clickSel: 'div[tabindex="0"]' });
+    const reply = arr.find((n) => n && n.id && n.replyId && !n.renoteId);
+    const W = 'div[tabindex="0"] article time';
+    // Runner targets the main note by URL id (see the click handler), and
+    // asserts the saved url == the intended one.
+    if (single) cells.push({ id: 'A-3b', platform: 'misskey', url: `https://misskey.io/notes/${single.id}`, kind: 'click', waitSel: W, clickSel: 'div[tabindex="0"]' });
+    // ★ regression (audit HIGH): a reply's detail page must save the REPLY,
+    // not the parent note rendered as a preview above it.
+    if (reply) cells.push({ id: 'A-3e', platform: 'misskey', url: `https://misskey.io/notes/${reply.id}`, kind: 'click', waitSel: W, clickSel: 'div[tabindex="0"]', regression: 'リプライ→親に化けない' });
   } catch (e) { console.log('misskey 選別スキップ:', e.message); }
 }
 
@@ -142,7 +165,15 @@ async function pickMastodon(cells) {
       media = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
     }
     const s = (media || []).find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((m) => m.type === 'image'));
-    if (s) cells.push({ id: 'A-4b', platform: 'mastodon', url: `https://mastodon.social/@${s.account.acct}/${s.id}`, kind: 'click', waitSel: '.detailed-status, .status', clickSel: '.detailed-status, .status' });
+    const W = '.detailed-status, .status';
+    if (s) cells.push({ id: 'A-4b', platform: 'mastodon', url: `https://mastodon.social/@${s.account.acct}/${s.id}`, kind: 'click', waitSel: W, clickSel: W });
+    // ★ regression: a reply status saves the reply itself (isReply path).
+    try {
+      const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
+      const st = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
+      const r = (st || []).find((x) => x && x.in_reply_to_id && x.account);
+      if (r) cells.push({ id: 'A-4e', platform: 'mastodon', url: `https://mastodon.social/@${r.account.acct}/${r.id}`, kind: 'click', waitSel: W, clickSel: '.detailed-status', regression: 'リプライ本人' });
+    } catch { /* skip reply cell */ }
   } catch (e) { console.log('mastodon 選別スキップ:', e.message); }
 }
 
@@ -236,7 +267,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
     const page = await browser.newPage();
 
     for (const cell of active) {
-      console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}`);
+      console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}${cell.regression ? ' ★' + cell.regression : ''}`);
       const before = listSidecars(dir);
       try {
         // SPAs (x/bsky/misskey/mastodon) and pixiv long-poll, so networkidle
@@ -244,6 +275,28 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         await page.goto(cell.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector(cell.waitSel, { timeout: 30000 });
         await sleep(1200);
+
+        // Negative regression: dragging a non-post image (profile avatar) must
+        // NOT pop the drop zone and must NOT save a record.
+        if (cell.kind === 'drag-none') {
+          const zoneShown = await page.evaluate(async (sel, notWithin) => {
+            const img = [...document.querySelectorAll(sel)].find((el) => !notWithin || !el.closest(notWithin));
+            if (!img) return 'no-img';
+            img.scrollIntoView({ block: 'center' });
+            img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+            await new Promise((r) => setTimeout(r, 500));
+            const z = document.getElementById('__corpusDropZone');
+            return !!(z && z.style.display !== 'none');
+          }, cell.dragSel, cell.notWithin);
+          if (zoneShown === 'no-img') throw new Error('avatar img not found');
+          await sleep(2500);
+          const leaked = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !before.has(f));
+          if (zoneShown) throw new Error('ドロップゾーンが表示された（捏造保存の恐れ）');
+          if (leaked.length) { leaked.forEach((f) => { for (const g of fs.readdirSync(dir)) if (g.startsWith(f.replace(/\.json$/, ''))) fs.unlinkSync(path.join(dir, g)); }); throw new Error('非投稿画像が保存された'); }
+          console.log('   ✓ ドロップゾーン非表示・保存なし（期待どおり）');
+          results.push({ id: cell.id, ok: true });
+          continue;
+        }
 
         if (cell.kind === 'click') {
           // Alt+S equivalent: inject the content scripts from the SW context
