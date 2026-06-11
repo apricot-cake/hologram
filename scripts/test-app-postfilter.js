@@ -1,8 +1,10 @@
 'use strict';
 
-// Verifies the post-view active-filter bar:
-//  - adding a platform filter shows #postActiveBar with a pill in #queryChips
-//  - clicking リセット clears it and hides the bar again
+// Verifies the post-view query builder bar (current flyout-era UI):
+//  - the builder bar is always visible; リセット is hidden until a filter exists
+//  - adding a platform filter via its flyout adds a pill and filters the grid
+//  - リセット clears the pills (and hides itself again)
+//  - a search term becomes a pill too; clicking it clears the search
 // Post-view is the default mode, so no mode switch is needed.
 //
 //   node scripts/test-app-postfilter.js
@@ -35,31 +37,38 @@ for (let i = 0; i < 3; i++) {
 }
 
 const evalJs = `(async () => {
-  await new Promise(r => setTimeout(r, 700));
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
   const bar = document.getElementById('postActiveBar');
-  const barBefore = bar.style.display !== 'none';
-  // add a platform filter
-  document.querySelector('.sb-chip[data-filter-type="platform"][data-filter-value="x"]').click();
-  await new Promise(r => setTimeout(r, 50));
-  const barShown = bar.style.display !== 'none';
+  const reset = document.getElementById('postResetBtn');
+  // builder bar is always visible; reset hidden while nothing is filtered
+  const barAlwaysOn = bar.style.display !== 'none';
+  const resetHiddenBefore = reset.style.display === 'none';
+  // add a platform filter via its flyout (sidebar restructure: rows → flyout)
+  document.querySelector('#filterRows [data-qfrow="platform"]').click(); await sleep(60);
+  const pop = document.querySelector('.qf-pop');
+  pop.querySelector('[data-qfval="x"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(80);
   const pills = document.querySelectorAll('#queryChips .sb-active-chip').length;
+  const resetShown = reset.style.display !== 'none';
   const cardsFiltered = document.querySelectorAll('#postGrid .post-card').length;
-  // reset
-  document.getElementById('postResetBtn').click();
-  await new Promise(r => setTimeout(r, 50));
-  const barAfter = bar.style.display === 'none';
+  // reset clears the pills and hides itself
+  reset.click();
+  await sleep(80);
+  const pillsAfter = document.querySelectorAll('#queryChips .sb-active-chip').length;
+  const resetHiddenAfter = reset.style.display === 'none';
   const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
-  // 検索もアクティブバーにピル化される（検索単独でもバーが出る）
+  // a search term becomes a pill too
   const sb = document.getElementById('searchBox');
   sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 50));
-  const searchBarShown = bar.style.display !== 'none';
+  await sleep(80);
   const searchPill = !!document.querySelector('#queryChips .sb-active-chip[data-special="search"]');
-  // 検索ピルをクリックで個別解除 → 検索クリア＆バー非表示
+  // clicking the search pill clears the search
   document.querySelector('#queryChips .sb-active-chip[data-special="search"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 50));
-  const searchCleared = sb.value === '' && bar.style.display === 'none';
-  return { barBefore, barShown, pills, cardsFiltered, barAfter, cardsAfter, searchBarShown, searchPill, searchCleared };
+  await sleep(80);
+  const searchCleared = sb.value === '' && reset.style.display === 'none';
+  return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, searchCleared };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -71,10 +80,11 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.barBefore === false && r.barShown === true && r.pills === 1 &&
-    r.cardsFiltered === 3 && r.barAfter === true && r.cardsAfter === 3 &&
-    r.searchBarShown === true && r.searchPill === true && r.searchCleared === true;
-  console.log(`barBefore=${r.barBefore} barShown=${r.barShown} pills=${r.pills} filtered=${r.cardsFiltered} barAfter=${r.barAfter} cardsAfter=${r.cardsAfter} searchBarShown=${r.searchBarShown} searchPill=${r.searchPill} searchCleared=${r.searchCleared}`);
+  const ok = r.barAlwaysOn === true && r.resetHiddenBefore === true && r.pills === 1 &&
+    r.resetShown === true && r.cardsFiltered === 3 && r.pillsAfter === 0 &&
+    r.resetHiddenAfter === true && r.cardsAfter === 3 &&
+    r.searchPill === true && r.searchCleared === true;
+  console.log(`barAlwaysOn=${r.barAlwaysOn} resetHiddenBefore=${r.resetHiddenBefore} pills=${r.pills} resetShown=${r.resetShown} filtered=${r.cardsFiltered} pillsAfter=${r.pillsAfter} resetHiddenAfter=${r.resetHiddenAfter} cardsAfter=${r.cardsAfter} searchPill=${r.searchPill} searchCleared=${r.searchCleared}`);
   console.log(ok ? 'POSTFILTER_TEST_PASS' : 'POSTFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

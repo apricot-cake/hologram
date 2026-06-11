@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "dev tooling deps (e2e capture tests)",
-  "dependencies": {
+  "devDependencies": {
     "puppeteer": "^25.1.0"
   }
 }
