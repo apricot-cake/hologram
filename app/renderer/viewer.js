@@ -1610,6 +1610,7 @@
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
+      if (!keepLimit && !prefersReducedMotion()) { void empty.offsetWidth; empty.classList.add('anim-in'); setTimeout(() => empty.classList.remove('anim-in'), 400); }
       if (noteEl) noteEl.style.display = 'none';
       // Empty states carry a "what to do next" affordance: the capture
       // shortcut + ZIP restore on first run, a one-click reset when filters
@@ -2774,7 +2775,11 @@
       btn.classList.add('active');
       currentView = btn.dataset.view;
       window.corpus.setPref('viewMode', currentView);
-      renderPosts();
+      if (document.startViewTransition && !prefersReducedMotion()) {
+        document.startViewTransition(() => renderPosts());
+      } else {
+        renderPosts();
+      }
     });
   });
 

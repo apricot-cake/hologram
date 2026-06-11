@@ -318,6 +318,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(var(--card-size, 280px), 1fr));
       gap: 16px;
+      view-transition-name: post-grid;
     }
     .post-card {
       background: var(--surface); border-radius: 8px; overflow: hidden;
@@ -1606,6 +1607,16 @@
 
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
     .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }
+
+    /* Empty state: same slide-in as cards when first shown. */
+    .empty-state.anim-in { animation: corpusCardIn .26s ease-out both; }
+
+    /* View mode transition (card↔tile↔list): scope to the grid only so sidebar
+       doesn't repaint. Old grid fades out quickly; new grid's anim-in handles
+       the card entrance. ::view-transition-new gets animation:none so we don't
+       double-animate with anim-in. */
+    ::view-transition-old(post-grid) { animation: corpusFadeIn .12s ease-in reverse both; }
+    ::view-transition-new(post-grid) { animation: none; }
 
     /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
        removing [hidden] re-mounts the element (display:none -> flex). */
