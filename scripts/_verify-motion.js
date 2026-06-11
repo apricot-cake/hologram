@@ -1,6 +1,6 @@
 'use strict';
 // Throwaway: confirm the motion pass is wired — fresh render adds .anim-in and
-// cards get the corpusCardIn animation; the detail popup box animates (corpusPopIn);
+// cards get the corpusCardIn animation; ℹ opens the (non-modal) inspector panel;
 // the lightbox slide gets .lb-in + corpusSlideIn. CSS keyframes resolve at runtime.
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -33,11 +33,11 @@ const evalJs = `(async () => {
   const gridAnimIn = grid.classList.contains('anim-in');
   const card = grid.querySelector('.post-card');
   const cardAnim = card ? getComputedStyle(card).animationName : 'none';
-  // detail popup
+  // ℹ opens the persistent inspector panel (no pop animation by design — it
+  // is a non-modal aside, not a popup)
   grid.querySelector('.post-card .info-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(50);
-  const box = document.querySelector('#postDetail .iv-detail-box');
-  const boxAnim = box ? getComputedStyle(box).animationName : 'none';
+  const inspOpen = !document.getElementById('postDetail').hidden;
   document.getElementById('postDetail').hidden = true;
   // lightbox / gallery
   grid.querySelector('.post-card .card-img').dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -47,7 +47,7 @@ const evalJs = `(async () => {
   const img = document.getElementById('lightboxImg');
   const imgHasLbIn = img.classList.contains('lb-in');
   const imgAnim = getComputedStyle(img).animationName;
-  return { gridAnimIn, cardAnim, boxAnim, lbShown, imgHasLbIn, imgAnim };
+  return { gridAnimIn, cardAnim, inspOpen, lbShown, imgHasLbIn, imgAnim };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -59,9 +59,9 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.gridAnimIn === true && /corpusCardIn/.test(r.cardAnim || '') &&
-    /corpusPopIn/.test(r.boxAnim || '') && r.lbShown === true &&
+    r.inspOpen === true && r.lbShown === true &&
     r.imgHasLbIn === true && /corpusSlideIn/.test(r.imgAnim || '');
-  console.log(`animIn=${r.gridAnimIn} card=${r.cardAnim} box=${r.boxAnim} lbShown=${r.lbShown} imgLbIn=${r.imgHasLbIn} img=${r.imgAnim}`);
+  console.log(`animIn=${r.gridAnimIn} card=${r.cardAnim} insp=${r.inspOpen} lbShown=${r.lbShown} imgLbIn=${r.imgHasLbIn} img=${r.imgAnim}`);
   console.log(ok ? 'MOTION_VERIFY_PASS' : 'MOTION_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

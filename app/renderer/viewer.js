@@ -1290,11 +1290,13 @@
   const userKey = (p) => p.platform + ':' + (p.userId || ('@' + (p.screenName || '')));
 
   // --- Load posts ---
-  async function loadPosts() {
+  // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
+  // without replaying the entrance animation or resetting the scroll window.
+  async function loadPosts(keepLimit) {
     const { posts } = await window.corpus.listPosts();
     allPosts = posts || [];
     stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
-    renderPosts();
+    renderPosts(keepLimit);
     reconcileFolders();
     renderPostFolders();
   }
@@ -1599,7 +1601,7 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
-        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></button>
+        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
         ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
@@ -1795,8 +1797,9 @@
     else if (e.key === 'ArrowRight') galleryStep(1);
   });
 
-  // ⚡ workspace button: one-click add/remove this post to the single ephemeral
-  // tray (no picking). Filled bookmark = in. (Default folder was removed.)
+  // Workspace button: one-click add/remove this post to the single ephemeral
+  // tray (no picking). Mutations never replay the entrance animation: re-render
+  // (keepLimit) only when a workspace filter could change the visible set.
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.ws-btn');
     if (!btn) return;
@@ -1810,7 +1813,7 @@
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
     renderWorkspace();
-    if (activeFilters.some((f) => f.type === 'workspace')) renderPosts();
+    if (activeFilters.some((f) => f.type === 'workspace')) renderPosts(true);
   });
 
   // Folder picker flyout (destinations) — opened from the card context menu
@@ -1847,7 +1850,8 @@
     if (row && foldMenuGroup) {
       keepCurrentVisible();
       CF().toggleIn(row.dataset.fid, foldMenuGroup.records.map((r2) => r2.captureId), foldMenuGroup.rep.captureId);
-      renderPosts(true);
+      // re-render only if a folder filter could change the visible set
+      if (activeFilters.some((f) => f.type === 'folder')) renderPosts(true);
     }
     hideFoldMenu();
   });
@@ -1866,7 +1870,7 @@
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     edit: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
   };
@@ -1975,7 +1979,7 @@
       if (!window.confirm(MSG.wsEmptyConfirm)) return;
       keepCurrentVisible();
       CF().clearWorkspace();
-      renderPosts();
+      renderPosts(true);
     });
   })();
 
@@ -2047,7 +2051,7 @@
       const idx = allPosts.findIndex(p => p.captureId === r.captureId);
       if (idx >= 0) allPosts.splice(idx, 1);
     }
-    renderPosts();
+    renderPosts(true);
     reconcileFolders();   // 削除した captureId をフォルダから即時掃除
     renderPostFolders();
     showToast(MSG.deleted);
@@ -2319,7 +2323,7 @@
     if (ungroup) ungrouped.add(key); else ungrouped.delete(key);
     if (window.corpus.setUngrouped) window.corpus.setUngrouped([...ungrouped]).catch(() => { /* best-effort */ });
     closeDetail();
-    renderPosts();
+    renderPosts(true);
     if (ungroup) showToast(MSG.ungroupDone);
   }
   function ungroupManual(idx) {
@@ -2328,7 +2332,7 @@
     manualGroups.splice(idx, 1);
     persistManual();
     closeDetail();
-    renderPosts();
+    renderPosts(true);
     showToast(MSG.ungroupDone);
   }
   function showDetail(g) {
@@ -3100,7 +3104,7 @@
       selectionAnchor = null;
       pendingBulkDelete = false;
       updateSelectionBar();
-      await loadPosts();
+      await loadPosts(true);
       showToast(MSG.deletedN(count));
     } else if (pendingDeleteGroup) {
       // Individual post (group) delete
@@ -3303,11 +3307,11 @@ render()
     activeFilters = activeFilters.filter((f) => f.type !== 'folder' || CF().byId(f.value));
     if (activeFilters.length !== before) renderQueryChips();
     renderPostFolders();
-    if (kind === 'list') renderPosts();
+    if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
   });
   if (window.corpus.onPostsChanged) {
     window.corpus.onPostsChanged(async () => {
-      await loadPosts();
+      await loadPosts(true);   // background fs-watch refresh — no anim replay
     });
   }
   renderQueryChips();
