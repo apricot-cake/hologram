@@ -813,6 +813,7 @@
       cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
     }
     .sb-active-chip:hover { opacity: 0.7; }
+    .sb-active-chip.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
     .sb-active-chip.qc-platform { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
     .sb-active-chip.qc-postType { background: var(--tint-purple-bg); border: 1px solid var(--tint-purple-bd); color: var(--text); }
     .sb-active-chip.qc-date { background: var(--tint-green-bg); border: 1px solid var(--tint-green-bd); color: var(--text); }
@@ -1474,6 +1475,7 @@
     @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
     @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+    @keyframes corpusPillIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
 
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
     .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }

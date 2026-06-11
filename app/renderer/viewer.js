@@ -406,6 +406,7 @@
 
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
+    const prevLabels = new Set(Array.from(container.querySelectorAll('.sb-active-chip')).map(el => el.textContent.trim()));
     const bar = document.getElementById('postActiveBar');
     // クエリビルダ: 「かつ」「または」の2フィールドを常時表示し、全フィルタを
     // 要素（ピル）として配置。ピルはドラッグで他方のフィールドへ移動できる。
@@ -491,6 +492,11 @@
       zone('and', andPills, orPills.length > 0) +
       joinSel +
       zone('or', orPills, andPills.length > 0);
+    if (!prefersReducedMotion()) {
+      container.querySelectorAll('.sb-active-chip').forEach(el => {
+        if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new');
+      });
+    }
   }
 
   function formatShortDate(dateStr) {
