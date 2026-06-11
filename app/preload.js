@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('corpus', {
   setPref: (key, value) => ipcRenderer.invoke('set-pref', key, value),
   imageDataUrl: (image) => ipcRenderer.invoke('image-data-url', image),
   deletePost: (image) => ipcRenderer.invoke('delete-post', image),
-  updateTags: (image, tags) => ipcRenderer.invoke('update-tags', image, tags),
+  updateTags: (image, tags, patch) => ipcRenderer.invoke('update-tags', image, tags, patch),
   importPosts: (posts) => ipcRenderer.invoke('import-posts', posts),
   clearAll: () => ipcRenderer.invoke('clear-all'),
   exportSave: (filename, bytes) => ipcRenderer.invoke('export-save', filename, bytes),

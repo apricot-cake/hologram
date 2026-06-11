@@ -86,6 +86,20 @@
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
+    tagWizardLink: _s('tagWizardLink'),
+    twTitle: _s('twTitle'),
+    twKindQ: _s('twKindQ'),
+    twKindMedia: _s('twKindMedia'),
+    twKindPlain: _s('twKindPlain'),
+    twKindSkip: _s('twKindSkip'),
+    twAddPlaceholder: _s('twAddPlaceholder'),
+    twAdd: _s('twAdd'),
+    twSkip: _s('twSkip'),
+    twSave: _s('twSave'),
+    twFinish: _s('twFinish'),
+    twDone: _s('twDone'),
+    twOther: _s('twOther'),
+    twNoGroups: _s('twNoGroups'),
     imagesCount: _f1('imagesCount'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
@@ -309,6 +323,11 @@
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
+  setText('tagWizardBtn', MSG.tagWizardLink);
+  setText('twTitle', MSG.twTitle);
+  setText('twSkip', MSG.twSkip);
+  setText('twSave', MSG.twSave);
+  setText('twFinish', MSG.twFinish);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1942,6 +1961,118 @@
     showToast(MSG.deleted);
   }
 
+  // === Tagging wizard: walk untagged posts, present every group's tags as
+  // toggle chips (recognition over recall), set a plain/media flag, save→next ===
+  (function setupTagWizard() {
+    const view = document.getElementById('tagWizard');
+    const body = document.getElementById('twBody');
+    const prog = document.getElementById('twProgress');
+    if (!view) return;
+    let queue = [];
+    let idx = 0;
+    let sel = new Set();    // selected tags for the current post
+    let kind = null;        // 'plain' | 'media' | null
+
+    const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length));
+
+    function open() {
+      // untagged groups within the CURRENT filter (so the user can narrow first)
+      queue = groupRecords(getFilteredPosts()).filter(isUntagged);
+      idx = 0;
+      view.hidden = false;
+      gotoStep(0);
+    }
+    function close() { view.hidden = true; body.innerHTML = ''; renderPosts(true); }
+
+    function gotoStep(i) {
+      idx = i;
+      if (idx < queue.length) {
+        const g = queue[idx];
+        sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
+        kind = g.rep.userKind || null;
+      }
+      paint();
+    }
+
+    function paint() {
+      const save = document.getElementById('twSave');
+      const skip = document.getElementById('twSkip');
+      if (idx >= queue.length) {
+        prog.textContent = '';
+        body.innerHTML = `<div class="tw-done">${escapeHtml(MSG.twDone)}</div>`;
+        if (save) save.style.display = 'none';
+        if (skip) skip.style.display = 'none';
+        return;
+      }
+      if (save) save.style.display = '';
+      if (skip) skip.style.display = '';
+      prog.textContent = `${idx + 1} / ${queue.length}`;
+      const g = queue[idx];
+      const p = g.rep;
+      const thumb = g.files[0] || captureFile(p);
+      const author = p.displayName || p.screenName || p.title || '';
+      const text = (p.text && p.text !== author) ? p.text : (p.title && p.title !== author ? p.title : '');
+      const chip = (t, on) => `<button class="tw-chip${on ? ' on' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+      let groupsHtml = '';
+      if (!tagGroups.length) {
+        groupsHtml = `<div class="tw-post-meta">${escapeHtml(MSG.twNoGroups)}</div>`;
+      } else {
+        for (const grp of tagGroups) {
+          const chips = (grp.tags || []).map((t) => chip(t, sel.has(t))).join('');
+          if (chips) groupsHtml += `<div class="tw-group"><div class="tw-group-name">${escapeHtml(grp.name)}</div><div class="tw-chips">${chips}</div></div>`;
+        }
+      }
+      // tags on the post that belong to no group (incl. just-added) → "other"
+      const grouped = new Set(tagGroups.flatMap((gr) => gr.tags || []));
+      const others = [...sel].filter((t) => !grouped.has(t));
+      const otherHtml = others.length
+        ? `<div class="tw-group"><div class="tw-group-name">${escapeHtml(MSG.twOther)}</div><div class="tw-chips">${others.map((t) => chip(t, true)).join('')}</div></div>`
+        : '';
+      body.innerHTML =
+        `<div class="tw-post">${thumb ? `<img src="${fileSrc(thumb, 240)}" alt="">` : ''}<div class="tw-post-meta"><div class="tw-author">${escapeHtml(author)}</div><div class="tw-text">${escapeHtml(text)}</div></div></div>` +
+        `<div class="tw-group-name">${escapeHtml(MSG.twKindQ)}</div>` +
+        `<div class="tw-kind">` +
+          `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
+          `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
+        `</div>` +
+        groupsHtml + otherHtml +
+        `<div class="tw-add"><input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}"><button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
+    }
+
+    function addCustom() {
+      const inp = document.getElementById('twAddInput');
+      const v = (inp && inp.value || '').trim();
+      if (v) { sel.add(v); paint(); }
+    }
+
+    async function saveCurrent() {
+      const g = queue[idx];
+      if (!g) return;
+      const tags = [...sel];
+      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { userKind: kind })
+        .then(() => { r.tags = tags.slice(); r.userKind = kind; })
+        .catch(() => {})));
+    }
+
+    body.addEventListener('click', (e) => {
+      const tagBtn = e.target.closest('.tw-chip[data-tag]');
+      if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
+      const kindBtn = e.target.closest('.tw-chip[data-kind]');
+      if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; paint(); return; }
+      if (e.target.closest('#twAddBtn')) addCustom();
+    });
+    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'twAddInput') { e.preventDefault(); addCustom(); } });
+
+    document.getElementById('twSave').addEventListener('click', async () => { await saveCurrent(); gotoStep(idx + 1); });
+    document.getElementById('twSkip').addEventListener('click', () => gotoStep(idx + 1));
+    document.getElementById('twFinish').addEventListener('click', close);
+    document.getElementById('twClose').addEventListener('click', close);
+    view.addEventListener('click', (e) => { if (e.target === view) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !view.hidden) close(); });
+    const launch = document.getElementById('tagWizardBtn');
+    if (launch) launch.addEventListener('click', open);
+  })();
+
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     document.getElementById('postDetail').hidden = true;
@@ -2061,6 +2192,7 @@
     if (lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
+    if (!document.getElementById('tagWizard').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
     const dp = document.getElementById('qfDatePopover');
@@ -2283,6 +2415,7 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
+    if (!document.getElementById('tagWizard').hidden) return;
     if (viewGroups.length === 0) return;
     e.preventDefault();
     viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
@@ -2302,6 +2435,7 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
+    if (!document.getElementById('tagWizard').hidden) return;
     e.preventDefault();
     const sb = document.getElementById('searchBox');
     sb.focus();

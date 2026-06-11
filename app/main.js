@@ -449,13 +449,20 @@ ipcMain.handle('delete-post', async (_e, image) => {
   return { ok: true };
 });
 
-ipcMain.handle('update-tags', async (_e, image, tags) => {
+ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
   const base = baseOf(image);
   const jsonPath = resolveInFolder(`${base}.json`);
   if (!jsonPath) return { ok: false };
   try {
     const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
     rec.tags = Array.isArray(tags) ? tags.map(String) : [];
+    // Optional extra fields (e.g. the tagging wizard's plain/media flag). Only
+    // an allow-listed set is honored so the renderer can't write arbitrary keys.
+    if (patch && typeof patch === 'object') {
+      if ('userKind' in patch) {
+        rec.userKind = (patch.userKind === 'plain' || patch.userKind === 'media') ? patch.userKind : null;
+      }
+    }
     rec.updatedAt = new Date().toISOString();        // record was modified in Corpus
     await fs.promises.writeFile(jsonPath, JSON.stringify(rec, null, 2), 'utf8');
     return { ok: true };
