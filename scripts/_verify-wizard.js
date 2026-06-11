@@ -42,20 +42,30 @@ const evalJs = `(async () => {
   await waitFor(() => !view.hidden && /1 \\/ 2/.test(document.getElementById('twProgress').textContent));
   const opened = !view.hidden;
   const queueIs2 = document.getElementById('twProgress').textContent.trim() === '1 / 2';   // 2 untagged only
-  const groupsShown = [...body.querySelectorAll('.tw-group-name')].some(e => e.textContent === 'ポーズ')
-    && body.querySelectorAll('.tw-chip[data-tag]').length >= 4;
+  const bigImg = !!body.querySelector('img.tw-big');   // image shown large
+  // groups are y/n gates: headers present, tag chips hidden until expanded
+  const gateCollapsed = body.querySelectorAll('.tw-grp-head[data-grp]').length === 2
+    && body.querySelectorAll('.tw-chip[data-tag]').length === 0;
+  // expand ポーズ (g1) → its tags appear
+  click(body.querySelector('.tw-grp-head[data-grp="g1"]')); await wait(40);
+  const expandWorks = body.querySelectorAll('.tw-chip[data-tag]').length >= 2;
 
-  // pick a tag + a kind, then save→next
-  click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち'));
-  click(body.querySelector('.tw-chip[data-kind="media"]'));
-  await wait(40);
+  // pick a tag + a kind
+  click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち')); await wait(40);
+  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
   const tagOn = [...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち').classList.contains('on');
   const kindOn = body.querySelector('.tw-chip[data-kind="media"]').classList.contains('on');
-  // free-add a tag
-  const inp = document.getElementById('twAddInput'); inp.value = '自作タグ';
+  const badgeShown = (body.querySelector('.tw-grp .tw-grp-badge') || {}).textContent === '1';
+  // new tag INTO A NEW GROUP (group creation)
+  document.getElementById('twAddInput').value = '自作タグ';
+  const gsel = document.getElementById('twAddGroup'); gsel.value = '__new'; gsel.dispatchEvent(new Event('change', { bubbles: true }));
+  await wait(30);
+  const newGroupInputShown = document.getElementById('twNewGroupName').style.display !== 'none';
+  document.getElementById('twNewGroupName').value = '自作群';
   click(document.getElementById('twAddBtn'));
-  await wait(40);
+  await wait(80);
   const customOn = [...body.querySelectorAll('.tw-chip[data-tag]')].some(c => c.dataset.tag === '自作タグ' && c.classList.contains('on'));
+  const newGroupAppears = [...body.querySelectorAll('.tw-grp-head')].some(h => h.textContent.includes('自作群'));
 
   click(document.getElementById('twSave'));
   await waitFor(() => document.getElementById('twProgress').textContent.trim() === '2 / 2', 4000);
@@ -68,7 +78,7 @@ const evalJs = `(async () => {
   click(document.getElementById('twFinish'));
   await wait(150);
   const closed = view.hidden;
-  return { opened, queueIs2, groupsShown, tagOn, kindOn, customOn, advanced, doneShown, closed };
+  return { opened, queueIs2, bigImg, gateCollapsed, expandWorks, tagOn, kindOn, badgeShown, newGroupInputShown, customOn, newGroupAppears, advanced, doneShown, closed };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -87,10 +97,16 @@ child.on('close', () => {
       if (Array.isArray(rec.tags) && rec.tags.includes('立ち') && rec.tags.includes('自作タグ') && rec.userKind === 'media') saved = true;
     } catch { /* next */ }
   }
+  // the new group must have been persisted to tag-groups.json
+  let newGroupSaved = false;
+  try {
+    const tg = JSON.parse(fs.readFileSync(path.join(saveFolder, 'tag-groups.json'), 'utf8'));
+    newGroupSaved = (tg.groups || []).some((g) => g.name === '自作群' && (g.tags || []).includes('自作タグ'));
+  } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['opened', 'queueIs2', 'groupsShown', 'tagOn', 'kindOn', 'customOn', 'advanced', 'doneShown', 'closed'];
-  const ok = keys.every((k) => r[k] === true) && saved;
-  console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved);
+  const keys = ['opened', 'queueIs2', 'bigImg', 'gateCollapsed', 'expandWorks', 'tagOn', 'kindOn', 'badgeShown', 'newGroupInputShown', 'customOn', 'newGroupAppears', 'advanced', 'doneShown', 'closed'];
+  const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
+  console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);
   console.log(ok ? 'WIZARD_VERIFY_PASS' : 'WIZARD_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

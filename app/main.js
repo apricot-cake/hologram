@@ -244,6 +244,18 @@ ipcMain.handle('get-tag-groups', () => {
   }
 });
 
+ipcMain.handle('set-tag-groups', (_e, groups) => {
+  const folder = getSaveFolder();
+  if (!folder || !Array.isArray(groups)) return { ok: false };
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'tag-groups.json'), JSON.stringify({ groups }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
 // Persistent per-post "do not group" set (image-view). Post keys whose images
 // should stay individual tiles (e.g. several pics from one post that aren't a
 // multi-page work). Lives as <saveFolder>/ungrouped.json: { keys: [...] }.

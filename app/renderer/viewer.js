@@ -100,6 +100,9 @@
     twDone: _s('twDone'),
     twOther: _s('twOther'),
     twNoGroups: _s('twNoGroups'),
+    twNoGroup: _s('twNoGroup'),
+    twNewGroup: _s('twNewGroup'),
+    twNewGroupName: _s('twNewGroupName'),
     imagesCount: _f1('imagesCount'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
@@ -1970,8 +1973,9 @@
     if (!view) return;
     let queue = [];
     let idx = 0;
-    let sel = new Set();    // selected tags for the current post
-    let kind = null;        // 'plain' | 'media' | null
+    let sel = new Set();        // selected tags for the current post
+    let kind = null;            // 'plain' | 'media' | null
+    let openGroups = new Set(); // tag groups expanded (y/n gate) for this post
 
     const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length));
 
@@ -1990,6 +1994,9 @@
         const g = queue[idx];
         sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
         kind = g.rep.userKind || null;
+        // Start with every group collapsed (the y/n gate); groups that already
+        // carry a selected tag auto-open so existing tags stay visible.
+        openGroups = new Set(tagGroups.filter((grp) => (grp.tags || []).some((t) => sel.has(t))).map((grp) => grp.id));
       }
       paint();
     }
@@ -2013,36 +2020,71 @@
       const author = p.displayName || p.screenName || p.title || '';
       const text = (p.text && p.text !== author) ? p.text : (p.title && p.title !== author ? p.title : '');
       const chip = (t, on) => `<button class="tw-chip${on ? ' on' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+      // Coarse→fine: each group is a y/n gate. Collapsed by default; the header
+      // shows a selected-count badge. Open it only if this post needs that
+      // group, so you skip the rest of the vocabulary instead of scanning it.
       let groupsHtml = '';
       if (!tagGroups.length) {
         groupsHtml = `<div class="tw-post-meta">${escapeHtml(MSG.twNoGroups)}</div>`;
       } else {
         for (const grp of tagGroups) {
-          const chips = (grp.tags || []).map((t) => chip(t, sel.has(t))).join('');
-          if (chips) groupsHtml += `<div class="tw-group"><div class="tw-group-name">${escapeHtml(grp.name)}</div><div class="tw-chips">${chips}</div></div>`;
+          if (!(grp.tags || []).length) continue;
+          const n = (grp.tags || []).filter((t) => sel.has(t)).length;
+          const isOpen = openGroups.has(grp.id);
+          const tagsHtml = isOpen ? `<div class="tw-chips">${grp.tags.map((t) => chip(t, sel.has(t))).join('')}</div>` : '';
+          groupsHtml += `<div class="tw-grp${isOpen ? ' open' : ''}">` +
+            `<button class="tw-grp-head" data-grp="${escapeAttr(grp.id)}"><span class="tw-grp-caret">${isOpen ? '▾' : '▸'}</span>${escapeHtml(grp.name)}${n ? `<span class="tw-grp-badge">${n}</span>` : ''}</button>` +
+            tagsHtml + `</div>`;
         }
       }
       // tags on the post that belong to no group (incl. just-added) → "other"
       const grouped = new Set(tagGroups.flatMap((gr) => gr.tags || []));
       const others = [...sel].filter((t) => !grouped.has(t));
       const otherHtml = others.length
-        ? `<div class="tw-group"><div class="tw-group-name">${escapeHtml(MSG.twOther)}</div><div class="tw-chips">${others.map((t) => chip(t, true)).join('')}</div></div>`
+        ? `<div class="tw-grp open"><div class="tw-grp-head" style="cursor:default"><span class="tw-grp-caret">▾</span>${escapeHtml(MSG.twOther)}<span class="tw-grp-badge">${others.length}</span></div><div class="tw-chips">${others.map((t) => chip(t, true)).join('')}</div></div>`
         : '';
+      // new-tag adder: tag + target group (existing / none / new)
+      const groupOpts = tagGroups.map((gr) => `<option value="${escapeAttr(gr.id)}">${escapeHtml(gr.name)}</option>`).join('');
+      const addHtml = `<div class="tw-add">` +
+        `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}">` +
+        `<select id="twAddGroup"><option value="">${escapeHtml(MSG.twNoGroup)}</option>${groupOpts}<option value="__new">${escapeHtml(MSG.twNewGroup)}</option></select>` +
+        `<input type="text" id="twNewGroupName" placeholder="${escapeAttr(MSG.twNewGroupName)}" style="display:none;">` +
+        `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
       body.innerHTML =
-        `<div class="tw-post">${thumb ? `<img src="${fileSrc(thumb, 240)}" alt="">` : ''}<div class="tw-post-meta"><div class="tw-author">${escapeHtml(author)}</div><div class="tw-text">${escapeHtml(text)}</div></div></div>` +
-        `<div class="tw-group-name">${escapeHtml(MSG.twKindQ)}</div>` +
+        `<div class="tw-post"><div class="tw-big-wrap">${thumb ? `<img class="tw-big" src="${fileSrc(thumb, 720)}" alt="">` : ''}</div>` +
+        `<div class="tw-post-side"><div class="tw-author">${escapeHtml(author)}</div>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}` +
+        `<div class="tw-group-name" style="margin-top:10px;">${escapeHtml(MSG.twKindQ)}</div>` +
         `<div class="tw-kind">` +
           `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
           `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
-        `</div>` +
-        groupsHtml + otherHtml +
-        `<div class="tw-add"><input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}"><button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
+        `</div></div></div>` +
+        `<div class="tw-groups">` + groupsHtml + otherHtml + `</div>` +
+        addHtml;
     }
 
-    function addCustom() {
+    async function addWithGroup() {
       const inp = document.getElementById('twAddInput');
       const v = (inp && inp.value || '').trim();
-      if (v) { sel.add(v); paint(); }
+      if (!v) return;
+      sel.add(v);
+      const gsel = document.getElementById('twAddGroup');
+      const choice = gsel ? gsel.value : '';
+      let changed = false;
+      if (choice === '__new') {
+        const nameEl = document.getElementById('twNewGroupName');
+        const name = (nameEl && nameEl.value || '').trim();
+        if (name) {
+          const id = 'g' + Date.now().toString(36);
+          tagGroups.push({ id, name, tags: [v] });
+          openGroups.add(id);
+          changed = true;
+        }
+      } else if (choice) {
+        const grp = tagGroups.find((gr) => gr.id === choice);
+        if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) grp.tags.push(v); openGroups.add(grp.id); changed = true; }
+      }
+      if (changed && window.corpus.setTagGroups) { try { await window.corpus.setTagGroups(tagGroups); } catch { /* best-effort */ } }
+      paint();
     }
 
     async function saveCurrent() {
@@ -2059,9 +2101,17 @@
       if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
       const kindBtn = e.target.closest('.tw-chip[data-kind]');
       if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; paint(); return; }
-      if (e.target.closest('#twAddBtn')) addCustom();
+      const grpHead = e.target.closest('.tw-grp-head[data-grp]');
+      if (grpHead) { const id = grpHead.dataset.grp; if (openGroups.has(id)) openGroups.delete(id); else openGroups.add(id); paint(); return; }
+      if (e.target.closest('#twAddBtn')) addWithGroup();
     });
-    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'twAddInput') { e.preventDefault(); addCustom(); } });
+    body.addEventListener('change', (e) => {
+      if (e.target.id === 'twAddGroup') {
+        const el = document.getElementById('twNewGroupName');
+        if (el) el.style.display = e.target.value === '__new' ? '' : 'none';
+      }
+    });
+    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.id === 'twAddInput' || e.target.id === 'twNewGroupName')) { e.preventDefault(); addWithGroup(); } });
 
     document.getElementById('twSave').addEventListener('click', async () => { await saveCurrent(); gotoStep(idx + 1); });
     document.getElementById('twSkip').addEventListener('click', () => gotoStep(idx + 1));

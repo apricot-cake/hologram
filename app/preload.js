@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('corpus', {
   setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   listPosts: () => ipcRenderer.invoke('list-posts'),
   getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
+  setTagGroups: (groups) => ipcRenderer.invoke('set-tag-groups', groups),
   getUngrouped: () => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys) => ipcRenderer.invoke('set-ungrouped', keys),
   getManualGroups: () => ipcRenderer.invoke('get-manual-groups'),
