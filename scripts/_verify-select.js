@@ -168,7 +168,7 @@ const evalJs = `(async () => {
     !!cm.querySelector('.fm-row[data-act="ws"]') && !!cm.querySelector('.fm-row[data-act="delete"].fm-danger');
   cm.querySelector('.fm-row[data-act="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(40);
-  const menu = document.querySelector('.fold-menu:not(.qf-pop):not(.card-menu)');
+  const menu = document.querySelector('.fold-menu:not(.qf-pop):not(.card-menu):not(.cs-pop)');
   const menuShown = !!menu && menu.classList.contains('show') &&
     menu.querySelectorAll('.fm-row[data-fid]').length === 2 &&
     !menu.querySelector('.fm-star');   // ★ default removed

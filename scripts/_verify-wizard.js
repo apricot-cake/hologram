@@ -62,26 +62,11 @@ const evalJs = `(async () => {
   const onlyOneGroup = body.querySelectorAll('.tw-chip[data-tag]').length === 2 &&
     [...body.querySelectorAll('.tw-chip[data-tag]')].every(c => ['立ち', '座り'].includes(c.dataset.tag));
 
-  // pick a tag on step 1
+  // pick a tag on step 1 (the メディア/ポスト kind chooser was removed — tags
+  // alone carry that distinction now)
   click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち')); await wait(40);
   const tagOn = [...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち').classList.contains('on');
-  // ⓘ explains メディア/ポスト (toggles a help block); close it again
-  click(document.getElementById('twKindInfo')); await wait(40);
-  const kindHelpShown = !!body.querySelector('.tw-kind-help') && /ポスト/.test(body.querySelector('.tw-kind-help').textContent);
-  click(document.getElementById('twKindInfo')); await wait(40);
-  const kindHelpHidden = !body.querySelector('.tw-kind-help');
-  // kind: pick メディア → the two buttons collapse into a compact pill (✎)
-  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
-  const kindCollapsed = !body.querySelector('.tw-chip[data-kind]') &&
-    /メディア/.test((document.getElementById('twKindEdit') || {}).textContent || '');
-  // clicking the pill re-expands the choice (re-select)
-  click(document.getElementById('twKindEdit')); await wait(40);
-  const kindReexpand = !!body.querySelector('.tw-chip[data-kind="media"]') &&
-    body.querySelector('.tw-chip[data-kind="media"]').classList.contains('on');
-  // collapse again for the rest of the flow
-  click(body.querySelector('.tw-chip[data-kind="media"]'));
-  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);   // off→on, back to pill
-  const kindOn = /メディア/.test((document.getElementById('twKindEdit') || {}).textContent || '');
+  const noKindChooser = !body.querySelector('.tw-chip[data-kind]') && !document.getElementById('twKindInfo');
   const badgeOn = (stepBtns()[0].querySelector('.tw-step-badge') || {}).textContent === '1';
 
   // 次へ → step 2 (構図); selection persists across steps (badge on step 1)
@@ -134,7 +119,7 @@ const evalJs = `(async () => {
   await wait(250);
   const queueEmptied = /お疲れ|done|ありません/i.test(body.textContent);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindHelpShown, kindHelpHidden, kindCollapsed, kindReexpand, kindOn, badgeOn, step2, badgeKept,
+  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, noKindChooser, badgeOn, step2, badgeKept,
     otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, noSkipBtn, doneShown, closed, queueEmptied };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -145,13 +130,13 @@ child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
-  // verify the sidecar was written (tags + userKind). queue[0] is the NEWEST
-  // untagged post (default date-desc sort) — could be tw0 or tw1, so scan both.
+  // verify the sidecar was written (tags only — userKind was removed). queue[0]
+  // is the NEWEST untagged post (default date-desc sort) — tw0 or tw1, scan both.
   let saved = false;
   for (const id of ['1700000000000-tw0', '1700000000001-tw1']) {
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(saveFolder, id + '.json'), 'utf8'));
-      if (Array.isArray(rec.tags) && rec.tags.includes('立ち') && rec.tags.includes('自作タグ') && rec.userKind === 'media') saved = true;
+      if (Array.isArray(rec.tags) && rec.tags.includes('立ち') && rec.tags.includes('自作タグ')) saved = true;
     } catch { /* next */ }
   }
   // the new group must have been persisted to tag-groups.json
@@ -161,7 +146,7 @@ child.on('close', () => {
     newGroupSaved = (tg.groups || []).some((g) => g.name === '自作群' && (g.tags || []).includes('自作タグ'));
   } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindHelpShown', 'kindHelpHidden', 'kindCollapsed', 'kindReexpand', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
+  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'noKindChooser', 'badgeOn', 'step2', 'badgeKept',
     'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'noSkipBtn', 'doneShown', 'closed', 'queueEmptied'];
   const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
   console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);

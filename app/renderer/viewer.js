@@ -25,7 +25,6 @@
     kindTitle: _s('kindTitle'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
-    userKindTitle: _s('userKindTitle'),
     multiOnly: _s('multiOnly'),
     expandAll: _s('expandAll'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
@@ -89,12 +88,6 @@
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
     twTitle: _s('twTitle'),
-    twKindQ: _s('twKindQ'),
-    twKindMedia: _s('twKindMedia'),
-    twKindPlain: _s('twKindPlain'),
-    twKindHelpMedia: _s('twKindHelpMedia'),
-    twKindHelpPost: _s('twKindHelpPost'),
-    twKindHelpNote: _s('twKindHelpNote'),
     twAddPlaceholder: _s('twAddPlaceholder'),
     twAddToGroup: _s('twAddToGroup'),
     twAdd: _s('twAdd'),
@@ -265,6 +258,7 @@
     qfEngagement: _s('qfEngagement'),
     qfTag: _s('qfTag'),
     qfMedia: _s('qfMedia'),
+    qfMediaTitle: _s('qfMediaTitle'),
     qfInstance: _s('qfInstance'),
     qfPost: _s('qfPost'),
     qfReply: _s('qfReply'),
@@ -486,9 +480,6 @@
         case 'kind':
           label = f.value === 'post' ? MSG.kindPost : MSG.kindImage;
           break;
-        case 'userKind':
-          label = f.value === 'media' ? MSG.twKindMedia : MSG.twKindPlain;
-          break;
         case 'platform':
           label = ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
           break;
@@ -681,15 +672,10 @@
   let qfTagGroup = null;   // tag flyout を特定グループに限定（'__other' = 未所属）
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
   function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfTagGroup = null; qfAnchor = null; }
-  const qfCatLabel = (id, fallback) => {
-    const el = document.getElementById(id);
-    return (el && el.textContent.trim()) || fallback;
-  };
   function qfValues(cat) {
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
-      case 'userKind': return [['media', MSG.twKindMedia], ['plain', MSG.twKindPlain]].map(([v, l]) => ({ v, l, on: act('userKind', v) }));
       case 'platform': {
         // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
         const names = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
@@ -743,16 +729,6 @@
       default: return [];
     }
   }
-  function qfHeading() {
-    if (qfCat !== 'tag' || !qfTagGroup) {
-      const ids = { kind: 'sbKindTitle', userKind: 'sbUserKindTitle', platform: 'sbPlatformTitle', postType: 'sbPostTypeTitle', media: 'sbMediaTitle', tag: 'sbTagTitle', user: 'sbAuthorTitle', instance: 'sbInstanceTitle' };
-      if (qfCat === 'folder') return MSG.qfCatFolder;
-      return qfCatLabel(ids[qfCat] || '', qfCat);
-    }
-    if (qfTagGroup === '__other') return MSG.tagGroupOther;
-    const g = tagGroups.find(g2 => g2.id === qfTagGroup);
-    return (g && g.name) || '';
-  }
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
@@ -763,7 +739,9 @@
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
-    qfPop.innerHTML = `<div class="fm-row qf-back">${escapeHtml(qfHeading())}</div>` +
+    // No heading row: the user already clicked the category row, so repeating
+    // its name as a (hover-highlighted, seemingly-clickable) row was noise.
+    qfPop.innerHTML =
       find +
       `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
     const fi = document.getElementById('qfFind');
@@ -1034,13 +1012,12 @@
 
   // Sidebar i18n
   setText('sbKindTitle', MSG.kindTitle);
-  setText('sbUserKindTitle', MSG.userKindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
   setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
-  setText('sbMediaTitle', MSG.qfMedia);
+  setText('sbMediaTitle', MSG.qfMediaTitle);
   setText('sbDateTitle', MSG.qfDate);
   setText('sbEngTitle', MSG.qfEngagement);
   setText('sbTagTitle', MSG.qfTag);
@@ -1430,11 +1407,13 @@
     // tag/folder/date/engagement elements are individually required.
     // OR field (mode === 'or') matches when ANY element matches.
     // Both fields combine via the user-selected connector (tagJoin).
-    const SINGLE_VALUED = ['kind', 'userKind', 'platform', 'user', 'instance', 'postType', 'media'];
+    const SINGLE_VALUED = ['kind', 'platform', 'user', 'instance', 'postType', 'media'];
     const predOf = (f) => {
       switch (f.type) {
-        case 'kind': return (p) => (f.value === 'post') === isScreenshot(p);
-        case 'userKind': return (p) => (p.userKind || null) === f.value;
+        // 'post' = SNS投稿（リンクあり＝拡張で取得: キャプチャもドラッグも）/
+        // 'image' = 取り込み画像（リンクなし＝手動追加）。キャプチャ/ドラッグの別は
+        // 区別する価値がないので url の有無を本質的な軸にする。
+        case 'kind': return (p) => (f.value === 'post') === !!p.url;
         case 'platform': return (p) => p.platform === f.value;
         case 'user': return (p) => userKey(p) === f.value;
         case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
@@ -2177,9 +2156,6 @@
     let idx = 0;                // current image
     let step = 0;               // current group step
     let sel = new Set();        // selected tags for the current post
-    let kind = null;            // 'plain' | 'media' | null
-    let kindEditing = false;    // force the kind choice expanded (re-select)
-    let kindHelp = false;       // ⓘ explanation for メディア/ポスト shown?
     let showHidPanel = false;   // group-visibility panel open?
 
     // Queue = posts not yet handled here: no tags AND not marked reviewed.
@@ -2213,8 +2189,6 @@
       if (idx < queue.length) {
         const g = queue[idx];
         sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
-        kind = g.rep.userKind || null;
-        kindEditing = false;   // collapse to the compact pill if already set
       }
       paint();
     }
@@ -2252,23 +2226,6 @@
         (thumb ? `<img class="tw-big" src="${fileSrc(thumb, 1080)}" alt="">` : '') +
         `<div class="tw-meta"><span class="tw-author">${escapeHtml(author)}</span>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}</div>` +
         `</div>`;
-      // Once a kind is chosen, collapse the two buttons into a compact pill
-      // (label ✎) so they stop competing for attention; clicking it (or its ✎)
-      // expands the choice again. kindEditing forces the expanded state.
-      const kindLabel = kind === 'media' ? MSG.twKindMedia : kind === 'plain' ? MSG.twKindPlain : '';
-      const collapsed = kind && !kindEditing;
-      const infoSvg = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>';
-      const kindRow = collapsed
-        ? `<div class="tw-kind"><button class="tw-kind-set" id="twKindEdit">${escapeHtml(kindLabel)} <span class="tw-kind-pen">✎</span></button></div>`
-        : `<div class="tw-kind"><span class="tw-group-name">${escapeHtml(MSG.twKindQ)}</span>` +
-          `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
-          `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
-          `<button class="tw-kind-info${kindHelp ? ' on' : ''}" id="twKindInfo" aria-label="?">${infoSvg}</button>` +
-        `</div>`;
-      const kindHelpBlock = (kindHelp && !collapsed)
-        ? `<div class="tw-kind-help"><div>${escapeHtml(MSG.twKindHelpMedia)}</div><div>${escapeHtml(MSG.twKindHelpPost)}</div><div class="tw-kind-help-note">${escapeHtml(MSG.twKindHelpNote)}</div></div>`
-        : '';
-
       // stepper: every visible group + the always-present 非表示 chip
       const stepsHtml = st.map((s, i) => {
         const tags = s.tags || ungroupedTags();
@@ -2304,7 +2261,7 @@
       const hideLink = isOther ? '' : `<button class="tw-hide-link" data-hide="${escapeAttr(cur.id)}">${escapeHtml(MSG.twHide)}</button>`;
       const panel = `<div class="tw-panel"><div class="tw-panel-name">${escapeHtml(cur.name)}</div>${noGroupsNote}${chipsHtml}${adder}${hideLink}</div>`;
 
-      body.innerHTML = left + `<div class="tw-right">${kindRow}${kindHelpBlock}<div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
+      body.innerHTML = left + `<div class="tw-right"><div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
     }
 
     async function addTag() {
@@ -2343,18 +2300,14 @@
       const tags = [...sel];
       // Pressing save = "I handled this image" → mark reviewed so it leaves the
       // queue even when it got no tags.
-      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { userKind: kind, tagReviewed: true })
-        .then(() => { r.tags = tags.slice(); r.userKind = kind; r.tagReviewed = true; })
+      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { tagReviewed: true })
+        .then(() => { r.tags = tags.slice(); r.tagReviewed = true; })
         .catch(() => {})));
     }
 
     body.addEventListener('click', (e) => {
       const tagBtn = e.target.closest('.tw-chip[data-tag]');
       if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
-      const kindBtn = e.target.closest('.tw-chip[data-kind]');
-      if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; kindEditing = !kind; paint(); return; }
-      if (e.target.closest('#twKindEdit')) { kindEditing = true; paint(); return; }
-      if (e.target.closest('#twKindInfo')) { kindHelp = !kindHelp; paint(); return; }
       const stepBtn = e.target.closest('.tw-step[data-step]');
       if (stepBtn) { setStep(parseInt(stepBtn.dataset.step, 10)); return; }
       if (e.target.closest('#twHiddenChip')) { showHidPanel = !showHidPanel; paint(); return; }

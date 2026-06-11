@@ -920,7 +920,6 @@
     .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
-    .sb-active-chip.qc-userKind { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-workspace { background: var(--accent-subtle); border: 1px solid var(--accent-border); color: var(--accent-subtle-fg); }
     /* 検索/フォルダの特殊ピル: 裸テキストだったのでチップ化（角丸の四角） */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder {
@@ -984,7 +983,6 @@
     }
     .qf-add:hover { color: var(--accent); border-color: var(--accent); }
     .qf-pop .qf-vals { max-height: 320px; overflow-y: auto; }
-    .qf-pop .qf-back { color: var(--text-muted); font-weight: 600; }
     .qf-pop .qf-arrow { color: var(--text-subtle); }
     .qf-pop .qf-find {
       width: calc(100% - 8px); margin: 2px 4px 4px; padding: 5px 10px; font-size: 12px;
@@ -1131,8 +1129,7 @@
              the unbounded lists (tags/authors/instances) live in the flyouts. -->
         <div class="sb-section" id="filterRows">
           <div class="sb-title" id="sbFilterTitle"></div>
-          <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="userKind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span><span class="sb-row-name" id="sbUserKindTitle"></span><span class="sb-row-badge" data-badge="userKind"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/></svg></span><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow">▸</span></button>
@@ -1451,29 +1448,6 @@
     .tw-meta { font-size: 12px; color: var(--text-muted); flex-shrink: 0; text-align: center; }
     .tw-meta .tw-author { font-size: 13px; font-weight: 600; color: var(--text); }
     .tw-meta .tw-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.55; color: var(--text); }
-    .tw-kind { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-    .tw-kind .tw-group-name { margin: 0 4px 0 0; }
-    /* collapsed confirmation pill (after a kind is chosen) */
-    .tw-kind-set {
-      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-      border: 1px solid var(--accent-border); background: var(--accent-subtle);
-      color: var(--accent-subtle-fg); border-radius: 999px; padding: 3px 12px;
-      font-size: 12px; font-weight: 600;
-    }
-    .tw-kind-set:hover { border-color: var(--accent); }
-    .tw-kind-pen { font-size: 11px; opacity: .7; }
-    .tw-kind-info {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px; border: none; border-radius: 50%;
-      background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
-    }
-    .tw-kind-info:hover, .tw-kind-info.on { color: var(--accent); }
-    .tw-kind-help {
-      font-size: 12px; line-height: 1.7; color: var(--text);
-      background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 12px; flex-shrink: 0;
-    }
-    .tw-kind-help-note { color: var(--text-muted); margin-top: 4px; }
     .tw-group-name { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
     .tw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     /* group stepper: every (visible) group is a clickable chip — the linear

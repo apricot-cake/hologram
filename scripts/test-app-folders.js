@@ -66,8 +66,8 @@ const evalJs = `(async () => {
     new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })); await sleep(40);
   const ctxOpen = !!document.querySelector('.card-menu.show .fm-row[data-act="folder"]');
   click(document.querySelector('.card-menu .fm-row[data-act="folder"]')); await sleep(40);
-  const menuOpen = !!document.querySelector('.fold-menu.show:not(.card-menu)');
-  click(document.querySelector('.fold-menu.show:not(.card-menu) .fm-row[data-fid]')); await sleep(50);
+  const menuOpen = !!document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop)');
+  click(document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop) .fm-row[data-fid]')); await sleep(50);
   const countText = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
 
   // filter by the folder chip → only the added card
