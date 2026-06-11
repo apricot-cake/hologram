@@ -2450,12 +2450,17 @@
     e.stopPropagation();
     closeDetail();
   }, true);
-  // ℹ button on card → detail popup
+  // ℹ button on card → detail popup (re-click same card toggles close)
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.info-btn');
     if (!btn) return;
     e.stopPropagation();
-    showDetail(viewGroups[parseInt(btn.dataset.info, 10)]);
+    const g = viewGroups[parseInt(btn.dataset.info, 10)];
+    if (!document.getElementById('postDetail').hidden && inspectedKey && g && postIdKey(g.rep) === inspectedKey) {
+      closeDetail();
+      return;
+    }
+    showDetail(g);
   });
 
   // --- Edit overlay logic ---
