@@ -1373,6 +1373,15 @@
     .tw-meta .tw-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.55; color: var(--text); }
     .tw-kind { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
     .tw-kind .tw-group-name { margin: 0 4px 0 0; }
+    /* collapsed confirmation pill (after a kind is chosen) */
+    .tw-kind-set {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      border: 1px solid var(--accent-border); background: var(--accent-subtle);
+      color: var(--accent-subtle-fg); border-radius: 999px; padding: 3px 12px;
+      font-size: 12px; font-weight: 600;
+    }
+    .tw-kind-set:hover { border-color: var(--accent); }
+    .tw-kind-pen { font-size: 11px; opacity: .7; }
     .tw-group-name { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
     .tw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     /* group stepper: every (visible) group is a clickable chip — the linear

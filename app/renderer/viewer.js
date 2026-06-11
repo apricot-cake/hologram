@@ -1990,6 +1990,7 @@
     let step = 0;               // current group step
     let sel = new Set();        // selected tags for the current post
     let kind = null;            // 'plain' | 'media' | null
+    let kindEditing = false;    // force the kind choice expanded (re-select)
     let showHidPanel = false;   // group-visibility panel open?
 
     const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length));
@@ -2022,6 +2023,7 @@
         const g = queue[idx];
         sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
         kind = g.rep.userKind || null;
+        kindEditing = false;   // collapse to the compact pill if already set
       }
       paint();
     }
@@ -2059,8 +2061,13 @@
         (thumb ? `<img class="tw-big" src="${fileSrc(thumb, 1080)}" alt="">` : '') +
         `<div class="tw-meta"><span class="tw-author">${escapeHtml(author)}</span>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}</div>` +
         `</div>`;
-      const kindRow =
-        `<div class="tw-kind"><span class="tw-group-name">${escapeHtml(MSG.twKindQ)}</span>` +
+      // Once a kind is chosen, collapse the two buttons into a compact pill
+      // (label ✎) so they stop competing for attention; clicking it (or its ✎)
+      // expands the choice again. kindEditing forces the expanded state.
+      const kindLabel = kind === 'media' ? MSG.twKindMedia : kind === 'plain' ? MSG.twKindPlain : '';
+      const kindRow = (kind && !kindEditing)
+        ? `<div class="tw-kind"><button class="tw-kind-set" id="twKindEdit">${escapeHtml(kindLabel)} <span class="tw-kind-pen">✎</span></button></div>`
+        : `<div class="tw-kind"><span class="tw-group-name">${escapeHtml(MSG.twKindQ)}</span>` +
           `<button class="tw-chip${kind === 'media' ? ' on' : ''}" data-kind="media">${escapeHtml(MSG.twKindMedia)}</button>` +
           `<button class="tw-chip${kind === 'plain' ? ' on' : ''}" data-kind="plain">${escapeHtml(MSG.twKindPlain)}</button>` +
         `</div>`;
@@ -2146,7 +2153,8 @@
       const tagBtn = e.target.closest('.tw-chip[data-tag]');
       if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
       const kindBtn = e.target.closest('.tw-chip[data-kind]');
-      if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; paint(); return; }
+      if (kindBtn) { const k = kindBtn.dataset.kind; kind = (kind === k) ? null : k; kindEditing = !kind; paint(); return; }
+      if (e.target.closest('#twKindEdit')) { kindEditing = true; paint(); return; }
       const stepBtn = e.target.closest('.tw-step[data-step]');
       if (stepBtn) { setStep(parseInt(stepBtn.dataset.step, 10)); return; }
       if (e.target.closest('#twHiddenChip')) { showHidPanel = !showHidPanel; paint(); return; }

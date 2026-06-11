@@ -62,11 +62,21 @@ const evalJs = `(async () => {
   const onlyOneGroup = body.querySelectorAll('.tw-chip[data-tag]').length === 2 &&
     [...body.querySelectorAll('.tw-chip[data-tag]')].every(c => ['立ち', '座り'].includes(c.dataset.tag));
 
-  // pick a tag on step 1 + the kind (kind lives on the image side, any step)
+  // pick a tag on step 1
   click([...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち')); await wait(40);
-  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
   const tagOn = [...body.querySelectorAll('.tw-chip[data-tag]')].find(c => c.dataset.tag === '立ち').classList.contains('on');
-  const kindOn = body.querySelector('.tw-chip[data-kind="media"]').classList.contains('on');
+  // kind: pick メディア → the two buttons collapse into a compact pill (✎)
+  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);
+  const kindCollapsed = !body.querySelector('.tw-chip[data-kind]') &&
+    /メディア/.test((document.getElementById('twKindEdit') || {}).textContent || '');
+  // clicking the pill re-expands the choice (re-select)
+  click(document.getElementById('twKindEdit')); await wait(40);
+  const kindReexpand = !!body.querySelector('.tw-chip[data-kind="media"]') &&
+    body.querySelector('.tw-chip[data-kind="media"]').classList.contains('on');
+  // collapse again for the rest of the flow
+  click(body.querySelector('.tw-chip[data-kind="media"]'));
+  click(body.querySelector('.tw-chip[data-kind="media"]')); await wait(40);   // off→on, back to pill
+  const kindOn = /メディア/.test((document.getElementById('twKindEdit') || {}).textContent || '');
   const badgeOn = (stepBtns()[0].querySelector('.tw-step-badge') || {}).textContent === '1';
 
   // 次へ → step 2 (構図); selection persists across steps (badge on step 1)
@@ -112,7 +122,7 @@ const evalJs = `(async () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await wait(150);
   const closed = view.hidden;
-  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindOn, badgeOn, step2, badgeKept,
+  return { opened, queueIs2, bigImg, stepperOk, onlyOneGroup, tagOn, kindCollapsed, kindReexpand, kindOn, badgeOn, step2, badgeKept,
     otherHasStray, newGroupStep, hiddenWorks, panelShows, unhideWorks, advanced, doneShown, closed };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -139,7 +149,7 @@ child.on('close', () => {
     newGroupSaved = (tg.groups || []).some((g) => g.name === '自作群' && (g.tags || []).includes('自作タグ'));
   } catch { /* stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
+  const keys = ['opened', 'queueIs2', 'bigImg', 'stepperOk', 'onlyOneGroup', 'tagOn', 'kindCollapsed', 'kindReexpand', 'kindOn', 'badgeOn', 'step2', 'badgeKept',
     'otherHasStray', 'newGroupStep', 'hiddenWorks', 'panelShows', 'unhideWorks', 'advanced', 'doneShown', 'closed'];
   const ok = keys.every((k) => r[k] === true) && saved && newGroupSaved;
   console.log(keys.map((k) => k + '=' + r[k]).join(' ') + ' savedSidecar=' + saved + ' newGroupSaved=' + newGroupSaved);
