@@ -302,10 +302,12 @@
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
-  // icon-only segments — labels live in the tooltip (setText would wipe the SVG)
-  setAttr('viewCard', 'title', MSG.viewCard);
-  setAttr('viewTile', 'title', MSG.viewTile);
-  setAttr('viewList', 'title', MSG.viewList);
+  // segments: icon always, label shown only on the active one (no tooltips —
+  // the active label is the affordance). Labels live in their own span so the
+  // SVG glyph survives.
+  setText('viewCardLabel', MSG.viewCard);
+  setText('viewTileLabel', MSG.viewTile);
+  setText('viewListLabel', MSG.viewList);
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
@@ -739,7 +741,9 @@
     const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
-    const find = items.length > 8 ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
+    // Find box only for genuinely long, open-ended lists (tags/authors). The
+    // platform list is short + fixed (5 PFs + their instances), so no find box.
+    const find = (qfCat !== 'platform' && items.length > 8) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
     qfPop.innerHTML =
@@ -891,7 +895,7 @@
     editingDateIdx = idx;
     const existing = idx != null ? activeFilters[idx] : null;
     const popover = document.getElementById('qfDatePopover');
-    const anchor = document.getElementById('sbDateTitle');
+    const anchor = document.querySelector('#filterRows [data-qfrow="date"]');
     const rect = anchor.getBoundingClientRect();
 
     document.getElementById('qfDateFrom').value = existing?.from || '';
@@ -906,10 +910,15 @@
     document.getElementById('qfDateDelete').textContent = MSG.qfDelete;
     document.getElementById('qfDateApply').textContent = MSG.qfApply;
 
+    // Open to the RIGHT of the row (same as the category flyouts) — opening
+    // straight down covered the rows below and made switching awkward.
     popover.style.display = 'block';
-    popover.style.top = (rect.bottom + 4) + 'px';
-    popover.style.left = (rect.left) + 'px';
+    popover.style.left = (rect.right + 8) + 'px';
+    popover.style.top = rect.top + 'px';
     popover.style.right = 'auto';
+    const pr = popover.getBoundingClientRect();
+    if (pr.right > innerWidth - 8) popover.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    if (pr.bottom > innerHeight - 8) popover.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
   }
 
   document.getElementById('qfDateType').addEventListener('click', function() {
@@ -952,7 +961,7 @@
     editingEngIdx = idx;
     const existing = idx != null ? activeFilters[idx] : null;
     const popover = document.getElementById('qfEngPopover');
-    const anchor = document.getElementById('sbEngTitle');
+    const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]');
     const rect = anchor.getBoundingClientRect();
 
     const select = document.getElementById('qfEngType');
@@ -972,9 +981,12 @@
     document.getElementById('qfEngApply').textContent = MSG.qfApply;
 
     popover.style.display = 'block';
-    popover.style.top = (rect.bottom + 4) + 'px';
-    popover.style.left = (rect.left) + 'px';
+    popover.style.left = (rect.right + 8) + 'px';
+    popover.style.top = rect.top + 'px';
     popover.style.right = 'auto';
+    const pr = popover.getBoundingClientRect();
+    if (pr.right > innerWidth - 8) popover.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    if (pr.bottom > innerHeight - 8) popover.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
   }
 
   document.getElementById('qfEngOp').addEventListener('click', function() {

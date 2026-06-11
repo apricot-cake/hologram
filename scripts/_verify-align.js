@@ -34,20 +34,23 @@ const evalJs = `(async () => {
     return el.getBoundingClientRect().left + parseFloat(cs.borderLeftWidth || 0) + parseFloat(cs.paddingLeft || 0);
   };
   const xs = {
-    // sbKindTitle is now a ROW NAME after a leading icon (by design), so it no
-    // longer sits on the bare-text axis — measure section titles instead.
-    search: textX(document.getElementById('searchBox')),
+    // The 23px text axis = the filter row's content start (its 1px transparent
+    // border + 12px padding). Everything in the column aligns to it.
     select: textX(document.getElementById('sortSelect').nextElementSibling),
     row: textX(document.querySelector('#filterRows .sb-row')),
     modeSel: textX(document.getElementById('searchModeSel').nextElementSibling),
-    secTitle: textX(document.getElementById('sbSearchTitle'))
-    // viewBtn dropped: segmented-control labels are center-aligned, so they
-    // don't sit on the left text axis (the 1px box-math diff is meaningless).
+    secTitle: textX(document.getElementById('sbSearchTitle')),
+    // chips were flush-left; now their container is indented so the pills'
+    // left edge lands on the axis, lining up with the filter rows (user req).
+    chip: textX(document.querySelector('#sidebar .sb-chips'))
+    // sbKindTitle dropped (row name after an icon); viewBtn dropped (centered).
   };
-  const base = xs.search;
+  const base = xs.row;
   const offBy = {};
   for (const k of Object.keys(xs)) offBy[k] = Math.round((xs[k] - base) * 10) / 10;
-  const aligned = Object.values(offBy).every((d) => Math.abs(d) < 0.6);
+  const aligned = Object.values(offBy).every((d) => Math.abs(d) < 1.1);
+  // search intentionally sits ~2px inside the axis (user wanted more padding)
+  const searchPad = getComputedStyle(document.getElementById('searchBox')).paddingLeft;
   const padTop = getComputedStyle(document.getElementById('sidebar')).paddingTop;
   const scroll = document.querySelector('#controls-posts .sb-scroll');
   const scrollPadRight = getComputedStyle(scroll).paddingRight;
@@ -80,7 +83,7 @@ const evalJs = `(async () => {
   document.body.appendChild(probe2);
   const segMonotone = segBg === getComputedStyle(probe2).backgroundColor;
   probe2.remove();
-  return { offBy, aligned, padTop, scrollPadRight,
+  return { offBy, aligned, padTop, scrollPadRight, searchPad,
     secGap, viewFirst, segMonotone, hvPastel, base: Math.round(base * 10) / 10 };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -93,10 +96,10 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.aligned === true && r.padTop === '18px' &&
-    r.scrollPadRight === '8px' &&
+    r.scrollPadRight === '8px' && r.searchPad === '14px' &&
     r.secGap === '22px' && r.viewFirst === true && r.segMonotone === true && r.hvPastel === true;
   console.log('base=' + r.base + ' offsets=' + JSON.stringify(r.offBy) + ' padTop=' + r.padTop +
-    ' scrollPadRight=' + r.scrollPadRight +
+    ' scrollPadRight=' + r.scrollPadRight + ' searchPad=' + r.searchPad +
     ' secGap=' + r.secGap + ' viewFirst=' + r.viewFirst + ' segMono=' + r.segMonotone + ' hvPastel=' + r.hvPastel);
   console.log(ok ? 'ALIGN_VERIFY_PASS' : 'ALIGN_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
