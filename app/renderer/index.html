@@ -298,21 +298,26 @@
     .post-meta {
       padding: 12px;
     }
+    /* Meta line 1: brand dot + name (strong) + handle (subtle, ellipsis).
+       The old solid platform badge was the loudest element on the card while
+       carrying the least information (Reeder/Ivory keep source markers quiet —
+       the dot's brand color + tooltip identify the platform). */
     .post-meta .user {
       font-weight: 600; font-size: 13px;
-      margin-bottom: 4px;
+      margin-bottom: 4px; min-width: 0;
       display: flex; align-items: center; gap: 6px;
     }
-    .platform-badge {
-      font-size: 10px; font-weight: 500;
-      padding: 1px 6px; border-radius: 3px;
-      color: #fff; text-transform: uppercase;
+    .post-meta .user .uname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .post-meta .user .handle {
+      color: var(--text-subtle); font-weight: 400; font-size: 11px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
     }
-    .platform-badge.x { background: var(--brand-x); color: var(--surface); }
-    .platform-badge.bluesky { background: #0085ff; }
-    .platform-badge.misskey { background: #96d04a; color: #16191e; }
-    .platform-badge.mastodon { background: #6364ff; }
-    .platform-badge.pixiv { background: #0096fa; }
+    .pf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .pf-dot.x { background: var(--brand-x); }
+    .pf-dot.bluesky { background: var(--brand-bluesky); }
+    .pf-dot.misskey { background: var(--brand-misskey); }
+    .pf-dot.mastodon { background: var(--brand-mastodon); }
+    .pf-dot.pixiv { background: var(--brand-pixiv); }
     .post-meta .text {
       font-size: 13px; color: var(--text);
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
@@ -331,12 +336,15 @@
     }
     .post-meta .text.truncated:hover .text-hint { display: block; }
     .post-meta .text.expanded .text-hint { display: none; }
+    /* Footer line: nonzero engagement (monotone glyphs) + ONE compact date,
+       both quiet — a single line where two full timestamp rows used to sit. */
+    .post-foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
     .post-meta .stats {
-      display: flex; gap: 12px; font-size: 12px; color: var(--text-subtle);
+      display: flex; gap: 10px; font-size: 11.5px; color: var(--text-subtle);
     }
-    .post-meta .date {
-      font-size: 11px; color: var(--text-subtle); margin-top: 4px;
-    }
+    .post-meta .stats .st { display: inline-flex; align-items: center; gap: 3px; }
+    .post-meta .stats .st svg { width: 12px; height: 12px; }
+    .post-foot .pdate { margin-left: auto; font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
 
     .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
     /* ○ select ring — the ONLY selection entry point. A hollow white ring with a
@@ -402,9 +410,9 @@
       order: 1; margin-bottom: 0; white-space: nowrap;
       font-size: 12px; font-weight: 500; color: var(--text-muted);
     }
-    .post-grid.list-view .post-meta .stats { order: 2; white-space: nowrap; font-size: 11px; }
-    .post-grid.list-view .post-meta .date { order: 3; white-space: nowrap; margin-top: 0; margin-left: auto; }
-    .post-grid.list-view .post-meta .date-captured { display: none; }
+    .post-grid.list-view .post-meta .post-foot { order: 2; flex: 1; min-width: 0; margin-top: 0; }
+    .post-grid.list-view .post-meta .stats { white-space: nowrap; font-size: 11px; }
+    .post-grid.list-view .post-meta .pdate { white-space: nowrap; }
     .post-grid.list-view .post-meta .tags-label { display: none; }
 
     /* --- Tile density: a post-card with its info section hidden + a compact
@@ -599,10 +607,11 @@
     /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に
        （srgb 混合 — oklch でサーフェスと混ぜると紫に寄って見える） */
     #editTagsList .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
-    .post-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
-    .post-flag { font-size: 10px; border-radius: 3px; padding: 1px 6px; line-height: 1.5; }
-    .post-flag.flag-type { background: var(--tint-purple-bg); color: var(--text); }
-    .post-flag.flag-media { background: var(--tint-blue-bg); color: var(--text); }
+    /* Flags (リプライ/引用/動画 etc.): quiet muted text, NOT boxed chips —
+       the boxed-tint chips were more outlined boxes (wireframe feel) and
+       競合した with the real value chips in the sidebar. */
+    .post-flags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 0 0 3px; }
+    .post-flag { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
     .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
     /* ⚡ workspace button: like the other hover actions, but its 'in' state IS
        meaningful (single tray, so a persistent filled bookmark is correct). */
