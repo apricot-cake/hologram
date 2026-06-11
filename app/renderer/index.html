@@ -631,9 +631,11 @@
     .post-card:hover .fold-btn { opacity: 1; }
     /* membership ('in') tints the button blue but does NOT keep it visible at
        rest — like every other card action it appears on hover only */
-    .fold-btn.in { background: var(--accent); }
-    /* clicking an .in button REMOVES from the folder → plain red on hover
-       (srgb mix: an oklch mix with the dark surface read as purple) */
+    /* No persistent blue when a post is in the default folder: it can live in
+       MANY folders, so a stuck-blue 📁 misleads ("only one?"). Membership shows
+       in the right-click menu (✓); the 📁 just stays a neutral add control.
+       The green flash confirms the add; hovering an already-in one is red so a
+       click reads as "remove" (srgb mix — an oklch mix read as purple on dark). */
     .fold-btn.in:hover { background: var(--danger); }
     .fold-btn.added { background: var(--success); }
     /* Right-click menu on 📁: pick the destination folder / set the default (★) */
@@ -857,6 +859,7 @@
     .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
+    .sb-active-chip.qc-userKind { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
     /* 検索/フォルダの特殊ピル: 裸テキストだったのでチップ化（角丸の四角） */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder {
       background: var(--surface-3); border: 1px solid var(--border-strong);
@@ -1060,6 +1063,7 @@
         <div class="sb-section" id="filterRows">
           <div class="sb-title" id="sbFilterTitle"></div>
           <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="userKind"><span class="sb-row-name" id="sbUserKindTitle"></span><span class="sb-row-badge" data-badge="userKind"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow">▸</span></button>
           <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow">▸</span></button>
