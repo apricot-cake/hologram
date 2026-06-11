@@ -28,7 +28,11 @@ for (let i = 0; i < 4; i++) {
     captureId: id, image: id + '.jpg', url: 'https://x.com/u/status/' + (300 + i),
     platform: 'x', text: '本文' + i, displayName: '人' + i, screenName: 'u' + i,
     likes: i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: ['t' + i], hashtags: []
+    date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+    // newest (i=3) sorts to data-index 0 and has a public original (search
+    // links shown); the others have none (links hidden)
+    media: i === 3 ? [{ url: 'https://pbs.twimg.com/media/ABC123.jpg?name=orig', file: id + '-media-0.jpg' }] : [],
+    tags: ['t' + i], hashtags: []
   }, null, 2));
 }
 const evalJs = `(async () => {
@@ -60,6 +64,8 @@ const evalJs = `(async () => {
   const cursorSwap = grid.classList.contains('insp-open') &&
     getComputedStyle(card0.querySelector('img.card-img')).cursor === 'pointer';
   const hasActions = !!document.getElementById('pdEdit') && !!document.getElementById('pdOpen') && !!document.getElementById('pdClose');
+  // card 0 has a public original → both reverse-image-search links present
+  const sauceShown = !!document.getElementById('pdSauce') && !!document.getElementById('pdAscii');
   const posMode = getComputedStyle(insp).position;
   const layoutOk = matchMedia('(max-width: 1279px)').matches ? posMode === 'fixed' : posMode === 'sticky';
 
@@ -76,6 +82,8 @@ const evalJs = `(async () => {
   const t2 = title();
   const swapped = !insp.hidden && t2 !== '' && cardText(card2).startsWith(t2) && t2 !== t0;
   const ringMoved = card2.classList.contains('inspected') && !card0.classList.contains('inspected');
+  // card 2 has no public original → reverse-search links must be absent
+  const sauceHiddenNoMedia = !document.getElementById('pdSauce') && !document.getElementById('pdAscii');
 
   // slide-over (the 1100px default window is below the 1280 breakpoint):
   // clicking the grid/cards outside the panel closes it, and the click is
@@ -111,7 +119,7 @@ const evalJs = `(async () => {
   const galleryNormal = lightbox.classList.contains('show');
   esc(); await wait(60);
 
-  return { isAside, opened, contentOk, ring0, cursorSwap, hasActions, layoutOk, slashWorks,
+  return { isAside, opened, contentOk, ring0, cursorSwap, hasActions, sauceShown, sauceHiddenNoMedia, layoutOk, slashWorks,
     swapped, ringMoved, outsideCloses, editOpens, editBack, ringKept, escCloses, cursorBack, galleryNormal,
     dbg: JSON.stringify({ t0, c0: cardText(card0), t2, c2: cardText(card2), narrowMode }) };
 })()`;
@@ -124,7 +132,7 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['isAside', 'opened', 'contentOk', 'ring0', 'cursorSwap', 'hasActions', 'layoutOk', 'slashWorks',
+  const keys = ['isAside', 'opened', 'contentOk', 'ring0', 'cursorSwap', 'hasActions', 'sauceShown', 'sauceHiddenNoMedia', 'layoutOk', 'slashWorks',
     'swapped', 'ringMoved', 'outsideCloses', 'editOpens', 'editBack', 'ringKept', 'escCloses', 'cursorBack', 'galleryNormal'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));

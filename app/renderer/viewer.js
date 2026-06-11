@@ -84,6 +84,8 @@
     imageOf: _f2('imageOf'),
     detailTags: _s('detailTags'),
     detailOpen: _s('detailOpen'),
+    detailSauce: _s('detailSauce'),
+    detailAscii: _s('detailAscii'),
     imagesCount: _f1('imagesCount'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
@@ -1986,6 +1988,12 @@
       : '';
     const heading = p.title || p.text || '';
     const thumbFile = g.files[0] || captureFile(p);
+    // Reverse image search needs a PUBLIC image URL. media[].url keeps the
+    // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
+    // a screenshot-only post has none, so the search links are hidden then.
+    // pixiv (i.pximg.net) is referer-gated so the fetcher may 403 — but pixiv
+    // IS the source, so reverse search there is moot anyway.
+    const srcImageUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
     // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
     // (same post URL with siblings) toggle via the persisted ungrouped set.
     const gkey = postKeyOf(p.url);
@@ -2017,6 +2025,8 @@
       `<div class="iv-insp-actions">` +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
       `<a class="iv-insp-open" id="pdEdit">${escapeHtml(MSG.tipEdit)}</a>` +
+      (srcImageUrl ? `<a class="iv-insp-open" id="pdSauce">${escapeHtml(MSG.detailSauce)} ↗</a>` : '') +
+      (srcImageUrl ? `<a class="iv-insp-open" id="pdAscii">${escapeHtml(MSG.detailAscii)} ↗</a>` : '') +
       groupBtn +
       `</div>`;
     document.getElementById('postDetail').hidden = false;
@@ -2034,6 +2044,8 @@
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const o = document.getElementById('pdOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
     const ed = document.getElementById('pdEdit'); if (ed) ed.onclick = () => openEditOverlay(g.rep, g.records);
+    const sa = document.getElementById('pdSauce'); if (sa) sa.onclick = () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl));
+    const as = document.getElementById('pdAscii'); if (as) as.onclick = () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl));
     const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
     const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
     const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
