@@ -1855,7 +1855,7 @@
     }
     hideFoldMenu();
   });
-  document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); });
+  document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
 
   // --- Card context menu: the labeled table of contents of per-card actions.
@@ -1918,7 +1918,7 @@
     else if (act === 'info') showDetail(g);
     else if (act === 'delete') requestDeleteGroup(g);
   });
-  document.addEventListener('click', (e) => { if (cardMenu.classList.contains('show') && !cardMenu.contains(e.target)) hideCardMenu(); });
+  document.addEventListener('click', (e) => { if (cardMenu.classList.contains('show') && !cardMenu.contains(e.target)) hideCardMenu(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCardMenu(); });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
