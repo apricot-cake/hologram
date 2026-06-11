@@ -198,12 +198,13 @@
     /* --- Sidebar control readability: in dark mode the sidebar bg (--sidebar-bg)
        is LIGHTER than --surface, so surface-colored controls look sunken/dark.
        Raise them to --surface-3 + --border-strong (same fix as the sb-chips). --- */
-    /* Inputs (search/select/date/number): FILLED field + hairline border.
-       Outline-only transparent boxes read as wireframe (user-rejected);
-       borders are an input-only affordance and even there stay subtle. */
+    /* Inputs (search/select/date/number): RECESSED fill + visible hairline —
+       a field must read as a well you can type into. (First pass used
+       border-subtle on surface-3 and the fields sank into the background —
+       user report. Borders remain an input-only affordance.) */
     #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
     #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter {
-      background: var(--surface-3); border-color: var(--border-subtle); color: var(--text);
+      background: var(--field-bg); border-color: var(--border-strong); color: var(--text);
     }
     /* icon buttons (history ←→ etc.): ghost — bare glyph, fill on hover */
     #sidebar .icon-btn { background: transparent; border-color: transparent; color: var(--text-muted); }
@@ -312,6 +313,14 @@
       color: var(--text-subtle); font-weight: 400; font-size: 11px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
     }
+    /* dot+text source label (Reeder-style): the dot alone was illegible
+       (user report) — quiet uppercase text names the platform without the
+       loud solid badge coming back. */
+    .pf-tag {
+      display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+      font-size: 9px; font-weight: 600; letter-spacing: .05em;
+      color: var(--text-subtle); text-transform: uppercase;
+    }
     .pf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .pf-dot.x { background: var(--brand-x); }
     .pf-dot.bluesky { background: var(--brand-bluesky); }
@@ -343,7 +352,6 @@
       display: flex; gap: 10px; font-size: 11.5px; color: var(--text-subtle);
     }
     .post-meta .stats .st { display: inline-flex; align-items: center; gap: 3px; }
-    .post-meta .stats .st svg { width: 12px; height: 12px; }
     .post-foot .pdate { margin-left: auto; font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
 
     .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }

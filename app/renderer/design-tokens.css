@@ -85,6 +85,10 @@
   --seg-track:     var(--gray-100);
   --seg-thumb:     var(--gray-0);
 
+  /* input fields (search/select): recessed fill + VISIBLE hairline so the
+     field reads as a well, not background (macOS search-field anatomy) */
+  --field-bg:      var(--gray-100);
+
   --accent:         var(--blue-600);
   --accent-hover:   var(--blue-700);
   --accent-fg:      #ffffff;
@@ -139,6 +143,7 @@
   /* dark: track recessed below the sidebar (#202226), thumb raised above it */
   --seg-track:     #1a1c20;
   --seg-thumb:     #34373d;
+  --field-bg:      #1a1c20;
 
   --accent:         var(--blue-500);
   --accent-hover:   var(--blue-400);
