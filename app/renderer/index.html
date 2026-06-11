@@ -199,6 +199,11 @@
     #sidebar .view-toggle button:not(.active):hover { background: var(--active); color: var(--text-strong); }
     #sidebar .icon-btn:hover { background: var(--hover); }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
+    /* Sidebar controls run slimmer than the dialog defaults: the column is a
+       dense list, so tall bars waste vertical room (vertical padding only —
+       the 12px side padding carries the 23px text axis). */
+    #sidebar select { padding-top: 5px; padding-bottom: 5px; }
+    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
        chips above), like any other control in the column */
     .engagement-select {
@@ -217,7 +222,7 @@
     }
     .view-toggle button {
       flex: 1;   /* fill the control: content-sized buttons left a dead sliver at the edge that ignored hover */
-      background: var(--surface); border: none; padding: 6px 12px;
+      background: var(--surface); border: none; padding: 5px 12px;
       cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1;
       transition: all 0.15s;
     }
@@ -919,7 +924,7 @@
      beside the row. Badge = number of active filters of that type. */
   .sb-row {
     display: flex; align-items: center; gap: 6px; width: 100%;
-    padding: 7px 12px; margin-bottom: 4px; text-align: left;
+    padding: 5px 12px; margin-bottom: 4px; text-align: left;
     background: var(--surface-3); border: 1px solid var(--border-strong);
     border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer;
     transition: border-color .12s, color .12s;
