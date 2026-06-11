@@ -1586,13 +1586,13 @@
     grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
       const p = g.rep;
       // Engagement: nonzero only (zeros are noise \u2014 every client hides them),
-      // emoji glyph + bare count (user preference: keep the emoji, drop the
-      // unit words like "RT" \u2014 the glyph is the unit).
+      // outline TEXT glyphs (\u2661 \u21c4 \ud83d\udde8 \u2014 text presentation, not color emoji,
+      // not SVG: user-picked style) + bare count, no unit words.
       const statsHtml = [
-        p.likes > 0 ? `<span class="st">\u2764 ${formatCount(p.likes)}</span>` : '',
-        p.reposts > 0 ? `<span class="st">\ud83d\udd01 ${formatCount(p.reposts)}</span>` : '',
-        p.replies > 0 ? `<span class="st">\ud83d\udcac ${formatCount(p.replies)}</span>` : '',
-        p.bookmarks > 0 ? `<span class="st">\ud83d\udd16 ${formatCount(p.bookmarks)}</span>` : ''
+        p.likes > 0 ? `<span class="st">\u2661 ${formatCount(p.likes)}</span>` : '',
+        p.reposts > 0 ? `<span class="st">\u21c4 ${formatCount(p.reposts)}</span>` : '',
+        p.replies > 0 ? `<span class="st">\ud83d\udde8\ufe0e ${formatCount(p.replies)}</span>` : '',
+        p.bookmarks > 0 ? `<span class="st">\ud83d\udd16\ufe0e ${formatCount(p.bookmarks)}</span>` : ''
       ].filter(Boolean).join('');
 
       const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
@@ -1600,6 +1600,10 @@
       // ONE compact date on the card; both full timestamps live in its tooltip.
       const footDate = compactDate(p.date || p.capturedAt);
       const footTip = escapeAttr([dateStr, capturedStr].filter(Boolean).join('\n'));
+      // Source corner (Reeder): platform label lives bottom-right WITH the
+      // date — at the head of line 1 it crowded the author/filename and the
+      // dot+text didn't read as one unit (user report).
+      const pfTag = p.platform ? `<span class="pf-tag"><span class="pf-dot ${p.platform}"></span>${escapeHtml(PF_NAME[p.platform] || p.platform)}</span>` : '';
       const userName = p.displayName || p.screenName || p.title || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
       // Library images carry the filename as BOTH title and text — showing it
@@ -1608,7 +1612,7 @@
       const textPreview = textRaw === userName ? '' : escapeHtml(textRaw);
       const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
       const nImg = g.files.length;                    // ×N badge: total images across the group
-      const likesOv = p.likes != null ? `<span class="ov-likes">❤ ${MSG.likes(p.likes)}</span>` : '';
+      const likesOv = p.likes != null ? `<span class="ov-likes">♡ ${MSG.likes(p.likes)}</span>` : '';
 
       // Post-type + media flags (grid view only; hidden in the compact list view).
       const flags = [];
@@ -1633,10 +1637,10 @@
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
-          <div class="user">${p.platform ? `<span class="pf-tag"><span class="pf-dot ${p.platform}"></span>${escapeHtml(PF_NAME[p.platform] || p.platform)}</span>` : ''}<span class="uname">${escapeHtml(userName)}</span>${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}</div>
+          <div class="user"><span class="uname">${escapeHtml(userName)}</span>${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}</div>
           ${flagsHtml}
           ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
-          ${(statsHtml || footDate) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}${footDate ? `<span class="pdate"${footTip ? ` title="${footTip}"` : ''}>${footDate}</span>` : ''}</div>` : ''}
+          ${(statsHtml || footDate || pfTag) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${pfTag}${footDate ? `<span class="pdate"${footTip ? ` title="${footTip}"` : ''}>${footDate}</span>` : ''}</span></div>` : ''}
           ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;
@@ -2365,11 +2369,11 @@
     const box = document.getElementById('postDetailBox');
     const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(k)}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
     const eng = [];
-    if (p.likes != null) eng.push('❤ ' + formatCount(p.likes));
-    if (p.reposts != null) eng.push('🔁 ' + formatCount(p.reposts));
-    if (p.replies != null) eng.push('💬 ' + formatCount(p.replies));
-    if (p.bookmarks != null) eng.push('🔖 ' + formatCount(p.bookmarks));
-    if (p.views != null) eng.push('👁 ' + formatCount(p.views));
+    if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
+    if (p.reposts != null) eng.push('⇄ ' + formatCount(p.reposts));
+    if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
+    if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
+    if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
     const tags = (Array.isArray(p.hashtags) ? p.hashtags : []).concat(Array.isArray(p.tags) ? p.tags : []);
     const tagsHtml = tags.length
       ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
