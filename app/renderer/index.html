@@ -28,6 +28,11 @@
     /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
        top, then the active mode's controls below. One column, no second rail. --- */
     #sidebar {
+      /* --sb-gutter = the ONE horizontal inset for the whole column. Every
+         item's box aligns to it (the scroll owns the inset; items are full
+         width within, no per-element left padding). Change it here and the
+         entire column's left/right axis moves together. */
+      --sb-gutter: 12px;
       width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 30;
       /* Mica-style material (NOT glass — nothing behind it to blur): a faint
          top-light vertical gradient + fine grain noise + 1px top highlight
@@ -108,7 +113,11 @@
        右: コンテンツとスクロールバーの間に 8px の余白。 */
     .sb-scroll {
       flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
-      margin-left: -6px; padding-left: 6px; padding-right: 8px; padding-bottom: 16px;
+      /* The gutter lives HERE (single source). 6px is the negative-margin
+         escape for select-ring overflow; 8px is the scrollbar gap. */
+      margin-left: -6px;
+      padding-left: calc(6px + var(--sb-gutter)); padding-right: calc(8px + var(--sb-gutter));
+      padding-bottom: 16px;
     }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
@@ -232,12 +241,13 @@
        dense list, so tall bars waste vertical room (vertical padding only —
        the 12px side padding carries the 23px text axis). */
     #sidebar select { padding-top: 5px; padding-bottom: 5px; }
-    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; padding-left: 14px; padding-right: 14px; }
-    /* Section contents (chips) align to the 23px text axis = the filter rows'
-       content start, not the section's flush-left edge (user: 中の要素がフィルタと
-       そろう). Titles already sit on the axis via their 13px indent. */
-    #sidebar .sb-chips { padding-left: 13px; }
-    #sidebar #wsChip { margin-left: 13px; }
+    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; }
+    /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
+       (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
+       content-pad (12px) inside it — so headers read as one step out, content
+       one step in. No magic per-element numbers. */
+    #sidebar .sb-chips { padding-left: 12px; }
+    #sidebar #wsChip { margin-left: 12px; }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
        chips above), like any other control in the column */
     .engagement-select {
@@ -826,17 +836,14 @@
     /* Rhythm: generous space BETWEEN sections, tight spacing inside them
        (title→content 6px, rows 4-8px) — Linear-style grouping. */
     .sb-section { padding: 0; margin-bottom: 22px; }
-    /* Structure for the flat lower column: a hairline above each scroll section
-       (filters / tags / workspace / folders) so the groups read as distinct
-       bands instead of one featureless sheet (Notion/Finder sidebar idiom).
-       The toolbar's own sub-sections (search/sort/view) are nested elsewhere,
-       so they keep their tight grouping. */
-    .sb-scroll > .sb-section { margin-bottom: 0; border-top: 1px solid var(--border-subtle); padding-top: 18px; }
-    .sb-scroll > .sb-section:first-child { border-top: none; padding-top: 0; }
+    /* Lower column: separate the big groups (filters / tags / workspace /
+       folders) by generous WHITESPACE rather than divider lines (user: no
+       rules). The extra air carries the structure. */
+    .sb-scroll > .sb-section { margin-bottom: 26px; }
     .sb-title {
       font-size: 11px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
-      margin-bottom: 6px; padding-left: 13px;
+      margin-bottom: 8px; padding-left: 0;   /* aligns to the gutter (container) */
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
     .sb-manage-link {
@@ -1042,7 +1049,11 @@
     /* サイドバーのタグ節: タググループごとの小見出し付きブロック */
     .sb-taggroup { margin-top: 8px; }
     .sb-taggroup:first-child { margin-top: 0; }
-  .sb-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 13px; }
+  /* Sub-section labels (ピン留め / グループ) are CHILDREN of タグ: smaller +
+     lighter than a section title, and indented one step in (with their chips)
+     so the nesting reads. Section titles are 11px uppercase --text-muted at the
+     gutter; these are 10px --text-subtle, nested +12px. */
+  .sb-subtitle { font-size: 10px; color: var(--text-subtle); margin: 12px 0 5px; padding-left: 12px; text-transform: none; letter-spacing: 0; }
   /* Filter rows: one-line category buttons; a flyout with the values opens
      beside the row. Badge = number of active filters of that type. */
   /* Category rows: borderless text rows with a soft fill ONLY on hover
