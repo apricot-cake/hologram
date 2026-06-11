@@ -126,24 +126,23 @@ const evalJs = `(async () => {
   const bulkTagAdds = tagged.length === 2 && tagged.every((p) => (p.tags || []).includes('base'));
   const stillSelected = selCount() === 2;
 
-  // bulk フォルダに追加: create a folder (auto-default), then add both
+  // bulk フォルダに追加: create folder F, then 一括「フォルダに追加」→ picker → F
   document.getElementById('postFolderManage').click();
   await wait(30);
   document.getElementById('ivFolderNewName').value = 'F';
   document.getElementById('ivFolderCreate').click();
   await wait(50);
   document.getElementById('ivFolderClose').click();
-  document.getElementById('folderSelectedBtn').click();
+  document.getElementById('folderSelectedBtn').click();   // opens the picker now
+  await wait(50);
+  document.querySelector('.fold-menu.show .fm-row[data-fid]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(120);
   const chipN = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
   const bulkFolderAdds = chipN === '2';
 
-  // the 'added' 📁 marker no longer shows at rest ANYWHERE (hover-only like the
-  // other card actions); the active-bar folder pill is a styled rounded-rect chip
+  // the active-bar folder pill is a styled rounded-rect chip
   document.getElementById('cancelSelectBtn').click();
   await wait(60);
-  const inBtn = grid.querySelector('.fold-btn.in');
-  const inHiddenAtRest = !!inBtn && getComputedStyle(inBtn).opacity === '0';
   document.querySelector('#postFolderChips .sb-chip').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(80);
   const fp = document.querySelector('#queryChips .sb-active-chip.qc-folder');
@@ -151,8 +150,8 @@ const evalJs = `(async () => {
   const folderPillChip = !!fpCs && fpCs.borderRadius === '6px' && fpCs.backgroundColor !== 'rgba(0, 0, 0, 0)';
 
   console.log('CHK sec-ctx');
-  // --- Right-click 📁 context menu: choose destination folder / set default ---
-  // create a 2nd folder G, clear the folder filter, then right-click a card's 📁
+  // --- 📁 picker (left-click): choose destination folder (no ★/default) ---
+  // create a 2nd folder G, clear the folder filter, then click a card's 📁
   document.getElementById('postFolderManage').click(); await wait(30);
   document.getElementById('ivFolderNewName').value = 'G';
   document.getElementById('ivFolderCreate').click(); await wait(50);
@@ -162,24 +161,21 @@ const evalJs = `(async () => {
   await wait(80);
   console.log('CHK pre-fbtn cards=' + grid.querySelectorAll('.post-card').length);
   const fbtn = grid.querySelector('.post-card .fold-btn');
-  fbtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
+  fbtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(40);
   const menu = document.querySelector('.fold-menu:not(.qf-pop)');
-  const menuShown = !!menu && menu.classList.contains('show') && menu.querySelectorAll('.fm-row[data-fid]').length === 2;
+  const menuShown = !!menu && menu.classList.contains('show') &&
+    menu.querySelectorAll('.fm-row[data-fid]').length === 2 &&
+    !menu.querySelector('.fm-star');   // ★ default removed
   // click the G row → that card joins G (chip count 1)
   const gRow = [...menu.querySelectorAll('.fm-row[data-fid]')].find((r) => r.querySelector('.fm-name').textContent === 'G');
   gRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(100);
   const gChip = [...document.querySelectorAll('#postFolderChips .sb-chip')].find((c) => c.textContent.includes('G'));
   const addedToG = !!gChip && gChip.querySelector('.iv-tagn').textContent === '1';
-  // right-click again, ★ on G → G becomes the default folder (persisted)
-  fbtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
-  await wait(40);
-  const gStar = [...menu.querySelectorAll('.fm-row[data-fid]')].find((r) => r.querySelector('.fm-name').textContent === 'G').querySelector('.fm-star');
-  gStar.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await wait(100);
+  // folders.json persists { folders, workspace } and NO defaultId
   const rb2 = await window.corpus.getFolders();
-  const gDefault = (rb2.folders.find((f) => f.name === 'G') || {}).id === rb2.defaultId;
+  const noDefaultId = !('defaultId' in rb2);
   const menuClosed = !menu.classList.contains('show');
 
   console.log('CHK sec-mix');
@@ -207,8 +203,8 @@ const evalJs = `(async () => {
   return { bodyNoSelect, ringSelects, shiftRange, ringDeselects, ctrlA, cleared, inputGuard, ringHollow,
     modeOn, bodyTogglesInMode, imgTogglesInMode, ringAlwaysOn, btnsHidden, imgCursorPointer, modeExits,
     barAtTop, newBtnsVisible, bulkOverlayOpen, bulkTagAdds, stillSelected, bulkFolderAdds,
-    inHiddenAtRest, folderPillChip,
-    menuShown, addedToG, gDefault, menuClosed,
+    folderPillChip,
+    menuShown, addedToG, noDefaultId, menuClosed,
     fOr, fgOr, gAndF, gOrF };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -223,8 +219,8 @@ child.on('close', () => {
   const keys = ['bodyNoSelect', 'ringSelects', 'shiftRange', 'ringDeselects', 'ctrlA', 'cleared', 'inputGuard', 'ringHollow',
     'modeOn', 'bodyTogglesInMode', 'imgTogglesInMode', 'ringAlwaysOn', 'btnsHidden', 'imgCursorPointer', 'modeExits',
     'barAtTop', 'newBtnsVisible', 'bulkOverlayOpen', 'bulkTagAdds', 'stillSelected', 'bulkFolderAdds',
-    'inHiddenAtRest', 'folderPillChip',
-    'menuShown', 'addedToG', 'gDefault', 'menuClosed',
+    'folderPillChip',
+    'menuShown', 'addedToG', 'noDefaultId', 'menuClosed',
     'fOr', 'fgOr', 'gAndF', 'gOrF'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));

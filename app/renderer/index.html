@@ -368,7 +368,7 @@
     .post-grid.selecting .select-check { opacity: 1; }
     .post-grid.selecting .delete-btn, .post-grid.selecting .edit-btn,
     .post-grid.selecting .info-btn, .post-grid.selecting .fold-btn,
-    .post-grid.selecting .open-btn { display: none; }
+    .post-grid.selecting .ws-btn, .post-grid.selecting .open-btn { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -429,14 +429,15 @@
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
     .post-grid.tile-view .edit-btn, .post-grid.tile-view .open-btn { display: none; }
-    .post-grid.tile-view .delete-btn, .post-grid.tile-view .info-btn, .post-grid.tile-view .fold-btn {
+    .post-grid.tile-view .delete-btn, .post-grid.tile-view .info-btn, .post-grid.tile-view .fold-btn, .post-grid.tile-view .ws-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
-    /* Same relative order as card/list (ℹ → 📁 → ×, left to right) */
+    /* Same relative order as card/list (⚡ → ℹ → 📁 → ×, left to right) */
     .post-grid.tile-view .delete-btn { right: 6px; }
     .post-grid.tile-view .fold-btn { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .info-btn { right: calc(6px + (var(--act) + 4px) * 2); }
-    .post-grid.tile-view .fold-btn svg, .post-grid.tile-view .info-btn svg { width: 60%; height: 60%; }
+    .post-grid.tile-view .ws-btn { right: calc(6px + (var(--act) + 4px) * 3); }
+    .post-grid.tile-view .fold-btn svg, .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -638,6 +639,23 @@
        click reads as "remove" (srgb mix — an oklch mix read as purple on dark). */
     .fold-btn.in:hover { background: var(--danger); }
     .fold-btn.added { background: var(--success); }
+    /* ⚡ workspace button: like the other hover actions, but its 'in' state IS
+       meaningful (single tray, so a persistent filled bookmark is correct). */
+    .ws-btn {
+      position: absolute; top: 8px; right: 168px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(0,0,0,0.5); color: #fff; border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
+      z-index: 1;
+    }
+    .ws-btn:hover { background: color-mix(in oklch, var(--accent) 82%, transparent); }
+    .post-card:hover .ws-btn { opacity: 1; }
+    .ws-btn.in { background: var(--accent); opacity: 1; }   /* in the tray → always visible + filled */
+    .ws-btn.added { background: var(--success); }
+    .post-grid.list-view .ws-btn { top: 50%; right: 168px; transform: translateY(-50%); }
+    /* no source link → no jump button: pull workspace inward with the rest */
+    .post-grid:not(.tile-view) .post-card.no-url .ws-btn { right: 136px; }
     /* Right-click menu on 📁: pick the destination folder / set the default (★) */
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
@@ -860,6 +878,7 @@
     .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
     .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
     .sb-active-chip.qc-userKind { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
+    .sb-active-chip.qc-workspace { background: var(--accent-subtle); border: 1px solid var(--accent-border); color: var(--accent-subtle-fg); }
     /* 検索/フォルダの特殊ピル: 裸テキストだったのでチップ化（角丸の四角） */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder {
       background: var(--surface-3); border: 1px solid var(--border-strong);
@@ -1086,6 +1105,12 @@
           <div class="sb-chips" id="sbPinnedTags"></div>
           <div class="sb-subtitle" id="sbGroupTitle" style="display:none; margin-top:10px;"></div>
           <div class="sb-chips" id="sbTagGroupRows"></div>
+        </div>
+
+        <!-- Workspace: the single ephemeral tray (one-click ⚡ on cards) -->
+        <div class="sb-section">
+          <div class="sb-title"><span id="sbWorkspaceTitle">ワークスペース</span> <button class="sb-manage-link" id="wsClear" type="button" style="display:none;">クリア</button></div>
+          <button class="sb-chip" id="wsChip" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span id="sbWorkspaceChip">ワークスペース</span><span class="iv-tagn">0</span></button>
         </div>
 
         <!-- Folders (shared with image-view via folders.json) -->

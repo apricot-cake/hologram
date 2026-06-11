@@ -4,14 +4,14 @@
 // the toast (#ivToast); the "which folder is filtered" state stays per-view. Subscribers
 // (onChange) are notified after any mutation so each view refreshes its own chips.
 //
-//   window.corpusFolders.{ load, all, defaultId, byId, has, inDefault,
-//     reconcile, toggleDefault, toggleIn, addToDefault, setDefault, openManager, closeManager, isManagerOpen,
-//     toast, onChange, isLoaded }
+//   window.corpusFolders.{ load, all, byId, has, toggleIn,
+//     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
+//     reconcile, openManager, closeManager, isManagerOpen, toast, onChange, isLoaded }
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  let folders = [];           // [{ id, name, items:[captureId] }]
-  let defaultId = null;
+  let folders = [];           // [{ id, name, items:[captureId] }] — permanent shelves
+  let workspace = [];         // [captureId] — the single ephemeral tray (one-click)
   let loaded = false;
   let loadPromise = null;
   const subs = [];
@@ -22,7 +22,7 @@
   function genId() { return 'f-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders, defaultId }).catch(() => { /* best-effort */ });
+    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders, workspace }).catch(() => { /* best-effort */ });
   }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
@@ -30,21 +30,50 @@
     try {
       const r = (window.corpus && window.corpus.getFolders) ? await window.corpus.getFolders() : null;
       folders = (r && r.folders) || [];
-      defaultId = (r && r.defaultId) || null;
-    } catch { folders = []; defaultId = null; }
+      workspace = (r && Array.isArray(r.workspace)) ? r.workspace.slice() : [];
+    } catch { folders = []; workspace = []; }
     loaded = true;
   }
   function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
 
   function byId(id) { return folders.find((f) => f.id === id) || null; }
   function has(id, cid) { const f = byId(id); return !!(f && f.items.includes(cid)); }
-  function inDefault(cid) { return defaultId ? has(defaultId, cid) : false; }
+
+  // --- Workspace: a single ephemeral tray. One-click add/remove (no picking),
+  // easy to clear. Folders stay the permanent, named, multi-shelf system. ---
+  function inWorkspace(cid) { return workspace.includes(cid); }
+  function workspaceItems() { return workspace.slice(); }
+  function workspaceCount(existing) { return existing ? workspace.filter((c) => existing.has(c)).length : workspace.length; }
+  // Toggle captureIds[] (a whole group) in the workspace; anchor decides state.
+  function toggleWorkspace(captureIds, anchorCid) {
+    const ids = (captureIds || []).filter(Boolean);
+    if (!ids.length) return null;
+    const anchor = anchorCid != null ? anchorCid : ids[0];
+    const wasIn = workspace.includes(anchor);
+    if (wasIn) workspace = workspace.filter((c) => !ids.includes(c));
+    else ids.forEach((c) => { if (!workspace.includes(c)) workspace.push(c); });
+    persist();
+    toast(wasIn ? 'ワークスペースから外しました' : 'ワークスペースに追加');
+    notify('workspace');
+    return wasIn ? 'removed' : 'added';
+  }
+  function clearWorkspace() {
+    if (!workspace.length) return 0;
+    const n = workspace.length;
+    workspace = [];
+    persist();
+    toast('ワークスペースを空にしました');
+    notify('workspace');
+    return n;
+  }
 
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
   function reconcile(existing) {
-    if (!folders.length) return;
     let changed = false;
     folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
+    const wn = workspace.length;
+    workspace = workspace.filter((c) => existing.has(c));
+    if (workspace.length !== wn) changed = true;
     if (changed) { persist(); notify('list'); }
   }
 
@@ -64,36 +93,6 @@
     return wasIn ? 'removed' : 'added';
   }
 
-  // Same, against the default folder (null = no default set → manager opens).
-  function toggleDefault(captureIds, anchorCid) {
-    if (!defaultId) { openManager(); return null; }
-    return toggleIn(defaultId, captureIds, anchorCid);
-  }
-
-  // Make fid the default folder (★).
-  function setDefault(fid) {
-    const f = byId(fid); if (!f) return;
-    defaultId = fid;
-    persist(); renderModal();
-    toast(`「${f.name}」をデフォルトに設定`);
-    notify('list');
-  }
-
-  // Add captureIds[] to the default folder (pure add — never removes). Returns
-  // the number of newly added ids, or null when no default folder is set
-  // (the manager opens so the user can create one, same as toggleDefault).
-  function addToDefault(captureIds) {
-    if (!defaultId) { openManager(); return null; }
-    const f = byId(defaultId); if (!f) return null;
-    const ids = (captureIds || []).filter(Boolean);
-    if (!ids.length) return 0;
-    let added = 0;
-    ids.forEach((c) => { if (!f.items.includes(c)) { f.items.push(c); added++; } });
-    if (added) { persist(); notify('membership'); }
-    toast(`「${f.name}」に追加`);
-    return added;
-  }
-
   // --- toast (shared, top-level #ivToast) ---
   let toastTimer = null;
   function toast(msg) {
@@ -110,9 +109,7 @@
   function renderModal() {
     const host = $('ivFolderList'); if (!host) return;
     host.innerHTML = folders.length ? folders.map((f) => {
-      const on = f.id === defaultId ? ' on' : '';
       return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}">` +
-        `<button class="iv-fold-def${on}" data-fact="default" title="デフォルトに設定">★</button>` +
         `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
         `<span class="iv-fold-n">${f.items.length}</span>` +
         `<button class="iv-fold-btn" data-fact="rename" title="名前変更">✎</button>` +
@@ -124,7 +121,6 @@
     const inp = $('ivFolderNewName'); if (!inp) return;
     const name = (inp.value || '').trim(); if (!name) return;
     folders.push({ id: genId(), name, items: [] });
-    if (!defaultId) defaultId = folders[folders.length - 1].id;   // first folder auto-becomes default
     inp.value = '';
     persist(); renderModal(); notify('list');
   }
@@ -139,12 +135,10 @@
       const row = e.target.closest('.iv-folder-row'); if (!row) return;
       const act = e.target.closest('[data-fact]'); if (!act) return;
       const fid = row.dataset.fid; const f = byId(fid); if (!f) return;
-      if (act.dataset.fact === 'default') defaultId = defaultId === fid ? null : fid;
-      else if (act.dataset.fact === 'rename') { const name = window.prompt('フォルダ名', f.name); if (name && name.trim()) f.name = name.trim(); }
+      if (act.dataset.fact === 'rename') { const name = window.prompt('フォルダ名', f.name); if (name && name.trim()) f.name = name.trim(); }
       else if (act.dataset.fact === 'delete') {
         if (!window.confirm(`フォルダ「${f.name}」を削除しますか？（中の画像自体は消えません）`)) return;
         folders = folders.filter((x) => x.id !== fid);
-        if (defaultId === fid) defaultId = null;
       }
       persist(); renderModal(); notify('list');
     });
@@ -153,8 +147,9 @@
   bind();
 
   window.corpusFolders = {
-    load, all: () => folders, defaultId: () => defaultId, byId, has, inDefault,
-    reconcile, toggleDefault, toggleIn, addToDefault, setDefault, openManager, closeManager, isManagerOpen,
+    load, all: () => folders, byId, has,
+    inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
+    reconcile, toggleIn, openManager, closeManager, isManagerOpen,
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();

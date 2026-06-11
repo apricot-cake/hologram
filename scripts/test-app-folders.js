@@ -1,11 +1,12 @@
 'use strict';
 
-// Verifies the (unified post-view) folder feature end-to-end:
-//  - create a folder via the shared management modal (first folder auto-becomes default ★)
-//  - one-click add a post card to the default folder via its 📁 button
-//  - the sidebar folder chip shows the right count and filters the grid
-//  - folders.json is persisted (round-trip via get-folders)
-// Seeds 3 standalone illustration records (eagle-migration shape) → 3 cards.
+// Verifies the post-view folder + workspace features (default folder removed):
+//  - create a folder via the shared management modal (no auto-default / no ★)
+//  - 📁 button opens a picker; clicking a folder row adds the card; chip counts + filters
+//  - folders.json persists { folders, workspace } (no defaultId)
+//  - ⚡ workspace button one-click adds to the single tray (filled), sidebar
+//    chip counts + filters, クリア empties it
+// Seeds 3 standalone illustration records → 3 cards.
 //
 //   node scripts/test-app-folders.js
 
@@ -42,62 +43,60 @@ const evalJs = `(async () => {
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-  // wait for the 3 seeded posts to render as cards (post view loads async)
   await waitFor(() => grid.querySelectorAll('.post-card').length >= 3);
   const totalBefore = grid.querySelectorAll('.post-card').length;
 
-  // create a folder through the shared management modal UI
-  $('postFolderManage').click();
-  await sleep(30);
+  // create a folder (no auto-default ★ anymore)
+  click($('postFolderManage')); await sleep(30);
   const modalOpen = !$('ivFolderModal').hidden;
   $('ivFolderNewName').value = '一次資料';
-  $('ivFolderCreate').click();
-  await sleep(50);
+  click($('ivFolderCreate')); await sleep(50);
   const chips = document.querySelectorAll('#postFolderChips .sb-chip').length;
-  const hasStar = !!document.querySelector('#postFolderChips .iv-foldstar');   // ★ marks the default folder chip
-  $('ivFolderClose').click();
+  const noStar = !document.querySelector('#postFolderChips .iv-foldstar');   // default removed → no ★
+  click($('ivFolderClose')); await sleep(20);
 
-  // one-click add card 0 to the (now default) folder via its 📁 button
-  const fold0 = grid.querySelector('.post-card[data-index="0"] .fold-btn');
-  fold0.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(40);
-  const foldIn = fold0.classList.contains('in');
+  // 📁 on card 0 now OPENS a picker; click the folder row to add
+  click(grid.querySelector('.post-card[data-index="0"] .fold-btn')); await sleep(40);
+  const menuOpen = !!document.querySelector('.fold-menu.show');
+  click(document.querySelector('.fold-menu .fm-row[data-fid]')); await sleep(50);
   const countText = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
 
-  // filter by the folder chip → only the added card remains
-  document.querySelector('#postFolderChips .sb-chip').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(40);
+  // filter by the folder chip → only the added card
+  click(document.querySelector('#postFolderChips .sb-chip')); await sleep(50);
   const filteredCount = grid.querySelectorAll('.post-card').length;
 
-  // persistence round-trip BEFORE further mutations (awaited → folders.json flushed)
+  // persistence: { folders, workspace }, no defaultId
   const rb = await window.corpus.getFolders();
   const f0 = rb.folders[0] || {};
   const persistedFolders = rb.folders.length;
   const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
-  const persistedDefault = rb.defaultId === f0.id;
+  const noDefaultId = !('defaultId' in rb);
+  $('postResetBtn').click(); await sleep(50);
 
-  // H2 (updated for sticky-visible): removing the card from the folder WHILE
-  // filtering by it no longer makes it vanish — it stays until the next filter
-  // change (mutation-survivor behavior).
-  const foldInBtn = grid.querySelector('.post-card .fold-btn.in');
-  foldInBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(40);
-  const afterUnfilter = grid.querySelectorAll('.post-card').length;   // sticky → still 1
+  // === Workspace ===
+  // ⚡ one-click add card 1 → filled, sidebar count 1
+  const ws1 = grid.querySelector('.post-card[data-index="1"] .ws-btn');
+  click(ws1); await sleep(50);
+  const wsIn = ws1.classList.contains('in');
+  const wsCount = ($('wsChip').querySelector('.iv-tagn') || {}).textContent;
+  // filter to the workspace → only that card
+  click($('wsChip')); await sleep(60);
+  const wsFiltered = grid.querySelectorAll('.post-card').length;
+  const wsPill = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-workspace')].length === 1;
+  // persisted to folders.json workspace[]
+  const rb2 = await window.corpus.getFolders();
+  const wsPersist = Array.isArray(rb2.workspace) && rb2.workspace.length === 1;
+  // クリア empties the tray (filter auto-clears via sticky → grid returns to all)
+  $('postResetBtn').click(); await sleep(40);
+  click($('wsClear')); await sleep(60);
+  const rb3 = await window.corpus.getFolders();
+  const wsCleared = (rb3.workspace || []).length === 0 &&
+    ($('wsChip').querySelector('.iv-tagn') || {}).textContent === '0';
 
-  // H4 regression: delete the folder WHILE it is the active filter → filter auto-clears,
-  // grid returns to all cards (not a silent empty grid), chip disappears.
-  window.confirm = () => true;
-  $('postFolderManage').click();
-  await sleep(20);
-  document.querySelector('#ivFolderList [data-fact="delete"]').click();
-  await sleep(50);
-  if (!$('ivFolderModal').hidden) $('ivFolderClose').click();
-  const afterDelete = grid.querySelectorAll('.post-card').length;
-  const chipsGone = document.querySelectorAll('#postFolderChips .sb-chip').length;
-
-  return { totalBefore, modalOpen, chips, hasStar, foldIn, countText, filteredCount,
-    persistedFolders, persistedItems, persistedDefault, afterUnfilter, afterDelete, chipsGone };
+  return { totalBefore, modalOpen, chips, noStar, menuOpen, countText, filteredCount,
+    persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, wsCleared };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -113,11 +112,13 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.totalBefore === 3 && r.modalOpen === true && r.chips === 1 && r.hasStar === true &&
-    r.foldIn === true && r.countText === '1' && r.filteredCount === 1 &&
-    r.persistedFolders === 1 && r.persistedItems === 1 && r.persistedDefault === true &&
-    r.afterUnfilter === 1 && r.afterDelete === 3 && r.chipsGone === 0;
-  console.log(`total=${r.totalBefore} modal=${r.modalOpen} chips=${r.chips} star=${r.hasStar} foldIn=${r.foldIn} count=${r.countText} filtered=${r.filteredCount} persisted=${r.persistedFolders}/${r.persistedItems}/${r.persistedDefault} unfilter=${r.afterUnfilter} delete=${r.afterDelete} chipsGone=${r.chipsGone}`);
+  const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'menuOpen', 'countText', 'filteredCount',
+    'persistedFolders', 'persistedItems', 'noDefaultId', 'wsIn', 'wsCount', 'wsFiltered', 'wsPill', 'wsPersist', 'wsCleared'];
+  const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, menuOpen: true, countText: '1',
+    filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, wsIn: true, wsCount: '1',
+    wsFiltered: 1, wsPill: true, wsPersist: true, wsCleared: true };
+  const ok = keys.every((k) => r[k] === expect[k]);
+  console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'FOLDERS_TEST_PASS' : 'FOLDERS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

@@ -111,6 +111,9 @@
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
+    tipWorkspace: _s('tipWorkspace'),
+    tipFolder: _s('tipFolder'),
+    workspaceTitle: _s('workspaceTitle'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -293,6 +296,8 @@
   setAttr('settingsBtn', 'title', MSG.tabSettings);
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
+  setText('sbWorkspaceTitle', MSG.workspaceTitle);
+  setText('sbWorkspaceChip', MSG.workspaceTitle);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
@@ -444,6 +449,9 @@
           label = fobj ? fobj.name : f.value;
           break;
         }
+        case 'workspace':
+          label = MSG.workspaceTitle;
+          break;
         case 'media':
           label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
           break;
@@ -1338,6 +1346,7 @@
         case 'media': return (p) => p.mediaType === f.value;
         case 'tag': return (p) => (p.tags || []).includes(f.value);
         case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
+        case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
         case 'date': {
           const field = f.dateField || 'date';
           const from = f.from ? new Date(f.from + 'T00:00:00') : null;
@@ -1583,7 +1592,8 @@
       const isSelected = selectedSet.has(postKey);
       return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
-        <button class="fold-btn${CF() && CF().inDefault(p.captureId) ? ' in' : ''}" data-fold="${i}" title="${CF() && CF().defaultId() ? 'デフォルトフォルダに追加/解除（右クリックでフォルダ選択）' : 'フォルダを作成して追加（右クリックでフォルダ選択）'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="${CF() && CF().inWorkspace(p.captureId) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="fold-btn" data-fold="${i}" title="${MSG.tipFolder}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
         <button class="edit-btn" data-edit="${i}" title="${MSG.tipEdit}" aria-label="${MSG.tipEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
         <button class="delete-btn" data-delete="${i}" title="${MSG.tipDelete}">&times;</button>
@@ -1800,28 +1810,38 @@
     openEditOverlay(g.rep, g.records);
   });
 
-  // 📁 button on card: one-click add/remove this post to the default folder.
+  // ⚡ workspace button: one-click add/remove this post to the single ephemeral
+  // tray (no picking). Filled bookmark = in. (Default folder was removed.)
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.ws-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    if (!CF()) return;
+    const g = viewGroups[parseInt(btn.dataset.ws, 10)];
+    if (!g || !g.rep.captureId) return;
+    keepCurrentVisible();   // removal can un-match an active workspace filter
+    const res = CF().toggleWorkspace(g.records.map((r) => r.captureId), g.rep.captureId);
+    if (!res) return;
+    btn.classList.toggle('in', res === 'added');
+    if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
+    const svg = btn.querySelector('svg');
+    if (svg) svg.setAttribute('fill', res === 'added' ? 'currentColor' : 'none');
+    renderWorkspace();
+    if (activeFilters.some((f) => f.type === 'workspace')) renderPosts();
+  });
+
+  // 📁 button on card: open the folder picker (choose destination — no default).
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.fold-btn');
     if (!btn) return;
     e.stopPropagation();
-    if (!CF()) return;
     const g = viewGroups[parseInt(btn.dataset.fold, 10)];
     if (!g || !g.rep.captureId) return;
-    keepCurrentVisible();   // removal can un-match an active folder filter
-    const res = CF().toggleDefault(g.records.map((r) => r.captureId), g.rep.captureId);   // whole group; persists + toast + notify; null=no default→manager
-    if (!res) return;
-    btn.classList.toggle('in', res === 'added');
-    if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
-    // If any folder filter is active, membership changes can drop cards out of
-    // the view — re-render so every card's data-index stays in sync.
-    if (activeFilters.some((f) => f.type === 'folder')) {
-      renderPosts();
-    }
+    const r = btn.getBoundingClientRect();
+    showFoldMenu(g, r.left, r.bottom + 4);
   });
 
-  // Right-click on a card's 📁: context menu listing every folder — click a row
-  // to add/remove THIS post (group) to that folder, ★ to make it the default.
+  // Right-click on a card's 📁 also opens the same folder picker.
   const foldMenu = document.createElement('div');
   foldMenu.className = 'fold-menu';
   document.body.appendChild(foldMenu);
@@ -1831,12 +1851,10 @@
     if (!CF()) return;
     foldMenuGroup = g;
     const list = CF().all();
-    const def = CF().defaultId();
     const rep = g.rep.captureId;
     foldMenu.innerHTML = list.map((f) => {
       const inF = CF().has(f.id, rep);
       return `<div class="fm-row" data-fid="${escapeAttr(f.id)}">` +
-        `<button class="fm-star${f.id === def ? ' on' : ''}" data-star="${escapeAttr(f.id)}" title="${MSG.ctxSetDefault}">★</button>` +
         `<span class="fm-name">${escapeHtml(f.name)}</span>` +
         (inF ? '<span class="fm-check">✓</span>' : '') +
         `</div>`;
@@ -1859,14 +1877,6 @@
   });
   foldMenu.addEventListener('click', (e) => {
     if (!CF()) { hideFoldMenu(); return; }
-    const star = e.target.closest('.fm-star');
-    if (star) {
-      e.stopPropagation();
-      CF().setDefault(star.dataset.star);
-      renderPosts(true);   // 📁 'in' states reflect the new default
-      hideFoldMenu();
-      return;
-    }
     if (e.target.closest('[data-manage]')) { hideFoldMenu(); CF().openManager(); return; }
     const row = e.target.closest('.fm-row[data-fid]');
     if (row && foldMenuGroup) {
@@ -1883,20 +1893,32 @@
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
   function renderPostFolders() {
+    renderWorkspace();
     const host = document.getElementById('postFolderChips');
     if (!host || !CF()) return;
     const list = CF().all();
-    const def = CF().defaultId();
     const existing = new Set(allPosts.filter(p => p.url).map(p => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
     const state = new Map(activeFilters.filter(f => f.type === 'folder').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;
-      const star = f.id === def ? '<span class="iv-foldstar" title="デフォルトフォルダ">★</span>' : '';
       const st = state.get(f.id);
       const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
-      return `<button class="sb-chip${cls}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${star}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      return `<button class="sb-chip${cls}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
+  }
+  // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
+  // to show only its contents; クリア empties it (items themselves are kept).
+  function renderWorkspace() {
+    const chip = document.getElementById('wsChip');
+    const clear = document.getElementById('wsClear');
+    if (!chip || !CF()) return;
+    const existing = new Set(allPosts.map(p => p.captureId));
+    const n = CF().workspaceCount(existing);
+    const active = activeFilters.some(f => f.type === 'workspace');
+    chip.classList.toggle('active', active);
+    chip.querySelector('.iv-tagn').textContent = n;
+    if (clear) clear.style.display = n > 0 ? '' : 'none';
   }
   document.getElementById('postFolderChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip');
@@ -1908,6 +1930,24 @@
     renderPostFolders();
   });
   document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
+
+  // Workspace: chip toggles a "show only the tray" filter; クリア empties it.
+  (function setupWorkspaceSidebar() {
+    const chip = document.getElementById('wsChip');
+    const clear = document.getElementById('wsClear');
+    if (chip) chip.addEventListener('click', () => {
+      const idx = activeFilters.findIndex(f => f.type === 'workspace');
+      if (idx < 0) addFilter({ type: 'workspace', value: '*', mode: 'or' });
+      else removeFilter(idx);
+      renderWorkspace();
+    });
+    if (clear) clear.addEventListener('click', () => {
+      if (!CF()) return;
+      keepCurrentVisible();
+      CF().clearWorkspace();
+      renderPosts();
+    });
+  })();
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
@@ -2518,14 +2558,16 @@
     document.getElementById('editOverlay').classList.add('show');
   });
 
-  // フォルダに追加: add every selected record to the default folder (pure add,
-  // no toggle). Without a default folder the manager opens, same as the 📁 button.
-  folderSelectedBtn.addEventListener('click', () => {
+  // フォルダに追加: open the folder picker for the whole selection (no default
+  // folder anymore — you choose the destination, same as a card's 📁).
+  folderSelectedBtn.addEventListener('click', (e) => {
     if (!CF()) return;
-    const ids = selectedRecords().map((r) => r.captureId).filter(Boolean);
+    e.stopPropagation();   // don't let the document outside-click handler close the menu we're opening
+    const recs = selectedRecords();
+    const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;
-    if (CF().addToDefault(ids) == null) return;   // no default → manager opened
-    renderPosts(true);                            // refresh 📁 'in' states
+    const r = e.currentTarget.getBoundingClientRect();
+    showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
   });
 
   function clearSelection() {
