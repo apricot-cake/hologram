@@ -109,6 +109,8 @@
     twShownTitle: _s('twShownTitle'),
     twHide: _s('twHide'),
     imagesCount: _f1('imagesCount'),
+    tagsSaved: _s('tagsSaved'),
+    tagsSavedN: _f1('tagsSavedN'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -1125,6 +1127,18 @@
       btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none';
     }, { passive: true });
     btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
+  })();
+
+  // Back-to-top for the CONTENT area. The post grid grows the document, so the
+  // window itself scrolls (html has scrollbar-gutter:stable) — watch window
+  // scroll, not an inner container.
+  (function setupContentTop() {
+    const btn = document.getElementById('contentTop');
+    if (!btn) return;
+    const onScroll = () => { btn.style.display = window.scrollY > 300 ? 'flex' : 'none'; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    onScroll();
   })();
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
@@ -2456,10 +2470,12 @@
     }
     renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
 
+    const n = editingRecords.length;
     editingPost = null;
     editingRecords = [];
     editAdditive = false;
     document.getElementById('editOverlay').classList.remove('show');
+    showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
   });
 
 
