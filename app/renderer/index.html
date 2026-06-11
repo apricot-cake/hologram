@@ -374,6 +374,9 @@
     .post-grid.list-view .post-meta {
       display: flex; flex-wrap: wrap; align-items: baseline;
       gap: 3px 10px; padding: 9px 14px; flex: 1; min-width: 0;
+      /* keep the right gutter clear for the hover pair (ℹ@8 + ws@40, 28px wide)
+         so the right-aligned date never sits under them */
+      padding-right: 76px;
     }
     /* text is the hero: full width, up to 2 lines, darker and a touch larger */
     .post-grid.list-view .post-meta .text {
