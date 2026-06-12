@@ -6,6 +6,10 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 > **UI 変更時は `DESIGN.md`（デザイン言語）に従うこと**。形＝意味の対応（ピル=値/角丸四角=操作）、tint によるアクティブ表示（ソリッド塗り禁止）、23px テキスト軸、22px/6–8px の余白リズム、モーション規約、却下済みデザイン一覧を定義している。新しい見た目・操作を追加する前に必ず参照。
 
+> タスクの内容を見て、より適したモデルがあれば冒頭で一言提案してください。
+> - 設計・アーキテクチャ・複雑な判断 → Opus推奨
+> - 実装・定型作業・反復作業 → Sonnet推奨
+
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
 > - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
@@ -43,7 +47,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 ## アプリのビルド/配布
 
 - 開発実行: `cd app && npm install && npm start`
-- **開発ルール**: アプリのコード変更を反映するときは、確認を取らずにアプリを再起動して反映する（単一インスタンスのため `Get-Process electron | Where Path -like '*corpus*' | Stop-Process -Force` で停止 → 起動し直す）。
+- **開発ルール**: アプリのコード変更を反映するときは、確認を取らずにアプリを再起動して反映する。停止: `try { Get-Process electron -ErrorAction Stop | Where-Object { $_.Path -like '*corpus*' } | Stop-Process -Force -Confirm:$false } catch {}`。起動: `Start-Process powershell.exe -ArgumentList '-NoProfile','-WindowStyle','Minimized','-Command','Set-Location ''C:\Users\apricot\ローカル\開発\corpus\app''; npm start'`（**`Start-Process npm` は .ps1 ダイアログが出るため使わない**）。
 - 配布物生成: `cd app && npm run dist`（electron-builder, win/nsis）
   - 出力 `app/dist/win-unpacked/` — スタンドアロン。`Corpus.exe` を直接実行可。ASCIIパスへ置けば native-host のランチャもASCIIになり日本語パス問題が解消。
   - **NSIS ワンクリックインストーラ** は winCodeSign 展開時に **symlink 作成権限** が要る。**Windows 設定 → 開発者向け → 開発者モード を ON**（または管理者で実行）してから `npm run dist` で `Corpus Setup x.x.x.exe` が生成される。OFF だと winCodeSign 展開が失敗し `win-unpacked` のみになる（macOS用 dylib symlink でこける／コードの問題ではない）。

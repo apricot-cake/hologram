@@ -460,6 +460,69 @@
     views: MSG.qfEngViews
   };
 
+  // Returns the human-readable label for a single active filter. Shared by
+  // the query-chip renderer and the tab title generator.
+  function filterLabel(f) {
+    switch (f.type) {
+      case 'kind':       return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
+      case 'userKind':   return f.value === 'media' ? MSG.userKindMedia : MSG.userKindPlain;
+      case 'platform':   return ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
+      case 'postType':   return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
+      case 'date': {
+        const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
+        const fromStr = f.from ? formatShortDate(f.from) : '';
+        const toStr = f.to ? formatShortDate(f.to) : '';
+        return `${typeName}: ${fromStr}〜${toStr}`;
+      }
+      case 'engagement': return `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
+      case 'tag':        return `#${f.value}`;
+      case 'folder': {   const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
+      case 'workspace':  return MSG.workspaceTitle;
+      case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
+      case 'instance':   return f.value;
+      case 'user':       return f.label || f.value;
+      default:           return f.value || f.type;
+    }
+  }
+
+  // Derives a tab title from a snapshot state. Pure function (no DOM reads).
+  // Priority: search > tag > user > platform/instance > postType/media/multi
+  //           > date > engagement > kind > workspace/folder > (no filters)
+  function tabTitleOf(state, ctx) {
+    const filters = (state && state.f) || [];
+    const search  = (state && state.search) || '';
+    const multi   = !!(state && state.multi);
+    const allCount = (ctx && ctx.allCount != null) ? ctx.allCount : 0;
+    const extra = filters.length + (search ? 1 : 0) + (multi ? 1 : 0) - 1;
+    const sfx = extra > 0 ? ' ＋' + extra : '';  // ＋ (fullwidth)
+
+    if (search) {
+      const q = search.length > 12 ? search.slice(0, 12) + '…' : search;
+      return { text: '“' + q + '”' + sfx, iconType: 'search' };
+    }
+    const byType = {};
+    filters.forEach((f) => { (byType[f.type] = byType[f.type] || []).push(f); });
+
+    if (byType.tag)        return { text: filterLabel(byType.tag[0])  + sfx, iconType: 'tag' };
+    if (byType.user)       return { text: filterLabel(byType.user[0]) + sfx, iconType: 'user' };
+
+    const pfInst = filters.find((f) => f.type === 'platform' || f.type === 'instance');
+    if (pfInst)            return { text: filterLabel(pfInst)  + sfx, iconType: pfInst.type };
+
+    const ptMedia = filters.find((f) => f.type === 'postType' || f.type === 'media');
+    if (ptMedia)           return { text: filterLabel(ptMedia) + sfx, iconType: ptMedia.type };
+    if (multi)             return { text: MSG.qfMultiImage     + sfx, iconType: 'media' };
+
+    if (byType.date)       return { text: filterLabel(byType.date[0])       + sfx, iconType: 'date' };
+    if (byType.engagement) return { text: filterLabel(byType.engagement[0]) + sfx, iconType: 'engagement' };
+    if (byType.kind)       return { text: filterLabel(byType.kind[0])       + sfx, iconType: 'kind' };
+
+    const wsFolder = filters.find((f) => f.type === 'workspace' || f.type === 'folder');
+    if (wsFolder)          return { text: filterLabel(wsFolder) + sfx, iconType: wsFolder.type };
+
+    return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
+  }
+
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
     const prevLabels = new Set(Array.from(container.querySelectorAll('.sb-active-chip')).map(el => el.textContent.trim()));
@@ -480,53 +543,7 @@
     const andPills = [];
     const orPills = [];
     activeFilters.forEach((f, i) => {
-      let label = '';
-      const cls = `qc-${f.type}`;
-      switch (f.type) {
-        case 'kind':
-          label = f.value === 'post' ? MSG.kindPost : MSG.kindImage;
-          break;
-        case 'userKind':
-          label = f.value === 'media' ? MSG.userKindMedia : MSG.userKindPlain;
-          break;
-        case 'platform':
-          label = ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
-          break;
-        case 'postType':
-          label = f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
-          break;
-        case 'date': {
-          const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
-          const fromStr = f.from ? formatShortDate(f.from) : '';
-          const toStr = f.to ? formatShortDate(f.to) : '';
-          label = `${typeName}: ${fromStr}\u301C${toStr}`;
-          break;
-        }
-        case 'engagement':
-          label = `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '\u2264' : '\u2265'} ${formatCount(f.min)}`;
-          break;
-        case 'tag':
-          label = `#${f.value}`;
-          break;
-        case 'folder': {
-          const fobj = CF() && CF().byId(f.value);
-          label = fobj ? fobj.name : f.value;
-          break;
-        }
-        case 'workspace':
-          label = MSG.workspaceTitle;
-          break;
-        case 'media':
-          label = f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
-          break;
-        case 'instance':
-          label = f.value;
-          break;
-        case 'user':
-          label = f.label || f.value;
-          break;
-      }
-      (f.mode === 'or' ? orPills : andPills).push(pill(i, label, cls));
+      (f.mode === 'or' ? orPills : andPills).push(pill(i, filterLabel(f), `qc-${f.type}`));
     });
     // フィールドはラベルを箱の中に持つ（外置きだと束ねている感が出ない）。
     // さらにピルの間に小さく「かつ/または」を挟み、「この箱の中は全部この
@@ -1549,7 +1566,9 @@
       const prev = viewHistory[histIdx];
       if (prev.search && snap.search &&
           JSON.stringify({ ...prev, search: '' }) === JSON.stringify({ ...snap, search: '' })) {
-        viewHistory[histIdx] = snap; lastHistPush = now; return;
+        viewHistory[histIdx] = snap; lastHistPush = now;
+        document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
+        return;
       }
     }
     viewHistory = viewHistory.slice(0, histIdx + 1);
@@ -1558,6 +1577,7 @@
     histIdx = viewHistory.length - 1;
     lastHistPush = now;
     updateHistButtons();
+    document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
   }
   function applyState(s) {
     restoringState = true;
@@ -1572,6 +1592,7 @@
     renderPosts();
     restoringState = false;
     updateHistButtons();
+    document.title = tabTitleOf(s, { allCount: allPosts.length }).text + ' — Corpus';
   }
   // Mutations (untag, unfold, ungroup) can make a visible card stop matching the
   // active filter. Instead of vanishing instantly, the card stays until the next

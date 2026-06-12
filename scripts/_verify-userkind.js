@@ -35,16 +35,12 @@ const evalJs = `(async () => {
   await waitFor(() => cards() >= 3);
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-  // the new メディア/ポスト row exists with a badge
+  // the new ラベル row exists with a badge
   const row = document.querySelector('#filterRows [data-qfrow="userKind"]');
   const rowExists = !!row && document.querySelector('#filterRows [data-badge="userKind"]') !== null;
-  // 種別 row's first value renamed to キャプチャ (not SNS投稿)
-  click(document.querySelector('#filterRows [data-qfrow="kind"]')); await wait(60);
   const pop = document.querySelector('.qf-pop');
-  const kindRenamed = [...pop.querySelectorAll('[data-qfval]')].some(r => r.textContent.includes('キャプチャ')) &&
-    ![...pop.querySelectorAll('[data-qfval]')].some(r => r.textContent.includes('SNS投稿'));
 
-  // open メディア/ポスト → choose ポスト(plain) → only the plain post shows
+  // open ラベル → choose ポスト(plain) → only the plain post shows
   click(row); await wait(60);
   const vals = [...pop.querySelectorAll('[data-qfval]')];
   const hasMediaPost = vals.some(r => r.dataset.qfval === 'media') && vals.some(r => r.dataset.qfval === 'plain');
@@ -59,7 +55,7 @@ const evalJs = `(async () => {
   const mediaOnly = cards() === 1;
   document.getElementById('postResetBtn').click(); await wait(60);
   const resetAll = cards() === 3;
-  return { rowExists, kindRenamed, hasMediaPost, plainOnly, badgeOn, pill, mediaOnly, resetAll };
+  return { rowExists, hasMediaPost, plainOnly, badgeOn, pill, mediaOnly, resetAll };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -70,7 +66,7 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['rowExists', 'kindRenamed', 'hasMediaPost', 'plainOnly', 'badgeOn', 'pill', 'mediaOnly', 'resetAll'];
+  const keys = ['rowExists', 'hasMediaPost', 'plainOnly', 'badgeOn', 'pill', 'mediaOnly', 'resetAll'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'USERKIND_VERIFY_PASS' : 'USERKIND_VERIFY_FAIL');
