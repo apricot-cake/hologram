@@ -90,7 +90,7 @@ function listPosts() {
   const posts = [];
   for (const f of files) {
     if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json') continue;
+    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json') continue;
     try {
       const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
       // Keep records with an image, a (poster-less) video, or downloaded media.
@@ -344,6 +344,23 @@ ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
   try { if (win) win.setTitleBarOverlay(opts); } catch { /* non-Windows or overlay-less build */ }
 });
 
+ipcMain.handle('get-tabs', () => {
+  const folder = getSaveFolder();
+  if (!folder) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(folder, 'tabs.json'), 'utf8'));
+    return (raw && Array.isArray(raw.tabs)) ? raw : null;
+  } catch { return null; }
+});
+ipcMain.handle('set-tabs', (_e, data) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    fs.writeFileSync(path.join(folder, 'tabs.json'), JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true };
+  } catch { return { ok: false }; }
+});
+
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);
@@ -561,7 +578,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
@@ -627,7 +644,7 @@ ipcMain.handle('import-complete', async (_e, bytes) => {
 // ここでは「安全な吐き出し先」に、ライブラリ丸ごとを完全 ZIP（整理情報込み・そのまま
 // インポートで復元可能）として出力する。クラウドはその出力先だけ同期すればよい。
 // 出力は直近 retention 世代だけ残す（古い zip は自動削除）。
-const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json'];
+const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json'];
 // 出力は必ずこのサブフォルダの中に書く。ユーザーがデスクトップ等を選んでも直下に
 // 数千ファイルがぶちまけられないようにするための安全策（再発防止）。
 const BACKUP_SUBDIR = 'Corpus-export';
@@ -802,7 +819,7 @@ function createWindow(show = true) {
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: dark ? '#0c0e12' : '#f6f7f9', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
+    titleBarOverlay: { color: dark ? '#202226' : '#ffffff', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

@@ -168,6 +168,7 @@
       sbTopTip: '最上部へ',
       ungroupDone: 'グループを解除しました',
       tagGroupOther: '未分類',
+      tagAllRow: 'すべてのタグ',
       pinnedTags: 'ピン留め',
       tipPin: 'サイドバーにピン留め/解除',
       qfFindPh: '絞り込み…',
@@ -292,7 +293,15 @@
       qfEngSuffix: '以上',
       qfEngGte: '以上',
       qfEngLte: '以下',
-      sbActiveTitle: 'アクティブフィルタ'
+      sbActiveTitle: 'アクティブフィルタ',
+      // viewer: window tabs
+      tabNew: '新しいタブ',
+      tabClose: 'タブを閉じる',
+      tabPin: 'ピン留め',
+      tabUnpin: 'ピン解除',
+      tabRename: '名前を変更',
+      tabDuplicate: '複製',
+      tabCloseOthers: '他のタブを閉じる'
     },
 
     en: {
@@ -447,6 +456,7 @@
       sbTopTip: 'Back to top',
       ungroupDone: 'Ungrouped',
       tagGroupOther: 'Uncategorized',
+      tagAllRow: 'All tags',
       pinnedTags: 'Pinned',
       tipPin: 'Pin to / unpin from the sidebar',
       qfFindPh: 'Filter…',
@@ -565,7 +575,15 @@
       qfEngSuffix: 'or more',
       qfEngGte: '\u2265',
       qfEngLte: '\u2264',
-      sbActiveTitle: 'Active Filters'
+      sbActiveTitle: 'Active Filters',
+      // viewer: window tabs
+      tabNew: 'New tab',
+      tabClose: 'Close tab',
+      tabPin: 'Pin',
+      tabUnpin: 'Unpin',
+      tabRename: 'Rename',
+      tabDuplicate: 'Duplicate',
+      tabCloseOthers: 'Close others'
     }
   };
 

@@ -1,7 +1,9 @@
 # サイドバー文法統一 — 「絞り込み＝完全な目次」設計・実装プラン
 
 設計: Fable 5（2026-06-12）。実装は別モデル可。
-状態: **第1弾 実装済み（未コミット）／第2弾 未着手**。
+状態: **第1弾・第2弾 実装済み（未コミット）／実機レビューの指摘を受けた A-2（タグ行の
+再設計）が設計済み・実装待ち（Sonnet 担当）**。バグ2件（タイトルバードラッグ・
+グループ子行フライアウトの検索バー不一致）は修正済み。
 
 ## 背景（ユーザー指摘）
 
@@ -125,6 +127,58 @@
   platform/postType/media/kind は常に表示）。ピンの保持自体は消さない。
 - i18n: `pinnedTags`（ピン留め）・`tipPin` は文言そのままで汎用に通用。
 
+### A-2. タグ行の再設計（第2弾の実機レビュー反映・実装待ち）
+
+第2弾実装後の実機レビューでの指摘（2026-06-12）:
+
+- 行クリック＝全タグフライアウトであることが視覚的に読めない。しかも折りたたみ
+  目的で行本体をクリックしがちなので、全タグフライアウトが誤爆してびっくりする。
+- ▾（開閉）と ▸（フライアウト）が右端に並んでいて、どっちがどっちか読めない。
+- 全タグの横断表示・検索は機能として必要なので、形を変えて残すこと。
+
+解法（実プロダクト準拠）— **2ターゲット1行をやめ、行クリック＝開閉に一本化**:
+
+1. **タグ行クリック＝子行の開閉トグル**（Notion / Mail.app / Finder のセクション
+   ヘッダと同型。1行1ターゲットなので誤爆の余地がない）。シェブロン部分の
+   クリックも同じ動作＝専用リスナーと `stopPropagation` は不要になる。
+   - `filterRows` ハンドラ: `if (cat === 'tag' && tagGroups.length) { hideQfPop();
+     toggleTagGroupsCollapsed(); return; }`（`hideQfPop()` は子行由来のフライアウトを
+     孤立させないため）。
+   - 既存の `sbTagDisclosure` 専用クリックリスナーは**撤去**し、
+     `toggleTagGroupsCollapsed()` 関数（collapsed 反転 + localStorage 保存 +
+     `updateSidebarTagGroups()`）に置き換える。
+     **注意: リスナーを残したまま要素 id を変えると null 参照で起動時に落ちる。**
+2. **シェブロンは右端に1個だけ**: `<span class="sb-row-arrow sb-row-disclosure"
+   id="sbTagChevron">▾</span>`（▾＝展開中、折りたたみで -90° 回転して他の行と同じ
+   ▸ に見える）。
+   - `.sb-row-disclosure` は**回転専用モディファイア**に簡素化（見た目は
+     `.sb-row-arrow` が担う）: `display:inline-flex; align-items:center;
+     transition: transform 200ms ease-out;` ＋ `.collapsed { transform:
+     rotate(-90deg); }`。既存定義の flex-shrink/font-size/color/cursor/padding は
+     削除。reduced-motion の media query は既存のまま。
+3. **全タグの横断検索は子行の先頭「すべてのタグ」行へ**（Eagle のタグパネル先頭の
+   「すべて」と同型＝ユーザーの既知パターン。Linear の "All issues" も同じ）。
+   - `updateSidebarTagGroups()` の rows 先頭に `data-tag-group="__all"` の子行を
+     追加: ラベル `MSG.tagAllRow`・count＝全タグ数・active ハイライトなし
+     （グループ行と二重に光らせない。行バッジが適用数を既に示す）。全タグ0件なら出さない。
+   - `filterRows` の子行分岐: `showQfPopAt('tag', sub, gid === '__all' ? null : gid)`
+     （`null` ＝ 第1弾の ghead 付き全タグリスト＋検索）。
+4. **タググループが無いライブラリ**: タグ行は従来どおりプレーン行（クリック＝
+   フライアウト、構造の無い属性に子行はない）。`updateSidebarTagGroups()` で
+   chevron を静的 ▸ に切り替える（`textContent='▸'`・`collapsed` クラス除去）。
+   グループありなら `textContent='▾'`＋collapsed 状態を反映。
+5. **i18n**: `tagAllRow` を追加（ja: `すべてのタグ` / en: `All tags`）。
+   `i18n.js` の ja は `tagGroupOther: '未分類'` の直後、en は
+   `tagGroupOther: 'Uncategorized'` の直後。`viewer.js` の MSG マップにも
+   `tagAllRow: _s('tagAllRow'),` を追加（`tagGroupOther` の行の直後）。
+6. **テスト**: `test-app-hashtags.js` はタググループ未シードなので現挙動のまま
+   PASS（タグ行クリック＝フライアウト）。グループをシードした「行クリック＝開閉・
+   __all 行→フライアウト」のアサーション追加は E と合わせて任意。
+
+変更ファイル: `app/renderer/index.html`（タグ行 span 1本化・`.sb-row-disclosure`
+CSS 簡素化）、`app/renderer/viewer.js`（filterRows ハンドラ・
+`updateSidebarTagGroups`・リスナー→関数化・MSG）、`app/renderer/i18n.js`（ja/en）。
+
 ### D. DESIGN.md 追記（実装後）
 
 - IA節: 「絞り込みセクション＝フィルタ可能属性の完全な目次。コンテナ（WS/フォルダ）の
@@ -148,8 +202,10 @@
 
 ### F. 動作確認（実機）
 
-1. タグ行: 行クリック=全タグフライアウト（ghead 付き）/ ▾=子行開閉（永続化）。
-2. グループ子行: 常時見える・件数表示・クリックでそのグループのフライアウト。
+1. タグ行（A-2 後）: 行クリック＝子行の開閉（永続化）。シェブロンは右端1個で
+   開閉に追従して回転。グループが無い保存先では行クリック＝フライアウト＋静的 ▸。
+2. グループ子行: 先頭に「すべてのタグ」（クリックで ghead 付き全タグフライアウト
+   ＋検索）、以下グループ行（件数表示・クリックでそのグループのフライアウト）。
 3. 長いフライアウトが画面内に収まり内部スクロールする（検索ボックス固定）。
 4. ハッシュタグ/作者など任意のフライアウトでピン → ピン留めにグリフ付きチップ。
    クリックでトグル・右クリックで解除・旧 pinnedTags が移行されている。

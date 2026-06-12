@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('corpus', {
   setManualGroups: (groups) => ipcRenderer.invoke('set-manual-groups', groups),
   getFolders: () => ipcRenderer.invoke('get-folders'),
   setFolders: (data) => ipcRenderer.invoke('set-folders', data),
+  getTabs: () => ipcRenderer.invoke('get-tabs'),
+  setTabs: (data) => ipcRenderer.invoke('set-tabs', data),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openImageWindow: (image) => ipcRenderer.invoke('open-image-window', image),
   getPrefs: () => ipcRenderer.invoke('get-prefs'),

@@ -29,12 +29,48 @@
       -webkit-app-region: drag;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      position: sticky; top: 0; z-index: 50;
     }
-    #tabBar > * { -webkit-app-region: no-drag; }
+    #tabBarInner > * { -webkit-app-region: no-drag; }
     #tabBarInner {
       width: env(titlebar-area-width, 100%); display: flex; align-items: center;
       padding: 0 8px; gap: 4px; min-width: 0;
     }
+    /* Window tabs (Phase 2) */
+    .tab-item {
+      position: relative; display: inline-flex; align-items: center; gap: 5px;
+      height: 28px; min-width: 96px; max-width: 200px;
+      padding: 0 8px 0 10px;
+      background: transparent; border: none; border-radius: 8px;
+      cursor: pointer; color: var(--text-muted); font-size: 12px;
+      transition: background .12s, color .12s;
+      white-space: nowrap; overflow: hidden; flex-shrink: 0;
+    }
+    .tab-item.pinned { max-width: 120px; }
+    .tab-item.pinned:not(.active) { background: var(--accent-subtle); color: var(--accent); }
+    .tab-item:hover:not(.active) { background: var(--hover); color: var(--text); }
+    .tab-item.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--shadow-xs); }
+    .tab-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: .7; display: flex; align-items: center; }
+    .tab-item.active .tab-icon { opacity: 1; }
+    .tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .tab-close {
+      flex-shrink: 0; width: 16px; height: 16px; border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      background: none; border: none; cursor: pointer; padding: 0;
+      color: var(--text-muted); opacity: 0; transition: opacity .12s, background .1s, color .1s;
+      margin-left: 2px;
+    }
+    .tab-item.active .tab-close { opacity: 1; }
+    .tab-item:not(.active):hover .tab-close { opacity: .7; }
+    .tab-close:hover { background: var(--hover); color: var(--text); opacity: 1 !important; }
+    .tab-new {
+      flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      transition: background .12s, color .12s; margin-left: 2px;
+    }
+    .tab-new:hover { background: var(--hover); color: var(--text); }
+    .tab-rename-input { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; border: none; outline: none; background: transparent; color: inherit; padding: 0; }
     #appBody { display: flex; flex: 1; min-height: 0; }
 
     /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
@@ -134,7 +170,7 @@
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
     #appMain { flex: 1; min-width: 0; display: flex; }
-    #mode-post { flex: 1; min-width: 0; padding: 24px 32px; }
+    #mode-post { flex: 1; min-width: 0; padding: 24px 32px; overflow-anchor: none; }
 
     /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
        `scrollbar-width` property disables these ::-webkit-scrollbar rules in
@@ -199,8 +235,8 @@
       padding: 6px 12px; font-size: 13px; color: var(--text); cursor: pointer; text-align: left;
       transition: border-color .12s;
     }
-    .cs-btn:hover { border-color: var(--accent); }
-    .cs-btn .cs-arrow { color: var(--text-subtle); font-size: 10px; flex-shrink: 0; }
+    .cs-btn:hover { border-color: var(--text-muted); background: var(--hover); }
+    .cs-btn .cs-arrow { /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
     .cs-pop { min-width: 160px; }
     .cs-pop .fm-row.cs-on { color: var(--accent-subtle-fg); font-weight: 600; }
     .post-count {
@@ -252,14 +288,27 @@
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
        dense list, so tall bars waste vertical room (vertical padding only —
        the 12px side padding carries the 23px text axis). */
-    #sidebar select { padding-top: 5px; padding-bottom: 5px; }
+    #sidebar select { padding-top: 5px; padding-bottom: 5px; transition: border-color .12s, background .12s; }
+    #sidebar select:hover { background: var(--hover); border-color: var(--text-muted); }
     #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; }
     /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
        (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
        content-pad (12px) inside it — so headers read as one step out, content
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
-    #sidebar #wsChip { margin-left: 12px; }
+    .ws-row-wrap { position: relative; }
+    .ws-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
+    .ws-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
+    .ws-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
+    .ws-clear-btn {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      background: transparent; border: none; padding: 3px; border-radius: 4px;
+      cursor: pointer; color: var(--text-muted);
+      display: flex; align-items: center;
+      opacity: 0; transition: opacity .12s;
+    }
+    .ws-row-wrap:hover .ws-clear-btn { opacity: 1; }
+    .ws-clear-btn:hover { color: var(--text); }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
        chips above), like any other control in the column */
     .engagement-select {
@@ -340,6 +389,9 @@
       /* Skip rendering offscreen cards (huge win for thousands of items, like
          the image grid). The intrinsic size is the per-density height estimate. */
       content-visibility: auto; contain-intrinsic-size: auto 360px;
+      /* Prevent scroll anchoring from adjusting viewport when content-visibility
+         re-renders offscreen cards on scroll-back — causes the "hitch" sensation. */
+      overflow-anchor: none;
     }
     .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); }
     .post-card img {
@@ -716,6 +768,7 @@
       border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
     .fold-menu.show { display: block; animation: corpusPopIn 150ms var(--ease-out) both; }
+    .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
     .fold-menu .fm-row {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
@@ -809,7 +862,6 @@
       cursor: pointer; display: flex; align-items: center; justify-content: space-between;
     }
     .qf-menu-item:hover { background: var(--hover); }
-    .qf-menu-item .arrow { color: var(--text-subtle); font-size: 10px; }
 
     /* --- Popovers --- */
     .qf-popover {
@@ -1026,8 +1078,7 @@
       transition: color .12s, border-color .12s;
     }
     .qf-add:hover { color: var(--accent); border-color: var(--accent); }
-    .qf-pop .qf-vals { max-height: 320px; overflow-y: auto; }
-    .qf-pop .qf-arrow { color: var(--text-subtle); }
+    .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; }
     .qf-pop .qf-find {
       width: calc(100% - 8px); margin: 2px 4px 4px; padding: 5px 10px; font-size: 12px;
       border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-3);
@@ -1048,6 +1099,29 @@
     .qf-pop .qf-pin:hover { color: var(--text); }
     .qf-pop .qf-pin.on { opacity: 1; color: var(--text); }
     .qf-pop .qf-pin.on svg { fill: currentColor; }
+    .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
+    .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent); background: none; border: none; cursor: pointer; }
+    .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }
+    /* --- Plan A: tag group sub-rows --- */
+    /* Grid trick: animates open/close without display:none jump.
+       The inner flex container needs min-height:0 to collapse below its content. */
+    .sb-subrows { display: grid; grid-template-rows: 1fr; overflow: hidden;
+      transition: grid-template-rows 180ms ease-out; }
+    .sb-subrows.collapsed { grid-template-rows: 0fr; }
+    .sb-subrows-inner { display: flex; flex-direction: column; min-height: 0; }
+    @media (prefers-reduced-motion: reduce) { .sb-subrows { transition: none; } }
+    .sb-subrow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px calc(var(--sb-gutter) + 22px); font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 5px; border: none; background: none; width: 100%; text-align: left; }
+    .sb-subrow:hover { background: var(--hover); }
+    .sb-subrow.active { color: var(--accent); }
+    .sb-subrow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sb-subrow-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+    .sb-subrow-arrow { margin-left: 4px; /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
+    .sb-row-disclosure { display: inline-flex; align-items: center; transition: transform 200ms ease-out; }
+    .sb-row-disclosure.collapsed { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .sb-row-disclosure { transition: none; } }
+    /* Plan C: pin chip glyph (attribute icon before label) */
+    .sb-chip .pin-ic { display: inline-flex; align-items: center; margin-right: 4px; color: var(--text-muted); flex-shrink: 0; }
+    .sb-chip.active .pin-ic { color: inherit; }
     /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者/フォルダ候補） */
     .search-suggest {
       position: fixed; z-index: 12000; display: none; max-height: 300px; overflow-y: auto;
@@ -1096,11 +1170,14 @@
     box-sizing: border-box;
   }
   .sb-row .sb-row-badge.on { display: inline-block; }
-  .sb-row .sb-row-arrow { color: var(--text-subtle); font-size: 10px; }
-  /* tag-group buttons: squared corners + ▸ so they read as「開くもの」—
+  /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
+     All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
+  .sb-row-arrow, .sb-subrow-arrow, .cs-btn .cs-arrow {
+    color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
+    pointer-events: none;
+  }
+  /* tag-group buttons: squared corners + chevron so they read as「開くもの」—
      丸ピル（タグ実体）との境界をはっきりさせる */
-
-  .sb-chip .sb-chip-arrow { margin-left: 4px; color: var(--text-subtle); font-size: 9px; }
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
   .sb-sub {
@@ -1183,26 +1260,20 @@
              the unbounded lists (tags/authors/instances) live in the flyouts. -->
         <div class="sb-section" id="filterRows">
           <div class="sb-title" id="sbFilterTitle"></div>
-          <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="userKind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg></span><span class="sb-row-name" id="sbUserKindTitle"></span><span class="sb-row-badge" data-badge="userKind"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/></svg></span><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="date"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></span><span class="sb-row-name" id="sbDateTitle"></span><span class="sb-row-badge" data-badge="date"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="engagement"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span><span class="sb-row-name" id="sbEngTitle"></span><span class="sb-row-badge" data-badge="engagement"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="user"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="sb-row-name" id="sbAuthorTitle">作者</span><span class="sb-row-badge" data-badge="user"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="tag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg></span><span class="sb-row-name" id="sbTagRowTitle"></span><span class="sb-row-badge" data-badge="tag"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="hashtag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg></span><span class="sb-row-name" id="sbHashtagRowTitle"></span><span class="sb-row-badge" data-badge="hashtag"></span><span class="sb-row-arrow">▸</span></button>
-          <button class="sb-row" type="button" data-qfrow="folder"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="sb-row-name" id="sbFolderRowTitle"></span><span class="sb-row-badge" data-badge="folder"></span><span class="sb-row-arrow">▸</span></button>
+          <button class="sb-row" type="button" data-qfrow="kind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><span class="sb-row-name" id="sbKindTitle"></span><span class="sb-row-badge" data-badge="kind"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="userKind"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg></span><span class="sb-row-name" id="sbUserKindTitle"></span><span class="sb-row-badge" data-badge="userKind"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/></svg></span><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="date"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></span><span class="sb-row-name" id="sbDateTitle"></span><span class="sb-row-badge" data-badge="date"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="engagement"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span><span class="sb-row-name" id="sbEngTitle"></span><span class="sb-row-badge" data-badge="engagement"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="user"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="sb-row-name" id="sbAuthorTitle">作者</span><span class="sb-row-badge" data-badge="user"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="tag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg></span><span class="sb-row-name" id="sbTagRowTitle"></span><span class="sb-row-badge" data-badge="tag"></span><span class="sb-row-arrow sb-row-disclosure" id="sbTagChevron"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg></span></button>
+          <div id="sbTagGroupSubRows" class="sb-subrows"><div class="sb-subrows-inner"></div></div>
+          <button class="sb-row" type="button" data-qfrow="hashtag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg></span><span class="sb-row-name" id="sbHashtagRowTitle"></span><span class="sb-row-badge" data-badge="hashtag"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <button class="sb-row" type="button" data-qfrow="folder"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="sb-row-name" id="sbFolderRowTitle"></span><span class="sb-row-badge" data-badge="folder"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
         </div>
 
-        <!-- Tag wizard launcher (feature button, not a filter) -->
-        <div class="sb-section" id="tagWizardSection">
-          <button class="sb-feature" id="tagWizardBtn" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
-            <span id="tagWizardLabel"></span>
-          </button>
-        </div>
 
         <!-- Pinned tags: user-curated shortcuts (hidden when none pinned) -->
         <div class="sb-section" id="pinnedSection" style="display:none;">
@@ -1210,19 +1281,18 @@
           <div class="sb-chips" id="sbPinnedTags"></div>
         </div>
 
-        <!-- Workspace: the single ephemeral tray (one-click ⚡ on cards) -->
+        <!-- Workspace: the single ephemeral tray (one-click hammer on cards) -->
         <div class="sb-section">
-          <div class="sb-title"><span id="sbWorkspaceTitle">ワークスペース</span> <button class="sb-manage-link" id="wsClear" type="button" style="display:none;">空にする</button></div>
-          <button class="sb-chip" id="wsChip" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg><span id="sbWorkspaceChip">ワークスペース</span><span class="iv-tagn">0</span></button>
-        </div>
-
-        <!-- Folders (shared with image-view via folders.json) -->
-        <div class="sb-section collapsible">
-          <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
-          <div class="sb-collapsible-body">
-            <div class="sb-chips" id="postFolderChips"></div>
+          <div class="ws-row-wrap">
+            <button class="sb-row ws-row" id="wsRow" type="button">
+              <span class="sb-row-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></span>
+              <span class="sb-row-name" id="sbWorkspaceTitle">ワークスペース</span>
+              <span class="sb-row-badge" id="wsBadge"></span>
+            </button>
+            <button class="ws-clear-btn" id="wsClear" type="button" aria-label="空にする" style="display:none;"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
           </div>
         </div>
+
         </div><!-- /sb-scroll -->
       </div>
 
@@ -1344,6 +1414,8 @@
   </div><!-- /appMain -->
   </div><!-- /appBody -->
 
+  <!-- Hidden launcher — clicked programmatically by the context menu wizard action -->
+  <button id="tagWizardBtn" type="button" hidden aria-hidden="true"></button>
   <!-- Tagging wizard: walk untagged posts, present every tag group's tags as
        toggle chips (recognition over recall), set a plain/media flag, save→next -->
   <div id="tagWizard" class="settings-view" hidden>

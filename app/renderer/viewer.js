@@ -68,6 +68,7 @@
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
+    tagAllRow: _s('tagAllRow'),
     pinnedTags: _s('pinnedTags'),
     tipPin: _s('tipPin'),
     qfFindPh: _s('qfFindPh'),
@@ -286,7 +287,15 @@
     qfEngLte: _s('qfEngLte'),
     searchExact: _s('searchExact'),
     searchFuzzy: _s('searchFuzzy'),
-    searchModeTitle: _s('searchModeTitle')
+    searchModeTitle: _s('searchModeTitle'),
+    // window tabs
+    tabNew: _s('tabNew'),
+    tabClose: _s('tabClose'),
+    tabPin: _s('tabPin'),
+    tabUnpin: _s('tabUnpin'),
+    tabRename: _s('tabRename'),
+    tabDuplicate: _s('tabDuplicate'),
+    tabCloseOthers: _s('tabCloseOthers')
   };
 
   // --- Apply i18n to static elements ---
@@ -298,8 +307,6 @@
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
-  setText('sbWorkspaceChip', MSG.workspaceTitle);
-  setText('wsClear', MSG.wsEmpty);
   const wsClearEl = document.getElementById('wsClear');
   if (wsClearEl) wsClearEl.title = MSG.wsEmptyTip;
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
@@ -345,7 +352,6 @@
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
   setText('unitYear', MSG.unitYear);
-  setText('tagWizardLabel', MSG.twTitle);
   setText('twTitle', MSG.twTitle);
   setText('twBack', MSG.twBack);
   setText('twNext', MSG.twNext);
@@ -397,6 +403,10 @@
   sortSelect.options[5].textContent = MSG.sortCaptured;
   sortSelect.options[6].textContent = MSG.sortLikesPct;
 
+  // --- Disclosure chevrons (thin SVG; right = flyout indicator, down = collapsible) ---
+  const CHEV_R = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg>';
+  const CHEV_D = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg>';
+
   // --- Custom glass dropdown: a native <select> popup is OS-drawn and can't
   // be glassed, so we hide the select (keeping it as the value source — all
   // existing change handlers still fire) and drive a field-styled trigger +
@@ -445,7 +455,7 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cs-btn';
-    btn.innerHTML = '<span class="cs-label"></span><span class="cs-arrow">▾</span>';
+    btn.innerHTML = '<span class="cs-label"></span><span class="cs-arrow">' + CHEV_D + '</span>';
     btn.querySelector('.cs-label').textContent = csLabel(sel);
     sel.insertAdjacentElement('afterend', btn);
     sel.__csBtn = btn;
@@ -592,16 +602,27 @@
 
   const PF_NAME = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
-  // --- Pinned tags (📌 ユーザーが明示的に選んだタグだけサイドバーに常駐) -------
-  // 自動の「よく使うタグ」は中身が予測できず認知負荷が高い、という判断で
-  // ピン留め式に置換。ピンが無ければセクションごと出ない。
-  const PIN_KEY = 'corpus.pinnedTags';
-  function loadPins() { try { return JSON.parse(localStorage.getItem(PIN_KEY)) || []; } catch { return []; } }
-  function togglePin(tag) {
+  // --- Pinned filters (📌 任意の属性の値をサイドバーに常駐) ---
+  const PIN_KEY = 'corpus.pinnedFilters';
+  const PIN_KEY_LEGACY = 'corpus.pinnedTags';
+  function loadPins() {
+    const legacy = localStorage.getItem(PIN_KEY_LEGACY);
+    if (legacy) {
+      try {
+        const pins = JSON.parse(legacy).map(t => ({ type: 'tag', value: t }));
+        localStorage.setItem(PIN_KEY, JSON.stringify(pins));
+        localStorage.removeItem(PIN_KEY_LEGACY);
+        return pins;
+      } catch {}
+    }
+    try { return JSON.parse(localStorage.getItem(PIN_KEY)) || []; } catch { return []; }
+  }
+  function isPinned(type, value) { return loadPins().some(p => p.type === type && p.value === value); }
+  function togglePin(type, value) {
     const pins = loadPins();
-    const i = pins.indexOf(tag);
-    if (i >= 0) pins.splice(i, 1); else pins.push(tag);
-    try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch { /* quota — non-fatal */ }
+    const i = pins.findIndex(p => p.type === type && p.value === value);
+    if (i >= 0) pins.splice(i, 1); else pins.push({ type, value });
+    try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch {}
     updateSidebarTags();
   }
 
@@ -696,7 +717,8 @@
   document.body.appendChild(qfPop);
   let qfCat = null;
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
-  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; }
+  let qfTagGroup = null;   // タグサブ行クリック時にセット（グループ絞り込み）
+  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null; }
   function qfValues(cat) {
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
@@ -730,6 +752,15 @@
       }
       case 'tag': {
         const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
+        if (qfTagGroup) {
+          if (qfTagGroup === '__other') {
+            const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
+            return allTags.filter(t => !grouped.has(t)).map(t => ({ v: t, l: t, on: act('tag', t) }));
+          }
+          const g = tagGroups.find(x => x.id === qfTagGroup);
+          if (g) return (g.tags || []).filter(t => allTags.includes(t)).map(t => ({ v: t, l: t, on: act('tag', t) }));
+          return [];
+        }
         if (!tagGroups.length) return allTags.map(t => ({ v: t, l: t, on: act('tag', t) }));
         const grouped = new Set();
         const out = [];
@@ -770,24 +801,33 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    // タグ行にはピン（留め/解除）を付ける — ピン済みは塗り・他はホバーで輪郭
-    const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
+    const PINNABLE = new Set(['tag', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'userKind', 'folder']);
     const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
+    const curPins = PINNABLE.has(qfCat) ? loadPins() : null;
     const rowOf = (it) => {
       if (it.ghead != null) return `<div class="qf-ghead">${escapeHtml(it.ghead)}</div>`;
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
+      const vtype = it.type || qfCat;
+      const isMulti = qfCat === 'media' && it.v === '__multi';
+      const pinHtml = (curPins && !isMulti)
+        ? `<span class="qf-pin${curPins.some(p => p.type === vtype && p.value === it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" data-pintype="${escapeAttr(vtype)}" title="${MSG.tipPin}">${PIN_SVG}</span>`
+        : '';
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinHtml}</div>`;
     };
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     // Find box only for genuinely long, open-ended lists (tags/authors). The
     // platform list is short + fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter(it => it.ghead == null).length;
-    const find = (qfCat !== 'platform' && valueCount > 8) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
+    const find = (qfCat !== 'platform' && (qfTagGroup || valueCount > 8)) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
+    const footer = (qfCat === 'folder' && CF())
+      ? `<div class="qf-footer"><button class="qf-footer-link" type="button" id="qfFolderManage">${escapeHtml(MSG.ctxManage)}</button></div>`
+      : '';
     qfPop.innerHTML =
       find +
-      `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>`;
+      `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>` +
+      footer;
     const fi = document.getElementById('qfFind');
     if (fi) setTimeout(() => fi.focus(), 0);
   }
@@ -806,10 +846,11 @@
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
   });
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
-  function showQfPopAt(cat, anchorEl) {
+  function showQfPopAt(cat, anchorEl, tagGroupId) {
     if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
     qfCat = cat;
     qfAnchor = anchorEl;
+    qfTagGroup = tagGroupId || null;
     renderQfPop();
     const r = anchorEl.getBoundingClientRect();
     qfPop.style.left = (r.right + 8) + 'px';
@@ -820,10 +861,11 @@
     if (pr.bottom > innerHeight - 8) qfPop.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
   }
   qfPop.addEventListener('click', (e) => {
+    if (e.target.closest('#qfFolderManage')) { if (CF()) CF().openManager(); hideQfPop(); return; }
     // 📌 ピン留めトグル（行クリックの選択とは独立）
     const pin = e.target.closest('.qf-pin');
     if (pin) {
-      togglePin(pin.dataset.pinval);
+      togglePin(pin.dataset.pintype || qfCat, pin.dataset.pinval);
       renderQfPop();
       return;
     }
@@ -860,7 +902,7 @@
     // click even though contains() can no longer see it
     if (!document.contains(e.target)) return;
     if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
-        !e.target.closest('.sb-row')) hideQfPop();
+        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) hideQfPop();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
@@ -1089,9 +1131,16 @@
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   document.getElementById('filterRows').addEventListener('click', (e) => {
+    const sub = e.target.closest('[data-tag-group]');
+    if (sub) {
+      const gid = sub.dataset.tagGroup;
+      showQfPopAt('tag', sub, gid === '__all' ? null : gid);
+      return;
+    }
     const row = e.target.closest('[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
+    if (cat === 'tag' && tagGroups.length) { hideQfPop(); toggleTagGroupsCollapsed(); return; }
     if (cat === 'date') { hideQfPop(); openDatePopover(null); return; }
     if (cat === 'engagement') { hideQfPop(); openEngPopover(null); return; }
     showQfPopAt(cat, row);
@@ -1138,33 +1187,118 @@
     else removeFilter(existIdx);
     updateSidebarState();
   }
+  const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const TYPE_IC = {
+    tag:      _ic('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/>'),
+    hashtag:  _ic('<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>'),
+    user:     _ic('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+    platform: _ic('<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'),
+    instance: _ic('<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'),
+    postType: _ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    media:    _ic('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/>'),
+    kind:     _ic('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+    userKind: _ic('<path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/>'),
+    folder:   _ic('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+  };
   function updateSidebarTags() {
     const pinHost = document.getElementById('sbPinnedTags');
     const section = document.getElementById('pinnedSection');
     if (!pinHost || !section) return;
-    // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
-    const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-    const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
-    const chip = (t) => {
-      const st = tagState.get(t);
-      const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
-      return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
-    };
-    const pins = loadPins().filter((t) => allTags.includes(t));
+    const snPosts = allPosts.filter(p => p.url);
+    const allTagSet  = new Set(snPosts.flatMap(p => p.tags || []));
+    const allHtSet   = new Set(snPosts.flatMap(p => p.hashtags || []));
+    const allUserSet = new Set(snPosts.map(p => userKey(p)));
+    const allInstSet = new Set(snPosts.filter(p => p.platform === 'misskey' || p.platform === 'mastodon').map(p => hostOf(p.url)).filter(Boolean));
+    const allFolderSet = new Set(CF() ? CF().all().map(f => f.id) : []);
+    const EXISTS = { tag: v => allTagSet.has(v), hashtag: v => allHtSet.has(v), user: v => allUserSet.has(v), instance: v => allInstSet.has(v), folder: v => allFolderSet.has(v) };
+    const pins = loadPins().filter(p => { const fn = EXISTS[p.type]; return fn ? fn(p.value) : true; });
     section.style.display = pins.length ? '' : 'none';
-    pinHost.innerHTML = pins.map(chip).join('');
+    const activeKey = new Set(activeFilters.map(f => f.type + ':' + f.value));
+    pinHost.innerHTML = pins.map(p => {
+      const active = activeKey.has(p.type + ':' + p.value);
+      const glyph = TYPE_IC[p.type] ? `<span class="pin-ic">${TYPE_IC[p.type]}</span>` : '';
+      return `<button class="sb-chip${active ? ' active' : ''}" data-filter-type="${escapeAttr(p.type)}" data-filter-value="${escapeAttr(p.value)}">${glyph}${escapeHtml(filterLabel(p))}</button>`;
+    }).join('');
+    updateSidebarTagGroups();
   }
   document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-chip[data-filter-value]');
-    if (chip) toggleTagFilter(chip.dataset.filterValue);
+    const chip = e.target.closest('.sb-chip[data-filter-type]');
+    if (!chip) return;
+    const { filterType: type, filterValue: value } = chip.dataset;
+    const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
+    if (existIdx >= 0) { removeFilter(existIdx); }
+    else if (type === 'tag' || type === 'folder' || type === 'hashtag') { addFilter({ type, value, mode: 'or' }); }
+    else if (type === 'user') { const u = buildUsers().find(x => x.key === value); addFilter({ type, value, label: u ? (u.displayName || u.screenName) : value }); }
+    else { addFilter({ type, value }); }
+    if (type === 'folder') renderPostFolders();
+    updateSidebarState();
   });
-  // 右クリックでピン解除
   document.getElementById('sbPinnedTags').addEventListener('contextmenu', (e) => {
-    const chip = e.target.closest('.sb-chip[data-filter-value]');
+    const chip = e.target.closest('.sb-chip[data-filter-type]');
     if (!chip) return;
     e.preventDefault();
-    togglePin(chip.dataset.filterValue);
+    togglePin(chip.dataset.filterType, chip.dataset.filterValue);
   });
+
+  // --- Tag group sub-rows (Plan A) ---
+  const TAGGROUPS_COLLAPSED_KEY = 'corpus.tagGroupsCollapsed';
+  let tagGroupsCollapsed = localStorage.getItem(TAGGROUPS_COLLAPSED_KEY) === '1';
+
+  function toggleTagGroupsCollapsed() {
+    const tagRow = document.querySelector('[data-qfrow="tag"]');
+    const yBefore = tagRow ? tagRow.getBoundingClientRect().top : null;
+    tagGroupsCollapsed = !tagGroupsCollapsed;
+    localStorage.setItem(TAGGROUPS_COLLAPSED_KEY, tagGroupsCollapsed ? '1' : '');
+    updateSidebarTagGroups();
+    // アニメーション完了後にタグ行の Y ずれをスクロール補正（カーソル下を維持）
+    if (yBefore !== null) setTimeout(() => {
+      const yAfter = tagRow.getBoundingClientRect().top;
+      const delta = yAfter - yBefore;
+      if (Math.abs(delta) > 0.5) {
+        const scroll = tagRow.closest('.sb-scroll');
+        if (scroll) scroll.scrollTop += delta;
+      }
+    }, 190);
+  }
+
+  function updateSidebarTagGroups() {
+    const host = document.getElementById('sbTagGroupSubRows');
+    const chev = document.getElementById('sbTagChevron');
+    if (!host) return;
+    // .sb-subrows-inner が消えていたら（起動タイミング競合など）再生成する
+    let inner = host.querySelector('.sb-subrows-inner');
+    if (!inner) {
+      inner = document.createElement('div');
+      inner.className = 'sb-subrows-inner';
+      host.appendChild(inner);
+    }
+    if (!tagGroups.length) {
+      if (chev) { chev.innerHTML = CHEV_R; chev.classList.remove('collapsed'); }
+      inner.innerHTML = '';
+      return;
+    }
+    if (chev) { chev.innerHTML = CHEV_D; chev.classList.toggle('collapsed', tagGroupsCollapsed); }
+    host.classList.toggle('collapsed', tagGroupsCollapsed);
+    const allTagSet  = new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []));
+    const activeTags = new Set(activeFilters.filter(f => f.type === 'tag').map(f => f.value));
+    const rows = [];
+    if (allTagSet.size) {
+      rows.push(`<button class="sb-subrow" type="button" data-tag-group="__all"><span class="sb-subrow-name">${escapeHtml(MSG.tagAllRow)}</span><span class="sb-subrow-count">${allTagSet.size}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+    }
+    for (const g of tagGroups) {
+      const count = (g.tags || []).filter(t => allTagSet.has(t)).length;
+      if (!count) continue;
+      const active = (g.tags || []).some(t => activeTags.has(t));
+      rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="${escapeAttr(g.id)}"><span class="sb-subrow-name">${escapeHtml(g.name || '')}</span><span class="sb-subrow-count">${count}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+    }
+    const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
+    const otherCount = [...allTagSet].filter(t => !grouped.has(t)).length;
+    if (otherCount) {
+      const active = [...activeTags].some(t => !grouped.has(t));
+      rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="__other"><span class="sb-subrow-name">${escapeHtml(MSG.tagGroupOther)}</span><span class="sb-subrow-count">${otherCount}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+    }
+    inner.innerHTML = rows.join('');
+  }
 
   // --- State ---
   let allPosts = [];
@@ -1528,6 +1662,9 @@
   let histIdx = -1;
   let restoringState = false;
   let lastHistPush = 0;
+  let tabs = [];
+  let activeTabId = null;
+  let _tabPersistTimer = null;
   function snapshotState() {
     return {
       f: JSON.parse(JSON.stringify(activeFilters)),
@@ -1547,7 +1684,7 @@
     if (restoringState) return;
     const snap = snapshotState();
     const ser = JSON.stringify(snap);
-    if (histIdx >= 0 && JSON.stringify(viewHistory[histIdx]) === ser) return;
+    if (histIdx >= 0 && JSON.stringify(viewHistory[histIdx]) === ser) { updateActiveTabTitle(); return; }
     const now = Date.now();
     // typing continuation (both entries already searching) replaces in place;
     // the FIRST keystroke still gets its own entry (so ← returns to no-search)
@@ -1557,6 +1694,7 @@
           JSON.stringify({ ...prev, search: '' }) === JSON.stringify({ ...snap, search: '' })) {
         viewHistory[histIdx] = snap; lastHistPush = now;
         document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
+        updateActiveTabTitle(); persistTabsDebounced();
         return;
       }
     }
@@ -1567,6 +1705,7 @@
     lastHistPush = now;
     updateHistButtons();
     document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
+    updateActiveTabTitle(); persistTabsDebounced();
   }
   function applyState(s) {
     restoringState = true;
@@ -1583,6 +1722,282 @@
     updateHistButtons();
     document.title = tabTitleOf(s, { allCount: allPosts.length }).text + ' — Corpus';
   }
+
+  // --- Window tabs ---
+  const TAB_ICONS = {
+    all:        '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+    search:     '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    tag:        '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
+    hashtag:    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+    user:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    platform:   '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    instance:   '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>',
+    postType:   '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    media:      '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+    date:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    engagement: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
+    kind:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+    workspace:  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>',
+    folder:     '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  };
+  function genTabId() { return 'tab_' + Math.random().toString(36).slice(2, 10); }
+  function persistTabsDebounced() {
+    clearTimeout(_tabPersistTimer);
+    _tabPersistTimer = setTimeout(() => {
+      if (!window.corpus.setTabs) return;
+      const at = tabs.find((t) => t.id === activeTabId);
+      if (at) { at.state = snapshotState(); at.history = [...viewHistory]; at.histIdx = histIdx; }
+      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, history: t.history, histIdx: t.histIdx })) });
+    }, 800);
+  }
+  function saveActiveTabState() {
+    const t = tabs.find((t) => t.id === activeTabId);
+    if (!t) return;
+    t.state = snapshotState(); t.history = [...viewHistory]; t.histIdx = histIdx;
+  }
+  function updateActiveTabTitle() {
+    if (!activeTabId) return;
+    const bar = document.getElementById('tabBarInner');
+    if (!bar) return;
+    const t = tabs.find((t) => t.id === activeTabId);
+    if (!t || t.title) return;
+    const snap = snapshotState();
+    const info = tabTitleOf(snap, { allCount: allPosts.length });
+    const tabEl = bar.querySelector('[data-tab="' + CSS.escape(activeTabId) + '"]');
+    if (!tabEl) return;
+    const titleEl = tabEl.querySelector('.tab-title');
+    if (titleEl) { titleEl.textContent = info.text; tabEl.title = info.text; }
+  }
+  function renderTabTitle(t) {
+    if (t.title) return t.title;
+    const s = (t.id === activeTabId) ? snapshotState() : (t.state || {});
+    return tabTitleOf(s, { allCount: allPosts.length }).text;
+  }
+  function renderTabs() {
+    const bar = document.getElementById('tabBarInner');
+    if (!bar) return;
+    let html = '';
+    for (const t of tabs) {
+      const isActive = t.id === activeTabId;
+      const ttl = renderTabTitle(t);
+      const s = (t.id === activeTabId) ? snapshotState() : (t.state || {});
+      const pinSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
+      const icon = t.pinned ? pinSvg : (TAB_ICONS[tabTitleOf(s, { allCount: allPosts.length }).iconType] || TAB_ICONS.all);
+      const closeBtn = (!t.pinned && tabs.length > 1)
+        ? '<button class="tab-close" data-close="' + escapeAttr(t.id) + '" title="' + escapeAttr(MSG.tabClose) + '" aria-label="' + escapeAttr(MSG.tabClose) + '"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>'
+        : '';
+      html += '<button class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" data-tab="' + escapeAttr(t.id) + '" title="' + escapeAttr(ttl) + '">'
+        + '<span class="tab-icon" aria-hidden="true">' + icon + '</span>'
+        + '<span class="tab-title">' + escapeHtml(ttl) + '</span>'
+        + closeBtn + '</button>';
+    }
+    html += '<button class="tab-new" title="' + escapeAttr(MSG.tabNew) + '" aria-label="' + escapeAttr(MSG.tabNew) + '"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>';
+    bar.innerHTML = html;
+  }
+  function switchTab(id) {
+    if (id === activeTabId) return;
+    saveActiveTabState();
+    activeTabId = id;
+    const t = tabs.find((t) => t.id === id);
+    if (!t) return;
+    viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
+    if (t.state) applyState(t.state); else renderPosts();
+    renderTabs(); persistTabsDebounced();
+  }
+  function addTab() {
+    saveActiveTabState();
+    const id = genTabId();
+    tabs.push({ id, pinned: false, title: null, state: { f: [], join: 'or', search: '', sort: 'date-desc', multi: false }, history: [], histIdx: -1 });
+    activeTabId = id;
+    viewHistory = []; histIdx = -1;
+    applyState({ f: [], join: 'or', search: '', sort: sortSelect.value, multi: false });
+    renderTabs(); persistTabsDebounced();
+  }
+  function closeTab(id) {
+    if (tabs.length <= 1) {
+      resetAllFilters();
+      updateActiveTabTitle();
+      persistTabsDebounced();
+      return;
+    }
+    const idx = tabs.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    tabs.splice(idx, 1);
+    if (activeTabId === id) {
+      const ni = Math.min(idx, tabs.length - 1);
+      activeTabId = tabs[ni].id;
+      const t = tabs[ni];
+      viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
+      if (t.state) applyState(t.state); else renderPosts();
+    }
+    renderTabs(); persistTabsDebounced();
+  }
+  function pinTab(id) {
+    const t = tabs.find((t) => t.id === id);
+    if (!t) return;
+    t.pinned = !t.pinned;
+    tabs = [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)];
+    renderTabs(); persistTabsDebounced();
+  }
+  function renameTab(id, name) {
+    const t = tabs.find((t) => t.id === id);
+    if (!t) return;
+    t.title = name.trim() || null;
+    renderTabs(); persistTabsDebounced();
+  }
+  function duplicateTab(id) {
+    saveActiveTabState();
+    const src = tabs.find((t) => t.id === id);
+    if (!src) return;
+    const idx = tabs.indexOf(src);
+    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, state: JSON.parse(JSON.stringify(src.state || {})), history: [...(src.history || [])], histIdx: src.histIdx };
+    tabs.splice(idx + 1, 0, nt);
+    activeTabId = nt.id;
+    viewHistory = [...(nt.history || [])]; histIdx = typeof nt.histIdx === 'number' ? nt.histIdx : -1;
+    if (nt.state && Object.keys(nt.state).length) applyState(nt.state); else renderPosts();
+    renderTabs(); persistTabsDebounced();
+  }
+  async function initTabs() {
+    try {
+      const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
+      if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
+        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, history: Array.isArray(t.history) ? t.history : [], histIdx: typeof t.histIdx === 'number' ? t.histIdx : -1 }));
+        const sid = saved.activeTabId;
+        activeTabId = (sid && tabs.find((t) => t.id === sid)) ? sid : tabs[0].id;
+      } else {
+        const id = genTabId();
+        tabs = [{ id, pinned: false, title: null, state: null, history: [], histIdx: -1 }];
+        activeTabId = id;
+      }
+      const at = tabs.find((t) => t.id === activeTabId);
+      if (at && at.state) {
+        activeFilters = JSON.parse(JSON.stringify(at.state.f || []));
+        tagJoin = at.state.join || 'or';
+        document.getElementById('searchBox').value = at.state.search || '';
+        sortSelect.value = at.state.sort || 'date-desc';
+        refreshCustomSelects();
+        multiOnly = !!at.state.multi;
+        viewHistory = [...(at.history || [])]; histIdx = typeof at.histIdx === 'number' ? at.histIdx : -1;
+        updateHistButtons();
+      }
+    } catch (err) {
+      console.error('initTabs error:', err);
+      const id = genTabId();
+      tabs = [{ id, pinned: false, title: null, state: null, history: [], histIdx: -1 }];
+      activeTabId = id;
+    }
+    renderTabs();
+  }
+  (function setupTabBar() {
+    const bar = document.getElementById('tabBarInner');
+    if (!bar) return;
+    let tabMenu = null;
+    let tabMenuTargetId = null;
+    function hideTabMenu() {
+      if (tabMenu) { tabMenu.remove(); tabMenu = null; tabMenuTargetId = null; }
+    }
+    function showTabMenu(id, e) {
+      hideTabMenu();
+      tabMenuTargetId = id;
+      const t = tabs.find((t) => t.id === id);
+      if (!t) return;
+      const menu = document.createElement('div');
+      menu.className = 'fold-menu';
+      menu.innerHTML = [
+        '<div class="fm-row" data-tab-act="pin">' + (t.pinned ? MSG.tabUnpin : MSG.tabPin) + '</div>',
+        '<div class="fm-row" data-tab-act="rename">' + MSG.tabRename + '</div>',
+        '<div class="fm-row" data-tab-act="duplicate">' + MSG.tabDuplicate + '</div>',
+        tabs.length > 1 ? '<div class="fm-row" data-tab-act="close">' + MSG.tabClose + '</div>' : '',
+        tabs.length > 1 ? '<div class="fm-row fm-danger" data-tab-act="close-others">' + MSG.tabCloseOthers + '</div>' : '',
+      ].join('');
+      document.body.appendChild(menu);
+      tabMenu = menu;
+      menu.classList.add('show');
+      const r = menu.getBoundingClientRect();
+      const { innerWidth: W, innerHeight: H } = window;
+      let x = e.clientX, y = e.clientY + 4;
+      if (x + r.width > W - 8) x = W - r.width - 8;
+      if (y + r.height > H - 8) y = e.clientY - r.height - 4;
+      menu.style.left = x + 'px'; menu.style.top = y + 'px';
+      menu.addEventListener('click', (ev) => {
+        const row = ev.target.closest('[data-tab-act]');
+        if (!row) return;
+        const act = row.dataset.tabAct;
+        const tid = tabMenuTargetId;
+        hideTabMenu();
+        if (act === 'pin') pinTab(tid);
+        else if (act === 'rename') startTabRename(tid);
+        else if (act === 'duplicate') duplicateTab(tid);
+        else if (act === 'close') closeTab(tid);
+        else if (act === 'close-others') {
+          tabs = tabs.filter((t) => t.id === tid);
+          const t = tabs[0];
+          activeTabId = tid;
+          viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
+          if (t.state) applyState(t.state); else renderPosts();
+          renderTabs(); persistTabsDebounced();
+        }
+      });
+    }
+    function startTabRename(id) {
+      const tabEl = bar.querySelector('[data-tab="' + CSS.escape(id) + '"]');
+      if (!tabEl) return;
+      const t = tabs.find((t) => t.id === id);
+      if (!t) return;
+      const titleEl = tabEl.querySelector('.tab-title');
+      if (!titleEl) return;
+      const input = document.createElement('input');
+      input.className = 'tab-rename-input';
+      input.value = renderTabTitle(t);
+      titleEl.replaceWith(input);
+      input.focus(); input.select();
+      let committed = false;
+      const commit = () => { if (committed) return; committed = true; renameTab(id, input.value); };
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+        else if (ev.key === 'Escape') { committed = true; renderTabs(); }
+      });
+      input.addEventListener('blur', commit);
+    }
+    bar.addEventListener('click', (e) => {
+      const closeBtn = e.target.closest('[data-close]');
+      if (closeBtn) { e.stopPropagation(); closeTab(closeBtn.dataset.close); return; }
+      const newBtn = e.target.closest('.tab-new');
+      if (newBtn) { addTab(); return; }
+      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      if (tabBtn && !e.target.closest('.tab-rename-input')) { switchTab(tabBtn.dataset.tab); return; }
+    });
+    bar.addEventListener('contextmenu', (e) => {
+      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      if (!tabBtn) return;
+      e.preventDefault();
+      showTabMenu(tabBtn.dataset.tab, e);
+    });
+    bar.addEventListener('dblclick', (e) => {
+      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      if (!tabBtn || e.target.closest('[data-close]')) return;
+      startTabRename(tabBtn.dataset.tab);
+    });
+    document.addEventListener('click', (e) => {
+      if (tabMenu && !tabMenu.contains(e.target)) hideTabMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && tabMenu) { hideTabMenu(); return; }
+      if (!e.ctrlKey || e.altKey) return;
+      if (e.key === 't') {
+        e.preventDefault(); addTab();
+      } else if (e.key === 'w') {
+        e.preventDefault(); closeTab(activeTabId);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        const idx = tabs.findIndex((t) => t.id === activeTabId);
+        if (idx < 0) return;
+        const n = e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
+        switchTab(tabs[n].id);
+      }
+    });
+  })();
+
   // Mutations (untag, unfold, ungroup) can make a visible card stop matching the
   // active filter. Instead of vanishing instantly, the card stays until the next
   // filter change / data refresh — call this BEFORE the mutation re-render.
@@ -1990,7 +2405,8 @@
     ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
-    sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    wizard: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>'
   };
   function showCardMenu(g, x, y) {
     cardMenuGroup = g;
@@ -2001,6 +2417,7 @@
     cardMenu.innerHTML =
       (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
       row('edit', CM_IC.edit, MSG.tipEdit) +
+      row('wizard', CM_IC.wizard, MSG.twTitle) +
       row('folder', CM_IC.folder, MSG.tipFolder) +
       (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
@@ -2033,6 +2450,7 @@
     const act = rowEl.dataset.act;
     if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
     else if (act === 'edit') openEditOverlay(g.rep, g.records);
+    else if (act === 'wizard') { document.getElementById('tagWizardBtn')?.click(); }
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
@@ -2064,17 +2482,18 @@
   // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
   // to show only its contents; クリア empties it (items themselves are kept).
   function renderWorkspace() {
-    const chip = document.getElementById('wsChip');
+    const row = document.getElementById('wsRow');
+    const badge = document.getElementById('wsBadge');
     const clear = document.getElementById('wsClear');
-    if (!chip || !CF()) return;
+    if (!row || !CF()) return;
     const existing = new Set(allPosts.map(p => p.captureId));
     const n = CF().workspaceCount(existing);
     const active = activeFilters.some(f => f.type === 'workspace');
-    chip.classList.toggle('active', active);
-    chip.querySelector('.iv-tagn').textContent = n;
+    row.classList.toggle('active', active);
+    if (badge) { badge.textContent = n; badge.classList.toggle('on', n > 0); }
     if (clear) clear.style.display = n > 0 ? '' : 'none';
   }
-  document.getElementById('postFolderChips').addEventListener('click', (e) => {
+  document.getElementById('postFolderChips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip');
     if (!chip) return;
     const fid = chip.dataset.fid;
@@ -2083,20 +2502,21 @@
     else removeFilter(existIdx);
     renderPostFolders();
   });
-  document.getElementById('postFolderManage').addEventListener('click', () => { if (CF()) CF().openManager(); });
+  document.getElementById('postFolderManage')?.addEventListener('click', () => { if (CF()) CF().openManager(); });
 
   // Workspace: chip toggles a "show only the tray" filter; 空にする empties the
   // tray itself (confirmed — it reads nothing like removing the filter).
   (function setupWorkspaceSidebar() {
-    const chip = document.getElementById('wsChip');
+    const row = document.getElementById('wsRow');
     const clear = document.getElementById('wsClear');
-    if (chip) chip.addEventListener('click', () => {
+    if (row) row.addEventListener('click', () => {
       const idx = activeFilters.findIndex(f => f.type === 'workspace');
       if (idx < 0) addFilter({ type: 'workspace', value: '*', mode: 'or' });
       else removeFilter(idx);
       renderWorkspace();
     });
-    if (clear) clear.addEventListener('click', () => {
+    if (clear) clear.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (!CF()) return;
       if (!window.confirm(MSG.wsEmptyConfirm)) return;
       keepCurrentVisible();
@@ -2855,11 +3275,16 @@
     sl.step = '1';
     // ceil = the FEWEST columns whose exact-fit size still stays ≤ max —
     // floor here would offer a notch whose size clamps and never reflows.
-    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g)));
+    // Card view: always allow 1 column — CSS auto-fill handles width naturally.
+    const nBig = currentView === 'card' ? 1 : Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g)));
     const nSmall = Math.max(nBig, tileColsFor(st.min, m));   // many columns = small
+    // Hide the row when only one column count is geometrically possible — the
+    // slider would have a single stop and convey nothing.
+    const sizeRow = document.getElementById('tileSizeRow');
+    if (sizeRow) sizeRow.style.display = nBig === nSmall ? 'none' : '';
     sl.min = String(nBig);
     sl.max = String(nSmall);
-    sl.disabled = nBig === nSmall;
+    sl.disabled = false;
     const n = Math.min(nSmall, Math.max(nBig, tileColsFor(st.get(), m)));
     sl.value = String(nBig + nSmall - n);                    // inverted: right = larger
   }
@@ -3426,5 +3851,6 @@ render()
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
+  await initTabs();
   loadPosts();
 })();
