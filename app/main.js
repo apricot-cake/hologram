@@ -340,6 +340,10 @@ ipcMain.handle('set-folders', (_e, data) => {
   }
 });
 
+ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
+  try { if (win) win.setTitleBarOverlay(opts); } catch { /* non-Windows or overlay-less build */ }
+});
+
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);
@@ -797,6 +801,8 @@ function createWindow(show = true) {
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: dark ? '#0c0e12' : '#f6f7f9', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

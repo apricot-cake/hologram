@@ -33,5 +33,6 @@ contextBridge.exposeInMainWorld('corpus', {
   runBackup: () => ipcRenderer.invoke('run-backup'),
   importImages: () => ipcRenderer.invoke('import-images'),
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
-  onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb)
+  onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb),
+  setTitleBarOverlay: (opts) => ipcRenderer.invoke('set-titlebar-overlay', opts)
 });

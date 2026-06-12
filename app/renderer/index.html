@@ -22,8 +22,20 @@
     body {
       font: 14px/1.6 var(--font-sans);
       background: var(--bg); color: var(--fg);
-      display: flex; min-height: 100vh; overflow-x: hidden;
+      display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden;
     }
+    #tabBar {
+      height: var(--tabbar-h); flex-shrink: 0; display: flex; align-items: center;
+      -webkit-app-region: drag;
+      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    #tabBar > * { -webkit-app-region: no-drag; }
+    #tabBarInner {
+      width: env(titlebar-area-width, 100%); display: flex; align-items: center;
+      padding: 0 8px; gap: 4px; min-width: 0;
+    }
+    #appBody { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
     /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
        top, then the active mode's controls below. One column, no second rail. --- */
@@ -33,7 +45,7 @@
          width within, no per-element left padding). Change it here and the
          entire column's left/right axis moves together. */
       --sb-gutter: 12px;
-      width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; z-index: 30;
+      width: 248px; flex-shrink: 0; position: sticky; top: var(--tabbar-h); height: calc(100vh - var(--tabbar-h)); z-index: 30;
       /* Mica-style material (NOT glass — nothing behind it to blur): a faint
          top-light vertical gradient + fine grain noise + 1px top highlight
          turn the flat fill into a surface with physicality. */
@@ -819,8 +831,8 @@
       width: 250px; flex-shrink: 0;
       /* Match body's 24px top padding so the sticky bar doesn't jump up / crowd
          the tabs against the window edge when the content scrolls. */
-      position: sticky; top: 24px; align-self: flex-start;
-      max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
+      position: sticky; top: calc(var(--tabbar-h) + 24px); align-self: flex-start;
+      max-height: calc(100vh - var(--tabbar-h) - 24px); overflow-y: auto; overflow-x: hidden;
       padding-right: 8px;
     }
     .app-sidebar input, .app-sidebar select {
@@ -1101,6 +1113,12 @@
   </style>
 </head>
 <body>
+  <header id="tabBar">
+    <div id="tabBarInner">
+      <!-- Phase 2 でタブ実装。スケルトン: ドラッグ領域の確保のみ -->
+    </div>
+  </header>
+  <div id="appBody">
   <aside id="sidebar">
     <div id="side-post" class="side-controls">
       <!-- Posts controls (the only post-mode view; hashtags/users folded into the
@@ -1324,6 +1342,7 @@
   </aside>
 
   </div><!-- /appMain -->
+  </div><!-- /appBody -->
 
   <!-- Tagging wizard: walk untagged posts, present every tag group's tags as
        toggle chips (recognition over recall), set a plain/media flag, save→next -->
@@ -1537,7 +1556,7 @@
        never disappears, only the layering changes. Esc/× closes; clicking a
        card while it is open swaps the content (double-click → gallery). */
     .inspector {
-      width: 320px; flex-shrink: 0; position: sticky; top: 0; height: 100vh;
+      width: 320px; flex-shrink: 0; position: sticky; top: var(--tabbar-h); height: calc(100vh - var(--tabbar-h));
       overflow-y: auto; overscroll-behavior: contain; z-index: 25;
       background: var(--surface); border-left: 1px solid var(--border);
       padding: 16px 18px; font-size: 12px;
