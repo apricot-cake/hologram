@@ -884,12 +884,15 @@
       border-color: color-mix(in oklch, var(--accent) 45%, var(--border)) !important;
       box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
     }
-    /* Collapsible sections: click the title to fold the chips. A ▾/▸ marker leads the title. */
+    /* Collapsible sections: click the title to fold the chips.
+       Height animates via grid-template-rows 0fr↔1fr (no display:none). */
     .sb-section.collapsible > .sb-title { cursor: pointer; user-select: none; display: block; position: relative; }
-    .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; }
-    .sb-section.collapsible.collapsed > .sb-title::after { content: '▸'; }
+    .sb-section.collapsible > .sb-title::after { content: '▾'; font-size: 9px; color: var(--muted); margin-left: 6px; display: inline-block; transition: transform 200ms ease-out; }
+    .sb-section.collapsible.collapsed > .sb-title::after { transform: rotate(-90deg); }
     .sb-section.collapsible > .sb-title > .sb-manage-link { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
-    .sb-section.collapsed > :not(.sb-title) { display: none; }
+    .sb-collapsible-body { display: grid; grid-template-rows: 1fr; overflow: hidden; transition: grid-template-rows 220ms ease-out; }
+    .sb-section.collapsible.collapsed > .sb-collapsible-body { grid-template-rows: 0fr; }
+    .sb-collapsible-body > * { min-height: 0; }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     /* Feature launcher (tagging session): filled neutral button (matches the
        chip language — no border) with an ACCENT icon marking it as a feature.
@@ -1195,7 +1198,9 @@
         <!-- Folders (shared with image-view via folders.json) -->
         <div class="sb-section collapsible">
           <div class="sb-title">フォルダ <button class="sb-manage-link" id="postFolderManage" type="button">管理</button></div>
-          <div class="sb-chips" id="postFolderChips"></div>
+          <div class="sb-collapsible-body">
+            <div class="sb-chips" id="postFolderChips"></div>
+          </div>
         </div>
         </div><!-- /sb-scroll -->
       </div>

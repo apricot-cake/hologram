@@ -98,7 +98,21 @@ async function pickX(cells) {
       const url = `https://x.com/BarackObama/status/${photo}`;
       cells.push({ id: 'A-1l', platform: 'x', url, kind: 'click', waitSel: W, clickSel: W });
       cells.push({ id: 'A-1m', platform: 'x', url, kind: 'drag', waitSel: `${W} img[src*="pbs.twimg.com/media"]`, dragSel: `${W} img[src*="pbs.twimg.com/media"]` });
+      // ★ regression: lightbox (/photo/1) — dragging a REPLY's image must save
+      // the reply post, not the lightbox (main tweet) post. The reply image is an
+      // article img that is NOT the first article on the page (the main tweet is
+      // first; replies come after). Only add if there are reply-with-image articles.
+      cells.push({ id: 'A-1n', platform: 'x', url: `${url}/photo/1`, kind: 'drag-lightbox-reply',
+        waitSel: W, regression: 'ライトボックス返信ドラッグ→返信として保存' });
     }
+    // ★ regression: dragging the profile header avatar must NOT show drop zone
+    // and must NOT save a record (no post ancestor → drag.js bails out).
+    cells.push({ id: 'A-1o', platform: 'x', url: 'https://x.com/jack',
+      kind: 'drag-none',
+      waitSel: 'div[data-testid^="UserAvatar-Container-"]',
+      dragSel: 'div[data-testid^="UserAvatar-Container-"] img',
+      notWithin: 'article[data-testid="tweet"]',
+      regression: 'プロフィールアバターは保存しない' });
   } catch (e) { console.log('x 選別スキップ:', e.message); }
 }
 
@@ -201,20 +215,34 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   console.log(`保存先: ${dir}`);
 
   // Optional platform filter: node e2e-capture-test.js bluesky misskey
-  const only = process.argv.slice(2).map((s) => s.toLowerCase());
+  // Auth: node e2e-capture-test.js x --user-data-dir="C:\Users\…\Chrome\User Data"
+  //       --profile-dir=Default  (optional, defaults to "Default")
+  //       Chrome must be closed before running — puppeteer needs exclusive profile lock.
+  const rawArgs = process.argv.slice(2);
+  const only = rawArgs.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
+  const argVal = (name) => { const a = rawArgs.find((a) => a.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : null; };
+  const userDataDir = argVal('user-data-dir');
+  const profileDirArg = argVal('profile-dir') || 'Default';
   const cells = [];
   await Promise.all([pickX(cells), pickPixiv(cells), pickBluesky(cells), pickMisskey(cells), pickMastodon(cells)]);
   let active = only.length ? cells.filter((c) => only.includes(c.platform)) : cells;
-  // X gates logged-out views, so a fresh test profile can't load tweets — skip
-  // X unless explicitly requested. To run X cells, point the test at a Chrome
-  // profile already logged into x.com (a future --user-data-dir option).
-  if (!only.includes('x')) active = active.filter((c) => c.platform !== 'x');
-  else console.log('※ X はログイン必須。未ログインのテストプロファイルでは投稿が描画されず失敗します。');
+  // X gates logged-out views — skip unless explicitly requested.
+  if (!only.includes('x')) {
+    active = active.filter((c) => c.platform !== 'x');
+  } else {
+    if (!userDataDir) {
+      console.warn('※ X テスト: --user-data-dir が未指定。未ログインプロファイルでは投稿が描画されず失敗します。');
+      console.warn('   例: node scripts/e2e-capture-test.js x --user-data-dir="C:\\Users\\<you>\\AppData\\Local\\Google\\Chrome\\User Data"');
+      console.warn('   ※ 実行前に Chrome を閉じてください（プロファイルロック）。');
+    } else {
+      console.log(`X テスト: ユーザーデータ=${userDataDir} プロファイル=${profileDirArg}`);
+    }
+  }
   active.sort((a, b) => a.id.localeCompare(b.id, 'en'));
   if (!active.length) { console.error('対象セルを選別できず'); process.exit(1); }
   console.log(`対象セル: ${active.map((c) => c.id + '(' + c.kind + ')').join(' ')}`);
 
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
+  const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
   const EXT_DIR = stageExtension();
   const hostManifestPath = path.join(process.env.APPDATA, 'Corpus', 'com.corpus.host.json');
   const originalHostManifest = fs.existsSync(hostManifestPath) ? fs.readFileSync(hostManifestPath, 'utf8') : null;
@@ -228,7 +256,8 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
       '--no-first-run',
       '--no-default-browser-check',
       '--hide-crash-restore-bubble',
-      '--lang=ja'
+      '--lang=ja',
+      ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : []),
     ],
     defaultViewport: null
   });
@@ -298,7 +327,51 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           continue;
         }
 
-        if (cell.kind === 'click') {
+        // ★ A-1n: lightbox + reply image drag
+        // The /photo/1 page has the main tweet article first, then reply articles.
+        // Find an img inside a REPLY article (not the first article) and drag it.
+        // Expected: saved url == the reply's permalink, NOT the lightbox tweet's url.
+        if (cell.kind === 'drag-lightbox-reply') {
+          const replyImg = await page.evaluate((articleSel) => {
+            const articles = [...document.querySelectorAll(articleSel)];
+            // Skip the first article (main tweet); look for a reply article with a media img.
+            for (const art of articles.slice(1)) {
+              const img = art.querySelector('img[src*="pbs.twimg.com/media"]');
+              if (img) {
+                // Return the article's permalink so we can assert the saved url later.
+                const link = art.querySelector('a[href*="/status/"]');
+                return { found: true, artHref: link ? link.getAttribute('href') : null };
+              }
+            }
+            return { found: false };
+          }, `article[data-testid="tweet"]`);
+          if (!replyImg.found || !replyImg.artHref) {
+            console.log('   SKIP: 返信欄に画像/パーマリンクが見つからない（ライトボックステスト不能）');
+            results.push({ id: cell.id, ok: true, skipped: true });
+            continue;
+          }
+          // Override expected url for the id-match check below
+          cell.url = `https://x.com${replyImg.artHref}`;
+          const dragOk = await page.evaluate((articleSel) => {
+            const articles = [...document.querySelectorAll(articleSel)];
+            for (const art of articles.slice(1)) {
+              const img = art.querySelector('img[src*="pbs.twimg.com/media"]');
+              if (img) {
+                img.scrollIntoView({ block: 'center' });
+                const dt = new DataTransfer();
+                img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+                return new Promise((res) => setTimeout(() => {
+                  const zone = document.getElementById('__corpusDropZone');
+                  if (!zone || zone.style.display === 'none') { res('no-zone'); return; }
+                  zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                  res('ok');
+                }, 400));
+              }
+            }
+            return 'no-reply-img';
+          }, `article[data-testid="tweet"]`);
+          if (dragOk !== 'ok') throw new Error('drag-lightbox-reply setup failed: ' + dragOk);
+        } else if (cell.kind === 'click') {
           // Alt+S equivalent: inject the content scripts from the SW context
           // (activeTab gestures can't be synthesized; the staged extension has
           // <all_urls> so executeScript works on every platform).
@@ -398,7 +471,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
     }
   } finally {
     await browser.close().catch(() => {});
-    fs.rmSync(profile, { recursive: true, force: true });
+    if (!userDataDir) fs.rmSync(profile, { recursive: true, force: true });
     fs.rmSync(EXT_DIR, { recursive: true, force: true });
     // restore the host manifest's allowed_origins (we added the test ext's ID)
     if (originalHostManifest != null) fs.writeFileSync(hostManifestPath, originalHostManifest);
