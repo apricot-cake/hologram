@@ -378,9 +378,10 @@
   const engParticleEl = document.getElementById('sbEngParticle');
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
+  setText('sbTagRowTitle', MSG.qfTag);
+  setText('sbHashtagRowTitle', MSG.tabTags);
+  setText('sbFolderRowTitle', MSG.qfCatFolder);
   setText('sbPinTitle', MSG.pinnedTags);
-  setText('sbGroupTitle', MSG.tagGroupsTitle);
-  setText('sbHashtagTitle', MSG.tabTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
@@ -694,9 +695,8 @@
   qfPop.className = 'fold-menu qf-pop';
   document.body.appendChild(qfPop);
   let qfCat = null;
-  let qfTagGroup = null;   // tag flyout を特定グループに限定（'__other' = 未所属）
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
-  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfTagGroup = null; qfAnchor = null; }
+  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; }
   function qfValues(cat) {
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
@@ -729,16 +729,28 @@
         return out;
       }
       case 'tag': {
-        let tags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-        if (qfTagGroup === '__other') {
-          const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
-          tags = tags.filter(t => !grouped.has(t));
-        } else if (qfTagGroup) {
-          const g = tagGroups.find(g2 => g2.id === qfTagGroup);
-          const own = new Set((g && g.tags) || []);
-          tags = tags.filter(t => own.has(t));
+        const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
+        if (!tagGroups.length) return allTags.map(t => ({ v: t, l: t, on: act('tag', t) }));
+        const grouped = new Set();
+        const out = [];
+        for (const g of tagGroups) {
+          const own = (g.tags || []).filter(t => allTags.includes(t));
+          if (!own.length) continue;
+          own.forEach(t => grouped.add(t));
+          out.push({ ghead: g.name || '' });
+          own.forEach(t => out.push({ v: t, l: t, on: act('tag', t) }));
         }
-        return tags.map(t => ({ v: t, l: t, on: act('tag', t) }));
+        const rest = allTags.filter(t => !grouped.has(t));
+        if (rest.length) {
+          out.push({ ghead: MSG.tagGroupOther });
+          rest.forEach(t => out.push({ v: t, l: t, on: act('tag', t) }));
+        }
+        return out;
+      }
+      case 'hashtag': {
+        const counts = {};
+        allPosts.filter(p => p.url).forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(h => ({ v: h, l: '#' + h, on: act('hashtag', h) }));
       }
       case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
       case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
@@ -761,12 +773,16 @@
     // タグ行にはピン（留め/解除）を付ける — ピン済みは塗り・他はホバーで輪郭
     const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
     const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
-    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
+    const rowOf = (it) => {
+      if (it.ghead != null) return `<div class="qf-ghead">${escapeHtml(it.ghead)}</div>`;
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
+    };
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     // Find box only for genuinely long, open-ended lists (tags/authors). The
     // platform list is short + fixed (5 PFs + their instances), so no find box.
-    const find = (qfCat !== 'platform' && items.length > 8) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
+    const valueCount = items.filter(it => it.ghead == null).length;
+    const find = (qfCat !== 'platform' && valueCount > 8) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
     qfPop.innerHTML =
@@ -790,10 +806,9 @@
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
   });
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
-  function showQfPopAt(cat, anchorEl, tagGroupId) {
+  function showQfPopAt(cat, anchorEl) {
     if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
     qfCat = cat;
-    qfTagGroup = tagGroupId || null;
     qfAnchor = anchorEl;
     renderQfPop();
     const r = anchorEl.getBoundingClientRect();
@@ -827,7 +842,7 @@
       const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
       if (i >= 0) {
         removeFilter(i);
-      } else if (vtype === 'tag' || vtype === 'folder') {
+      } else if (vtype === 'tag' || vtype === 'folder' || vtype === 'hashtag') {
         addFilter({ type: vtype, value: v, mode: 'or' });
       } else if (vtype === 'user') {
         const u = buildUsers().find(x => x.key === v);
@@ -845,7 +860,7 @@
     // click even though contains() can no longer see it
     if (!document.contains(e.target)) return;
     if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
-        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) hideQfPop();
+        !e.target.closest('.sb-row')) hideQfPop();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
@@ -1062,7 +1077,6 @@
   setText('sbMediaTitle', MSG.qfMediaTitle);
   setText('sbDateTitle', MSG.qfDate);
   setText('sbEngTitle', MSG.qfEngagement);
-  setText('sbTagTitle', MSG.qfTag);
   setText('sbPost', MSG.qfPost);
   setText('sbReply', MSG.qfReply);
   setText('sbQuote', MSG.qfQuote);
@@ -1094,7 +1108,6 @@
     if (sb) sb.classList.toggle('has-value', !!sb.value.trim());
     renderFilterBadges();
     updateSidebarTags();
-    updateSidebarHashtags();
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
@@ -1127,40 +1140,19 @@
   }
   function updateSidebarTags() {
     const pinHost = document.getElementById('sbPinnedTags');
-    const groupHost = document.getElementById('sbTagGroupRows');
-    if (!pinHost || !groupHost) return;
+    const section = document.getElementById('pinnedSection');
+    if (!pinHost || !section) return;
     // 投稿閲覧は url ありの投稿のみ対象。画像ライブラリ（url無し）のEagleタグを混ぜない。
     const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
-    if (!allTags.length) { pinHost.innerHTML = ''; groupHost.innerHTML = ''; return; }
     const tagState = new Map(activeFilters.filter(f => f.type === 'tag').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     const chip = (t) => {
       const st = tagState.get(t);
       const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
       return `<button class="sb-chip${cls}" data-filter-type="tag" data-filter-value="${escapeHtml(t)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(t)}</button>`;
     };
-    // 📌 ピン留めタグ: ユーザーが明示的に選んだものだけ（無ければ見出しごと非表示）
     const pins = loadPins().filter((t) => allTags.includes(t));
-    const pinTitle = document.getElementById('sbPinTitle');
-    if (pinTitle) pinTitle.style.display = pins.length ? '' : 'none';
+    section.style.display = pins.length ? '' : 'none';
     pinHost.innerHTML = pins.map(chip).join('');
-    // タググループ行: グループ内に存在するタグ数 ＋ 適用中なら active。
-    const grouped = new Set();
-    const rows = [];
-    for (const g of tagGroups) {
-      const own = (g.tags || []).filter((t) => allTags.includes(t));
-      if (!own.length) continue;
-      own.forEach((t) => grouped.add(t));
-      const activeN = own.filter((t) => tagState.has(t)).length;
-      rows.push(`<button class="sb-chip${activeN ? ' active' : ''}" data-tag-group="${escapeAttr(g.id)}">${escapeHtml(g.name || '')}<span class="iv-tagn">${own.length}</span><span class="sb-chip-arrow">▸</span></button>`);
-    }
-    const rest = allTags.filter((t) => !grouped.has(t));
-    if (rest.length) {
-      const activeN = rest.filter((t) => tagState.has(t)).length;
-      rows.push(`<button class="sb-chip${activeN ? ' active' : ''}" data-tag-group="__other">${escapeHtml(MSG.tagGroupOther)}<span class="iv-tagn">${rest.length}</span><span class="sb-chip-arrow">▸</span></button>`);
-    }
-    groupHost.innerHTML = rows.join('');
-    const groupTitle = document.getElementById('sbGroupTitle');
-    if (groupTitle) groupTitle.style.display = rows.length ? '' : 'none';
   }
   document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip[data-filter-value]');
@@ -1172,35 +1164,6 @@
     if (!chip) return;
     e.preventDefault();
     togglePin(chip.dataset.filterValue);
-  });
-  document.getElementById('sbTagGroupRows').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-tag-group]');
-    if (b) showQfPopAt('tag', b, b.dataset.tagGroup);
-  });
-
-  function toggleHashtagFilter(value) {
-    const existIdx = activeFilters.findIndex(f => f.type === 'hashtag' && f.value === value);
-    if (existIdx < 0) addFilter({ type: 'hashtag', value, mode: 'or' });
-    else removeFilter(existIdx);
-    updateSidebarState();
-  }
-  function updateSidebarHashtags() {
-    const titleEl = document.getElementById('sbHashtagTitle');
-    const host    = document.getElementById('sbHashtagChips');
-    if (!titleEl || !host) return;
-    const counts = {};
-    allPosts.filter(p => p.url).forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
-    const hashtags = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 50);
-    titleEl.style.display = hashtags.length ? '' : 'none';
-    if (!hashtags.length) { host.innerHTML = ''; return; }
-    const activeSet = new Set(activeFilters.filter(f => f.type === 'hashtag').map(f => f.value));
-    host.innerHTML = hashtags.map(h =>
-      `<button class="sb-chip${activeSet.has(h) ? ' active' : ''}" data-filter-type="hashtag" data-filter-value="${escapeHtml(h)}">#${escapeHtml(h)}</button>`
-    ).join('');
-  }
-  document.getElementById('sbHashtagChips').addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-chip[data-filter-value]');
-    if (chip) toggleHashtagFilter(chip.dataset.filterValue);
   });
 
   // --- State ---

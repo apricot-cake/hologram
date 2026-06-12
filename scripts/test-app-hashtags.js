@@ -1,9 +1,8 @@
 'use strict';
 
-// Verifies the sidebar tag filter and that hashtag browsing now lives in the
-// search box (the dedicated Hashtags tab was removed): seeds posts with #tags in
-// text and user tags, checks the sidebar タグ chips + their search input, then
-// that typing "#typescript" in the search box narrows the post grid.
+// Verifies the sidebar tag row and hashtag row flyouts:
+// - Tag row opens a flyout listing all user tags (grouped by group / uncategorized)
+// - Hashtag row opens a flyout listing hashtags from post text
 //
 //   node scripts/test-app-hashtags.js
 
@@ -24,37 +23,44 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-function writePost(id, text, tags) {
+function writePost(id, text, tags, hashtags) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
   fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
     captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x',
-    text, tags: tags || [], capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z'
+    text, tags: tags || [], hashtags: hashtags || [],
+    capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z'
   }, null, 2));
 }
-// 8 unique user tags (> 6) so the sidebar tag filter input is shown.
-writePost('p1', 'TypeScript最高 #typescript #プログラミング', ['alpha', 'beta', 'gamma']);
-writePost('p2', '別記事 #typescript の続き', ['delta', 'epsilon']);
-writePost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta']);
+// 8 unique user tags so the tag flyout search input is shown (> 8 items).
+writePost('p1', 'TypeScript最高', ['alpha', 'beta', 'gamma'], ['typescript', 'プログラミング']);
+writePost('p2', '別記事の続き',   ['delta', 'epsilon'],       ['typescript']);
+writePost('p3', 'タグなし投稿',   ['zeta', 'eta', 'theta'],   ['rust']);
 
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-  document.querySelector('#sbTagGroupRows [data-tag-group="__other"]').click();
+
+  // --- Tag row: opens flyout with all user tags ---
+  document.querySelector('[data-qfrow="tag"]').click();
   await sleep(60);
   const pop = document.querySelector('.qf-pop');
-  const flyTags = pop.querySelectorAll('[data-qfval]').length;
+  const tagFlyCount = pop ? pop.querySelectorAll('[data-qfval]').length : 0;
   document.body.click(); await sleep(40);
 
-  // Hashtag browsing now lives in the search box: "#typescript" appears in two
-  // posts' text, so the grid should narrow to those two cards.
-  const search = document.getElementById('searchBox');
-  search.value = '#typescript';
-  search.dispatchEvent(new Event('input'));
+  // --- Hashtag row: opens flyout with hashtags from post text ---
+  document.querySelector('[data-qfrow="hashtag"]').click();
+  await sleep(60);
+  const pop2 = document.querySelector('.qf-pop');
+  const htFlyCount = pop2 ? pop2.querySelectorAll('[data-qfval]').length : 0;
+  // select 'typescript' hashtag from flyout
+  const tsRow = pop2 && pop2.querySelector('[data-qfval="typescript"]');
+  if (tsRow) tsRow.click();
   await sleep(120);
+  document.body.click(); await sleep(40);
   const htCards = document.querySelectorAll('#postGrid .post-card').length;
 
-  return { flyTags, htCards };
+  return { tagFlyCount, htFlyCount, htCards };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -76,8 +82,9 @@ child.on('close', () => {
 
   let ok = true;
   const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
-  check('その他 group flyout lists the 8 tags', r.flyTags === 8);
-  check('searching "#typescript" narrows the grid to its 2 posts', r.htCards === 2);
+  check('tag row flyout lists the 8 user tags', r.tagFlyCount === 8);
+  check('hashtag row flyout lists 3 distinct hashtags', r.htFlyCount === 3);
+  check('selecting #typescript narrows grid to 2 posts', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });
