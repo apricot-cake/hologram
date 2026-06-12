@@ -25,6 +25,9 @@
     kindTitle: _s('kindTitle'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
+    userKindTitle: _s('userKindTitle'),
+    userKindMedia: _s('userKindMedia'),
+    userKindPlain: _s('userKindPlain'),
     multiOnly: _s('multiOnly'),
     expandAll: _s('expandAll'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
@@ -483,6 +486,9 @@
         case 'kind':
           label = f.value === 'post' ? MSG.kindPost : MSG.kindImage;
           break;
+        case 'userKind':
+          label = f.value === 'media' ? MSG.userKindMedia : MSG.userKindPlain;
+          break;
         case 'platform':
           label = ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
           break;
@@ -679,6 +685,7 @@
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
+      case 'userKind': return [['media', MSG.userKindMedia], ['plain', MSG.userKindPlain]].map(([v, l]) => ({ v, l, on: act('userKind', v) }));
       case 'platform': {
         // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
         const names = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
@@ -1025,6 +1032,7 @@
 
   // Sidebar i18n
   setText('sbKindTitle', MSG.kindTitle);
+  setText('sbUserKindTitle', MSG.userKindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
@@ -1420,13 +1428,14 @@
     // tag/folder/date/engagement elements are individually required.
     // OR field (mode === 'or') matches when ANY element matches.
     // Both fields combine via the user-selected connector (tagJoin).
-    const SINGLE_VALUED = ['kind', 'platform', 'user', 'instance', 'postType', 'media'];
+    const SINGLE_VALUED = ['kind', 'platform', 'user', 'instance', 'postType', 'media', 'userKind'];
     const predOf = (f) => {
       switch (f.type) {
         // 'post' = SNS投稿（リンクあり＝拡張で取得: キャプチャもドラッグも）/
         // 'image' = 取り込み画像（リンクなし＝手動追加）。キャプチャ/ドラッグの別は
         // 区別する価値がないので url の有無を本質的な軸にする。
         case 'kind': return (p) => (f.value === 'post') === !!p.url;
+        case 'userKind': return (p) => p.userKind === f.value;
         case 'platform': return (p) => p.platform === f.value;
         case 'user': return (p) => userKey(p) === f.value;
         case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
