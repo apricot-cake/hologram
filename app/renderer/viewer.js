@@ -726,7 +726,7 @@
       }
       case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
       case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
-        .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', on: act('user', u.key) }));
+        .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key) }));
       case 'instance': {
         const hosts = new Map();
         for (const p of allPosts) {
@@ -745,7 +745,7 @@
     // タグ行にはピン（留め/解除）を付ける — ピン済みは塗り・他はホバーで輪郭
     const pinned = qfCat === 'tag' ? new Set(loadPins()) : null;
     const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
-    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
+    const rowOf = (it) => `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinned ? `<span class="qf-pin${pinned.has(it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" title="${MSG.tipPin}">${PIN_SVG}</span>` : ''}</div>`;
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     // Find box only for genuinely long, open-ended lists (tags/authors). The
@@ -762,9 +762,14 @@
   // 値リストの絞り込み（再描画せず行の表示/非表示だけ切替＝入力フォーカス維持）
   qfPop.addEventListener('input', (e) => {
     if (!e.target.classList.contains('qf-find')) return;
-    const q = e.target.value.trim().toLowerCase();
+    const raw = e.target.value.trim().toLowerCase();
+    const atMode = raw.startsWith('@');
+    const q = atMode ? raw.slice(1) : raw;
     qfPop.querySelectorAll('.qf-vals .fm-row').forEach((row) => {
-      row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      const match = !q || (atMode
+        ? (row.dataset.sn || '').toLowerCase().includes(q)
+        : row.textContent.toLowerCase().includes(q));
+      row.style.display = match ? '' : 'none';
     });
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
   });
