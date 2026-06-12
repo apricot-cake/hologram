@@ -380,6 +380,7 @@
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('sbPinTitle', MSG.pinnedTags);
   setText('sbGroupTitle', MSG.tagGroupsTitle);
+  setText('sbHashtagTitle', MSG.tabTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('histBack').title = MSG.histBack;
   document.getElementById('histFwd').title = MSG.histFwd;
@@ -475,7 +476,8 @@
         return `${typeName}: ${fromStr}〜${toStr}`;
       }
       case 'engagement': return `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
-      case 'tag':        return `#${f.value}`;
+      case 'tag':        return f.value;
+      case 'hashtag':    return `#${f.value}`;
       case 'folder': {   const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
       case 'workspace':  return MSG.workspaceTitle;
       case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
@@ -486,41 +488,38 @@
   }
 
   // Derives a tab title from a snapshot state. Pure function (no DOM reads).
-  // Priority: search > tag > user > platform/instance > postType/media/multi
-  //           > date > engagement > kind > workspace/folder > (no filters)
+  // All active labels joined with ・ in priority order so every tab is unique.
   function tabTitleOf(state, ctx) {
-    const filters = (state && state.f) || [];
-    const search  = (state && state.search) || '';
-    const multi   = !!(state && state.multi);
+    const filters  = (state && state.f) || [];
+    const search   = (state && state.search) || '';
+    const multi    = !!(state && state.multi);
     const allCount = (ctx && ctx.allCount != null) ? ctx.allCount : 0;
-    const extra = filters.length + (search ? 1 : 0) + (multi ? 1 : 0) - 1;
-    const sfx = extra > 0 ? ' ＋' + extra : '';  // ＋ (fullwidth)
 
-    if (search) {
-      const q = search.length > 12 ? search.slice(0, 12) + '…' : search;
-      return { text: '“' + q + '”' + sfx, iconType: 'search' };
+    if (!filters.length && !search && !multi) {
+      return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
     }
+
+    const parts = [];
+    let primaryIconType = null;
+    const add = (label, iconType) => { parts.push(label); if (!primaryIconType) primaryIconType = iconType; };
+
+    if (search) { const q = search.length > 12 ? search.slice(0, 12) + '…' : search; add('”' + q + '”', 'search'); }
+
     const byType = {};
     filters.forEach((f) => { (byType[f.type] = byType[f.type] || []).push(f); });
 
-    if (byType.tag)        return { text: filterLabel(byType.tag[0])  + sfx, iconType: 'tag' };
-    if (byType.user)       return { text: filterLabel(byType.user[0]) + sfx, iconType: 'user' };
+    if (byType.tag)        byType.tag.forEach((f)        => add(filterLabel(f), 'tag'));
+    if (byType.hashtag)    byType.hashtag.forEach((f)    => add(filterLabel(f), 'hashtag'));
+    if (byType.user)       byType.user.forEach((f)       => add(filterLabel(f), 'user'));
+    filters.filter((f) => f.type === 'platform' || f.type === 'instance').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'postType'  || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
+    if (multi && !byType.media) add(MSG.qfMultiImage, 'media');
+    if (byType.date)       byType.date.forEach((f)       => add(filterLabel(f), 'date'));
+    if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
+    if (byType.kind)       byType.kind.forEach((f)       => add(filterLabel(f), 'kind'));
+    filters.filter((f) => f.type === 'workspace' || f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
 
-    const pfInst = filters.find((f) => f.type === 'platform' || f.type === 'instance');
-    if (pfInst)            return { text: filterLabel(pfInst)  + sfx, iconType: pfInst.type };
-
-    const ptMedia = filters.find((f) => f.type === 'postType' || f.type === 'media');
-    if (ptMedia)           return { text: filterLabel(ptMedia) + sfx, iconType: ptMedia.type };
-    if (multi)             return { text: MSG.qfMultiImage     + sfx, iconType: 'media' };
-
-    if (byType.date)       return { text: filterLabel(byType.date[0])       + sfx, iconType: 'date' };
-    if (byType.engagement) return { text: filterLabel(byType.engagement[0]) + sfx, iconType: 'engagement' };
-    if (byType.kind)       return { text: filterLabel(byType.kind[0])       + sfx, iconType: 'kind' };
-
-    const wsFolder = filters.find((f) => f.type === 'workspace' || f.type === 'folder');
-    if (wsFolder)          return { text: filterLabel(wsFolder) + sfx, iconType: wsFolder.type };
-
-    return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
+    return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
 
   function renderQueryChips() {
@@ -1095,6 +1094,7 @@
     if (sb) sb.classList.toggle('has-value', !!sb.value.trim());
     renderFilterBadges();
     updateSidebarTags();
+    updateSidebarHashtags();
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
@@ -1176,6 +1176,31 @@
   document.getElementById('sbTagGroupRows').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tag-group]');
     if (b) showQfPopAt('tag', b, b.dataset.tagGroup);
+  });
+
+  function toggleHashtagFilter(value) {
+    const existIdx = activeFilters.findIndex(f => f.type === 'hashtag' && f.value === value);
+    if (existIdx < 0) addFilter({ type: 'hashtag', value, mode: 'or' });
+    else removeFilter(existIdx);
+    updateSidebarState();
+  }
+  function updateSidebarHashtags() {
+    const titleEl = document.getElementById('sbHashtagTitle');
+    const host    = document.getElementById('sbHashtagChips');
+    if (!titleEl || !host) return;
+    const counts = {};
+    allPosts.filter(p => p.url).forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
+    const hashtags = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 50);
+    titleEl.style.display = hashtags.length ? '' : 'none';
+    if (!hashtags.length) { host.innerHTML = ''; return; }
+    const activeSet = new Set(activeFilters.filter(f => f.type === 'hashtag').map(f => f.value));
+    host.innerHTML = hashtags.map(h =>
+      `<button class="sb-chip${activeSet.has(h) ? ' active' : ''}" data-filter-type="hashtag" data-filter-value="${escapeHtml(h)}">#${escapeHtml(h)}</button>`
+    ).join('');
+  }
+  document.getElementById('sbHashtagChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.sb-chip[data-filter-value]');
+    if (chip) toggleHashtagFilter(chip.dataset.filterValue);
   });
 
   // --- State ---
@@ -1466,7 +1491,8 @@
           f.value === 'reply' ? !!p.isReply :
           f.value === 'quote' ? !!p.isQuote : !!p.isThread;
         case 'media': return (p) => p.mediaType === f.value;
-        case 'tag': return (p) => (p.tags || []).includes(f.value);
+        case 'tag':     return (p) => (p.tags     || []).includes(f.value);
+        case 'hashtag': return (p) => (p.hashtags || []).includes(f.value);
         case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
         case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
         case 'date': {

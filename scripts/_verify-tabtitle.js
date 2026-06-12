@@ -33,7 +33,8 @@ function filterLabel(f) {
       return `${typeName}: ${fromStr}〜${toStr}`;
     }
     case 'engagement': return `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
-    case 'tag':        return `#${f.value}`;
+    case 'tag':        return f.value;
+    case 'hashtag':    return `#${f.value}`;
     case 'folder': {   const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
     case 'workspace':  return MSG.workspaceTitle;
     case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
@@ -49,34 +50,32 @@ function tabTitleOf(state, ctx) {
   const search   = (state && state.search) || '';
   const multi    = !!(state && state.multi);
   const allCount = (ctx && ctx.allCount != null) ? ctx.allCount : 0;
-  const extra = filters.length + (search ? 1 : 0) + (multi ? 1 : 0) - 1;
-  const sfx = extra > 0 ? ' ＋' + extra : '';
 
-  if (search) {
-    const q = search.length > 12 ? search.slice(0, 12) + '…' : search;
-    return { text: '"' + q + '"' + sfx, iconType: 'search' };
+  if (!filters.length && !search && !multi) {
+    return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
   }
+
+  const parts = [];
+  let primaryIconType = null;
+  const add = (label, iconType) => { parts.push(label); if (!primaryIconType) primaryIconType = iconType; };
+
+  if (search) { const q = search.length > 12 ? search.slice(0, 12) + '…' : search; add('"' + q + '"', 'search'); }
+
   const byType = {};
   filters.forEach((f) => { (byType[f.type] = byType[f.type] || []).push(f); });
 
-  if (byType.tag)        return { text: filterLabel(byType.tag[0])  + sfx, iconType: 'tag' };
-  if (byType.user)       return { text: filterLabel(byType.user[0]) + sfx, iconType: 'user' };
+  if (byType.tag)        byType.tag.forEach((f)        => add(filterLabel(f), 'tag'));
+  if (byType.hashtag)    byType.hashtag.forEach((f)    => add(filterLabel(f), 'hashtag'));
+  if (byType.user)       byType.user.forEach((f)       => add(filterLabel(f), 'user'));
+  filters.filter((f) => f.type === 'platform' || f.type === 'instance').forEach((f) => add(filterLabel(f), f.type));
+  filters.filter((f) => f.type === 'postType'  || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
+  if (multi && !byType.media) add(MSG.qfMultiImage, 'media');
+  if (byType.date)       byType.date.forEach((f)       => add(filterLabel(f), 'date'));
+  if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
+  if (byType.kind)       byType.kind.forEach((f)       => add(filterLabel(f), 'kind'));
+  filters.filter((f) => f.type === 'workspace' || f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
 
-  const pfInst = filters.find((f) => f.type === 'platform' || f.type === 'instance');
-  if (pfInst)            return { text: filterLabel(pfInst)  + sfx, iconType: pfInst.type };
-
-  const ptMedia = filters.find((f) => f.type === 'postType' || f.type === 'media');
-  if (ptMedia)           return { text: filterLabel(ptMedia) + sfx, iconType: ptMedia.type };
-  if (multi)             return { text: MSG.qfMultiImage     + sfx, iconType: 'media' };
-
-  if (byType.date)       return { text: filterLabel(byType.date[0])       + sfx, iconType: 'date' };
-  if (byType.engagement) return { text: filterLabel(byType.engagement[0]) + sfx, iconType: 'engagement' };
-  if (byType.kind)       return { text: filterLabel(byType.kind[0])       + sfx, iconType: 'kind' };
-
-  const wsFolder = filters.find((f) => f.type === 'workspace' || f.type === 'folder');
-  if (wsFolder)          return { text: filterLabel(wsFolder) + sfx, iconType: wsFolder.type };
-
-  return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
+  return { text: parts.join('・'), iconType: primaryIconType || 'all' };
 }
 
 // --- Test fixtures ---
@@ -95,18 +94,23 @@ const cases = [
     state: { f: [], search: 'あいうえおかきくけこさしすせそ', multi: false }, ctx: { allCount: 0 },
     text: '"あいうえおかきくけこさし…"', icon: 'search' },
 
-  { desc: 'search + 1 tag → search wins + ＋1',
+  { desc: 'search + 1 tag → both shown',
     state: { f: [{ type: 'tag', value: 'art' }], search: '猫', multi: false }, ctx: { allCount: 50 },
-    text: '"猫" ＋1', icon: 'search' },
+    text: '"猫"・art', icon: 'search' },
 
-  // tag (priority 2)
+  // tag (priority 2, no # prefix — user tags)
   { desc: 'single tag',
     state: { f: [{ type: 'tag', value: 'イラスト' }], search: '', multi: false }, ctx: { allCount: 0 },
-    text: '#イラスト', icon: 'tag' },
+    text: 'イラスト', icon: 'tag' },
 
-  { desc: '3 tags → first tag + ＋2',
+  { desc: '3 tags → all joined',
     state: { f: [{ type: 'tag', value: 'a' }, { type: 'tag', value: 'b' }, { type: 'tag', value: 'c' }], search: '', multi: false }, ctx: { allCount: 0 },
-    text: '#a ＋2', icon: 'tag' },
+    text: 'a・b・c', icon: 'tag' },
+
+  // hashtag (priority 2.5, # prefix — API-derived)
+  { desc: 'single hashtag',
+    state: { f: [{ type: 'hashtag', value: 'イラスト' }], search: '', multi: false }, ctx: { allCount: 0 },
+    text: '#イラスト', icon: 'hashtag' },
 
   // user (priority 3)
   { desc: 'user filter',
@@ -118,9 +122,9 @@ const cases = [
     state: { f: [{ type: 'platform', value: 'bluesky' }], search: '', multi: false }, ctx: {},
     text: 'Bluesky', icon: 'platform' },
 
-  { desc: 'platform pixiv + engagement → platform wins',
+  { desc: 'platform pixiv + engagement → both shown',
     state: { f: [{ type: 'platform', value: 'pixiv' }, { type: 'engagement', engType: 'likes', op: 'gte', min: 100 }], search: '', multi: false }, ctx: {},
-    text: 'pixiv ＋1', icon: 'platform' },
+    text: 'pixiv・いいね ≥ 100', icon: 'platform' },
 
   // postType (priority 5)
   { desc: 'postType reply',
