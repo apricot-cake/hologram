@@ -1567,11 +1567,14 @@
   let _haveBaseline = false;     // false until we hold a full snapshot (also reset on reload = fresh module state)
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
-  async function loadPosts(keepLimit) {
+  // changedNames is the fs-watch hint relayed from main (null | [] | [names…]);
+  // it lets the refresh re-stat only the changed sidecars instead of the whole
+  // folder. Absent (explicit reloads: sort change, import) -> full reconcile.
+  async function loadPosts(keepLimit, changedNames) {
     if (_loadPostsInFlight) { _loadPostsPending = true; return; }
     _loadPostsInFlight = true;
     try {
-      const res = await window.corpus.listPostsDelta(_haveBaseline);
+      const res = await window.corpus.listPostsDelta(_haveBaseline, changedNames);
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
@@ -3914,8 +3917,8 @@ render()
     if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
   });
   if (window.corpus.onPostsChanged) {
-    window.corpus.onPostsChanged(async () => {
-      await loadPosts(true);   // background fs-watch refresh — no anim replay
+    window.corpus.onPostsChanged(async (names) => {
+      await loadPosts(true, names);   // background fs-watch refresh — targeted via the changed-file hint
     });
   }
   renderQueryChips();

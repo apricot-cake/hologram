@@ -94,6 +94,41 @@ function createPostIndex(opts) {
     return { posts, changed, stamps };
   }
 
+  // Targeted update: re-stat/read ONLY the named sidecars (from fs.watch's
+  // changed-filename events) instead of stat-ing the whole folder. Returns the
+  // changes so the caller can ship them as a delta: added = [{id, mtimeMs,
+  // record}] for new/edited posts, removed = [captureId] for deleted ones (or
+  // ones that became non-posts). This is the O(changed) end-to-end path; the
+  // full list() stays the reliable fallback (initial load, folder switch, or a
+  // watch event with no usable filename).
+  async function applyChanges(folder, names) {
+    await loadSnapshot(folder);
+    const added = [];
+    const removed = [];
+    for (const f of names) {
+      if (typeof f !== 'string' || internal.has(f) || !f.toLowerCase().endsWith('.json')) continue;
+      const full = path.join(folder, f);
+      let st = null;
+      try { st = await fs.promises.stat(full); } catch { st = null; }
+      const prev = map.get(f);
+      if (!st) {                                   // deleted
+        if (prev) { if (prev.record) removed.push(prev.record.captureId); map.delete(f); }
+        continue;
+      }
+      if (prev && prev.mtimeMs === st.mtimeMs) continue;   // spurious event, nothing moved
+      let rec = null;
+      try { rec = JSON.parse(await fs.promises.readFile(full, 'utf8')); } catch { rec = null; }
+      const record = isPostRecord(rec) ? rec : null;
+      // Previous post vanished (became a non-post, or — defensively — its id moved).
+      if (prev && prev.record && (!record || record.captureId !== prev.record.captureId)) {
+        removed.push(prev.record.captureId);
+      }
+      map.set(f, { mtimeMs: st.mtimeMs, record });
+      if (record) added.push({ id: record.captureId, mtimeMs: st.mtimeMs, record });
+    }
+    return { added, removed };
+  }
+
   // Persist the current map to <folder>/.index.json atomically (tmp + rename).
   // Best-effort: a failure just means the next cold start re-scans.
   async function writeSnapshot(folder) {
@@ -105,7 +140,7 @@ function createPostIndex(opts) {
     await fs.promises.rename(tmp, path.join(folder, INDEX_FILE));
   }
 
-  return { list, writeSnapshot, INDEX_FILE, _size: () => map.size };
+  return { list, applyChanges, writeSnapshot, INDEX_FILE, _size: () => map.size };
 }
 
 // Compute the renderer delta between what was last delivered (lastSent: a Map of

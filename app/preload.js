@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('corpus', {
   listPosts: () => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
-  listPostsDelta: (haveBaseline) => ipcRenderer.invoke('list-posts-delta', haveBaseline),
+  listPostsDelta: (haveBaseline, changedNames) => ipcRenderer.invoke('list-posts-delta', haveBaseline, changedNames),
   getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
   setTagGroups: (groups) => ipcRenderer.invoke('set-tag-groups', groups),
   getUngrouped: () => ipcRenderer.invoke('get-ungrouped'),
@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('corpus', {
   runBackup: () => ipcRenderer.invoke('run-backup'),
   importImages: () => ipcRenderer.invoke('import-images'),
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
-  onPostsChanged: (cb) => ipcRenderer.on('posts-changed', cb),
+  // cb receives the changed-sidecar hint (null | [] | [names…]); the raw IPC
+  // event is not forwarded.
+  onPostsChanged: (cb) => ipcRenderer.on('posts-changed', (_e, names) => cb(names)),
   setTitleBarOverlay: (opts) => ipcRenderer.invoke('set-titlebar-overlay', opts)
 });

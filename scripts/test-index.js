@@ -100,6 +100,37 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   assert.strictEqual(d0.added.length, 0, 'unchanged => no adds');
   assert.strictEqual(d0.removed.length, 0, 'unchanged => no removes');
 
+  // --- applyChanges: targeted update from an fs-watch hint (re-stats ONLY the
+  //     named sidecars, not the whole folder) ---
+  const dir2 = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index2-'));
+  const w2 = (name, rec) => realFs.writeFileSync(path.join(dir2, name), JSON.stringify(rec));
+  w2('x.json', { captureId: 'x', image: 'x.jpg', capturedAt: '2026-02-01T00:00:00Z' });
+  w2('y.json', { captureId: 'y', image: 'y.jpg', capturedAt: '2026-02-02T00:00:00Z' });
+  const idxB = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
+  let rb = await idxB.list(dir2);
+  assert.deepStrictEqual(rb.posts.map((p) => p.captureId), ['y', 'x'], 'baseline built');
+
+  // y edited (force a new mtime), z added, x deleted — then hint only those three.
+  w2('y.json', { captureId: 'y', image: 'y.jpg', capturedAt: '2026-02-02T00:00:00Z', tags: ['edited'] });
+  realFs.utimesSync(path.join(dir2, 'y.json'), new Date(), new Date(Date.now() + 10000));
+  w2('z.json', { captureId: 'z', image: 'z.jpg', capturedAt: '2026-02-03T00:00:00Z' });
+  realFs.rmSync(path.join(dir2, 'x.json'));
+
+  sidecarReads = 0;
+  const chg = await idxB.applyChanges(dir2, ['y.json', 'z.json', 'x.json']);
+  assert.deepStrictEqual(chg.added.map((a) => a.id).sort(), ['y', 'z'], 'added = edited + new');
+  assert.deepStrictEqual(chg.removed.sort(), ['x'], 'removed = deleted');
+  assert.ok(chg.added.find((a) => a.id === 'y').record.tags[0] === 'edited', 'edited record carries new content');
+  assert.strictEqual(sidecarReads, 2, 'targeted update reads ONLY y + z (x deleted = stat fail, no read)');
+
+  // A subsequent full list() agrees with the targeted state (no drift, no re-read).
+  sidecarReads = 0;
+  rb = await idxB.list(dir2);
+  assert.deepStrictEqual(rb.posts.map((p) => p.captureId), ['z', 'y'], 'full scan matches targeted state');
+  assert.strictEqual(rb.changed, false, 'targeted update left the map consistent');
+  assert.strictEqual(sidecarReads, 0, 'consistent map = no re-read on the following full scan');
+  realFs.rmSync(dir2, { recursive: true, force: true });
+
   realFs.rmSync(dir, { recursive: true, force: true });
-  console.log('PASS test-index: O(changed) reuse, prune, snapshot cold-restore, and computeDelta verified');
+  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, and targeted applyChanges verified');
 })().catch((e) => { try { realFs.rmSync(dir, { recursive: true, force: true }); } catch {} console.error('FAIL test-index:', e && e.message ? e.message : e); process.exit(1); });

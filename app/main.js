@@ -66,6 +66,8 @@ const INTERNAL_FILES = new Set([
 // single capture writes both a .jpg and a .json.
 let folderWatcher = null;
 let watchDebounce = null;
+let watchChanged = new Set();   // changed sidecar (.json) basenames within the debounce window
+let watchUnknown = false;       // a watch event lacked a filename -> can't target, force a full reconcile
 function watchSaveFolder() {
   if (folderWatcher) {
     try { folderWatcher.close(); } catch { /* already closed */ }
@@ -75,12 +77,27 @@ function watchSaveFolder() {
   if (!folder) return;
   try {
     folderWatcher = fs.watch(folder, (_event, filename) => {
-      if (filename && !/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(filename)) return;
-      // App-internal metadata churns constantly; only real captures should refresh.
-      if (filename && INTERNAL_FILES.has(path.basename(filename))) return;
+      if (!filename) {
+        watchUnknown = true;   // platform didn't tell us which file -> renderer will full-reconcile
+      } else {
+        const base = path.basename(filename);
+        if (!/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(base)) return;
+        // App-internal metadata churns constantly; only real captures should refresh.
+        if (INTERNAL_FILES.has(base)) return;
+        // Only the .json sidecar carries a record; collect those as the targeted
+        // hint. An image-only event has no record change to ship yet (its .json
+        // lands separately and re-triggers).
+        if (base.toLowerCase().endsWith('.json')) watchChanged.add(base);
+        else return;
+      }
       clearTimeout(watchDebounce);
       watchDebounce = setTimeout(() => {
-        if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
+        // names: null = full reconcile (unusable hint); [] = no sidecar changed;
+        // [..] = re-scan only these. The renderer relays it back to listPostsDelta.
+        const names = watchUnknown ? null : [...watchChanged];
+        watchChanged = new Set();
+        watchUnknown = false;
+        if (win && !win.isDestroyed()) win.webContents.send('posts-changed', names);
       }, 400);
     });
   } catch (err) {
@@ -115,21 +132,38 @@ async function listPosts() {
 // `haveBaseline` is the renderer asserting it still holds the last full set; when
 // either side lacks a baseline (cold main, folder switch, or a renderer that
 // reloaded and lost its cache) we resend a full snapshot and both sides re-sync.
+// changedNames (the fs-watch hint relayed by the renderer):
+//   undefined/null -> reliable hint unavailable: full folder re-scan
+//   []             -> files changed but no sidecar among them: nothing to ship
+//   [names…]       -> re-stat ONLY these sidecars (the O(changed) fast path)
 let _deltaFolder = null;
 let _lastSent = new Map();   // captureId -> mtimeMs last delivered to the renderer
-async function listPostsDelta(haveBaseline) {
+async function listPostsDelta(haveBaseline, changedNames) {
   const folder = getSaveFolder();
   if (!folder) { _deltaFolder = null; _lastSent = new Map(); return { saveFolder: null, full: true, posts: [] }; }
-  const { posts, changed, stamps } = await postIndex.list(folder);
-  if (changed) scheduleSnapshot(folder);
-  if (!haveBaseline || _deltaFolder !== folder) {
-    _deltaFolder = folder;
+
+  // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
+  if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
+    const { posts, changed, stamps } = await postIndex.list(folder);
+    if (changed) scheduleSnapshot(folder);
+    if (!haveBaseline || _deltaFolder !== folder) {
+      _deltaFolder = folder;
+      _lastSent = new Map(stamps);
+      return { saveFolder: folder, full: true, posts };
+    }
+    const { added, removed } = computeDelta(_lastSent, posts, stamps);   // hint-less delta vs baseline
     _lastSent = new Map(stamps);
-    return { saveFolder: folder, full: true, posts };
+    return { saveFolder: folder, full: false, added, removed };
   }
-  const { added, removed } = computeDelta(_lastSent, posts, stamps);
-  _lastSent = new Map(stamps);
-  return { saveFolder: folder, full: false, added, removed };
+
+  // Targeted: only the named sidecars moved — no folder-wide stat.
+  if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
+  const r = await postIndex.applyChanges(folder, changedNames);
+  const added = [];
+  for (const t of r.added) { _lastSent.set(t.id, t.mtimeMs); added.push(t.record); }
+  for (const id of r.removed) _lastSent.delete(id);
+  if (r.added.length || r.removed.length) scheduleSnapshot(folder);
+  return { saveFolder: folder, full: false, added, removed: r.removed };
 }
 
 // --- Native host registration (idempotent, on each launch) ---
@@ -262,7 +296,7 @@ ipcMain.handle('pick-save-folder', async () => {
 });
 
 ipcMain.handle('list-posts', () => listPosts());
-ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline));
+ipcMain.handle('list-posts-delta', (_e, haveBaseline, changedNames) => listPostsDelta(!!haveBaseline, changedNames));
 
 // Tag groups (migrated from the imported library's metadata) live alongside the
 // sidecars as <saveFolder>/tag-groups.json: { groups: [{id,name,tags[]}] }.
