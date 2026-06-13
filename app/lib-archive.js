@@ -24,6 +24,27 @@ const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
+// --- Zip-Slip guard ------------------------------------------------------------
+// A malicious ZIP can carry entry names with traversal sequences (..) or
+// BACKSLASH separators (a path separator on Windows, NOT caught by a
+// forward-slash-only check) or absolute / drive-letter forms, landing writes
+// OUTSIDE the save folder. Accept a library entry name only if it is a single
+// path segment — its own basename, with no separator of either kind, not
+// '.'/'..', not absolute. Legitimate exports only ever emit single-segment
+// filenames (captureIds + `<id>-media-N.<ext>`), so this rejects nothing real.
+function isSafeEntryName(name) {
+  if (!name || name === '.' || name === '..') return false;
+  if (/[\\/]/.test(name)) return false;
+  if (path.isAbsolute(name)) return false;
+  return name === path.basename(name);
+}
+// Belt-and-suspenders: the resolved destination must stay inside destFolder.
+function isWithin(parentDir, target) {
+  const p = path.resolve(parentDir);
+  const t = path.resolve(target);
+  return t === p || t.startsWith(p + path.sep);
+}
+
 // --- Organization merges (union) ---------------------------------------------
 function mergeFolders(cur, inc) {
   const byId = new Map();
@@ -121,8 +142,9 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   zip.forEach((relPath, entry) => {
     if (entry.dir) return;
     const m = /^library\/(.+)$/.exec(relPath);
-    if (!m || m[1].indexOf('/') >= 0) return;   // only top-level files under library/
+    if (!m) return;
     const name = m[1];
+    if (!isSafeEntryName(name)) return;   // Zip-Slip: reject separators / traversal / absolute
     if (EXPORT_SKIP.has(name)) return;
     if (MERGERS[name]) orgEntries[name] = entry;
     else captures.push({ name, entry });
@@ -130,6 +152,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   for (const c of captures) {
     const dest = path.join(destFolder, c.name);
     try {
+      if (!isWithin(destFolder, dest)) { skipped++; continue; }   // defensive Zip-Slip guard
       if (fs.existsSync(dest)) { skipped++; continue; }
       const tmp = dest + '.tmp-import';
       await fs.promises.writeFile(tmp, await c.entry.async('nodebuffer'));
