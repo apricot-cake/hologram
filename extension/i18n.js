@@ -153,7 +153,10 @@
       bannerSaving: '保存中...',
       bannerSaved: '画像を保存しました',
       bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
-      bannerFailed: '保存に失敗しました'
+      bannerFailed: '保存に失敗しました',
+
+      // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
+      dragDropHint: 'ここにドロップで Corpus に保存'
     },
 
     en: {
@@ -284,7 +287,10 @@
       bannerSaving: 'Saving...',
       bannerSaved: 'Image saved',
       bannerSavedNoMeta: 'Saved (post info unavailable)',
-      bannerFailed: 'Save failed'
+      bannerFailed: 'Save failed',
+
+      // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
+      dragDropHint: 'Drop here to save to Corpus'
     }
   };
 

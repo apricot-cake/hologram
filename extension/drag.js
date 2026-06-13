@@ -15,7 +15,16 @@
   let overlay = null;
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
-  const HINT = 'ここにドロップで Corpus に保存';
+  // i18n: drag toasts share the banner strings. window.corpusI18n is set by the
+  // i18n.js content script declared BEFORE this one in the same manifest entry
+  // (same isolated world, runs first). Resolve once; until then t() echoes the
+  // key — overlay text is only set at drag time, long after page load, so the
+  // table is populated by the time it's read in practice.
+  let t = (key) => key;
+  if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
+    window.corpusI18n.then((api) => { if (api && api.getMessage) t = api.getMessage; });
+  }
+
   const BG_IDLE = 'rgba(29,155,240,0.96)';
   const BG_OVER = 'rgba(0,186,124,0.96)';
   const BG_BUSY = 'rgba(83,100,113,0.96)';
@@ -36,7 +45,7 @@
       'text-align:center', 'box-shadow:0 8px 28px rgba(0,0,0,0.35)',
       'pointer-events:auto', 'transition:transform .12s, background .12s'
     ].join(';');
-    overlay.textContent = HINT;
+    overlay.textContent = t('dragDropHint');
     overlay.addEventListener('dragenter', (e) => { e.preventDefault(); overlay.style.transform = 'scale(1.05)'; overlay.style.background = BG_OVER; });
     overlay.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
     overlay.addEventListener('dragleave', () => { overlay.style.transform = ''; overlay.style.background = BG_IDLE; });
@@ -47,7 +56,7 @@
 
   function showOverlay() {
     ensureOverlay();
-    overlay.textContent = HINT;
+    overlay.textContent = t('dragDropHint');
     overlay.style.background = BG_IDLE;
     overlay.style.transform = '';
     overlay.style.display = 'flex';
@@ -78,15 +87,15 @@
     pending = null;
     if (!p) { hideOverlay(); return; }
     savingViaDrop = true;
-    overlay.textContent = '保存中…';
+    overlay.textContent = t('bannerSaving');
     overlay.style.background = BG_BUSY;
     overlay.style.transform = '';
     chrome.runtime.sendMessage(p, (res) => {
       const ok = res && res.ok;
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       overlay.textContent = partial
-        ? '保存（投稿情報なし）'
-        : (ok ? '保存しました' : ('保存に失敗' + (res && res.error ? `: ${res.error}` : '')));
+        ? t('bannerSavedNoMeta')
+        : (ok ? t('bannerSaved') : (t('bannerFailed') + (res && res.error ? `: ${res.error}` : '')));
       overlay.style.background = partial ? BG_PARTIAL : (ok ? BG_OVER : BG_FAIL);
       setTimeout(() => { hideOverlay(); savingViaDrop = false; }, partial ? 2600 : 1400);
     });

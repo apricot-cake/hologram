@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["https://x.com/*", "https://twitter.com/*", "https://bsky.app/*", "https://www.pixiv.net/*", "https://pixiv.net/*"],
-      "js": ["drag.js"],
+      "js": ["i18n.js", "drag.js"],
       "run_at": "document_idle"
     }
   ],
