@@ -1002,6 +1002,21 @@
       margin: -24px -32px 16px; padding: 12px 32px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
     }
+    /* Concave fillet at the sidebar ↔ query-builder inner corner. The band and
+       the sidebar are both --sidebar-bg and meet in a sharp 90° notch where the
+       --bg content begins below (ユーザー指摘の接合部の角). A 10px square of
+       --sidebar-bg, radial-masked so only its top-left wedge survives, drops
+       into that notch — the surviving wedge fills the corner with a concave arc
+       so the content's top-left reads as softly rounded. It also caps the band's
+       bottom border for the first 10px, so the separator line emerges cleanly
+       from the curve. Anchored to the band (position: sticky), so it only paints
+       while the band is shown = exactly when the corner exists. */
+    .content-activebar::after {
+      content: ''; position: absolute; left: 0; top: 100%;
+      width: 10px; height: 10px; background: var(--sidebar-bg); pointer-events: none;
+      -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
+              mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
+    }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far
        edge — chips don't flex-grow so the button hugs the last zone. */
@@ -1754,6 +1769,7 @@
     @media (prefers-reduced-transparency: reduce) {
       .fold-menu, .qf-popover { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .content-activebar::after { background: var(--bg); }
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
