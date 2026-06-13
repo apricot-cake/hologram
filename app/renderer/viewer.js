@@ -2248,9 +2248,14 @@
 
       const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
-      // ONE compact date on the card; both full timestamps live in its tooltip.
-      const footDate = compactDate(p.date || p.capturedAt);
-      const footTip = escapeAttr([dateStr, capturedStr].filter(Boolean).join('\n'));
+      // Both dates on the card: post date bare (primary) + capture date with a
+      // 📷 mark (secondary, muted). Deduped when they land on the same day.
+      const postCompact = p.date ? compactDate(p.date) : '';
+      const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
+      const footDates = [
+        postCompact ? `<span class="pdate"${dateStr ? ` title="${escapeAttr(dateStr)}"` : ''}>${postCompact}</span>` : '',
+        (capCompact && capCompact !== postCompact) ? `<span class="cdate"${capturedStr ? ` title="${escapeAttr(capturedStr)}"` : ''}><svg class="cdate-ic" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>${capCompact}</span>` : ''
+      ].filter(Boolean).join('');
       // Platform = a source badge on the thumbnail's bottom-left (Instagram/Pinterest
       // style). It used to live in the bottom-right WITH the date, which read oddly
       // (a category label paired with a timestamp); the head of line 1 was rejected
@@ -2298,7 +2303,7 @@
           <div class="user"><span class="uname">${escapeHtml(userName)}</span>${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}</div>
           ${flagsHtml}
           ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
-          ${(statsHtml || footDate) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${footDate ? `<span class="pdate"${footTip ? ` title="${footTip}"` : ''}>${footDate}</span>` : ''}</span></div>` : ''}
+          ${(statsHtml || footDates) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${footDates}</span></div>` : ''}
           ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;

@@ -390,12 +390,12 @@
        fill, no color shift — so switching just slides the thumb and the buttons
        never resize or shove each other. */
     .view-toggle {
-      display: flex; width: fit-content; border: none; border-radius: 8px;
+      display: flex; border: none; border-radius: 8px;
       background: var(--seg-track); padding: 2px; gap: 2px;
     }
     .view-toggle button {
-      flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-      width: 29px; height: 29px; box-sizing: border-box; padding: 0;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      height: 31px; box-sizing: border-box; padding: 0;
       background: transparent; border: none; border-radius: 6px;
       cursor: pointer; color: var(--text-muted); line-height: 0;
       transition: background .15s, color .15s;
@@ -527,9 +527,11 @@
       display: flex; gap: 10px; font-size: 11.5px; color: var(--text-subtle);
     }
     .post-meta .stats .st { display: inline-flex; align-items: center; gap: 3px; }
-    /* source corner: [● PLATFORM  date] pinned right as one cluster */
+    /* footer right corner: post date (primary) + 📷 capture date (secondary) */
     .post-foot .foot-r { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
     .post-foot .pdate { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+    .post-foot .cdate { font-size: 11px; color: var(--text-subtle); opacity: .82; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+    .post-foot .cdate .cdate-ic { flex-shrink: 0; }
     /* Card view: pin the footer (date + pf-tag source corner) to the card bottom.
        Cards in a grid row stretch to equal height, so a short-text card left its
        footer floating mid-card with empty space below — pf-tag landed at a
