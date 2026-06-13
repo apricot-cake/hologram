@@ -1820,7 +1820,7 @@
       // NOTE: must be a <div>, not <button> — a button cannot contain the
       // .tab-close button (the HTML parser auto-closes the outer one, which
       // sprays the close buttons between the tabs as siblings).
-      html += '<div class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" tabindex="0" data-tab="' + escapeAttr(t.id) + '" title="' + escapeAttr(ttl) + '">'
+      html += '<div class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" tabindex="0" data-tab="' + escapeAttr(t.id) + '">'
         + '<span class="tab-body"><span class="tab-icon" aria-hidden="true">' + icon + '</span>'
         + '<span class="tab-title">' + escapeHtml(ttl) + '</span></span>'
         + closeBtn + '</div>';
