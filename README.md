@@ -2,7 +2,7 @@
 
 [English](README.en.md) | **日本語**
 
-SNS の投稿と、ドラッグ保存したイラスト／画像を **1 つのアプリ** に集約し、後から閲覧・検索・整理できます。**Eagle 等の外部アプリに依存しません。**
+SNS の投稿と、ドラッグ保存したイラスト／画像を **1 つのアプリ** に集約し、後から閲覧・検索・整理できます。
 
 Corpus は3つの部品でできています。
 
@@ -40,19 +40,6 @@ X (Twitter) / Bluesky / Misskey / Mastodon / **pixiv**
 - ZIP（画像＋メタデータ）／単体 HTML としてエクスポート、HTML から復元（インポート）
 - 言語切替（自動／日本語／English）
 
-## Eagle からの移行
-
-既存の Eagle ライブラリ（画像・動画・タグ・タググループ）を Corpus へ一括移行できます。**読み取り専用＝Eagle ライブラリは一切変更しません（コピーのみ）。**
-
-```bash
-# プレビュー（ドライラン・1ファイルも書きません）
-node scripts/migrate-eagle.js --lib "<path to .library>"
-# 実行（書き込み）＋照合監査
-node scripts/migrate-eagle.js --lib "<path to .library>" --apply --verify
-```
-
-ライブラリ全体（閲覧可能な静止画＋動画）を、ネイティブのタグ・タググループごとサイドカーに変換します。詳細は [docs/eagle-migration.md](docs/eagle-migration.md)。
-
 ## セットアップ（開発）
 
 デスクトップアプリはまだパッケージ化していないため、ソースから起動します。
@@ -68,7 +55,6 @@ node scripts/migrate-eagle.js --lib "<path to .library>" --apply --verify
 - `<id>.jpg` … 投稿クリックのスクリーンショット（または保存した画像そのもの）
 - `<id>.json` … メタデータ（`platform` / `url` / `text` / `title` / `displayName` / `screenName` / `userId` / `likes`・`reposts`・… / `date` / `capturedAt` / `updatedAt` / `mediaType` / `media[]` / `hashtags[]` / `tags[]` ほか）
 - `<id>-media-N.<ext>` … 投稿の原寸メディア（あれば）
-- Eagle 移行分は `eagle-<id>.<ext>`（原画）＋ `eagle-<id>.json`、動画は `eagle-<id>.mp4`＋ポスター
 - ライブラリ単位のメタ: `tag-groups.json`（タググループ）／`ungrouped.json`・`manual-groups.json`（グループ化設定）
 
 `<captureId>.json` が唯一の真実源です。サーバーには何も送信されません。

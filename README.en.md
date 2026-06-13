@@ -2,7 +2,7 @@
 
 **English** | [日本語](README.md)
 
-Collect SNS posts and drag-saved illustrations/images into **one app** to browse, search, and organize later. **No dependency on external apps like Eagle.**
+Collect SNS posts and drag-saved illustrations/images into **one app** to browse, search, and organize later.
 
 Corpus has three parts:
 
@@ -40,19 +40,6 @@ Both fetch the same metadata (text, author, date, engagement, hashtags, …) fro
 - Export as ZIP (images + metadata) or a single HTML file; restore from that HTML (import)
 - Language switch (auto / Japanese / English)
 
-## Migrating from Eagle
-
-Bulk-migrate an existing Eagle library (images, videos, tags, tag groups) into Corpus. **Read-only — the Eagle library is never modified (copy only).**
-
-```bash
-# Preview (dry run — writes nothing)
-node scripts/migrate-eagle.js --lib "<path to .library>"
-# Apply (write) + verify audit
-node scripts/migrate-eagle.js --lib "<path to .library>" --apply --verify
-```
-
-It converts the whole library (viewable stills + video) into sidecars, carrying native tags and tag groups. See [docs/eagle-migration.md](docs/eagle-migration.md).
-
 ## Setup (development)
 
 The desktop app isn't packaged yet, so run it from source.
@@ -68,7 +55,6 @@ In the save folder, each item is an image plus its metadata, side by side.
 - `<id>.jpg` … the post-click screenshot (or the saved image itself)
 - `<id>.json` … metadata (`platform` / `url` / `text` / `title` / `displayName` / `screenName` / `userId` / `likes`·`reposts`·… / `date` / `capturedAt` / `updatedAt` / `mediaType` / `media[]` / `hashtags[]` / `tags[]`, …)
 - `<id>-media-N.<ext>` … the post's original-resolution media (if any)
-- Migrated items use `eagle-<id>.<ext>` (original) + `eagle-<id>.json`; videos add a poster
 - Library-level metadata: `tag-groups.json` (tag groups) / `ungrouped.json`·`manual-groups.json` (grouping settings)
 
 `<captureId>.json` is the single source of truth. Nothing is sent to any server.
