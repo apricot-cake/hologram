@@ -80,6 +80,14 @@
   --hover:         var(--gray-100);
   --active:        var(--gray-150);
   --focus-ring:    color-mix(in oklch, var(--blue-500) 45%, transparent);
+  /* Sidebar rows sit on the Mica gradient; a solid hover washed out where the
+     gradient is lightest (near-white top, ユーザー指摘). A translucent darken
+     keeps the hover contrast uniform down the whole gradient. */
+  --sidebar-row-hover: rgba(0, 0, 0, 0.05);
+  /* Mica gradient stops, per-mode (light keeps the top base = not lightened, so
+     row hovers stay readable on it). */
+  --sidebar-grad-top:  var(--surface);
+  --sidebar-grad-bot:  color-mix(in srgb, var(--surface) 90%, #000);
 
   /* segmented control (recessed track + raised thumb, macOS-style) */
   --seg-track:     var(--gray-100);
@@ -145,6 +153,11 @@
      value hover was invisible on sidebar rows (ユーザー指摘). Light mode darkens; dark lightens. */
   --hover:         #2a2d33;
   --active:        #34373d;
+  --sidebar-row-hover: rgba(255, 255, 255, 0.05);
+  /* Dark Mica gradient was too flat to read (top=base). Lighten the top + darken
+     the bottom so the material is perceptible (ユーザー指摘: グラデ感が弱い). */
+  --sidebar-grad-top:  color-mix(in srgb, var(--sidebar-bg) 92%, #fff);
+  --sidebar-grad-bot:  color-mix(in srgb, var(--sidebar-bg) 84%, #000);
   --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
 
   /* dark: track recessed below the sidebar (#202226), thumb raised above it */

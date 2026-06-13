@@ -137,8 +137,8 @@
          turn the flat fill into a surface with physicality. */
       background-color: var(--sidebar-bg);
       background-image: linear-gradient(180deg,
-        var(--sidebar-bg) 0%,
-        color-mix(in srgb, var(--sidebar-bg) 88%, #000) 100%);
+        var(--sidebar-grad-top) 0%,
+        var(--sidebar-grad-bot) 100%);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
     }
@@ -194,7 +194,7 @@
       padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: left;
       transition: background .12s, color .12s;
     }
-    .nav-item:hover { background: var(--hover); }
+    .nav-item:hover { background: var(--sidebar-row-hover); }
     .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
     .nav-item.active { background: var(--accent-subtle); color: var(--accent); }
     .nav-item.active svg { color: var(--accent); }
@@ -1181,7 +1181,7 @@
     .sb-subrows-inner { display: flex; flex-direction: column; min-height: 0; }
     @media (prefers-reduced-motion: reduce) { .sb-subrows { transition: none; } }
     .sb-subrow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px calc(var(--sb-gutter) + 22px); font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 5px; border: none; background: none; width: 100%; text-align: left; }
-    .sb-subrow:hover { background: var(--hover); }
+    .sb-subrow:hover { background: var(--sidebar-row-hover); }
     .sb-subrow.active { color: var(--accent); }
     .sb-subrow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sb-subrow-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
@@ -1227,7 +1227,7 @@
     border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer;
     transition: background .12s, color .12s;
   }
-  .sb-row:hover { background: var(--hover); }
+  .sb-row:hover { background: var(--sidebar-row-hover); }
   .sb-row .sb-row-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; transition: color .12s; }
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
