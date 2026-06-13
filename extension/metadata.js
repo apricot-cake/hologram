@@ -130,8 +130,12 @@ async function fetchXTweet(parsed, url) {
     }
     if (j.quoted_tweet) {
       rec.isQuote = true;
-      const qu = j.quoted_tweet.user && j.quoted_tweet.id_str;
-      if (qu) rec.quotedUrl = `https://x.com/${j.quoted_tweet.user.screen_name}/status/${j.quoted_tweet.id_str}`;
+      // Guard screen_name: a quoted_tweet can carry a user object without a
+      // screen_name, which would otherwise build .../undefined/status/<id>.
+      const qt = j.quoted_tweet;
+      if (qt.user && qt.user.screen_name && qt.id_str) {
+        rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
+      }
     }
   } catch {
     // network/parse failure — keep what we have (URL + screenName)
@@ -223,16 +227,20 @@ async function fetchBlueskyPost(parsed, url) {
     }
     const embType = (post.embed && post.embed.$type) || (record.embed && record.embed.$type) || '';
     if (embType.includes('app.bsky.embed.record')) {
-      rec.isQuote = true;
       const rec2 = (post.embed && post.embed.record) || {};
       const quri = rec2.uri || (rec2.record && rec2.record.uri);
-      if (quri) {
-        const qm = quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/);
+      // Only a quoted POST is a quote. embed.record also wraps lists, feeds and
+      // starter packs (their uri is app.bsky.graph.* / app.bsky.feed.generator),
+      // which must NOT mark the post as a quote. Gate on the feed.post uri.
+      const qm = (typeof quri === 'string')
+        ? quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/) : null;
+      if (qm) {
+        rec.isQuote = true;
         // recordWithMedia nests the quoted ViewRecord one level deeper
         // (embed.record.record) — read the handle from whichever level has it.
         const qhandle = (rec2.author && rec2.author.handle) ||
           (rec2.record && rec2.record.author && rec2.record.author.handle);
-        if (qm) rec.quotedUrl = `https://bsky.app/profile/${qhandle || qm[1]}/post/${qm[2]}`;
+        rec.quotedUrl = `https://bsky.app/profile/${qhandle || qm[1]}/post/${qm[2]}`;
       }
     }
   } catch {
@@ -266,6 +274,9 @@ function misskeyMedia(files) {
 
 async function fetchMisskeyNote(parsed, url) {
   const rec = emptyRecord(url, 'misskey');
+  // Canonical permalink: the saved URL may carry a query/hash; rebuild the bare
+  // https://<instance>/notes/<id> form (opens on the instance the user viewed).
+  rec.url = `https://${parsed.host}/notes/${parsed.noteId}`;
   try {
     const res = await fetch(`https://${parsed.host}/api/notes/show`, {
       method: 'POST',
