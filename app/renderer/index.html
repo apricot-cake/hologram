@@ -520,6 +520,15 @@
     /* source corner: [● PLATFORM  date] pinned right as one cluster */
     .post-foot .foot-r { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
     .post-foot .pdate { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+    /* Card view: pin the footer (date + pf-tag source corner) to the card bottom.
+       Cards in a grid row stretch to equal height, so a short-text card left its
+       footer floating mid-card with empty space below — pf-tag landed at a
+       different height in every card (ユーザー指摘). flex-column + margin-top:auto
+       drops the footer to the bottom edge so it lines up across the row. Scoped to
+       card view: tile hides .post-meta, list re-lays it as a row. */
+    .post-grid:not(.tile-view):not(.list-view) .post-card { display: flex; flex-direction: column; }
+    .post-grid:not(.tile-view):not(.list-view) .post-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .post-grid:not(.tile-view):not(.list-view) .post-foot { margin-top: auto; }
 
     .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
     /* ○ select ring — the ONLY selection entry point. A hollow white ring with a

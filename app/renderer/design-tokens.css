@@ -141,8 +141,10 @@
   --border-strong: #36383d;
   --border-subtle: #1f2124;
 
-  --hover:         #202226;
-  --active:        #292b30;
+  /* dark: hover must brighten ABOVE the sidebar (#202226), not match it — a same-
+     value hover was invisible on sidebar rows (ユーザー指摘). Light mode darkens; dark lightens. */
+  --hover:         #2a2d33;
+  --active:        #34373d;
   --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
 
   /* dark: track recessed below the sidebar (#202226), thumb raised above it */
