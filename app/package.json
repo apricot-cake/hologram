@@ -30,7 +30,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "../icons/icon256.png"
+      "icon": "../extension/icons/icon256.png"
     },
     "nsis": {
       "oneClick": true,

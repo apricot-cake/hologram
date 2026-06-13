@@ -56,7 +56,7 @@ app.whenReady().then(async () => {
   await new Promise((r) => setTimeout(r, 500));
 
   const img = await win.webContents.capturePage();
-  const outDir = path.join(__dirname, '..', 'icons');
+  const outDir = path.join(__dirname, '..', 'extension', 'icons');
 
   for (const s of SIZES) {
     const out = s === SIZE ? img : img.resize({ width: s, height: s, quality: 'best' });
