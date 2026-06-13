@@ -164,7 +164,7 @@ async function getThumbnail(resolved, name, w) {
     if (img.isEmpty()) return null;
     const sz = img.getSize();
     if (Math.min(sz.width, sz.height) > w) {
-      img = (sz.width >= sz.height) ? img.resize({ height: w, quality: 'best' }) : img.resize({ width: w, quality: 'best' });
+      img = (sz.width >= sz.height) ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
     }
     const buf = img.toJPEG(90);
     fs.promises.mkdir(thumbCacheDir(), { recursive: true })
@@ -192,12 +192,15 @@ function registerImageProtocol() {
       const w = parseInt(url.searchParams.get('w') || '', 10);
       if (Number.isFinite(w) && w >= 64 && w <= 720) {
         const thumb = await getThumbnail(resolved, name, w);
-        if (thumb) return new Response(thumb, { headers: { 'content-type': 'image/jpeg' } });
+        // Cache-key includes mtime+width, and capture filenames are content-stable
+        // (unique captureId, written once) → immutable lets Chromium keep the
+        // decoded bitmap and skip re-reads/re-decodes on scroll-back.
+        if (thumb) return new Response(thumb, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
         // fall through to the original if thumbnailing failed
       }
 
       const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { 'content-type': mimeForFile(name) } });
+      return new Response(data, { headers: { 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
     } catch {
       return new Response('Error', { status: 500 });
     }
