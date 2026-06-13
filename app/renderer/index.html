@@ -950,7 +950,7 @@
     }
     /* Active-filter bar pinned to the top of the content area (scroll-following). */
     .content-activebar {
-      position: sticky; top: var(--tabbar-h); z-index: 10;
+      position: sticky; top: var(--tabbar-h); z-index: 31;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       margin: -24px -32px 16px; padding: 12px 32px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
@@ -966,7 +966,15 @@
        while the band is shown = exactly when the corner exists. */
     .content-activebar::after {
       content: ''; position: absolute; left: 0; top: 100%;
-      width: 10px; height: 10px; background: var(--sidebar-bg); pointer-events: none;
+      width: 10px; height: 10px; pointer-events: none;
+      /* The curved edge carries the 1px separator so the line runs continuously
+         from the band's bottom border, around the concave arc, into the sidebar's
+         right hairline — without it the line read as broken at the corner
+         (ユーザー指摘: カーブ部分で線が途切れる). A --border ring sits exactly at the
+         mask edge (matching the 1px box-shadow hairline color); --sidebar-bg fills
+         the body beyond it. */
+      background: radial-gradient(circle 10px at bottom right,
+        var(--border) 0 10.75px, var(--sidebar-bg) 10.75px);
       -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
               mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
     }
