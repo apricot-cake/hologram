@@ -504,6 +504,40 @@ function baseOf(name) {
   return path.basename(name || '').replace(/-poster\.[a-z0-9]+$/i, '').replace(/\.[a-z0-9]+$/i, '');
 }
 
+// --- Trash (soft delete) ---
+const TRASH_SUBDIR = '.trash';
+const TRASH_DAYS = 30;
+function getTrashDir() {
+  const folder = getSaveFolder();
+  return folder ? path.join(folder, TRASH_SUBDIR) : null;
+}
+// Delete items in trash older than TRASH_DAYS. Called at startup.
+async function purgeOldTrash() {
+  const trashDir = getTrashDir();
+  if (!trashDir) return;
+  let names;
+  try { names = await fs.promises.readdir(trashDir); } catch { return; }
+  const cutoff = Date.now() - TRASH_DAYS * 86400000;
+  const toPurge = new Set();
+  for (const f of names) {
+    if (!f.toLowerCase().endsWith('.json')) continue;
+    const id = f.slice(0, -5);
+    try {
+      const rec = JSON.parse(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
+      if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
+    } catch { /* corrupt sidecar — skip */ }
+  }
+  if (!toPurge.size) return;
+  for (const f of names) {
+    for (const id of toPurge) {
+      if (f.startsWith(id + '.') || f.startsWith(id + '-')) {
+        try { await fs.promises.unlink(path.join(trashDir, f)); } catch { }
+        break;
+      }
+    }
+  }
+}
+
 ipcMain.handle('image-data-url', async (_e, image) => {
   const p = resolveInFolder(image);
   if (!p) return null;
@@ -518,15 +552,10 @@ ipcMain.handle('image-data-url', async (_e, image) => {
 ipcMain.handle('delete-post', async (_e, image) => {
   const folder = getSaveFolder();
   if (!folder || !image) return { ok: false };
-  // The arg may be a screenshot jpg, an illustration of any ext, or a video
-  // poster — baseOf() recovers <captureId>. Delete the sidecar, the primary of
-  // any viewable ext, the video poster, and original-media files.
+  // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
   const base = baseOf(image);
   const targets = new Set([`${base}.json`]);
   for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
-  // Exact names from the sidecar (image / video / media), then sweep the disk for
-  // <base>-media-* and <base>-poster.* (covers a missing/partial sidecar). The
-  // anchors prevent matching a different post whose id is a prefix.
   const jsonPath = resolveInFolder(`${base}.json`);
   let rec = null;
   if (jsonPath) {
@@ -542,10 +571,79 @@ ipcMain.handle('delete-post', async (_e, image) => {
       if (f.startsWith(`${base}-media-`) || f.startsWith(`${base}-poster.`)) targets.add(f);
     }
   } catch { /* ignore */ }
+  const trashDir = getTrashDir();
+  await fs.promises.mkdir(trashDir, { recursive: true });
   for (const name of targets) {
-    const f = resolveInFolder(name);
-    if (f) {
-      try { await fs.promises.unlink(f); } catch { /* may not exist */ }
+    const src = resolveInFolder(name);
+    if (src) {
+      try { await fs.promises.rename(src, path.join(trashDir, name)); } catch { /* not found */ }
+    }
+  }
+  // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it.
+  const trashJson = path.join(trashDir, `${base}.json`);
+  try {
+    const r = JSON.parse(await fs.promises.readFile(trashJson, 'utf8'));
+    r.trashedAt = new Date().toISOString();
+    await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
+  } catch { /* sidecar may not exist — trash still works but won't auto-purge */ }
+  return { ok: true };
+});
+
+ipcMain.handle('list-trash', async () => {
+  const trashDir = getTrashDir();
+  if (!trashDir) return [];
+  let names;
+  try { names = await fs.promises.readdir(trashDir); } catch { return []; }
+  const records = [];
+  for (const f of names) {
+    if (!f.toLowerCase().endsWith('.json')) continue;
+    try {
+      const rec = JSON.parse(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
+      if (rec) records.push(rec);
+    } catch { /* skip corrupt sidecar */ }
+  }
+  records.sort((a, b) => new Date(b.trashedAt || 0) - new Date(a.trashedAt || 0));
+  return records;
+});
+
+ipcMain.handle('restore-post', async (_e, image) => {
+  const trashDir = getTrashDir();
+  const folder = getSaveFolder();
+  if (!trashDir || !folder) return { ok: false };
+  const base = baseOf(image);
+  let names;
+  try { names = await fs.promises.readdir(trashDir); } catch { return { ok: false }; }
+  for (const f of names) {
+    if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
+      try { await fs.promises.rename(path.join(trashDir, f), path.join(folder, f)); } catch { }
+    }
+  }
+  // Remove trashedAt from the restored sidecar.
+  const jsonPath = path.join(folder, `${base}.json`);
+  try {
+    const r = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+    delete r.trashedAt;
+    await fs.promises.writeFile(jsonPath, JSON.stringify(r, null, 2), 'utf8');
+  } catch { }
+  return { ok: true };
+});
+
+ipcMain.handle('empty-trash', async () => {
+  const trashDir = getTrashDir();
+  if (!trashDir) return { ok: true };
+  try { await fs.promises.rm(trashDir, { recursive: true, force: true }); } catch { }
+  return { ok: true };
+});
+
+ipcMain.handle('delete-from-trash', async (_e, image) => {
+  const trashDir = getTrashDir();
+  if (!trashDir) return { ok: false };
+  const base = baseOf(image);
+  let names;
+  try { names = await fs.promises.readdir(trashDir); } catch { return { ok: false }; }
+  for (const f of names) {
+    if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
+      try { await fs.promises.unlink(path.join(trashDir, f)); } catch { }
     }
   }
   return { ok: true };
@@ -998,6 +1096,7 @@ if (!gotSingleInstanceLock) {
       const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
       if (!last || (Date.now() - last) >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
     }
+    setTimeout(() => purgeOldTrash(), 6000);   // expire old trash entries on startup
   }
 
   if (SMOKE) {

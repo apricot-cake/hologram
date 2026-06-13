@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('corpus', {
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
   // cb receives the changed-sidecar hint (null | [] | [names…]); the raw IPC
   // event is not forwarded.
+  listTrash: () => ipcRenderer.invoke('list-trash'),
+  restorePost: (image) => ipcRenderer.invoke('restore-post', image),
+  emptyTrash: () => ipcRenderer.invoke('empty-trash'),
+  deleteFromTrash: (image) => ipcRenderer.invoke('delete-from-trash', image),
   onPostsChanged: (cb) => ipcRenderer.on('posts-changed', (_e, names) => cb(names)),
   setTitleBarOverlay: (opts) => ipcRenderer.invoke('set-titlebar-overlay', opts)
 });

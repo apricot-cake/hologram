@@ -192,7 +192,7 @@
     backupIntervalUnit: _s('backupIntervalUnit'),
     unitDay: _s('unitDay'),
     unitWeek: _s('unitWeek'),
-    unitYear: _s('unitYear'),
+    unitMonth: _s('unitMonth'),
     backupRunNow: _s('backupRunNow'),
     backupRunning: _s('backupRunning'),
     backupNotSet: _s('backupNotSet'),
@@ -200,6 +200,14 @@
     backupLastLabel: _s('backupLastLabel'),
     backupItemsUnit: _s('backupItemsUnit'),
     backupSkipLabel: _s('backupSkipLabel'),
+
+    // settings > trash
+    trashTitle: _s('trashTitle'),
+    trashEmpty: _s('trashEmpty'),
+    trashCount: _f1('trashCount'),
+    trashEmptyBtn: _s('trashEmptyBtn'),
+    trashRestoreBtn: _s('trashRestoreBtn'),
+    trashDeleteBtn: _s('trashDeleteBtn'),
 
     // export/import toasts
     exporting: _s('exporting'),
@@ -361,7 +369,9 @@
   setText('backupIntervalEvery', MSG.backupIntervalUnit);
   setText('unitDay', MSG.unitDay);
   setText('unitWeek', MSG.unitWeek);
-  setText('unitYear', MSG.unitYear);
+  setText('unitMonth', MSG.unitMonth);
+  setText('settingsTrashTitle', MSG.trashTitle);
+  setText('emptyTrash', MSG.trashEmptyBtn);
   setText('twTitle', MSG.twTitle);
   setText('twBack', MSG.twBack);
   setText('twNext', MSG.twNext);
@@ -3686,6 +3696,72 @@
       window.corpus.onBackupDone((_e, r) => { if (cfg && r) { cfg.lastResult = r; renderStatus(); } });
     }
 
+    load();
+  })();
+
+  // --- ゴミ箱 (soft delete) ---
+  (function setupTrash() {
+    const statusEl = document.getElementById('trashStatus');
+    const listEl = document.getElementById('trashList');
+    const emptyBtn = document.getElementById('emptyTrash');
+    if (!statusEl || !listEl || !emptyBtn) return;
+
+    const fmtDate = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+    };
+
+    async function load() {
+      let records = [];
+      try { records = (await window.corpus.listTrash()) || []; } catch { records = []; }
+      if (!records.length) {
+        statusEl.textContent = MSG.trashEmpty;
+        listEl.innerHTML = '';
+        emptyBtn.disabled = true;
+        return;
+      }
+      statusEl.textContent = MSG.trashCount(records.length);
+      emptyBtn.disabled = false;
+      listEl.innerHTML = records.map((r) => {
+        const title = r.title || r.screenName || r.captureId || '';
+        const platform = r.platform || '';
+        const date = fmtDate(r.trashedAt);
+        const img = r.image ? `<img src="psimg://${r.image}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">` : '<span style="width:36px;height:36px;border-radius:4px;background:var(--surface-3);flex-shrink:0;display:inline-block;"></span>';
+        return `<div class="trash-row" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border-subtle);">
+          ${img}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(title)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(platform)} ${date}</div>
+          </div>
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px;flex-shrink:0;" data-restore="${escapeAttr(r.image || r.video || r.captureId)}">${MSG.trashRestoreBtn}</button>
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--danger);" data-perma="${escapeAttr(r.captureId)}">${MSG.trashDeleteBtn}</button>
+        </div>`;
+      }).join('');
+    }
+
+    listEl.addEventListener('click', async (e) => {
+      const restoreBtn = e.target.closest('[data-restore]');
+      const permaBtn = e.target.closest('[data-perma]');
+      if (restoreBtn) {
+        try { await window.corpus.restorePost(restoreBtn.dataset.restore); } catch { }
+        await load();
+      } else if (permaBtn) {
+        try { await window.corpus.deleteFromTrash(permaBtn.dataset.perma); } catch { }
+        await load();
+      }
+    });
+
+    emptyBtn.addEventListener('click', async () => {
+      try { await window.corpus.emptyTrash(); } catch { }
+      await load();
+    });
+
+    // Load when settings opens
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', load);
     load();
   })();
 
