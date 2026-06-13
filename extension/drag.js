@@ -1,10 +1,10 @@
 // Persistent content script (manifest content_scripts for x / bsky / pixiv).
-// Eagle-for-Chrome style: when the user starts dragging an image, a drop zone
+// Drag-to-save: when the user starts dragging an image, a drop zone
 // appears; the image is saved to Corpus ONLY if dropped into that zone. Dragging
 // an image anywhere else (to disk, to reorder, etc.) does nothing — no accidental
 // saves. On drop, the background fetches the post metadata and saves the dragged
 // illustration itself (no screenshot) via the native host. Identity extraction is
-// ported from eagle-info-plus, minus all Eagle coupling.
+// self-contained per platform (no external coupling).
 (() => {
   const siteConfig = getDragSiteConfig();
   if (!siteConfig) return;
@@ -92,7 +92,7 @@
     });
   }
 
-  // === identity (per platform; ported from eagle-info-plus) ===
+  // === identity (per platform) ===
 
   function collectImageUrls(img, platform) {
     const urls = new Set();

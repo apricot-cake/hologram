@@ -91,8 +91,8 @@ function resolveThumbnail(lib, id) {
   return null;
 }
 
-// The eagle-info-plus plugin wrote a text annotation ("Key: value" lines) into
-// each Eagle item. Most keys duplicate structured store fields, but UID / Alt /
+// Some Eagle items carry a text annotation ("Key: value" lines) in their note
+// field. Most keys duplicate structured store fields, but UID / Alt /
 // Published are NOT in the store — notably UID, the stable user id for non-pixiv
 // platforms (X numeric / bsky did / misskey・mastodon id). Parse it so userId
 // survives the migration (the store's `author` is only the numeric id for pixiv).

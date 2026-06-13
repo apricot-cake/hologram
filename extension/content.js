@@ -467,8 +467,8 @@ function pixivIdFromArtworkLink(link) {
 // Resolve { id, el } anchored at the click/hover TARGET, walking UP via closest()
 // — never scanning a wide scope's descendants by document order, which on a
 // multi-artwork grid would pick a neighbor (the first pximg in DOM order) rather
-// than the clicked one. (This is the wrong-neighbor bug eagle-info-plus fixed with
-// treeDistance; anchoring at the target with closest() avoids it by construction.)
+// than the clicked one. (This is the wrong-neighbor bug; anchoring at the
+// target with closest() avoids it by construction.)
 // Priority: the target's own pximg image (unambiguous) → nearest enclosing
 // /artworks/ link → the nearest <figure>'s main image → the /artworks/ URL bar.
 function resolvePixivTarget(target) {
