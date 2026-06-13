@@ -3705,20 +3705,49 @@
       const p = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     };
-    function renderStatus() {
-      if (!cfg || !cfg.dir) { statusEl.textContent = ''; return; }
+    const fmtMirrorTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+      if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return hhmm;
+      if ((+now - +d) < 2 * 86400000) return `昨 ${hhmm}`;
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+    function updateMirrorStatus() {
+      const el = document.getElementById('mirrorStatus');
+      if (!el) return;
+      if (!cfg || !cfg.dir) { el.textContent = ''; el.className = 'mirror-status'; el.title = ''; return; }
       const r = cfg.lastResult;
-      if (!r) { statusEl.textContent = ''; return; }
+      if (!r) { el.textContent = ''; el.title = ''; return; }
+      if (r.ok === false && r.error) {
+        el.textContent = '⚠'; el.className = 'mirror-status is-error'; el.title = r.error; return;
+      }
+      el.className = 'mirror-status';
+      const t = fmtMirrorTime(r.at);
+      el.textContent = t ? `↑ ${t}` : '';
+      let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
+      if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
+      else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
+      el.title = tip;
+    }
+    function renderStatus() {
+      if (!cfg || !cfg.dir) { statusEl.textContent = ''; updateMirrorStatus(); return; }
+      const r = cfg.lastResult;
+      if (!r) { statusEl.textContent = ''; updateMirrorStatus(); return; }
       if (r.ok === false && r.error) {
         statusEl.textContent = `⚠ ${r.error}`;
         statusEl.style.color = 'var(--danger)';
-        return;
+        updateMirrorStatus(); return;
       }
       statusEl.style.color = '';
       let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) s += `（+${r.written}${MSG.backupItemsUnit}）`;
       else if (r.fileCount) s += `（${r.fileCount}${MSG.backupItemsUnit}）`;
       statusEl.textContent = s;
+      updateMirrorStatus();
     }
     function render() {
       if (!cfg) return;
