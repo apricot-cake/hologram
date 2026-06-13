@@ -1330,6 +1330,55 @@
     inner.innerHTML = rows.join('');
   }
 
+  // --- In-session Edit Undo/Redo ---
+  // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
+  // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
+  const UNDO_MAX = 50;
+  let undoStack = [];   // [{type, records: [{captureId, image, prevTags, newTags}]}]
+  let redoStack = [];
+
+  function pushUndo(type, records) {
+    if (!records || !records.length) return;
+    undoStack.push({ type, records });
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack = [];   // discard redo on new edit (linear history)
+  }
+
+  async function applyTagUndo(records) {
+    for (const r of records) {
+      try { await window.corpus.updateTags(r.image, r.tags); } catch { }
+      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
+      if (idx >= 0) allPosts[idx].tags = r.tags.slice();
+    }
+    renderPosts(true);
+  }
+
+  async function doUndo() {
+    const entry = undoStack.pop();
+    if (!entry) return;
+    const reverse = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.prevTags }));
+    await applyTagUndo(reverse);
+    redoStack.push(entry);
+    showToast('Undo');
+  }
+
+  async function doRedo() {
+    const entry = redoStack.pop();
+    if (!entry) return;
+    const forward = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.newTags }));
+    await applyTagUndo(forward);
+    undoStack.push(entry);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    showToast('Redo');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    if (e.shiftKey) doRedo(); else doUndo();
+  });
+
   // --- State ---
   let allPosts = [];
   let _allPostsGeneration = 0;  // bumped on every allPosts replacement; invalidates sidebar caches
@@ -2857,11 +2906,17 @@
       const g = queue[idx];
       if (!g) return;
       const tags = [...sel];
-      // Pressing save = "I handled this image" → mark reviewed so it leaves the
-      // queue even when it got no tags.
+      // Capture before-state for undo, then persist.
+      const undoRecords = g.records.map(r => ({
+        captureId: r.captureId,
+        image: r.image || r.video,
+        prevTags: (r.tags || []).slice(),
+        newTags: tags.slice()
+      }));
       await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { tagReviewed: true })
         .then(() => { r.tags = tags.slice(); r.tagReviewed = true; })
         .catch(() => {})));
+      pushUndo('tags-wizard', undoRecords);
     }
 
     body.addEventListener('click', (e) => {
@@ -3143,15 +3198,17 @@
     keepCurrentVisible();   // removing a tag can un-match an active tag filter
     const tags = [...editTags];
 
-    // Persist to every record's sidecar, then update in memory.
-    // Additive (bulk タグを追加): union with each record's existing tags;
-    // normal edit: the list replaces the record's tags.
-    for (const r of editingRecords) {
-      const next = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags;
-      try { await window.corpus.updateTags(r.image || r.video, next); } catch { /* keep going */ }
-      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
-      if (idx >= 0) allPosts[idx].tags = next;
+    // Capture before-state for undo, then persist.
+    const undoRecords = editingRecords.map(r => {
+      const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
+      return { captureId: r.captureId, image: r.image || r.video, prevTags: (r.tags || []).slice(), newTags };
+    });
+    for (const u of undoRecords) {
+      try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
+      const idx = allPosts.findIndex(p => p.captureId === u.captureId);
+      if (idx >= 0) allPosts[idx].tags = u.newTags.slice();
     }
+    pushUndo('tags', undoRecords);
     renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
 
     const n = editingRecords.length;
