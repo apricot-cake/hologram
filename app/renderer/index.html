@@ -1230,10 +1230,17 @@
     color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
     pointer-events: none;
   }
-  /* Flyout arrows: hover-only. Disclosure chevron (.sb-row-disclosure) stays visible — it indicates collapse state. */
+  /* Flyout arrows: hover-only. */
   #filterRows .sb-row .sb-row-arrow:not(.sb-row-disclosure) { opacity: 0; transition: opacity .12s; }
   #filterRows .sb-row:hover .sb-row-arrow:not(.sb-row-disclosure),
   #filterRows .sb-row.qf-open .sb-row-arrow:not(.sb-row-disclosure) { opacity: 1; }
+  /* Tag disclosure (▾ on タグ): hover-only when EXPANDED — the visible subrows already
+     show the open state, so the chevron is redundant (Finder-style quiet). When COLLAPSED
+     it is the only cue that hidden content exists, so keep it shown. */
+  #filterRows .sb-row .sb-row-disclosure { opacity: 0; transition: opacity .12s; }
+  #filterRows .sb-row:hover .sb-row-disclosure,
+  #filterRows .sb-row.qf-open .sb-row-disclosure,
+  #filterRows .sb-row .sb-row-disclosure.collapsed { opacity: 1; }
   /* Tag sub-rows (すべてのタグ/人物…) share the same hover-only flyout chevron */
   #filterRows .sb-subrow .sb-subrow-arrow { opacity: 0; transition: opacity .12s; }
   #filterRows .sb-subrow:hover .sb-subrow-arrow,
