@@ -25,11 +25,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 > (TaskCreate/TaskUpdate)へもミラー**（画面で自動催促＝取りこぼし防止。ファイルが正本）。
 > 全項目が片付いたらファイルは見出しだけ残して空にする。
 
-> **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
-> - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
-> - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
-> - **残（任意）**: 配布パッケージング（electron-builder 設定済み・下記「アプリのビルド/配布」参照）、スクリーンショット/デモ差し替え。
-> 詳細プラン: `~/.claude/plans/playful-kindling-duckling.md`
+> **アーキテクチャ**: キャプチャは拡張（タブキャプチャ＋API由来メタ）→ **Native Messaging ブリッジ**（`native-host/`・拡張/アプリ未起動でも動作）→ **ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す**（EXIF/chrome.storage は不使用）。閲覧は Electron アプリ（`app/`）がサイドカーを走査。旧・拡張内ビューアと EXIF/storage 方式は撤去済み。残（任意）: 配布パッケージング（下記「アプリのビルド/配布」）。
 
 ## 対応プラットフォーム
 
@@ -57,7 +53,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 
 - `Alt+S` — キャプチャモード開始
 
-> 旧 `Alt+R`（拡張リロード・開発用）はストア版整理で撤去。旧 `Alt+V`（ビューアを開く）は Phase 2 で廃止。ビューアは独立した Electron アプリに分離したため、拡張側のショートカットは `Alt+S` のみ。
+> 旧 `Alt+R`（拡張リロード・開発用）はストア版整理で撤去。旧 `Alt+V`（ビューアを開く）はビューアの Electron アプリ分離時に廃止。拡張側のショートカットは `Alt+S` のみ。
 
 ## アプリのビルド/配布
 
@@ -75,7 +71,7 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - インスタンス/サーバーフィルタ（Misskey / Mastodon 選択時にサイドバーへサーバー一覧を展開、URLのホストで絞り込み。プラットフォーム解除で孤立したinstanceフィルタは自動整理）
 - 保存先フォルダの自動監視（新規キャプチャ等で一覧を自動更新。main の `fs.watch`→`posts-changed` IPC）
 - ハッシュタグ一覧タブ（本文の #タグ を抽出・頻度順表示、クリックで絞り込み。タブ内に絞り込み入力）
-- ユーザー一覧タブ（Phase 1: サイドカーの著者情報を `platform:userId` でグルーピング。投稿数順表示・検索・プラットフォームフィルタ、クリックで投稿タブを `user` フィルタで絞り込み。追加のAPI取得なし。Phase 2 のフォロー数/作成日付与は未実装）
+- ユーザー一覧タブ（サイドカーの著者情報を `platform:userId` でグルーピング。投稿数順表示・検索・プラットフォームフィルタ、クリックで投稿タブを `user` フィルタで絞り込み。追加のAPI取得なし。フォロー数/作成日の付与は未実装）
 - 添付画像の原寸表示（🔍ボタンでスクショ＋原寸を1つに束ねたギャラリーを開く＝prev/next・矢印キー・カウンタ。原寸はページ送りで閲覧）
 - 日付範囲フィルタ（from/to）
 - エンゲージメントフィルタ（種類選択+最低値）
@@ -109,21 +105,13 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 - テスト済みのケースを再テストしない（`test-progress.md` を必ず確認）
 - 1つの投稿で複数のケースをカバーできる場合はまとめて記録（例: A-1b と A-1h）
 
-## TODO (リリース前)
+## 残タスク
 
-- [x] ストア版ビルド: 開発用コードを除去する（完了 — `reload-extension` コマンド/onCommand分岐、`buildHash`/`getBuildHash`、`getBuildHash` のDOM埋め込み[content.js]、`cmdReloadExtension`/`cmdOpenViewer` ロケール、`scripts/check-reload.py` を撤去。`writeCaptureLog()`・拡張内ビューア・`debugSection` も撤去済み）
+- [ ] 配布パッケージング（electron-builder, win/nsis。設定済み＝「アプリのビルド/配布」参照。リリース準備一式の決定はメモリ `corpus-release-prep` に詳細）。
 
-## TODO (将来対応)
+（Electron移行・サイドカー保存・原寸メディアDL/表示・ハッシュタグ/インスタンス/ユーザー一覧タブ・Mastodon対応は実装済み＝「構成」「ビューア機能」を参照。ユーザー一覧タブのフォロー数/作成日付与は未実装。）
 
-- [x] デスクトップアプリ（Electron + Native Messaging）— Phase 1/2 完了（上部「アーキテクチャ移行」参照）
-  - [x] 拡張をキャプチャ専用化（Native Messaging送信）
-  - [x] メタデータはサイドカーJSON（SQLite不採用：Electronでのネイティブ依存回避）+ ファイルシステムに画像保存
-  - [x] ビューア全機能の Electron 移植（検索・フィルタ・ソート・タグ編集・削除・エクスポート/インポート）
-  - [ ] 配布パッケージング（electron-builder 等）
-  - [x] 添付画像の原寸保存・表示（静止画。metadata.js が `media[]`（原寸URL）抽出 → bridge が DL して `<id>-media-N.<ext>` 保存 → ビューアで🔍ボタンからギャラリー表示（スクショ＋原寸を1つに束ねる）。動画/GIFは対象外、新規キャプチャのみ。検証: `scripts/test-media.js`/`test-app-media.js`、`test-metadata.js` の media アサーション）
-- [x] ビューア: ハッシュタグ一覧画面（保存済み投稿の text から #タグ を抽出して一覧表示）
-- [x] ビューア: Misskey インスタンス指定フィルタ（Misskey チップを押すとインスタンス一覧が展開）
-- [x] Mastodon 対応（公開REST API `/api/v1/statuses/:id`＝**安定API方針に合致**。metadata.js に追加、content.js は標準Web UIの投稿特定＋URL抽出のみ。CORSは Origin付きで `*`）
+## データ取得方針・不採用
 
-> **不採用: Threads** — 安定した公開APIが無く DOM依存のため、「安定API由来のみ」方針に反するので対応しない（決定済み）。
 > **データ取得方針**: メタデータは安定した公式/公開APIからのみ取得し、DOMスクレイピングはしない（壊れやすいため）。content.js は投稿の特定とパーマリンク抽出だけ。X は公式APIが無く `cdn.syndication.twimg.com`（非公式・要host_permissions）で代替（リポスト/ブックマーク/閲覧数は取得不可）。
+> **不採用: Threads** — 安定した公開APIが無く DOM依存のため、「安定API由来のみ」方針に反するので対応しない（決定済み）。
