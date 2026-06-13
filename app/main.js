@@ -806,15 +806,13 @@ ipcMain.handle('import-complete', async (_e, bytes) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 
-// --- バックアップ / 指定フォルダへの増分エクスポート ---------------------------
-// 保存先フォルダ自体をクラウド同期の対象にすると（ライブ書き込み中の同期で）壊れやすい。
-// ここでは「安全な吐き出し先」に、ライブラリ丸ごとを完全 ZIP（整理情報込み・そのまま
-// インポートで復元可能）として出力する。クラウドはその出力先だけ同期すればよい。
-// 出力は直近 retention 世代だけ残す（古い zip は自動削除）。
-const LIBRARY_JSON = ['config.json', '.index.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json'];
-// 出力は必ずこのサブフォルダの中に書く。ユーザーがデスクトップ等を選んでも直下に
-// 数千ファイルがぶちまけられないようにするための安全策（再発防止）。
-const BACKUP_SUBDIR = 'Corpus-export';
+// --- バックアップ / 増分ミラー --------------------------------------------------
+// 保存先フォルダ自体をクラウド同期フォルダに置くとライブ書き込み中の同期で壊れやすい。
+// ここでは選択した「宛先フォルダ」の中に「写し（remote）」を保持する。
+// アセットは immutable（一度書いたら変わらない）→ 宛先に無いファイルだけコピー(O(new))。
+// 削除は宛先からも伝播（最新ミラー）。ZIP は手動エクスポート専用に残す。
+// 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
+const BACKUP_SUBDIR = 'Corpus-mirror';
 function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
 
 
@@ -857,25 +855,50 @@ async function runBackup(reason) {
   if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
   if (backupRunning) return { ok: false, error: 'busy' };
   backupRunning = true;
-  const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: null, pruned: 0 };
+  // written = new files copied; pruned = files deleted (propagated deletions)
+  const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
   try {
-    const dest = backupDest(b.dir);                 // 直下ではなく Corpus-export/ の中へ（自動作成）
+    const dest = backupDest(b.dir);
     await fs.promises.mkdir(dest, { recursive: true });
-    const built = await archive.buildCompleteZip(getJSZip(), src);
-    result.fileCount = built.fileCount;
-    if (built.fileCount > 0) {
-      const name = 'corpus-export-' + exportStamp() + '.zip';
-      const dp = path.join(dest, name);
-      const tmp = dp + '.tmp-' + Date.now();
-      await fs.promises.writeFile(tmp, built.buffer);   // アトミック: tmp→rename
-      await fs.promises.rename(tmp, dp);
-      result.written = name;
-      // 保持世代: 直近 N 個だけ残し、古い zip は削除
-      const keep = Math.max(1, Number(b.retention) || 5);
-      let zips = [];
-      try { zips = (await fs.promises.readdir(dest)).filter((n) => /^corpus-export-.*\.zip$/i.test(n)).sort(); } catch { zips = []; }
-      for (const old of zips.slice(0, Math.max(0, zips.length - keep))) {
-        try { await fs.promises.unlink(path.join(dest, old)); result.pruned++; } catch { /* ignore */ }
+
+    // Collect source files, skipping app-internal and transient entries
+    let srcFiles;
+    try { srcFiles = await fs.promises.readdir(src); } catch { srcFiles = []; }
+    const srcSet = new Set();
+    for (const f of srcFiles) {
+      if (f === '.index.json' || f === TRASH_SUBDIR) continue;
+      if (/\.tmp(-\d+)?$/i.test(f)) continue;
+      try {
+        const st = await fs.promises.stat(path.join(src, f));
+        if (st.isFile()) srcSet.add(f);
+      } catch { /* skip inaccessible entries */ }
+    }
+    result.fileCount = srcSet.size;
+
+    // Collect destination files
+    let destFiles;
+    try { destFiles = await fs.promises.readdir(dest); } catch { destFiles = []; }
+    const destSet = new Set(destFiles.filter(f => !/\.tmp(-\d+)?$/i.test(f)));
+
+    // Copy new files (assets are immutable — existence check only, no mtime compare)
+    for (const f of srcSet) {
+      if (destSet.has(f)) continue;
+      const tmp = path.join(dest, f + '.tmp-' + Date.now());
+      try {
+        await fs.promises.copyFile(path.join(src, f), tmp);
+        await fs.promises.rename(tmp, path.join(dest, f));
+        result.written++;
+      } catch (e) {
+        try { await fs.promises.unlink(tmp); } catch { }
+        // Surface the first copy error but keep going for the rest
+        if (!result.firstError) result.firstError = e.message;
+      }
+    }
+
+    // Prune files present in dest but gone from src (deleted posts propagate)
+    for (const f of destSet) {
+      if (!srcSet.has(f)) {
+        try { await fs.promises.unlink(path.join(dest, f)); result.pruned++; } catch { }
       }
     }
   } catch (err) {
@@ -884,7 +907,8 @@ async function runBackup(reason) {
     backupRunning = false;
   }
   const at = new Date().toISOString();
-  const summary = { fileCount: result.fileCount, written: result.written, pruned: result.pruned, reason: result.reason, ok: result.ok, at: at };
+  const summary = { fileCount: result.fileCount, written: result.written, pruned: result.pruned,
+    reason: result.reason, ok: result.ok, error: result.error || result.firstError || null, at: at };
   try { writeBackupConfig({ lastRunAt: at, lastResult: summary }); } catch { /* ignore */ }
   if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: at }));
   return result;

@@ -3652,8 +3652,15 @@
       if (!cfg || !cfg.dir) { statusEl.textContent = ''; return; }
       const r = cfg.lastResult;
       if (!r) { statusEl.textContent = ''; return; }
+      if (r.ok === false && r.error) {
+        statusEl.textContent = `⚠ ${r.error}`;
+        statusEl.style.color = 'var(--danger)';
+        return;
+      }
+      statusEl.style.color = '';
       let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
-      if (r.written) s += `（${r.fileCount}${MSG.backupItemsUnit}）`;
+      if (r.written) s += `（+${r.written}${MSG.backupItemsUnit}）`;
+      else if (r.fileCount) s += `（${r.fileCount}${MSG.backupItemsUnit}）`;
       statusEl.textContent = s;
     }
     function render() {
