@@ -232,11 +232,14 @@ function registerImageProtocol() {
 
       const url = new URL(request.url);
       const name = path.basename(decodeURIComponent(url.pathname.replace(/^\/+/, '')));
-      if (!name) return new Response('Not found', { status: 404 });
+      if (!name || name === '.' || name === '..') return new Response('Not found', { status: 404 });
 
-      const filePath = path.join(folder, name);
-      const resolved = path.resolve(filePath);
-      if (!resolved.startsWith(path.resolve(folder))) {
+      const folderResolved = path.resolve(folder);
+      const resolved = path.resolve(path.join(folder, name));
+      // name is already a basename, but assert the resolved path is strictly
+      // INSIDE the save folder. Compare against folder + separator: a bare
+      // startsWith(folder) would also accept a sibling like "<folder>-other".
+      if (!resolved.startsWith(folderResolved + path.sep)) {
         return new Response('Forbidden', { status: 403 });
       }
 
