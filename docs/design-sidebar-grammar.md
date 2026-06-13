@@ -33,7 +33,7 @@
   サイドバー側は自然に「ショートカット」と読める）。ビルダーに全部入るのは
   不整合ではなく、そこが統一の場。
 - **Notion サイドバー** — 1行に2ターゲット: 名前クリック＝開く、シェブロン＝
-  ツリー開閉。タグ行のグループ子行はこれ（Finder/Mail/Eagle のツリーも同型）。
+  ツリー開閉。タグ行のグループ子行はこれ（Finder/Mail のツリーも同型）。
 - **macOS Finder** — 「よく使う項目」＝昇格（promotion）。フォルダでもタグでも
   何でも置ける。ピン留め汎化の前例（Slack のスター・Linear の favorites も同じ）。
 
@@ -156,8 +156,8 @@
      transition: transform 200ms ease-out;` ＋ `.collapsed { transform:
      rotate(-90deg); }`。既存定義の flex-shrink/font-size/color/cursor/padding は
      削除。reduced-motion の media query は既存のまま。
-3. **全タグの横断検索は子行の先頭「すべてのタグ」行へ**（Eagle のタグパネル先頭の
-   「すべて」と同型＝ユーザーの既知パターン。Linear の "All issues" も同じ）。
+3. **全タグの横断検索は子行の先頭「すべてのタグ」行へ**（リストの先頭に「すべて」を
+   置く既知パターン。Linear の "All issues" も同じ）。
    - `updateSidebarTagGroups()` の rows 先頭に `data-tag-group="__all"` の子行を
      追加: ラベル `MSG.tagAllRow`・count＝全タグ数・active ハイライトなし
      （グループ行と二重に光らせない。行バッジが適用数を既に示す）。全タグ0件なら出さない。

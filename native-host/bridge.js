@@ -183,7 +183,7 @@ async function handleSave(msg) {
 // itself (any supported still type, with an optional pixiv Referer) and that file
 // IS the record's primary image. media[] is left empty (the image is the content;
 // duplicating it in media[] would double it in the viewer's lightbox). This is the
-// same "illustration record" shape the Eagle migration produces. captureId is the
+// same "illustration record" shape an imported library item produces. captureId is the
 // normal epochMillis-hex form, so it passes SAFE_ID.
 async function handleSaveDragged(msg) {
   const captureId = sanitizeCaptureId(msg.captureId);
@@ -201,7 +201,7 @@ async function handleSaveDragged(msg) {
 
   const meta = msg.metadata || {};
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
-  // so the image-view shows it. Mirrors the Eagle migration's source marker.
+  // so the image-view shows it. Mirrors the migrated records' source marker.
   const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag' });
   fs.writeFileSync(path.join(saveFolder, `${base}.json`), JSON.stringify(record, null, 2), 'utf8');
 

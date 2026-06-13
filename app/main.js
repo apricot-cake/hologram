@@ -243,7 +243,7 @@ ipcMain.handle('pick-save-folder', async () => {
 
 ipcMain.handle('list-posts', () => listPosts());
 
-// Tag groups (migrated from Eagle's library metadata) live alongside the
+// Tag groups (migrated from the imported library's metadata) live alongside the
 // sidecars as <saveFolder>/tag-groups.json: { groups: [{id,name,tags[]}] }.
 ipcMain.handle('get-tag-groups', () => {
   const folder = getSaveFolder();

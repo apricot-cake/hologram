@@ -2315,7 +2315,7 @@
   document.getElementById('postGrid').addEventListener('click', (e) => {
     // Image -> open the gallery (screenshot + originals, whole group).
     // While the inspector is open, a single click swaps its content instead
-    // (Eagle-style browsing); the gallery is then reached by double-click.
+    // (inline browsing); the gallery is then reached by double-click.
     const img = e.target.closest('.card-img');
     if (img) {
       e.stopPropagation();
@@ -3265,7 +3265,7 @@
   // quantize the real width to "how many columns fit", so their track maps to
   // COLUMN COUNTS (one detent = exactly one column, no dead notches). The
   // list is a full-width stack, so its track maps straight to the thumbnail
-  // px. Right = larger, Eagle/Lightroom style. While dragging only the CSS
+  // px. Right = larger. While dragging only the CSS
   // vars update; persisting + re-requesting thumbnails happens on release.
   function viewSizeState() {
     if (currentView === 'card') return { get: () => cardSize, set: (v) => { cardSize = v; }, min: CARD_MIN, max: CARD_MAX, pref: 'cardSize', columns: true };
