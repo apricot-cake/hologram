@@ -386,29 +386,23 @@
 
     /* --- View toggle --- */
     /* Segmented control = recessed track + raised thumb (macOS/iOS style).
-       No outer border, no dividers — outlined segments read as wireframe. */
+       Icon-only: the raised thumb is the ONLY active cue — no label, no glyph
+       fill, no color shift — so switching just slides the thumb and the buttons
+       never resize or shove each other. */
     .view-toggle {
       display: flex; width: fit-content; border: none; border-radius: 8px;
       background: var(--seg-track); padding: 2px; gap: 2px;
     }
     .view-toggle button {
       flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; padding: 5px 5px; border-radius: 6px;
+      background: transparent; border: none; padding: 5px 7px; border-radius: 6px;
       cursor: pointer; color: var(--text-muted); line-height: 0;
-      transition: background .15s, color .15s, padding .2s, gap .2s;
+      transition: background .15s, color .15s;
     }
-    /* Glyph: outline when inactive, FILLED when active (iOS/macOS tab-bar idiom).
-       Active also reveals its text label via max-width slide; inactive = icon only.
-       The raised thumb + filled glyph + label mark the active mode together. */
+    /* Glyph stays outlined in every state; the thumb behind it marks the active one. */
     .view-toggle .vt-ico { width: 17px; height: 17px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
-    .view-toggle .vt-label {
-      display: inline-block; max-width: 0; overflow: hidden; white-space: nowrap;
-      font-size: 12px; font-weight: 600; line-height: 17px; opacity: 0;
-      transition: max-width .22s ease, opacity .15s ease;
-    }
-    .view-toggle button.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--glass-edge), var(--shadow-xs); gap: 6px; padding: 5px 9px; }
-    .view-toggle button.active .vt-ico { fill: currentColor; stroke: none; }
-    .view-toggle button.active .vt-label { max-width: 60px; opacity: 1; }
+    .view-toggle .vt-label { display: none; }
+    .view-toggle button.active { background: var(--seg-thumb); box-shadow: var(--glass-edge), var(--shadow-xs); }
     @keyframes vt-tap { 0%{} 20%{filter:saturate(1.5) brightness(1.06) hue-rotate(4deg)} 60%{filter:saturate(1.15) hue-rotate(-1deg)} 100%{filter:none} }
     .view-toggle button:active { animation: vt-tap .28s ease-out; }
     @media (prefers-reduced-transparency: reduce) { .view-toggle button.active { box-shadow: var(--shadow-xs); } }
