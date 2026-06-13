@@ -19,6 +19,21 @@ const net = require('net');
 
 const { configDir, defaultLibraryDir } = require('./paths');
 
+// --- Diagnostic log -----------------------------------------------------------
+// Chrome spawns this process once per native-messaging connection, so a line
+// here PROVES the host was found in the registry and launched. If Chrome reports
+// "native messaging host not found" and this log gets NO new lines, the failure
+// is in Chrome's manifest lookup (before launch), not in the bridge. Best-effort;
+// must never throw (a logging error must not break a capture).
+function logLine(msg) {
+  try {
+    fs.appendFileSync(
+      path.join(configDir(), 'bridge.log'),
+      `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`
+    );
+  } catch { /* ignore — logging is non-essential */ }
+}
+
 // --- Save folder resolution (shared config with the desktop app) ---
 // MUST stay in lockstep with the app's getSaveFolder(): explicit config wins,
 // otherwise both fall back to the SAME shared default (defaultLibraryDir).
@@ -309,6 +324,7 @@ async function handleSaveDragged(msg) {
 // Only act as a real native-messaging host when executed directly. When this
 // module is require()'d (by a test), skip the reader and expose internals.
 if (require.main === module) {
+logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
 let buffer = Buffer.alloc(0);
 
 process.stdin.on('data', (chunk) => {
@@ -323,10 +339,12 @@ process.stdin.on('data', (chunk) => {
     try {
       msg = JSON.parse(body.toString('utf8'));
     } catch {
+      logLine('recv: invalid JSON');
       sendMessage({ ok: false, error: 'Invalid JSON message' });
       continue;
     }
 
+    logLine(`recv type=${msg && msg.type}`);
     try {
       if (msg.type === 'save') {
         // async (downloads original media) — ack is sent once it settles. The
