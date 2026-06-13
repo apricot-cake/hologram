@@ -340,6 +340,12 @@
        stays put (the raised thumb is the only fill that moves). */
     #sidebar .view-toggle button:not(.active):hover { background: transparent; color: var(--text); }
     #sidebar .icon-btn:hover { background: var(--hover); color: var(--text); }
+    /* Back-to-top: floats above content → qualifies as transient surface → glass */
+    #sbTop { background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
+    #sbTop:hover { background: var(--glass-bg); color: var(--text); }
+    @media (prefers-reduced-transparency: reduce) {
+      #sbTop { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--shadow-md); }
+    }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
        dense list, so tall bars waste vertical room (vertical padding only —
@@ -386,19 +392,26 @@
       background: var(--seg-track); padding: 2px; gap: 2px;
     }
     .view-toggle button {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; padding: 5px 0; border-radius: 6px;
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; padding: 5px 5px; border-radius: 6px;
       cursor: pointer; color: var(--text-muted); line-height: 0;
-      transition: background .15s, color .15s;
+      transition: background .15s, color .15s, padding .2s, gap .2s;
     }
     /* Glyph: outline when inactive, FILLED when active (iOS/macOS tab-bar idiom).
-       Active also reveals its text label (icon + label); inactive = icon only.
+       Active also reveals its text label via max-width slide; inactive = icon only.
        The raised thumb + filled glyph + label mark the active mode together. */
     .view-toggle .vt-ico { width: 17px; height: 17px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
-    .view-toggle .vt-label { display: none; font-size: 12px; font-weight: 600; }
-    .view-toggle button.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--shadow-xs); gap: 6px; }
+    .view-toggle .vt-label {
+      display: inline-block; max-width: 0; overflow: hidden; white-space: nowrap;
+      font-size: 12px; font-weight: 600; opacity: 0;
+      transition: max-width .22s ease, opacity .15s ease;
+    }
+    .view-toggle button.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--glass-edge), var(--shadow-xs); gap: 6px; padding: 5px 9px; }
     .view-toggle button.active .vt-ico { fill: currentColor; stroke: none; }
-    .view-toggle button.active .vt-label { display: inline; }
+    .view-toggle button.active .vt-label { max-width: 60px; opacity: 1; }
+    @keyframes vt-tap { 0%{} 20%{filter:saturate(1.5) brightness(1.06) hue-rotate(4deg)} 60%{filter:saturate(1.15) hue-rotate(-1deg)} 100%{filter:none} }
+    .view-toggle button:active { animation: vt-tap .28s ease-out; }
+    @media (prefers-reduced-transparency: reduce) { .view-toggle button.active { box-shadow: var(--shadow-xs); } }
 
     /* Browser-style back/forward over the filter & view state: two ghost
        square buttons matching the sidebar's control palette */
@@ -1217,6 +1230,10 @@
     color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
     pointer-events: none;
   }
+  /* Flyout arrows: hover-only. Disclosure chevron (.sb-row-disclosure) stays visible — it indicates collapse state. */
+  #filterRows .sb-row .sb-row-arrow:not(.sb-row-disclosure) { opacity: 0; transition: opacity .12s; }
+  #filterRows .sb-row:hover .sb-row-arrow:not(.sb-row-disclosure),
+  #filterRows .sb-row.qf-open .sb-row-arrow:not(.sb-row-disclosure) { opacity: 1; }
   /* tag-group buttons: squared corners + chevron so they read as「開くもの」—
      丸ピル（タグ実体）との境界をはっきりさせる */
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
@@ -1340,7 +1357,7 @@
     </div><!-- /side-post -->
 
     <!-- Back-to-top: floats above the footer once the filter column is scrolled -->
-    <button id="sbTop" class="icon-btn" type="button" style="position:absolute; right:28px; bottom:52px; display:none; z-index:5; box-shadow: var(--shadow-md);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
+    <button id="sbTop" class="icon-btn" type="button" style="position:absolute; right:28px; bottom:52px; display:none; z-index:5;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
 
     <div class="sidebar-footer">
       <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" title="設定">

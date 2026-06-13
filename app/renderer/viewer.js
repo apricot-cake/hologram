@@ -738,7 +738,10 @@
   let qfCat = null;
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
   let qfTagGroup = null;   // タグサブ行クリック時にセット（グループ絞り込み）
-  function hideQfPop() { qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null; }
+  function hideQfPop() {
+    document.querySelectorAll('#filterRows .sb-row.qf-open').forEach(r => r.classList.remove('qf-open'));
+    qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
+  }
   function qfValues(cat) {
     const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
     switch (cat) {
@@ -868,6 +871,8 @@
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl, tagGroupId) {
     if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
+    document.querySelectorAll('#filterRows .sb-row.qf-open').forEach(r => r.classList.remove('qf-open'));
+    anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
     qfTagGroup = tagGroupId || null;
