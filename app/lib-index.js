@@ -1,0 +1,107 @@
+'use strict';
+
+// On-disk + in-memory index over a save folder's sidecar JSONs.
+//
+// listPosts() used to readdirSync + readFileSync + JSON.parse EVERY sidecar on
+// every call (startup and after every capture), which froze the main process for
+// ~900ms on a ~9k-post folder — and a capture fires the folder watcher, so the
+// freeze hit on every save. This index keeps each parsed record keyed by
+// filename + mtimeMs, so a refresh re-reads only the sidecars that actually
+// changed (O(changed), ~tens of ms) and a cold start restores from one snapshot
+// read instead of tens of thousands of small reads.
+//
+// Kept Electron-free (fs injected, defaults to node's) so it unit-tests in plain
+// node, mirroring lib-archive.js.
+
+const path = require('path');
+
+const INDEX_FILE = '.index.json';
+const BATCH = 64;   // stat/read this many sidecars concurrently, then yield
+
+function isPostRecord(rec) {
+  // Keep records with an image, a (poster-less) video, or downloaded media —
+  // identical to the legacy listPosts() filter.
+  return !!(rec && (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length)));
+}
+
+// internalFiles: a Set of basenames in the save folder that are app metadata, not
+// posts (config/tabs/folders/…/.index.json). fs: injectable for tests.
+function createPostIndex(opts) {
+  const o = opts || {};
+  const fs = o.fs || require('fs');
+  const internal = o.internalFiles || new Set();
+
+  let curFolder = null;
+  let map = new Map();          // filename -> { mtimeMs, record|null }  (null = known non-post)
+  let snapshotLoaded = false;
+
+  async function loadSnapshot(folder) {
+    if (curFolder !== folder) { map = new Map(); curFolder = folder; snapshotLoaded = false; }
+    if (snapshotLoaded) return;
+    snapshotLoaded = true;      // mark first so a missing/corrupt snapshot isn't retried each call
+    try {
+      const raw = await fs.promises.readFile(path.join(folder, INDEX_FILE), 'utf8');
+      const idx = JSON.parse(raw);
+      if (idx && idx.version === 1 && idx.entries && typeof idx.entries === 'object') {
+        for (const name of Object.keys(idx.entries)) {
+          const e = idx.entries[name];
+          if (e && typeof e.mtimeMs === 'number') map.set(name, { mtimeMs: e.mtimeMs, record: e.record || null });
+        }
+      }
+    } catch { /* no/invalid snapshot — cold scan will populate it */ }
+  }
+
+  // Scan the folder, reusing cached records whose mtime is unchanged. Returns
+  // { posts, changed } — `changed` is true if anything was added/updated/removed
+  // (the caller persists the snapshot when so).
+  async function list(folder) {
+    let files;
+    try { files = await fs.promises.readdir(folder); } catch { return { posts: [], changed: false }; }
+    await loadSnapshot(folder);
+
+    const sidecars = files.filter((f) => f.toLowerCase().endsWith('.json') && !internal.has(f));
+    const present = new Set(sidecars);
+    let changed = false;
+
+    for (let i = 0; i < sidecars.length; i += BATCH) {
+      const slice = sidecars.slice(i, i + BATCH);
+      await Promise.all(slice.map(async (f) => {
+        let st;
+        try { st = await fs.promises.stat(path.join(folder, f)); }
+        catch { if (map.delete(f)) changed = true; return; }
+        const cached = map.get(f);
+        if (cached && cached.mtimeMs === st.mtimeMs) return;   // unchanged -> reuse parsed record
+        changed = true;
+        try {
+          const rec = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
+          map.set(f, { mtimeMs: st.mtimeMs, record: isPostRecord(rec) ? rec : null });
+        } catch {
+          map.set(f, { mtimeMs: st.mtimeMs, record: null });   // corrupt/partial -> remember as non-post
+        }
+      }));
+    }
+
+    // Prune entries for sidecars that disappeared (deletes).
+    for (const k of [...map.keys()]) if (!present.has(k)) { map.delete(k); changed = true; }
+
+    const posts = [];
+    for (const f of sidecars) { const e = map.get(f); if (e && e.record) posts.push(e.record); }
+    posts.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
+    return { posts, changed };
+  }
+
+  // Persist the current map to <folder>/.index.json atomically (tmp + rename).
+  // Best-effort: a failure just means the next cold start re-scans.
+  async function writeSnapshot(folder) {
+    const entries = {};
+    for (const [name, e] of map) entries[name] = e;
+    const payload = JSON.stringify({ version: 1, entries });
+    const tmp = path.join(folder, INDEX_FILE + '.tmp');
+    await fs.promises.writeFile(tmp, payload, 'utf8');
+    await fs.promises.rename(tmp, path.join(folder, INDEX_FILE));
+  }
+
+  return { list, writeSnapshot, INDEX_FILE, _size: () => map.size };
+}
+
+module.exports = { createPostIndex, INDEX_FILE, isPostRecord };

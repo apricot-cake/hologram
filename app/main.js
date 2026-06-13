@@ -11,6 +11,7 @@ const nativeHostDir = app.isPackaged
   : path.join(__dirname, '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
+const { createPostIndex } = require('./lib-index');
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
@@ -87,31 +88,23 @@ function watchSaveFolder() {
   }
 }
 
-// --- Posts (scan sidecars) ---
-function listPosts() {
+// --- Posts (scan sidecars, via the on-disk + in-memory index) ---
+// listPosts is now async and O(changed): the index re-reads only sidecars whose
+// mtime moved and restores the rest from .index.json / memory, so a post-capture
+// refresh no longer freezes the main process (was ~900ms full re-scan on ~9k).
+const postIndex = createPostIndex({ internalFiles: INTERNAL_FILES });
+let snapshotTimer = null;
+function scheduleSnapshot(folder) {
+  // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
+  // not self-trigger the folder watcher. Atomic (tmp + rename) inside writeSnapshot.
+  clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => { postIndex.writeSnapshot(folder).catch(() => { /* re-scan next cold start */ }); }, 1500);
+}
+async function listPosts() {
   const folder = getSaveFolder();
   if (!folder) return { saveFolder: null, posts: [] };
-
-  let files;
-  try {
-    files = fs.readdirSync(folder);
-  } catch {
-    return { saveFolder: folder, posts: [] };
-  }
-
-  const posts = [];
-  for (const f of files) {
-    if (!f.toLowerCase().endsWith('.json')) continue;
-    if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json') continue;
-    try {
-      const rec = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
-      // Keep records with an image, a (poster-less) video, or downloaded media.
-      if (rec && (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length))) posts.push(rec);
-    } catch {
-      // Skip corrupt/partial sidecar.
-    }
-  }
-  posts.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
+  const { posts, changed } = await postIndex.list(folder);
+  if (changed) scheduleSnapshot(folder);
   return { saveFolder: folder, posts };
 }
 
