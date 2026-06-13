@@ -477,15 +477,25 @@
       color: var(--text-subtle); font-weight: 400; font-size: 11px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
     }
-    /* dot+text source label (Reeder-style), living in the footer's source
-       corner next to the date. At the head of line 1 it crowded the author
-       name and didn't read as one unit (user report); --text-muted because
-       subtle was too quiet there. */
-    .pf-tag {
-      display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
-      font-size: 10px; font-weight: 600; letter-spacing: .04em;
-      color: var(--text-muted); text-transform: uppercase;
+    /* Source badge: platform marker pinned to the thumbnail's bottom-left
+       (Instagram/Pinterest style). .card-thumb wraps the image as the anchor;
+       in tile/list it collapses (display:contents) so the badge falls back to
+       the card box, which there coincides with the image edge. */
+    .card-thumb { position: relative; display: block; line-height: 0; }
+    .post-grid.tile-view .card-thumb, .post-grid.list-view .card-thumb { display: contents; }
+    .pf-badge {
+      position: absolute; left: 8px; bottom: 8px; z-index: 1;
+      display: inline-flex; align-items: center; gap: 5px;
+      max-width: calc(100% - 16px); box-sizing: border-box;
+      padding: 2px 7px; border-radius: 999px;
+      background: rgba(0,0,0,0.58); color: #fff;
+      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      font-size: 10px; font-weight: 600; line-height: 1.4; letter-spacing: .01em;
+      pointer-events: none;
     }
+    .pf-badge .pf-badge-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pf-badge .pf-dot { width: 6px; height: 6px; }
+    .post-grid.tile-view .pf-badge { display: none; }   /* tile stays a clean image */
     .pf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .pf-dot.x { background: var(--brand-x); }
     .pf-dot.bluesky { background: var(--brand-bluesky); }

@@ -2251,10 +2251,12 @@
       // ONE compact date on the card; both full timestamps live in its tooltip.
       const footDate = compactDate(p.date || p.capturedAt);
       const footTip = escapeAttr([dateStr, capturedStr].filter(Boolean).join('\n'));
-      // Source corner (Reeder): platform label lives bottom-right WITH the
-      // date — at the head of line 1 it crowded the author/filename and the
-      // dot+text didn't read as one unit (user report).
-      const pfTag = p.platform ? `<span class="pf-tag"><span class="pf-dot ${p.platform}"></span>${escapeHtml(PF_NAME[p.platform] || p.platform)}</span>` : '';
+      // Platform = a source badge on the thumbnail's bottom-left (Instagram/Pinterest
+      // style). It used to live in the bottom-right WITH the date, which read oddly
+      // (a category label paired with a timestamp); the head of line 1 was rejected
+      // earlier for crowding the author. The thumbnail corner keeps it off the text.
+      const pfName = p.platform ? (PF_NAME[p.platform] || p.platform) : '';
+      const pfBadge = p.platform ? `<div class="pf-badge" title="${escapeAttr(pfName)}"><span class="pf-dot ${p.platform}"></span><span class="pf-badge-name">${escapeHtml(pfName)}</span></div>` : '';
       const userName = p.displayName || p.screenName || p.title || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
       // Library images carry the filename as BOTH title and text — showing it
@@ -2289,14 +2291,14 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="lazy" decoding="async">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
+        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="lazy" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
           <div class="user"><span class="uname">${escapeHtml(userName)}</span>${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}</div>
           ${flagsHtml}
           ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
-          ${(statsHtml || footDate || pfTag) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${pfTag}${footDate ? `<span class="pdate"${footTip ? ` title="${footTip}"` : ''}>${footDate}</span>` : ''}</span></div>` : ''}
+          ${(statsHtml || footDate) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${footDate ? `<span class="pdate"${footTip ? ` title="${footTip}"` : ''}>${footDate}</span>` : ''}</span></div>` : ''}
           ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;
