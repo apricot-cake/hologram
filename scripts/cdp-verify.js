@@ -73,7 +73,10 @@ async function main() {
     else console.log(typeof r.result.value === 'string' ? r.result.value : JSON.stringify(r.result.value, null, 2));
   } else {
     await send('Page.enable', {});
-    const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false });
+    // fromSurface:false captures from the renderer's compositor instead of the OS
+    // window surface, so it still works when the window is minimized/occluded
+    // (a minimized window has no surface → "-32000 Unable to capture screenshot").
+    const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false, fromSurface: false });
     const out = arg || 'scripts/_shot.jpg';
     fs.writeFileSync(out, Buffer.from(r.data, 'base64'));
     console.log('wrote', out, Buffer.from(r.data, 'base64').length, 'bytes');
