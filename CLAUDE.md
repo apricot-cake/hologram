@@ -14,6 +14,17 @@ SNS投稿（X / Bluesky / Misskey）をJPEG画像としてキャプチャするC
 > `~/.claude/projects/C--Users-apricot---------corpus/memory/corpus-ui-backlog.md`
 > に追加してからにすること。**忘れると次セッションで蒸発するため厳守。
 
+> **【作業メモリ運用ルール】複数タスクが同時に来たら、着手前に必ず全部を
+> `~/.claude/projects/C--Users-apricot---------corpus/memory/corpus-working-memory.md`
+> に書き出す**（設計判断や修正ループで他タスクが押し出されて消えるのを防ぐ手元メモ。
+> バックログ＝後でやる溜め場とは別物＝こちらは今のスコープ内で必ず片付ける in-flight タスク）。
+> 各項目に印: `〔即〕`今すぐ済む実装・修正 / `〔設計〕`上位モデル(Fable/Opus)の判断が要る /
+> `〔待ち〕`ユーザー待ち。手順: ①`〔即〕`を片付け→**完了項目はファイルから即削除**→
+> ②ユーザーに報告し`〔設計〕`が残れば上位モデルへの切替と設計開始を提案→
+> ③上位モデルの作業完了でその項目も削除。**セッション中はハーネスのタスク一覧
+> (TaskCreate/TaskUpdate)へもミラー**（画面で自動催促＝取りこぼし防止。ファイルが正本）。
+> 全項目が片付いたらファイルは見出しだけ残して空にする。
+
 > **アーキテクチャ移行中**: EXIF と chrome.storage への保存を廃止し、**ユーザーが選んだ保存先フォルダに `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す方式**へ移行中。キャプチャ→保存は Native Messaging ブリッジ経由（拡張・アプリ未起動でも動作）。閲覧は Electron アプリ。
 > - **Phase 1（完了）**: 拡張をキャプチャ専用化（EXIF/storage廃止 → Native Messaging送信）、ブリッジ（`native-host/`）、最小 Electron ビューア（`app/`）。
 > - **Phase 2（完了）**: ビューア全機能を Electron（`app/renderer/`）へ移植、拡張内ビューア（`viewer.html/js`）と `vendor/` を撤去、`options_ui`/`open-viewer` 削除、ドキュメント/ストア説明を更新。
