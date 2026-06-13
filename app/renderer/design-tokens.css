@@ -154,9 +154,12 @@
   --hover:         #2a2d33;
   --active:        #34373d;
   --sidebar-row-hover: rgba(255, 255, 255, 0.05);
-  /* Dark Mica gradient was too flat to read (top=base). Lighten the top + darken
-     the bottom so the material is perceptible (ユーザー指摘: グラデ感が弱い). */
-  --sidebar-grad-top:  color-mix(in srgb, var(--sidebar-bg) 92%, #fff);
+  /* Mica depth comes from the DOWNWARD darkening only. The top stays at
+     sidebar-bg so the sidebar's top edge matches the flat tab-bar / query-builder
+     band (both --sidebar-bg) — lightening the top made the sidebar read as a
+     different colour from those surfaces in dark mode (ユーザー指摘: 色違い).
+     Light mode already uses this top=base form, which is why it never showed it. */
+  --sidebar-grad-top:  var(--sidebar-bg);
   --sidebar-grad-bot:  color-mix(in srgb, var(--sidebar-bg) 84%, #000);
   --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
 
