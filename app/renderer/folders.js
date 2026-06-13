@@ -16,6 +16,25 @@
   let loadPromise = null;
   const subs = [];
 
+  // i18n: this module owns the folder modal + its toasts. window.corpusI18n is a
+  // promise set by i18n.js (loaded before this script). Resolve once and cache
+  // getMessage as t(); until then t() echoes the key. Static modal labels are
+  // applied on resolve (and re-applied if the modal is open). Dynamic strings
+  // (toasts, row buttons, prompts, confirms) call t() at use time.
+  let t = (key, subs2) => key;
+  if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
+    window.corpusI18n.then((api) => {
+      if (api && api.getMessage) { t = api.getMessage; applyStaticI18n(); }
+    });
+  }
+  function applyStaticI18n() {
+    const modal = $('ivFolderModal'); if (!modal) return;
+    const title = modal.querySelector('.iv-insp-title'); if (title) title.textContent = t('foldManageTitle');
+    const inp = $('ivFolderNewName'); if (inp) inp.placeholder = t('foldNewPlaceholder');
+    const createBtn = $('ivFolderCreate'); if (createBtn) createBtn.textContent = t('foldCreate');
+    if (isManagerOpen()) renderModal();   // refresh empty-state / row labels if already shown
+  }
+
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -53,7 +72,7 @@
     if (wasIn) workspace = workspace.filter((c) => !ids.includes(c));
     else ids.forEach((c) => { if (!workspace.includes(c)) workspace.push(c); });
     persist();
-    toast(wasIn ? 'ワークスペースから外しました' : 'ワークスペースに追加');
+    toast(wasIn ? t('wsRemoved') : t('wsAdded'));
     notify('workspace');
     return wasIn ? 'removed' : 'added';
   }
@@ -62,7 +81,7 @@
     const n = workspace.length;
     workspace = [];
     persist();
-    toast('ワークスペースを空にしました');
+    toast(t('wsCleared'));
     notify('workspace');
     return n;
   }
@@ -88,7 +107,7 @@
     if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
     else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
     persist();
-    toast(wasIn ? `「${f.name}」から削除` : `「${f.name}」に追加`);
+    toast(wasIn ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]));
     notify('membership');
     return wasIn ? 'removed' : 'added';
   }
@@ -112,10 +131,10 @@
       return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}">` +
         `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
         `<span class="iv-fold-n">${f.items.length}</span>` +
-        `<button class="iv-fold-btn" data-fact="rename" title="名前変更">✎</button>` +
-        `<button class="iv-fold-btn" data-fact="delete" title="削除">🗑</button>` +
+        `<button class="iv-fold-btn" data-fact="rename" title="${escapeHtml(t('foldRename'))}">✎</button>` +
+        `<button class="iv-fold-btn" data-fact="delete" title="${escapeHtml(t('foldDelete'))}">🗑</button>` +
         `</div>`;
-    }).join('') : '<div class="iv-folder-empty">フォルダがありません。下の欄から作成してください。</div>';
+    }).join('') : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
   }
   function create() {
     const inp = $('ivFolderNewName'); if (!inp) return;
@@ -135,9 +154,9 @@
       const row = e.target.closest('.iv-folder-row'); if (!row) return;
       const act = e.target.closest('[data-fact]'); if (!act) return;
       const fid = row.dataset.fid; const f = byId(fid); if (!f) return;
-      if (act.dataset.fact === 'rename') { const name = window.prompt('フォルダ名', f.name); if (name && name.trim()) f.name = name.trim(); }
+      if (act.dataset.fact === 'rename') { const name = window.prompt(t('foldRenamePrompt'), f.name); if (name && name.trim()) f.name = name.trim(); }
       else if (act.dataset.fact === 'delete') {
-        if (!window.confirm(`フォルダ「${f.name}」を削除しますか？（中の画像自体は消えません）`)) return;
+        if (!window.confirm(t('foldDeleteConfirm', [f.name]))) return;
         folders = folders.filter((x) => x.id !== fid);
       }
       persist(); renderModal(); notify('list');
