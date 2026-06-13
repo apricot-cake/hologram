@@ -86,7 +86,9 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
 
   // Metadata comes from the platform's API (no DOM scraping).
   // fetchPostMetadata is defined in metadata.js (imported at the top).
-  const meta = await fetchPostMetadata(postUrl);
+  // expectedHost pins the Misskey/Mastodon instance fetch to the sender tab's
+  // host (SSRF guard — a hostile page can't aim the fetch at another host).
+  const meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
   const record = {
     captureId,
     image: `${captureId}.jpg`,
@@ -215,7 +217,9 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   const captureId = generateCaptureId();
   const capturedAt = new Date().toISOString();
 
-  const meta = await fetchPostMetadata(postUrl);
+  // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
+  // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
+  const meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
   const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
   if (!primary || !primary.url) throw new Error('Could not resolve a dragged image URL');
 

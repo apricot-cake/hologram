@@ -483,9 +483,21 @@ async function fetchPixivIllust(parsed, url) {
   return rec;
 }
 
-async function fetchPostMetadata(url) {
+async function fetchPostMetadata(url, opts) {
   const parsed = parsePostUrl(url);
   if (!parsed) return emptyRecord(url, null);
+  // SSRF / origin-confusion guard. Misskey & Mastodon derive the API host from
+  // the post URL (instances are arbitrary hosts), so a postUrl host chosen by a
+  // hostile page would aim our privileged background fetch at an attacker-named
+  // host. When the caller knows the sender tab's host, require the instance host
+  // to match it — content.js only ever extracts a same-instance permalink, so
+  // this rejects nothing legitimate. X / Bluesky / pixiv use fixed API hosts and
+  // are unaffected (their parse only matches the known hosts).
+  const expectedHost = opts && opts.expectedHost;
+  if (expectedHost && (parsed.platform === 'misskey' || parsed.platform === 'mastodon') &&
+      parsed.host !== expectedHost) {
+    return emptyRecord(url, parsed.platform);
+  }
   if (parsed.platform === 'x') return fetchXTweet(parsed, url);
   if (parsed.platform === 'bluesky') return fetchBlueskyPost(parsed, url);
   if (parsed.platform === 'misskey') return fetchMisskeyNote(parsed, url);
