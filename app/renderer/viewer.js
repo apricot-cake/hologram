@@ -1,6 +1,6 @@
 (async () => {
   // --- i18n ---
-  // Messages live in i18n.js (loaded before this script via viewer.html).
+  // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { lang, getMessage } = await window.corpusI18n;
   const _s = (key) => getMessage(key);

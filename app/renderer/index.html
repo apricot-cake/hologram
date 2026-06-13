@@ -187,17 +187,6 @@
     .switch input:checked + .switch-track { background: var(--accent); border-color: var(--accent); }
     .switch input:checked + .switch-track::after { transform: translateX(16px); background: #fff; }
     .switch input:focus-visible + .switch-track { box-shadow: var(--ring); }
-    .mode-nav { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
-    .nav-item {
-      display: flex; align-items: center; gap: 10px; width: 100%;
-      border: none; background: none; cursor: pointer; color: var(--fg);
-      padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: left;
-      transition: background .12s, color .12s;
-    }
-    .nav-item:hover { background: var(--sidebar-row-hover); }
-    .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
-    .nav-item.active { background: var(--accent-subtle); color: var(--accent); }
-    .nav-item.active svg { color: var(--accent); }
     .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
        固定フッターにして、スクロールバーがバーに被らないようにする。 */

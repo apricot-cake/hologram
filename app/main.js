@@ -458,7 +458,7 @@ ipcMain.handle('open-image-window', (_event, image) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'mode', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 ipcMain.handle('get-prefs', () => {
@@ -468,7 +468,6 @@ ipcMain.handle('get-prefs', () => {
     viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card',   // display density
     skipDeleteConfirm: !!cfg.skipDeleteConfirm,
     sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
-    mode: cfg.mode === 'image' ? 'image' : 'post',   // last-opened top-level tab
     imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // tile view: edge px
     cardSize: (Number.isFinite(cfg.cardSize) ? cfg.cardSize : null),       // card view: min column px
     listThumb: (Number.isFinite(cfg.listThumb) ? cfg.listThumb : null),    // list view: thumbnail px

@@ -102,7 +102,7 @@ async function fetchXTweet(parsed, url) {
   if (parsed.screenName) rec.url = `https://x.com/${parsed.screenName}/status/${parsed.id}`;
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
-    const res = await fetch(api, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await fetch(api);
     if (!res.ok) return rec;
     const j = await res.json();
     rec.text = j.text || null;
