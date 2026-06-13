@@ -131,8 +131,10 @@ semantic 変数のみ参照、primitive 直書き禁止）。
 | HTMLエスケープ | `ui.js` の `corpusUI.escapeHtml()`（`& < > " '` を全てエスケープ） | viewer/folders とも委譲。重複実装を作らない |
 | 操作ボタン | `.btn-outline`（通常）／`.btn-danger`（破壊・赤枠赤文字） | 角丸四角＝操作。ピル（`.chip`）で操作ボタンを作らない |
 | フィルタ値チップ | `.sb-chip`（サイドバー）／`.sb-active-chip`＋`qc-*`（アクティブバー） | 丸ピル＝値。active は tint |
-| アクティブ状態 | tint（手本 `.sb-chip.active`＝`--accent-subtle`＋`--accent`縁＋`--accent-subtle-fg`） | ソリッド塗り禁止（色セクション参照） |
-| 件数 | muted の地味表示（`.sb-subrow-count`／`.iv-tagn`） | 強調（accent-subtle ピル）が要る箇所が出るまで `.count-*` を新設しない |
+| アクティブ状態 | 淡 tint（`--accent-subtle` 地＋`--accent-subtle-fg` 文字／**ハードな accent 縁は付けない**） | 「主張しすぎ」却下。サイドバー全体で1つの控えめ表現に統一（フィルタ行の text-blue と同系）。ソリッド塗りも禁止 |
+| 件数バッジ | muted 真円 `.sb-row-badge`（`--surface-3` 地＋`--border`＋`--text-muted`・16px・flex 中央）。フィルタ件数もワークスペース件数も**同じパーツ** | 量＝muted（accent 塗りは浮く）。1桁=真円／2桁以上=自動でピル |
+| コントラスト（チップ/バッジ） | サイドバーのチップ/バッジは**可視縁（`--border`）を必ず持つ** | 地の tint だけに頼ると muted 背景で消える＝**再発するコントラスト問題の根治**。縁はコントラスト非依存で背景に左右されない |
+| hover-scale | `transform: scale(1.02)`（＋影リフト）は**サムネ／浮くボタン限定**（カード・タイル・丸ボタン）。常設の行/トグル/チップには付けない | 「持ち上がる」感（Pinterest）。何でも拡大は toy っぽく却下。`prefers-reduced-motion` でオフ |
 | メニュー／ポップ | `.fold-menu`／`.qf-popover`（ガラス） | フライアウト＝ガラス |
 
 - `ui.js` は `index.html` で `i18n.js → ui.js → folders.js → viewer.js` の順に読み込む（`corpusUI` を後続が参照するため先に）。

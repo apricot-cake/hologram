@@ -359,10 +359,9 @@
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
     .ws-row-wrap { position: relative; }
-    /* Workspace count = a quantity, not a state → muted (the accent tint floated
-       against the grey sidebar, user report). Inset by the filter rows' chevron
-       column (11px glyph + 7px gap = 18px) so the number lines up with their badges. */
-    #wsBadge.sb-row-badge { background: var(--surface-3); border-color: var(--border); color: var(--text-muted); margin-right: 18px; }
+    /* Workspace count uses the shared muted badge style; only inset it by the filter
+       rows' chevron column (11px glyph + 7px gap = 18px) so it lines up with theirs. */
+    #wsBadge.sb-row-badge { margin-right: 18px; }
     .ws-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
     .ws-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
     .ws-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
@@ -450,7 +449,7 @@
     .post-card {
       background: var(--surface); border-radius: 8px; overflow: hidden;
       border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
-      cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
+      cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s, transform 0.18s var(--ease-out);
       position: relative;
       /* Skip rendering offscreen cards (huge win for thousands of items, like
          the image grid). The intrinsic size is the per-density height estimate. */
@@ -460,6 +459,11 @@
       overflow-anchor: none;
     }
     .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); }
+    /* Hover lift: a slight scale + the deeper shadow reads as "picked up"
+       (Pinterest/gallery idiom). Cards & tiles only — list rows would jitter.
+       Transform origin is the center; off under prefers-reduced-motion. */
+    .post-grid:not(.list-view) .post-card:hover { transform: scale(1.02); z-index: 1; }
+    @media (prefers-reduced-motion: reduce) { .post-card:hover { transform: none; } }
     .post-card img {
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
@@ -1046,20 +1050,23 @@
     /* Value chips: FILLED pill, no outline (GitHub topics / Notion tags).
        The transparent border keeps geometry so the active tint border can
        appear without layout shift. Hover = neutral lift, never accent. */
+    /* Resting chip carries a visible border — relying on bg-tint alone made chips
+       vanish into the muted sidebar (recurring low-contrast complaint). A border
+       is contrast-independent, so it survives any background. */
     .sb-chip {
-      background: var(--chip-bg); border: 1px solid transparent; border-radius: 12px;
+      background: var(--chip-bg); border: 1px solid var(--border); border-radius: 12px;
       padding: 3px 12px; font-size: 11px; color: var(--text);
       cursor: pointer; white-space: nowrap;
       /* transition: all はスクロール時のスタイル再計算を重くするので対象プロパティを限定 */
       transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     }
     .sb-chip:hover { background: var(--chip-bg-hover); color: var(--text-strong); }
-    /* Active = tinted, not a solid saturated fill (淡色地＋アクセント文字＋細縁
-       — solid 単色のべた塗りはチープに見えるため、Linear/GitHub 系の選択表現に) */
+    /* Active = soft tint (light accent bg + accent text), NOT a saturated border —
+       the hard accent border read as too loud (user). Matches the quiet filter-row
+       active (accent text) for one consistent selection language across the sidebar. */
     .sb-chip.active {
-      background: var(--accent-subtle); border-color: var(--accent);
+      background: var(--accent-subtle); border-color: var(--accent-subtle);
       color: var(--accent-subtle-fg); font-weight: 600;
-      box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent);
     }
     /* tag chips cycle 解除→いずれか(OR)→すべて含む(AND): AND = 濃いめのティント + ＋ prefix */
     .sb-chip.active.and {
@@ -1230,14 +1237,19 @@
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
   .sb-row .sb-row-name { flex: 1; }
+  /* Count badge — active-filter count AND workspace count are the same part, so
+     unified: a MUTED circle (16×16 for one digit; widens to a pill for 2+), digit
+     centered both axes via flex. Muted because a count is a quantity, not a state
+     (the accent tint floated against the sidebar — user). */
   .sb-row .sb-row-badge {
-    display: none; min-width: 17px; height: 16px; padding: 0 5px;
-    border-radius: 8px; background: var(--accent-subtle);
-    border: 1px solid var(--accent-border); color: var(--accent-subtle-fg);
-    font-size: 10px; font-weight: 700; line-height: 14px; text-align: center;
+    display: none; min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 8px; background: var(--surface-3);
+    border: 1px solid var(--border); color: var(--text-muted);
+    font-size: 10px; font-weight: 700;
+    align-items: center; justify-content: center;
     box-sizing: border-box;
   }
-  .sb-row .sb-row-badge.on { display: inline-block; }
+  .sb-row .sb-row-badge.on { display: inline-flex; }
   /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
      All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
   .sb-row-arrow, .sb-subrow-arrow, .cs-btn .cs-arrow {
