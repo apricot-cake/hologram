@@ -50,6 +50,16 @@ function getSaveFolder() {
   return (typeof folder === 'string' && folder.trim()) ? folder : defaultLibraryDir();
 }
 
+// App-internal metadata files that live in the save folder but are NOT posts.
+// The renderer writes these constantly (tabs.json on every tab switch via
+// persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
+// IGNORE them — otherwise each write self-triggers a full library reload
+// (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
+const INTERNAL_FILES = new Set([
+  'config.json', '.index.json', 'tag-groups.json', 'ungrouped.json',
+  'manual-groups.json', 'folders.json', 'tabs.json',
+]);
+
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
 // single capture writes both a .jpg and a .json.
@@ -65,6 +75,8 @@ function watchSaveFolder() {
   try {
     folderWatcher = fs.watch(folder, (_event, filename) => {
       if (filename && !/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(filename)) return;
+      // App-internal metadata churns constantly; only real captures should refresh.
+      if (filename && INTERNAL_FILES.has(path.basename(filename))) return;
       clearTimeout(watchDebounce);
       watchDebounce = setTimeout(() => {
         if (win && !win.isDestroyed()) win.webContents.send('posts-changed');
@@ -819,7 +831,7 @@ function createWindow(show = true) {
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: dark ? '#202226' : '#ffffff', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
+    titleBarOverlay: { color: dark ? '#0e0f11' : '#f6f7f9', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

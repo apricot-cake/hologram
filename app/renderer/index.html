@@ -27,50 +27,100 @@
     #tabBar {
       height: var(--tabbar-h); flex-shrink: 0; display: flex; align-items: center;
       -webkit-app-region: drag;
-      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      background: var(--bg);
+      box-shadow: inset 0 -1px 0 var(--border);
       position: sticky; top: 0; z-index: 50;
     }
     #tabBarInner > * { -webkit-app-region: no-drag; }
     #tabBarInner {
-      width: env(titlebar-area-width, 100%); display: flex; align-items: center;
-      padding: 0 8px; gap: 4px; min-width: 0;
+      width: env(titlebar-area-width, 100%); display: flex; align-items: flex-end;
+      align-self: stretch;
+      /* padding-right reserves a permanent draggable gutter (no child sits in
+         padding, so it stays -webkit-app-region:drag). Chrome keeps a grab strip
+         right of the tabs so the window can always be moved/un-snapped even when
+         many tabs fill the bar; without it 4+ equal-width tabs ate the whole row. */
+      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px; gap: 0; min-width: 0;
     }
-    /* Window tabs (Phase 2) */
+    /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
+       32px bottom-flush box (one text axis); inactive hover = floating pill
+       inset within the box; active = connected to the band below with
+       concave "ears" at both bottom corners. */
     .tab-item {
-      position: relative; display: inline-flex; align-items: center; gap: 5px;
-      height: 28px; min-width: 96px; max-width: 200px;
+      position: relative; display: flex; align-items: center;
+      height: 32px; flex: 1 1 0; max-width: 200px; min-width: 0;
       padding: 0 8px 0 10px;
       background: transparent; border: none; border-radius: 8px;
       cursor: pointer; color: var(--text-muted); font-size: 12px;
-      transition: background .12s, color .12s;
-      white-space: nowrap; overflow: hidden; flex-shrink: 0;
+      transition: color .12s; overflow: hidden;
+      user-select: none;   /* .tab-item is a div now; dblclick = rename, not text selection */
     }
-    .tab-item.pinned { max-width: 120px; }
-    .tab-item.pinned:not(.active) { background: var(--accent-subtle); color: var(--accent); }
-    .tab-item:hover:not(.active) { background: var(--hover); color: var(--text); }
-    .tab-item.active { background: var(--seg-thumb); color: var(--text-strong); box-shadow: var(--shadow-xs); }
+    .tab-body {
+      display: flex; align-items: center; gap: 6px;
+      flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
+    }
+    /* Hover pill — floats centered inside the tab box */
+    .tab-item::before {
+      content: ''; position: absolute; inset: 3px 2px;
+      border-radius: 7px; background: transparent;
+      transition: background .12s; pointer-events: none;
+    }
+    /* ALL children above the ::before pill (icon/title/close/rename input) */
+    .tab-item > * { position: relative; z-index: 1; }
+    .tab-item.pinned:not(.active) { color: var(--accent); }
+    .tab-item.pinned:not(.active)::before { background: var(--accent-subtle); }
+    .tab-item:hover:not(.active) { color: var(--text); }
+    /* Hover pill colour: midway between the bar (--bg) and the band
+       (--sidebar-bg) — Chrome's hierarchy. var(--hover) collides with
+       --sidebar-bg in dark mode (both #202226), which would make a hovered
+       inactive tab look exactly like the active one. */
+    .tab-item:hover:not(.active)::before { background: color-mix(in srgb, var(--sidebar-bg) 60%, var(--bg)); }
+    /* Active tab: connected to the band below, Chrome-style concave ears */
+    .tab-item.active {
+      background: var(--sidebar-bg); color: var(--text-strong);
+      border-radius: 8px 8px 0 0; overflow: visible; z-index: 1;
+    }
+    /* Ear geometry: fill OUTSIDE a quarter-circle whose center sits at the
+       square's corner TOUCHING THE BAR BG (top-left for the left ear,
+       top-right for the right ear) — the filled sliver hugs the tab wall
+       and the band, the transparent bulk shows the bar. */
+    .tab-item.active::before {
+      inset: auto; bottom: 0; left: -8px;
+      width: 8px; height: 8px; border-radius: 0;
+      background: radial-gradient(circle 8px at top left, transparent 7.5px, var(--sidebar-bg) 8px);
+      transition: none;
+    }
+    .tab-item.active::after {
+      content: ''; position: absolute;
+      bottom: 0; right: -8px;
+      width: 8px; height: 8px;
+      background: radial-gradient(circle 8px at top right, transparent 7.5px, var(--sidebar-bg) 8px);
+      pointer-events: none;
+    }
     .tab-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: .7; display: flex; align-items: center; }
     .tab-item.active .tab-icon { opacity: 1; }
     .tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
     .tab-close {
-      flex-shrink: 0; width: 16px; height: 16px; border-radius: 3px;
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px; border-radius: 3px;
       display: flex; align-items: center; justify-content: center;
       background: none; border: none; cursor: pointer; padding: 0;
       color: var(--text-muted); opacity: 0; transition: opacity .12s, background .1s, color .1s;
-      margin-left: 2px;
     }
     .tab-item.active .tab-close { opacity: 1; }
     .tab-item:not(.active):hover .tab-close { opacity: .7; }
     .tab-close:hover { background: var(--hover); color: var(--text); opacity: 1 !important; }
     .tab-new {
       flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+      /* Vertically centered in the bar (tabs are flex-end / bottom-flush, so the
+         + needs align-self:center to sit on the bar's mid-line), with a small
+         gap from the last tab. */
+      align-self: center; margin-left: 6px;
       display: flex; align-items: center; justify-content: center;
       background: none; border: none; cursor: pointer; color: var(--text-muted);
-      transition: background .12s, color .12s; margin-left: 2px;
+      transition: background .12s, color .12s;
     }
     .tab-new:hover { background: var(--hover); color: var(--text); }
-    .tab-rename-input { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; border: none; outline: none; background: transparent; color: inherit; padding: 0; }
+    .tab-rename-input { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; border: none; outline: none; background: transparent; color: inherit; padding: 0; user-select: text; /* parent .tab-item is user-select:none */ }
     #appBody { display: flex; flex: 1; min-height: 0; }
 
     /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
@@ -86,14 +136,9 @@
          top-light vertical gradient + fine grain noise + 1px top highlight
          turn the flat fill into a surface with physicality. */
       background-color: var(--sidebar-bg);
-      background-image:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.045'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
-        linear-gradient(180deg,
-          color-mix(in srgb, var(--sidebar-bg) 94%, #fff) 0%,
-          var(--sidebar-bg) 26%,
-          color-mix(in srgb, var(--sidebar-bg) 96%, #000) 100%);
-      border-right: 1px solid var(--border);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      background-image: linear-gradient(180deg,
+        var(--sidebar-bg) 0%,
+        color-mix(in srgb, var(--sidebar-bg) 88%, #000) 100%);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
     }
@@ -183,6 +228,23 @@
     }
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
+
+    /* Sidebar scrollbar: auto-hide (macOS / Claude-Desktop overlay language).
+       A permanently-visible thumb drew a vertical line down the sidebar's right
+       edge that broke the tab → query-builder → sidebar surface into pieces
+       (ユーザー指摘). At rest the thumb is fully transparent so the --sidebar-bg
+       plane reads as one continuous surface; it fades in only while the pointer
+       is over the sidebar or a field inside it is focused. The track is already
+       transparent and the 10px width is unchanged, so nothing shifts — the bar
+       just stops being visible when idle. Position stays on the right (natural). */
+    .sb-scroll::-webkit-scrollbar-thumb { background: transparent; transition: background .18s ease; }
+    .sb-scroll:hover::-webkit-scrollbar-thumb,
+    .sb-scroll:focus-within::-webkit-scrollbar-thumb {
+      background: color-mix(in oklch, var(--text-subtle) 45%, transparent); background-clip: padding-box;
+    }
+    .sb-scroll::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box;
+    }
 
     #panelSettings { max-width: 720px; }
 
@@ -926,11 +988,10 @@
     }
     /* Active-filter bar pinned to the top of the content area (scroll-following). */
     .content-activebar {
-      position: sticky; top: 0; z-index: 10;
+      position: sticky; top: var(--tabbar-h); z-index: 10;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       margin: -24px -32px 16px; padding: 12px 32px;
-      background: var(--glass-bg-bar); border-bottom: 1px solid var(--border);
-      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
     }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far

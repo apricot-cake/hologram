@@ -1200,15 +1200,24 @@
     userKind: _ic('<path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/>'),
     folder:   _ic('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
   };
+  // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
+  let _sidebarSetsGen = -1;
+  let _cachedTagSet = null, _cachedHtSet = null, _cachedUserSet = null, _cachedInstSet = null;
+  function _rebuildSidebarSets() {
+    if (_sidebarSetsGen === _allPostsGeneration) return;
+    const snPosts = allPosts.filter(p => p.url);
+    _cachedTagSet  = new Set(snPosts.flatMap(p => p.tags || []));
+    _cachedHtSet   = new Set(snPosts.flatMap(p => p.hashtags || []));
+    _cachedUserSet = new Set(snPosts.map(p => userKey(p)));
+    _cachedInstSet = new Set(snPosts.filter(p => p.platform === 'misskey' || p.platform === 'mastodon').map(p => hostOf(p.url)).filter(Boolean));
+    _sidebarSetsGen = _allPostsGeneration;
+  }
   function updateSidebarTags() {
     const pinHost = document.getElementById('sbPinnedTags');
     const section = document.getElementById('pinnedSection');
     if (!pinHost || !section) return;
-    const snPosts = allPosts.filter(p => p.url);
-    const allTagSet  = new Set(snPosts.flatMap(p => p.tags || []));
-    const allHtSet   = new Set(snPosts.flatMap(p => p.hashtags || []));
-    const allUserSet = new Set(snPosts.map(p => userKey(p)));
-    const allInstSet = new Set(snPosts.filter(p => p.platform === 'misskey' || p.platform === 'mastodon').map(p => hostOf(p.url)).filter(Boolean));
+    _rebuildSidebarSets();
+    const allTagSet = _cachedTagSet, allHtSet = _cachedHtSet, allUserSet = _cachedUserSet, allInstSet = _cachedInstSet;
     const allFolderSet = new Set(CF() ? CF().all().map(f => f.id) : []);
     const EXISTS = { tag: v => allTagSet.has(v), hashtag: v => allHtSet.has(v), user: v => allUserSet.has(v), instance: v => allInstSet.has(v), folder: v => allFolderSet.has(v) };
     const pins = loadPins().filter(p => { const fn = EXISTS[p.type]; return fn ? fn(p.value) : true; });
@@ -1279,7 +1288,8 @@
     }
     if (chev) { chev.innerHTML = CHEV_D; chev.classList.toggle('collapsed', tagGroupsCollapsed); }
     host.classList.toggle('collapsed', tagGroupsCollapsed);
-    const allTagSet  = new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []));
+    _rebuildSidebarSets();
+    const allTagSet = _cachedTagSet;
     const activeTags = new Set(activeFilters.filter(f => f.type === 'tag').map(f => f.value));
     const rows = [];
     if (allTagSet.size) {
@@ -1302,6 +1312,7 @@
 
   // --- State ---
   let allPosts = [];
+  let _allPostsGeneration = 0;  // bumped on every allPosts replacement; invalidates sidebar caches
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let multiOnly = false;      // show only items with more than one image
@@ -1524,13 +1535,32 @@
   // --- Load posts ---
   // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
   // without replaying the entrance animation or resetting the scroll window.
+  let _loadPostsInFlight = false;
+  let _loadPostsPending = false;
   async function loadPosts(keepLimit) {
-    const { posts } = await window.corpus.listPosts();
-    allPosts = posts || [];
-    stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
-    renderPosts(keepLimit);
-    reconcileFolders();
-    renderPostFolders();
+    if (_loadPostsInFlight) { _loadPostsPending = true; return; }
+    _loadPostsInFlight = true;
+    try {
+      const { posts } = await window.corpus.listPosts();
+      // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per comparison.
+      const raw = posts || [];
+      for (const p of raw) {
+        p._dateMs      = p.date       ? +new Date(p.date)       : 0;
+        p._capturedMs  = p.capturedAt ? +new Date(p.capturedAt) : 0;
+      }
+      allPosts = raw;
+      _allPostsGeneration++;
+      stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
+      renderPosts(keepLimit);
+      reconcileFolders();
+      renderPostFolders();
+    } finally {
+      _loadPostsInFlight = false;
+      if (_loadPostsPending) {
+        _loadPostsPending = false;
+        loadPosts(true);  // background reload missed during in-flight — re-run once
+      }
+    }
   }
   function reconcileFolders() { if (CF()) CF().reconcile(new Set(allPosts.map(p => p.captureId))); }
 
@@ -1641,14 +1671,15 @@
     }
 
 
-    // Sort (unchanged)
+    // Sort — use pre-cached numeric timestamps (_dateMs/_capturedMs) to avoid
+    // new Date() per comparator call (was ~120k allocations per sort on 9k posts).
     switch (sort) {
-      case 'date-desc': posts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); break;
-      case 'date-asc': posts.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)); break;
+      case 'date-desc': posts.sort((a, b) => (b._dateMs || 0) - (a._dateMs || 0)); break;
+      case 'date-asc': posts.sort((a, b) => (a._dateMs || 0) - (b._dateMs || 0)); break;
       case 'likes-desc': posts.sort((a, b) => (b.likes || 0) - (a.likes || 0)); break;
       case 'reposts-desc': posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0)); break;
       case 'replies-desc': posts.sort((a, b) => (b.replies || 0) - (a.replies || 0)); break;
-      case 'captured-desc': posts.sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || '')); break;
+      case 'captured-desc': posts.sort((a, b) => (b._capturedMs || 0) - (a._capturedMs || 0)); break;
       case 'likes-pct': { const pct = percentileFn(posts); posts.sort((a, b) => pct(b) - pct(a)); break; }
     }
 
@@ -1786,10 +1817,13 @@
       const closeBtn = (!t.pinned && tabs.length > 1)
         ? '<button class="tab-close" data-close="' + escapeAttr(t.id) + '" title="' + escapeAttr(MSG.tabClose) + '" aria-label="' + escapeAttr(MSG.tabClose) + '"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>'
         : '';
-      html += '<button class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" data-tab="' + escapeAttr(t.id) + '" title="' + escapeAttr(ttl) + '">'
-        + '<span class="tab-icon" aria-hidden="true">' + icon + '</span>'
-        + '<span class="tab-title">' + escapeHtml(ttl) + '</span>'
-        + closeBtn + '</button>';
+      // NOTE: must be a <div>, not <button> — a button cannot contain the
+      // .tab-close button (the HTML parser auto-closes the outer one, which
+      // sprays the close buttons between the tabs as siblings).
+      html += '<div class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" tabindex="0" data-tab="' + escapeAttr(t.id) + '" title="' + escapeAttr(ttl) + '">'
+        + '<span class="tab-body"><span class="tab-icon" aria-hidden="true">' + icon + '</span>'
+        + '<span class="tab-title">' + escapeHtml(ttl) + '</span></span>'
+        + closeBtn + '</div>';
     }
     html += '<button class="tab-new" title="' + escapeAttr(MSG.tabNew) + '" aria-label="' + escapeAttr(MSG.tabNew) + '"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>';
     bar.innerHTML = html;
@@ -2469,7 +2503,7 @@
     const host = document.getElementById('postFolderChips');
     if (!host || !CF()) return;
     const list = CF().all();
-    const existing = new Set(allPosts.filter(p => p.url).map(p => p.captureId));
+    const existing = new Set(allPosts.filter(p => p.url && p.captureId).map(p => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
     const state = new Map(activeFilters.filter(f => f.type === 'folder').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     host.innerHTML = list.map(f => {
@@ -3767,10 +3801,15 @@ render()
     return String(n);
   }
 
+  // Cached Intl formatters: toLocaleDateString/TimeString build a fresh formatter
+  // on every call, which dominated render time (formatDate runs 2×/card for the
+  // hover tooltip × 150 cards). Reusing one formatter each is ~10× faster.
+  const _dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });
+  const _timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
   function formatDate(isoStr) {
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return _dateFmt.format(d) + ' ' + _timeFmt.format(d);
   }
 
   function formatExportDate() {
