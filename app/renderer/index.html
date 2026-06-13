@@ -359,6 +359,10 @@
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
     .ws-row-wrap { position: relative; }
+    /* Workspace count = a quantity, not a state → muted (the accent tint floated
+       against the grey sidebar, user report). Inset by the filter rows' chevron
+       column (11px glyph + 7px gap = 18px) so the number lines up with their badges. */
+    #wsBadge.sb-row-badge { background: var(--surface-3); border-color: var(--border); color: var(--text-muted); margin-right: 18px; }
     .ws-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
     .ws-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
     .ws-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
