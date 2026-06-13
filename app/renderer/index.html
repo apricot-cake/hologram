@@ -141,6 +141,10 @@
         var(--sidebar-grad-bot) 100%);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
+      /* Hairline vs the content area. In light mode --bg (gray-50) and --sidebar-bg
+         (near-white) sat too close and read as one surface (ユーザー指摘: 溶け合い).
+         macOS/Finder-style 1px border; box-shadow keeps the 248px width unchanged. */
+      box-shadow: 1px 0 0 var(--border);
     }
     /* Settings gear pinned bottom-left of the sidebar (title/theme button removed;
        theme moved into Settings). */
