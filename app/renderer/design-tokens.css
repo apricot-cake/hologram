@@ -153,7 +153,7 @@
      value hover was invisible on sidebar rows (ユーザー指摘). Light mode darkens; dark lightens. */
   --hover:         #2a2d33;
   --active:        #34373d;
-  --sidebar-row-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-row-hover: rgba(255, 255, 255, 0.09);
   /* Mica depth comes from the DOWNWARD darkening only. The top stays at
      sidebar-bg so the sidebar's top edge matches the flat tab-bar / query-builder
      band (both --sidebar-bg) — lightening the top made the sidebar read as a
