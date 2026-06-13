@@ -1476,6 +1476,9 @@
   // The "artwork pages" of one record: original media, else the dragged/migrated image.
   const groupFilesOf = (p) => { const m = mediaFilesOf(p); if (m.length) return m; const a = artworkFile(p); return a ? [a] : []; };
   function groupRecords(list) {
+    // url-derived group key, precomputed once per record by stampPost (_postKey);
+    // fall back to a live parse for any record that somehow predates the stamp.
+    const pk = (p) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
     const manualOf = new Map();   // captureId → 'manual:idx' (manual groups win)
     manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
     let solo = 0;
@@ -1484,7 +1487,7 @@
       const mg = manualOf.get(p.captureId);
       if (mg) key = mg;
       else {
-        const k = postKeyOf(p.url);
+        const k = pk(p);
         key = (k && !ungrouped.has(k)) ? k : ('__solo' + (solo++));
       }
       return { p, key };
@@ -1494,7 +1497,7 @@
     // render as one card. The platform-local own-id is the last segment of the
     // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
     // suppress the merge for either side.
-    const pidOf = (p) => { const k = postKeyOf(p.url); return k ? k.split(/[/:]/).pop() : null; };
+    const pidOf = (p) => { const k = pk(p); return k ? k.split(/[/:]/).pop() : null; };
     const idIndex = new Map();    // userId + '|' + ownPostId → entry
     for (const e of base) {
       const id = pidOf(e.p);
@@ -1504,7 +1507,7 @@
     for (const e of base) {
       const p = e.p;
       if (!p.replyToId || !p.userId) continue;
-      const ownKey = postKeyOf(p.url);
+      const ownKey = pk(p);
       if (!ownKey || ungrouped.has(ownKey)) continue;
       const parent = idIndex.get(p.userId + '|' + String(p.replyToId));
       if (!parent || parent.key === e.key) continue;
@@ -1557,6 +1560,7 @@
   function stampPost(p) {
     p._dateMs     = p.date       ? +new Date(p.date)       : 0;
     p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
+    p._postKey    = postKeyOf(p.url);   // url-derived group key; groupRecords would re-parse it 3x/record otherwise
     return p;
   }
   // Authoritative cache keyed by captureId. The renderer holds the full set and
@@ -3413,7 +3417,13 @@
   // Search / sort events
   // NOTE: not addEventListener('input', renderPosts) — the Event object would
   // arrive as a truthy keepLimit and skip the history push / fresh-render path.
-  document.getElementById('searchBox').addEventListener('input', () => renderPosts());
+  // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
+  // stutters; coalesce to the pause after typing.
+  let _searchRenderTimer = null;
+  document.getElementById('searchBox').addEventListener('input', () => {
+    clearTimeout(_searchRenderTimer);
+    _searchRenderTimer = setTimeout(() => renderPosts(), 150);
+  });
 
   // --- リアルタイム検索サジェスト -------------------------------------------
   // タイプのたびに、本文検索と並行してタグ/作者/フォルダの候補を検索ボックス
@@ -3480,7 +3490,14 @@
   });
   {
     const sb = document.getElementById('searchBox');
-    sb.addEventListener('input', () => { suggestIdx = -1; renderSuggest(); });
+    // Reset the highlighted row immediately (cheap), but debounce the suggest
+    // recompute (scans tags/authors/folders) to match the search debounce.
+    let _suggestTimer = null;
+    sb.addEventListener('input', () => {
+      suggestIdx = -1;
+      clearTimeout(_suggestTimer);
+      _suggestTimer = setTimeout(renderSuggest, 150);
+    });
     sb.addEventListener('focus', renderSuggest);
     sb.addEventListener('blur', () => setTimeout(hideSuggest, 150));
     sb.addEventListener('keydown', (e) => {
