@@ -813,6 +813,41 @@ ipcMain.handle('import-images', async () => {
   return { imported, skipped };
 });
 
+// --- Window size/position persistence ---
+// The window was fixed at 1100x820 every launch. Save bounds to config.json
+// (`windowBounds`) and restore them, clamped to a visible display so a
+// disconnected monitor can't reopen the window off-screen.
+let _boundsSaveTimer = null;
+function persistWindowBounds() {
+  clearTimeout(_boundsSaveTimer);
+  _boundsSaveTimer = setTimeout(saveWindowBoundsNow, 400);
+}
+function saveWindowBoundsNow() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds();
+    const cfg = readConfig();
+    cfg.windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: win.isMaximized() };
+    writeConfig(cfg);
+  } catch { /* best-effort */ }
+}
+function savedWindowBounds() {
+  const b = readConfig().windowBounds;
+  if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height) || b.width < 400 || b.height < 300) return null;
+  try {
+    const { screen } = require('electron');
+    const onScreen = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y;
+    });
+    // Off-screen (e.g. monitor unplugged) → keep the size, drop x/y so the OS centers it.
+    if (!onScreen || !Number.isFinite(b.x) || !Number.isFinite(b.y)) {
+      return { width: b.width, height: b.height, isMaximized: !!b.isMaximized };
+    }
+  } catch { /* screen module unavailable before ready — fall through to use as-is */ }
+  return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
+}
+
 // --- Window ---
 function createWindow(show = true) {
   // Resolve the theme from config up front so the first paint (and the window's
@@ -823,9 +858,14 @@ function createWindow(show = true) {
   const cfgTheme = readConfig().theme;
   const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
   const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
+  const smoke = process.env.CORPUS_SMOKE === '1';
+  const sb = smoke ? null : savedWindowBounds();
   win = new BrowserWindow({
-    width: 1100,
-    height: 820,
+    width: (sb && sb.width) || 1100,
+    height: (sb && sb.height) || 820,
+    ...(sb && Number.isFinite(sb.x) ? { x: sb.x, y: sb.y } : {}),
+    minWidth: 720,
+    minHeight: 480,
     show,
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Corpus',
@@ -840,6 +880,15 @@ function createWindow(show = true) {
     }
   });
   win.removeMenu();
+  if (!smoke) {
+    if (sb && sb.isMaximized) win.maximize();
+    // Remember size/position across launches (debounced on resize/move; flushed on close).
+    win.on('resize', persistWindowBounds);
+    win.on('move', persistWindowBounds);
+    win.on('maximize', persistWindowBounds);
+    win.on('unmaximize', persistWindowBounds);
+    win.on('close', saveWindowBoundsNow);
+  }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme } });
 }
 
