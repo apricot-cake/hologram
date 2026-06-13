@@ -128,6 +128,10 @@
     sortCaptured: _s('sortCaptured'),
     sortLikesPct: _s('sortLikesPct'),
     filterAll: _s('filterAll'),
+    reset: _s('reset'),
+    close: _s('close'),
+    tileSizeTip: _s('tileSizeTip'),
+    foldersNone: _s('foldersNone'),
     postCount: _f1('postCount'),
 
     // empty states
@@ -271,6 +275,7 @@
     qfImage: _s('qfImage'),
     qfVideo: _s('qfVideo'),
     qfGif: _s('qfGif'),
+    qfMultiImage: _s('qfMultiImage'),
     qfApply: _s('qfApply'),
     qfDelete: _s('qfDelete'),
     qfDatePost: _s('qfDatePost'),
@@ -308,7 +313,12 @@
   setText('sbAuthorTitle', MSG.sidebarAuthors);
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
   const wsClearEl = document.getElementById('wsClear');
-  if (wsClearEl) wsClearEl.title = MSG.wsEmptyTip;
+  if (wsClearEl) { wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
+  setAttr('contentTop', 'aria-label', MSG.sbTopTip);
+  setAttr('tileSlider', 'title', MSG.tileSizeTip);
+  setText('postResetBtn', MSG.reset);
+  setAttr('settingsClose', 'aria-label', MSG.close);
+  setAttr('settingsClose', 'title', MSG.close);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
   setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
@@ -507,7 +517,7 @@
     const allCount = (ctx && ctx.allCount != null) ? ctx.allCount : 0;
 
     if (!filters.length && !search && !multi) {
-      return { text: 'すべて(' + formatCount(allCount) + ')', iconType: 'all' };
+      return { text: MSG.filterAll + '(' + formatCount(allCount) + ')', iconType: 'all' };
     }
 
     const parts = [];
@@ -2504,7 +2514,7 @@
     if (!host || !CF()) return;
     const list = CF().all();
     const existing = new Set(allPosts.filter(p => p.url && p.captureId).map(p => p.captureId));
-    if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">なし</span>'; return; }
+    if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">' + escapeHtml(MSG.foldersNone) + '</span>'; return; }
     const state = new Map(activeFilters.filter(f => f.type === 'folder').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;

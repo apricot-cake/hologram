@@ -108,6 +108,10 @@
       sortCaptured: 'キャプチャ日時順',
       sortLikesPct: '人気順（SNS内）',
       filterAll: 'すべて',
+      reset: 'リセット',
+      close: '閉じる',
+      tileSizeTip: 'タイルの大きさ',
+      foldersNone: 'なし',
       postCount: '$1 件ヒット',
 
       // viewer: empty states
@@ -400,6 +404,10 @@
       sortCaptured: 'Captured date',
       sortLikesPct: 'Top (within SNS)',
       filterAll: 'All',
+      reset: 'Reset',
+      close: 'Close',
+      tileSizeTip: 'Tile size',
+      foldersNone: 'None',
       postCount: '$1 hits',
 
       emptyTitle: 'No posts yet',
