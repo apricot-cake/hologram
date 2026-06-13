@@ -446,11 +446,15 @@ function getSiteConfig() {
 }
 
 // === pixiv helpers ===
-// pximg URL filename embeds the artwork id: <id>_p<N>_<size>.<ext>.
-const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
 
 function pixivIdFromImg(img) {
   if (!(img instanceof Element)) return null;
+  // pximg URL filename embeds the artwork id: <id>_p<N>_<size>.<ext>.
+  // Declared INSIDE the function (not as a top-level `const`) on purpose: this
+  // content script is re-injected on every Alt+S, and a top-level lexical
+  // binding would trip an "already declared" SyntaxError during script
+  // instantiation — before the runtime re-injection guard can run.
+  const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
   for (const src of [img.src, img.currentSrc]) {
     const m = src && src.match(PXIMG_FILENAME);
     if (m) return m[1];
