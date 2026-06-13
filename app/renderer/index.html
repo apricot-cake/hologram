@@ -1234,6 +1234,10 @@
   #filterRows .sb-row .sb-row-arrow:not(.sb-row-disclosure) { opacity: 0; transition: opacity .12s; }
   #filterRows .sb-row:hover .sb-row-arrow:not(.sb-row-disclosure),
   #filterRows .sb-row.qf-open .sb-row-arrow:not(.sb-row-disclosure) { opacity: 1; }
+  /* Tag sub-rows (すべてのタグ/人物…) share the same hover-only flyout chevron */
+  #filterRows .sb-subrow .sb-subrow-arrow { opacity: 0; transition: opacity .12s; }
+  #filterRows .sb-subrow:hover .sb-subrow-arrow,
+  #filterRows .sb-subrow.qf-open .sb-subrow-arrow { opacity: 1; }
   /* tag-group buttons: squared corners + chevron so they read as「開くもの」—
      丸ピル（タグ実体）との境界をはっきりさせる */
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
