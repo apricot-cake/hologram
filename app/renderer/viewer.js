@@ -3895,11 +3895,7 @@ render()
     return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join('-');
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
+  function escapeHtml(str) { return window.corpusUI.escapeHtml(str); }
 
   // escapeHtml (textContent->innerHTML) does NOT escape quotes, so it is unsafe
   // inside a double-quoted attribute (a `"` in API-sourced text would break out).
@@ -3919,19 +3915,9 @@ render()
     });
   }
 
-  function showToast(msg) {
-    let toast = document.getElementById('toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'toast';
-      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;z-index:99999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
-      document.body.appendChild(toast);
-    }
-    toast.textContent = msg;
-    toast.style.opacity = '1';
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-  }
+  // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid
+  // #333 #toast; unified to #ivToast so viewer + folders share one look.
+  function showToast(msg) { return window.corpusUI.notify(msg); }
 
   // --- Init ---
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)

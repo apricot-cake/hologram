@@ -35,9 +35,7 @@
     if (isManagerOpen()) renderModal();   // refresh empty-state / row labels if already shown
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
+  function escapeHtml(s) { return window.corpusUI.escapeHtml(s); }
   function genId() { return 'f-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
@@ -113,13 +111,7 @@
   }
 
   // --- toast (shared, top-level #ivToast) ---
-  let toastTimer = null;
-  function toast(msg) {
-    const el = $('ivToast'); if (!el) return;
-    el.textContent = msg; el.classList.add('show');
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
-  }
+  function toast(msg) { return window.corpusUI.notify(msg); }
 
   // --- management modal ---
   function isManagerOpen() { const m = $('ivFolderModal'); return !!(m && !m.hidden); }
