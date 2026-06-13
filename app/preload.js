@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('corpus', {
   pickSaveFolder: () => ipcRenderer.invoke('pick-save-folder'),
   setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   listPosts: () => ipcRenderer.invoke('list-posts'),
+  // Delta refresh: pass true once a full snapshot is held; main returns either a
+  // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
+  listPostsDelta: (haveBaseline) => ipcRenderer.invoke('list-posts-delta', haveBaseline),
   getTagGroups: () => ipcRenderer.invoke('get-tag-groups'),
   setTagGroups: (groups) => ipcRenderer.invoke('set-tag-groups', groups),
   getUngrouped: () => ipcRenderer.invoke('get-ungrouped'),

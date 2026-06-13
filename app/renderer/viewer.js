@@ -1552,20 +1552,35 @@
   // --- Load posts ---
   // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
   // without replaying the entrance animation or resetting the scroll window.
+  // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
+  // comparison (done once per record on arrival, not per render).
+  function stampPost(p) {
+    p._dateMs     = p.date       ? +new Date(p.date)       : 0;
+    p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
+    return p;
+  }
+  // Authoritative cache keyed by captureId. The renderer holds the full set and
+  // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
+  // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
+  // its order is irrelevant since getFilteredPosts() always re-sorts.
+  let _postsById = new Map();
+  let _haveBaseline = false;     // false until we hold a full snapshot (also reset on reload = fresh module state)
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
   async function loadPosts(keepLimit) {
     if (_loadPostsInFlight) { _loadPostsPending = true; return; }
     _loadPostsInFlight = true;
     try {
-      const { posts } = await window.corpus.listPosts();
-      // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per comparison.
-      const raw = posts || [];
-      for (const p of raw) {
-        p._dateMs      = p.date       ? +new Date(p.date)       : 0;
-        p._capturedMs  = p.capturedAt ? +new Date(p.capturedAt) : 0;
+      const res = await window.corpus.listPostsDelta(_haveBaseline);
+      if (!res || res.full) {
+        _postsById = new Map();
+        for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
+      } else {
+        for (const id of (res.removed || [])) _postsById.delete(id);
+        for (const p of (res.added || [])) _postsById.set(p.captureId, stampPost(p));
       }
-      allPosts = raw;
+      _haveBaseline = true;
+      allPosts = [..._postsById.values()];
       _allPostsGeneration++;
       stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
       renderPosts(keepLimit);
@@ -2643,6 +2658,7 @@
       try { await window.corpus.deletePost(r.image || r.video); } catch { /* keep going */ }
       const idx = allPosts.findIndex(p => p.captureId === r.captureId);
       if (idx >= 0) allPosts.splice(idx, 1);
+      _postsById.delete(r.captureId);   // keep the delta cache in sync with the optimistic removal
     }
     renderPosts(true);
     reconcileFolders();   // 削除した captureId をフォルダから即時掃除
@@ -3702,6 +3718,7 @@
       if (confirmKeywordEl.value.trim() !== MSG.deleteKeyword) return;
       setConfirmKeywordMode(false);
       await window.corpus.clearAll();
+      _postsById = new Map();   // keep the delta cache in sync with the wipe
       allPosts = [];
       renderPosts();
       showToast(MSG.cleared);

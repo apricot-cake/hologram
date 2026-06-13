@@ -11,7 +11,7 @@ const nativeHostDir = app.isPackaged
   : path.join(__dirname, '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
-const { createPostIndex } = require('./lib-index');
+const { createPostIndex, computeDelta } = require('./lib-index');
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
@@ -106,6 +106,30 @@ async function listPosts() {
   const { posts, changed } = await postIndex.list(folder);
   if (changed) scheduleSnapshot(folder);
   return { saveFolder: folder, posts };
+}
+
+// Delta variant for the renderer. Serializing all ~9k records over IPC on every
+// refresh costs ~450ms (the new bottleneck once the scan is indexed). The window
+// is a single client, so main tracks what it last delivered and ships only
+// added/updated/removed records — a post-capture refresh becomes O(changed).
+// `haveBaseline` is the renderer asserting it still holds the last full set; when
+// either side lacks a baseline (cold main, folder switch, or a renderer that
+// reloaded and lost its cache) we resend a full snapshot and both sides re-sync.
+let _deltaFolder = null;
+let _lastSent = new Map();   // captureId -> mtimeMs last delivered to the renderer
+async function listPostsDelta(haveBaseline) {
+  const folder = getSaveFolder();
+  if (!folder) { _deltaFolder = null; _lastSent = new Map(); return { saveFolder: null, full: true, posts: [] }; }
+  const { posts, changed, stamps } = await postIndex.list(folder);
+  if (changed) scheduleSnapshot(folder);
+  if (!haveBaseline || _deltaFolder !== folder) {
+    _deltaFolder = folder;
+    _lastSent = new Map(stamps);
+    return { saveFolder: folder, full: true, posts };
+  }
+  const { added, removed } = computeDelta(_lastSent, posts, stamps);
+  _lastSent = new Map(stamps);
+  return { saveFolder: folder, full: false, added, removed };
 }
 
 // --- Native host registration (idempotent, on each launch) ---
@@ -238,6 +262,7 @@ ipcMain.handle('pick-save-folder', async () => {
 });
 
 ipcMain.handle('list-posts', () => listPosts());
+ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline));
 
 // Tag groups (migrated from the imported library's metadata) live alongside the
 // sidecars as <saveFolder>/tag-groups.json: { groups: [{id,name,tags[]}] }.

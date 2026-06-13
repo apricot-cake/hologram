@@ -85,9 +85,13 @@ function createPostIndex(opts) {
     for (const k of [...map.keys()]) if (!present.has(k)) { map.delete(k); changed = true; }
 
     const posts = [];
-    for (const f of sidecars) { const e = map.get(f); if (e && e.record) posts.push(e.record); }
+    const stamps = new Map();   // captureId -> mtimeMs, for the main process's delta IPC
+    for (const f of sidecars) {
+      const e = map.get(f);
+      if (e && e.record) { posts.push(e.record); stamps.set(e.record.captureId, e.mtimeMs); }
+    }
     posts.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
-    return { posts, changed };
+    return { posts, changed, stamps };
   }
 
   // Persist the current map to <folder>/.index.json atomically (tmp + rename).
@@ -104,4 +108,16 @@ function createPostIndex(opts) {
   return { list, writeSnapshot, INDEX_FILE, _size: () => map.size };
 }
 
-module.exports = { createPostIndex, INDEX_FILE, isPostRecord };
+// Compute the renderer delta between what was last delivered (lastSent: a Map of
+// captureId -> mtimeMs) and the current scan (posts + stamps). added = records
+// that are new or whose mtime moved; removed = ids no longer present. Pure so it
+// unit-tests directly (the main process owns the lastSent state).
+function computeDelta(lastSent, posts, stamps) {
+  const added = [];
+  for (const p of posts) { if (lastSent.get(p.captureId) !== stamps.get(p.captureId)) added.push(p); }
+  const removed = [];
+  for (const id of lastSent.keys()) if (!stamps.has(id)) removed.push(id);
+  return { added, removed };
+}
+
+module.exports = { createPostIndex, computeDelta, INDEX_FILE, isPostRecord };

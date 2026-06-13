@@ -12,7 +12,7 @@ const assert = require('assert');
 const realFs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createPostIndex } = require('../app/lib-index.js');
+const { createPostIndex, computeDelta } = require('../app/lib-index.js');
 
 const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index-'));
 const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json',
@@ -84,6 +84,22 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   assert.strictEqual(r.changed, false, 'cold instance with matching mtimes reports no change');
   assert.strictEqual(sidecarReads, 0, 'cold instance restores from snapshot, reads no sidecar');
 
+  // --- computeDelta: the renderer diff (new / mtime-moved => added; gone => removed) ---
+  const post = (id, m) => ({ captureId: id, _m: m });
+  const stampsOf = (arr) => new Map(arr.map((p) => [p.captureId, p._m]));
+  // baseline a@1, b@1, c@1
+  const base = [post('a', 1), post('b', 1), post('c', 1)];
+  const last = stampsOf(base);
+  // now: a unchanged, b edited (mtime 2), c removed, d added
+  const now = [post('a', 1), post('b', 2), post('d', 5)];
+  const d = computeDelta(last, now, stampsOf(now));
+  assert.deepStrictEqual(d.added.map((p) => p.captureId).sort(), ['b', 'd'], 'added = new + mtime-moved');
+  assert.deepStrictEqual(d.removed.sort(), ['c'], 'removed = gone');
+  // no-op delta
+  const d0 = computeDelta(stampsOf(now), now, stampsOf(now));
+  assert.strictEqual(d0.added.length, 0, 'unchanged => no adds');
+  assert.strictEqual(d0.removed.length, 0, 'unchanged => no removes');
+
   realFs.rmSync(dir, { recursive: true, force: true });
-  console.log('PASS test-index: O(changed) reuse, prune, and snapshot cold-restore verified');
+  console.log('PASS test-index: O(changed) reuse, prune, snapshot cold-restore, and computeDelta verified');
 })().catch((e) => { try { realFs.rmSync(dir, { recursive: true, force: true }); } catch {} console.error('FAIL test-index:', e && e.message ? e.message : e); process.exit(1); });
