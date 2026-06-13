@@ -546,7 +546,13 @@
     .post-grid:not(.tile-view):not(.list-view) .post-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     .post-grid:not(.tile-view):not(.list-view) .post-foot { margin-top: auto; }
 
-    .post-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+    /* Selection ring as an overlay (::after) so it paints ABOVE the positioned
+       .card-thumb. An `outline` on the card was painted under the thumb, so it
+       looked thinner over the thumbnail than over the meta (user report). */
+    .post-card.selected::after {
+      content: ''; position: absolute; inset: 0; z-index: 6;
+      border: 3px solid var(--accent); border-radius: 8px; pointer-events: none;
+    }
     /* ○ select ring — the ONLY selection entry point. A hollow white ring with a
        soft dark halo (visible on any image), top-left, shown on hover; fills with
        the accent + ✓ once selected (selected cards keep it shown). */
