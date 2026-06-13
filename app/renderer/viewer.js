@@ -611,13 +611,18 @@
 
   // Card footer date: ONE compact date (Ivory/Tweetbot cell anatomy — full
   // timestamps belong to the tooltip and the inspector, not the card).
+  // Month-name short date (e.g. "Jun 13" / "6月13日") — a bare "6/13" reads as a
+  // fraction / page count next to the ×N image badge (user report). Formatters
+  // cached: compactDate runs once per card × up to 150 cards.
+  const _compactFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+  const _compactFmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   function compactDate(ds) {
     if (!ds) return '';
     const d = new Date(ds);
     if (isNaN(d)) return '';
     return d.getFullYear() === new Date().getFullYear()
-      ? `${d.getMonth() + 1}/${d.getDate()}`
-      : `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+      ? _compactFmt.format(d)
+      : _compactFmtY.format(d);
   }
 
   const PF_NAME = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
