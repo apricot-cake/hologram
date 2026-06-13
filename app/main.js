@@ -725,7 +725,7 @@ const BACKUP_DEFAULTS = {
   retention: 5,           // 直近何世代の ZIP を残すか
   interval: false,        // 一定間隔
   intervalValue: 1,       // 間隔の数
-  intervalUnit: 'day',    // 'day' | 'week' | 'year'
+  intervalUnit: 'day',    // 'day' | 'week' | 'month'
   lastRunAt: null,
   lastResult: null
 };
@@ -793,15 +793,25 @@ async function runBackup(reason) {
 }
 
 let backupIntervalTimer = null;
+// Node の setInterval は 2^31-1 ms 超の delay を 1ms にクランプするため、
+// 大きな間隔（week×4 以上・year など）を直接渡すと暴走する。
+// 短い heartbeat（1分）で due を判定し、閾値を超えたときだけ実行する方式に変更。
+const BACKUP_HEARTBEAT_MS = 60 * 1000;
 function backupIntervalMs(b) {
-  const unitMs = { day: 86400000, week: 604800000, year: 31536000000 };
+  // 'year' は UI から廃止済みだが旧設定値の後方互換として残す
+  const unitMs = { day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
   return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
 }
 function armBackupSchedule() {
   if (backupIntervalTimer) { clearInterval(backupIntervalTimer); backupIntervalTimer = null; }
   const b = readBackupConfig();
-  if (!b.dir) return;
-  if (b.interval) backupIntervalTimer = setInterval(() => { runBackup('interval'); }, backupIntervalMs(b));
+  if (!b.dir || !b.interval) return;
+  backupIntervalTimer = setInterval(() => {
+    const cur = readBackupConfig();
+    if (!cur.dir || !cur.interval) return;
+    const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
+    if ((Date.now() - last) >= backupIntervalMs(cur)) runBackup('interval');
+  }, BACKUP_HEARTBEAT_MS);
 }
 
 ipcMain.handle('get-backup', () => readBackupConfig());
