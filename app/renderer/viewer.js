@@ -1348,6 +1348,12 @@
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
+  // card/list serve a thumbnail too now (they used to load the full original —
+  // multi-MB pixiv/X art decoded on every scroll and stuttered). DPR-aware, 60px
+  // buckets, capped at the thumbnailer's 720px max (main.js getThumbnail).
+  const _dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cardThumbW = () => Math.min(720, Math.max(240, Math.ceil((cardSize * 1.3 * _dpr) / 60) * 60));
+  const listThumbW = () => Math.min(720, Math.max(120, Math.ceil((listThumb * 1.5 * _dpr) / 60) * 60));
   function applyTileLayout() {
     const grid = document.getElementById('postGrid');
     if (grid) {
@@ -2187,6 +2193,11 @@
       const textRaw = p.text || p.title || '';
       const textPreview = textRaw === userName ? '' : escapeHtml(textRaw);
       const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
+      // GIFs stay full-size in card/list so they keep animating (the thumbnailer
+      // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
+      const imgW = currentView === 'tile' ? tileThumbW()
+        : /\.gif$/i.test(imgFile || '') ? 0
+        : (currentView === 'list' ? listThumbW() : cardThumbW());
       const nImg = g.files.length;                    // ×N badge: total images across the group
       const likesOv = p.likes != null ? `<span class="ov-likes">♡ ${MSG.likes(p.likes)}</span>` : '';
 
@@ -2209,7 +2220,7 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, currentView === 'tile' ? tileThumbW() : 0)}" alt="" loading="lazy" decoding="async">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
+        ${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="lazy" decoding="async">` : (p.video ? '<div class="card-img card-video">▶</div>' : '')}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
