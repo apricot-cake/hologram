@@ -297,11 +297,30 @@
   --glass-bg-panel:color-mix(in srgb, var(--surface) 88%, transparent);
   --glass-filter:  blur(24px) saturate(140%);
   --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.35);
+
+  /* Glass MATERIAL tokens for the 3-tier .glass-* classes (lens/frost/relief)
+     + toggle thumb + active chips. **Defined in BOTH themes on purpose** so a
+     glass surface can never be styled for one theme only (the recurring bug:
+     white rims/sheen are invisible on light, so light needs a subtle DARK rim).
+     Any new glass value goes here, not inline — that forces both themes. */
+  --glass-rim:       rgba(0,0,0,0.10);
+  --glass-hi:        rgba(255,255,255,0.85);
+  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.16) 24%, transparent 50%);
+  --glass-drop:      0 12px 32px -8px rgba(0,0,0,0.18);
+  --glass-drop-sm:   0 2px 8px -2px rgba(0,0,0,0.16);
+  --glass-relief-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 82%, #fff) 0%, var(--surface) 100%);
 }
 
 [data-theme="dark"] {
   /* Dark glass: the white top-edge highlight is the main "glass" cue. */
   --glass-edge: inset 0 1px 0 rgba(255,255,255,0.07);
+  /* Dark counterparts of the material tokens above (white edges read on dark). */
+  --glass-rim:       rgba(255,255,255,0.16);
+  --glass-hi:        rgba(255,255,255,0.55);
+  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 24%, transparent 48%);
+  --glass-drop:      0 12px 36px -8px rgba(0,0,0,0.5);
+  --glass-drop-sm:   0 2px 6px -2px rgba(0,0,0,0.35);
+  --glass-relief-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 86%, #fff) 0%, color-mix(in srgb, var(--surface) 90%, transparent) 100%);
 }
 
 [data-theme="dark"] {

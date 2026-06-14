@@ -601,6 +601,13 @@
         if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new');
       });
     }
+    // Connector (かつ/または): swap the native <select> for the glass custom
+    // dropdown so the OPEN list is glass (cs-pop = glass-frost), matching the
+    // sort/search pulldowns. The bar re-renders often, so prune the detached
+    // previous select from csHosts before enhancing the fresh one.
+    for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
+    const jsel = document.getElementById('qcJoinSel');
+    if (jsel) { enhanceSelect(jsel); if (jsel.__csBtn) jsel.__csBtn.classList.add('cs-join-btn'); }
   }
 
   function formatShortDate(dateStr) {
@@ -3394,11 +3401,23 @@
   let pendingBulkDelete = false;
 
   // View toggle
+  // Slide the glass thumb to the active button using its measured geometry
+  // (inline on the real .vt-thumb element — reliable + transitions).
+  function positionViewThumb() {
+    const vt = document.querySelector('.view-toggle');
+    const btn = vt && vt.querySelector('button.active');
+    const thumb = vt && vt.querySelector('.vt-thumb');
+    if (!btn || !thumb || !btn.offsetWidth) return;
+    thumb.style.width = btn.offsetWidth + 'px';
+    thumb.style.left = btn.offsetLeft + 'px';
+  }
+  window.addEventListener('resize', positionViewThumb, { passive: true });
   document.querySelectorAll('.view-toggle button').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
+      positionViewThumb();   // slide the glass thumb
       window.corpus.setPref('viewMode', currentView);
       if (document.startViewTransition && !prefersReducedMotion()) {
         document.startViewTransition(() => renderPosts());
@@ -3516,6 +3535,7 @@
       currentView = prefs.viewMode;
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
+    positionViewThumb();   // place the glass thumb on the restored active button
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
     if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
     if (Number.isFinite(prefs.listThumb)) listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
