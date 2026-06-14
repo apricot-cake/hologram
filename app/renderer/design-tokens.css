@@ -135,6 +135,12 @@
   --accent:         var(--indigo-700);
   --accent-hover:   var(--indigo-800);
   --accent-fg:      #ffffff;
+  /* Accent as FOREGROUND/TEXT (links, hover labels, active-row ink, accent icons).
+     Distinct from --accent because --accent is tuned as a FILL (white rides on it);
+     reused as text it's too dark on the dark surface (dark indigo-600 = 2.88:1 —
+     user hit this on the reset hover). Light keeps indigo-700 (8.3:1 on white);
+     dark uses the lighter indigo-300 (7.4:1). Guarded ≥4.5 both themes. */
+  --accent-text:    var(--indigo-700);
   --accent-soft:    var(--indigo-400);
   /* "subtle/border" are now MONOTONE: active filter/tag/workspace/query pills use
      grey contrast, not an accent tint (DESIGN.md「モノトーン基調＋機能アクセント」).
@@ -222,6 +228,9 @@
   --accent:         var(--indigo-600);
   --accent-hover:   #6760c4;
   --accent-fg:      #ffffff;
+  /* Dark accent-as-text: the lighter indigo-300 (7.4:1 on the dark surface), NOT
+     the fill-tuned --accent (indigo-600 = 2.88:1, unreadable as text). See light note. */
+  --accent-text:    var(--indigo-300);
   --accent-soft:    var(--indigo-300);
   /* monotone active (grey contrast over the dark sidebar), not an accent tint */
   --accent-subtle:  #2d323c;

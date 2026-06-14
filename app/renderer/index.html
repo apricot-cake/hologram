@@ -66,7 +66,7 @@
     }
     /* ALL children above the ::before pill (icon/title/close/rename input) */
     .tab-item > * { position: relative; z-index: 1; }
-    .tab-item.pinned:not(.active) { color: var(--accent); }
+    .tab-item.pinned:not(.active) { color: var(--accent-text); }
     .tab-item.pinned:not(.active)::before { background: var(--accent-subtle); }
     .tab-item:hover:not(.active) { color: var(--text); }
     /* Hover pill colour: midway between the bar (--bg) and the band
@@ -334,7 +334,7 @@
       padding: 4px 14px; font-size: 13px; color: var(--text);
       cursor: pointer; transition: all 0.15s; white-space: nowrap;
     }
-    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .chip:hover { border-color: var(--accent); color: var(--accent-text); }
     .date-input {
       padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 12px; color: var(--text); outline: none; cursor: pointer;
@@ -767,7 +767,7 @@
       color: var(--text); font-size: 13px; cursor: pointer;
       transition: border-color .12s, color .12s, background .12s;
     }
-    .empty-cta:hover { border-color: var(--accent); color: var(--accent); background: var(--hover); }
+    .empty-cta:hover { border-color: var(--accent); color: var(--accent-text); background: var(--hover); }
 
     /* --- Settings --- */
     .section {
@@ -803,7 +803,7 @@
       border-radius: 6px; padding: 7px 16px; font-size: 13px;
       cursor: pointer; transition: border-color 0.15s, color 0.15s;
     }
-    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent-text); }
     .btn-danger {
       background: var(--surface); color: var(--danger); border: 1px solid var(--danger);
       border-radius: 6px; padding: 7px 16px; font-size: 13px;
@@ -816,7 +816,7 @@
       opacity: 0; transition: opacity 0.2s;
     }
     .status-msg.show { opacity: 1; }
-    a { color: var(--accent); text-decoration: none; }
+    a { color: var(--accent-text); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* --- Data management --- */
@@ -944,7 +944,7 @@
     .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
     .fm-check svg { display: block; }
     .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
-    .fm-manage { color: var(--accent); }
+    .fm-manage { color: var(--accent-text); }
     .fm-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
     .fm-ic svg { display: block; }
     /* destructive row: quiet red, stronger on hover (srgb mix — oklch turns purple on dark) */
@@ -1083,11 +1083,7 @@
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
-    .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
-    /* dark: --accent (indigo-600) is a button-FILL step — too dark as TEXT on the
-       dark bar, so the hover label darkened (user). Use the lighter accent step for
-       foreground/border in dark instead. */
-    [data-theme="dark"] .sb-reset:hover { border-color: var(--accent-soft); color: var(--accent-soft); }
+    .sb-reset:hover { border-color: var(--accent); color: var(--accent-text); }
     /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
     /* 値が入っている欄の強調はパステルに（強い青の二重リングは主張しすぎ） */
     .has-value {
@@ -1107,7 +1103,7 @@
       transition: background .12s;
     }
     .sb-feature:hover { background: var(--chip-bg-hover); }
-    .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+    .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent-text); }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 12px;
       border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
@@ -1191,7 +1187,7 @@
       width: 24px; height: 24px; border: none; border-radius: 50%;
       background: none; color: var(--text-subtle); cursor: pointer; transition: color .12s;
     }
-    .qb-help:hover { color: var(--accent); }
+    .qb-help:hover { color: var(--accent-text); }
     .qb-help-pop {
       position: fixed; z-index: 12000; display: none; max-width: 360px;
       background: var(--surface); border: 1px solid var(--border-strong);
@@ -1214,7 +1210,7 @@
       color: var(--text-muted); cursor: pointer; white-space: nowrap;
       transition: color .12s, border-color .12s;
     }
-    .qf-add:hover { color: var(--accent); border-color: var(--accent); }
+    .qf-add:hover { color: var(--accent-text); border-color: var(--accent); }
     .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; }
     .qf-pop .qf-find {
       width: calc(100% - 8px); margin: 2px 4px 4px; padding: 5px 10px; font-size: 12px;
@@ -1237,7 +1233,7 @@
     .qf-pop .qf-pin.on { opacity: 1; color: var(--text); }
     .qf-pop .qf-pin.on svg { fill: currentColor; }
     .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
-    .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent); background: none; border: none; cursor: pointer; }
+    .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
     .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }
     /* --- Plan A: tag group sub-rows --- */
     /* Grid trick: animates open/close without display:none jump.
@@ -1249,7 +1245,7 @@
     @media (prefers-reduced-motion: reduce) { .sb-subrows { transition: none; } }
     .sb-subrow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px calc(var(--sb-gutter) + 22px); font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 5px; border: none; background: none; width: 100%; text-align: left; }
     .sb-subrow:hover { background: var(--sidebar-row-hover); }
-    .sb-subrow.active { color: var(--accent); }
+    .sb-subrow.active { color: var(--accent-text); }
     .sb-subrow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sb-subrow-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
     .sb-subrow-arrow { margin-left: 4px; /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
@@ -1723,7 +1719,7 @@
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
     .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
-    .iv-htbtn:hover { border-color: var(--accent); color: var(--accent); }
+    .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
     .iv-htbtn:disabled { opacity: .5; cursor: default; }
 
     /* Detail popup (ℹ action): centered modal over a dim backdrop. */
@@ -1746,7 +1742,7 @@
     .iv-insp-v { flex: 1; word-break: break-word; }
     .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
-    .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent); cursor: pointer; }
+    .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
     /* --- Tagging wizard --- */
@@ -1788,7 +1784,7 @@
     .tw-panel { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
     .tw-panel-name { font-size: 14px; font-weight: 600; color: var(--text-strong); }
     .tw-hide-link { align-self: flex-start; background: none; border: none; padding: 0; font-size: 11px; color: var(--text-subtle); cursor: pointer; }
-    .tw-hide-link:hover { color: var(--accent); text-decoration: underline; }
+    .tw-hide-link:hover { color: var(--accent-text); text-decoration: underline; }
     /* group-visibility panel (opened from the 非表示 chip) */
     .tw-hidpanel { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
     .tw-hidrow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
