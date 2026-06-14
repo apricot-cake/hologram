@@ -139,7 +139,12 @@
   /* "subtle/border" are now MONOTONE: active filter/tag/workspace/query pills use
      grey contrast, not an accent tint (DESIGN.md「モノトーン基調＋機能アクセント」).
      The names are kept so the many consumers don't have to change. */
-  --accent-subtle:  var(--gray-150);
+  /* Monotone ACTIVE fill (workspace row / active chips / active filter rows). At
+     gray-150 it matched the Mica sidebar (~1.01:1 = the active state dissolved —
+     user). gray-300 gives a clearly-read selected fill (~1.4:1 worst case at the
+     gradient bottom). Dark's #2d323c already clears its dark sidebar, so only light
+     moves. text-strong rides on it either way (near-black on a light grey). */
+  --accent-subtle:  var(--gray-300);
   --accent-subtle-fg: var(--text-strong);
   --accent-border:  var(--border-strong);
 

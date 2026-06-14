@@ -368,11 +368,17 @@
        stays put (the raised thumb is the only fill that moves). */
     #sidebar .view-toggle button:not(.active):hover { background: transparent; color: var(--text); }
     #sidebar .icon-btn:hover { background: var(--hover); color: var(--text); }
-    /* Back-to-top: floats above content → qualifies as transient surface → glass */
-    #sbTop { background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
-    #sbTop:hover { background: var(--glass-bg); color: var(--text); }
+    /* Back-to-top: floats above content → glass. NB `#sidebar .icon-btn` (1,1,0)
+       outweighs a bare `#sbTop` (1,0,0) and was forcing the ghost transparent fill
+       (+ transparent border) → the button was invisible on the light sidebar (user).
+       Qualify with #sidebar so the glass fill + a defined rim actually win. */
+    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--border-strong); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
+    #sidebar #sbTop:hover { background: var(--glass-bg); color: var(--text); }
+    /* Content back-to-top (glass-relief over the content area): the relief rim
+       (10% black) is too faint on the light --bg → give it the same defined edge. */
+    #contentTop { border: 1px solid var(--border-strong); }
     @media (prefers-reduced-transparency: reduce) {
-      #sbTop { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--shadow-md); }
+      #sidebar #sbTop { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--shadow-md); }
     }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
