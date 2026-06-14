@@ -380,7 +380,9 @@
        the 12px side padding carries the 23px text axis). */
     #sidebar select { padding-top: 5px; padding-bottom: 5px; transition: border-color .12s, background .12s; }
     #sidebar select:hover { background: var(--hover); border-color: var(--text-muted); }
-    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; }
+    /* 13px = same as the sibling #sidebar select; at 14px the 13-glyph JP
+       placeholder ("テキスト・ユーザー名で検索") overran the ~178px field and clipped. */
+    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
     /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
        (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
        content-pad (12px) inside it — so headers read as one step out, content
