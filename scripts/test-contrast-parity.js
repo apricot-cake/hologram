@@ -38,14 +38,23 @@ const CHECKS = [
   // the dedicated --accent-text token (--accent itself is a fill, too dark as text
   // on dark = 2.88:1). Must clear AA in both themes.
   { role: '--accent-text',       ref: '--surface',    floor: 4.5 },
+  // Status hue as foreground (delete labels, error text). Held to the 3:1 status/
+  // icon tier, NOT 4.5 body-text — a saturated red is distinct and is only used for
+  // short action labels/icons (light --danger is 3.91, fine at this tier; the guard
+  // catches a future drift below 3:1).
+  { role: '--danger',            ref: '--surface',    floor: 3.0 },
 ];
 // Cross-theme spread cap for band roles.
 const MAX_SPREAD = 1.6;
 
 // 2. foreground that rides on a fill — breaks if the fill drifts. Floor = AA.
 const FILL_CHECKS = [
-  { fg: '--accent-fg',        fill: '--accent',        floor: 4.5, what: 'white on accent button' },
+  { fg: '--accent-fg',        fill: '--accent',        floor: 4.5, what: 'white text on accent button' },
   { fg: '--accent-subtle-fg', fill: '--accent-subtle', floor: 4.5, what: 'active ink on active pill' },
+  // White ICONS on status fills (.ws-btn remove/added). Icon tier = 3:1, not 4.5.
+  // Drift guard: dark --success was #43c585 (white ~2.2:1, too low) → darkened.
+  { fg: '--text-on-accent',   fill: '--danger',        floor: 3.0, what: 'white icon on danger (remove) button' },
+  { fg: '--text-on-accent',   fill: '--success',       floor: 3.0, what: 'white icon on success (added) button' },
 ];
 
 // 3. non-text component visible on the sidebar (reads via fill OR border). Soft
