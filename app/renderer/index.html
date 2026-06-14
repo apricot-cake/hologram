@@ -162,16 +162,33 @@
     .kb-hint-wrap { position: relative; display: flex; align-items: center; margin-left: 6px; }
     .kb-hint-pop {
       display: none; position: fixed; bottom: 52px; left: 14px;
-      /* More transparent than the shared --glass-bg: over the solid Mica sidebar
-         a higher opacity reads as flat (sidebar-bg ≈ surface in dark mode), so
-         drop opacity hard to let the sidebar's gradient/grain clearly show. */
-      background: color-mix(in srgb, var(--surface) 38%, transparent);
-      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
-      border: 1px solid var(--border-strong); border-radius: 10px;
-      box-shadow: var(--shadow-pop), var(--glass-edge);
-      padding: 10px 12px; z-index: 12000; white-space: nowrap;
+      border-radius: 14px; padding: 10px 12px; z-index: 12000; white-space: nowrap;
     }
     .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn .15s ease-out; }
+    /* --- Liquid-glass "lens": high transparency + light blur so you read THROUGH
+       it (vs the frosted --glass-filter), with a bright refractive rim and a
+       diagonal specular sheen for the Apple-style lens feel. Reusable: drop
+       .glass-lens onto any floating surface. --- */
+    .glass-lens {
+      position: relative; isolation: isolate;
+      background: color-mix(in srgb, var(--surface) 14%, transparent);
+      backdrop-filter: blur(5px) saturate(190%) brightness(1.06);
+      -webkit-backdrop-filter: blur(5px) saturate(190%) brightness(1.06);
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow:
+        inset 0 1px 0.5px rgba(255,255,255,0.55),
+        inset 0 0 0 0.5px rgba(255,255,255,0.06),
+        inset 0 -10px 22px -14px rgba(255,255,255,0.22),
+        0 12px 36px -8px rgba(0,0,0,0.5);
+    }
+    .glass-lens::before {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      pointer-events: none; z-index: -1;
+      background: linear-gradient(135deg,
+        rgba(255,255,255,0.22) 0%,
+        rgba(255,255,255,0.06) 26%,
+        transparent 52%);
+    }
     .kb-hint-head { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
     .kb-hint-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; }
     .kb-hint-grid kbd {
@@ -1433,7 +1450,7 @@
         <button class="icon-btn" type="button" aria-label="キーボードショートカット" style="border:none; background:none; color:var(--text-subtle); width:20px; height:20px;">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M8 15h8"/></svg>
         </button>
-        <div class="kb-hint-pop">
+        <div class="kb-hint-pop glass-lens">
           <div class="kb-hint-head">ショートカット</div>
           <div class="kb-hint-grid">
             <kbd>/</kbd><span>検索</span>
