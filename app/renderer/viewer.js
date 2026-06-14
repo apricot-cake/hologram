@@ -3229,8 +3229,34 @@
     }
   });
 
+  // Tasteful "祝祭" burst on tag save (X-like / YouTube-like). Indigo + warm gold +
+  // near-white sparkles fly out from (cx,cy) and fade. Skipped for reduced-motion.
+  function celebrate(cx, cy) {
+    if (prefersReducedMotion()) return;
+    const colors = ['var(--accent-soft)', '#e8a13a', 'var(--text-strong)'];
+    const N = 12, parts = [];
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < N; i++) {
+      const p = document.createElement('i');
+      p.className = 'celebrate-particle';
+      const ang = (Math.PI * 2 * i) / N + Math.random() * 0.45;
+      const dist = 30 + Math.random() * 34;
+      const sz = (5 + Math.random() * 4).toFixed(1);
+      p.style.left = cx + 'px'; p.style.top = cy + 'px';
+      p.style.width = p.style.height = sz + 'px';
+      p.style.background = colors[i % colors.length];
+      p.style.setProperty('--tx', (Math.cos(ang) * dist).toFixed(1) + 'px');
+      p.style.setProperty('--ty', (Math.sin(ang) * dist).toFixed(1) + 'px');
+      p.style.animationDuration = (520 + Math.random() * 200).toFixed(0) + 'ms';
+      frag.appendChild(p); parts.push(p);
+    }
+    document.body.appendChild(frag);
+    setTimeout(() => parts.forEach((p) => p.remove()), 900);
+  }
+
   document.getElementById('editSave').addEventListener('click', async () => {
     if (!editingPost) return;
+    const _sr = document.getElementById('editSave').getBoundingClientRect();   // burst origin (before overlay closes)
     keepCurrentVisible();   // removing a tag can un-match an active tag filter
     const tags = [...editTags];
 
@@ -3253,6 +3279,7 @@
     editAdditive = false;
     document.getElementById('editOverlay').classList.remove('show');
     showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
+    celebrate(_sr.left + _sr.width / 2, _sr.top + _sr.height / 2);
   });
 
 

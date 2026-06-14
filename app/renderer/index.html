@@ -1926,6 +1926,19 @@
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
     @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
     @keyframes corpusPillIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
+    /* Tag-save celebration: a small tasteful burst (X-like / YouTube-like). Particles
+       fly out from the save point and fade. Per-particle --tx/--ty + duration set in JS.
+       prefers-reduced-motion skips it (handled in JS). */
+    .celebrate-particle {
+      position: fixed; z-index: 13000; border-radius: 50%; pointer-events: none;
+      transform: translate(-50%, -50%); will-change: transform, opacity;
+      animation: corpusCelebrate 600ms var(--ease-out) forwards;
+    }
+    @keyframes corpusCelebrate {
+      0%   { transform: translate(-50%, -50%) scale(.3); opacity: 0; }
+      18%  { opacity: 1; }
+      100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1); opacity: 0; }
+    }
 
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
     .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }
