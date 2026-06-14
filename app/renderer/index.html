@@ -163,8 +163,9 @@
     .kb-hint-pop {
       display: none; position: fixed; bottom: 52px; left: 14px;
       /* More transparent than the shared --glass-bg: over the solid Mica sidebar
-         a higher opacity reads as flat, so let the sidebar's gradient/grain show. */
-      background: color-mix(in srgb, var(--surface) 60%, transparent);
+         a higher opacity reads as flat (sidebar-bg ≈ surface in dark mode), so
+         drop opacity hard to let the sidebar's gradient/grain clearly show. */
+      background: color-mix(in srgb, var(--surface) 38%, transparent);
       backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       border: 1px solid var(--border-strong); border-radius: 10px;
       box-shadow: var(--shadow-pop), var(--glass-edge);
