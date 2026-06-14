@@ -512,6 +512,14 @@
          re-renders offscreen cards on scroll-back — causes the "hitch" sensation. */
       overflow-anchor: none;
     }
+    /* Hidden SMOKE capture window: force cards to paint (nothing is ever "on-screen"
+       there, so content-visibility:auto would skip them all) AND skip the entrance
+       animation — corpusCardIn starts at opacity:0 with fill `both`, and the hidden
+       window doesn't advance the animation, so cards stayed invisible despite being
+       laid out with loaded images. Gated on the class so the normal app is untouched. */
+    html.smoke-capture .post-card { content-visibility: visible; }
+    html.smoke-capture .post-grid .post-card,
+    html.smoke-capture .empty-state { animation: none !important; opacity: 1 !important; transform: none !important; }
     .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); }
     /* Hover lift: a slight scale + the deeper shadow reads as "picked up"
        (Pinterest/gallery idiom). Cards & tiles only — list rows would jitter.

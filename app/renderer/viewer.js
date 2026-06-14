@@ -1406,6 +1406,12 @@
   const TILE_MIN = 120, TILE_MAX = 400;
   const CARD_MIN = 240, CARD_MAX = 560;
   const LIST_MIN = 56, LIST_MAX = 200;
+  // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
+  // so content-visibility:auto skips painting every card and loading=lazy images
+  // never fetch → blank grid. Launched via ?smoke=1, we flip both off (CSS class
+  // + eager images) so capturePage() sees real cards. Normal app is untouched.
+  const SMOKE_CAPTURE = (() => { try { return new URLSearchParams(location.search).get('smoke') === '1'; } catch { return false; } })();
+  if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
   // Windowed rendering: render only the first `renderLimit` filtered posts and
   // grow as a bottom sentinel nears the viewport. Rendering all (thousands) at
   // once froze the UI and starved image (psimg) loads. Reset to one page on any
@@ -2302,7 +2308,7 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="lazy" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
+        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">

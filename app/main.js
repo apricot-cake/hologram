@@ -1064,7 +1064,9 @@ function createWindow(show = true) {
     win.on('unmaximize', persistWindowBounds);
     win.on('close', saveWindowBoundsNow);
   }
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme } });
+  // Pass smoke=1 so the renderer disables the offscreen render optimizations
+  // (content-visibility / lazy images) that leave the hidden capture window blank.
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
 }
 
 // Side-effect-free launch check: skips host registration, hides the window,
@@ -1132,7 +1134,7 @@ if (!gotSingleInstanceLock) {
         }
       }
       quit('SMOKE_OK');
-    }, 900));
+    }, 1300));
     setTimeout(() => quit('SMOKE_TIMEOUT'), 9000);
     return;
   }
