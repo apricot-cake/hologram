@@ -76,7 +76,7 @@
     .tab-item:hover:not(.active)::before { background: color-mix(in srgb, var(--sidebar-bg) 60%, var(--bg)); }
     /* Active tab: connected to the band below, Chrome-style concave ears */
     .tab-item.active {
-      background: var(--sidebar-bg); color: var(--text-strong);
+      background: var(--sidebar-bg); color: var(--text);
       border-radius: 8px 8px 0 0; overflow: visible; z-index: 1;
     }
     /* Ear geometry: fill OUTSIDE a quarter-circle whose center sits at the
@@ -849,7 +849,7 @@
       content: ''; position: absolute; top: -1px; right: -1px;
       width: 7px; height: 7px; border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 0 2px rgba(20,22,26,0.55);
+      box-shadow: 0 0 0 1.5px var(--surface);
     }
     /* Hovering an in-tray one is red so a click reads as "remove" (same
        hover-red-for-undo rule as folders). */
@@ -912,14 +912,11 @@
          content); under the dark glass it was nearly invisible and the
          glide could not be seen. */
       background: rgba(255,255,255,0.25);
-      transition: right .22s var(--ease-out), top .22s var(--ease-out), opacity .12s;
+      transition: opacity .12s;
     }
     .post-card:has(.ws-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
-    @media (prefers-reduced-motion: reduce) {
-      .act-pill { transition: opacity .12s; }   /* snap, no glide */
-    }
 
     /* --- Popovers --- */
     .qf-popover {
@@ -1108,7 +1105,7 @@
     .qc-zone.drag-over { border-color: var(--accent); background: var(--accent-subtle); }
     /* フィールド見出しは箱の中（仕切り線つき）＝「この箱の中は全部この演算子」 */
     .qc-zone-label {
-      font-size: 11px; font-weight: 700; color: var(--text-muted);
+      font-size: 11px; font-weight: 500; color: var(--text-subtle);
       padding: 0 9px 0 6px; margin-right: 3px; align-self: stretch;
       display: inline-flex; align-items: center;
       border-right: 1px solid var(--border);
@@ -1116,7 +1113,7 @@
     .qc-op { font-size: 10px; color: var(--text-subtle); align-self: center; margin: 0 2px; pointer-events: none; }
     .qc-zone-empty { font-size: 11px; color: var(--text-subtle); padding: 0 5px; pointer-events: none; }
     .qc-join-sel {
-      font-size: 11px; font-weight: 700; padding: 3px 6px; width: auto;
+      font-size: 11px; font-weight: 500; padding: 3px 6px; width: auto;
       border: 1px solid var(--accent-border); border-radius: 8px;
       background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin: 0 5px;
     }

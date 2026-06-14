@@ -197,7 +197,7 @@
   --accent-subtle-fg: var(--text-strong);
   --accent-border:  var(--border-strong);
 
-  --danger:        #f0676b;
+  --danger:        #f04040;
   --danger-bg:     color-mix(in oklch, var(--red-500) 16%, var(--surface));
   --success:       #43c585;
 
