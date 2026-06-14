@@ -1,64 +1,69 @@
 # Corpus
 
-**English** ・ [日本語](https://github.com/apricot-cake/corpus)
+<p align="center"><strong>English</strong> ・ <a href="README.md">日本語</a></p>
 
-Collect SNS posts and drag-saved illustrations/images into **one app** to browse, search, and organize later.
+Save the SNS posts you come across — image and information together — and find them again whenever you like. **Your own personal SNS library.**
 
-Corpus has three parts:
+No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
 
-- **Chrome extension** — click a post to capture it as JPEG, or drag an image to save it
-- **Native messaging bridge** (Node) — writes captures as plain files into **a folder you choose**
-- **Desktop app** (Electron) — browse, search, filter, tag, and export in two modes
+## What it does
 
-No browser storage, no EXIF. Images/videos and metadata sit side by side as ordinary files — move or back them up freely (drop them straight into GitHub, etc.).
+- **Save the whole post** — not just a screenshot, but the text, author, date, like count, and original URL too. So you can always find "that post" later.
+- **Organize and search freely** — filter by your own tags, in-text hashtags, platform, date, engagement, and author. Reach what you want even among thousands.
+- **Illustrations and posts in one place** — from pixiv illustrations to X text posts, all in a single library. View images as cards or tiles, read text in a list — switch to whatever suits the moment.
+- **Everything stays with you** — your data lives on your PC, with images and metadata sitting side by side as ordinary files. Nothing is sent to any server. Open them later in another tool, or move the whole library — it's all yours.
+- **Backup & portability** — export/import the whole library as a ZIP. You can also set up a **scheduled backup (mirror)** to another folder.
 
 ## Supported platforms
 
-X (Twitter) / Bluesky / Misskey / Mastodon / **pixiv**
+X (Twitter) ・ Bluesky ・ Misskey ・ Mastodon ・ pixiv
 
-> Metadata comes only from each platform's stable official/public API (no DOM scraping). X has no official API, so an unofficial endpoint (`cdn.syndication.twimg.com`) is used; reposts/bookmarks/views aren't available.
+## How to use
 
-## Two ways to save
+### 1. Save (Chrome extension)
 
-- **Click a post** (`Alt+S` → click the post): saves a screenshot of the post plus its original media
-- **Drag an image**: drop the dragged image into the drop zone to save the image itself (no screenshot)
+When you find a post you like —
 
-Both fetch the same metadata (text, author, date, engagement, hashtags, …) from the post URL.
+- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date, engagement, and other details.
+- **Drag an image** — save pixiv illustrations and the like as the image itself.
 
-## Two viewer modes (switch in the left sidebar; the last mode is remembered)
+What you save gathers automatically in the desktop app (it watches the save folder, so new captures show up in the list right away).
 
-- **Post view** — card display (text, stats, lightbox; filter by platform/user/date/engagement/tags). For URL-bearing SNS posts.
-- **Image view** — square tile grid (for an illustration/image library). Filter by search, platform, sort (recently saved / updated / likes), min-likes, and tags (shown grouped).
+### 2. Browse & read
 
-## Features
+Switch between **card / tile / list** views at the top of the left sidebar. Tile is good for browsing illustrations side by side; list is good for reading text.
 
-- Save to any folder you choose
-- Organize and filter by **tags / tag groups**
-- **Image grouping** — collapse multiple images of the same post into one tile (×N badge, paged in the fullscreen viewer). Per-post ungroup/regroup (persistent), manual grouping of arbitrary images, and a temporary expand-all
-- **Video** (mp4, etc.) and **original-resolution media** in the fullscreen viewer (video muted by default)
-- ℹ for a detail popup, ↗ to open the original post, 🗑 to delete
-- Export as ZIP (images + metadata) or a single HTML file; restore from that HTML (import)
-- Language switch (auto / Japanese / English)
+Click a card's image to open a **gallery** that bundles the screenshot and the original-resolution images. Posts with multiple images can be paged with `←` `→` or the arrow keys, and videos play right there.
 
-## Setup (development)
+### 3. Find
 
-The desktop app isn't packaged yet, so run it from source.
+Filter and sort from the left sidebar.
 
-1. `cd app && npm install && npm start` — the first launch registers the capture helper. Pick a **save folder** in Settings.
-2. Load the extension: `chrome://extensions` → enable Developer mode → **Load unpacked** → select the `extension/` folder. Paste the shown extension ID into the app's **Extension ID** field.
-3. Capture with `Alt+S` (if it doesn't work, assign it under `chrome://extensions/shortcuts`). You can also save images by dragging into the drop zone.
+- **Search** — by text or username (fuzzy search is also available)
+- **Filter** — by platform / author / tag / hashtag / date / engagement (likes, etc.) / folder (multi-select)
+- **Sort** — newest first, most likes, save date, and more
 
-## Data format (sidecars)
+Active filters gather at the top of the screen; **Reset** clears them all at once. **Back / Forward** returns you to the previous filter state.
 
-In the save folder, each item is an image plus its metadata, side by side.
+### 4. Organize
 
-- `<id>.jpg` … the post-click screenshot (or the saved image itself)
-- `<id>.json` … metadata (`platform` / `url` / `text` / `title` / `displayName` / `screenName` / `userId` / `likes`·`reposts`·… / `date` / `capturedAt` / `updatedAt` / `mediaType` / `media[]` / `hashtags[]` / `tags[]`, …)
-- `<id>-media-N.<ext>` … the post's original-resolution media (if any)
-- Library-level metadata: `tag-groups.json` (tag groups) / `ungrouped.json`·`manual-groups.json` (grouping settings)
+- **Tags** — right-click a card → "Edit tags." There's also a "tagging session" to tag untagged posts one after another.
+- **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
+- **Workspace** — hover a card and hit ⚡ to collect items into a temporary tray for comparison.
+- **Bulk actions** — select multiple posts with the ○ at the top-left of each card, then tag, add to a folder, group, or delete them all at once.
 
-`<captureId>.json` is the single source of truth. Nothing is sent to any server.
+### 5. Backup & portability
+
+From the **gear (Settings)** at the bottom-left of the screen.
+
+- Export/import the whole library as a **ZIP**
+- **Scheduled backup (mirror)** to another folder
+- Theme (light/dark) and display language can also be switched here
+
+## Setup
+
+Preparing for release (including publishing the extension to the Chrome Web Store).
 
 ## Privacy
 
-See [PRIVACY.md](PRIVACY.md). Everything is stored in a local folder; nothing is sent to any server.
+Everything is stored in a local folder; nothing is sent to any server. See [PRIVACY.md](PRIVACY.md) for details.
