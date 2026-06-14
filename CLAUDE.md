@@ -125,7 +125,6 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 ### 監査の残（未対応のみ）
 - **i18n [LOW・要確認]**: viewer.js の死に MSG 群／i18n.js 孤児キー／extension/i18n.js の旧ビューア文字列表（実消費は banner* のみ）。
 - **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。
-- **公開前 docs**: version 不一致（ext 1.1.0 / app 1.0.0 を揃える）／acquisition-audit を gitignore か移設。
 
 ### 状態の記憶
 - スクロール位置（タブごと）: tab state に `scrollTop`。再起動復元は renderLimit 復元も要る＝後回し可。

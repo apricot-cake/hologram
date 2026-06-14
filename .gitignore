@@ -11,3 +11,5 @@ __pycache__/
 # 使い捨てスクリプトは _ 接頭辞で除外するが、検証ハーネス _verify-*.js は追跡する
 scripts/_*.js
 !scripts/_verify-*.js
+# 公開前の内部監査メモ（取得方針の棚卸し等）＝公開リポに出さない（gitignore＝ファイルはローカルに保持）
+docs/acquisition-audit-*.md
