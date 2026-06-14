@@ -249,7 +249,6 @@
     tipDelete: _s('tipDelete'),
     postedOn: _f1('postedOn'),
     captured: _f1('captured'),
-    statsNote: _s('statsNote'),
 
     // stats formatters (pure formatting, no translation)
     likes: (n) => n != null ? `${formatCount(n)}` : '',
@@ -379,7 +378,6 @@
   setText('confirmCancel', MSG.confirmCancel);
   setText('confirmOk', MSG.confirmOk);
   setText('settingsStatus', MSG.saved);
-  setText('statsNote', MSG.statsNote);
   setText('confirmSkipText', MSG.confirmSkip);
 
   // Edit overlay i18n
@@ -2211,13 +2209,11 @@
 
     countEl.textContent = MSG.postCount(viewGroups.length);
 
-    const noteEl = document.getElementById('statsNote');
     if (viewGroups.length === 0) {
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
       if (!keepLimit && !prefersReducedMotion()) { void empty.offsetWidth; empty.classList.add('anim-in'); setTimeout(() => empty.classList.remove('anim-in'), 400); }
-      if (noteEl) noteEl.style.display = 'none';
       // Empty states carry a "what to do next" affordance: the capture
       // shortcut + ZIP restore on first run, a one-click reset when filters
       // ate everything. Buttons are re-created each render → delegated below.
@@ -2238,7 +2234,6 @@
     grid.classList.toggle('tile-view', currentView === 'tile');
     applyTileLayout();
     empty.style.display = 'none';
-    if (noteEl) noteEl.style.display = 'block';
 
     // Card entrance plays only on a fresh build (filter/sort/search), never on
     // load-more (keepLimit) — otherwise every already-visible card re-animates
@@ -3439,6 +3434,12 @@
     thumb.style.left = btn.offsetLeft + 'px';
   }
   window.addEventListener('resize', positionViewThumb, { passive: true });
+  // The sidebar gains/loses a scrollbar as content grows, which changes the
+  // view-toggle's width WITHOUT a window resize — the thumb's measured px then
+  // overran the now-narrower track (user: list switch "はみ出てる"). Re-measure
+  // whenever the control's own box changes.
+  { const _vt = document.querySelector('.view-toggle');
+    if (_vt && window.ResizeObserver) new ResizeObserver(positionViewThumb).observe(_vt); }
   document.querySelectorAll('.view-toggle button').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));

@@ -300,7 +300,12 @@
      glass, and a flat --bg behind the sidebar gives nothing to blur.
      Tint stays >=70% for 12px text legibility over busy thumbnails
      (Fluent acrylic: 70-85% tint on menus). srgb mix per the red-mix rule. */
-  --glass-bg:      color-mix(in srgb, var(--surface) 78%, transparent);
+  /* Light reads less "see-through" than dark at equal alpha (dark text on a light
+     veil over light cards = low local contrast), so light gets a touch more
+     transparency to compensate (72 vs dark's 78 — user request). Floor kept ~70% so
+     dark body text stays legible over busy thumbnails. Per-theme: dark value is in
+     the dark glass block below (this token is NOT shared anymore). */
+  --glass-bg:      color-mix(in srgb, var(--surface) 72%, transparent);
   --glass-bg-bar:  color-mix(in srgb, var(--bg) 70%, transparent);
   --glass-bg-panel:color-mix(in srgb, var(--surface) 88%, transparent);
   --glass-filter:  blur(24px) saturate(140%);
@@ -322,6 +327,9 @@
 [data-theme="dark"] {
   /* Dark glass: the white top-edge highlight is the main "glass" cue. */
   --glass-edge: inset 0 1px 0 rgba(255,255,255,0.07);
+  /* Dark keeps the heavier 78% tint (light is lighter at 72%, see :root note):
+     light text survives a thinner dark veil, so dark needs no extra opacity. */
+  --glass-bg:   color-mix(in srgb, var(--surface) 78%, transparent);
   /* Dark counterparts of the material tokens above (white edges read on dark). */
   --glass-rim:       rgba(255,255,255,0.16);
   --glass-hi:        rgba(255,255,255,0.55);

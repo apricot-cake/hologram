@@ -1078,6 +1078,10 @@
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
     .sb-reset:hover { border-color: var(--accent); color: var(--accent); }
+    /* dark: --accent (indigo-600) is a button-FILL step — too dark as TEXT on the
+       dark bar, so the hover label darkened (user). Use the lighter accent step for
+       foreground/border in dark instead. */
+    [data-theme="dark"] .sb-reset:hover { border-color: var(--accent-soft); color: var(--accent-soft); }
     /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
     /* 値が入っている欄の強調はパステルに（強い青の二重リングは主張しすぎ） */
     .has-value {
@@ -1491,7 +1495,6 @@
       <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
         <div id="emptyState" class="empty-state" style="display:none;"></div>
-        <div class="hint" id="statsNote" style="margin-top: 12px; text-align: center;"></div>
       </div>
 
   <!-- Settings (moved into #settingsView overlay at runtime, opened by the gear) -->

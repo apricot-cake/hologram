@@ -273,7 +273,6 @@
       tipDelete: '削除',
       postedOn: '$1 に投稿',
       captured: '$1 にキャプチャ',
-      statsNote: 'エンゲージメントはキャプチャ時点の値です',
 
       // viewer: edit overlay
       tagsLabel: 'タグ',
@@ -576,7 +575,6 @@
       tipDelete: 'Delete',
       postedOn: 'Posted $1',
       captured: 'Captured $1',
-      statsNote: 'Engagement counts are from the time of capture',
 
       tagsLabel: 'Tags',
       addTag: 'Add',
