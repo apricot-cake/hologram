@@ -169,8 +169,11 @@
        it (vs the frosted --glass-filter), with a bright refractive rim and a
        diagonal specular sheen for the Apple-style lens feel. Reusable: drop
        .glass-lens onto any floating surface. --- */
+    /* NOTE: the host element must set its own position (relative/fixed/absolute)
+       so the ::before sheen anchors to it — .glass-lens deliberately does NOT set
+       position, or it would clobber a host's fixed/absolute and break layout. */
     .glass-lens {
-      position: relative; isolation: isolate;
+      isolation: isolate;
       background: color-mix(in srgb, var(--surface) 14%, transparent);
       backdrop-filter: blur(5px) saturate(190%) brightness(1.06);
       -webkit-backdrop-filter: blur(5px) saturate(190%) brightness(1.06);
