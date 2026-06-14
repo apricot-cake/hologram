@@ -429,7 +429,9 @@
   // a glass option list that matches the flyout menus. ---
   const csHosts = [];
   const csPop = document.createElement('div');
-  csPop.className = 'fold-menu cs-pop';
+  // glass-frost (tier B): pulldowns open over the sparse sidebar, so a frosted
+  // mid-opacity material reads as glass without busy content behind it.
+  csPop.className = 'fold-menu cs-pop glass-frost';
   document.body.appendChild(csPop);
   let csSel = null, csBtn = null;
   function hideCsPop() { csPop.classList.remove('show'); csSel = null; csBtn = null; }

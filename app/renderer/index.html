@@ -174,33 +174,9 @@
        sheen+blur of .glass-lens, just a more opaque base so 11px text reads. */
     .kb-hint-pop.glass-lens { background: color-mix(in srgb, var(--surface) 42%, transparent); }
     .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn .15s ease-out; }
-    /* --- Liquid-glass "lens": high transparency + light blur so you read THROUGH
-       it (vs the frosted --glass-filter), with a bright refractive rim and a
-       diagonal specular sheen for the Apple-style lens feel. Reusable: drop
-       .glass-lens onto any floating surface. --- */
-    /* NOTE: the host element must set its own position (relative/fixed/absolute)
-       so the ::before sheen anchors to it — .glass-lens deliberately does NOT set
-       position, or it would clobber a host's fixed/absolute and break layout. */
-    .glass-lens {
-      isolation: isolate;
-      background: color-mix(in srgb, var(--surface) 14%, transparent);
-      backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
-      -webkit-backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
-      border: 1px solid rgba(255,255,255,0.16);
-      box-shadow:
-        inset 0 1px 0.5px rgba(255,255,255,0.55),
-        inset 0 0 0 0.5px rgba(255,255,255,0.06),
-        inset 0 -10px 22px -14px rgba(255,255,255,0.22),
-        0 12px 36px -8px rgba(0,0,0,0.5);
-    }
-    .glass-lens::before {
-      content: ''; position: absolute; inset: 0; border-radius: inherit;
-      pointer-events: none; z-index: -1;
-      background: linear-gradient(135deg,
-        rgba(255,255,255,0.22) 0%,
-        rgba(255,255,255,0.06) 26%,
-        transparent 52%);
-    }
+    /* Glass material system (.glass-lens / .glass-frost / .glass-relief) is defined
+       as a utility layer at the END of this stylesheet so it wins source-order over
+       component rules like .fold-menu. See "=== Glass material system ===" there. */
     .kb-hint-head { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
     .kb-hint-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; }
     .kb-hint-grid kbd {
@@ -1374,7 +1350,7 @@
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
-            <div class="view-toggle">
+            <div class="view-toggle glass-relief">
               <button data-view="card" id="viewCard" class="active"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg><span class="vt-label" id="viewCardLabel"></span></button>
               <button data-view="tile" id="viewTile"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="vt-label" id="viewTileLabel"></span></button>
               <button data-view="list" id="viewList"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span class="vt-label" id="viewListLabel"></span></button>
@@ -1859,9 +1835,70 @@
     }
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ============================================================
+       === Glass material system — pick the tier by WHAT IS BEHIND ===
+       Utility layer (defined LAST so it wins source-order over component
+       rules like .fold-menu). Host must set its own `position` so the
+       ::before sheen anchors to it.
+         A .glass-lens  — rich content behind (over cards): read THROUGH it.
+                          High transparency + light blur. Text-dense hosts
+                          should bump opacity (see .kb-hint-pop.glass-lens).
+         B .glass-frost — sparse/low-contrast behind (pulldown over sidebar):
+                          mid opacity + strong blur MANUFACTURES the frost so
+                          it reads as glass without busy content behind it.
+         C .glass-relief— nothing behind (toggle on the flat Mica sidebar):
+                          a baked top-light gradient + the shared specular
+                          sell the glass with almost no help from the backdrop.
+       ============================================================ */
+    .glass-lens, .glass-frost, .glass-relief { isolation: isolate; }
+    /* Shared diagonal specular sheen ("light catching the glass edge"). */
+    .glass-lens::before, .glass-frost::before, .glass-relief::before {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      pointer-events: none; z-index: -1;
+      background: linear-gradient(135deg,
+        rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 26%, transparent 52%);
+    }
+    .glass-lens {
+      background: color-mix(in srgb, var(--surface) 14%, transparent);
+      backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
+      -webkit-backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow:
+        inset 0 1px 0.5px rgba(255,255,255,0.55),
+        inset 0 0 0 0.5px rgba(255,255,255,0.06),
+        inset 0 -10px 22px -14px rgba(255,255,255,0.22),
+        0 12px 36px -8px rgba(0,0,0,0.5);
+    }
+    .glass-frost {
+      background: color-mix(in srgb, var(--surface) 55%, transparent);
+      backdrop-filter: blur(18px) saturate(165%) brightness(1.04);
+      -webkit-backdrop-filter: blur(18px) saturate(165%) brightness(1.04);
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow:
+        inset 0 1px 0.5px rgba(255,255,255,0.45),
+        inset 0 0 0 0.5px rgba(255,255,255,0.05),
+        0 12px 36px -8px rgba(0,0,0,0.5);
+    }
+    .glass-relief {
+      /* baked top-light → bottom-dark gradient = the refraction a backdrop would
+         give, painted in so the glass works on a flat surface */
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--surface) 86%, white 14%) 0%,
+        color-mix(in srgb, var(--surface) 90%, transparent) 100%);
+      backdrop-filter: blur(6px) saturate(150%);
+      -webkit-backdrop-filter: blur(6px) saturate(150%);
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow:
+        inset 0 1px 0.5px rgba(255,255,255,0.6),
+        inset 0 -7px 16px -11px rgba(255,255,255,0.28),
+        0 2px 8px -2px rgba(0,0,0,0.35);
+    }
+
     /* a11y escape hatch: solid surfaces when the OS asks for less transparency */
     @media (prefers-reduced-transparency: reduce) {
       .fold-menu, .qf-popover { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .glass-lens, .glass-frost, .glass-relief { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .glass-lens::before, .glass-frost::before, .glass-relief::before { background: none; }
       .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .content-activebar::after { background: var(--bg); }
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
