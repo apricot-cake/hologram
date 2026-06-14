@@ -121,6 +121,12 @@
      sidebar bg — a barely-different fill reads as noise, not a pill */
   --chip-bg:       var(--gray-100);
   --chip-bg-hover: var(--gray-150);
+  /* Chip OUTLINE must clear the sidebar even where the Mica gradient passes through
+     the chip's own light fill (mid-column the fill matched the bg = chip vanished,
+     measured 1.03:1 — user). gray-300 gives a defined edge (~1.45:1 worst case at
+     the gradient bottom); light-on-light can't reach WCAG 3:1 so the edge carries
+     it. Dark chips already clear their bg, so dark keeps the soft --border. */
+  --chip-border:   var(--gray-300);
 
   /* Indigo accent, TWO steps. --accent is the DARK step: white text/✓ rides on
      it (primary button, selection check), and it reads as colored text on light
@@ -204,6 +210,9 @@
   /* sidebar-bg is #202226 — chips need a clear step above it */
   --chip-bg:       #2e333b;
   --chip-bg-hover: #394049;
+  /* Dark chip fill (#2e333b) already sits a clear step above the sidebar (#202226),
+     so the soft border suffices (no light-on-light problem). */
+  --chip-border:   var(--border);
 
   --accent:         var(--indigo-600);
   --accent-hover:   #6760c4;
