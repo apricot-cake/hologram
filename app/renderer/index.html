@@ -50,7 +50,7 @@
       height: 32px; flex: 1 1 0; max-width: 200px; min-width: 0;
       padding: 0 8px 0 10px;
       background: transparent; border: none; border-radius: 8px;
-      cursor: pointer; color: var(--text-muted); font-size: 12px;
+      cursor: pointer; color: var(--text-muted-strong); font-size: 12px;
       transition: color .12s; overflow: hidden;
       user-select: none;   /* .tab-item is a div now; dblclick = rename, not text selection */
     }
@@ -1025,7 +1025,7 @@
        rules). The extra air carries the structure. */
     .sb-scroll > .sb-section { margin-bottom: 26px; }
     .sb-title {
-      font-size: 11px; font-weight: 600; color: var(--text-muted);
+      font-size: 11px; font-weight: 600; color: var(--text-muted-strong);
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 8px; padding-left: 0;   /* aligns to the gutter (container) */
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1686,7 +1686,7 @@
     </div>
     <div style="display:flex;gap:6px;justify-content:flex-end;">
       <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
-      <button class="btn-outline" id="qfDateApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
+      <button class="btn-outline" id="qfDateApply" style="background:var(--indigo-600);color:#fff;border-color:var(--indigo-600);"></button>
     </div>
   </div>
 
@@ -1701,7 +1701,7 @@
     </div>
     <div style="display:flex;gap:6px;justify-content:flex-end;">
       <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
-      <button class="btn-outline" id="qfEngApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
+      <button class="btn-outline" id="qfEngApply" style="background:var(--indigo-600);color:#fff;border-color:var(--indigo-600);"></button>
     </div>
   </div>
 

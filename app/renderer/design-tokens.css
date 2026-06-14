@@ -79,6 +79,11 @@
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
   --text-muted:    var(--gray-500);
+  /* "legible muted" — one step darker than --text-muted. Light's muted (gray-500
+     #6c7280) reads faint on white for small/uppercase labels (tab titles, sidebar
+     section eyebrows); this lifts them without going to body-text weight. Dark's
+     muted already clears its dark bg, so dark keeps --text-muted (see dark block). */
+  --text-muted-strong: var(--gray-600);
   --text-subtle:   var(--gray-400);
   --text-on-accent:#ffffff;
 
@@ -159,6 +164,9 @@
   --text:          #dadce0;
   --text-strong:   #f4f5f7;
   --text-muted:    #8e9298;
+  /* dark muted (#8e9298) already reads on the dark bg, so "legible muted" == muted
+     here (defined in both themes so the parity guard can't let it drift). */
+  --text-muted-strong: var(--text-muted);
   --text-subtle:   #65686e;
   --text-on-accent:#ffffff;
 
