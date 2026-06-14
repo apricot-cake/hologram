@@ -939,22 +939,25 @@
   qbHelpPop.className = 'qb-help-pop';
   document.body.appendChild(qbHelpPop);
   function hideQbHelp() { qbHelpPop.classList.remove('show'); }
-  document.getElementById('qbHelpBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (qbHelpPop.classList.contains('show')) { hideQbHelp(); return; }
+  function showQbHelp() {
+    const btn = document.getElementById('qbHelpBtn');
+    if (!btn) return;
     qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` +
       [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5, MSG.qbHelp6]
         .map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
-    const r = e.currentTarget.getBoundingClientRect();
+    const r = btn.getBoundingClientRect();
     qbHelpPop.style.left = r.left + 'px';
     qbHelpPop.style.top = (r.bottom + 6) + 'px';
     qbHelpPop.classList.add('show');
     const pr = qbHelpPop.getBoundingClientRect();
     if (pr.right > innerWidth - 8) qbHelpPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-  });
-  document.addEventListener('click', (e) => {
-    if (qbHelpPop.classList.contains('show') && !qbHelpPop.contains(e.target) && !e.target.closest('#qbHelpBtn')) hideQbHelp();
-  });
+  }
+  // Hover (and keyboard focus) to reveal — it's a passive hint, no click needed.
+  const qbHelpBtn = document.getElementById('qbHelpBtn');
+  qbHelpBtn.addEventListener('mouseenter', showQbHelp);
+  qbHelpBtn.addEventListener('mouseleave', hideQbHelp);
+  qbHelpBtn.addEventListener('focus', showQbHelp);
+  qbHelpBtn.addEventListener('blur', hideQbHelp);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbHelp(); });
 
   // Chip click handler
@@ -1464,8 +1467,10 @@
     const btn = document.getElementById('sbTop');
     const scroller = document.querySelector('#controls-posts .sb-scroll');
     if (!btn || !scroller) return;
+    // Threshold must stay BELOW the sidebar's max scroll, which is small now that
+    // sections were trimmed (~140px). 300 made the button unreachable (=消えてる).
     scroller.addEventListener('scroll', () => {
-      btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none';
+      btn.style.display = scroller.scrollTop > 80 ? 'flex' : 'none';
     }, { passive: true });
     btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
   })();

@@ -169,10 +169,6 @@
       display: none; position: fixed; bottom: 52px; left: 14px;
       border-radius: 14px; padding: 10px 12px; z-index: 12000; white-space: nowrap;
     }
-    /* Text-dense surface → thicker material than the bare lens (Apple uses
-       regular/thick material for legible text, not ultraThin). Keeps the rim+
-       sheen+blur of .glass-lens, just a more opaque base so 11px text reads. */
-    .kb-hint-pop.glass-lens { background: color-mix(in srgb, var(--surface) 42%, transparent); }
     .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn .15s ease-out; }
     /* Glass material system (.glass-lens / .glass-frost / .glass-relief) is defined
        as a utility layer at the END of this stylesheet so it wins source-order over
@@ -1438,7 +1434,7 @@
         <button class="icon-btn icon-btn--ghost" type="button" aria-label="キーボードショートカット">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M8 15h8"/></svg>
         </button>
-        <div class="kb-hint-pop glass-lens">
+        <div class="kb-hint-pop glass-frost">
           <div class="kb-hint-head">ショートカット</div>
           <div class="kb-hint-grid">
             <kbd>/</kbd><span>検索</span>
@@ -1595,7 +1591,7 @@
   </div>
 
   <!-- Back-to-top for the content area (the post grid scrolls with the window) -->
-  <button id="contentTop" class="icon-btn" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40; box-shadow: var(--shadow-md);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
+  <button id="contentTop" class="icon-btn glass-relief" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
   <div id="ivToast" class="iv-toast"></div>
@@ -1933,6 +1929,12 @@
        double-animate with anim-in. */
     ::view-transition-old(post-grid) { animation: corpusFadeIn .12s ease-in reverse both; }
     ::view-transition-new(post-grid) { animation: none; }
+    /* The post-grid snapshot renders in the TOP LAYER and would cover the sticky
+       active-filter bar (content shows through it on mode switch — ユーザー報告).
+       Promote the bar to its own snapshot group above the grid so it stays put. */
+    .content-activebar { view-transition-name: corpus-activebar; }
+    ::view-transition-group(corpus-activebar) { z-index: 2; }
+    ::view-transition-old(corpus-activebar), ::view-transition-new(corpus-activebar) { animation: none; }
 
     /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
        removing [hidden] re-mounts the element (display:none -> flex). */
