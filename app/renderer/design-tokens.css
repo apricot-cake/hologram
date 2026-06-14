@@ -100,8 +100,14 @@
   --sidebar-row-hover: rgba(0, 0, 0, 0.05);
   /* Mica gradient stops, per-mode (light keeps the top base = not lightened, so
      row hovers stay readable on it). */
-  --sidebar-grad-top:  var(--surface);
-  --sidebar-grad-bot:  color-mix(in srgb, var(--surface) 90%, #000);
+  /* Cool-tinted to match the slate ramp. The content --bg (gray-50) is ~+3 blue,
+     so a pure-neutral sidebar read warm/yellowish next to it by simultaneous
+     contrast (user). Bright cool white → cool light gray, the blue bias deepening
+     with the darkening exactly like the gray ramp does (gray-50 +3 → gray-200 +10).
+     Literal (not color-mix): staying near-white AND cool needs B held high while
+     R/G drop, which mixing white with a darker gray can't produce. */
+  --sidebar-grad-top:  #fcfdff;
+  --sidebar-grad-bot:  #e6e8ed;
 
   /* segmented control (recessed track + raised thumb, macOS-style) */
   --seg-track:     var(--gray-100);
