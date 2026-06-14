@@ -343,12 +343,17 @@
 
     /* --- Selection bar (pinned at the sidebar top while ≥1 card is selected) --- */
     .selection-bar {
-      display: flex; flex-direction: column; gap: 6px; align-items: stretch;
-      margin-bottom: 10px; padding: 10px 12px;
+      /* 2-col grid (was a 6-tall vertical stack of full-width buttons = tall/heavy,
+         user). The count spans the top row; the 6 actions pack into 3 rows of 2 →
+         ~half the height. Buttons stay rectangular (操作=四角ボタン規約は維持). */
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      margin-bottom: 10px; padding: 8px 10px;
       background: var(--accent-subtle); border: 1px solid var(--accent-border);
       border-radius: 10px;
     }
-    .selection-bar .post-count { color: var(--text); font-weight: 600; }
+    .selection-bar .post-count { grid-column: 1 / -1; color: var(--text); font-weight: 600; }
+    /* compact fill for the narrow half-width cells (scoped — leaves dialog buttons untouched) */
+    .selection-bar .btn-outline, .selection-bar .btn-danger { padding: 5px 8px; font-size: 12px; text-align: center; }
 
     /* --- Sidebar control readability: in dark mode the sidebar bg (--sidebar-bg)
        is LIGHTER than --surface, so surface-colored controls look sunken/dark.
