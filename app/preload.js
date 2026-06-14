@@ -4,8 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('corpus', {
   getConfig: () => ipcRenderer.invoke('get-config'),
-  pickSaveFolder: () => ipcRenderer.invoke('pick-save-folder'),
-  setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
+setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   listPosts: () => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.

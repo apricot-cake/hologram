@@ -144,10 +144,6 @@
 
     save: _s('save'),       // tag editor save button
     saved: _s('saved'),     // settings status toast
-    saveFolderTitle: _s('saveFolderTitle'),
-    chooseFolder: _s('chooseFolder'),
-    hintSaveFolder: _s('hintSaveFolder'),
-
     // settings > appearance / language / shortcut
     themeTitle: _s('themeTitle'),
     themeMode: _s('themeMode'),

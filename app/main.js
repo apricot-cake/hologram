@@ -284,20 +284,6 @@ ipcMain.handle('set-extension-id', (_event, id) => {
   return { extensionId: cfg.extensionId };
 });
 
-ipcMain.handle('pick-save-folder', async () => {
-  const res = await dialog.showOpenDialog(win, {
-    properties: ['openDirectory', 'createDirectory']
-  });
-  if (res.canceled || !res.filePaths[0]) {
-    return { saveFolder: getSaveFolder() };
-  }
-  const cfg = readConfig();
-  cfg.saveFolder = res.filePaths[0];
-  writeConfig(cfg);
-  watchSaveFolder();
-  return { saveFolder: cfg.saveFolder };
-});
-
 ipcMain.handle('list-posts', () => listPosts());
 ipcMain.handle('list-posts-delta', (_e, haveBaseline, changedNames) => listPostsDelta(!!haveBaseline, changedNames));
 
