@@ -161,7 +161,7 @@
     /* Keyboard-shortcut hint: hover the ? button to see all shortcuts */
     .kb-hint-wrap { position: relative; }
     .kb-hint-pop {
-      display: none; position: absolute; bottom: calc(100% + 8px); left: 0;
+      display: none; position: fixed; bottom: 52px; left: 14px;
       background: var(--glass-bg); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       border: 1px solid var(--border-strong); border-radius: 10px;
       box-shadow: var(--shadow-pop), var(--glass-edge);
@@ -187,14 +187,15 @@
     .settings-view:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
     .settings-view-inner {
       width: 100%; max-width: 720px; max-height: 100%; overflow-y: auto;
-      background: var(--bg); border: 1px solid var(--border-strong);
-      border-radius: 16px; box-shadow: var(--shadow-lg);
+      background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      border: 1px solid var(--border-strong); border-radius: 16px;
+      box-shadow: var(--shadow-lg), var(--glass-edge);
       padding: 4px 32px 40px;
     }
     .settings-view:not([hidden]) .settings-view-inner { animation: corpusPopIn .2s ease-out; }
     .settings-view-head {
       display: flex; align-items: center; justify-content: space-between;
-      position: sticky; top: 0; background: var(--bg); padding: 12px 0 14px;
+      position: sticky; top: 0; background: transparent; padding: 12px 0 14px;
       z-index: 1; margin-bottom: 4px;
     }
     .settings-view-title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); color: var(--text-strong); }
