@@ -1128,28 +1128,24 @@
       border-color: var(--accent); color: var(--accent-subtle-fg);
     }
 
+    /* Active-filter pills = one uniform GLASS material (monotone). The old
+       per-type rainbow tints (qc-platform/postType/date/…) read as "color groups
+       floating" against the monotone UI (報告) — dropped for a single glass pill;
+       the leading icon/label still tells the type apart. */
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
       border-radius: 999px; padding: 3px 10px; font-size: 12px;
       cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
+      color: var(--text);
+      background: color-mix(in srgb, var(--surface) 48%, transparent);
+      backdrop-filter: blur(8px) saturate(160%); -webkit-backdrop-filter: blur(8px) saturate(160%);
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: inset 0 1px 0.5px rgba(255,255,255,0.4);
     }
     .sb-active-chip:hover { opacity: 0.7; }
     .sb-active-chip.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
-    .sb-active-chip.qc-platform { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
-    .sb-active-chip.qc-postType { background: var(--tint-purple-bg); border: 1px solid var(--tint-purple-bd); color: var(--text); }
-    .sb-active-chip.qc-date { background: var(--tint-green-bg); border: 1px solid var(--tint-green-bd); color: var(--text); }
-    .sb-active-chip.qc-engagement { background: var(--tint-orange-bg); border: 1px solid var(--tint-orange-bd); color: var(--text); }
-    .sb-active-chip.qc-tag { background: var(--tint-olive-bg); border: 1px solid var(--tint-olive-bd); color: var(--text); }
-    .sb-active-chip.qc-media { background: var(--tint-blue-bg); border: 1px solid var(--tint-blue-bd); color: var(--text); }
-    .sb-active-chip.qc-user { background: var(--tint-pink-bg); border: 1px solid var(--tint-pink-bd); color: var(--text); }
-    .sb-active-chip.qc-img { background: var(--hover); border: 1px solid var(--border); color: var(--fg); }
-    .sb-active-chip.qc-kind { background: var(--surface-3); border: 1px solid var(--border); color: var(--text); }
-    .sb-active-chip.qc-workspace { background: var(--accent-subtle); border: 1px solid var(--accent-border); color: var(--accent-subtle-fg); }
-    /* 検索/フォルダの特殊ピル: 裸テキストだったのでチップ化（角丸の四角） */
-    .sb-active-chip.qc-search, .sb-active-chip.qc-folder {
-      background: var(--surface-3); border: 1px solid var(--border-strong);
-      color: var(--text); border-radius: 6px;
-    }
+    /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
+    .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
     /* クエリビルダ: 「かつ」「または」の2フィールドを常時表示。全フィルタが
        要素（ピル）で、ドラッグで他方のフィールドへ移せる。間の接続は
        プルダウン（かつ/または）。 */
@@ -1169,10 +1165,15 @@
     }
     .qc-op { font-size: 10px; color: var(--text-subtle); align-self: center; margin: 0 2px; pointer-events: none; }
     .qc-zone-empty { font-size: 11px; color: var(--text-subtle); padding: 0 5px; pointer-events: none; }
+    /* Connect-operator dropdown = glass (monotone), matching the glass pills.
+       Native <select>, so only the trigger is glassed (the popup is OS-drawn). */
     .qc-join-sel {
       font-size: 11px; font-weight: 500; padding: 3px 6px; width: auto;
-      border: 1px solid var(--accent-border); border-radius: 8px;
-      background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin: 0 5px;
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+      background: color-mix(in srgb, var(--surface) 48%, transparent);
+      backdrop-filter: blur(8px) saturate(160%); -webkit-backdrop-filter: blur(8px) saturate(160%);
+      box-shadow: inset 0 1px 0.5px rgba(255,255,255,0.4);
+      color: var(--text); cursor: pointer; margin: 0 5px;
     }
     #queryChips .sb-active-chip { cursor: grab; }
     #queryChips .sb-active-chip:active { cursor: grabbing; }
@@ -1925,6 +1926,7 @@
       .fold-menu, .qf-popover { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .glass-lens, .glass-frost, .glass-relief { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .glass-lens::before, .glass-frost::before, .glass-relief::before { background: none; }
+      .sb-active-chip, .qc-join-sel { background: var(--surface-3); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: var(--border); }
       .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .content-activebar::after { background: var(--bg); }
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
