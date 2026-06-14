@@ -159,10 +159,13 @@
     .icon-btn svg { width: 15px; height: 15px; }
 
     /* Keyboard-shortcut hint: hover the ? button to see all shortcuts */
-    .kb-hint-wrap { position: relative; }
+    .kb-hint-wrap { position: relative; display: flex; align-items: center; margin-left: 6px; }
     .kb-hint-pop {
       display: none; position: fixed; bottom: 52px; left: 14px;
-      background: var(--glass-bg); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      /* More transparent than the shared --glass-bg: over the solid Mica sidebar
+         a higher opacity reads as flat, so let the sidebar's gradient/grain show. */
+      background: color-mix(in srgb, var(--surface) 60%, transparent);
+      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       border: 1px solid var(--border-strong); border-radius: 10px;
       box-shadow: var(--shadow-pop), var(--glass-edge);
       padding: 10px 12px; z-index: 12000; white-space: nowrap;
