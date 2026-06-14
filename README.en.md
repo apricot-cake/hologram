@@ -1,6 +1,6 @@
 # Corpus
 
-**English** | [日本語](README.md)
+**English** ・ [日本語](https://github.com/apricot-cake/corpus)
 
 Collect SNS posts and drag-saved illustrations/images into **one app** to browse, search, and organize later.
 
