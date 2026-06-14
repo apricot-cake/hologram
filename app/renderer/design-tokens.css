@@ -311,7 +311,10 @@
   --glass-bg:      color-mix(in srgb, var(--surface) 72%, transparent);
   --glass-bg-bar:  color-mix(in srgb, var(--bg) 70%, transparent);
   --glass-bg-panel:color-mix(in srgb, var(--surface) 88%, transparent);
-  --glass-filter:  blur(24px) saturate(140%);
+  /* Light pushes saturate harder (180 vs dark's 140): a light veil over light
+     content has little to "refract", so popping the blurred backdrop colours is
+     what sells the glass in light. Per-theme (dark override below). */
+  --glass-filter:  blur(24px) saturate(180%);
   --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.35);
 
   /* Glass MATERIAL tokens for the 3-tier .glass-* classes (lens/frost/relief)
@@ -321,7 +324,7 @@
      Any new glass value goes here, not inline — that forces both themes. */
   --glass-rim:       rgba(0,0,0,0.10);
   --glass-hi:        rgba(255,255,255,0.85);
-  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.16) 24%, transparent 50%);
+  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.22) 26%, transparent 52%);
   --glass-drop:      0 12px 32px -8px rgba(0,0,0,0.18);
   --glass-drop-sm:   0 2px 8px -2px rgba(0,0,0,0.16);
   --glass-relief-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 82%, #fff) 0%, var(--surface) 100%);
@@ -333,6 +336,9 @@
   /* Dark keeps the heavier 78% tint (light is lighter at 72%, see :root note):
      light text survives a thinner dark veil, so dark needs no extra opacity. */
   --glass-bg:   color-mix(in srgb, var(--surface) 78%, transparent);
+  /* Dark keeps saturate 140 (the dark veil already reads as glass via its bright
+     edge; light needs the extra 180 pop — see :root note). */
+  --glass-filter: blur(24px) saturate(140%);
   /* Dark counterparts of the material tokens above (white edges read on dark). */
   --glass-rim:       rgba(255,255,255,0.16);
   --glass-hi:        rgba(255,255,255,0.55);

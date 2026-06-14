@@ -33,12 +33,12 @@ const SHARED_EXACT = new Set([
   '--text-lg', '--text-xl', '--text-2xl', '--text-3xl', '--text-4xl',
   '--tabbar-h', '--ring',
   '--fg', '--fg-strong', '--muted', '--muted2', '--border-soft',
-  // Glass tint/filter that theme themselves: --glass-bg-bar/-panel are
-  // color-mix(var(--bg)/var(--surface) …) so they flip via the per-theme base;
-  // --glass-filter is colorless blur (same both themes). (--glass-bg is now
-  // per-theme — light 72% vs dark 78% — so it is defined in BOTH blocks and is NOT
-  // shared. --glass-edge/rim/hi/sheen/drop*/relief-bg also differ per theme.)
-  '--glass-bg-bar', '--glass-bg-panel', '--glass-filter',
+  // Glass tint that themes itself: --glass-bg-bar/-panel are color-mix(var(--bg)/
+  // var(--surface) …) so they flip via the per-theme base. (--glass-bg AND
+  // --glass-filter are now per-theme — light is more transparent / more saturated
+  // than dark — so both are defined in BOTH blocks and are NOT shared.
+  // --glass-edge/rim/hi/sheen/drop*/relief-bg also differ per theme.)
+  '--glass-bg-bar', '--glass-bg-panel',
 ]);
 const isShared = (n) => SHARED_EXACT.has(n) || SHARED_PREFIX.some((p) => n.startsWith(p));
 
