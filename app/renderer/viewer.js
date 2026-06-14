@@ -3465,6 +3465,21 @@
   }
   tileSlider.addEventListener('input', () => onSliderMove(false));
   tileSlider.addEventListener('change', () => onSliderMove(true));
+  // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+    if (tileSlider.disabled) return;
+    const step = parseInt(tileSlider.step, 10) || 1;
+    tileSlider.value = String(Math.max(
+      parseInt(tileSlider.min, 10),
+      Math.min(parseInt(tileSlider.max, 10),
+        parseInt(tileSlider.value, 10) + (e.key === '-' ? -step : step))));
+    onSliderMove(true);
+  });
   // Window resizes change how many columns fit → re-derive the track range.
   let tileResizeT = 0;
   window.addEventListener('resize', () => {
