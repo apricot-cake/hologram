@@ -164,9 +164,12 @@
   --text:          #dadce0;
   --text-strong:   #f4f5f7;
   --text-muted:    #8e9298;
-  /* dark muted (#8e9298) already reads on the dark bg, so "legible muted" == muted
-     here (defined in both themes so the parity guard can't let it drift). */
-  --text-muted-strong: var(--text-muted);
+  /* Contrast-matched to light's muted-strong: a gray bright enough to read as a
+     clear step above --text-muted in dark too (~6.9 vs the dark sidebar, ~7.7 vs
+     the dark surface ≈ light's 7.73). Was =--text-muted, which left dark tab
+     titles & section eyebrows weak (~5.1) while light's were ~7.7. Enforced by
+     scripts/test-contrast-parity.js. */
+  --text-muted-strong: #a6abb2;
   --text-subtle:   #65686e;
   --text-on-accent:#ffffff;
 
