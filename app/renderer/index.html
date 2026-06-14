@@ -848,13 +848,13 @@
     .ws-btn.in::after {
       content: ''; position: absolute; top: -1px; right: -1px;
       width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent);
+      background: var(--accent-soft);
       box-shadow: 0 0 0 1.5px var(--surface);
     }
     /* Hovering an in-tray one is red so a click reads as "remove" (same
        hover-red-for-undo rule as folders). */
     .ws-btn.in:hover { background: var(--danger); }
-    .ws-btn.in:hover::after { background: #fff; box-shadow: 0 0 0 1.5px var(--danger); }
+    .ws-btn.in:hover::after { background: var(--accent-soft); box-shadow: 0 0 0 1.5px var(--danger); }
     .ws-btn.added { background: var(--success); }
     .post-grid.list-view .ws-btn { top: 50%; right: 40px; transform: translateY(-50%); }
     /* Flyout menus: the card context menu (full action list) and the folder
