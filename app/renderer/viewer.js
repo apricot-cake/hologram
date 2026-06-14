@@ -422,6 +422,9 @@
   // --- Disclosure chevrons (thin SVG; right = flyout indicator, down = collapsible) ---
   const CHEV_R = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg>';
   const CHEV_D = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg>';
+  // Geometric check (replaces the ✓ glyph, which read as thin/cursive). Thick
+  // stroke + high-contrast monotone color via .fm-check.
+  const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17 19 7"/></svg>';
 
   // --- Custom glass dropdown: a native <select> popup is OS-drawn and can't
   // be glassed, so we hide the select (keeping it as the value source — all
@@ -441,7 +444,7 @@
     if (csPop.classList.contains('show') && csSel === sel) { hideCsPop(); return; }
     csSel = sel; csBtn = btn;
     csPop.innerHTML = Array.from(sel.options).map((o, i) =>
-      `<div class="fm-row cs-opt${i === sel.selectedIndex ? ' cs-on' : ''}" data-i="${i}"><span class="fm-name">${escapeHtml(o.textContent)}</span>${i === sel.selectedIndex ? '<span class="fm-check">✓</span>' : ''}</div>`).join('');
+      `<div class="fm-row cs-opt${i === sel.selectedIndex ? ' cs-on' : ''}" data-i="${i}"><span class="fm-name">${escapeHtml(o.textContent)}</span>${i === sel.selectedIndex ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('');
     const r = btn.getBoundingClientRect();
     csPop.style.left = r.left + 'px';
     csPop.style.top = (r.bottom + 4) + 'px';
@@ -837,7 +840,7 @@
       const pinHtml = (curPins && !isMulti)
         ? `<span class="qf-pin${curPins.some(p => p.type === vtype && p.value === it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" data-pintype="${escapeAttr(vtype)}" title="${MSG.tipPin}">${PIN_SVG}</span>`
         : '';
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? '<span class="fm-check">✓</span>' : ''}${pinHtml}</div>`;
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}${pinHtml}</div>`;
     };
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
@@ -2526,7 +2529,7 @@
       const inF = CF().has(f.id, rep);
       return `<div class="fm-row" data-fid="${escapeAttr(f.id)}">` +
         `<span class="fm-name">${escapeHtml(f.name)}</span>` +
-        (inF ? '<span class="fm-check">✓</span>' : '') +
+        (inF ? `<span class="fm-check">${CHECK_SVG}</span>` : '') +
         `</div>`;
     }).join('') + (list.length ? '<div class="fm-sep"></div>' : '') +
       `<div class="fm-row fm-manage" data-manage="1">${MSG.ctxManage}</div>`;

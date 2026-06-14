@@ -227,7 +227,10 @@
       /* The gutter lives HERE (single source). 6px is the negative-margin
          escape for select-ring overflow; 8px is the scrollbar gap. */
       margin-left: -6px;
-      padding-left: calc(6px + var(--sb-gutter)); padding-right: calc(8px + var(--sb-gutter));
+      /* Right gutter was 8px+gutter PLUS the 10px transparent scrollbar, so items
+         hugged the left (左右の余白が非対称・報告). The scrollbar already supplies
+         the visual right gap, so keep padding-right minimal to balance the edges. */
+      padding-left: calc(6px + var(--sb-gutter)); padding-right: 4px;
       padding-bottom: 16px;
     }
     #sidebar select, #sidebar input.search-box { width: 100%; }
@@ -438,7 +441,26 @@
     /* Glyph stays outlined in every state; the thumb behind it marks the active one. */
     .view-toggle .vt-ico { width: 17px; height: 17px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .view-toggle .vt-label { display: none; }
-    .view-toggle button.active { background: var(--seg-thumb); box-shadow: var(--glass-edge), var(--shadow-xs); }
+    /* Active thumb = glass (the BUTTON itself, not the track) — baked light
+       gradient + specular + an INSET rim (box-shadow, so no layout shift vs the
+       border-less inactive buttons). This makes the selected mode read as a
+       liquid-glass chip and lifts its contrast. */
+    .view-toggle button.active {
+      position: relative; isolation: isolate;
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--seg-thumb) 88%, white 12%) 0%, var(--seg-thumb) 100%);
+      color: var(--text-strong);
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,0.18),
+        inset 0 1px 0.5px rgba(255,255,255,0.6),
+        inset 0 -6px 14px -10px rgba(255,255,255,0.28),
+        0 2px 6px -2px rgba(0,0,0,0.35);
+    }
+    .view-toggle button.active::before {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      pointer-events: none; z-index: -1;
+      background: linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05) 28%, transparent 54%);
+    }
 
     /* Browser-style back/forward over the filter & view state: two ghost
        square buttons matching the sidebar's control palette */
@@ -905,7 +927,9 @@
     }
     .fold-menu .fm-row:hover { background: var(--hover); }
     .fm-name { flex: 1; word-break: break-word; }
-    .fm-check { color: var(--accent); flex-shrink: 0; }
+    /* High-contrast monotone check (was thin accent ✓ that read as cursive). */
+    .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
+    .fm-check svg { display: block; }
     .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
     .fm-manage { color: var(--accent); }
     .fm-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }
@@ -1346,7 +1370,7 @@
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
-            <div class="view-toggle glass-relief">
+            <div class="view-toggle">
               <button data-view="card" id="viewCard" class="active"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg><span class="vt-label" id="viewCardLabel"></span></button>
               <button data-view="tile" id="viewTile"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="vt-label" id="viewTileLabel"></span></button>
               <button data-view="list" id="viewList"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span class="vt-label" id="viewListLabel"></span></button>
@@ -1847,12 +1871,18 @@
                           sell the glass with almost no help from the backdrop.
        ============================================================ */
     .glass-lens, .glass-frost, .glass-relief { isolation: isolate; }
-    /* Shared diagonal specular sheen ("light catching the glass edge"). */
+    /* Shared diagonal specular sheen ("light catching the glass edge"). Kept
+       subtle — a strong top-left hotspot washed out the first menu row (報告). */
     .glass-lens::before, .glass-frost::before, .glass-relief::before {
       content: ''; position: absolute; inset: 0; border-radius: inherit;
       pointer-events: none; z-index: -1;
       background: linear-gradient(135deg,
-        rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 26%, transparent 52%);
+        rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 24%, transparent 48%);
+    }
+    /* Relief (no backdrop to help) keeps a slightly stronger glint. */
+    .glass-relief::before {
+      background: linear-gradient(135deg,
+        rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.05) 28%, transparent 54%);
     }
     .glass-lens {
       background: color-mix(in srgb, var(--surface) 14%, transparent);
