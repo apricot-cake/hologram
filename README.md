@@ -1,8 +1,13 @@
-# Corpus
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner-light.svg" alt="corpus — 投稿を丸ごと。あなたの SNS ライブラリ" width="440">
+  </picture>
+</p>
 
-[English](README.en.md) | **日本語**
+<p align="center"><a href="README.en.md">English</a> ・ <strong>日本語</strong></p>
 
-SNS の投稿と、ドラッグ保存したイラスト／画像を **1 つのアプリ** に集約し、後から閲覧・検索・整理できます。
+SNS投稿を、画像と情報ごとキャプチャ。自分のタグや、日付・エンゲージメント・作者などの条件で整理・検索できる、手元のアーカイブ。SNS の投稿も、ドラッグ保存したイラスト／画像も **1 つのアプリ** に集約できます。
 
 Corpus は3つの部品でできています。
 

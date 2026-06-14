@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 104" role="img" aria-label="corpus — 投稿を丸ごと。あなたの SNS ライブラリ">
+  <g transform="translate(6,7) scale(1.55)">
+    <path d="M20 10 q-6 0 -6 7 v4 q0 5 -5 7 q5 2 5 7 v4 q0 7 6 7" fill="none" stroke="#e9e7f3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M52 10 q6 0 6 7 v4 q0 5 5 7 q-5 2 -5 7 v4 q0 7 -6 7" fill="none" stroke="#e9e7f3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 37 C28 31 25 26 27 22 C28.5 19 32.5 19 34.5 21.5 C35.3 22.5 35.7 23 36 24 C36.3 23 36.7 22.5 37.5 21.5 C39.5 19 43.5 19 45 22 C47 26 44 31 36 37 Z" fill="none" stroke="#a59ee8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <text x="132" y="52" font-family="'IBM Plex Mono','Courier New',monospace" font-size="42" font-weight="500" letter-spacing="-0.5" fill="#f0eff7">corpus</text>
+  <text x="134" y="80" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-size="16" font-weight="500" fill="#9aa0ac">投稿を丸ごと。あなたの SNS ライブラリ</text>
+</svg>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>corpus — logo builder</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Inter:wght@500&display=swap');
+  body{margin:0;padding:28px;background:#f7f8fa;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;}
+  h1{font-size:18px;font-weight:600;margin:0 0 4px;}
+  .note{font-size:13px;color:#64748b;margin:0 0 20px;line-height:1.6;}
+  .ctl{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .grp{display:flex;align-items:center;gap:6px;}
+  .gl{font-size:11px;color:#94a3b8;}
+  .vv{font-size:11px;color:#475569;min-width:34px;font-variant-numeric:tabular-nums;}
+  button{padding:5px 11px;border-radius:999px;border:1px solid #d4dbe5;background:#fff;color:#475569;font-size:12px;cursor:pointer;}
+  button.on{border-color:#0f172a;color:#0f172a;font-weight:600;}
+  .sl{width:118px;accent-color:#6f68c8;cursor:pointer;}
+  .modebtn{margin-left:auto;}
+  .banner{display:flex;align-items:center;gap:26px;padding:32px 38px;border-radius:14px;border:1px solid;transition:background .15s,border-color .15s;}
+  .wm{font-size:38px;font-weight:500;letter-spacing:-.01em;line-height:1;font-family:'IBM Plex Mono',monospace;}
+  .tag{font-size:15px;font-weight:500;margin-top:9px;}
+  .sub{font-size:12.5px;line-height:1.65;margin-top:6px;max-width:400px;}
+  .exp{margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .exp button{background:#6f68c8;color:#fff;border:none;padding:8px 16px;font-weight:600;border-radius:8px;}
+  .exp .alt{background:#475569;}
+  #msg{font-size:12px;color:#16a34a;}
+  textarea{width:100%;height:120px;margin-top:10px;font-family:monospace;font-size:11px;border:1px solid #d4dbe5;border-radius:8px;padding:10px;box-sizing:border-box;}
+</style>
+</head>
+<body>
+<h1>corpus — logo builder</h1>
+<p class="note">スライダーで調整して、下の「アイコン SVG をコピー / ダウンロード」で書き出せます。<br>確定値: 波 { } × ハート × Plex Mono / 間隔 40・記号 100%・全体 100%・線 2.8・X 0・Y 0。</p>
+<div class="ctl">
+  <div class="grp"><span class="gl">中身</span><button data-i="hrd" class="on">♡ ハート</button><button data-i="hash"># タグ</button></div>
+  <button class="modebtn" id="modebtn">🌙 ダーク</button>
+</div>
+<div class="ctl">
+  <div class="grp"><span class="gl">間隔</span><input type="range" class="sl" id="gapSl" min="22" max="52" value="40"><span class="vv" id="gapV"></span></div>
+  <div class="grp"><span class="gl">記号</span><input type="range" class="sl" id="sizeSl" min="60" max="150" value="100"><span class="vv" id="sizeV"></span></div>
+  <div class="grp"><span class="gl">全体</span><input type="range" class="sl" id="gsSl" min="70" max="170" value="100"><span class="vv" id="gsV"></span></div>
+  <div class="grp"><span class="gl">線</span><input type="range" class="sl" id="swSl" min="14" max="38" value="28"><span class="vv" id="swV"></span></div>
+  <div class="grp"><span class="gl">X</span><input type="range" class="sl" id="dxSl" min="-16" max="16" value="0"><span class="vv" id="dxV"></span></div>
+  <div class="grp"><span class="gl">Y</span><input type="range" class="sl" id="dySl" min="-12" max="12" value="0"><span class="vv" id="dyV"></span></div>
+</div>
+<div class="banner" id="banner">
+  <svg class="lgsvg" id="lgsvg" width="96" height="74" viewBox="0 0 72 56" aria-hidden="true" style="flex:0 0 auto;"></svg>
+  <div>
+    <div class="wm" id="wm">corpus</div>
+    <div class="tag" id="tag">投稿を丸ごと。あなたの SNS ライブラリ</div>
+    <div class="sub" id="sub">SNS投稿を、画像と情報ごとキャプチャ。自分のタグや、日付・エンゲージメント・作者などの条件で整理・検索できる、手元のアーカイブ。</div>
+  </div>
+</div>
+<div class="exp">
+  <button id="copyBtn">アイコン SVG をコピー</button>
+  <button id="dlBtn" class="alt">ダウンロード</button>
+  <span id="msg"></span>
+</div>
+<textarea id="out" readonly></textarea>
+<script>
+  var svg=document.getElementById('lgsvg'),banner=document.getElementById('banner'),wm=document.getElementById('wm'),tag=document.getElementById('tag'),sub=document.getElementById('sub'),modebtn=document.getElementById('modebtn'),out=document.getElementById('out'),msg=document.getElementById('msg');
+  function curlyL(cx){return 'M'+(cx+4)+' 10 q-6 0 -6 7 v4 q0 5 -5 7 q5 2 5 7 v4 q0 7 6 7';}
+  function curlyR(cx){return 'M'+(cx-4)+' 10 q6 0 6 7 v4 q0 5 5 7 q-5 2 -5 7 v4 q0 7 -6 7';}
+  function bracket(gap,ink){
+    var lx=36-gap/2,rx=36+gap/2;
+    var s='" fill="none" stroke="'+ink+'" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>';
+    return '<path d="'+curlyL(lx)+s+'<path d="'+curlyR(rx)+s;
+  }
+  var HRD='M36 37 C28 31 25 26 27 22 C28.5 19 32.5 19 34.5 21.5 C35.3 22.5 35.7 23 36 24 C36.3 23 36.7 22.5 37.5 21.5 C39.5 19 43.5 19 45 22 C47 26 44 31 36 37 Z';
+  var ic='hrd',mode='light',gap=40,size=1,gs=1,sw=2.8,dx=0,dy=0;
+  function glyph(ac){
+    if(ic==='hrd') return '<path d="'+HRD+'" fill="none" stroke="'+ac+'" stroke-width="'+sw+'" stroke-linejoin="round" stroke-linecap="round"/>';
+    return '<text x="36" y="28" text-anchor="middle" dominant-baseline="central" font-family="\'Inter\',sans-serif" font-size="22" font-weight="500" fill="'+ac+'">#</text>';
+  }
+  function svgBody(ink,ac){
+    return bracket(gap,ink)+'<g transform="translate(36,28) scale('+size+') translate(-36,-28)">'+glyph(ac)+'</g>';
+  }
+  function iconSVG(){
+    var ink=(mode==='light')?'#23222c':'#e9e7f3',ac=(mode==='light')?'#6f68c8':'#a59ee8';
+    var inner='<g transform="translate('+(36+dx)+','+(28+dy)+') scale('+gs+') translate(-36,-28)">'+svgBody(ink,ac)+'</g>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 56" role="img" aria-label="corpus">\n  '+inner+'\n</svg>';
+  }
+  function apply(){
+    var T=(mode==='light')
+      ?{ink:'#23222c',ac:'#6f68c8',panel:'#ffffff',bd:'#e6e8ee',wm:'#1a1a24',tag:'#1a1a24',sub:'#5a5f6b'}
+      :{ink:'#e9e7f3',ac:'#a59ee8',panel:'#16171a',bd:'#2a2a30',wm:'#f0eff7',tag:'#f0eff7',sub:'#9aa0ac'};
+    svg.innerHTML='<g transform="translate('+(36+dx)+','+(28+dy)+') scale('+gs+') translate(-36,-28)">'+svgBody(T.ink,T.ac)+'</g>';
+    banner.style.background=T.panel;banner.style.borderColor=T.bd;
+    wm.style.color=T.wm;tag.style.color=T.tag;sub.style.color=T.sub;
+    document.querySelectorAll('[data-i]').forEach(function(x){x.classList.toggle('on',x.dataset.i===ic);});
+    modebtn.textContent=(mode==='light')?'🌙 ダーク':'☀ ライト';
+    document.getElementById('gapV').textContent=gap;
+    document.getElementById('sizeV').textContent=Math.round(size*100)+'%';
+    document.getElementById('gsV').textContent=Math.round(gs*100)+'%';
+    document.getElementById('swV').textContent=sw.toFixed(1);
+    document.getElementById('dxV').textContent=dx;
+    document.getElementById('dyV').textContent=dy;
+    out.value=iconSVG();
+  }
+  document.querySelectorAll('[data-i]').forEach(function(x){x.addEventListener('click',function(){ic=x.dataset.i;apply();});});
+  document.getElementById('gapSl').addEventListener('input',function(){gap=+this.value;apply();});
+  document.getElementById('sizeSl').addEventListener('input',function(){size=+this.value/100;apply();});
+  document.getElementById('gsSl').addEventListener('input',function(){gs=+this.value/100;apply();});
+  document.getElementById('swSl').addEventListener('input',function(){sw=+this.value/10;apply();});
+  document.getElementById('dxSl').addEventListener('input',function(){dx=+this.value;apply();});
+  document.getElementById('dySl').addEventListener('input',function(){dy=+this.value;apply();});
+  modebtn.addEventListener('click',function(){mode=(mode==='light')?'dark':'light';apply();});
+  document.getElementById('copyBtn').addEventListener('click',function(){
+    navigator.clipboard.writeText(iconSVG()).then(function(){msg.textContent='コピーしました';setTimeout(function(){msg.textContent='';},1800);});
+  });
+  document.getElementById('dlBtn').addEventListener('click',function(){
+    var blob=new Blob([iconSVG()],{type:'image/svg+xml'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='corpus-icon-'+mode+'.svg';a.click();URL.revokeObjectURL(a.href);
+  });
+  apply();
+</script>
+</body>
+</html>
