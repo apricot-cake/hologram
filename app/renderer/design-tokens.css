@@ -45,6 +45,15 @@
   --blue-700: #1d4ed8;
   --blue-800: #1e40af;
 
+  /* ---- Primitive: indigo accent (the product accent; the blue ramp above is
+     kept ONLY for the category "blue" tint, not for the accent anymore) ---- */
+  --indigo-300: #a59ee8;
+  --indigo-400: #9690d8;
+  --indigo-500: #6f68c8;
+  --indigo-600: #5b53b8;
+  --indigo-700: #4a4490;
+  --indigo-800: #3e3978;
+
   /* ---- Primitive: status ---- */
   --red-500:    #e5484d;
   --red-600:    #d13438;
@@ -79,7 +88,7 @@
 
   --hover:         var(--gray-100);
   --active:        var(--gray-150);
-  --focus-ring:    color-mix(in oklch, var(--blue-500) 45%, transparent);
+  --focus-ring:    color-mix(in oklch, var(--indigo-500) 45%, transparent);
   /* Sidebar rows sit on the Mica gradient; a solid hover washed out where the
      gradient is lightest (near-white top, ユーザー指摘). A translucent darken
      keeps the hover contrast uniform down the whole gradient. */
@@ -102,12 +111,20 @@
   --chip-bg:       var(--gray-100);
   --chip-bg-hover: var(--gray-150);
 
-  --accent:         var(--blue-600);
-  --accent-hover:   var(--blue-700);
+  /* Indigo accent, TWO steps. --accent is the DARK step: white text/✓ rides on
+     it (primary button, selection check), and it reads as colored text on light
+     (links, focus). --accent-soft is the PALE step for outlines only (selection
+     ring, logo tick) where nothing rides on top. */
+  --accent:         var(--indigo-700);
+  --accent-hover:   var(--indigo-800);
   --accent-fg:      #ffffff;
-  --accent-subtle:  var(--blue-50);
-  --accent-subtle-fg: var(--blue-700);
-  --accent-border:  var(--blue-200);
+  --accent-soft:    var(--indigo-400);
+  /* "subtle/border" are now MONOTONE: active filter/tag/workspace/query pills use
+     grey contrast, not an accent tint (DESIGN.md「モノトーン基調＋機能アクセント」).
+     The names are kept so the many consumers don't have to change. */
+  --accent-subtle:  var(--gray-150);
+  --accent-subtle-fg: var(--text-strong);
+  --accent-border:  var(--border-strong);
 
   --danger:        var(--red-500);
   --danger-bg:     #fdecec;
@@ -161,7 +178,7 @@
      Light mode already uses this top=base form, which is why it never showed it. */
   --sidebar-grad-top:  var(--sidebar-bg);
   --sidebar-grad-bot:  color-mix(in srgb, var(--sidebar-bg) 84%, #000);
-  --focus-ring:    color-mix(in oklch, var(--blue-400) 55%, transparent);
+  --focus-ring:    color-mix(in oklch, var(--indigo-400) 55%, transparent);
 
   /* dark: track recessed below the sidebar (#202226), thumb raised above it */
   --seg-track:     #1a1c20;
@@ -171,12 +188,14 @@
   --chip-bg:       #2e333b;
   --chip-bg-hover: #394049;
 
-  --accent:         var(--blue-500);
-  --accent-hover:   var(--blue-400);
+  --accent:         var(--indigo-600);
+  --accent-hover:   #6760c4;
   --accent-fg:      #ffffff;
-  --accent-subtle:  color-mix(in oklch, var(--blue-500) 18%, var(--surface));
-  --accent-subtle-fg: var(--blue-300);
-  --accent-border:  color-mix(in oklch, var(--blue-500) 40%, var(--border));
+  --accent-soft:    var(--indigo-300);
+  /* monotone active (grey contrast over the dark sidebar), not an accent tint */
+  --accent-subtle:  #2d323c;
+  --accent-subtle-fg: var(--text-strong);
+  --accent-border:  var(--border-strong);
 
   --danger:        #f0676b;
   --danger-bg:     color-mix(in oklch, var(--red-500) 16%, var(--surface));
