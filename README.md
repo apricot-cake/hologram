@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="corpus — 投稿を丸ごと。あなたの SNS ライブラリ" width="440">
+    <img src="assets/banner-light.svg" alt="corpus — 投稿を丸ごと。あなたの SNS ライブラリに。" width="440">
   </picture>
 </p>
 
