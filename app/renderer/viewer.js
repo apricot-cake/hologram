@@ -1916,6 +1916,13 @@
     const t = tabs.find((t) => t.id === activeTabId);
     if (!t) return;
     t.state = snapshotState(); t.history = [...viewHistory]; t.histIdx = histIdx;
+    t._scrollTop = window.scrollY;   // session-only (not persisted): remember content scroll per tab
+  }
+  // Restore a tab's remembered content scroll after its state has rendered. rAF so
+  // the new content has laid out; tabs with no saved scroll fall back to the top.
+  function restoreTabScroll(t) {
+    const y = (t && typeof t._scrollTop === 'number') ? t._scrollTop : 0;
+    requestAnimationFrame(() => window.scrollTo(0, y));
   }
   function updateActiveTabTitle() {
     if (!activeTabId) return;
@@ -1967,6 +1974,7 @@
     if (!t) return;
     viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
     if (t.state) applyState(t.state); else renderPosts();
+    restoreTabScroll(t);
     renderTabs(); persistTabsDebounced();
   }
   function addTab() {
@@ -1976,6 +1984,7 @@
     activeTabId = id;
     viewHistory = []; histIdx = -1;
     applyState({ f: [], join: 'or', search: '', sort: sortSelect.value, multi: false });
+    requestAnimationFrame(() => window.scrollTo(0, 0));   // new tab starts at the top
     renderTabs(); persistTabsDebounced();
   }
   function closeTab(id) {
@@ -1994,6 +2003,7 @@
       const t = tabs[ni];
       viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
       if (t.state) applyState(t.state); else renderPosts();
+      restoreTabScroll(t);
     }
     renderTabs(); persistTabsDebounced();
   }

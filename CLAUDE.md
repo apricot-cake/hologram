@@ -123,7 +123,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。
 
 ### 状態の記憶
-- スクロール位置（タブごと）: tab state に `scrollTop`。再起動復元は renderLimit 復元も要る＝後回し可。
+- スクロール位置（タブごと）— セッション内は実装済み（タブ切替で位置を記憶/復元・in-memory `_scrollTop`・`window.scrollY`）。残: **再起動復元**（永続化＋renderLimit 復元も要る＝後回し）。
 - 死蔵 pref 掃除: tab履歴(`history`/`histIdx`＝戻る進む撤去と同時)／`mode` pref(画像ビュー撤去で死蔵)／`corpus.wizardHiddenGroups`(ウィザード退役で死蔵)／`sortBy` 二重持ち→タブ側に一本化。
 
 ### リリース準備
