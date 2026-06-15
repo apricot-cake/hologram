@@ -111,9 +111,6 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - **カードの詰め表示（ウォーターフォール／card ビュー）**: 短いカードが伸びず隙間なく詰まるか／画像読み込み中の並び直り・動作の重さは許容範囲か（A=実測方式の難点）／大きさスライダーで列数が追従するか。気になれば B（画像寸法を保存）へ。
 - **タブごとのスクロール位置**: タブを切り替えて戻ると見ていた位置に戻るか（セッション内）。
 
-### 大型: 戻る/進む＝完全撤去（設計確定・実装待ち）
-ボタン・`Alt+←→`・履歴機構ごと削除。tab state に深く統合。撤去対象（行番号は要再grep）: ①viewer.js: `MSG.histBack/histFwd`・title設定・history機構本体（`histBackBtn/histFwdBtn/viewHistory/histIdx/lastHistPush`＋push関数）・tab state の `history`/`histIdx`（save/restore/dup/init 12箇所超）・`histGo`/click/`Alt+←→`・renderPosts の push 判定 ②index.html: `.hist-nav` CSS・ボタン ③i18n.js: histBack/histFwd キー ④docs: design-tabs.md の「戻る/進む共存」記述・DESIGN.md のショートカット記載。状態記憶掃除（tab履歴削除）と同時に。
-
 ### Todoist 実装待ち（設計確定・承認済み）
 - **タグ付け＝2軸併設＋トグル切替**: カード編集（1画像→複数タグ）／スタンプ（1タグ→複数画像 Lightroom式）両方。付与時に祝祭エフェクト。既存ウィザードは退役（この2軸へ統合）。ホバーにタグアイコンは足さない。グループ横断タグ検索は別途。
 - **著者プロフィール取得**: 全PFアバター＋取れるPF（Bluesky/Misskey/Mastodon/pixiv）のフォロワー/作成日。X はフォロワー無しで graceful 隠し（アバターは X も syndication user から取得可）。metadata.js に抽出追加。
@@ -133,7 +130,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 
 ### 状態の記憶
 - スクロール位置（タブごと）— セッション内は実装済み（タブ切替で位置を記憶/復元・in-memory `_scrollTop`・`window.scrollY`）。残: **再起動復元**（永続化＋renderLimit 復元も要る＝後回し）。
-- 死蔵 pref 掃除: tab履歴(`history`/`histIdx`＝戻る進む撤去と同時)／`mode` pref(画像ビュー撤去で死蔵)／`corpus.wizardHiddenGroups`(ウィザード退役で死蔵)／`sortBy` 二重持ち→タブ側に一本化。
+- 死蔵 pref 掃除（多くは別タスク待ち・要確認）: `mode` pref(画像ビュー撤去で死蔵＝既にコード上は不在の見込み)／`corpus.wizardHiddenGroups`(ウィザード退役後＝退役は未)／`sortBy` 二重持ち→タブ側に一本化。
 
 ### リリース準備
 - **配布パッケージング**（electron-builder, win/nsis。設定済み＝「アプリのビルド/配布」参照。一式の決定はメモリ `corpus-release-prep`）。

@@ -472,17 +472,6 @@
     .view-toggle button { position: relative; z-index: 1; }
     .view-toggle button.active { color: var(--text-strong); }
 
-    /* Browser-style back/forward over the filter & view state: two ghost
-       square buttons matching the sidebar's control palette */
-    .hist-nav { display: flex; gap: 6px; align-self: flex-start; }
-    .hist-nav button {
-      width: 30px; height: 27px; display: flex; align-items: center; justify-content: center;
-      background: transparent; border: 1px solid transparent; border-radius: 6px;
-      color: var(--text-muted); cursor: pointer; transition: background .12s, color .12s, opacity .12s;
-    }
-    .hist-nav button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
-    .hist-nav button:disabled { opacity: .3; cursor: default; }
-
     /* Tile-size ± (shown only in the tile density) */
     /* Tile size: thin slider, small→large glyphs at the ends */
     .tile-size { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
@@ -1381,11 +1370,6 @@
         </div>
         <div class="sb-scroll">
         <div class="toolbar" id="postsToolbar">
-          <!-- Browser-style history over the filter/view state -->
-          <div class="hist-nav">
-            <button id="histBack" type="button" title="戻る" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14 6 8 12 14 18"/></svg></button>
-            <button id="histFwd" type="button" title="進む" disabled><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 6 16 12 10 18"/></svg></button>
-          </div>
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
             <div class="view-toggle"><i class="vt-thumb" aria-hidden="true"></i>

@@ -51,8 +51,6 @@
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
     tileOverlay: _s('tileOverlay'),
-    histBack: _s('histBack'),
-    histFwd: _s('histFwd'),
     qcDropHere: _s('qcDropHere'),
     qcDropMove: _s('qcDropMove'),
     qbHelpTitle: _s('qbHelpTitle'),
@@ -403,8 +401,6 @@
   setText('sbFolderRowTitle', MSG.qfCatFolder);
   setText('sbPinTitle', MSG.pinnedTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
-  document.getElementById('histBack').title = MSG.histBack;
-  document.getElementById('histFwd').title = MSG.histFwd;
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
@@ -1817,13 +1813,8 @@
     return posts;
   }
 
-  // --- Browser-style history over the filter & view state (back/forward) ---
-  const histBackBtn = document.getElementById('histBack');
-  const histFwdBtn = document.getElementById('histFwd');
-  let viewHistory = [];
-  let histIdx = -1;
+  let lastRenderedState = null;
   let restoringState = false;
-  let lastHistPush = 0;
   let tabs = [];
   let activeTabId = null;
   let _tabPersistTimer = null;
@@ -1836,36 +1827,13 @@
       multi: multiOnly
     };
   }
-  function updateHistButtons() {
-    if (histBackBtn) histBackBtn.disabled = histIdx <= 0;
-    if (histFwdBtn) histFwdBtn.disabled = histIdx >= viewHistory.length - 1;
-  }
-  // Called from every fresh renderPosts(). Captures the state AFTER the change;
-  // rapid search typing coalesces into one entry instead of one per keystroke.
-  function pushHistory() {
-    if (restoringState) return;
+  // Called from every fresh renderPosts(): keep the tab title + persistence in sync
+  // with the current state, and record it for the stickyRecs change-detection below.
+  // (The view-history mechanism this used to feed has been removed.)
+  function syncTitleAndPersist() {
     const snap = snapshotState();
-    const ser = JSON.stringify(snap);
-    if (histIdx >= 0 && JSON.stringify(viewHistory[histIdx]) === ser) { updateActiveTabTitle(); return; }
-    const now = Date.now();
-    // typing continuation (both entries already searching) replaces in place;
-    // the FIRST keystroke still gets its own entry (so ← returns to no-search)
-    if (histIdx >= 0 && now - lastHistPush < 900) {
-      const prev = viewHistory[histIdx];
-      if (prev.search && snap.search &&
-          JSON.stringify({ ...prev, search: '' }) === JSON.stringify({ ...snap, search: '' })) {
-        viewHistory[histIdx] = snap; lastHistPush = now;
-        document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
-        updateActiveTabTitle(); persistTabsDebounced();
-        return;
-      }
-    }
-    viewHistory = viewHistory.slice(0, histIdx + 1);
-    viewHistory.push(snap);
-    if (viewHistory.length > 100) viewHistory.shift();
-    histIdx = viewHistory.length - 1;
-    lastHistPush = now;
-    updateHistButtons();
+    lastRenderedState = JSON.stringify(snap);
+    if (restoringState) return;
     document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
     updateActiveTabTitle(); persistTabsDebounced();
   }
@@ -1881,7 +1849,6 @@
     renderQueryChips();
     renderPosts();
     restoringState = false;
-    updateHistButtons();
     document.title = tabTitleOf(s, { allCount: allPosts.length }).text + ' — Corpus';
   }
 
@@ -1908,14 +1875,14 @@
     _tabPersistTimer = setTimeout(() => {
       if (!window.corpus.setTabs) return;
       const at = tabs.find((t) => t.id === activeTabId);
-      if (at) { at.state = snapshotState(); at.history = [...viewHistory]; at.histIdx = histIdx; }
-      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, history: t.history, histIdx: t.histIdx })) });
+      if (at) { at.state = snapshotState(); }
+      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state })) });
     }, 800);
   }
   function saveActiveTabState() {
     const t = tabs.find((t) => t.id === activeTabId);
     if (!t) return;
-    t.state = snapshotState(); t.history = [...viewHistory]; t.histIdx = histIdx;
+    t.state = snapshotState();
     t._scrollTop = window.scrollY;   // session-only (not persisted): remember content scroll per tab
   }
   // Restore a tab's remembered content scroll after its state has rendered. rAF so
@@ -1972,7 +1939,6 @@
     activeTabId = id;
     const t = tabs.find((t) => t.id === id);
     if (!t) return;
-    viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
     if (t.state) applyState(t.state); else renderPosts();
     restoreTabScroll(t);
     renderTabs(); persistTabsDebounced();
@@ -1980,9 +1946,8 @@
   function addTab() {
     saveActiveTabState();
     const id = genTabId();
-    tabs.push({ id, pinned: false, title: null, state: { f: [], join: 'or', search: '', sort: 'date-desc', multi: false }, history: [], histIdx: -1 });
+    tabs.push({ id, pinned: false, title: null, state: { f: [], join: 'or', search: '', sort: 'date-desc', multi: false } });
     activeTabId = id;
-    viewHistory = []; histIdx = -1;
     applyState({ f: [], join: 'or', search: '', sort: sortSelect.value, multi: false });
     requestAnimationFrame(() => window.scrollTo(0, 0));   // new tab starts at the top
     renderTabs(); persistTabsDebounced();
@@ -2001,7 +1966,6 @@
       const ni = Math.min(idx, tabs.length - 1);
       activeTabId = tabs[ni].id;
       const t = tabs[ni];
-      viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
       if (t.state) applyState(t.state); else renderPosts();
       restoreTabScroll(t);
     }
@@ -2025,10 +1989,9 @@
     const src = tabs.find((t) => t.id === id);
     if (!src) return;
     const idx = tabs.indexOf(src);
-    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, state: JSON.parse(JSON.stringify(src.state || {})), history: [...(src.history || [])], histIdx: src.histIdx };
+    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, state: JSON.parse(JSON.stringify(src.state || {})) };
     tabs.splice(idx + 1, 0, nt);
     activeTabId = nt.id;
-    viewHistory = [...(nt.history || [])]; histIdx = typeof nt.histIdx === 'number' ? nt.histIdx : -1;
     if (nt.state && Object.keys(nt.state).length) applyState(nt.state); else renderPosts();
     renderTabs(); persistTabsDebounced();
   }
@@ -2036,12 +1999,12 @@
     try {
       const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
       if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, history: Array.isArray(t.history) ? t.history : [], histIdx: typeof t.histIdx === 'number' ? t.histIdx : -1 }));
+        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null }));
         const sid = saved.activeTabId;
         activeTabId = (sid && tabs.find((t) => t.id === sid)) ? sid : tabs[0].id;
       } else {
         const id = genTabId();
-        tabs = [{ id, pinned: false, title: null, state: null, history: [], histIdx: -1 }];
+        tabs = [{ id, pinned: false, title: null, state: null }];
         activeTabId = id;
       }
       const at = tabs.find((t) => t.id === activeTabId);
@@ -2052,13 +2015,11 @@
         sortSelect.value = at.state.sort || 'date-desc';
         refreshCustomSelects();
         multiOnly = !!at.state.multi;
-        viewHistory = [...(at.history || [])]; histIdx = typeof at.histIdx === 'number' ? at.histIdx : -1;
-        updateHistButtons();
       }
     } catch (err) {
       console.error('initTabs error:', err);
       const id = genTabId();
-      tabs = [{ id, pinned: false, title: null, state: null, history: [], histIdx: -1 }];
+      tabs = [{ id, pinned: false, title: null, state: null }];
       activeTabId = id;
     }
     renderTabs();
@@ -2108,7 +2069,6 @@
           tabs = tabs.filter((t) => t.id === tid);
           const t = tabs[0];
           activeTabId = tid;
-          viewHistory = [...(t.history || [])]; histIdx = typeof t.histIdx === 'number' ? t.histIdx : -1;
           if (t.state) applyState(t.state); else renderPosts();
           renderTabs(); persistTabsDebounced();
         }
@@ -2180,23 +2140,6 @@
     viewGroups.forEach((g) => g.records.forEach((r) => { if (r.captureId) stickyRecs.add(r.captureId); }));
   }
 
-  function histGo(d) {
-    const ni = histIdx + d;
-    if (ni < 0 || ni >= viewHistory.length) return;
-    histIdx = ni;
-    applyState(viewHistory[histIdx]);
-  }
-  if (histBackBtn) histBackBtn.addEventListener('click', () => histGo(-1));
-  if (histFwdBtn) histFwdBtn.addEventListener('click', () => histGo(1));
-  // Alt+←/→ mirror the buttons (skipped while typing in a field)
-  document.addEventListener('keydown', (e) => {
-    if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault();
-    histGo(e.key === 'ArrowLeft' ? -1 : 1);
-  });
-
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // --- Masonry (card view): pack cards into N equal flex columns by measured
@@ -2245,8 +2188,8 @@
     if (!keepLimit) renderLimit = RENDER_PAGE;
     // A genuine filter/search/sort change drops the sticky survivors (they only
     // outlive in-place mutations, not user-driven view changes).
-    if (!keepLimit && stickyRecs.size && histIdx >= 0 &&
-        JSON.stringify(snapshotState()) !== JSON.stringify(viewHistory[histIdx])) {
+    if (!keepLimit && stickyRecs.size && lastRenderedState !== null &&
+        JSON.stringify(snapshotState()) !== lastRenderedState) {
       stickyRecs.clear();
     }
     updateSidebarState();
@@ -2277,7 +2220,7 @@
         empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` +
           `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
       }
-      if (!keepLimit) pushHistory();   // 0件の状態も履歴対象
+      if (!keepLimit) syncTitleAndPersist();   // 0件の状態もタイトル・永続化を同期
       return;
     }
 
@@ -2414,7 +2357,7 @@
       }
     }
 
-    if (!keepLimit) pushHistory();   // capture the filter/view state for ←/→
+    if (!keepLimit) syncTitleAndPersist();   // keep the tab title + persistence in sync
   }
 
   // Text expand/collapse on click
