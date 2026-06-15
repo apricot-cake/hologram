@@ -1963,6 +1963,20 @@
     .content-activebar { view-transition-name: corpus-activebar; }
     ::view-transition-group(corpus-activebar) { z-index: 2; }
     ::view-transition-old(corpus-activebar), ::view-transition-new(corpus-activebar) { animation: none; }
+    /* Same top-layer cover for the rest of the persistent chrome: once the page is
+       scrolled, the post-grid snapshot's box starts above the viewport, so in the
+       top layer it paints over the tab bar / sidebar (query builder) / back-to-top
+       and the grid shows "through" them on mode switch (ユーザー報告: タブ・クエリ
+       ビルダーが透ける). Promote each to its own static group above the grid. */
+    #tabBar { view-transition-name: corpus-tabbar; }
+    ::view-transition-group(corpus-tabbar) { z-index: 3; }
+    ::view-transition-old(corpus-tabbar), ::view-transition-new(corpus-tabbar) { animation: none; }
+    #sidebar { view-transition-name: corpus-sidebar; }
+    ::view-transition-group(corpus-sidebar) { z-index: 2; }
+    ::view-transition-old(corpus-sidebar), ::view-transition-new(corpus-sidebar) { animation: none; }
+    #contentTop { view-transition-name: corpus-backtotop; }
+    ::view-transition-group(corpus-backtotop) { z-index: 3; }
+    ::view-transition-old(corpus-backtotop), ::view-transition-new(corpus-backtotop) { animation: none; }
 
     /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
        removing [hidden] re-mounts the element (display:none -> flex). */
