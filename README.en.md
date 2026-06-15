@@ -1,13 +1,9 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.svg">
-    <img src="assets/icon-light.svg" alt="corpus" width="72">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
+    <img src="assets/banner-en-light.svg" alt="corpus — whole posts, a searchable social library" width="440">
   </picture>
 </p>
-
-<h1 align="center">corpus</h1>
-
-<p align="center">Archive posts whole — a searchable library of your social feeds.</p>
 
 <p align="center"><strong>English</strong> · <a href="README.md">日本語</a></p>
 

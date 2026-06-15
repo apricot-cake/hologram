@@ -140,7 +140,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - 開発共通ルールを親フォルダの CLAUDE.md に書き出し→重複削除（上位集約）。
 - 拡張の実機E2E拡充: 特に **X＝要ログインで未自動化**（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここで。
 - host not found 検知→「Chrome を再起動してください」導線（任意）。
-- README: 英語版 banner SVG（英語タグライン版＝JP バナーは日本語焼き込み・英語タグラインは長くレイアウト要＝視覚作業）／README 全体見直し（日本語・冒頭簡潔化）。※README.en.md 本文・英語タグライン・SNS→social media・戻る進む記述削除は対応済み。
+- README 全体見直し（日本語・冒頭簡潔化、撤去予定の戻る/進む記述の削除）。※英語版 README.en.md は本文・英語タグライン・英語バナー（`assets/banner-en-*.svg`）まで対応済み。
 - （任意）ロゴのハート `#6f68c8` と `--accent`(`#4a4490`) の色差統一。
 - （個人作業）既存ライブラリのリンク→拡張で再キャプチャ（画像/メタ欠損分。backfill はメタのみ）。
 
