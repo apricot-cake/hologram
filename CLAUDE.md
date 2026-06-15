@@ -108,7 +108,6 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 完了は git が記録するので**完了項目は残さず削除**。実装済み機能・構成・検証手順は本ファイル他節＋メモリ `corpus-verify-notes` が真実源（重複させない）。機微な項目（git 履歴スクラブ等）だけはメモリ `corpus-tasks.md`。
 
 ### 帰宅後の確認待ち（リモート中に実装＝要ハンズオン確認・確認できたら削除）
-- **カードの詰め表示（ウォーターフォール／card ビュー）**: 短いカードが伸びず隙間なく詰まるか／画像読み込み中の並び直り・動作の重さは許容範囲か（A=実測方式の難点）／大きさスライダーで列数が追従するか。気になれば B（画像寸法を保存）へ。
 - **タブごとのスクロール位置**: タブを切り替えて戻ると見ていた位置に戻るか（セッション内）。
 
 ### Todoist 実装待ち（設計確定・承認済み）
@@ -121,12 +120,11 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - **「作者」表現の見直し**: イラスト以外も保存＝不適切（DESIGN.md の正確さ優先リネーム哲学）。`#sbAuthorChips`/タブ文言が対象。
 
 ### UI / 見た目
-- **マスонリー（カードのタイトフィット）— A実装済み・残りB（任意の改善）**: card ビューを JS 列詰め（実高さ測定）でウォーターフォール化済み（短いカードが伸びない・Eagle的）。実装＝`layoutMasonry()`（描画後に各カードを最短列へ分配）＋画像ロード後/リサイズで再配置（debounce）、card のみ `content-visibility` 切＋画像 eager（実高さを測るため）。tile/list は従来グリッドのまま。**残B**: スクリーンショットの寸法をサイドカーに保存→高さを予測し、ロード時のガタつき＋eager先読みコストを解消（撮影側＝extension/bridge＋既存分の backfill＝大きめ。content-visibility/lazy も復活可）。
 - シェブロン過密・チープ: タグ以外/タググループのシェブロン要否・ホバー時のみ表示等。
 
 ### 監査の残（未対応のみ）
 - **i18n [LOW・要確認]**: viewer.js の死に MSG 群／i18n.js 孤児キー／extension/i18n.js の旧ビューア文字列表（実消費は banner* のみ）。
-- **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。
+- **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。**masonry の「もっと読み込む」(150件境界)はこの全再構築で各カードDOMを作り直す＝可視画像が再ロードして一瞬チラつく**（連続churnは解消済み・残るは境界の単発のみ）。新スライスのみ既存列へ追記すれば解消（greedyは順序安定なので既存カードは動かない）。card は `content-visibility:visible`（高さ予約済みなので `contain-intrinsic-size` に予約高さを使えば再有効化も可）。
 
 ### 状態の記憶
 - スクロール位置（タブごと）— セッション内は実装済み（タブ切替で位置を記憶/復元・in-memory `_scrollTop`・`window.scrollY`）。残: **再起動復元**（永続化＋renderLimit 復元も要る＝後回し）。
