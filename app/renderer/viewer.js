@@ -269,6 +269,7 @@
 
     // query/sidebar filters
     qfPlatform: _s('qfPlatform'),
+    qfPlatformNone: _s('qfPlatformNone'),
     qfPostType: _s('qfPostType'),
     qfDate: _s('qfDate'),
     qfEngagement: _s('qfEngagement'),
@@ -496,7 +497,7 @@
     switch (f.type) {
       case 'kind':       return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
       case 'userKind':   return f.value === 'media' ? MSG.userKindMedia : MSG.userKindPlain;
-      case 'platform':   return ({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value;
+      case 'platform':   return f.value === '__none' ? MSG.qfPlatformNone : (({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value);
       case 'postType':   return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
       case 'date': {
         const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
@@ -794,6 +795,9 @@
             for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true });
           }
         }
+        // 「プラットフォームなし」= platform 未設定の投稿（取り込み画像など）。
+        // 該当が1件もなければ出さない（空振りする項目を並べない）。
+        if (allPosts.some(p => !p.platform)) out.push({ v: '__none', l: MSG.qfPlatformNone, on: act('platform', '__none') });
         return out;
       }
       case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
@@ -1169,8 +1173,6 @@
   // --- Sidebar filter controls ---
 
   // Sidebar i18n
-  setText('sbKindTitle', MSG.kindTitle);
-  setText('sbUserKindTitle', MSG.userKindTitle);
   setText('sbKindPost', MSG.kindPost);
   setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
@@ -1206,41 +1208,8 @@
     showQfPopAt(cat, row);
   });
 
-  // --- Hover-to-open flyouts (experiment): hovering a filter row opens its value
-  // flyout after a short intent delay; it stays while the cursor is on the row or
-  // the flyout, and closes shortly after leaving both. Click still opens/dismisses.
-  // Date/engagement param pops and the tag-row sub-row toggle stay click-only.
-  (function setupHoverFlyouts() {
-    const rows = document.getElementById('filterRows');
-    if (!rows) return;
-    const OPEN_MS = 140, CLOSE_MS = 260;
-    let openT = null, closeT = null, hoverAnchor = null;
-    const flyoutTarget = (el) => {
-      const sub = el.closest && el.closest('[data-tag-group]');
-      if (sub) return { anchor: sub, open: () => showQfPopAt('tag', sub, sub.dataset.tagGroup === '__all' ? null : sub.dataset.tagGroup) };
-      const row = el.closest && el.closest('[data-qfrow]');
-      if (!row) return null;
-      const cat = row.dataset.qfrow;
-      if (cat === 'date' || cat === 'engagement') return null;       // param pops stay click-only
-      if (cat === 'tag' && tagGroups.length) return null;            // tag row toggles its sub-rows
-      return { anchor: row, open: () => showQfPopAt(cat, row) };
-    };
-    const cancelClose = () => { if (closeT) { clearTimeout(closeT); closeT = null; } };
-    const scheduleClose = () => { cancelClose(); closeT = setTimeout(() => { if (qfPop.classList.contains('show')) hideQfPop(); }, CLOSE_MS); };
-    rows.addEventListener('mouseover', (e) => {
-      const t = flyoutTarget(e.target);
-      if (!t) { hoverAnchor = null; return; }
-      cancelClose();
-      if (t.anchor === hoverAnchor) return;                          // same row — don't restart the timer
-      hoverAnchor = t.anchor;
-      if (openT) clearTimeout(openT);
-      if (qfAnchor === t.anchor && qfPop.classList.contains('show')) return;
-      openT = setTimeout(() => { if (!(qfAnchor === t.anchor && qfPop.classList.contains('show'))) t.open(); }, OPEN_MS);
-    });
-    rows.addEventListener('mouseleave', () => { hoverAnchor = null; if (openT) { clearTimeout(openT); openT = null; } scheduleClose(); });
-    qfPop.addEventListener('mouseenter', cancelClose);
-    qfPop.addEventListener('mouseleave', scheduleClose);
-  })();
+  // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
+  // 別行へカーソルが乗って別フライアウトに化ける問題があったため）。
 
   // Update sidebar state (chip actives, row badges, tag area, active bar)
   function updateSidebarState() {
@@ -1866,7 +1835,7 @@
         // 区別する価値がないので url の有無を本質的な軸にする。
         case 'kind': return (p) => (f.value === 'post') === !!p.url;
         case 'userKind': return (p) => p.userKind === f.value;
-        case 'platform': return (p) => p.platform === f.value;
+        case 'platform': return (p) => f.value === '__none' ? !p.platform : p.platform === f.value;
         case 'user': return (p) => userKey(p) === f.value;
         case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
         case 'postType': return (p) =>

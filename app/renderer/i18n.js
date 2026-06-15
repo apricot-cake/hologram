@@ -286,6 +286,7 @@
 
       // viewer: query/sidebar filters
       qfPlatform: 'プラットフォーム',
+      qfPlatformNone: 'プラットフォームなし',
       qfPostType: '投稿タイプ',
       qfMediaTitle: 'メディアタイプ',
       qfDate: '日付',
@@ -590,6 +591,7 @@
       applyToSelected: 'Apply to selected',
 
       qfPlatform: 'Platform',
+      qfPlatformNone: 'No platform',
       qfPostType: 'Post type',
       qfMediaTitle: 'Media type',
       qfDate: 'Date',
