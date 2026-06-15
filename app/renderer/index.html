@@ -132,13 +132,8 @@
          entire column's left/right axis moves together. */
       --sb-gutter: 12px;
       width: 248px; flex-shrink: 0; position: sticky; top: var(--tabbar-h); height: calc(100vh - var(--tabbar-h)); z-index: 30;
-      /* Mica-style material (NOT glass — nothing behind it to blur): a faint
-         top-light vertical gradient + fine grain noise + 1px top highlight
-         turn the flat fill into a surface with physicality. */
+      /* Flat fill — the vertical gradient was dropped (user). */
       background-color: var(--sidebar-bg);
-      background-image: linear-gradient(180deg,
-        var(--sidebar-grad-top) 0%,
-        var(--sidebar-grad-bot) 100%);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
       /* Hairline vs the content area. In light mode --bg (gray-50) and --sidebar-bg
