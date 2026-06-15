@@ -510,6 +510,15 @@
       gap: 16px;
       view-transition-name: post-grid;
     }
+    /* Masonry (card view only): JS packs cards into equal flex columns by measured
+       height so short cards no longer stretch to the grid row (Eagle-style
+       waterfall). Tile/list keep the grid above. content-visibility is off here
+       (offscreen cards must be measurable to pack) and card images load eagerly. */
+    .post-grid.masonry { display: block; }
+    .post-grid.masonry .mcols { display: flex; align-items: flex-start; gap: 16px; }
+    .post-grid.masonry .mcol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .post-grid.masonry .post-card { content-visibility: visible; contain-intrinsic-size: auto; width: 100%; }
+    .post-grid.masonry .more-sentinel { width: 100%; }
     .post-card {
       background: var(--surface); border-radius: 8px; overflow: hidden;
       border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);

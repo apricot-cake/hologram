@@ -118,7 +118,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - **「作者」表現の見直し**: イラスト以外も保存＝不適切（DESIGN.md の正確さ優先リネーム哲学）。`#sbAuthorChips`/タブ文言が対象。
 
 ### UI / 見た目
-- **マスонリー（カードのタイトフィット）＝A（フル実装）・次着手**: 短いカードが引き伸ばされ余白→Eagle的ウォーターフォール。card ビュー限定。CSS columns はスクロールで列再計算ガタつく／Grid masonry は Chromium 未対応 → JS 列詰め（実高さ測定＋画像ロード追従）＋窓描画(150件)/content-visibility との噛み合わせが要点。
+- **マスонリー（カードのタイトフィット）— A実装済み・残りB（任意の改善）**: card ビューを JS 列詰め（実高さ測定）でウォーターフォール化済み（短いカードが伸びない・Eagle的）。実装＝`layoutMasonry()`（描画後に各カードを最短列へ分配）＋画像ロード後/リサイズで再配置（debounce）、card のみ `content-visibility` 切＋画像 eager（実高さを測るため）。tile/list は従来グリッドのまま。**残B**: スクリーンショットの寸法をサイドカーに保存→高さを予測し、ロード時のガタつき＋eager先読みコストを解消（撮影側＝extension/bridge＋既存分の backfill＝大きめ。content-visibility/lazy も復活可）。
 - シェブロン過密・チープ: タグ以外/タググループのシェブロン要否・ホバー時のみ表示等。
 
 ### 監査の残（未対応のみ）

@@ -2189,6 +2189,48 @@
 
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
+  // --- Masonry (card view): pack cards into N equal flex columns by measured
+  // height so short cards don't stretch (Eagle-style waterfall). Re-runs on image
+  // load (debounced) and resize; load-more re-renders so it re-packs naturally.
+  // Approach A (measure live); a future B could store image dims to skip the
+  // load-time settle and the eager image load.
+  let _masonryT = null;
+  function masonryColCount(gridW) {
+    const gap = 16;
+    return Math.max(1, Math.floor((gridW + gap) / (cardSize + gap)));
+  }
+  function layoutMasonry() {
+    const grid = document.getElementById('postGrid');
+    if (!grid || currentView !== 'card' || !grid.classList.contains('masonry')) return;
+    const cards = Array.from(grid.querySelectorAll('.post-card'));
+    if (!cards.length) return;
+    const sentinel = grid.querySelector('.more-sentinel');
+    const gap = 16;
+    const N = masonryColCount(grid.clientWidth);
+    const cols = Array.from({ length: N }, () => {
+      const d = document.createElement('div'); d.className = 'mcol'; return d;
+    });
+    const wrap = document.createElement('div'); wrap.className = 'mcols';
+    cols.forEach((c) => wrap.appendChild(c));
+    // Drop every card into col 0 first so each measures at the real COLUMN width.
+    cols[0].append(...cards);
+    grid.replaceChildren(wrap);
+    if (sentinel) grid.appendChild(sentinel);
+    const hs = cards.map((c) => c.offsetHeight);   // one reflow read, correct width
+    // Greedy: each card into the currently-shortest column (keeps rough order).
+    const colH = new Array(N).fill(0);
+    cards.forEach((card, i) => {
+      let m = 0; for (let c = 1; c < N; c++) if (colH[c] < colH[m]) m = c;
+      cols[m].appendChild(card);
+      colH[m] += hs[i] + gap;
+    });
+  }
+  function scheduleMasonry() {
+    if (_masonryT) return;
+    _masonryT = setTimeout(() => { _masonryT = null; layoutMasonry(); }, 120);
+  }
+  window.addEventListener('resize', () => { if (currentView === 'card') scheduleMasonry(); }, { passive: true });
+
   function renderPosts(keepLimit) {
     if (!keepLimit) renderLimit = RENDER_PAGE;
     // A genuine filter/search/sort change drops the sticky survivors (they only
@@ -2229,7 +2271,7 @@
       return;
     }
 
-    grid.style.display = currentView === 'list' ? 'flex' : 'grid';
+    grid.style.display = currentView === 'list' ? 'flex' : currentView === 'card' ? 'block' : 'grid';
     grid.classList.toggle('list-view', currentView === 'list');
     grid.classList.toggle('tile-view', currentView === 'tile');
     applyTileLayout();
@@ -2239,6 +2281,7 @@
     // load-more (keepLimit) — otherwise every already-visible card re-animates
     // on each scroll page. Skipped under prefers-reduced-motion.
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
+    grid.classList.toggle('masonry', currentView === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selectedSet.size > 0);
     // Tile overlay (author/❤) is optional; the ❤ count only shows while an
@@ -2310,7 +2353,7 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
+        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="${SMOKE_CAPTURE || currentView === 'card' ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
@@ -2327,12 +2370,22 @@
     if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
     if (viewGroups.length > renderLimit) {
       const sentinel = document.createElement('div');
+      sentinel.className = 'more-sentinel';
       sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
       grid.appendChild(sentinel);
       moreObserver = new IntersectionObserver((entries) => {
         if (entries.some((en) => en.isIntersecting)) { renderLimit += RENDER_PAGE; renderPosts(true); }
       }, { rootMargin: '800px' });
       moreObserver.observe(sentinel);
+    }
+
+    // Card view: pack into masonry columns now (rough; images may be unloaded),
+    // then re-pack as each image loads (debounced) so heights settle into balance.
+    if (currentView === 'card') {
+      layoutMasonry();
+      grid.querySelectorAll('.card-img').forEach((img) => {
+        if (!img.complete) img.addEventListener('load', scheduleMasonry, { once: true });
+      });
     }
 
     // Mark truncated text elements
