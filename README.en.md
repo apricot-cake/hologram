@@ -1,8 +1,17 @@
-# Corpus
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.svg">
+    <img src="assets/icon-light.svg" alt="corpus" width="72">
+  </picture>
+</p>
 
-<p align="center"><strong>English</strong> ・ <a href="README.md">日本語</a></p>
+<h1 align="center">corpus</h1>
 
-Save the SNS posts you come across — image and information together — and find them again whenever you like. **Your own personal SNS library.**
+<p align="center">Archive posts whole — a searchable library of your social feeds.</p>
+
+<p align="center"><strong>English</strong> · <a href="README.md">日本語</a></p>
+
+Save the posts you come across on social media — image and information together — and find them again whenever you like. **Your own personal social-media library.**
 
 No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
 
@@ -43,7 +52,7 @@ Filter and sort from the left sidebar.
 - **Filter** — by platform / author / tag / hashtag / date / engagement (likes, etc.) / folder (multi-select)
 - **Sort** — newest first, most likes, save date, and more
 
-Active filters gather at the top of the screen; **Reset** clears them all at once. **Back / Forward** returns you to the previous filter state.
+Active filters gather at the top of the screen; **Reset** clears them all at once.
 
 ### 4. Organize
 
