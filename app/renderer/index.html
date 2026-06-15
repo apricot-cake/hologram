@@ -197,17 +197,28 @@
     .settings-search-ic { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-muted); pointer-events: none; }
     .settings-search { width: 100%; padding: 6px 10px 6px 30px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); outline: none; }
     .settings-search:focus { border-color: var(--accent); }
-    .settings-body { display: flex; align-items: flex-start; gap: 26px; }
-    .settings-toc { position: sticky; top: 58px; flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 1px; }
+    /* Master-detail: the TOC is the persistent left nav; the right pane shows
+       only the selected section as its own "page" (no long scroll). */
+    .settings-body { display: flex; align-items: stretch; gap: 0; }
+    .settings-toc { flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 1px; padding-right: 22px; border-right: 1px solid var(--border-subtle); }
     .settings-toc .toc-item { text-align: left; border: none; background: transparent; color: var(--text-muted); font-size: 13px; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .settings-toc .toc-item:hover { background: var(--hover); color: var(--text); }
     .settings-toc .toc-item.active { color: var(--text-strong); font-weight: 600; background: var(--hover); }
     .settings-toc .toc-item[hidden] { display: none; }
-    .settings-view #panelSettings { display: block; flex: 1; min-width: 0; max-width: none; }
-    .settings-view .section { scroll-margin-top: 60px; }
+    .settings-view #panelSettings { display: block; flex: 1; min-width: 0; max-width: none; padding-left: 26px; }
+    /* One page = one section card; drop the inter-section margin in single-page mode. */
+    .settings-view .section { margin-bottom: 16px; }
+    .settings-view .section:last-child { margin-bottom: 0; }
     .settings-empty { display: none; padding: 28px 6px; color: var(--text-muted); font-size: 13px; }
     .settings-empty:not([hidden]) { display: block; }
-    @media (max-width: 680px) { .settings-toc { display: none; } .settings-search-wrap { max-width: none; } }
+    /* Narrow: keep the TOC reachable (else pages can't be switched) — stack it
+       as a horizontal chip row above the page. */
+    @media (max-width: 680px) {
+      .settings-body { flex-direction: column; }
+      .settings-toc { width: auto; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 0 0 12px; border-right: none; border-bottom: 1px solid var(--border-subtle); margin-bottom: 14px; }
+      .settings-view #panelSettings { padding-left: 0; }
+      .settings-search-wrap { max-width: none; }
+    }
     .settings-view:not([hidden]) .settings-view-inner { animation: corpusPopIn .2s ease-out; }
     .settings-view-head {
       display: flex; align-items: center; justify-content: space-between;
