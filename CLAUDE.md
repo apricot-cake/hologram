@@ -106,7 +106,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 設計書＝`docs/design-tabs.md`（canonical）。Phase 0→1→2→3。Phase 0=タブタイトル自動生成を document.title でライブ表示→納得確認後に本実装。確定: タブstate=snapshotState()同形（表示密度は含めない）／tabs.json はライブラリ側（list-posts スキップ必須）／タブ=角丸四角・アクティブ=seg-thumb（tint禁止）／帯=常設面で非ガラス／ピンタブも編集追従／タブ高38px=`--tabbar-h`。タイトルバー合体は `titleBarStyle:'hidden'`+`titleBarOverlay`（実装済み）。
 
 ### 大型: 戻る/進む＝完全撤去（設計確定・実装待ち）
-ボタン・`Alt+←→`・履歴機構ごと削除。tab state に深く統合＝新鮮なセッションで集中して。撤去対象（行番号は要再grep）: ①viewer.js: `MSG.histBack/histFwd`・title設定・history機構本体（`histBackBtn/histFwdBtn/viewHistory/histIdx/lastHistPush`＋push関数）・tab state の `history`/`histIdx`（save/restore/dup/init 12箇所超）・`histGo`/click/`Alt+←→`・renderPosts の push 判定 ②index.html: `.hist-nav` CSS・ボタン ③i18n.js: histBack/histFwd キー ④docs: design-tabs.md の「戻る/進む共存」記述・DESIGN.md のショートカット記載。状態記憶掃除（tab履歴削除）と同時に。
+ボタン・`Alt+←→`・履歴機構ごと削除。tab state に深く統合。撤去対象（行番号は要再grep）: ①viewer.js: `MSG.histBack/histFwd`・title設定・history機構本体（`histBackBtn/histFwdBtn/viewHistory/histIdx/lastHistPush`＋push関数）・tab state の `history`/`histIdx`（save/restore/dup/init 12箇所超）・`histGo`/click/`Alt+←→`・renderPosts の push 判定 ②index.html: `.hist-nav` CSS・ボタン ③i18n.js: histBack/histFwd キー ④docs: design-tabs.md の「戻る/進む共存」記述・DESIGN.md のショートカット記載。状態記憶掃除（tab履歴削除）と同時に。
 
 ### Todoist 実装待ち（設計確定・承認済み）
 - **タグ付け＝2軸併設＋トグル切替**: カード編集（1画像→複数タグ）／スタンプ（1タグ→複数画像 Lightroom式）両方。付与時に祝祭エフェクト。既存ウィザードは退役（この2軸へ統合）。ホバーにタグアイコンは足さない。グループ横断タグ検索は別途。
