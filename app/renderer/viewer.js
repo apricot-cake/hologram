@@ -1530,8 +1530,11 @@
 
   // Per-density image source. A post may carry both a capture (screenshot) and
   // real media/artwork; the density decides which leads:
-  //   tile → artwork preferred (clean image grid), capture as fallback
-  //   card / list → capture preferred (the post as it looked), artwork as fallback
+  //   tile / card → artwork preferred (the actual image leads — a clean grid),
+  //                 capture as fallback (posts whose original didn't download)
+  //   list        → capture preferred (the post as it looked in its compact row)
+  // NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
+  // height reservation (shotW/shotH) sizes the same image the card shows.
   const SS_EXT = /\.jpe?g$/i;
   const mediaFilesOf = (p) => (Array.isArray(p.media) ? p.media.filter((m) => m && m.file).map((m) => m.file) : []);
   // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
@@ -1540,7 +1543,7 @@
   const artworkFile = (p) => { const m = mediaFilesOf(p); if (m.length) return m[0]; return (p.image && !isScreenshot(p)) ? p.image : ''; };
   function densityImage(p, density) {
     const cap = captureFile(p), art = artworkFile(p);
-    return density === 'tile' ? (art || cap) : (cap || art);
+    return density === 'list' ? (cap || art) : (art || cap);
   }
 
   // --- Grouping (ported from image-view) --------------------------------------

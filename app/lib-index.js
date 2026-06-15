@@ -31,14 +31,21 @@ function isPostRecord(rec) {
 }
 
 // The file shown in CARD view — mirrors the renderer's densityImage('card'): the
-// capture screenshot leads, else the first media file, else a non-screenshot
-// artwork image. Drag / eagle-migration images are artworks, not screenshots.
+// downloaded original (first media file) leads, else a dragged/migrated artwork,
+// else the capture screenshot (posts whose original didn't download). Keep this in
+// lockstep with viewer.js densityImage() so the masonry height reservation
+// (shotW/shotH) sizes the SAME image the card actually shows.
 function cardImageFile(rec) {
-  const isShot = rec.image && SS_EXT.test(rec.image) && rec.source !== 'drag' && rec.source !== 'eagle-migration';
-  if (isShot) return rec.image;
   const media = Array.isArray(rec.media) ? rec.media.filter((m) => m && m.file).map((m) => m.file) : [];
   if (media.length) return media[0];
   return rec.image || '';
+}
+// A capture whose card image just changed from the screenshot to its downloaded
+// original (v1→v2 migration target): its cached shotW/shotH sized the screenshot.
+function cardImageChangedFromV1(rec) {
+  const media = Array.isArray(rec.media) ? rec.media.filter((m) => m && m.file) : [];
+  const wasShot = rec.image && SS_EXT.test(rec.image) && rec.source !== 'drag' && rec.source !== 'eagle-migration';
+  return !!(wasShot && media.length);
 }
 
 // internalFiles: a Set of basenames in the save folder that are app metadata, not
@@ -94,10 +101,17 @@ function createPostIndex(opts) {
     try {
       const raw = await fs.promises.readFile(path.join(folder, INDEX_FILE), 'utf8');
       const idx = JSON.parse(raw);
-      if (idx && idx.version === 1 && idx.entries && typeof idx.entries === 'object') {
+      if (idx && (idx.version === 1 || idx.version === 2) && idx.entries && typeof idx.entries === 'object') {
+        // v1 sized the screenshot for captures; the card now shows the original,
+        // so re-size ONLY those records (null their shotW → backfill re-augments).
+        // Every other card keeps its reservation = no waterfall settle on upgrade.
+        const migrate = idx.version < 2;
         for (const name of Object.keys(idx.entries)) {
           const e = idx.entries[name];
-          if (e && typeof e.mtimeMs === 'number') map.set(name, { mtimeMs: e.mtimeMs, record: e.record || null });
+          if (!e || typeof e.mtimeMs !== 'number') continue;
+          const record = e.record || null;
+          if (migrate && record && record.shotW != null && cardImageChangedFromV1(record)) { record.shotW = null; record.shotH = null; }
+          map.set(name, { mtimeMs: e.mtimeMs, record });
         }
       }
     } catch { /* no/invalid snapshot — cold scan will populate it */ }
@@ -193,7 +207,7 @@ function createPostIndex(opts) {
   async function writeSnapshot(folder) {
     const entries = {};
     for (const [name, e] of map) entries[name] = e;
-    const payload = JSON.stringify({ version: 1, entries });
+    const payload = JSON.stringify({ version: 2, entries });
     const tmp = path.join(folder, INDEX_FILE + '.tmp');
     await fs.promises.writeFile(tmp, payload, 'utf8');
     await fs.promises.rename(tmp, path.join(folder, INDEX_FILE));

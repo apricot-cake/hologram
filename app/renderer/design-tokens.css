@@ -28,6 +28,7 @@
   --gray-300: #c3c9d2;
   --gray-400: #9aa1ad;
   --gray-500: #6c7280;
+  --gray-550: #606673;   /* between 500/600 — a slightly stronger muted for light text */
   --gray-600: #4d535f;
   --gray-700: #373c45;
   --gray-800: #24282f;
@@ -78,7 +79,7 @@
 
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
-  --text-muted:    var(--gray-500);
+  --text-muted:    var(--gray-550);   /* light muted read faint on white (counts, eyebrows, sublabels) — lifted toward dark's muted contrast */
   /* "legible muted" — one step darker than --text-muted. Light's muted (gray-500
      #6c7280) reads faint on white for small/uppercase labels (tab titles, sidebar
      section eyebrows); this lifts them without going to body-text weight. Dark's
