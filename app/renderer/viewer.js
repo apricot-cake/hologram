@@ -586,6 +586,9 @@
     // ビルダは常時表示（＋フィルタの入口を兼ねるため、空でもバーを出す）。
     // リセットは「消すものがある」ときだけ（空のバーにボタンが浮かない）。
     if (bar) bar.style.display = '';
+    // The query bar is a full-width top bar; the floating sidebar offsets its sticky
+    // top by this height. Measure after layout (chips can wrap to多段).
+    if (bar) requestAnimationFrame(() => document.documentElement.style.setProperty('--activebar-h', bar.offsetHeight + 'px'));
     const resetBtn = document.getElementById('postResetBtn');
     if (resetBtn) resetBtn.style.display = (activeFilters.length || searchVal) ? '' : 'none';
     let special = '';

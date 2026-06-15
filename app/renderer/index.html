@@ -131,15 +131,22 @@
          width within, no per-element left padding). Change it here and the
          entire column's left/right axis moves together. */
       --sb-gutter: 12px;
-      width: 248px; flex-shrink: 0; position: sticky; top: var(--tabbar-h); height: calc(100vh - var(--tabbar-h)); z-index: 30;
+      width: 248px; flex-shrink: 0; z-index: 30;
+      /* Floating "window" sidebar (Claude-app style): rounded card with a margin on
+         all sides, starting BELOW the full-width query-builder bar. It sticks under
+         the tab bar + query bar as the window scrolls. */
+      position: sticky;
+      top: calc(var(--tabbar-h) + var(--activebar-h) + var(--sidebar-float));
+      height: calc(100vh - var(--tabbar-h) - var(--activebar-h) - var(--sidebar-float) * 2);
+      margin: var(--sidebar-float) var(--sidebar-float) var(--sidebar-float) var(--sidebar-float);
       /* Flat fill — the vertical gradient was dropped (user). */
       background-color: var(--sidebar-bg);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
-      overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（アクティブバーは外側の固定フッター） */
-      /* Hairline vs the content area. In light mode --bg (gray-50) and --sidebar-bg
-         (near-white) sat too close and read as one surface (ユーザー指摘: 溶け合い).
-         macOS/Finder-style 1px border; box-shadow keeps the 248px width unchanged. */
-      box-shadow: 1px 0 0 var(--border);
+      overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（角丸でクリップ） */
+      /* Window-like: a defined rim + lift (replaces the old 1px content hairline). */
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      box-shadow: var(--shadow-md);
     }
     /* Settings gear pinned bottom-left of the sidebar (title/theme button removed;
        theme moved into Settings). */
@@ -1096,35 +1103,16 @@
       flex-shrink: 0; margin: 8px -10px 0; padding: 8px 10px;
       background: var(--surface); border-top: 1px solid var(--border);
     }
-    /* Active-filter bar pinned to the top of the content area (scroll-following). */
+    /* Query builder = full-width top bar that spans ABOVE the sidebar+content row
+       (it pierces over the sidebar's top; the sidebar starts below it). Sticks
+       directly under the (sticky) tab bar. Its height feeds --activebar-h (set in
+       JS) so the floating sidebar below can offset its sticky top. */
     .content-activebar {
-      position: sticky; top: var(--tabbar-h); z-index: 31;
+      position: sticky; top: var(--tabbar-h); z-index: 40;
+      flex-shrink: 0;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      margin: -24px -32px 16px; padding: 12px 32px;
+      padding: 9px 16px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
-    }
-    /* Concave fillet at the sidebar ↔ query-builder inner corner. The band and
-       the sidebar are both --sidebar-bg and meet in a sharp 90° notch where the
-       --bg content begins below (ユーザー指摘の接合部の角). A 10px square of
-       --sidebar-bg, radial-masked so only its top-left wedge survives, drops
-       into that notch — the surviving wedge fills the corner with a concave arc
-       so the content's top-left reads as softly rounded. It also caps the band's
-       bottom border for the first 10px, so the separator line emerges cleanly
-       from the curve. Anchored to the band (position: sticky), so it only paints
-       while the band is shown = exactly when the corner exists. */
-    .content-activebar::after {
-      content: ''; position: absolute; left: 0; top: 100%;
-      width: 10px; height: 10px; pointer-events: none;
-      /* The curved edge carries the 1px separator so the line runs continuously
-         from the band's bottom border, around the concave arc, into the sidebar's
-         right hairline — without it the line read as broken at the corner
-         (ユーザー指摘: カーブ部分で線が途切れる). A --border ring sits exactly at the
-         mask edge (matching the 1px box-shadow hairline color); --sidebar-bg fills
-         the body beyond it. */
-      background: radial-gradient(circle 10px at bottom right,
-        var(--border) 0 10.75px, var(--sidebar-bg) 10.75px);
-      -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
-              mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
     }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far
@@ -1401,6 +1389,13 @@
       <!-- Phase 2 でタブ実装。スケルトン: ドラッグ領域の確保のみ -->
     </div>
   </header>
+  <!-- Query builder: full-width top bar that spans above the sidebar (the sidebar
+       starts below it). Always shown (it's also the entry point for filters). -->
+  <div id="postActiveBar" class="content-activebar" style="display:none">
+    <div class="sb-chips" id="queryChips"></div>
+    <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
+    <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
+  </div>
   <div id="appBody">
   <aside id="sidebar">
     <div id="side-post" class="side-controls">
@@ -1569,12 +1564,6 @@
         </div>
         <span class="tag-edit-hint" id="tagEditHint"></span>
         <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
-      </div>
-      <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
-      <div id="postActiveBar" class="content-activebar" style="display:none">
-        <div class="sb-chips" id="queryChips"></div>
-        <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
-        <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
       </div>
       <!-- Posts tab -->
       <div class="tab-panel active" id="panelPosts">
@@ -1810,9 +1799,10 @@
        monotone-contrast segmented control (no accent-tint active — withdrawn);
        the loaded stamp is marked by an accent-soft EDGE only (DESIGN.md). */
     .tag-bar {
-      position: sticky; top: var(--tabbar-h); z-index: 32;
+      /* Sits in the content column, BELOW the full-width query-builder bar. */
+      position: sticky; top: calc(var(--tabbar-h) + var(--activebar-h)); z-index: 32;
       display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
-      margin: -24px -32px 0; padding: 9px 32px;
+      margin: -24px -32px 16px; padding: 9px 32px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
     }
     /* When no filters are active the active-filter bar is hidden, so THIS band
@@ -1826,9 +1816,8 @@
       -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
               mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
     }
-    /* While tagging, push the active-filter bar down below this band (both sticky).
-       --tagbar-h is measured + set by JS so a wrapped/taller bar still stacks right. */
-    body.tagging #postActiveBar { top: calc(var(--tabbar-h) + var(--tagbar-h, 47px)); margin-top: 0; }
+    /* (Tagging no longer pushes the query bar down — the query bar is the full-width
+       top bar that always stays at the top; the tag band sticks below it instead.) */
     .tag-bar-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted-strong); text-transform: uppercase; letter-spacing: .4px; }
     .tag-bar-badge svg { color: var(--accent-text); }
     /* Axis toggle — monotone-contrast segmented control */
