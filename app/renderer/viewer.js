@@ -99,6 +99,7 @@
     tagPickToLoad: _s('tagPickToLoad'),
     tagPaletteFilter: _s('tagPaletteFilter'),
     tagPalNoMatch: _s('tagPalNoMatch'),
+    editNoTags: _s('editNoTags'),
     tagAddBtn: _s('tagAddBtn'),
     tagNewName: _s('tagNewName'),
     tagNoGroup: _s('tagNoGroup'),
@@ -2995,24 +2996,8 @@
       updateLayout();
     }
 
-    // Palette organised by tag-group (defined groups in order, then 未分類 =
-    // ungrouped tags that exist on posts), each section filtered by the search box.
-    function paletteGroups() {
-      const q = palQuery.toLowerCase();
-      const ok = (t) => !q || t.toLowerCase().includes(q);
-      const byJa = (a, b) => a.localeCompare(b, 'ja');
-      const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
-      const out = [];
-      for (const g of tagGroups) {
-        const tags = (g.tags || []).filter(ok).sort(byJa);
-        if (tags.length) out.push({ name: g.name, tags });
-      }
-      const applied = new Set();
-      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) applied.add(t);
-      const ungrouped = [...applied].filter(ok).sort(byJa);
-      if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
-      return out;
-    }
+    // Palette organised by tag-group, filtered by the search box (shared helper).
+    const paletteGroups = () => groupedTagVocab(palQuery);
 
     function renderPalette() {
       const groups = paletteGroups();
@@ -3357,22 +3342,64 @@
   let editingRecords = [];
   let editTags = [];
   let editAdditive = false;   // true = bulk "タグを追加": merge into each record's tags
+  let editPickQuery = '';     // edit picker search filter
+
+  // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
+  // ungrouped tags that exist on posts), each section filtered by `query`. Shared
+  // by the stamp palette and the card-edit picker.
+  function groupedTagVocab(query) {
+    const q = (query || '').toLowerCase();
+    const ok = (t) => !q || t.toLowerCase().includes(q);
+    const byJa = (a, b) => a.localeCompare(b, 'ja');
+    const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
+    const out = [];
+    for (const g of tagGroups) {
+      const tags = (g.tags || []).filter(ok).sort(byJa);
+      if (tags.length) out.push({ name: g.name, tags });
+    }
+    const applied = new Set();
+    for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) applied.add(t);
+    const ungrouped = [...applied].filter(ok).sort(byJa);
+    if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
+    return out;
+  }
 
   function openEditOverlay(post, records) {
     editingPost = post;
     editingRecords = (records && records.length) ? records : [post];
     editTags = [...(post.tags || [])];
     editAdditive = false;
+    editPickQuery = '';
     document.getElementById('editTagsLabel').textContent = MSG.tagsLabel;
-    document.getElementById('editTagInput').value = '';
+    const inp = document.getElementById('editTagInput'); inp.value = '';
     renderEditTags();
+    renderEditPicker();
     document.getElementById('editOverlay').classList.add('show');
+    inp.focus();
   }
 
   function renderEditTags() {
     const container = document.getElementById('editTagsList');
-    container.innerHTML = editTags.map((t, i) =>
-      `<span class="tag-chip" style="cursor:pointer;" data-remove-tag="${i}">${escapeHtml(t)} \u00d7</span>`
+    container.innerHTML = editTags.length
+      ? editTags.map((t, i) => `<span class="tag-chip" style="cursor:pointer;" data-remove-tag="${i}">${escapeHtml(t)} \u00d7</span>`).join('')
+      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
+  }
+
+  // Recognition-over-recall: every existing tag, grouped, click to toggle on this
+  // card. Filtered by the input; the input also creates a brand-new tag on Enter.
+  function renderEditPicker() {
+    const picker = document.getElementById('editPicker');
+    if (!picker) return;
+    const groups = groupedTagVocab(editPickQuery);
+    if (!groups.length) {
+      picker.innerHTML = `<span class="edit-empty">${escapeHtml(editPickQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
+      return;
+    }
+    const sel = new Set(editTags);
+    picker.innerHTML = groups.map((g) =>
+      `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(g.name)}</div><div class="edit-pick-chips">` +
+      g.tags.map((t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('') +
+      `</div></div>`
     ).join('');
   }
 
@@ -3381,19 +3408,35 @@
     if (!chip) return;
     editTags.splice(parseInt(chip.dataset.removeTag, 10), 1);
     renderEditTags();
+    renderEditPicker();
+  });
+
+  // Toggle an existing tag on/off for this card straight from the picker.
+  document.getElementById('editPicker').addEventListener('click', (e) => {
+    const chip = e.target.closest('.edit-pick-chip');
+    if (!chip) return;
+    const t = chip.dataset.pick;
+    const i = editTags.indexOf(t);
+    if (i >= 0) editTags.splice(i, 1); else editTags.push(t);
+    renderEditTags();
+    renderEditPicker();
   });
 
   document.getElementById('editTagAdd').addEventListener('click', () => {
     const input = document.getElementById('editTagInput');
     const tag = input.value.trim();
-    if (tag && !editTags.includes(tag)) {
-      editTags.push(tag);
-      renderEditTags();
-    }
-    input.value = '';
+    if (tag && !editTags.includes(tag)) editTags.push(tag);
+    input.value = ''; editPickQuery = '';
+    renderEditTags();
+    renderEditPicker();
     input.focus();
   });
 
+  // Typing filters the picker; Enter commits the typed text as a (possibly new) tag.
+  document.getElementById('editTagInput').addEventListener('input', (e) => {
+    editPickQuery = e.target.value.trim();
+    renderEditPicker();
+  });
   document.getElementById('editTagInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
