@@ -1517,6 +1517,7 @@
         </div>
         <div class="tag-stamp-zone" id="tagStampZone">
           <span class="tag-loaded-label" id="tagLoadedLabel"></span>
+          <input type="search" class="tag-pal-search" id="tagPalSearch" autocomplete="off">
           <div class="tag-palette" id="tagPalette"></div>
           <button type="button" class="tag-new-toggle" id="tagNewToggle">＋</button>
           <div class="tag-new-form" id="tagNewForm" style="display:none">
@@ -1802,8 +1803,14 @@
     .tag-axis-toggle button.active { background: var(--surface); color: var(--text-strong); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
     /* Stamp zone: loaded label + palette (h-scroll) + new-tag form */
     .tag-stamp-zone { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-    .tag-loaded-label { font-size: 11px; color: var(--text-subtle); flex-shrink: 0; }
+    .tag-loaded-label { font-size: 11px; color: var(--text-subtle); flex-shrink: 0; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tag-pal-search { flex-shrink: 0; width: 120px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; background: var(--surface); color: var(--text); outline: none; }
+    .tag-pal-search:focus { border-color: var(--accent); width: 160px; }
     .tag-palette { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; padding: 2px 0; scrollbar-width: thin; }
+    /* Grouped palette: each group is a small dim label followed by its chips. */
+    .tag-pal-group { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding-right: 4px; }
+    .tag-pal-group + .tag-pal-group { border-left: 1px solid var(--border); padding-left: 10px; }
+    .tag-pal-gname { font-size: 10px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; flex-shrink: 0; }
     .tag-pal-chip {
       flex-shrink: 0; border: none; background: var(--chip-bg); color: var(--text);
       border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;

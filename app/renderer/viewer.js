@@ -97,6 +97,8 @@
     tagAxisStampHint: _s('tagAxisStampHint'),
     tagLoaded: _s('tagLoaded'),
     tagPickToLoad: _s('tagPickToLoad'),
+    tagPaletteFilter: _s('tagPaletteFilter'),
+    tagPalNoMatch: _s('tagPalNoMatch'),
     tagAddBtn: _s('tagAddBtn'),
     tagNewName: _s('tagNewName'),
     tagNoGroup: _s('tagNoGroup'),
@@ -2947,6 +2949,7 @@
     const editBtn = document.getElementById('tagAxisEditBtn');
     const stampBtn = document.getElementById('tagAxisStampBtn');
     const palette = document.getElementById('tagPalette');
+    const palSearch = document.getElementById('tagPalSearch');
     const loadedLabel = document.getElementById('tagLoadedLabel');
     const newForm = document.getElementById('tagNewForm');
     const newToggle = document.getElementById('tagNewToggle');
@@ -2960,7 +2963,8 @@
     const AXIS_KEY = 'corpus.tagAxis';
     let active = false;
     let axis = localStorage.getItem(AXIS_KEY) === 'edit' ? 'edit' : 'stamp';
-    let loaded = null;   // the loaded stamp tag (stamp axis)
+    let loaded = null;       // the loaded stamp tag (stamp axis)
+    let palQuery = '';       // palette search filter
 
     // --- static labels ---
     const setT = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
@@ -2977,31 +2981,49 @@
     newGroupName.placeholder = MSG.tagNewGroupName;
     newToggle.setAttribute('aria-label', MSG.tagNewName);
     newToggle.title = MSG.tagNewName;
+    if (palSearch) palSearch.placeholder = MSG.tagPaletteFilter;
 
-    // The new-tag form takes over the stamp zone (palette + loaded label hide):
-    // it's create OR browse, never both — so the row never overflows.
+    // The new-tag form takes over the stamp zone (palette + search + loaded label
+    // hide): it's create OR browse, never both — so the row never overflows.
     function setNewForm(show) {
       newForm.style.display = show ? 'flex' : 'none';
       palette.style.display = show ? 'none' : 'flex';
-      loadedLabel.style.display = show ? 'none' : '';
+      loadedLabel.style.display = show ? 'none' : (loaded ? '' : 'none');
+      if (palSearch) palSearch.style.display = show ? 'none' : '';
       newToggle.classList.toggle('on', show);
       if (show) newInput.focus();
       updateLayout();
     }
 
-    // Every tag in the library (applied to posts + defined in groups), ja-sorted.
-    function allTagsSorted() {
-      const set = new Set();
-      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) set.add(t);
-      for (const g of tagGroups) for (const t of (g.tags || [])) set.add(t);
-      return [...set].sort((a, b) => a.localeCompare(b, 'ja'));
+    // Palette organised by tag-group (defined groups in order, then 未分類 =
+    // ungrouped tags that exist on posts), each section filtered by the search box.
+    function paletteGroups() {
+      const q = palQuery.toLowerCase();
+      const ok = (t) => !q || t.toLowerCase().includes(q);
+      const byJa = (a, b) => a.localeCompare(b, 'ja');
+      const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
+      const out = [];
+      for (const g of tagGroups) {
+        const tags = (g.tags || []).filter(ok).sort(byJa);
+        if (tags.length) out.push({ name: g.name, tags });
+      }
+      const applied = new Set();
+      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) applied.add(t);
+      const ungrouped = [...applied].filter(ok).sort(byJa);
+      if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
+      return out;
     }
 
     function renderPalette() {
-      const tags = allTagsSorted();
-      palette.innerHTML = tags.length
-        ? tags.map((t) => `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('')
-        : `<span class="tag-pal-empty">${escapeHtml(MSG.tagNoTags)}</span>`;
+      const groups = paletteGroups();
+      if (!groups.length) {
+        palette.innerHTML = `<span class="tag-pal-empty">${escapeHtml(palQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
+        return;
+      }
+      const chip = (t) => `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+      palette.innerHTML = groups.map((g) =>
+        `<span class="tag-pal-group"><span class="tag-pal-gname">${escapeHtml(g.name)}</span>${g.tags.map(chip).join('')}</span>`
+      ).join('');
     }
     function renderGroupSelect() {
       newGroup.innerHTML =
@@ -3011,9 +3033,10 @@
       newGroupName.style.display = 'none';
     }
     function updateLoadedLabel() {
-      loadedLabel.innerHTML = loaded
-        ? `${escapeHtml(MSG.tagLoaded)} <b>${escapeHtml(loaded)}</b>`
-        : escapeHtml(MSG.tagPickToLoad);
+      // Only take row width when a tag IS loaded; otherwise the search box + the
+      // visible grouped chips already tell the user to pick one (no long hint).
+      loadedLabel.innerHTML = loaded ? `${escapeHtml(MSG.tagLoaded)} <b>${escapeHtml(loaded)}</b>` : '';
+      loadedLabel.style.display = loaded ? '' : 'none';
     }
     function loadTag(t) { loaded = t || null; updateLoadedLabel(); renderPalette(); refreshMarks(); }
 
@@ -3109,6 +3132,7 @@
       if (selectedSet.size) clearSelection();
       bar.style.display = 'flex';
       document.body.classList.add('tagging');
+      palQuery = ''; if (palSearch) palSearch.value = '';
       setNewForm(false);
       renderPalette();
       renderGroupSelect();
@@ -3134,6 +3158,7 @@
       const t = chip.dataset.tag;
       loadTag(t === loaded ? null : t);   // click the loaded chip again to unload
     });
+    if (palSearch) palSearch.addEventListener('input', () => { palQuery = palSearch.value.trim(); renderPalette(); });
     newAdd.addEventListener('click', createTag);
     newToggle.addEventListener('click', () => setNewForm(newForm.style.display === 'none'));
     newGroup.addEventListener('change', () => { newGroupName.style.display = newGroup.value === '__new' ? '' : 'none'; });
