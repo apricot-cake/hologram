@@ -3523,9 +3523,9 @@
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout();
-    if (!commit) return;
+    if (!commit) { if (currentView === 'card') scheduleMasonry(); return; }   // drag: re-pack columns live
     window.corpus.setPref(st.pref, st.get());
-    renderPosts();   // re-request thumbnails at the new size
+    renderPosts();   // re-request thumbnails at the new size (re-packs masonry too)
   }
   function tileGridMetrics() {
     const grid = document.getElementById('postGrid');
