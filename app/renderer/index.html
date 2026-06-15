@@ -428,16 +428,14 @@
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
     .ws-row-wrap { position: relative; }
-    /* Workspace count uses the shared muted badge style; only inset it by the filter
-       rows' chevron column (11px glyph + 7px gap = 18px) so it lines up with theirs. */
+    /* Workspace count: same plain-number treatment as the filter badges, parked at
+       the right edge (where the × clear button takes over on hover). */
     #wsBadge.sb-row-badge {
-      display: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-      min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-      background: var(--surface-3); border: 1px solid var(--border); color: var(--text-muted);
-      font-size: 10px; font-weight: 700; align-items: center; justify-content: center;
-      box-sizing: border-box; transition: opacity .12s;
+      display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      color: var(--text); font-size: 11px; font-weight: 600;
+      font-variant-numeric: tabular-nums; transition: opacity .12s;
     }
-    #wsBadge.sb-row-badge.on { display: inline-flex; }
+    #wsBadge.sb-row-badge.on { display: inline-block; }
     .ws-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
     .ws-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
     .ws-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
@@ -1336,19 +1334,18 @@
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
   .sb-row .sb-row-name { flex: 1; }
-  /* Count badge — active-filter count AND workspace count are the same part, so
-     unified: a MUTED circle (16×16 for one digit; widens to a pill for 2+), digit
-     centered both axes via flex. Muted because a count is a quantity, not a state
-     (the accent tint floated against the sidebar — user). */
+  /* Active-filter count (AND workspace count — same part). The old filled grey
+     pill read as a clunky notification badge against the flat sidebar (user: ダサい);
+     replaced by a PLAIN right-aligned number matching the tag sub-row counts
+     (.sb-subrow-count). It marks an ACTIVE category, so it carries a touch more
+     weight + the full --text ink (vs the muted passive tag counts) — "active = grey
+     contrast", not a tint or a box (DESIGN.md). */
   .sb-row .sb-row-badge {
-    display: none; min-width: 16px; height: 16px; padding: 0 4px;
-    border-radius: 8px; background: var(--surface-3);
-    border: 1px solid var(--border); color: var(--text-muted);
-    font-size: 10px; font-weight: 700;
-    align-items: center; justify-content: center;
-    box-sizing: border-box;
+    display: none; flex-shrink: 0;
+    color: var(--text); font-size: 11px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
-  .sb-row .sb-row-badge.on { display: inline-flex; }
+  .sb-row .sb-row-badge.on { display: inline-block; }
   /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
      All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
   .sb-row-arrow, .sb-subrow-arrow, .cs-btn .cs-arrow {
