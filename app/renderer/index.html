@@ -1369,6 +1369,11 @@
           <button class="btn-outline" id="cancelSelectBtn"></button>
         </div>
         <div class="sb-scroll">
+        <!-- Feature launcher: enter tagging mode (card-edit / stamp toggle). -->
+        <button class="sb-feature" id="tagStartBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+          <span id="tagStartLabel"></span>
+        </button>
         <div class="toolbar" id="postsToolbar">
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
@@ -1485,6 +1490,29 @@
   <div id="appMain">
   <div id="mode-post">
     <div class="app-content">
+      <!-- Tagging-mode bar: 2 axes (card edit / stamp) + a loaded-tag palette.
+           Hidden until tagging mode is entered. Stacks ABOVE the active-filter
+           bar so filtering stays usable (filter → stamp across the subset). -->
+      <div id="tagBar" class="tag-bar" style="display:none">
+        <span class="tag-bar-badge"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span id="tagBarBadgeText"></span></span>
+        <div class="tag-axis-toggle" id="tagAxisToggle">
+          <button type="button" data-axis="edit" id="tagAxisEditBtn" class="active"></button>
+          <button type="button" data-axis="stamp" id="tagAxisStampBtn"></button>
+        </div>
+        <div class="tag-stamp-zone" id="tagStampZone">
+          <span class="tag-loaded-label" id="tagLoadedLabel"></span>
+          <div class="tag-palette" id="tagPalette"></div>
+          <button type="button" class="tag-new-toggle" id="tagNewToggle">＋</button>
+          <div class="tag-new-form" id="tagNewForm" style="display:none">
+            <input type="text" id="tagNewInput" class="tag-new-input" autocomplete="off">
+            <select id="tagNewGroup" class="tag-new-group"></select>
+            <input type="text" id="tagNewGroupName" class="tag-new-input tag-new-gname" style="display:none" autocomplete="off">
+            <button type="button" class="btn-outline" id="tagNewAdd"></button>
+          </div>
+        </div>
+        <span class="tag-edit-hint" id="tagEditHint"></span>
+        <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
+      </div>
       <!-- Active-filter bar: pinned to the top of the content area, scroll-following -->
       <div id="postActiveBar" class="content-activebar" style="display:none">
         <div class="sb-chips" id="queryChips"></div>
@@ -1592,28 +1620,6 @@
 
   </div><!-- /appMain -->
   </div><!-- /appBody -->
-
-  <!-- Hidden launcher — clicked programmatically by the context menu wizard action -->
-  <button id="tagWizardBtn" type="button" hidden aria-hidden="true"></button>
-  <!-- Tagging wizard: walk untagged posts, present every tag group's tags as
-       toggle chips (recognition over recall), set a plain/media flag, save→next -->
-  <div id="tagWizard" class="settings-view" hidden>
-    <div class="settings-view-inner tw-inner">
-      <div class="settings-view-head">
-        <div class="settings-view-title"><span id="twTitle"></span> <span id="twProgress" class="tw-progress"></span></div>
-        <button class="icon-btn" id="twClose" type="button" aria-label="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
-      </div>
-      <div id="twBody" class="tw-body"></div>
-      <!-- one right-aligned cluster: the eye finishes the right-column flow
-           and drops straight onto the actions (no bottom-left detour) -->
-      <div class="tw-foot">
-        <span style="flex:1"></span>
-        <button class="btn-outline" id="twBack" type="button"></button>
-        <button class="btn-outline" id="twNext" type="button"></button>
-        <button class="btn-outline" id="twSave" type="button" style="margin-left:16px;background:var(--accent);color:#fff;border-color:var(--accent);"></button>
-      </div>
-    </div>
-  </div>
 
   <!-- Back-to-top for the content area (the post grid scrolls with the window) -->
   <button id="contentTop" class="icon-btn glass-relief" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
@@ -1743,61 +1749,79 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
-    /* --- Tagging wizard --- */
-    /* One image LARGE on the left; on the right ONE tag group at a time with a
-       clickable group stepper (no full-vocabulary scan, no collapse-and-peek). */
-    .tw-inner { max-width: 1100px; width: 100%; display: flex; flex-direction: column; max-height: 100%; }
-    .tw-progress { font-size: var(--text-sm); color: var(--text-muted); font-weight: var(--weight-regular); }
-    .tw-body { flex: 1; min-height: 460px; overflow: hidden; padding: 4px 2px 8px; display: flex; gap: 20px; }
-    .tw-left { flex: 1.25; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-    .tw-right { flex: 1; min-width: 320px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 2px; }
-    /* the image is the protagonist: large, zoomable, and the frame HUGS the
-       image (no fixed box → no letterboxing bars) */
-    .tw-big { max-width: 100%; max-height: 64vh; width: auto; height: auto; align-self: center; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); display: block; cursor: zoom-in; }
-    .tw-meta { font-size: 12px; color: var(--text-muted); flex-shrink: 0; text-align: center; }
-    .tw-meta .tw-author { font-size: 13px; font-weight: 600; color: var(--text); }
-    .tw-meta .tw-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.55; color: var(--text); }
-    .tw-group-name { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
-    .tw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    /* group stepper: every (visible) group is a clickable chip — the linear
-       次へ is just the default walk; jumping is always allowed, so "done" is
-       an informed choice rather than an order artifact */
-    .tw-steps { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
-    .tw-step {
-      border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text-muted);
-      border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 5px;
-      transition: background .12s, color .12s, border-color .12s;
+    /* --- Tagging mode bar (2-axis: card edit / stamp) ---
+       A slim band stacked ABOVE the active-filter bar. The axis toggle is a
+       monotone-contrast segmented control (no accent-tint active — withdrawn);
+       the loaded stamp is marked by an accent-soft EDGE only (DESIGN.md). */
+    .tag-bar {
+      position: sticky; top: var(--tabbar-h); z-index: 32;
+      display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+      margin: -24px -32px 0; padding: 9px 32px;
+      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
     }
-    .tw-step:hover { color: var(--text); border-color: var(--accent); }
-    .tw-step.on { background: var(--accent-subtle); color: var(--accent-subtle-fg); border-color: var(--accent-border); font-weight: 600; }
-    .tw-step-badge {
-      font-size: 10px; font-weight: 700; min-width: 16px; text-align: center;
-      background: var(--accent-subtle); color: var(--accent-subtle-fg); border: 1px solid var(--accent-border);
-      border-radius: 999px; padding: 0 5px;
+    /* When no filters are active the active-filter bar is hidden, so THIS band
+       is the bottom one — give it the gap before the grid + the corner fillet. */
+    .tag-bar.tag-bar--solo { margin-bottom: 16px; }
+    .tag-bar.tag-bar--solo::after {
+      content: ''; position: absolute; left: 0; top: 100%;
+      width: 10px; height: 10px; pointer-events: none;
+      background: radial-gradient(circle 10px at bottom right,
+        var(--border) 0 10.75px, var(--sidebar-bg) 10.75px);
+      -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
+              mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
     }
-    .tw-step.on .tw-step-badge { background: var(--surface); }
-    .tw-step-hid { border-style: dashed; color: var(--text-subtle); }
-    /* current group's panel */
-    .tw-panel { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
-    .tw-panel-name { font-size: 14px; font-weight: 600; color: var(--text-strong); }
-    .tw-hide-link { align-self: flex-start; background: none; border: none; padding: 0; font-size: 11px; color: var(--text-subtle); cursor: pointer; }
-    .tw-hide-link:hover { color: var(--accent-text); text-decoration: underline; }
-    /* group-visibility panel (opened from the 非表示 chip) */
-    .tw-hidpanel { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
-    .tw-hidrow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
-    .tw-chip {
-      border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text);
-      border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer;
-      transition: background .12s, color .12s, border-color .12s;
+    /* While tagging, push the active-filter bar down below this band (both sticky).
+       --tagbar-h is measured + set by JS so a wrapped/taller bar still stacks right. */
+    body.tagging #postActiveBar { top: calc(var(--tabbar-h) + var(--tagbar-h, 47px)); margin-top: 0; }
+    .tag-bar-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted-strong); text-transform: uppercase; letter-spacing: .4px; }
+    .tag-bar-badge svg { color: var(--accent-text); }
+    /* Axis toggle — monotone-contrast segmented control */
+    .tag-axis-toggle { display: inline-flex; flex-shrink: 0; background: var(--chip-bg); border-radius: 999px; padding: 3px; gap: 2px; }
+    .tag-axis-toggle button {
+      border: none; background: transparent; color: var(--text-muted);
+      font-size: 12px; padding: 5px 13px; border-radius: 999px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px; transition: background .12s, color .12s;
     }
-    .tw-chip:hover { border-color: var(--accent); }
-    .tw-chip.on { background: var(--accent-subtle); color: var(--accent-subtle-fg); border-color: var(--accent-border); }
-    .tw-add { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-    .tw-add input { flex: 1; min-width: 120px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
-    .tw-add select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
-    .tw-foot { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); margin-top: 4px; }
-    .tw-done { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .tag-axis-toggle button:hover { color: var(--text); }
+    .tag-axis-toggle button.active { background: var(--surface); color: var(--text-strong); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    /* Stamp zone: loaded label + palette (h-scroll) + new-tag form */
+    .tag-stamp-zone { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .tag-loaded-label { font-size: 11px; color: var(--text-subtle); flex-shrink: 0; }
+    .tag-palette { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; padding: 2px 0; scrollbar-width: thin; }
+    .tag-pal-chip {
+      flex-shrink: 0; border: none; background: var(--chip-bg); color: var(--text);
+      border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      transition: background .12s, box-shadow .12s, color .12s;
+    }
+    .tag-pal-chip:hover { background: var(--chip-bg-hover); }
+    .tag-pal-chip.loaded { box-shadow: inset 0 0 0 1.5px var(--accent-soft); color: var(--text-strong); font-weight: 600; }
+    .tag-pal-empty { font-size: 12px; color: var(--text-subtle); flex-shrink: 0; }
+    /* New-tag form is collapsed behind a ＋ so the palette keeps its width. */
+    .tag-new-toggle { flex-shrink: 0; border: 1px dashed var(--border-strong); background: transparent; color: var(--text-muted); border-radius: 999px; padding: 4px 11px; font-size: 13px; line-height: 1; cursor: pointer; transition: color .12s, border-color .12s; }
+    .tag-new-toggle:hover { color: var(--text); border-color: var(--accent); }
+    .tag-new-toggle.on { color: var(--accent-text); border-color: var(--accent); border-style: solid; }
+    .tag-new-form { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+    .tag-new-input { width: 120px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
+    .tag-new-input:focus { border-color: var(--accent); }
+    #tagNewInput { flex: 1 1 70px; min-width: 50px; width: auto; }   /* the name field yields width first */
+    .tag-new-gname { width: 100px; flex-shrink: 0; }
+    .tag-new-group { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text); min-width: 0; max-width: 130px; }
+    .tag-new-form .btn-outline { flex-shrink: 0; }
+    .tag-edit-hint { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 0; }
+    .tag-done-btn { flex-shrink: 0; margin-left: auto; font-size: 12px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; transition: border-color .12s, color .12s; }
+    .tag-done-btn:hover { border-color: var(--accent); color: var(--accent-text); }
+    /* Axis-conditional visibility */
+    body:not(.tagging-stamp) .tag-stamp-zone { display: none; }
+    body:not(.tagging-edit) .tag-edit-hint { display: none; }
+    /* Stamp affordances on the grid (scoped to in-mode so it never leaks out) */
+    body.tagging.tagging-stamp #postGrid .post-card { cursor: copy; }
+    body.tagging #postGrid .select-check { display: none; }
+    .post-card.stamp-on { box-shadow: inset 0 0 0 2px var(--accent-soft); }
+    .post-card.stamp-on::after {
+      content: '✓'; position: absolute; top: 6px; left: 6px; z-index: 3;
+      width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff;
+      font-size: 12px; line-height: 18px; text-align: center; font-weight: 700; pointer-events: none;
+    }
 
 
     /* Inspector (ℹ): an inline right column at wide widths; below the

@@ -89,21 +89,23 @@
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
-    twTitle: _s('twTitle'),
-    twAddPlaceholder: _s('twAddPlaceholder'),
-    twAddToGroup: _s('twAddToGroup'),
-    twAdd: _s('twAdd'),
-    twBack: _s('twBack'),
-    twNext: _s('twNext'),
-    twSave: _s('twSave'),
-    twDone: _s('twDone'),
-    twNoGroups: _s('twNoGroups'),
-    twNoGroup: _s('twNoGroup'),
-    twNewGroup: _s('twNewGroup'),
-    twNewGroupName: _s('twNewGroupName'),
-    twHidden: _s('twHidden'),
-    twShownTitle: _s('twShownTitle'),
-    twHide: _s('twHide'),
+    tagStart: _s('tagStart'),
+    tagBarBadge: _s('tagBarBadge'),
+    tagAxisEdit: _s('tagAxisEdit'),
+    tagAxisStamp: _s('tagAxisStamp'),
+    tagAxisEditHint: _s('tagAxisEditHint'),
+    tagAxisStampHint: _s('tagAxisStampHint'),
+    tagLoaded: _s('tagLoaded'),
+    tagPickToLoad: _s('tagPickToLoad'),
+    tagAddBtn: _s('tagAddBtn'),
+    tagNewName: _s('tagNewName'),
+    tagNoGroup: _s('tagNoGroup'),
+    tagNewGroup: _s('tagNewGroup'),
+    tagNewGroupName: _s('tagNewGroupName'),
+    tagDone: _s('tagDone'),
+    tagNoTags: _s('tagNoTags'),
+    tagStampedOn: _f1('tagStampedOn'),
+    tagStampedOff: _f1('tagStampedOff'),
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
@@ -365,10 +367,6 @@
   setText('unitMonth', MSG.unitMonth);
   setText('settingsTrashTitle', MSG.trashTitle);
   setText('emptyTrash', MSG.trashEmptyBtn);
-  setText('twTitle', MSG.twTitle);
-  setText('twBack', MSG.twBack);
-  setText('twNext', MSG.twNext);
-  setText('twSave', MSG.twSave);
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
@@ -1426,6 +1424,7 @@
   const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
   let inspectedKey = null;      // postIdKey of the group shown in the inspector (ring marker)
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
+  let taggingApi = null;        // tagging mode (2-axis) API; set by setupTagging() below
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   // card/list serve a thumbnail too now (they used to load the full original —
@@ -2391,6 +2390,8 @@
       }
     }
 
+    if (taggingApi && taggingApi.isActive()) taggingApi.refreshMarks();   // re-apply stamp marks after a rebuild
+
     if (!keepLimit) syncTitleAndPersist();   // keep the tab title + persistence in sync
   }
 
@@ -2631,7 +2632,7 @@
     cardMenu.innerHTML =
       (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
       row('edit', CM_IC.edit, MSG.tipEdit) +
-      row('wizard', CM_IC.wizard, MSG.twTitle) +
+      row('tagmode', CM_IC.wizard, MSG.tagStart) +
       row('folder', CM_IC.folder, MSG.tipFolder) +
       (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
@@ -2664,7 +2665,7 @@
     const act = rowEl.dataset.act;
     if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
     else if (act === 'edit') openEditOverlay(g.rep, g.records);
-    else if (act === 'wizard') { document.getElementById('tagWizardBtn')?.click(); }
+    else if (act === 'tagmode') { if (taggingApi) taggingApi.enter(); }
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
@@ -2814,233 +2815,241 @@
     showToast(MSG.deleted);
   }
 
-  // === Tagging wizard: one image LARGE + ONE tag group per step. The group
-  // stepper shows every (visible) group and is clickable, so 次へ is just the
-  // default walk — finishing early is an informed choice, not an order
-  // artifact. Groups can be hidden from the wizard (persisted, reversible from
-  // the always-visible 非表示 chip). No recommendations, no collapse-and-peek:
-  // deterministic, user-controlled. ===
-  (function setupTagWizard() {
-    const view = document.getElementById('tagWizard');
-    const body = document.getElementById('twBody');
-    const prog = document.getElementById('twProgress');
-    if (!view) return;
-    const HIDDEN_KEY = 'corpus.wizardHiddenGroups';
-    const loadHidden = () => {
-      try { const a = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); return new Set(Array.isArray(a) ? a : []); } catch { return new Set(); }
-    };
-    let hidden = loadHidden();
-    const saveHidden = () => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ } };
-    let queue = [];             // untagged post groups (images)
-    let idx = 0;                // current image
-    let step = 0;               // current group step
-    let sel = new Set();        // selected tags for the current post
-    let showHidPanel = false;   // group-visibility panel open?
+  // === Tagging mode (2-axis: card edit ↔ stamp). Replaces the old wizard.
+  // A slim toolbar above the grid toggles between two ways to tag:
+  //   • card edit — click a card → edit that ONE card's tags (1 image → many tags)
+  //   • stamp     — load ONE tag, then click cards to apply/remove it across many
+  //                 (1 tag → many images, Lightroom painter style)
+  // Filtering stays live underneath: narrow the set first, then stamp across it. ===
+  (function setupTagging() {
+    const bar = document.getElementById('tagBar');
+    if (!bar) return;
+    const postGrid = document.getElementById('postGrid');
+    const postActiveBar = document.getElementById('postActiveBar');
+    const editBtn = document.getElementById('tagAxisEditBtn');
+    const stampBtn = document.getElementById('tagAxisStampBtn');
+    const palette = document.getElementById('tagPalette');
+    const loadedLabel = document.getElementById('tagLoadedLabel');
+    const newForm = document.getElementById('tagNewForm');
+    const newToggle = document.getElementById('tagNewToggle');
+    const newInput = document.getElementById('tagNewInput');
+    const newGroup = document.getElementById('tagNewGroup');
+    const newGroupName = document.getElementById('tagNewGroupName');
+    const newAdd = document.getElementById('tagNewAdd');
+    const doneBtn = document.getElementById('tagDoneBtn');
+    const startBtn = document.getElementById('tagStartBtn');
 
-    // Queue = posts not yet handled here: no tags AND not marked reviewed.
-    // Saving (even with no tags) sets tagReviewed so it stops resurfacing.
-    const isUntagged = (g) => g.records.every((r) => !(Array.isArray(r.tags) && r.tags.length) && !r.tagReviewed);
-    // visible group steps + the trailing 未分類 step (ungrouped tags + adder)
-    const steps = () => tagGroups
-      .filter((grp) => (grp.tags || []).length && !hidden.has(grp.id))
-      .concat([{ id: '__other', name: MSG.tagGroupOther, tags: null }]);
-    // every existing ungrouped tag in the library (recognition, not recall)
-    function ungroupedTags() {
-      const grouped = new Set(tagGroups.flatMap((gr) => gr.tags || []));
-      const out = new Set();
-      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) out.add(t);
-      for (const t of sel) if (!grouped.has(t)) out.add(t);
-      return [...out].sort((a, b) => a.localeCompare(b, 'ja'));
+    const AXIS_KEY = 'corpus.tagAxis';
+    let active = false;
+    let axis = localStorage.getItem(AXIS_KEY) === 'edit' ? 'edit' : 'stamp';
+    let loaded = null;   // the loaded stamp tag (stamp axis)
+
+    // --- static labels ---
+    const setT = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    setT('tagStartLabel', MSG.tagStart);
+    setT('tagBarBadgeText', MSG.tagBarBadge);
+    setT('tagEditHint', MSG.tagAxisEditHint);
+    editBtn.textContent = MSG.tagAxisEdit;
+    stampBtn.textContent = MSG.tagAxisStamp;
+    editBtn.title = MSG.tagAxisEditHint;
+    stampBtn.title = MSG.tagAxisStampHint;
+    newAdd.textContent = MSG.tagAddBtn;
+    doneBtn.textContent = MSG.tagDone;
+    newInput.placeholder = MSG.tagNewName;
+    newGroupName.placeholder = MSG.tagNewGroupName;
+    newToggle.setAttribute('aria-label', MSG.tagNewName);
+    newToggle.title = MSG.tagNewName;
+
+    // The new-tag form takes over the stamp zone (palette + loaded label hide):
+    // it's create OR browse, never both — so the row never overflows.
+    function setNewForm(show) {
+      newForm.style.display = show ? 'flex' : 'none';
+      palette.style.display = show ? 'none' : 'flex';
+      loadedLabel.style.display = show ? 'none' : '';
+      newToggle.classList.toggle('on', show);
+      if (show) newInput.focus();
+      updateLayout();
     }
 
-    function open() {
-      // untagged groups within the CURRENT filter (so the user can narrow first)
-      queue = groupRecords(getFilteredPosts()).filter(isUntagged);
-      view.hidden = false;
-      gotoImage(0);
+    // Every tag in the library (applied to posts + defined in groups), ja-sorted.
+    function allTagsSorted() {
+      const set = new Set();
+      for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) set.add(t);
+      for (const g of tagGroups) for (const t of (g.tags || [])) set.add(t);
+      return [...set].sort((a, b) => a.localeCompare(b, 'ja'));
     }
-    function close() { view.hidden = true; body.innerHTML = ''; renderPosts(true); }
 
-    function gotoImage(i) {
-      idx = i;
-      step = 0;
-      showHidPanel = false;
-      if (idx < queue.length) {
-        const g = queue[idx];
-        sel = new Set(g.records.flatMap((r) => Array.isArray(r.tags) ? r.tags : []));
+    function renderPalette() {
+      const tags = allTagsSorted();
+      palette.innerHTML = tags.length
+        ? tags.map((t) => `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('')
+        : `<span class="tag-pal-empty">${escapeHtml(MSG.tagNoTags)}</span>`;
+    }
+    function renderGroupSelect() {
+      newGroup.innerHTML =
+        `<option value="">${escapeHtml(MSG.tagNoGroup)}</option>` +
+        tagGroups.map((g) => `<option value="${escapeAttr(g.id)}">${escapeHtml(g.name)}</option>`).join('') +
+        `<option value="__new">${escapeHtml(MSG.tagNewGroup)}</option>`;
+      newGroupName.style.display = 'none';
+    }
+    function updateLoadedLabel() {
+      loadedLabel.innerHTML = loaded
+        ? `${escapeHtml(MSG.tagLoaded)} <b>${escapeHtml(loaded)}</b>`
+        : escapeHtml(MSG.tagPickToLoad);
+    }
+    function loadTag(t) { loaded = t || null; updateLoadedLabel(); renderPalette(); refreshMarks(); }
+
+    function applyAxis() {
+      document.body.classList.toggle('tagging-stamp', axis === 'stamp');
+      document.body.classList.toggle('tagging-edit', axis === 'edit');
+      editBtn.classList.toggle('active', axis === 'edit');
+      stampBtn.classList.toggle('active', axis === 'stamp');
+    }
+    function setAxis(a) {
+      axis = a === 'edit' ? 'edit' : 'stamp';
+      try { localStorage.setItem(AXIS_KEY, axis); } catch { /* ignore */ }
+      applyAxis();
+      refreshMarks();
+    }
+
+    // The tag bar and the active-filter bar are two stacked sticky bands. When
+    // no filter is active the filter band is hidden, so THIS band becomes the
+    // bottom one (gap before grid + corner fillet via the --solo class).
+    function updateLayout() {
+      if (!active) return;
+      document.documentElement.style.setProperty('--tagbar-h', bar.offsetHeight + 'px');
+      const abHidden = getComputedStyle(postActiveBar).display === 'none';
+      bar.classList.toggle('tag-bar--solo', abHidden);
+    }
+    // Ring + ✓ marker on cards that already carry the loaded stamp.
+    function refreshMarks() {
+      if (!active) return;
+      updateLayout();
+      postGrid.querySelectorAll('.post-card').forEach((card) => {
+        const g = viewGroups[parseInt(card.dataset.index, 10)];
+        const on = !!(axis === 'stamp' && loaded && g && g.records.length &&
+          g.records.every((r) => (r.tags || []).includes(loaded)));
+        card.classList.toggle('stamp-on', on);
+      });
+    }
+    function clearMarks() { postGrid.querySelectorAll('.post-card.stamp-on').forEach((c) => c.classList.remove('stamp-on')); }
+
+    // Refresh just one card's bottom tag chips after a stamp (no full re-render).
+    function updateCardTagLabel(cardEl, g) {
+      const meta = cardEl.querySelector('.post-meta'); if (!meta) return;
+      let label = meta.querySelector('.tags-label');
+      const tags = g.rep.tags || [];
+      if (!tags.length) { if (label) label.remove(); return; }
+      const html = tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('');
+      if (label) label.innerHTML = html;
+      else { label = document.createElement('div'); label.className = 'tags-label'; label.innerHTML = html; meta.appendChild(label); }
+    }
+
+    // Toggle the loaded tag on every record of a group (additive: other tags stay).
+    async function stampCard(cardEl, g) {
+      if (!loaded) { showToast(MSG.tagPickToLoad); return; }
+      const recs = g.records;
+      const has = recs.length > 0 && recs.every((r) => (r.tags || []).includes(loaded));
+      const undoRecords = recs.map((r) => {
+        const prev = (r.tags || []).slice();
+        const next = has ? prev.filter((t) => t !== loaded) : [...new Set([...prev, loaded])];
+        return { captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next };
+      });
+      for (const u of undoRecords) {
+        try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
+        const r = recs.find((x) => x.captureId === u.captureId); if (r) r.tags = u.newTags.slice();
+        const i = allPosts.findIndex((p) => p.captureId === u.captureId); if (i >= 0) allPosts[i].tags = u.newTags.slice();
       }
-      paint();
-    }
-    function setStep(i) { step = i; showHidPanel = false; paint(); }
-    function next() { const st = steps(); if (step < st.length - 1) setStep(step + 1); else saveNext(); }
-    function back() { if (step > 0) setStep(step - 1); }
-    async function saveNext() { await saveCurrent(); gotoImage(idx + 1); }
-
-    function paint() {
-      const atEnd = idx >= queue.length;
-      for (const id of ['twSave', 'twBack', 'twNext']) {
-        const b = document.getElementById(id);
-        if (b) b.style.display = atEnd ? 'none' : '';
-      }
-      if (atEnd) {
-        prog.textContent = '';
-        body.innerHTML = `<div class="tw-done" style="margin:auto;">${escapeHtml(MSG.twDone)}</div>`;
-        return;
-      }
-      const st = steps();
-      if (step >= st.length) step = st.length - 1;
-      const cur = st[step];
-      prog.textContent = `${idx + 1} / ${queue.length}`;
-      const g = queue[idx];
-      const p = g.rep;
-      const thumb = g.files[0] || captureFile(p);
-      const author = p.displayName || p.screenName || p.title || '';
-      const text = (p.text && p.text !== author) ? p.text : (p.title && p.title !== author ? p.title : '');
-      const chip = (t, on) => `<button class="tw-chip${on ? ' on' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
-
-      // left = the reference (image + caption only); every DECISION lives in
-      // the right column so the eye walks one straight lane top→bottom
-      const left =
-        `<div class="tw-left">` +
-        (thumb ? `<img class="tw-big" src="${fileSrc(thumb, 1080)}" alt="">` : '') +
-        `<div class="tw-meta"><span class="tw-author">${escapeHtml(author)}</span>${text ? `<div class="tw-text">${escapeHtml(text)}</div>` : ''}</div>` +
-        `</div>`;
-      // stepper: every visible group + the always-present 非表示 chip
-      const stepsHtml = st.map((s, i) => {
-        const tags = s.tags || ungroupedTags();
-        const n = tags.filter((t) => sel.has(t)).length;
-        return `<button class="tw-step${i === step ? ' on' : ''}" data-step="${i}">${escapeHtml(s.name)}${n ? `<span class="tw-step-badge">${n}</span>` : ''}</button>`;
-      }).join('') +
-        `<button class="tw-step tw-step-hid${showHidPanel ? ' on' : ''}" id="twHiddenChip">${escapeHtml(MSG.twHidden)} ${hidden.size}</button>`;
-
-      // group-visibility panel (open from the 非表示 chip; reversible anywhere)
-      const hidPanel = showHidPanel
-        ? `<div class="tw-hidpanel"><div class="tw-group-name">${escapeHtml(MSG.twShownTitle)}</div>` +
-          tagGroups.filter((gr) => (gr.tags || []).length).map((gr) =>
-            `<label class="tw-hidrow"><input type="checkbox" data-vis="${escapeAttr(gr.id)}"${hidden.has(gr.id) ? '' : ' checked'}> ${escapeHtml(gr.name)}</label>`
-          ).join('') + `</div>`
-        : '';
-
-      // current group's panel: ALL of its tags as chips (one small set per
-      // screen — recognition without scanning the whole vocabulary)
-      const isOther = cur.id === '__other';
-      const tags = isOther ? ungroupedTags() : cur.tags;
-      const chipsHtml = tags.length ? `<div class="tw-chips">${tags.map((t) => chip(t, sel.has(t))).join('')}</div>` : '';
-      const noGroupsNote = (!tagGroups.length && isOther) ? `<div class="tw-meta">${escapeHtml(MSG.twNoGroups)}</div>` : '';
-      const groupOpts = tagGroups.map((gr) => `<option value="${escapeAttr(gr.id)}">${escapeHtml(gr.name)}</option>`).join('');
-      const adder = isOther
-        ? `<div class="tw-add">` +
-          `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddPlaceholder)}">` +
-          `<select id="twAddGroup"><option value="">${escapeHtml(MSG.twNoGroup)}</option>${groupOpts}<option value="__new">${escapeHtml(MSG.twNewGroup)}</option></select>` +
-          `<input type="text" id="twNewGroupName" placeholder="${escapeAttr(MSG.twNewGroupName)}" style="display:none;">` +
-          `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`
-        : `<div class="tw-add">` +
-          `<input type="text" id="twAddInput" placeholder="${escapeAttr(MSG.twAddToGroup)}">` +
-          `<button class="btn-outline" id="twAddBtn">${escapeHtml(MSG.twAdd)}</button></div>`;
-      const hideLink = isOther ? '' : `<button class="tw-hide-link" data-hide="${escapeAttr(cur.id)}">${escapeHtml(MSG.twHide)}</button>`;
-      const panel = `<div class="tw-panel"><div class="tw-panel-name">${escapeHtml(cur.name)}</div>${noGroupsNote}${chipsHtml}${adder}${hideLink}</div>`;
-
-      body.innerHTML = left + `<div class="tw-right"><div class="tw-steps">${stepsHtml}</div>${hidPanel}${panel}</div>`;
+      pushUndo('tags', undoRecords);
+      if (cardEl) { cardEl.classList.toggle('stamp-on', !has); updateCardTagLabel(cardEl, g); }
+      if (!has && cardEl) { const r = cardEl.getBoundingClientRect(); celebrate(r.left + r.width / 2, r.top + r.height / 2); }
+      showToast(has ? MSG.tagStampedOff(loaded) : MSG.tagStampedOn(loaded));
     }
 
-    async function addTag() {
-      const inp = document.getElementById('twAddInput');
-      const v = (inp && inp.value || '').trim();
-      if (!v) return;
-      sel.add(v);
-      const st = steps();
-      const cur = st[step];
+    // Create a tag (optionally into a group / a new group), then load it as the stamp.
+    async function createTag() {
+      const v = (newInput.value || '').trim(); if (!v) return;
+      const choice = newGroup.value;
       let changed = false;
-      if (cur.id !== '__other') {
-        // implicit: a tag created on a group's step joins that group
-        const grp = tagGroups.find((gr) => gr.id === cur.id);
+      if (choice === '__new') {
+        const name = (newGroupName.value || '').trim();
+        if (name) { tagGroups.push({ id: 'g' + Date.now().toString(36), name, tags: [v] }); changed = true; }
+      } else if (choice) {
+        const grp = tagGroups.find((g) => g.id === choice);
         if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) { grp.tags.push(v); changed = true; } }
-      } else {
-        const gsel = document.getElementById('twAddGroup');
-        const choice = gsel ? gsel.value : '';
-        if (choice === '__new') {
-          const nameEl = document.getElementById('twNewGroupName');
-          const name = (nameEl && nameEl.value || '').trim();
-          if (name) { tagGroups.push({ id: 'g' + Date.now().toString(36), name, tags: [v] }); changed = true; }
-        } else if (choice) {
-          const grp = tagGroups.find((gr) => gr.id === choice);
-          if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) grp.tags.push(v); changed = true; }
-        }
       }
       if (changed && window.corpus.setTagGroups) { try { await window.corpus.setTagGroups(tagGroups); } catch { /* best-effort */ } }
-      paint();
-      const again = document.getElementById('twAddInput');
-      if (again) again.focus();
+      newInput.value = ''; newGroupName.value = '';
+      renderGroupSelect();
+      setNewForm(false);   // collapse back to the palette
+      loadTag(v);
+      if (typeof updateSidebarTagGroups === 'function') updateSidebarTagGroups();
     }
 
-    async function saveCurrent() {
-      const g = queue[idx];
-      if (!g) return;
-      const tags = [...sel];
-      // Capture before-state for undo, then persist.
-      const undoRecords = g.records.map(r => ({
-        captureId: r.captureId,
-        image: r.image || r.video,
-        prevTags: (r.tags || []).slice(),
-        newTags: tags.slice()
-      }));
-      await Promise.all(g.records.map((r) => window.corpus.updateTags(r.image || r.video, tags, { tagReviewed: true })
-        .then(() => { r.tags = tags.slice(); r.tagReviewed = true; })
-        .catch(() => {})));
-      pushUndo('tags-wizard', undoRecords);
+    function enter(a) {
+      if (a === 'edit' || a === 'stamp') setAxis(a); else applyAxis();
+      active = true;
+      if (selectedSet.size) clearSelection();
+      bar.style.display = 'flex';
+      document.body.classList.add('tagging');
+      setNewForm(false);
+      renderPalette();
+      renderGroupSelect();
+      updateLoadedLabel();
+      refreshMarks();
+      updateLayout();
+    }
+    function exit() {
+      active = false;
+      bar.style.display = 'none';
+      document.body.classList.remove('tagging', 'tagging-stamp', 'tagging-edit');
+      clearMarks();
+      renderPosts(true);   // reconcile filter matching after edits
     }
 
-    body.addEventListener('click', (e) => {
-      const tagBtn = e.target.closest('.tw-chip[data-tag]');
-      if (tagBtn) { const t = tagBtn.dataset.tag; if (sel.has(t)) sel.delete(t); else sel.add(t); paint(); return; }
-      const stepBtn = e.target.closest('.tw-step[data-step]');
-      if (stepBtn) { setStep(parseInt(stepBtn.dataset.step, 10)); return; }
-      if (e.target.closest('#twHiddenChip')) { showHidPanel = !showHidPanel; paint(); return; }
-      const hideBtn = e.target.closest('.tw-hide-link[data-hide]');
-      if (hideBtn) { hidden.add(hideBtn.dataset.hide); saveHidden(); paint(); return; }
-      const big = e.target.closest('.tw-big');
-      if (big) { openGallery(buildGroupGalleryItems(queue[idx]), 0); return; }
-      if (e.target.closest('#twAddBtn')) addTag();
+    // --- events ---
+    if (startBtn) startBtn.addEventListener('click', () => { if (active) exit(); else enter(); });
+    editBtn.addEventListener('click', () => setAxis('edit'));
+    stampBtn.addEventListener('click', () => setAxis('stamp'));
+    doneBtn.addEventListener('click', exit);
+    palette.addEventListener('click', (e) => {
+      const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
+      const t = chip.dataset.tag;
+      loadTag(t === loaded ? null : t);   // click the loaded chip again to unload
     });
-    body.addEventListener('change', (e) => {
-      if (e.target.id === 'twAddGroup') {
-        const el = document.getElementById('twNewGroupName');
-        if (el) el.style.display = e.target.value === '__new' ? '' : 'none';
-        return;
-      }
-      const vis = e.target.closest('input[data-vis]');
-      if (vis) {
-        if (vis.checked) hidden.delete(vis.dataset.vis); else hidden.add(vis.dataset.vis);
-        saveHidden();
-        paint();
-      }
-    });
-    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.id === 'twAddInput' || e.target.id === 'twNewGroupName')) { e.preventDefault(); e.stopPropagation(); addTag(); } });
+    newAdd.addEventListener('click', createTag);
+    newToggle.addEventListener('click', () => setNewForm(newForm.style.display === 'none'));
+    newGroup.addEventListener('change', () => { newGroupName.style.display = newGroup.value === '__new' ? '' : 'none'; });
+    [newInput, newGroupName].forEach((el) => el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); createTag(); }
+    }));
 
-    document.getElementById('twSave').addEventListener('click', saveNext);
-    document.getElementById('twBack').addEventListener('click', back);
-    document.getElementById('twNext').addEventListener('click', next);
-    document.getElementById('twClose').addEventListener('click', close);
-    view.addEventListener('click', (e) => { if (e.target === view) close(); });
-    // keyboard: ←/→ walk groups, Enter = 次へ, Ctrl+Enter = 保存して次の画像
-    // (tagging is high-frequency — keep hands off the mouse). Esc closes,
-    // except while the gallery zoom is on top.
+    // Grid clicks while tagging: capture phase pre-empts gallery/text/select.
+    // The corner buttons (ℹ info / ⚡ workspace) still work — we skip them.
+    postGrid.addEventListener('click', (e) => {
+      if (!active) return;
+      if (e.target.closest('.info-btn, .ws-btn')) return;
+      const card = e.target.closest('.post-card'); if (!card) return;
+      e.preventDefault(); e.stopPropagation();
+      const g = viewGroups[parseInt(card.dataset.index, 10)]; if (!g) return;
+      if (axis === 'edit') openEditOverlay(g.rep, g.records);
+      else stampCard(card, g);
+    }, true);
+
+    // Esc leaves tagging mode (unless the gallery / edit overlay is on top).
     document.addEventListener('keydown', (e) => {
-      if (view.hidden) return;
-      if (e.key === 'Escape') {
-        if (!lightbox.classList.contains('show')) close();
-        return;
-      }
-      const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (idx >= queue.length) return;
-      if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
-      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNext(); }
-      else if (e.key === 'Enter') { e.preventDefault(); next(); }
+      if (!active || e.key !== 'Escape') return;
+      if (lightbox.classList.contains('show')) return;
+      if (document.getElementById('editOverlay').classList.contains('show')) return;
+      exit();
     });
-    const launch = document.getElementById('tagWizardBtn');
-    if (launch) launch.addEventListener('click', open);
+
+    // Reflect the persisted axis on the (hidden) toggle WITHOUT touching body
+    // classes — the tagging-stamp/edit body classes only exist while in the mode
+    // (enter() adds them) so grid affordances never leak outside tagging.
+    editBtn.classList.toggle('active', axis === 'edit');
+    stampBtn.classList.toggle('active', axis === 'stamp');
+    taggingApi = { enter, exit, isActive: () => active, getAxis: () => axis, refreshMarks };
   })();
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
@@ -3162,7 +3171,7 @@
     if (lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (!document.getElementById('tagWizard').hidden) return;
+    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
     const dp = document.getElementById('qfDatePopover');
@@ -3423,7 +3432,7 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (!document.getElementById('tagWizard').hidden) return;
+    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     if (viewGroups.length === 0) return;
     e.preventDefault();
     viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
@@ -3443,7 +3452,7 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (!document.getElementById('tagWizard').hidden) return;
+    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     e.preventDefault();
     const sb = document.getElementById('searchBox');
     sb.focus();
