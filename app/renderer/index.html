@@ -1484,6 +1484,23 @@
         </div><!-- /sb-scroll -->
       </div>
 
+      <!-- Tag palette: replaces the filter sidebar while in tagging (stamp axis).
+           Vertical, grouped, searchable — far roomier than the top toolbar strip. -->
+      <div id="tagPalettePanel" class="tag-palette-panel">
+        <input type="search" class="tpp-search" id="tagPalSearch" autocomplete="off">
+        <div class="tpp-list tag-palette" id="tagPalette"></div>
+        <div class="tpp-new" id="tagNewForm">
+          <div class="tpp-new-row">
+            <input type="text" id="tagNewInput" class="tag-new-input" autocomplete="off">
+            <button type="button" class="btn-outline" id="tagNewAdd"></button>
+          </div>
+          <div class="tpp-new-row">
+            <select id="tagNewGroup" class="tag-new-group"></select>
+            <input type="text" id="tagNewGroupName" class="tag-new-input tag-new-gname" style="display:none" autocomplete="off">
+          </div>
+        </div>
+      </div>
+
     </div><!-- /side-post -->
 
     <!-- Back-to-top: floats above the footer once the filter column is scrolled -->
@@ -1533,15 +1550,6 @@
         </div>
         <div class="tag-stamp-zone" id="tagStampZone">
           <span class="tag-loaded-label" id="tagLoadedLabel"></span>
-          <input type="search" class="tag-pal-search" id="tagPalSearch" autocomplete="off">
-          <div class="tag-palette" id="tagPalette"></div>
-          <button type="button" class="tag-new-toggle" id="tagNewToggle">＋</button>
-          <div class="tag-new-form" id="tagNewForm" style="display:none">
-            <input type="text" id="tagNewInput" class="tag-new-input" autocomplete="off">
-            <select id="tagNewGroup" class="tag-new-group"></select>
-            <input type="text" id="tagNewGroupName" class="tag-new-input tag-new-gname" style="display:none" autocomplete="off">
-            <button type="button" class="btn-outline" id="tagNewAdd"></button>
-          </div>
         </div>
         <span class="tag-edit-hint" id="tagEditHint"></span>
         <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
@@ -1816,36 +1824,38 @@
     }
     .tag-axis-toggle button:hover { color: var(--text); }
     .tag-axis-toggle button.active { background: var(--surface); color: var(--text-strong); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-    /* Stamp zone: loaded label + palette (h-scroll) + new-tag form */
+    /* Stamp zone in the toolbar = just the loaded-tag readout (the palette moved
+       to the sidebar — a top strip is too narrow for a real tag vocabulary). */
     .tag-stamp-zone { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-    .tag-loaded-label { font-size: 11px; color: var(--text-subtle); flex-shrink: 0; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tag-pal-search { flex-shrink: 0; width: 120px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; background: var(--surface); color: var(--text); outline: none; }
-    .tag-pal-search:focus { border-color: var(--accent); width: 160px; }
-    .tag-palette { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; padding: 2px 0; scrollbar-width: thin; }
-    /* Grouped palette: each group is a small dim label followed by its chips. */
-    .tag-pal-group { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding-right: 4px; }
-    .tag-pal-group + .tag-pal-group { border-left: 1px solid var(--border); padding-left: 10px; }
-    .tag-pal-gname { font-size: 10px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; flex-shrink: 0; }
+    .tag-loaded-label { font-size: 12px; color: var(--text-muted); flex-shrink: 1; min-width: 0; max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tag-edit-hint { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 0; }
+
+    /* Tag palette panel: while tagging (stamp axis) it REPLACES the filter sidebar
+       — vertical, grouped, searchable, with the full sidebar height to work in. */
+    .tag-palette-panel { display: none; }
+    body.tagging.tagging-stamp #side-post > #controls-posts { display: none; }
+    body.tagging.tagging-stamp .tag-palette-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; padding-top: 4px; }
+    .tpp-search { flex-shrink: 0; width: 100%; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
+    .tpp-search:focus { border-color: var(--accent); }
+    .tpp-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; }
+    .tag-pal-group { display: block; }
+    .tag-pal-gname { display: block; font-size: 10px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px; padding-left: 2px; }
+    .tag-pal-chips { display: flex; flex-wrap: wrap; gap: 5px; }
     .tag-pal-chip {
-      flex-shrink: 0; border: none; background: var(--chip-bg); color: var(--text);
-      border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      border: none; background: var(--chip-bg); color: var(--text);
+      border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer;
       transition: background .12s, box-shadow .12s, color .12s;
     }
     .tag-pal-chip:hover { background: var(--chip-bg-hover); }
     .tag-pal-chip.loaded { box-shadow: inset 0 0 0 1.5px var(--accent-soft); color: var(--text-strong); font-weight: 600; }
-    .tag-pal-empty { font-size: 12px; color: var(--text-subtle); flex-shrink: 0; }
-    /* New-tag form is collapsed behind a ＋ so the palette keeps its width. */
-    .tag-new-toggle { flex-shrink: 0; border: 1px dashed var(--border-strong); background: transparent; color: var(--text-muted); border-radius: 999px; padding: 4px 11px; font-size: 13px; line-height: 1; cursor: pointer; transition: color .12s, border-color .12s; }
-    .tag-new-toggle:hover { color: var(--text); border-color: var(--accent); }
-    .tag-new-toggle.on { color: var(--accent-text); border-color: var(--accent); border-style: solid; }
-    .tag-new-form { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
-    .tag-new-input { width: 120px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
+    .tag-pal-empty { font-size: 12px; color: var(--text-subtle); padding: 8px 2px; }
+    /* New-tag form: persistent at the bottom of the panel (there's room now). */
+    .tpp-new { flex-shrink: 0; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .tpp-new-row { display: flex; gap: 6px; }
+    .tag-new-input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
     .tag-new-input:focus { border-color: var(--accent); }
-    #tagNewInput { flex: 1 1 70px; min-width: 50px; width: auto; }   /* the name field yields width first */
-    .tag-new-gname { width: 100px; flex-shrink: 0; }
-    .tag-new-group { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text); min-width: 0; max-width: 130px; }
-    .tag-new-form .btn-outline { flex-shrink: 0; }
-    .tag-edit-hint { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 0; }
+    .tag-new-group { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text); }
+    .tpp-new .btn-outline { flex-shrink: 0; padding: 6px 12px; }
     .tag-done-btn { flex-shrink: 0; margin-left: auto; font-size: 12px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; transition: border-color .12s, color .12s; }
     .tag-done-btn:hover { border-color: var(--accent); color: var(--accent-text); }
     /* Axis-conditional visibility */

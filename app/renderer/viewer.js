@@ -2953,7 +2953,6 @@
     const palSearch = document.getElementById('tagPalSearch');
     const loadedLabel = document.getElementById('tagLoadedLabel');
     const newForm = document.getElementById('tagNewForm');
-    const newToggle = document.getElementById('tagNewToggle');
     const newInput = document.getElementById('tagNewInput');
     const newGroup = document.getElementById('tagNewGroup');
     const newGroupName = document.getElementById('tagNewGroupName');
@@ -2980,25 +2979,13 @@
     doneBtn.textContent = MSG.tagDone;
     newInput.placeholder = MSG.tagNewName;
     newGroupName.placeholder = MSG.tagNewGroupName;
-    newToggle.setAttribute('aria-label', MSG.tagNewName);
-    newToggle.title = MSG.tagNewName;
     if (palSearch) palSearch.placeholder = MSG.tagPaletteFilter;
-
-    // The new-tag form takes over the stamp zone (palette + search + loaded label
-    // hide): it's create OR browse, never both — so the row never overflows.
-    function setNewForm(show) {
-      newForm.style.display = show ? 'flex' : 'none';
-      palette.style.display = show ? 'none' : 'flex';
-      loadedLabel.style.display = show ? 'none' : (loaded ? '' : 'none');
-      if (palSearch) palSearch.style.display = show ? 'none' : '';
-      newToggle.classList.toggle('on', show);
-      if (show) newInput.focus();
-      updateLayout();
-    }
 
     // Palette organised by tag-group, filtered by the search box (shared helper).
     const paletteGroups = () => groupedTagVocab(palQuery);
 
+    // Vertical, grouped palette in the sidebar: each group is a header + a wrapped
+    // row of chips (room to breathe — the old top strip was too narrow).
     function renderPalette() {
       const groups = paletteGroups();
       if (!groups.length) {
@@ -3007,7 +2994,7 @@
       }
       const chip = (t) => `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
       palette.innerHTML = groups.map((g) =>
-        `<span class="tag-pal-group"><span class="tag-pal-gname">${escapeHtml(g.name)}</span>${g.tags.map(chip).join('')}</span>`
+        `<div class="tag-pal-group"><div class="tag-pal-gname">${escapeHtml(g.name)}</div><div class="tag-pal-chips">${g.tags.map(chip).join('')}</div></div>`
       ).join('');
     }
     function renderGroupSelect() {
@@ -3106,7 +3093,6 @@
       if (changed && window.corpus.setTagGroups) { try { await window.corpus.setTagGroups(tagGroups); } catch { /* best-effort */ } }
       newInput.value = ''; newGroupName.value = '';
       renderGroupSelect();
-      setNewForm(false);   // collapse back to the palette
       loadTag(v);
       if (typeof updateSidebarTagGroups === 'function') updateSidebarTagGroups();
     }
@@ -3118,7 +3104,6 @@
       bar.style.display = 'flex';
       document.body.classList.add('tagging');
       palQuery = ''; if (palSearch) palSearch.value = '';
-      setNewForm(false);
       renderPalette();
       renderGroupSelect();
       updateLoadedLabel();
@@ -3145,7 +3130,6 @@
     });
     if (palSearch) palSearch.addEventListener('input', () => { palQuery = palSearch.value.trim(); renderPalette(); });
     newAdd.addEventListener('click', createTag);
-    newToggle.addEventListener('click', () => setNewForm(newForm.style.display === 'none'));
     newGroup.addEventListener('change', () => { newGroupName.style.display = newGroup.value === '__new' ? '' : 'none'; });
     [newInput, newGroupName].forEach((el) => el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); createTag(); }
