@@ -333,7 +333,7 @@
      content has little to "refract", so popping the blurred backdrop colours is
      what sells the glass in light. Per-theme (dark override below). */
   --glass-filter:  blur(24px) saturate(180%);
-  --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.35);
+  --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.6);
 
   /* Glass MATERIAL tokens for the 3-tier .glass-* classes (lens/frost/relief)
      + toggle thumb + active chips. **Defined in BOTH themes on purpose** so a
@@ -341,6 +341,11 @@
      white rims/sheen are invisible on light, so light needs a subtle DARK rim).
      Any new glass value goes here, not inline — that forces both themes. */
   --glass-rim:       rgba(0,0,0,0.10);
+  /* Outer hairline for glass PANELS/POPS (flyouts, popovers, settings, inspector).
+     Light can't show dark's bright top-edge rim (white-on-near-white is invisible),
+     so the light "ふち" is a defined cool hairline a touch darker than --border-strong
+     (gray-200). Dark = border-strong (#36383d) so dark's look is unchanged. */
+  --glass-border:    color-mix(in srgb, var(--gray-500) 42%, transparent);
   --glass-hi:        rgba(255,255,255,0.85);
   --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.22) 26%, transparent 52%);
   --glass-drop:      0 12px 32px -8px rgba(0,0,0,0.18);
@@ -359,6 +364,7 @@
   --glass-filter: blur(24px) saturate(140%);
   /* Dark counterparts of the material tokens above (white edges read on dark). */
   --glass-rim:       rgba(255,255,255,0.16);
+  --glass-border:    var(--border-strong);
   --glass-hi:        rgba(255,255,255,0.55);
   --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 24%, transparent 48%);
   --glass-drop:      0 12px 36px -8px rgba(0,0,0,0.5);

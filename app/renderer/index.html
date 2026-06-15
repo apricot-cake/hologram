@@ -188,7 +188,7 @@
     .settings-view-inner {
       width: 100%; max-width: 880px; max-height: 100%; overflow-y: auto;
       background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
-      border: 1px solid var(--border-strong); border-radius: 16px;
+      border: 1px solid var(--glass-border); border-radius: 16px;
       box-shadow: var(--shadow-lg), var(--glass-edge);
       padding: 4px 32px 40px;
     }
@@ -398,7 +398,7 @@
        outweighs a bare `#sbTop` (1,0,0) and was forcing the ghost transparent fill
        (+ transparent border) → the button was invisible on the light sidebar (user).
        Qualify with #sidebar so the glass fill + a defined rim actually win. */
-    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--border-strong); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
+    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--glass-border); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
     #sidebar #sbTop:hover { background: var(--glass-bg); color: var(--text); }
     /* Content back-to-top (glass-relief over the content area): the relief rim
        (10% black) is too faint on the light --bg → give it the same defined edge. */
@@ -980,7 +980,7 @@
        picker it opens share one look. */
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
-      background: var(--glass-bg); border: 1px solid var(--border-strong);
+      background: var(--glass-bg); border: 1px solid var(--glass-border);
       backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
@@ -1044,7 +1044,7 @@
     .qf-popover {
       position: fixed; background: var(--glass-bg); border-radius: 10px;
       backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
-      box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--border); padding: 16px;
+      box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border); padding: 16px;
       z-index: 1001; min-width: 260px;
     }
     .qf-backdrop {
@@ -1912,7 +1912,7 @@
     @media (max-width: 1279px) {
       .inspector {
         position: fixed; top: 0; right: 0;
-        border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg), var(--glass-edge);
+        border-left: 1px solid var(--glass-border); box-shadow: var(--shadow-lg), var(--glass-edge);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
         /* Floating over the grid -> glass. The inline (wide) column stays
            solid: it sits BESIDE content, nothing to blur. High tint (88%)

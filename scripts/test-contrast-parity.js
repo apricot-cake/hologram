@@ -66,7 +66,9 @@ const COMPONENT_CHECKS = [
   { name: 'chip',        fill: '--chip-bg',       border: '--chip-border',   floor: 1.2 },
   { name: 'active fill', fill: '--accent-subtle', border: '--accent-subtle', floor: 1.2 },
 ];
-const SIDEBAR_REF = { light: '--sidebar-grad-bot', dark: '--sidebar-bg' };
+// Sidebar is a single flat colour now (the vertical gradient was retired), so the
+// worst-case sidebar point in light is just --sidebar-bg (was --sidebar-grad-bot).
+const SIDEBAR_REF = { light: '--sidebar-bg', dark: '--sidebar-bg' };
 
 // ---- CSS parse: merge every :root block -> light map, every dark block -> dark map.
 function parse() {
