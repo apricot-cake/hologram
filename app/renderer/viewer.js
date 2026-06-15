@@ -389,12 +389,11 @@
   document.getElementById('editCancel').textContent = MSG.confirmCancel;
   document.getElementById('editSave').textContent = MSG.save;
 
-  // Toolbar section titles (検索 / 並び順 / 表示) + search-mode select options
+  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode label is set on
+  // the in-bar toggle button by syncSearchToggle (the old select was removed).
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
   setText('sbViewTitle', MSG.sbViewTitle);
-  setText('searchModeOptNormal', MSG.searchExact);
-  setText('searchModeOptFuzzy', MSG.searchFuzzy);
   // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
   setText('sbEngParticle', MSG.engParticle);
   const engParticleEl = document.getElementById('sbEngParticle');
@@ -880,7 +879,9 @@
     // Find box only for genuinely long, open-ended lists (tags/authors). The
     // platform list is short + fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter(it => it.ghead == null).length;
-    const find = (qfCat !== 'platform' && (qfTagGroup || valueCount > 8)) ? `<input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off">` : '';
+    const find = (qfCat !== 'platform' && (qfTagGroup || valueCount > 8))
+      ? `<div class="qf-find-wrap"><input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off"><button type="button" class="qf-mode-btn" id="qfModeBtn"></button></div>`
+      : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
     const footer = (qfCat === 'folder' && CF())
@@ -892,21 +893,34 @@
       footer;
     const fi = document.getElementById('qfFind');
     if (fi) setTimeout(() => fi.focus(), 0);
+    syncQfMode();   // label the in-bar 通常/あいまい toggle
   }
-  // 値リストの絞り込み（再描画せず行の表示/非表示だけ切替＝入力フォーカス維持）
-  qfPop.addEventListener('input', (e) => {
-    if (!e.target.classList.contains('qf-find')) return;
-    const raw = e.target.value.trim().toLowerCase();
+  // 値リストの絞り込み（再描画せず行の表示/非表示だけ切替＝入力フォーカス維持）。
+  // 検索方式（通常=部分一致 / あいまい=corpusSearch）はメイン検索と共有。
+  function applyQfFind() {
+    const fi = document.getElementById('qfFind');
+    if (!fi) return;
+    const raw = fi.value.trim().toLowerCase();
     const atMode = raw.startsWith('@');
     const q = atMode ? raw.slice(1) : raw;
+    const matcher = (q && window.corpusSearch && window.corpusSearch.isFuzzy()) ? window.corpusSearch.compile(q) : null;
+    const hit = (hay) => { const s = String(hay || ''); return matcher ? matcher(s) : s.toLowerCase().includes(q); };
     qfPop.querySelectorAll('.qf-vals .fm-row').forEach((row) => {
-      const match = !q || (atMode
-        ? (row.dataset.sn || '').toLowerCase().includes(q)
-        : row.textContent.toLowerCase().includes(q));
+      const match = !q || (atMode ? hit(row.dataset.sn || '') : hit(row.textContent));
       row.style.display = match ? '' : 'none';
     });
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
-  });
+  }
+  // フライアウトのバー内トグルにラベルを反映（メイン検索ボタンと同じ表示）。
+  function syncQfMode() {
+    const mb = document.getElementById('qfModeBtn');
+    if (!mb || !window.corpusSearch) return;
+    const fz = window.corpusSearch.isFuzzy();
+    mb.textContent = fz ? MSG.searchFuzzy : MSG.searchExact;
+    mb.classList.toggle('fuzzy', fz);
+    mb.title = MSG.searchModeTitle;
+  }
+  qfPop.addEventListener('input', (e) => { if (e.target.classList.contains('qf-find')) applyQfFind(); });
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl, tagGroupId) {
     if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
@@ -926,6 +940,14 @@
   }
   qfPop.addEventListener('click', (e) => {
     if (e.target.closest('#qfFolderManage')) { if (CF()) CF().openManager(); hideQfPop(); return; }
+    // バー内の 通常/あいまい トグル（メイン検索と共有のモードを切替→絞り込み再適用）
+    if (e.target.closest('.qf-mode-btn')) {
+      if (window.corpusSearch) window.corpusSearch.toggle();
+      syncQfMode();
+      applyQfFind();
+      const fi = document.getElementById('qfFind'); if (fi) fi.focus();
+      return;
+    }
     // 📌 ピン留めトグル（行クリックの選択とは独立）
     const pin = e.target.closest('.qf-pin');
     if (pin) {
@@ -3864,17 +3886,18 @@
     renderPosts();
   });
 
-  // 検索方式トグル（通常 / あいまい）。corpusSearch がモードを集約し、両モードで共有する。
-  const searchModeSel = document.getElementById('searchModeSel');
+  // 検索方式トグル（通常 / あいまい）。検索バー内に統合（旧・別 select は廃止）。
+  // corpusSearch がモードを集約＝メイン検索とフライアウト絞り込みで共有する。
+  const searchModeBtn = document.getElementById('searchModeBtn');
   function syncSearchToggle() {
-    if (!searchModeSel || !window.corpusSearch) return;
-    searchModeSel.value = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'normal';
-    searchModeSel.title = MSG.searchModeTitle;
-    refreshCustomSelects();
+    if (!searchModeBtn || !window.corpusSearch) return;
+    const fuzzy = window.corpusSearch.isFuzzy();
+    searchModeBtn.textContent = fuzzy ? MSG.searchFuzzy : MSG.searchExact;
+    searchModeBtn.classList.toggle('fuzzy', fuzzy);
+    searchModeBtn.title = MSG.searchModeTitle;
   }
-  if (searchModeSel && window.corpusSearch) {
-    enhanceSelect(searchModeSel);
-    searchModeSel.addEventListener('change', () => window.corpusSearch.setMode(searchModeSel.value));
+  if (searchModeBtn && window.corpusSearch) {
+    searchModeBtn.addEventListener('click', () => window.corpusSearch.toggle());
     window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
     syncSearchToggle();
   }
