@@ -102,9 +102,6 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 
 完了は git が記録するので**完了項目は残さず削除**。実装済み機能・構成・検証手順は本ファイル他節＋メモリ `corpus-verify-notes` が真実源（重複させない）。機微な項目（git 履歴スクラブ等）だけはメモリ `corpus-tasks.md`。
 
-### 大型: ブラウザ式タブ（複数ステートの並列保持）— 設計完了・実装待ち
-設計書＝`docs/design-tabs.md`（canonical）。Phase 0→1→2→3。Phase 0=タブタイトル自動生成を document.title でライブ表示→納得確認後に本実装。確定: タブstate=snapshotState()同形（表示密度は含めない）／tabs.json はライブラリ側（list-posts スキップ必須）／タブ=角丸四角・アクティブ=seg-thumb（tint禁止）／帯=常設面で非ガラス／ピンタブも編集追従／タブ高38px=`--tabbar-h`。タイトルバー合体は `titleBarStyle:'hidden'`+`titleBarOverlay`（実装済み）。
-
 ### 大型: 戻る/進む＝完全撤去（設計確定・実装待ち）
 ボタン・`Alt+←→`・履歴機構ごと削除。tab state に深く統合。撤去対象（行番号は要再grep）: ①viewer.js: `MSG.histBack/histFwd`・title設定・history機構本体（`histBackBtn/histFwdBtn/viewHistory/histIdx/lastHistPush`＋push関数）・tab state の `history`/`histIdx`（save/restore/dup/init 12箇所超）・`histGo`/click/`Alt+←→`・renderPosts の push 判定 ②index.html: `.hist-nav` CSS・ボタン ③i18n.js: histBack/histFwd キー ④docs: design-tabs.md の「戻る/進む共存」記述・DESIGN.md のショートカット記載。状態記憶掃除（tab履歴削除）と同時に。
 
