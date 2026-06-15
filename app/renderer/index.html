@@ -1832,11 +1832,20 @@
     /* Stamp affordances on the grid (scoped to in-mode so it never leaks out) */
     body.tagging.tagging-stamp #postGrid .post-card { cursor: copy; }
     body.tagging #postGrid .select-check { display: none; }
-    .post-card.stamp-on { box-shadow: inset 0 0 0 2px var(--accent-soft); }
+    /* "has the loaded stamp": the SAME clean border-overlay ring as selection
+       (painted above the thumb so it reads evenly) — no inset box-shadow / ✓ glyph
+       (those framed unevenly = the "枠が変" report). A small accent disc with a
+       crisp check (SVG, white) marks it without the fragile pseudo-on-pseudo. */
     .post-card.stamp-on::after {
-      content: '✓'; position: absolute; top: 6px; left: 6px; z-index: 3;
-      width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff;
-      font-size: 12px; line-height: 18px; text-align: center; font-weight: 700; pointer-events: none;
+      content: ''; position: absolute; inset: 0; z-index: 6;
+      border: 3px solid var(--accent-soft); border-radius: 8px; pointer-events: none;
+    }
+    .post-card.stamp-on::before {
+      content: ''; position: absolute; top: 8px; left: 8px; z-index: 7;
+      width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+      box-shadow: 0 0 2px 1px rgba(0,0,0,.35); pointer-events: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5 13l4 4L19 7'/></svg>");
+      background-repeat: no-repeat; background-position: center; background-size: 12px;
     }
 
 
@@ -1971,20 +1980,6 @@
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
     @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
     @keyframes corpusPillIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
-    /* Tag-save celebration: a small tasteful burst (X-like / YouTube-like). Particles
-       fly out from the save point and fade. Per-particle --tx/--ty + duration set in JS.
-       prefers-reduced-motion skips it (handled in JS). */
-    .celebrate-particle {
-      position: fixed; z-index: 13000; border-radius: 50%; pointer-events: none;
-      transform: translate(-50%, -50%); will-change: transform, opacity;
-      animation: corpusCelebrate 600ms var(--ease-out) forwards;
-    }
-    @keyframes corpusCelebrate {
-      0%   { transform: translate(-50%, -50%) scale(.3); opacity: 0; }
-      18%  { opacity: 1; }
-      100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1); opacity: 0; }
-    }
-
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
     .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }
 
