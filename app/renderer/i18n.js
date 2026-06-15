@@ -97,7 +97,7 @@
       tagAxisEditHint: 'カードをクリックすると、その1枚のタグを編集できます',
       tagAxisStampHint: 'タグを選んでカードをクリックで付与（もう一度クリックで解除）',
       tagLoaded: '装填中',
-      tagPickToLoad: '右からタグを選ぶと装填されます',
+      tagPickToLoad: '右からタグを選ぶと装填されます',
       tagAddBtn: '追加',
       tagNewName: '新しいタグ',
       tagNoGroup: 'グループなし',
@@ -140,6 +140,8 @@
       saved: '保存しました',
 
       // viewer: settings > language / shortcut
+      settingsSearch: '設定を検索…',
+      settingsNoMatch: '該当する設定がありません',
       langTitle: '言語',
       langAuto: '自動（OSの言語設定に従う）',
       hintLang: 'ビューアの表示言語を変更します。変更後に再読み込みされます。',
@@ -406,7 +408,7 @@
       tagAxisEditHint: 'Click a card to edit that card’s tags',
       tagAxisStampHint: 'Pick a tag, then click cards to apply (click again to remove)',
       tagLoaded: 'Loaded',
-      tagPickToLoad: 'Pick a tag on the right to load it',
+      tagPickToLoad: 'Pick a tag on the right to load it',
       tagAddBtn: 'Add',
       tagNewName: 'New tag',
       tagNoGroup: 'No group',
@@ -446,6 +448,8 @@
       save: 'Save',
       saved: 'Saved',
 
+      settingsSearch: 'Search settings…',
+      settingsNoMatch: 'No matching settings',
       langTitle: 'Language',
       langAuto: 'Auto (follow system language)',
       hintLang: 'Changes the viewer display language. The app reloads after the change.',

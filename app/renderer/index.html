@@ -191,12 +191,28 @@
     .settings-view[hidden] { display: none; }
     .settings-view:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
     .settings-view-inner {
-      width: 100%; max-width: 720px; max-height: 100%; overflow-y: auto;
+      width: 100%; max-width: 880px; max-height: 100%; overflow-y: auto;
       background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
       border: 1px solid var(--border-strong); border-radius: 16px;
       box-shadow: var(--shadow-lg), var(--glass-edge);
       padding: 4px 32px 40px;
     }
+    /* Settings search (in the sticky head) + side TOC + scrollable panel. */
+    .settings-search-wrap { position: relative; flex: 1; max-width: 280px; margin: 0 14px 0 18px; display: flex; align-items: center; }
+    .settings-search-ic { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-muted); pointer-events: none; }
+    .settings-search { width: 100%; padding: 6px 10px 6px 30px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); outline: none; }
+    .settings-search:focus { border-color: var(--accent); }
+    .settings-body { display: flex; align-items: flex-start; gap: 26px; }
+    .settings-toc { position: sticky; top: 58px; flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 1px; }
+    .settings-toc .toc-item { text-align: left; border: none; background: transparent; color: var(--text-muted); font-size: 13px; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .settings-toc .toc-item:hover { background: var(--hover); color: var(--text); }
+    .settings-toc .toc-item.active { color: var(--text-strong); font-weight: 600; background: var(--hover); }
+    .settings-toc .toc-item[hidden] { display: none; }
+    .settings-view #panelSettings { display: block; flex: 1; min-width: 0; max-width: none; }
+    .settings-view .section { scroll-margin-top: 60px; }
+    .settings-empty { display: none; padding: 28px 6px; color: var(--text-muted); font-size: 13px; }
+    .settings-empty:not([hidden]) { display: block; }
+    @media (max-width: 680px) { .settings-toc { display: none; } .settings-search-wrap { max-width: none; } }
     .settings-view:not([hidden]) .settings-view-inner { animation: corpusPopIn .2s ease-out; }
     .settings-view-head {
       display: flex; align-items: center; justify-content: space-between;
@@ -206,7 +222,6 @@
     .settings-view-title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); color: var(--text-strong); }
     .settings-view-head .icon-btn { width: 30px; height: 30px; }
     .settings-view-head .icon-btn svg { width: 17px; height: 17px; }
-    .settings-view #panelSettings { display: block; max-width: none; }
     /* Toggle switch (Settings → 外観) */
     .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
     .switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; }
@@ -2028,11 +2043,19 @@
     <div class="settings-view-inner">
       <div class="settings-view-head">
         <h1 class="settings-view-title" id="settingsViewTitle">設定</h1>
+        <div class="settings-search-wrap">
+          <svg class="settings-search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="settingsSearch" class="settings-search" autocomplete="off">
+        </div>
         <button id="settingsClose" class="icon-btn" type="button" aria-label="閉じる" title="閉じる">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
       </div>
-      <!-- #panelSettings is appended here at runtime -->
+      <div class="settings-empty" id="settingsNoMatch" hidden></div>
+      <div class="settings-body" id="settingsBody">
+        <nav class="settings-toc" id="settingsToc"></nav>
+        <!-- #panelSettings is appended into #settingsBody at runtime -->
+      </div>
     </div>
   </div>
 

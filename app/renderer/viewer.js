@@ -152,6 +152,8 @@
     themeDark: _s('themeDark'),
     hintTheme: _s('hintTheme'),
     langTitle: _s('langTitle'),
+    settingsSearch: _s('settingsSearch'),
+    settingsNoMatch: _s('settingsNoMatch'),
     langAuto: _s('langAuto'),
     hintLang: _s('hintLang'),
     shortcutTitle: _s('shortcutTitle'),
@@ -1515,9 +1517,64 @@
     const view = document.getElementById('settingsView');
     const panel = document.getElementById('panelSettings');
     const inner = view && view.querySelector('.settings-view-inner');
-    if (inner && panel) inner.appendChild(panel);
+    const body = document.getElementById('settingsBody');
+    const toc = document.getElementById('settingsToc');
+    const search = document.getElementById('settingsSearch');
+    const empty = document.getElementById('settingsNoMatch');
+    if (body && panel) body.appendChild(panel);
+
+    // Side TOC from the section headings (one entry per .section). Each section
+    // gets an id so the TOC can scroll to it and the scroll-spy can highlight it.
+    const sections = panel ? [...panel.querySelectorAll('.section')] : [];
+    sections.forEach((sec, i) => { sec.id = sec.id || ('set-sec-' + i); });
+    if (toc && sections.length) {
+      toc.innerHTML = sections.map((sec) => {
+        const h = sec.querySelector('h2');
+        return `<button type="button" class="toc-item" data-target="${sec.id}">${escapeHtml(h ? h.textContent.trim() : sec.id)}</button>`;
+      }).join('');
+      toc.addEventListener('click', (e) => {
+        const it = e.target.closest('.toc-item'); if (!it) return;
+        const sec = document.getElementById(it.dataset.target);
+        if (sec) sec.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+      });
+    }
+    // Section labels are i18n'd at init; refresh the TOC text whenever opening.
+    function syncTocLabels() {
+      if (!toc) return;
+      toc.querySelectorAll('.toc-item').forEach((it) => {
+        const h = document.getElementById(it.dataset.target)?.querySelector('h2');
+        if (h && h.textContent.trim()) it.textContent = h.textContent.trim();
+      });
+    }
+    // Search: hide sections (and their TOC entries) whose text doesn't match.
+    function applySearch() {
+      const q = (search ? search.value : '').trim().toLowerCase();
+      let shown = 0;
+      sections.forEach((sec) => {
+        const match = !q || sec.textContent.toLowerCase().includes(q);
+        sec.style.display = match ? '' : 'none';
+        if (match) shown++;
+        const it = toc && toc.querySelector(`.toc-item[data-target="${sec.id}"]`);
+        if (it) it.hidden = !match;
+      });
+      if (empty) empty.hidden = shown > 0;
+    }
+    if (search) { search.placeholder = MSG.settingsSearch; search.addEventListener('input', applySearch); }
+    if (empty) empty.textContent = MSG.settingsNoMatch;
+
+    // Scroll-spy: mark the section nearest the top as the active TOC entry.
+    if (toc && inner && sections.length && window.IntersectionObserver) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          if (!en.isIntersecting) return;
+          toc.querySelectorAll('.toc-item').forEach((it) => it.classList.toggle('active', it.dataset.target === en.target.id));
+        });
+      }, { root: inner, rootMargin: '-58px 0px -65% 0px', threshold: 0 });
+      sections.forEach((s) => io.observe(s));
+    }
+
     const close = () => { if (view) view.hidden = true; };
-    const open = () => { if (view) view.hidden = false; };
+    const open = () => { if (view) { view.hidden = false; syncTocLabels(); if (search) search.value = ''; applySearch(); inner && inner.scrollTo({ top: 0 }); } };
     const btn = document.getElementById('settingsBtn');
     const x = document.getElementById('settingsClose');
     if (btn) btn.addEventListener('click', open);
