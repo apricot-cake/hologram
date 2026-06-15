@@ -2179,8 +2179,18 @@
     });
   }
   function scheduleMasonry() {
-    if (_masonryT) return;
-    _masonryT = setTimeout(() => { _masonryT = null; layoutMasonry(); }, 120);
+    clearTimeout(_masonryT);   // reset-debounce: re-pack ONCE after image loads quiet down (not on every load = no jitter)
+    _masonryT = setTimeout(() => { _masonryT = null; layoutMasonry(); }, 160);
+  }
+  // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
+  // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
+  // so masonry packs correctly the first time = no settle/jitter and no eager load.
+  let imgAspect = {};
+  try { imgAspect = JSON.parse(localStorage.getItem('corpus.imgAspect') || '{}') || {}; } catch (e) {}
+  let _aspectT = null;
+  function persistAspect() {
+    clearTimeout(_aspectT);
+    _aspectT = setTimeout(() => { try { localStorage.setItem('corpus.imgAspect', JSON.stringify(imgAspect)); } catch (e) {} }, 1000);
   }
   window.addEventListener('resize', () => { if (currentView === 'card') scheduleMasonry(); }, { passive: true });
 
@@ -2284,6 +2294,14 @@
       const imgW = currentView === 'tile' ? tileThumbW()
         : /\.gif$/i.test(imgFile || '') ? 0
         : (currentView === 'list' ? listThumbW() : cardThumbW());
+      // Reserve the card image's height BEFORE its lazy image loads (card masonry)
+      // so the column packs correctly the first time = no load-time settle/jitter.
+      // Pixel size from the index (shotW/shotH) covers every post up front; the
+      // learned cache is a fallback for any the index couldn't size yet.
+      const aspRatio = currentView !== 'card' ? ''
+        : (p.shotW > 0 && p.shotH > 0) ? (p.shotW + '/' + p.shotH)
+        : (p.captureId && imgAspect[p.captureId]) ? imgAspect[p.captureId]
+        : '';
       const nImg = g.files.length;                    // ×N badge: total images across the group
       const likesOv = p.likes != null ? `<span class="ov-likes">♡ ${MSG.likes(p.likes)}</span>` : '';
 
@@ -2306,7 +2324,7 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" loading="${SMOKE_CAPTURE || currentView === 'card' ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
+        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" data-cap="${escapeAttr(p.captureId || '')}"${aspRatio ? ` style="aspect-ratio:${aspRatio}"` : ''} loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
         <div class="post-meta">
@@ -2332,12 +2350,28 @@
       moreObserver.observe(sentinel);
     }
 
-    // Card view: pack into masonry columns now (rough; images may be unloaded),
-    // then re-pack as each image loads (debounced) so heights settle into balance.
+    // Card view: pack into masonry columns once, now. Cards whose height is
+    // reserved up front (shotW/shotH from the index, or a cached aspect) DON'T
+    // re-pack when their image loads — the box is already the right size, so the
+    // lazy image just fills it with no layout change. Re-packing on every load was
+    // tearing down and rebuilding the WHOLE grid as images streamed in on scroll
+    // (the "コマ送り" full-grid flicker). Only UNSIZED cards (rare: video / a
+    // header we couldn't read) actually change height on load, so only those learn
+    // their aspect and trigger one debounced re-pack.
     if (currentView === 'card') {
       layoutMasonry();
       grid.querySelectorAll('.card-img').forEach((img) => {
-        if (!img.complete) img.addEventListener('load', scheduleMasonry, { once: true });
+        if (img.style.aspectRatio && img.style.aspectRatio !== 'auto') return;   // height reserved → leave it
+        const cap = img.getAttribute('data-cap');
+        const onReady = () => {
+          if (cap && img.naturalWidth && img.naturalHeight) {
+            const ar = img.naturalWidth + '/' + img.naturalHeight;
+            if (imgAspect[cap] !== ar) { imgAspect[cap] = ar; persistAspect(); }
+          }
+          scheduleMasonry();
+        };
+        if (img.complete && img.naturalWidth) onReady();
+        else img.addEventListener('load', onReady, { once: true });
       });
     }
 

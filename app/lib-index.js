@@ -14,14 +14,31 @@
 // node, mirroring lib-archive.js.
 
 const path = require('path');
+const { imageSize } = require('./lib-imgsize.js');
 
 const INDEX_FILE = '.index.json';
 const BATCH = 64;   // stat/read this many sidecars concurrently, then yield
+
+const SS_EXT = /\.jpe?g$/i;
+const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
+const HEADER_BYTES = 65536;       // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
+const HEADER_BYTES_2 = 262144;    // retry window for big-EXIF JPEGs (eagle migrations)
 
 function isPostRecord(rec) {
   // Keep records with an image, a (poster-less) video, or downloaded media —
   // identical to the legacy listPosts() filter.
   return !!(rec && (rec.image || rec.video || (Array.isArray(rec.media) && rec.media.length)));
+}
+
+// The file shown in CARD view — mirrors the renderer's densityImage('card'): the
+// capture screenshot leads, else the first media file, else a non-screenshot
+// artwork image. Drag / eagle-migration images are artworks, not screenshots.
+function cardImageFile(rec) {
+  const isShot = rec.image && SS_EXT.test(rec.image) && rec.source !== 'drag' && rec.source !== 'eagle-migration';
+  if (isShot) return rec.image;
+  const media = Array.isArray(rec.media) ? rec.media.filter((m) => m && m.file).map((m) => m.file) : [];
+  if (media.length) return media[0];
+  return rec.image || '';
 }
 
 // internalFiles: a Set of basenames in the save folder that are app metadata, not
@@ -34,6 +51,41 @@ function createPostIndex(opts) {
   let curFolder = null;
   let map = new Map();          // filename -> { mtimeMs, record|null }  (null = known non-post)
   let snapshotLoaded = false;
+
+  // Read just the image header (no decode) and return { width, height } or null.
+  async function readImageDims(folder, file) {
+    if (!fs.promises || typeof fs.promises.open !== 'function') return null;   // test fs has no open()
+    let fh = null;
+    try {
+      fh = await fs.promises.open(path.join(folder, file), 'r');
+      const buf = Buffer.alloc(HEADER_BYTES);
+      const { bytesRead } = await fh.read(buf, 0, HEADER_BYTES, 0);
+      let dim = imageSize(buf.subarray(0, bytesRead));
+      if (!dim && bytesRead === HEADER_BYTES) {            // SOF past the first window (big EXIF) — read more
+        const buf2 = Buffer.alloc(HEADER_BYTES_2);
+        const r2 = await fh.read(buf2, 0, HEADER_BYTES_2, 0);
+        dim = imageSize(buf2.subarray(0, r2.bytesRead));
+      }
+      return dim;
+    } catch { return null; }
+    finally { if (fh) { try { await fh.close(); } catch {} } }
+  }
+
+  // Record the card image's pixel size on the record (shotW/shotH) so the
+  // renderer reserves each masonry card's height BEFORE its lazy image loads =
+  // no load-time settle/jitter. Sentinel 0/0 = "tried, unsizable" (video/corrupt)
+  // so we don't re-read it every scan. Returns true if it mutated the record (the
+  // caller then marks the snapshot dirty). No-op when fs lacks open() — the unit-
+  // test fs — so the index's read accounting is unchanged under test.
+  async function augmentDims(folder, rec) {
+    if (!rec || rec.shotW != null) return false;
+    if (!fs.promises || typeof fs.promises.open !== 'function') return false;
+    const file = cardImageFile(rec);
+    const dim = (file && IMG_EXT.test(file)) ? await readImageDims(folder, file) : null;
+    if (dim && dim.width > 0 && dim.height > 0) { rec.shotW = dim.width; rec.shotH = dim.height; }
+    else { rec.shotW = 0; rec.shotH = 0; }
+    return true;
+  }
 
   async function loadSnapshot(folder) {
     if (curFolder !== folder) { map = new Map(); curFolder = folder; snapshotLoaded = false; }
@@ -70,11 +122,17 @@ function createPostIndex(opts) {
         try { st = await fs.promises.stat(path.join(folder, f)); }
         catch { if (map.delete(f)) changed = true; return; }
         const cached = map.get(f);
-        if (cached && cached.mtimeMs === st.mtimeMs) return;   // unchanged -> reuse parsed record
+        if (cached && cached.mtimeMs === st.mtimeMs) {          // unchanged -> reuse parsed record
+          // One-time backfill: size posts whose snapshot predates shotW/shotH.
+          if (cached.record && cached.record.shotW == null && await augmentDims(folder, cached.record)) changed = true;
+          return;
+        }
         changed = true;
         try {
           const rec = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
-          map.set(f, { mtimeMs: st.mtimeMs, record: isPostRecord(rec) ? rec : null });
+          const record = isPostRecord(rec) ? rec : null;
+          if (record) await augmentDims(folder, record);
+          map.set(f, { mtimeMs: st.mtimeMs, record });
         } catch {
           map.set(f, { mtimeMs: st.mtimeMs, record: null });   // corrupt/partial -> remember as non-post
         }
@@ -119,6 +177,7 @@ function createPostIndex(opts) {
       let rec = null;
       try { rec = JSON.parse(await fs.promises.readFile(full, 'utf8')); } catch { rec = null; }
       const record = isPostRecord(rec) ? rec : null;
+      if (record) await augmentDims(folder, record);
       // Previous post vanished (became a non-post, or — defensively — its id moved).
       if (prev && prev.record && (!record || record.captureId !== prev.record.captureId)) {
         removed.push(prev.record.captureId);
