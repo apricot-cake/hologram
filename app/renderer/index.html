@@ -509,27 +509,29 @@
       width: calc((100% - 8px) / 3);   /* card fallback before JS measures left/width */
       border-radius: 6px;
       transition: left .22s var(--ease-out), width .22s var(--ease-out);
-      /* LIQUID GLASS (light): a white thumb on a flat track has no backdrop to refract,
-         so MANUFACTURE the "something behind" — a faint blurred colour wash (indigo top-
-         left / cyan bottom-right) + a chromatic edge fringe (warm TL ↔ cool BR) + a
-         specular gloss (::before). That's how Apple's Liquid Glass reads glassy on white,
-         where bright-edge/sheen cues alone vanish. (Dark keeps its recipe below.) */
-      background:
-        radial-gradient(135% 150% at 20% -10%, rgba(99,102,241,0.11), transparent 52%),
-        radial-gradient(135% 150% at 105% 110%, rgba(56,189,248,0.11), transparent 52%),
-        linear-gradient(180deg, #ffffff 0%, var(--gray-50) 64%, var(--gray-100) 100%);
+      /* LIGHT glass bead — CONVEX, not a diagonal smear: clear-ish CENTRE (the grey track
+         shows through the thinnest part) → brighter toward the rim, a symmetric luminous
+         RIM (the 縁感), and a top-centre dome highlight (::before) = reads as a bulging
+         lens. No diagonal colour wash / no bottom inner-shadow (those read lopsided &
+         concave). Frost blur keeps it translucent. (Dark recipe below.) */
+      background: radial-gradient(105% 92% at 50% 50%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.34) 56%, rgba(255,255,255,0.55) 100%);
+      backdrop-filter: blur(6px) saturate(130%);
+      -webkit-backdrop-filter: blur(6px) saturate(130%);
       box-shadow:
-        inset 0 1px 0.5px rgba(255,255,255,0.95),       /* top gloss line */
-        inset 1.5px 1.5px 0 rgba(255,120,150,0.13),      /* warm refraction fringe (top-left) */
-        inset -1.5px -1.5px 0 rgba(90,150,255,0.13),     /* cool refraction fringe (bottom-right) */
-        inset 0 -4px 6px -4px rgba(70,68,130,0.14),      /* bottom curvature (faint indigo) */
-        0 0 0 0.5px rgba(20,22,40,0.06),                 /* crisp hairline */
-        0 1px 1px rgba(20,22,40,0.05),
-        0 7px 16px -7px rgba(20,22,40,0.22);             /* soft lift */
+        inset 0 0 0 1px rgba(255,255,255,0.92),     /* bright glass rim — symmetric all around (縁感) */
+        inset 0 0 6px 0 rgba(255,255,255,0.42),       /* inner edge bloom (luminous rim) */
+        0 0 0 0.5px rgba(20,22,40,0.10),              /* crisp outer hairline = defined edge */
+        0 1px 1px rgba(20,22,40,0.06),
+        0 6px 14px -6px rgba(20,22,40,0.20);          /* convex lift */
     }
-    /* Specular diagonal gloss — reads on both themes (white streak). */
+    /* Top-centre dome highlight — light hitting the top of the bulge (convex cue). Symmetric
+       horizontally, so the clear/bright area sits centred, not in a corner. LIGHT only;
+       dark keeps its previous diagonal gloss (it was already approved). */
     .vt-thumb::before {
       content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: radial-gradient(62% 44% at 50% 14%, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.14) 52%, transparent 74%);
+    }
+    [data-theme="dark"] .vt-thumb::before {
       background: linear-gradient(135deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.16) 20%, transparent 44%);
     }
     [data-theme="dark"] .vt-thumb {
@@ -1027,7 +1029,10 @@
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
       background: var(--glass-bg); border: 1px solid var(--glass-border);
-      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      /* EXPERIMENT: real refraction — warp the backdrop via the SVG displacement filter
+         (was just blur+saturate). The filter does displacement + a light blur; saturate
+         stays in CSS. Falls back to no-filter if url() unsupported (bg still translucent). */
+      backdrop-filter: url(#liquidGlass) saturate(150%); -webkit-backdrop-filter: url(#liquidGlass) saturate(150%);
       border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
     .fold-menu.show { display: block; animation: corpusPopIn 150ms var(--ease-out) both; }
@@ -1036,7 +1041,13 @@
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
     }
-    .fold-menu .fm-row:hover { background: var(--hover); }
+    /* Glass-friendly hover: a TRANSLUCENT highlight (reuses the sidebar's row-hover
+       token = darken in light / lighten in dark) so the glass shows through instead of
+       an opaque block floating on it. */
+    .fold-menu .fm-row:hover { background: var(--sidebar-row-hover); }
+    /* Light flyout text a touch darker — better contrast over the now-translucent
+       refracted backdrop (dark is fine as-is). */
+    html:not([data-theme="dark"]) .fold-menu .fm-row { color: var(--gray-900); }
     .fm-name { flex: 1; word-break: break-word; }
     /* High-contrast monotone check (was thin accent ✓ that read as cursive). */
     .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
@@ -1424,6 +1435,16 @@
   </style>
 </head>
 <body>
+  <!-- "Real" Liquid Glass refraction (experiment): an SVG displacement filter that
+       actually WARPS the backdrop through the glass (vs CSS blur which only softens).
+       Applied to overlays that float over content (flyouts). Hidden defs. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
+    <filter id="liquidGlass" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="13" result="turb"/>
+      <feDisplacementMap in="SourceGraphic" in2="turb" scale="14" xChannelSelector="R" yChannelSelector="G" result="disp"/>
+      <feGaussianBlur in="disp" stdDeviation="6"/>
+    </filter>
+  </svg>
   <header id="tabBar">
     <div id="tabBarInner">
       <!-- Phase 2 でタブ実装。スケルトン: ドラッグ領域の確保のみ -->
