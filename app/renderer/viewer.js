@@ -931,12 +931,19 @@
     qfTagGroup = tagGroupId || null;
     renderQfPop();
     const r = anchorEl.getBoundingClientRect();
+    qfPop.style.maxHeight = '';   // reset before measuring (a prior open may have set it)
     qfPop.style.left = (r.right + 8) + 'px';
     qfPop.style.top = r.top + 'px';
     qfPop.classList.add('show');
     const pr = qfPop.getBoundingClientRect();
     if (pr.right > innerWidth - 8) qfPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    if (pr.bottom > innerHeight - 8) qfPop.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
+    // Clamp the top so the bottom fits, THEN cap max-height to the space from the final
+    // top to the viewport bottom — so a long list never overruns the screen (its inner
+    // .qf-vals scrolls instead of the bottom being clipped).
+    let top = r.top;
+    if (pr.bottom > innerHeight - 8) top = Math.max(8, innerHeight - pr.height - 8);
+    qfPop.style.top = top + 'px';
+    qfPop.style.maxHeight = (innerHeight - top - 8) + 'px';
   }
   qfPop.addEventListener('click', (e) => {
     if (e.target.closest('#qfFolderManage')) { if (CF()) CF().openManager(); hideQfPop(); return; }
@@ -3750,6 +3757,9 @@
       btn.classList.add('active');
       currentView = btn.dataset.view;
       positionViewThumb();   // slide the glass thumb
+      // Liquid-glass jelly bulge: re-trigger the scale pulse on each slide.
+      const _thumb = document.querySelector('.view-toggle .vt-thumb');
+      if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
       window.corpus.setPref('viewMode', currentView);
       if (document.startViewTransition && !prefersReducedMotion()) {
         document.startViewTransition(() => renderPosts());

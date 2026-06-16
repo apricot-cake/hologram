@@ -546,7 +546,12 @@
         inset 0 0 0 1px var(--glass-rim),
         var(--glass-drop-sm);
     }
-    @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
+    /* Liquid-glass "jelly" slide: the thumb momentarily bulges as it moves between
+       segments (Apple Liquid Glass = the indicator grows a touch mid-travel, then settles).
+       Re-triggered per click in JS (toggle .vt-sliding). Runs alongside the left/width slide. */
+    @keyframes vtBulge { 0% { transform: scale(1); } 42% { transform: scale(1.11); } 100% { transform: scale(1); } }
+    .vt-thumb.vt-sliding { animation: vtBulge .34s var(--ease-out); }
+    @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } .vt-thumb.vt-sliding { animation: none; } }
     .view-toggle button { position: relative; z-index: 1; }
     /* Active glyph: light uses a soft grey (the glass thumb IS the active cue, so the
        icon needn't go near-black); dark keeps bright ink to read on the dark thumb. */
