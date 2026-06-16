@@ -3812,11 +3812,11 @@
       tileOverlay = false;
       document.getElementById('tileOverlayToggle').checked = false;
     }
-    if (prefs.sortBy) { sortSelect.value = prefs.sortBy; refreshCustomSelects(); }
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
-    // Re-render once after applying the saved view mode + sort, so the initial
-    // list reflects the persisted sort regardless of the prefs/loadPosts race.
+    // Re-render once after applying the saved view mode. Sort is NOT read here anymore
+    // — it comes from the tab state (applied by initTabs), so the old prefs/initTabs
+    // load race on sortSelect.value is gone.
     renderPosts();
   });
 
@@ -3929,7 +3929,8 @@
     if (scroller) scroller.addEventListener('scroll', hideSuggest, { passive: true });
   }
   sortSelect.addEventListener('change', () => {
-    window.corpus.setPref('sortBy', sortSelect.value);
+    // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
+    // separate global pref — that double-storage raced on load. renderPosts captures it.
     renderPosts();
   });
 
