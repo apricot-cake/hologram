@@ -1552,11 +1552,51 @@
       applySearch();
       inner && inner.scrollTo({ top: 0 });
     }
+    // Item-level highlight: wrap the matching substring in <mark> inside the shown
+    // sections so the exact setting is pinpointed (esp. in the long データ section),
+    // not just its whole section surfaced. Skips form controls (SELECT/OPTION/INPUT).
+    function clearHighlights() {
+      if (!panel) return;
+      panel.querySelectorAll('mark.set-hl').forEach((m) => {
+        const t = document.createTextNode(m.textContent);
+        const parent = m.parentNode;
+        m.replaceWith(t);
+        parent && parent.normalize();
+      });
+    }
+    function highlightIn(root, q) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          const tag = node.parentNode && node.parentNode.nodeName;
+          if (tag === 'SELECT' || tag === 'OPTION' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+          return node.nodeValue.toLowerCase().includes(q) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      });
+      const targets = [];
+      while (walker.nextNode()) targets.push(walker.currentNode);
+      targets.forEach((node) => {
+        const text = node.nodeValue, low = text.toLowerCase();
+        const frag = document.createDocumentFragment();
+        let i = 0, idx;
+        while ((idx = low.indexOf(q, i)) !== -1) {
+          if (idx > i) frag.appendChild(document.createTextNode(text.slice(i, idx)));
+          const mk = document.createElement('mark');
+          mk.className = 'set-hl';
+          mk.textContent = text.slice(idx, idx + q.length);
+          frag.appendChild(mk);
+          i = idx + q.length;
+        }
+        if (i < text.length) frag.appendChild(document.createTextNode(text.slice(i)));
+        node.parentNode.replaceChild(frag, node);
+      });
+    }
     // No query  → single-page mode: show only the active section.
-    // With query → cross-page search: show every matching section stacked and
-    // filter the TOC (so a setting can still be found regardless of its page).
+    // With query → cross-page search: show every matching section stacked, filter
+    // the TOC, and highlight the matching text within each shown section.
     function applySearch() {
       const q = (search ? search.value : '').trim().toLowerCase();
+      clearHighlights();
       if (!q) {
         sections.forEach((sec) => { sec.style.display = (sec.id === activeId) ? '' : 'none'; });
         if (toc) toc.querySelectorAll('.toc-item').forEach((it) => {
@@ -1570,7 +1610,7 @@
       sections.forEach((sec) => {
         const match = sec.textContent.toLowerCase().includes(q);
         sec.style.display = match ? '' : 'none';
-        if (match) shown++;
+        if (match) { shown++; highlightIn(sec, q); }
         const it = toc && toc.querySelector(`.toc-item[data-target="${sec.id}"]`);
         if (it) { it.hidden = !match; it.classList.remove('active'); }
       });

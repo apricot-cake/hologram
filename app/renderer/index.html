@@ -216,6 +216,9 @@
     /* One page = one section card; drop the inter-section margin in single-page mode. */
     .settings-view .section { margin-bottom: 16px; }
     .settings-view .section:last-child { margin-bottom: 0; }
+    /* Search hit highlight inside the settings panel — pinpoints the matching item
+       within a surfaced section (esp. the long データ section). Soft accent tint. */
+    .settings-view mark.set-hl { background: var(--accent-subtle); color: var(--accent-subtle-fg); border-radius: 3px; padding: 0 1px; }
     .settings-empty { display: none; padding: 28px 6px; color: var(--text-muted); font-size: 13px; }
     .settings-empty:not([hidden]) { display: block; }
     /* Narrow: keep the TOC reachable (else pages can't be switched) — stack it
