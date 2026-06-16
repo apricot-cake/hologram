@@ -131,7 +131,6 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 - **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。**masonry の「もっと読み込む」(150件境界)はこの全再構築で各カードDOMを作り直す＝可視画像が再ロードして一瞬チラつく**（連続churnは解消済み・残るは境界の単発のみ）。新スライスのみ既存列へ追記すれば解消（greedyは順序安定なので既存カードは動かない）。card は `content-visibility:visible`（高さ予約済みなので `contain-intrinsic-size` に予約高さを使えば再有効化も可）。
 
 ### 状態の記憶
-- スクロール位置（タブごと）— セッション内は実装済み（タブ切替で位置を記憶/復元・in-memory `_scrollTop`・`window.scrollY`）。残: **再起動復元**（永続化＋renderLimit 復元も要る＝後回し）。
 - 死蔵 pref 掃除（多くは別タスク待ち・要確認）: `mode` pref(画像ビュー撤去で死蔵＝既にコード上は不在の見込み)／`corpus.wizardHiddenGroups`(ウィザード退役済み＝コード参照は全撤去、localStorage 値だけ残骸として無害に残存・任意で消去可)／`sortBy` 二重持ち→タブ側に一本化。新規 pref `corpus.tagAxis`(タグ付けの最後に使った軸＝カード編集/スタンプ)は現役。
 
 ### リリース準備

@@ -2038,21 +2038,28 @@
     _tabPersistTimer = setTimeout(() => {
       if (!window.corpus.setTabs) return;
       const at = tabs.find((t) => t.id === activeTabId);
-      if (at) { at.state = snapshotState(); }
-      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state })) });
+      if (at) { at.state = snapshotState(); at._scrollTop = window.scrollY; at._renderLimit = renderLimit; }
+      // scrollTop + renderLimit ride along so the view restores across RESTART, not
+      // just tab switches (main.js writes the payload verbatim — no whitelist).
+      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, renderLimit: t._renderLimit })) });
     }, 800);
   }
   function saveActiveTabState() {
     const t = tabs.find((t) => t.id === activeTabId);
     if (!t) return;
     t.state = snapshotState();
-    t._scrollTop = window.scrollY;   // session-only (not persisted): remember content scroll per tab
+    t._scrollTop = window.scrollY;    // remember content scroll per tab (persisted too)
+    t._renderLimit = renderLimit;     // …and how far the windowed list had grown
   }
-  // Restore a tab's remembered content scroll after its state has rendered. rAF so
-  // the new content has laid out; tabs with no saved scroll fall back to the top.
-  function restoreTabScroll(t) {
-    const y = (t && typeof t._scrollTop === 'number') ? t._scrollTop : 0;
-    requestAnimationFrame(() => window.scrollTo(0, y));
+  // Restore a tab's remembered renderLimit (re-render to it so a deep-scroll layout is
+  // reproduced) then its content scroll. rAF×2 so the re-rendered content has laid out.
+  // Capped so a pathological deep scroll doesn't render thousands of cards at once.
+  function restoreTabView(t) {
+    if (!t) return;
+    const lim = Math.min((typeof t._renderLimit === 'number' ? t._renderLimit : RENDER_PAGE), RENDER_PAGE * 8);
+    if (lim > renderLimit) { renderLimit = lim; renderPosts(true); }
+    const y = (typeof t._scrollTop === 'number') ? t._scrollTop : 0;
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
   }
   function updateActiveTabTitle() {
     if (!activeTabId) return;
@@ -2103,7 +2110,7 @@
     const t = tabs.find((t) => t.id === id);
     if (!t) return;
     if (t.state) applyState(t.state); else renderPosts();
-    restoreTabScroll(t);
+    restoreTabView(t);
     renderTabs(); persistTabsDebounced();
   }
   function addTab() {
@@ -2130,7 +2137,7 @@
       activeTabId = tabs[ni].id;
       const t = tabs[ni];
       if (t.state) applyState(t.state); else renderPosts();
-      restoreTabScroll(t);
+      restoreTabView(t);
     }
     renderTabs(); persistTabsDebounced();
   }
@@ -2162,7 +2169,7 @@
     try {
       const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
       if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null }));
+        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, _scrollTop: (typeof t.scrollTop === 'number' ? t.scrollTop : 0), _renderLimit: (typeof t.renderLimit === 'number' ? t.renderLimit : RENDER_PAGE) }));
         const sid = saved.activeTabId;
         activeTabId = (sid && tabs.find((t) => t.id === sid)) ? sid : tabs[0].id;
       } else {
@@ -4438,5 +4445,14 @@ render()
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   await initTabs();
-  loadPosts();
+  await loadPosts();
+  // First paint done — restore the active tab's renderLimit + scroll (survives restart).
+  restoreTabView(tabs.find((t) => t.id === activeTabId));
+  // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
+  // remembered position is current at restart. persistTabsDebounced captures scrollY.
+  let _scrollPersistTimer = null;
+  window.addEventListener('scroll', () => {
+    clearTimeout(_scrollPersistTimer);
+    _scrollPersistTimer = setTimeout(persistTabsDebounced, 400);
+  }, { passive: true });
 })();
