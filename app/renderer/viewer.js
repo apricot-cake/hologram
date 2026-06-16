@@ -2977,8 +2977,18 @@
       selectedSet.add(key);
       selectionAnchor = idx;
     }
-    renderPosts(true);   // keepLimit: no scroll-window reset, no entrance-anim replay
+    syncSelectionClasses();   // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
+  }
+  // Reflect selectedSet onto the DOM without a full re-render: toggle .selecting on
+  // the grid + .selected per card. data-key round-trips to the template's postKey, so
+  // this matches the template's own isSelected logic exactly.
+  function syncSelectionClasses() {
+    const grid = document.getElementById('postGrid');
+    grid.classList.toggle('selecting', selectedSet.size > 0);
+    grid.querySelectorAll('.post-card').forEach((c) => {
+      c.classList.toggle('selected', selectedSet.has(c.dataset.key));
+    });
   }
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -3622,7 +3632,7 @@
   function clearSelection() {
     selectedSet.clear();
     selectionAnchor = null;
-    renderPosts(true);
+    syncSelectionClasses();   // class-only (callers that change content re-render themselves)
     updateSelectionBar();
   }
 
@@ -3649,7 +3659,11 @@
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
     persistManual();
-    clearSelection();   // re-renders the grid (now collapsed) + hides the bar
+    // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
+    // class-only). Clear first so the rebuild shows no stale selection.
+    selectedSet.clear(); selectionAnchor = null;
+    renderPosts(true);
+    updateSelectionBar();
     showToast(MSG.grouped);
   });
 
@@ -3660,7 +3674,7 @@
     } else {
       viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
     }
-    renderPosts(true);
+    syncSelectionClasses();
     updateSelectionBar();
   });
 
