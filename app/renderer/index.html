@@ -423,7 +423,7 @@
        outweighs a bare `#sbTop` (1,0,0) and was forcing the ghost transparent fill
        (+ transparent border) → the button was invisible on the light sidebar (user).
        Qualify with #sidebar so the glass fill + a defined rim actually win. */
-    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--glass-border); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); box-shadow: var(--glass-edge), var(--shadow-md); }
+    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--glass-border); backdrop-filter: url(#liquidGlass) saturate(150%); -webkit-backdrop-filter: url(#liquidGlass) saturate(150%); box-shadow: var(--glass-edge), var(--shadow-md); }
     #sidebar #sbTop:hover { background: var(--glass-bg); color: var(--text); }
     /* Content back-to-top (glass-relief over the content area): the relief rim
        (10% black) is too faint on the light --bg → give it the same defined edge. */
@@ -1105,7 +1105,7 @@
     /* --- Popovers --- */
     .qf-popover {
       position: fixed; background: var(--glass-bg); border-radius: 10px;
-      backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+      backdrop-filter: url(#liquidGlass) saturate(150%); -webkit-backdrop-filter: url(#liquidGlass) saturate(150%);
       box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border); padding: 16px;
       z-index: 1001; min-width: 260px;
     }
@@ -1972,7 +1972,7 @@
            solid: it sits BESIDE content, nothing to blur. High tint (88%)
            because the panel is text-dense. */
         background: var(--glass-bg-panel);
-        backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
+        backdrop-filter: url(#liquidGlass) saturate(150%); -webkit-backdrop-filter: url(#liquidGlass) saturate(150%);
       }
     }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
