@@ -546,7 +546,10 @@
     }
     @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
     .view-toggle button { position: relative; z-index: 1; }
-    .view-toggle button.active { color: var(--text-strong); }
+    /* Active glyph: light uses a soft grey (the glass thumb IS the active cue, so the
+       icon needn't go near-black); dark keeps bright ink to read on the dark thumb. */
+    .view-toggle button.active { color: var(--text); }
+    [data-theme="dark"] .view-toggle button.active { color: var(--text-strong); }
 
     /* Tile-size ± (shown only in the tile density) */
     /* Tile size: thin slider, small→large glyphs at the ends */
