@@ -1977,6 +1977,7 @@
   }
 
   let lastRenderedState = null;
+  let _lastRenderGen = -1;   // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
   let restoringState = false;
   let tabs = [];
   let activeTabId = null;
@@ -2352,6 +2353,39 @@
     clearTimeout(_masonryT);   // reset-debounce: re-pack ONCE after image loads quiet down (not on every load = no jitter)
     _masonryT = setTimeout(() => { _masonryT = null; layoutMasonry(); }, 160);
   }
+  // Load-more sentinel: render the next page when a bottom marker nears the viewport.
+  // Shared by the full build and the fast card-grow path.
+  function setupMoreSentinel(grid) {
+    if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
+    const old = grid.querySelector('.more-sentinel'); if (old) old.remove();
+    if (viewGroups.length <= renderLimit) return;
+    const sentinel = document.createElement('div');
+    sentinel.className = 'more-sentinel';
+    sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
+    grid.appendChild(sentinel);
+    moreObserver = new IntersectionObserver((entries) => {
+      if (entries.some((en) => en.isIntersecting)) { renderLimit += RENDER_PAGE; renderPosts(true); }
+    }, { rootMargin: '800px' });
+    moreObserver.observe(sentinel);
+  }
+  // Card images with a reserved height (shotW/shotH or cached aspect) don't re-pack
+  // on load. Only UNSIZED ones learn their aspect on load + trigger one debounced
+  // re-pack. Shared by the full build and the fast card-grow path.
+  function learnCardAspects(imgs) {
+    imgs.forEach((img) => {
+      if (img.style.aspectRatio && img.style.aspectRatio !== 'auto') return;   // height reserved → leave it
+      const cap = img.getAttribute('data-cap');
+      const onReady = () => {
+        if (cap && img.naturalWidth && img.naturalHeight) {
+          const ar = img.naturalWidth + '/' + img.naturalHeight;
+          if (imgAspect[cap] !== ar) { imgAspect[cap] = ar; persistAspect(); }
+        }
+        scheduleMasonry();
+      };
+      if (img.complete && img.naturalWidth) onReady();
+      else img.addEventListener('load', onReady, { once: true });
+    });
+  }
   // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
   // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
   // so masonry packs correctly the first time = no settle/jitter and no eager load.
@@ -2424,7 +2458,44 @@
       ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) ||
       activeFilters.some(f => f.type === 'engagement'));
 
-    grid.innerHTML = viewGroups.slice(0, renderLimit).map((g, i) => {
+    // FAST PATH — pure load-more in card view: append ONLY the new slice into the
+    // existing masonry columns so already-visible cards (and their <img>) aren't
+    // recreated. The old full innerHTML rebuild reloaded every visible image at the
+    // 150-card boundary (一瞬チラつき). Guarded tightly; any mismatch (filter/sort
+    // change, background reload, resized columns, list/tile view) falls through to
+    // the full rebuild below.
+    {
+      const wrap = grid.querySelector('.mcols');
+      const rendered = wrap ? wrap.querySelectorAll('.post-card').length : 0;
+      const sameQuery = lastRenderedState !== null && JSON.stringify(snapshotState()) === lastRenderedState;
+      if (keepLimit && currentView === 'card' && wrap && rendered > 0 &&
+          _allPostsGeneration === _lastRenderGen && sameQuery &&
+          wrap.children.length === masonryColCount(grid.clientWidth) &&
+          rendered < viewGroups.length && renderLimit > rendered) {
+        const cols = [...wrap.querySelectorAll('.mcol')];
+        const upto = Math.min(renderLimit, viewGroups.length);
+        const frag = document.createElement('div');
+        frag.innerHTML = viewGroups.slice(rendered, upto).map((g, k) => cardHtml(g, rendered + k)).join('');
+        const newCards = [...frag.children];
+        const colH = cols.map((c) => c.offsetHeight);   // current column heights
+        cols[0].append(...newCards);                     // park to measure at column width
+        const gap = 16, hs = newCards.map((c) => c.offsetHeight);
+        newCards.forEach((card, k) => {                  // greedy: continue packing the shortest column
+          let m = 0; for (let c = 1; c < cols.length; c++) if (colH[c] < colH[m]) m = c;
+          cols[m].appendChild(card); colH[m] += hs[k] + gap;
+        });
+        learnCardAspects(newCards.flatMap((c) => [...c.querySelectorAll('.card-img')]));
+        setupMoreSentinel(grid);
+        requestAnimationFrame(() => newCards.forEach((card) => card.querySelectorAll('.text')
+          .forEach((el) => el.classList.toggle('truncated', el.scrollHeight > el.clientHeight))));
+        if (taggingApi && taggingApi.isActive()) taggingApi.refreshMarks();
+        return;
+      }
+    }
+
+    grid.innerHTML = viewGroups.slice(0, renderLimit).map(cardHtml).join('');
+    _lastRenderGen = _allPostsGeneration;   // mark the generation of this FULL build
+    function cardHtml(g, i) {
       const p = g.rep;
       // Engagement: nonzero only (zeros are noise \u2014 every client hides them),
       // outline TEXT glyphs (\u2661 \u21c4 \ud83d\udde8 \u2014 text presentation, not color emoji,
@@ -2505,20 +2576,10 @@
           ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;
-    }).join('');
-
-    // Load-more: render the next page when a bottom sentinel nears the viewport.
-    if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
-    if (viewGroups.length > renderLimit) {
-      const sentinel = document.createElement('div');
-      sentinel.className = 'more-sentinel';
-      sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
-      grid.appendChild(sentinel);
-      moreObserver = new IntersectionObserver((entries) => {
-        if (entries.some((en) => en.isIntersecting)) { renderLimit += RENDER_PAGE; renderPosts(true); }
-      }, { rootMargin: '800px' });
-      moreObserver.observe(sentinel);
     }
+
+    // Load-more sentinel (shared helper).
+    setupMoreSentinel(grid);
 
     // Card view: pack into masonry columns once, now. Cards whose height is
     // reserved up front (shotW/shotH from the index, or a cached aspect) DON'T
@@ -2530,19 +2591,7 @@
     // their aspect and trigger one debounced re-pack.
     if (currentView === 'card') {
       layoutMasonry();
-      grid.querySelectorAll('.card-img').forEach((img) => {
-        if (img.style.aspectRatio && img.style.aspectRatio !== 'auto') return;   // height reserved → leave it
-        const cap = img.getAttribute('data-cap');
-        const onReady = () => {
-          if (cap && img.naturalWidth && img.naturalHeight) {
-            const ar = img.naturalWidth + '/' + img.naturalHeight;
-            if (imgAspect[cap] !== ar) { imgAspect[cap] = ar; persistAspect(); }
-          }
-          scheduleMasonry();
-        };
-        if (img.complete && img.naturalWidth) onReady();
-        else img.addEventListener('load', onReady, { once: true });
-      });
+      learnCardAspects([...grid.querySelectorAll('.card-img')]);
     }
 
     // Mark truncated text elements

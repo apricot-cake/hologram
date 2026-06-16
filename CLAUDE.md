@@ -128,7 +128,7 @@ SNS投稿（X / Bluesky / Misskey / Mastodon / pixiv）をJPEG画像としてキ
 
 ### 監査の残（未対応のみ）
 - **i18n [LOW・要確認]**: viewer.js の死に MSG 群／i18n.js 孤児キー／extension/i18n.js の旧ビューア文字列表（実消費は banner* のみ）。
-- **perf 残**: renderPosts がクラストグル/スクロール伸長でも全 innerHTML 再構築→filter署名で viewGroups メモ化・クラスのみ変更は早期return・伸長は新スライスのみ insertAdjacentHTML。**masonry の「もっと読み込む」(150件境界)はこの全再構築で各カードDOMを作り直す＝可視画像が再ロードして一瞬チラつく**（連続churnは解消済み・残るは境界の単発のみ）。新スライスのみ既存列へ追記すれば解消（greedyは順序安定なので既存カードは動かない）。card は `content-visibility:visible`（高さ予約済みなので `contain-intrinsic-size` に予約高さを使えば再有効化も可）。
+- **perf 残（低優先・任意）**: masonry の「もっと読み込む」(150件境界)のチラつきは解消済み＝load-more は新スライスのみ既存列へ greedy 追記し、既存カード/画像を再生成しない（`renderPosts` の FAST PATH。ガード外れは全再構築へフォールバック）。残る微最適化: クラスのみ変更（選択モード/絞り込み等）でも全 innerHTML 再構築する点の早期return・`viewGroups` の filter署名メモ化・card の `content-visibility` 再有効化（`contain-intrinsic-size` に予約高さ）。いずれも体感影響は小さい。
 
 ### リリース準備
 - **配布パッケージング**（electron-builder, win/nsis。設定済み＝「アプリのビルド/配布」参照。一式の決定はメモリ `corpus-release-prep`）。
