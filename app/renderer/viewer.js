@@ -812,7 +812,8 @@
         return out;
       }
       case 'tag': {
-        const allTags = [...new Set(allPosts.filter(p => p.url).flatMap(p => p.tags || []))].sort();
+        // Include tags from all posts (incl. imported url-less images), not just SNS posts.
+        const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
         if (qfTagGroup) {
           if (qfTagGroup === '__other') {
             const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
@@ -841,7 +842,7 @@
       }
       case 'hashtag': {
         const counts = {};
-        allPosts.filter(p => p.url).forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
+        allPosts.forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
         return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(h => ({ v: h, l: '#' + h, on: act('hashtag', h) }));
       }
       case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
@@ -1303,8 +1304,11 @@
   function _rebuildSidebarSets() {
     if (_sidebarSetsGen === _allPostsGeneration) return;
     const snPosts = allPosts.filter(p => p.url);
-    _cachedTagSet  = new Set(snPosts.flatMap(p => p.tags || []));
-    _cachedHtSet   = new Set(snPosts.flatMap(p => p.hashtags || []));
+    // Tags / body hashtags are user-applied to ALL posts (incl. imported, url-less
+    // images migrated from Eagle), so build their choice sets from the whole library.
+    // Authors / instances only make sense for SNS posts, so keep those url-scoped.
+    _cachedTagSet  = new Set(allPosts.flatMap(p => p.tags || []));
+    _cachedHtSet   = new Set(allPosts.flatMap(p => p.hashtags || []));
     _cachedUserSet = new Set(snPosts.map(p => userKey(p)));
     _cachedInstSet = new Set(snPosts.filter(p => p.platform === 'misskey' || p.platform === 'mastodon').map(p => hostOf(p.url)).filter(Boolean));
     _sidebarSetsGen = _allPostsGeneration;
