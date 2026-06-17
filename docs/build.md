@@ -18,7 +18,7 @@ cd app && npm install && npm start
   ```
 - 起動:
   ```powershell
-  Start-Process -FilePath "C:\Users\apricot\ローカル\開発\corpus\app\node_modules\electron\dist\electron.exe" -ArgumentList "." -WorkingDirectory "C:\Users\apricot\ローカル\開発\corpus\app"
+  Start-Process -FilePath "C:\Users\apricot\local\dev\corpus\app\node_modules\electron\dist\electron.exe" -ArgumentList "." -WorkingDirectory "C:\Users\apricot\local\dev\corpus\app"
   ```
 - **`npm start` 経由は cmd ウィンドウが出るため使わない**。electron.exe はGUIアプリなので `-WindowStyle Hidden` 不要・コンソールが一切出ない。
 
