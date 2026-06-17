@@ -78,6 +78,8 @@
     detailPlatform: _s('detailPlatform'),
     detailAuthor: _s('detailAuthor'),
     detailUser: _s('detailUser'),
+    detailFollowers: _s('detailFollowers'),
+    detailJoined: _s('detailJoined'),
     detailEngagement: _s('detailEngagement'),
     detailPosted: _s('detailPosted'),
     detailSaved: _s('detailSaved'),
@@ -3356,6 +3358,8 @@
       row(MSG.detailPlatform, (p.platform || '').toUpperCase()) +
       row(MSG.detailAuthor, p.displayName || '') +
       row(MSG.detailUser, p.screenName ? '@' + p.screenName : '') +
+      row(MSG.detailFollowers, p.followers != null ? formatCount(p.followers) : '') +
+      row(MSG.detailJoined, p.authorCreatedAt ? new Date(p.authorCreatedAt).toLocaleDateString() : '') +
       row(MSG.detailEngagement, eng.join('   ')) +
       row(MSG.detailPosted, p.date ? new Date(p.date).toLocaleString() : '') +
       row(MSG.detailSaved, p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '') +
