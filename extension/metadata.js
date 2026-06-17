@@ -51,8 +51,9 @@ function emptyRecord(url, platform) {
     // Author profile. avatar: all platforms (X via syndication user). followers /
     // authorCreatedAt: only the platforms that expose them on a public API
     // (Bluesky / Misskey / Mastodon). X and pixiv don't expose either → stay null
-    // (graceful hide, the viewer omits absent fields).
-    avatar: null, followers: null, authorCreatedAt: null,
+    // (graceful hide, the viewer omits absent fields). avatarReferer: only pixiv
+    // needs one (i.pximg.net is Referer-gated) — the bridge honors it on download.
+    avatar: null, avatarReferer: null, followers: null, authorCreatedAt: null,
     likes: null, reposts: null, replies: null, bookmarks: null, views: null,
     date: null, mediaType: null, media: [], lang: null,
     isReply: null, isQuote: null, isThread: null, quotedUrl: null,
@@ -549,6 +550,8 @@ async function fetchPixivIllust(parsed, url) {
           const udata = await ures.json();
           if (!udata.error && udata.body) {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
+            // i.pximg.net 403s without a pixiv Referer — tell the bridge to send one.
+            if (rec.avatar) rec.avatarReferer = 'https://www.pixiv.net/';
           }
         }
       } catch { /* no avatar */ }

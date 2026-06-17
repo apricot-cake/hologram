@@ -18,7 +18,7 @@ const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(saveFolder, { recursive: true }); // handleSave mkdir's this; the direct downloadMedia call needs it too
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-const { handleSave, downloadMedia } = require('../native-host/bridge');
+const { handleSave, downloadMedia, downloadAvatar } = require('../native-host/bridge');
 
 // A valid 1x1 PNG (only the content-type matters to the bridge).
 const PNG = Buffer.from(
@@ -26,9 +26,12 @@ const PNG = Buffer.from(
   'base64'
 );
 
-// Stub fetch: map test URLs to Responses. No real network.
-global.fetch = async (url) => {
+// Stub fetch: map test URLs to Responses. No real network. lastFetch records the
+// most recent request so a test can assert the bridge forwarded a Referer (pixiv).
+let lastFetch = null;
+global.fetch = async (url, opts) => {
   const u = String(url);
+  lastFetch = { url: u, headers: (opts && opts.headers) || null };
   if (u.endsWith('/img.png')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
   if (u.endsWith('/photo.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } });
   if (u.endsWith('/page.html')) return new Response('<html>no</html>', { status: 200, headers: { 'content-type': 'text/html' } });
@@ -68,6 +71,15 @@ const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label)
     !fs.existsSync(path.join(saveFolder, base + '-media-5.png')));
   check('descriptor carries file + alt + dims', saved[0].file === base + '-media-0.png' && saved[0].alt === 'pic' && saved[0].width === 1);
 
+  // --- downloadAvatar: valid → <base>-avatar.<ext>; bad/empty → null; Referer forwarded ---
+  const ab = '1717500000000-cccc';
+  const avFile = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder, ab);
+  check('downloadAvatar writes <base>-avatar.jpg', avFile === ab + '-avatar.jpg' && fs.existsSync(path.join(saveFolder, avFile)));
+  check('downloadAvatar(null) → null', (await downloadAvatar(null, undefined, saveFolder, ab)) === null);
+  check('downloadAvatar(404) → null', (await downloadAvatar('https://h/missing', undefined, saveFolder, ab)) === null);
+  await downloadAvatar('https://h/photo.jpg', 'https://www.pixiv.net/', saveFolder, ab);
+  check('downloadAvatar forwards pixiv Referer', !!(lastFetch && lastFetch.headers && lastFetch.headers.Referer === 'https://www.pixiv.net/'));
+
   // --- handleSave end-to-end: sidecar media reflects what landed; ack ok ---
   const ack = await handleSave({
     type: 'save',
@@ -75,6 +87,7 @@ const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label)
     image: jpegB64,
     metadata: {
       url: 'https://x.com/u/status/1', platform: 'x', text: 'hi',
+      avatar: 'https://h/img.png',
       media: [
         { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
         { url: 'https://h/missing', alt: null }       // dropped, must not fail the save
@@ -87,6 +100,7 @@ const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label)
   check('sidecar media.length = 1', Array.isArray(rec.media) && rec.media.length === 1);
   check('sidecar media[0].file on disk', rec.media[0] && rec.media[0].file && fs.existsSync(path.join(saveFolder, rec.media[0].file)));
   check('screenshot jpg still written', fs.existsSync(path.join(saveFolder, ack.file)));
+  check('sidecar avatarFile on disk', !!(rec.avatarFile && fs.existsSync(path.join(saveFolder, rec.avatarFile))));
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('\n' + (ok ? 'MEDIA_TEST_PASS' : 'MEDIA_TEST_FAIL'));

@@ -3329,6 +3329,12 @@
     const tagsHtml = tags.length
       ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
       : '';
+    // Poster row carries the locally-saved avatar (psimg://) when present, so the
+    // inspector keeps its "label: value" rhythm while adding a face to the name.
+    const avatarImg = p.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(p.avatarFile)}" alt="">` : '';
+    const authorRow = (p.displayName || avatarImg)
+      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailAuthor)}</span><span class="iv-insp-v iv-insp-author">${avatarImg}<span>${escapeHtml(p.displayName || '')}</span></span></div>`
+      : '';
     const heading = p.title || p.text || '';
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
@@ -3356,7 +3362,7 @@
       (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
       (thumbFile ? `<img class="iv-insp-thumb" src="${fileSrc(thumbFile, 480)}" alt="">` : '') +
       row(MSG.detailPlatform, (p.platform || '').toUpperCase()) +
-      row(MSG.detailAuthor, p.displayName || '') +
+      authorRow +
       row(MSG.detailUser, p.screenName ? '@' + p.screenName : '') +
       row(MSG.detailFollowers, p.followers != null ? formatCount(p.followers) : '') +
       row(MSG.detailJoined, p.authorCreatedAt ? new Date(p.authorCreatedAt).toLocaleDateString() : '') +

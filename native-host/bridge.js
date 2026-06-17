@@ -247,6 +247,19 @@ async function downloadMedia(mediaList, dir, base) {
   return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
 }
 
+// Download the author avatar to <base>-avatar.<ext> so the viewer can show it
+// offline (no external fetch at display time). pixiv passes a Referer because
+// i.pximg.net 403s without one. Returns the filename or null; like media, a
+// failure here never fails the save.
+async function downloadAvatar(avatar, referer, dir, base) {
+  if (typeof avatar !== 'string' || !avatar) return null;
+  const got = await fetchStillImage(avatar, referer);
+  if (!got) return null;
+  const file = `${base}-avatar.${got.ext}`;
+  fs.writeFileSync(path.join(dir, file), got.buf);
+  return file;
+}
+
 async function handleSave(msg) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
@@ -281,10 +294,20 @@ async function handleSave(msg) {
     savedMedia = [];
   }
 
+  // Author avatar: same best-effort contract as media — a failure leaves
+  // avatarFile null (the viewer hides it) and never fails the save.
+  let avatarFile = null;
+  try {
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, base);
+  } catch {
+    avatarFile = null;
+  }
+
   const record = Object.assign({}, meta, {
     captureId: base,
     image: `${base}.jpg`,
-    media: savedMedia
+    media: savedMedia,
+    avatarFile
   });
   fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
 
@@ -312,9 +335,15 @@ async function handleSaveDragged(msg) {
   fs.writeFileSync(path.join(saveFolder, imageFile), got.buf);
 
   const meta = msg.metadata || {};
+  let avatarFile = null;
+  try {
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, base);
+  } catch {
+    avatarFile = null;
+  }
   // source:'drag' marks the image as the artwork itself (not a post screenshot),
   // so the image-view shows it. Mirrors the migrated records' source marker.
-  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag' });
+  const record = Object.assign({}, meta, { captureId: base, image: imageFile, media: [], source: 'drag', avatarFile });
   fs.writeFileSync(path.join(saveFolder, `${base}.json`), JSON.stringify(record, null, 2), 'utf8');
 
   return { ok: true, file: imageFile, saveFolder };
@@ -368,4 +397,4 @@ process.stdin.on('data', (chunk) => {
 // naturally rather than calling process.exit(), so any pending stdout write
 // (the ack) is flushed before the process terminates.
 
-module.exports = { handleSave, handleSaveDragged, downloadMedia, fetchStillImage };
+module.exports = { handleSave, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage };
