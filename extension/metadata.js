@@ -48,6 +48,11 @@ function emptyRecord(url, platform) {
   return {
     url: url || null, platform: platform || null, text: null, title: null,
     displayName: null, screenName: null, userId: null,
+    // Author profile. avatar: all platforms (X via syndication user). followers /
+    // authorCreatedAt: only the platforms that expose them on a public API
+    // (Bluesky / Misskey / Mastodon). X and pixiv don't expose either → stay null
+    // (graceful hide, the viewer omits absent fields).
+    avatar: null, followers: null, authorCreatedAt: null,
     likes: null, reposts: null, replies: null, bookmarks: null, views: null,
     date: null, mediaType: null, media: [], lang: null,
     isReply: null, isQuote: null, isThread: null, quotedUrl: null,
@@ -110,6 +115,11 @@ async function fetchXTweet(parsed, url) {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;
       rec.userId = j.user.id_str || null;
+      // Avatar: syndication serves the 48px _normal variant; rebuild the 400px one
+      // (X has no public follower count / account-creation date — both stay null).
+      if (j.user.profile_image_url_https) {
+        rec.avatar = j.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
+      }
       if (j.user.screen_name) rec.url = `https://x.com/${j.user.screen_name}/status/${parsed.id}`;
     }
     rec.likes = j.favorite_count ?? null;
@@ -212,6 +222,22 @@ async function fetchBlueskyPost(parsed, url) {
       rec.displayName = post.author.displayName || null;
       rec.screenName = post.author.handle || rec.screenName;
       rec.userId = post.author.did || rec.userId;
+      rec.avatar = post.author.avatar || null;   // ProfileViewBasic carries the avatar
+    }
+    // Followers + account-creation date: the post's author view is a
+    // ProfileViewBasic without them — fetch the full profile by DID. Failure
+    // keeps the avatar we already have from the author view.
+    const actor = (post.author && post.author.did) || did;
+    if (actor) {
+      try {
+        const pres = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
+        if (pres.ok) {
+          const prof = await pres.json();
+          rec.avatar = prof.avatar || rec.avatar;
+          rec.followers = prof.followersCount ?? null;
+          rec.authorCreatedAt = toIso(prof.createdAt);
+        }
+      } catch { /* keep avatar from the author view */ }
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.mediaType = bskyMediaType(post);
@@ -296,6 +322,26 @@ async function fetchMisskeyNote(parsed, url) {
         ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username)
         : null;
       rec.userId = note.user.id || null;
+      rec.avatar = note.user.avatarUrl || null;   // UserLite carries the avatar URL
+    }
+    // Followers + account-creation date: the UserLite on a note lacks them —
+    // fetch the full user by id from the same instance (already pinned by the
+    // expectedHost SSRF guard, so no new host is contacted). A user who hides
+    // their follower count returns null/0 → graceful. Failure keeps the avatar.
+    if (note.user && note.user.id) {
+      try {
+        const ures = await fetch(`https://${parsed.host}/api/users/show`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: note.user.id })
+        });
+        if (ures.ok) {
+          const u = await ures.json();
+          rec.avatar = u.avatarUrl || rec.avatar;
+          rec.followers = u.followersCount ?? null;
+          rec.authorCreatedAt = toIso(u.createdAt);
+        }
+      } catch { /* keep avatar from note.user */ }
     }
     if (note.reactions) {
       const total = Object.values(note.reactions).reduce((s, n) => s + n, 0);
@@ -389,6 +435,11 @@ async function fetchMastodonStatus(parsed, url) {
       rec.displayName = s.account.display_name || s.account.username || null;
       rec.screenName = s.account.acct || s.account.username || null;
       rec.userId = s.account.id || null;
+      // The status's account is a full Account object — avatar, follower count
+      // and account-creation date are all inline (no extra request).
+      rec.avatar = s.account.avatar || s.account.avatar_static || null;
+      rec.followers = s.account.followers_count ?? null;
+      rec.authorCreatedAt = toIso(s.account.created_at);
     }
     rec.likes = s.favourites_count ?? null;
     rec.reposts = s.reblogs_count ?? null;
@@ -487,6 +538,20 @@ async function fetchPixivIllust(parsed, url) {
           }
         }
       } catch { /* keep the substituted fallback */ }
+    }
+    // Author avatar: the illust payload carries no avatar — fetch the user record.
+    // pixiv's public ajax exposes neither follower count nor account-creation
+    // date, so those stay null (graceful hide, like X). Failure leaves avatar null.
+    if (il.userId) {
+      try {
+        const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
+        if (ures.ok) {
+          const udata = await ures.json();
+          if (!udata.error && udata.body) {
+            rec.avatar = udata.body.imageBig || udata.body.image || null;
+          }
+        }
+      } catch { /* no avatar */ }
     }
   } catch {
     // network/parse failure — keep what we have (URL only)

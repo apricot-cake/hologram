@@ -53,6 +53,9 @@ function saveFolder() {
       displayName: m.displayName,
       screenName: m.screenName,
       userId: m.userId,
+      avatar: m.avatar ?? rec.avatar,                 // keep existing avatar if re-fetch lacks it
+      followers: m.followers ?? rec.followers,
+      authorCreatedAt: m.authorCreatedAt ?? rec.authorCreatedAt,
       likes: m.likes,
       reposts: m.reposts,
       replies: m.replies,

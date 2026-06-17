@@ -11,7 +11,8 @@ function show(label, r) {
     platform: r.platform, screenName: r.screenName, displayName: r.displayName, userId: r.userId,
     text: (r.text || '').slice(0, 50), date: r.date, likes: r.likes, reposts: r.reposts,
     replies: r.replies, lang: r.lang, mediaType: r.mediaType, media: (r.media || []).length,
-    isReply: r.isReply, isQuote: r.isQuote, isThread: r.isThread
+    isReply: r.isReply, isQuote: r.isQuote, isThread: r.isThread,
+    avatar: r.avatar ? r.avatar.slice(0, 48) : null, followers: r.followers, authorCreatedAt: r.authorCreatedAt
   }, null, 0));
 }
 
