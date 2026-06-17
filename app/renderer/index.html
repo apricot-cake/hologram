@@ -27,8 +27,8 @@
     #tabBar {
       height: var(--tabbar-h); flex-shrink: 0; display: flex; align-items: center;
       -webkit-app-region: drag;
-      background: var(--bg);
-      box-shadow: inset 0 -1px 0 var(--border);
+      background: var(--tabbar-bg);
+      box-shadow: inset 0 -1px 0 var(--glass-border);
       position: sticky; top: 0; z-index: 50;
     }
     #tabBarInner > * { -webkit-app-region: no-drag; }
@@ -1167,7 +1167,7 @@
       flex-shrink: 0;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       padding: 9px 16px;
-      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
+      background: var(--sidebar-bg); border-bottom: 1px solid var(--glass-border);
     }
     .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far
@@ -1246,6 +1246,10 @@
       box-shadow: inset 0 1px 0.5px var(--glass-hi);
     }
     .sb-active-chip:hover { opacity: 0.7; }
+    /* Dark's white glass rim (--glass-rim .16) read fainter than light's dark rim
+       over the bar, so the pill looked edge-less in dark (BACKLOG). Lift dark only
+       so both themes show a matching edge. */
+    [data-theme="dark"] .sb-active-chip { border-color: rgba(255, 255, 255, 0.24); }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
     .sb-active-chip.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
     /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
@@ -1458,6 +1462,7 @@
   <!-- Query builder: full-width top bar that spans above the sidebar (the sidebar
        starts below it). Always shown (it's also the entry point for filters). -->
   <div id="postActiveBar" class="content-activebar" style="display:none">
+    <span class="sb-activebar-title" id="activebarLabel"></span>
     <div class="sb-chips" id="queryChips"></div>
     <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
     <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>

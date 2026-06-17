@@ -76,6 +76,9 @@
   --surface-2:     var(--gray-50);
   --surface-3:     var(--gray-100);
   --sidebar-bg:    var(--surface);
+  /* Tab strip sits a step darker than --bg so the white active tab reads as
+     raised; at --bg (≈white) active/inactive tabs dissolved in light (BACKLOG). */
+  --tabbar-bg:     var(--gray-100);
 
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
@@ -176,6 +179,9 @@
   --surface-2:     #1c1e21;
   --surface-3:     #25272b;
   --sidebar-bg:    #202226;
+  /* dark already separates the bar (#0e0f11) from the active tab (#202226), so
+     the bar keeps --bg — only light needed the darker strip (see :root note). */
+  --tabbar-bg:     var(--bg);
 
   --text:          #dadce0;
   --text-strong:   #f4f5f7;

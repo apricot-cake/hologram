@@ -42,6 +42,7 @@
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTip: _s('sbFilterTip'),
     sbFilterTitle: _s('sbFilterTitle'),
+    activebarLabel: _s('activebarLabel'),
     engParticle: _s('engParticle'),
     ctxManage: _s('ctxManage'),
     ctxWsAdd: _s('ctxWsAdd'),
@@ -401,6 +402,7 @@
   const engParticleEl = document.getElementById('sbEngParticle');
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
+  setText('activebarLabel', MSG.activebarLabel);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
   setText('sbFolderRowTitle', MSG.qfCatFolder);
