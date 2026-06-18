@@ -11,7 +11,6 @@
 - ❌ 不採用（再提案しない）: 「カード＝インスペクタ全情報」取り下げ済み／「タグ付与をホバーボタン昇格」も不採用（2軸タグ付けで解決）。
 
 ## 監査の残（未対応のみ）
-- **i18n [LOW・要確認]**: viewer.js の死に MSG 群／i18n.js 孤児キー／extension/i18n.js の旧ビューア文字列表（実消費は banner* のみ）。
 - **perf 残（低優先・任意）**: masonry の「もっと読み込む」(150件境界)のチラつきは解消済み＝load-more は新スライスのみ既存列へ greedy 追記（`renderPosts` の FAST PATH・ガード外れは全再構築へフォールバック）。選択モードの全再構築も解消＝選択/全選択/解除/キャンセルは `syncSelectionClasses` でクラス直接切替（内容が変わるグループ化/削除だけ再描画）。残る微最適化: `viewGroups` の filter署名メモ化・card の `content-visibility` 再有効化（`contain-intrinsic-size` に予約高さ）・他のクラス系トグル（タイル overlay / エンゲージ表示）。いずれも体感影響は小さい。
 
 ## その他
