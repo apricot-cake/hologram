@@ -6,12 +6,20 @@
 //
 //   node scripts/backfill-metadata.js          # only sidecars missing metadata
 //   node scripts/backfill-metadata.js --all     # re-fetch every sidecar
+//   node scripts/backfill-metadata.js --avatars # no API: just DL missing avatars
+//
+// Avatars: a re-fetch (or --all) downloads the author avatar to <base>-avatar.<ext>
+// when the record has an avatar URL but no local file yet — mirroring what the
+// native host does at capture time, so backfilled/imported records get an avatar
+// too. --avatars is the fast path for existing records whose metadata is already
+// present (no network metadata fetch, only the avatar image download).
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { configDir } = require('../native-host/paths');
 const { fetchPostMetadata } = require('../extension/metadata');
+const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download');
 
 function saveFolder() {
   try {
@@ -21,14 +29,51 @@ function saveFolder() {
   return path.join(os.homedir(), 'Corpus');
 }
 
+// DL the author avatar to <base>-avatar.<ext> when the record has an avatar URL
+// but no local file. Best-effort: returns the filename on success, else null.
+// pixiv needs a Referer; use the stored one or derive it from the i.pximg.net host.
+async function ensureAvatarFile(folder, base, avatarUrl, referer) {
+  if (!avatarUrl) return null;
+  const ref = referer || pixivRefererFor(avatarUrl);
+  try { return await downloadAvatar(avatarUrl, ref, folder, base); }
+  catch { return null; }
+}
+
+function listSidecars(folder) {
+  return fs.readdirSync(folder).filter(
+    (f) => f.toLowerCase().endsWith('.json') && f !== 'config.json' && f !== '.index.json'
+  );
+}
+
 (async () => {
   const folder = saveFolder();
   const all = process.argv.includes('--all');
+  const avatarsOnly = process.argv.includes('--avatars');
   let files;
   try {
-    files = fs.readdirSync(folder).filter((f) => f.toLowerCase().endsWith('.json') && f !== 'config.json' && f !== '.index.json');
+    files = listSidecars(folder);
   } catch {
     console.log('No save folder:', folder);
+    return;
+  }
+
+  // --avatars: no metadata fetch, just fill in missing avatar images.
+  if (avatarsOnly) {
+    let filled = 0, skipped = 0, failed = 0;
+    for (const f of files) {
+      const p = path.join(folder, f);
+      let rec;
+      try { rec = JSON.parse(fs.readFileSync(p, 'utf8')); } catch { continue; }
+      if (!rec.avatar || rec.avatarFile) { skipped++; continue; }
+      const base = path.basename(f, '.json');
+      const af = await ensureAvatarFile(folder, base, rec.avatar, rec.avatarReferer);
+      if (!af) { failed++; console.log('  no avatar:', f, rec.avatar); continue; }
+      rec.avatarFile = af;
+      fs.writeFileSync(p, JSON.stringify(rec, null, 2), 'utf8');
+      filled++;
+      console.log('  avatar:', f, '->', af);
+    }
+    console.log(`\navatars: filled ${filled}, skipped ${skipped}, no-data ${failed}  (folder: ${folder})`);
     return;
   }
 
@@ -69,6 +114,15 @@ function saveFolder() {
       isThread: m.isThread,
       quotedUrl: m.quotedUrl
     });
+
+    // Fill the avatar image if we have a URL but no local file yet (merged keeps
+    // rec.avatarFile via the spread). The fresh fetch carries avatarReferer for pixiv.
+    if (merged.avatar && !merged.avatarFile) {
+      const base = path.basename(f, '.json');
+      const af = await ensureAvatarFile(folder, base, merged.avatar, m.avatarReferer);
+      if (af) merged.avatarFile = af;
+    }
+
     fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
     updated++;
     console.log('  updated:', f, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));

@@ -15,9 +15,12 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const net = require('net');
 
 const { configDir, defaultLibraryDir } = require('./paths');
+// Best-effort remote-image download (original media + avatars) lives in a shared
+// module so the SSRF guard / size caps are identical across capture, import and
+// backfill. See media-download.js.
+const { downloadMedia, downloadAvatar, fetchStillImage } = require('./media-download');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -82,182 +85,6 @@ function uniqueBase(dir, captureId) {
     n += 1;
   }
   return `${captureId}-${n}`;
-}
-
-// --- Original-media download (best-effort, still images only) ---
-// Supported still-image content types -> file extension. Anything else (video,
-// svg, avif, html error pages, ...) is skipped rather than saved.
-const MEDIA_MIME_EXT = {
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif'
-};
-const MAX_MEDIA = 12;                       // cap attachments per post
-const MAX_MEDIA_BYTES = 25 * 1024 * 1024;   // skip anything larger
-const MEDIA_TIMEOUT_MS = 12000;             // per-image abort
-const MAX_MEDIA_REDIRECTS = 4;              // bound redirect chains
-
-// --- SSRF guard ----------------------------------------------------------------
-// The media URLs come from the page / a (possibly hostile) Misskey/Mastodon
-// instance, so a crafted URL could point the downloader at internal resources
-// (cloud metadata 169.254.169.254, loopback, RFC1918). This is BLIND SSRF (the
-// fetched bytes are written to the user's disk, never returned to the attacker)
-// and we already require https, but we still refuse private/reserved targets and
-// re-check every redirect hop. We block IP-LITERAL targets by range (the direct
-// and realistic vector — an attacker reaches metadata/loopback by its IP) plus
-// obvious local hostnames. We deliberately do NOT resolve hostnames here: it
-// would add per-fetch DNS latency and a rebinding TOCTOU gap (fetch re-resolves)
-// without closing it, and the residual "attacker domain → private IP" path is a
-// far higher bar for a blind, best-effort downloader.
-function isPrivateIPv4(ip) {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return false;
-  const o = parts.map(Number);
-  if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
-  const [a, b] = o;
-  if (a === 0 || a === 10 || a === 127) return true;       // this-network / RFC1918 / loopback
-  if (a === 169 && b === 254) return true;                 // link-local incl. cloud metadata
-  if (a === 172 && b >= 16 && b <= 31) return true;        // RFC1918
-  if (a === 192 && b === 168) return true;                 // RFC1918
-  if (a === 100 && b >= 64 && b <= 127) return true;       // CGNAT (RFC6598)
-  if (a === 192 && b === 0 && o[2] === 0) return true;     // IETF protocol assignments
-  if (a >= 224) return true;                               // multicast + reserved (224-255)
-  return false;
-}
-function isPrivateIp(ip) {
-  const fam = net.isIP(ip);
-  if (fam === 4) return isPrivateIPv4(ip);
-  if (fam === 6) {
-    const lc = ip.toLowerCase();
-    if (lc === '::1' || lc === '::') return true;                       // loopback / unspecified
-    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/);       // ::ffff:a.b.c.d / ::a.b.c.d
-    if (mapped) return isPrivateIPv4(mapped[1]);
-    if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true;                     // fc00::/7 unique-local
-    if (/^fe[89ab][0-9a-f]:/.test(lc)) return true;                     // fe80::/10 link-local
-    if (lc.startsWith('ff')) return true;                              // ff00::/8 multicast
-    return false;
-  }
-  return false; // not an IP literal
-}
-// Validate one URL: https + (if an IP literal) a public range + not an obvious
-// local hostname. Returns the parsed URL on success, or null.
-function checkMediaUrl(urlStr) {
-  let u;
-  try { u = new URL(urlStr); } catch { return null; }
-  if (u.protocol !== 'https:') return null;
-  const host = u.hostname.replace(/^\[|\]$/g, '');   // strip IPv6 brackets so net.isIP sees the literal
-  if (net.isIP(host)) return isPrivateIp(host) ? null : u;
-  const lower = host.toLowerCase();
-  if (lower === 'localhost' || lower.endsWith('.localhost') ||
-      lower.endsWith('.local') || lower.endsWith('.internal')) return null;
-  return u;
-}
-
-// Read a response body with a hard byte cap, streaming so an over-cap or
-// content-length-lying body is aborted mid-flight instead of buffered whole.
-async function readCappedBody(res, cap, ctrl) {
-  const body = res.body;
-  if (body && typeof body.getReader === 'function') {
-    const reader = body.getReader();
-    const chunks = [];
-    let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > cap) {
-        try { ctrl.abort(); } catch { /* ignore */ }
-        try { await reader.cancel(); } catch { /* ignore */ }
-        return null;
-      }
-      chunks.push(Buffer.from(value));
-    }
-    return Buffer.concat(chunks);
-  }
-  // Fallback (no streamable body): buffer whole, then enforce the cap.
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.length > cap ? null : buf;
-}
-
-// Fetch one still image and return { buf, ext } on success, or null on any
-// failure. pixiv originals on i.pximg.net 403 without a pixiv Referer; callers
-// pass a referer for those. Other hosts omit it. Redirects are followed manually
-// so every hop is re-validated against the SSRF guard.
-async function fetchStillImage(url, referer) {
-  if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
-  if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
-  try {
-    const headers = (typeof referer === 'string' && /^https:\/\//i.test(referer))
-      ? { Referer: referer }
-      : undefined;
-    let current = url;
-    let res = null;
-    for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
-      if (!checkMediaUrl(current)) return null;   // SSRF guard, every hop
-      res = await fetch(current, { signal: ctrl.signal, redirect: 'manual', headers });
-      if (res.status >= 300 && res.status < 400) {
-        const loc = res.headers.get('location');
-        if (!loc) return null;
-        try { current = new URL(loc, current).href; } catch { return null; }
-        continue;
-      }
-      break;
-    }
-    if (!res || !res.ok) return null;
-    const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const ext = MEDIA_MIME_EXT[ct];
-    if (!ext) return null; // not a supported still image
-    const declared = Number(res.headers.get('content-length'));
-    if (Number.isFinite(declared) && declared > MAX_MEDIA_BYTES) return null;
-    const buf = await readCappedBody(res, MAX_MEDIA_BYTES, ctrl);
-    if (!buf || !buf.length) return null;
-    return { buf, ext };
-  } catch {
-    return null; // network/abort/parse failure
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// Download one still image to <base>-media-<i>.<ext>. Returns the post-download
-// descriptor (with `file`) on success, or null on any failure (caller drops it).
-async function downloadOneMedia(entry, dir, base, i) {
-  if (!entry) return null;
-  const got = await fetchStillImage(entry.url, entry.referer);
-  if (!got) return null;
-  const file = `${base}-media-${i}.${got.ext}`;
-  fs.writeFileSync(path.join(dir, file), got.buf);
-  return {
-    url: entry.url,
-    alt: entry.alt != null ? String(entry.alt) : null,
-    width: Number.isFinite(entry.width) ? entry.width : null,
-    height: Number.isFinite(entry.height) ? entry.height : null,
-    file
-  };
-}
-
-async function downloadMedia(mediaList, dir, base) {
-  if (!Array.isArray(mediaList) || !mediaList.length) return [];
-  const list = mediaList.slice(0, MAX_MEDIA);
-  const settled = await Promise.allSettled(list.map((m, i) => downloadOneMedia(m, dir, base, i)));
-  return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
-}
-
-// Download the author avatar to <base>-avatar.<ext> so the viewer can show it
-// offline (no external fetch at display time). pixiv passes a Referer because
-// i.pximg.net 403s without one. Returns the filename or null; like media, a
-// failure here never fails the save.
-async function downloadAvatar(avatar, referer, dir, base) {
-  if (typeof avatar !== 'string' || !avatar) return null;
-  const got = await fetchStillImage(avatar, referer);
-  if (!got) return null;
-  const file = `${base}-avatar.${got.ext}`;
-  fs.writeFileSync(path.join(dir, file), got.buf);
-  return file;
 }
 
 async function handleSave(msg) {

@@ -11,6 +11,8 @@ const nativeHostDir = app.isPackaged
   : path.join(__dirname, '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
+// Best-effort avatar download for import-posts (same SSRF guard/caps as capture).
+const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
 
 // Pin userData to the SAME directory the native host reads its config from, so
@@ -676,6 +678,18 @@ ipcMain.handle('import-posts', async (_e, posts) => {
     }
   } catch { /* empty */ }
 
+  // Avatars are downloaded once per unique URL: a legacy library has many posts
+  // per author, so dedup the network fetch and reuse the bytes for each record's
+  // own <captureId>-avatar.<ext>. null = a URL we already tried and failed.
+  const avatarCache = new Map();
+  async function fetchAvatarCached(url) {
+    if (avatarCache.has(url)) return avatarCache.get(url);
+    let got = null;
+    try { got = await fetchStillImage(url, pixivRefererFor(url)); } catch { got = null; }
+    avatarCache.set(url, got);
+    return got;
+  }
+
   const stamp = Date.now();
   let imported = 0, skipped = 0, seq = 0;
   for (const p of posts) {
@@ -693,6 +707,7 @@ ipcMain.handle('import-posts', async (_e, posts) => {
       screenName: p.screenName || null,
       userId: p.userId || null,
       avatar: p.avatar || null,
+      avatarFile: null,
       followers: p.followers ?? null,
       authorCreatedAt: p.authorCreatedAt || null,
       likes: p.likes ?? null,
@@ -715,6 +730,19 @@ ipcMain.handle('import-posts', async (_e, posts) => {
     };
     try {
       fs.writeFileSync(path.join(folder, `${captureId}.jpg`), Buffer.from(p.image.split(',')[1] || '', 'base64'));
+      // Best-effort avatar before the sidecar so avatarFile reflects what landed
+      // on disk. Wrapped on its own so an avatar failure leaves avatarFile null
+      // (the viewer hides it) and NEVER fails the import.
+      if (rec.avatar) {
+        try {
+          const got = await fetchAvatarCached(rec.avatar);
+          if (got) {
+            const af = `${captureId}-avatar.${got.ext}`;
+            fs.writeFileSync(path.join(folder, af), got.buf);
+            rec.avatarFile = af;
+          }
+        } catch { /* avatar is best-effort */ }
+      }
       fs.writeFileSync(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
       if (p.url) existing.add(p.url);
       imported++;

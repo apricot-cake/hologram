@@ -13,7 +13,7 @@
 
 - `inject-dummy.js` — 保存先に jpg+サイドカー生成
 - `verify-store.py` — サイドカーをAPI照合
-- `backfill-metadata.js` — 保存先の欠損メタを保存URLから再取得
+- `backfill-metadata.js` — 保存先の欠損メタを保存URLから再取得（再取得時＋`--all` はアバターも未DLなら取得）。`--avatars`＝API無しでアバターのみDL（`avatar` URL有り＆`avatarFile` 無しの既存データ向け）
 - `make-icons.js` — アイコン生成（256px基準）
 
 ### キャプチャ／メタデータ検証
@@ -31,7 +31,8 @@
 ### 退行・セキュリティ・正しさ
 
 - `test-archive-zipslip.js` — import ZIP の Zip-Slip 退行テスト（バックスラッシュ/`..`/絶対パスのエントリが save folder 外へ書き込まれないことを検証）
-- `test-bridge-ssrf.js` — bridge の `fetchStillImage` の SSRF/サイズ上限ガード（IPリテラルの private/予約・localhost系・private へのリダイレクトを fetch 前に拒否、上限超過 body をストリームで中断）
+- `test-bridge-ssrf.js` — `media-download.js#fetchStillImage` の SSRF/サイズ上限ガード（IPリテラルの private/予約・localhost系・private へのリダイレクトを fetch 前に拒否、上限超過 body をストリームで中断）
+- `test-avatar-fill.js` — `backfill-metadata.js --avatars` の実機実行（fetchスタブを`-r`プリロード）＝`avatar`有り&`avatarFile`無しのサイドカーに `<base>-avatar.<ext>` をDLして `avatarFile` 付与・既にある/avatar無しはスキップ。`pixivRefererFor` の単体も兼ねる
 - `test-metadata-origin.js` — `fetchPostMetadata` の `expectedHost` 制約（Misskey/Mastodon のインスタンスhost が sender tab と不一致なら fetch せず空レコード／一致時と固定hostの X は通す）
 - `test-metadata-correctness.js` — メタ正しさ3件（X引用の screen_name 欠落時に `.../undefined/` を作らない／Bluesky の引用判定を feed.post 埋込限定＝リスト/フィード/スターターパック埋込を除外／Misskey の `rec.url` を bare permalink 化＝query/hash 除去）
 - `test-index.js` — `lib-index.js` の O(changed) 再利用・削除prune・`.index.json` スナップショットからの cold 復元を read計数で検証
