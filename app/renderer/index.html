@@ -1169,7 +1169,7 @@
       padding: 9px 16px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--glass-border);
     }
-    .content-activebar .sb-activebar-title { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+    .content-activebar .sb-activebar-title { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     /* Reset sits right NEXT to the builder (small gap), not parked at the far
        edge — chips don't flex-grow so the button hugs the last zone. */
     .content-activebar #queryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; min-width: 0; justify-content: flex-start; align-items: center; }
@@ -1186,18 +1186,34 @@
       box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
     }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    /* Feature launcher (tagging session): filled neutral button (matches the
-       chip language — no border) with an ACCENT icon marking it as a feature.
-       The old accent-bordered tint box was the lone un-redesigned element. */
+    /* Feature launcher (tagging session): an explicit CTA button (Notion "+New" /
+       Linear式) — defined fill + border + xs shadow, plus a hover LIFT (translateY
+       + shadow) so it reads unmistakably as a press target, not a flat tinted box.
+       The accent icon sits in its own soft chip so the button has a clear "head".
+       (.btn-outline language — a single CTA, not a category row.) */
     .sb-feature {
-      width: 100%; display: flex; align-items: center; gap: 8px;
-      padding: 9px 12px; margin-bottom: 8px; border-radius: 8px;
-      border: none; background: var(--chip-bg);
+      width: 100%; display: flex; align-items: center; gap: 9px;
+      padding: 8px 11px; margin: 2px 0 12px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--chip-bg);
       color: var(--text); font-size: 13px; font-weight: 600;
       cursor: pointer; text-align: left;
-      transition: background .12s;
+      box-shadow: var(--shadow-xs);
+      transition: background .12s, border-color .12s, box-shadow .12s, transform .12s;
     }
-    .sb-feature:hover { background: var(--chip-bg-hover); }
+    .sb-feature:hover {
+      background: var(--chip-bg-hover); border-color: var(--accent-soft);
+      box-shadow: var(--shadow-sm); transform: translateY(-1px);
+    }
+    .sb-feature:active { transform: translateY(0); box-shadow: var(--shadow-xs); }
+    /* Icon gets a soft accent chip = the button's "head" (recognisable affordance,
+       like Linear's coloured glyph badge). */
+    .sb-feature .sb-feature-ic {
+      flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      color: var(--accent-text);
+    }
+    .sb-feature .sb-feature-ic svg { width: 15px; height: 15px; }
     .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent-text); }
     .sb-tag-filter {
       width: 100%; margin-bottom: 6px; padding: 5px 12px;
@@ -1487,7 +1503,7 @@
         <div class="sb-scroll">
         <!-- Feature launcher: enter tagging mode (card-edit / stamp toggle). -->
         <button class="sb-feature" id="tagStartBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+          <span class="sb-feature-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span>
           <span id="tagStartLabel"></span>
         </button>
         <div class="toolbar" id="postsToolbar">
