@@ -21,11 +21,14 @@
     '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px);',
     '  background-size: 26px 26px;',
     '}',
-    /* ガラスサイドバー: 半透明 + ぼかしで背後のグリッドを霜化（dense text なので70%は残す） */
+    /* ガラスサイドバー: 背後のグリッドを「透かす」=読み抜けるレンズに寄せる。
+       DESIGN.md「dense text は材質を厚く（42%）」に従い 42% の薄さ＋真の屈折 #liquidGlass
+       （feTurbulence→feDisplacementMap で背後を実際に歪ませる）。frost(blur)は背後を隠す
+       ので使わない。これでグリッドが歪んで透ける本物のガラスになる。 */
     'body.exp-glass-sb #sidebar {',
-    '  background-color: color-mix(in srgb, var(--sidebar-bg) 68%, transparent);',
-    '  -webkit-backdrop-filter: blur(20px) saturate(140%);',
-    '  backdrop-filter: blur(20px) saturate(140%);',
+    '  background-color: color-mix(in srgb, var(--sidebar-bg) 42%, transparent);',
+    '  -webkit-backdrop-filter: url(#liquidGlass) saturate(155%);',
+    '  backdrop-filter: url(#liquidGlass) saturate(155%);',
     '}',
     /* 実験パネル */
     '#expPanel {',
