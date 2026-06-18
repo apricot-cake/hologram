@@ -2300,6 +2300,20 @@
       const tabBtn = e.target.closest('.tab-item[data-tab]');
       if (tabBtn && !e.target.closest('.tab-rename-input')) { switchTab(tabBtn.dataset.tab); return; }
     });
+    // Middle-click (wheel) a tab to close it — matches the close-button rule
+    // (pinned tabs and the last remaining tab stay protected).
+    bar.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      if (!tabBtn) return;
+      e.preventDefault();
+      const t = tabs.find((x) => x.id === tabBtn.dataset.tab);
+      if (t && !t.pinned && tabs.length > 1) closeTab(t.id);
+    });
+    // Suppress the middle-click autoscroll cursor over the tab strip.
+    bar.addEventListener('mousedown', (e) => {
+      if (e.button === 1 && e.target.closest('.tab-item[data-tab]')) e.preventDefault();
+    });
     bar.addEventListener('contextmenu', (e) => {
       const tabBtn = e.target.closest('.tab-item[data-tab]');
       if (!tabBtn) return;
