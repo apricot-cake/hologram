@@ -135,6 +135,9 @@
       posterSortCount: '投稿数順',
       posterSortName: '名前順',
       posterSortRecent: '最新投稿順',
+      posterFavAdd: 'お気に入りに追加',
+      posterFavRemove: 'お気に入りから外す',
+      posterFavOnly: 'お気に入りのみ',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -428,6 +431,9 @@
       posterSortCount: 'Most posts',
       posterSortName: 'Name',
       posterSortRecent: 'Recent',
+      posterFavAdd: 'Add to favorites',
+      posterFavRemove: 'Remove from favorites',
+      posterFavOnly: 'Favorites only',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',

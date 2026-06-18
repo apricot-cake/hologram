@@ -140,6 +140,9 @@
     posterSortCount: _s('posterSortCount'),
     posterSortName: _s('posterSortName'),
     posterSortRecent: _s('posterSortRecent'),
+    posterFavAdd: _s('posterFavAdd'),
+    posterFavRemove: _s('posterFavRemove'),
+    posterFavOnly: _s('posterFavOnly'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -321,6 +324,7 @@
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   setText('sbPosterPlatformTitle', MSG.sbPosterPlatformTitle);
+  setText('posterFavOnlyLabel', MSG.posterFavOnly);
   { const ps = document.getElementById('posterSortSelect');
     if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; ps.options[2].textContent = MSG.posterSortRecent; } }
   setText('settingsThemeTitle', MSG.themeTitle);
@@ -3822,6 +3826,22 @@
   let posterSort = 'count';          // 'count' | 'name' | 'recent'
   let posterPlatforms = new Set();   // active platform filter (empty = all)
   let posterWorkGroups = [];         // recent works shown in the poster inspector
+  let posterFavorites = new Set();   // starred poster keys (persisted poster-favorites.json)
+  let posterFavOnly = false;         // sidebar toggle: show only favorited posters
+  const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg>';
+  function persistFavorites() { if (window.corpus.setPosterFavorites) window.corpus.setPosterFavorites([...posterFavorites]).catch(() => { /* best-effort */ }); }
+  function toggleFavorite(u) {
+    if (!u) return;
+    const on = !posterFavorites.has(u.key);
+    if (on) posterFavorites.add(u.key); else posterFavorites.delete(u.key);
+    persistFavorites();
+    // Sync the two possible star buttons (card + inspector) without a full re-render.
+    const idx = posterList.indexOf(u);
+    const stars = [idx >= 0 ? document.querySelector('.poster-fav[data-fav-index="' + idx + '"]') : null,
+                   (inspectedKey === 'poster:' + u.key) ? document.getElementById('pdFavBtn') : null];
+    for (const s of stars) if (s) { s.classList.toggle('on', on); const t = on ? MSG.posterFavRemove : MSG.posterFavAdd; s.title = t; s.setAttribute('aria-label', t); }
+    if (posterFavOnly) renderPosters();   // favorites-only view: drop the just-unfavorited card
+  }
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
     return s ? escapeHtml(s[0].toUpperCase()) : '?';
@@ -3831,6 +3851,7 @@
   function filteredPosters() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = namedPosters();
+    if (posterFavOnly) list = list.filter((u) => posterFavorites.has(u.key));
     if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
@@ -3885,13 +3906,17 @@
       const name = hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)');
       const handleRow = (hasName && u.screenName) ? `<div class="poster-handle">@${escapeHtml(u.screenName)}</div>` : '';
       const pf = u.platform ? `<span class="pf-tag"><span class="pf-dot ${u.platform}"></span>${escapeHtml(pfName)}</span>` : '';
+      const fav = posterFavorites.has(u.key);
+      const favTip = escapeAttr(fav ? MSG.posterFavRemove : MSG.posterFavAdd);
       return `<div class="poster-card" data-index="${i}" tabindex="0">`
         + `<div class="poster-av">${avatar}</div>`
         + `<div class="poster-meta">`
         + `<div class="poster-name">${escapeHtml(name)}</div>`
         + handleRow
         + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
-        + `</div></div>`;
+        + `</div>`
+        + `<button class="poster-fav${fav ? ' on' : ''}" data-fav-index="${i}" title="${favTip}" aria-label="${favTip}">${STAR_SVG}</button>`
+        + `</div>`;
     }).join('');
   }
   // Jump from a poster to its posts: posts mode + a single user filter for it.
@@ -3919,9 +3944,12 @@
           return f ? `<img class="iv-poster-thumb" data-work="${i}" src="${fileSrc(f, 200)}" alt="" loading="lazy">` : '';
         }).join('')}</div>`
       : '';
+    const fav = posterFavorites.has(u.key);
+    const favTip = escapeAttr(fav ? MSG.posterFavRemove : MSG.posterFavAdd);
     box.innerHTML =
       `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
-      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span></div>` +
+      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span>` +
+      `<button class="poster-fav iv-poster-fav${fav ? ' on' : ''}" id="pdFavBtn" title="${favTip}" aria-label="${favTip}">${STAR_SVG}</button></div>` +
       row(MSG.detailUser, u.screenName ? '@' + u.screenName : '') +
       row(MSG.detailPlatform, pfName) +
       row(MSG.detailPosts, formatCount(u.count)) +
@@ -3938,6 +3966,7 @@
     if (idx >= 0) { const card = document.querySelector('.poster-card[data-index="' + idx + '"]'); if (card) card.classList.add('inspected'); }
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
+    const fb = document.getElementById('pdFavBtn'); if (fb) fb.onclick = () => toggleFavorite(u);
     box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
       t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) openGallery(buildGroupGalleryItems(g), 0); };
     });
@@ -3957,7 +3986,16 @@
     const u = posterList[parseInt(card.dataset.index, 10)];
     if (u) openPosterPosts(u);
   });
-  // Poster-mode sort + platform filter (sidebar, shown only while browsing posters).
+  // Star toggle on a poster card — capture phase so it pre-empts the card-open click.
+  document.getElementById('posterGrid').addEventListener('click', (e) => {
+    const fb = e.target.closest('.poster-fav');
+    if (!fb) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const u = posterList[parseInt(fb.dataset.favIndex, 10)];
+    if (u) toggleFavorite(u);
+  }, true);
+  // Poster-mode sort + platform filter + favorites-only (sidebar, poster mode only).
   { const ps = document.getElementById('posterSortSelect');
     if (ps) ps.addEventListener('change', () => { posterSort = ps.value; renderPosters(); }); }
   document.getElementById('posterPlatformChips').addEventListener('click', (e) => {
@@ -3967,6 +4005,8 @@
     if (posterPlatforms.has(p)) posterPlatforms.delete(p); else posterPlatforms.add(p);
     renderPosters();
   });
+  { const fo = document.getElementById('posterFavOnlyBtn');
+    if (fo) fo.addEventListener('click', () => { posterFavOnly = !posterFavOnly; fo.classList.toggle('active', posterFavOnly); renderPosters(); }); }
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
   // quantize the real width to "how many columns fit", so their track maps to
@@ -4715,6 +4755,7 @@ render()
   if (CF()) await CF().load();   // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
+  try { const r = window.corpus.getPosterFavorites ? await window.corpus.getPosterFavorites() : null; posterFavorites = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   await initTabs();

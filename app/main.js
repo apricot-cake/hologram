@@ -60,7 +60,7 @@ function getSaveFolder() {
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
 const INTERNAL_FILES = new Set([
   'config.json', '.index.json', 'tag-groups.json', 'ungrouped.json',
-  'manual-groups.json', 'folders.json', 'tabs.json',
+  'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json',
 ]);
 
 // Watch the save folder and tell the renderer to refresh when files change
@@ -332,6 +332,31 @@ ipcMain.handle('set-ungrouped', (_e, keys) => {
   if (!folder) return { ok: false };
   try {
     fs.writeFileSync(path.join(folder, 'ungrouped.json'),
+      JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// Favorited posters (poster view). Poster keys (platform:userId) the user starred.
+// Lives as <saveFolder>/poster-favorites.json: { keys: [...] } — same shape as
+// ungrouped, so it rides the same export/backup/merge machinery.
+ipcMain.handle('get-poster-favorites', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { keys: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-favorites.json'), 'utf8'));
+    return { keys: Array.isArray(j.keys) ? j.keys : [] };
+  } catch {
+    return { keys: [] };
+  }
+});
+ipcMain.handle('set-poster-favorites', (_e, keys) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    fs.writeFileSync(path.join(folder, 'poster-favorites.json'),
       JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
     return { ok: true };
   } catch {
@@ -762,7 +787,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }

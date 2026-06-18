@@ -572,7 +572,8 @@
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
     .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
     .poster-card {
-      display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-width: 0;
+      position: relative;   /* anchor the favorite star */
+      display: flex; align-items: center; gap: 12px; padding: 12px 38px 12px 14px; min-width: 0;
       background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
       cursor: pointer; transition: background .15s, border-color .15s, transform .15s, box-shadow .15s;
     }
@@ -592,10 +593,30 @@
     .poster-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
     .poster-foot .pf-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
     .poster-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+    /* Favorite star (GitHub スター / iOS ハートの語彙): subtle on hover, accent when on. */
+    .poster-fav {
+      position: absolute; top: 8px; right: 8px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 50%; cursor: pointer; padding: 0;
+      color: var(--text-subtle); opacity: 0;
+      transition: opacity .15s, background .15s, color .15s, transform .15s;
+    }
+    .poster-card:hover .poster-fav, .poster-fav:focus-visible, .poster-fav.on { opacity: 1; }
+    .poster-fav:hover { background: var(--hover); transform: scale(1.1); }
+    .poster-fav svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+    .poster-fav.on { color: var(--accent); }
+    .poster-fav.on svg { fill: currentColor; stroke: currentColor; }
+    /* Inspector star sits inline at the end of the head row (not absolute). */
+    .iv-poster-fav { position: static; opacity: 1; flex: none; }
+    /* Favorites-only toggle chip in the poster sidebar. */
+    #posterControls .poster-fav-only { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+    #posterControls .poster-fav-only .pfo-star { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+    #posterControls .poster-fav-only.active .pfo-star { fill: var(--accent); stroke: var(--accent); }
+    #posterControls .poster-sort-title { margin-top: 0; }
     /* Poster inspector header: bigger avatar + name (reuses .iv-insp-avatar sizing). */
     .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
     .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
-    .iv-poster-head .iv-poster-name { font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .iv-poster-head .iv-poster-name { flex: 1; font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Recent works strip in the poster inspector — preview of who this poster is. */
     .iv-poster-works { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 12px; }
     .iv-poster-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; cursor: pointer; background: var(--surface-3); border: 1px solid var(--border-soft); transition: transform .15s; }
@@ -1606,7 +1627,8 @@
         <!-- Poster-mode controls (sort + platform filter). Shown only while
              browsing posters (CSS body.browse-posters); mirrors the post sidebar. -->
         <div class="sb-section" id="posterControls">
-          <div class="sb-title" id="sbPosterSortTitle"></div>
+          <button class="sb-chip poster-fav-only" id="posterFavOnlyBtn" type="button"><svg class="pfo-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg><span id="posterFavOnlyLabel"></span></button>
+          <div class="sb-title poster-sort-title" id="sbPosterSortTitle"></div>
           <select id="posterSortSelect">
             <option value="count"></option>
             <option value="name"></option>
