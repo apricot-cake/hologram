@@ -120,6 +120,17 @@
       foldersNone: 'なし',
       postCount: '$1 件ヒット',
 
+      // viewer: 投稿/投稿者 モード切替・投稿者ビュー
+      browsePosts: '投稿',
+      browsePosters: '投稿者',
+      browseModeTitle: '表示を切替（投稿 / 投稿者）',
+      posterCount: '$1 人',
+      posterPosts: '投稿 $1 件',
+      posterViewPosts: 'この投稿者の投稿を見る',
+      posterEmptyTitle: '投稿者がいません',
+      posterEmptyDesc: 'SNS投稿を保存すると、投稿者がここに並びます。',
+      detailPosts: '投稿数',
+
       // viewer: empty states
       emptyTitle: '投稿がありません',
       emptyDesc: 'SNSで投稿を保存すると、ここに表示されます。',
@@ -396,6 +407,17 @@
       tileSizeTip: 'Tile size',
       foldersNone: 'None',
       postCount: '$1 hits',
+
+      // viewer: Posts/Posters mode toggle + poster view
+      browsePosts: 'Posts',
+      browsePosters: 'Posters',
+      browseModeTitle: 'Switch view (Posts / Posters)',
+      posterCount: '$1 posters',
+      posterPosts: '$1 posts',
+      posterViewPosts: "View this poster's posts",
+      posterEmptyTitle: 'No posters yet',
+      posterEmptyDesc: 'Save posts from SNS and their posters will appear here.',
+      detailPosts: 'Posts',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',

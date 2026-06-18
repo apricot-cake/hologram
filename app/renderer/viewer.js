@@ -125,6 +125,17 @@
     foldersNone: _s('foldersNone'),
     postCount: _f1('postCount'),
 
+    // 投稿/投稿者 モード切替・投稿者ビュー
+    browsePosts: _s('browsePosts'),
+    browsePosters: _s('browsePosters'),
+    browseModeTitle: _s('browseModeTitle'),
+    posterCount: _f1('posterCount'),
+    posterPosts: _f1('posterPosts'),
+    posterViewPosts: _s('posterViewPosts'),
+    posterEmptyTitle: _s('posterEmptyTitle'),
+    posterEmptyDesc: _s('posterEmptyDesc'),
+    detailPosts: _s('detailPosts'),
+
     // empty states
     emptyTitle: _s('emptyTitle'),
     emptyDesc: _s('emptyDesc'),
@@ -300,6 +311,9 @@
   setText('viewCardLabel', MSG.viewCard);
   setText('viewTileLabel', MSG.viewTile);
   setText('viewListLabel', MSG.viewList);
+  setText('browsePostsLabel', MSG.browsePosts);
+  setText('browsePostersLabel', MSG.browsePosters);
+  { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
@@ -685,7 +699,10 @@
   document.getElementById('emptyState').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-    if (btn.id === 'emptyResetBtn') resetAllFilters();
+    if (btn.id === 'emptyResetBtn') {
+      if (browseMode === 'posters') { document.getElementById('searchBox').value = ''; renderPosters(); }
+      else resetAllFilters();
+    }
     else if (btn.id === 'emptyImportBtn') document.getElementById('importZipInput').click();
   });
 
@@ -1429,6 +1446,7 @@
   let _allPostsGeneration = 0;  // bumped on every allPosts replacement; invalidates sidebar caches
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
+  let browseMode = 'posts';   // 'posts' | 'posters' (what the content area browses)
   let multiOnly = false;      // show only items with more than one image
   let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180;         // tile view: edge px (pref imageTileSize)
@@ -1647,12 +1665,18 @@
       const key = userKey(p);
       let u = map.get(key);
       if (!u) {
-        u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '', count: 0 };
+        u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '',
+              avatarFile: '', followers: null, authorCreatedAt: '', count: 0 };
         map.set(key, u);
       }
       u.count++;
+      // Posts arrive newest-first, so the first non-empty occurrence is the latest
+      // value for that poster (same idiom as displayName/screenName below).
       if (!u.displayName && p.displayName) u.displayName = p.displayName;
       if (!u.screenName && p.screenName) u.screenName = p.screenName;
+      if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
+      if (u.followers == null && p.followers != null) u.followers = p.followers;
+      if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
     }
     _cachedUsers = [...map.values()];
     _buildUsersGen = _allPostsGeneration;
@@ -1816,7 +1840,7 @@
       allPosts = [..._postsById.values()];
       _allPostsGeneration++;
       stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
-      renderPosts(keepLimit);
+      if (browseMode === 'posters') renderPosters(keepLimit); else renderPosts(keepLimit);
       reconcileFolders();
       renderPostFolders();
     } finally {
@@ -2382,6 +2406,7 @@
       stickyRecs.clear();
     }
     updateSidebarState();
+    syncBrowseBar();   // reveal the 投稿/投稿者 switch once there are posters
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
@@ -3252,7 +3277,7 @@
     document.getElementById('postDetail').hidden = true;
     document.getElementById('postDetailBox').innerHTML = '';
     inspectedKey = null;
-    document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
+    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));   // post + poster cards
     document.getElementById('postGrid').classList.remove('insp-open');
     refreshTileSlider();   // the grid width grew back — re-derive the track
   }
@@ -3395,6 +3420,7 @@
     if (insp.contains(e.target)) return;
     if (!e.target.closest('#mode-post')) return;   // sidebar/overlays: leave it open
     if (e.target.closest('.info-btn')) return;     // ℹ = swap to that card
+    if (e.target.closest('.poster-card')) return;  // poster click = swap to that poster
     e.preventDefault();
     e.stopPropagation();
     closeDetail();
@@ -3712,29 +3738,33 @@
   // View toggle
   // Slide the glass thumb to the active button using its measured geometry
   // (inline on the real .vt-thumb element — reliable + transitions).
-  function positionViewThumb() {
-    const vt = document.querySelector('.view-toggle');
-    const btn = vt && vt.querySelector('button.active');
-    const thumb = vt && vt.querySelector('.vt-thumb');
-    if (!btn || !thumb || !btn.offsetWidth) return;
-    thumb.style.width = btn.offsetWidth + 'px';
-    thumb.style.left = btn.offsetLeft + 'px';
+  function positionViewThumb(scope) {
+    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle');
+    containers.forEach((vt) => {
+      const btn = vt.querySelector('button.active');
+      const thumb = vt.querySelector('.vt-thumb');
+      if (!btn || !thumb || !btn.offsetWidth) return;
+      thumb.style.width = btn.offsetWidth + 'px';
+      thumb.style.left = btn.offsetLeft + 'px';
+    });
   }
   window.addEventListener('resize', positionViewThumb, { passive: true });
   // The sidebar gains/loses a scrollbar as content grows, which changes the
   // view-toggle's width WITHOUT a window resize — the thumb's measured px then
   // overran the now-narrower track (user: list switch "はみ出てる"). Re-measure
   // whenever the control's own box changes.
-  { const _vt = document.querySelector('.view-toggle');
-    if (_vt && window.ResizeObserver) new ResizeObserver(positionViewThumb).observe(_vt); }
-  document.querySelectorAll('.view-toggle button').forEach(btn => {
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => positionViewThumb());
+    document.querySelectorAll('.view-toggle').forEach((vt) => ro.observe(vt));
+  }
+  document.querySelectorAll('#densityToggle button').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#densityToggle button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
       positionViewThumb();   // slide the glass thumb
       // Liquid-glass jelly bulge: re-trigger the scale pulse on each slide.
-      const _thumb = document.querySelector('.view-toggle .vt-thumb');
+      const _thumb = document.querySelector('#densityToggle .vt-thumb');
       if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
       window.corpus.setPref('viewMode', currentView);
       if (document.startViewTransition && !prefersReducedMotion()) {
@@ -3743,6 +3773,139 @@
         renderPosts();
       }
     });
+  });
+
+  // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
+  // Switches the content area between the post grid and the poster grid (same tab).
+  // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
+  function setBrowseMode(mode, opts) {
+    mode = (mode === 'posters') ? 'posters' : 'posts';
+    browseMode = mode;
+    document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    const _t = document.querySelector('#browseToggle .vt-thumb');
+    positionViewThumb(document.getElementById('browseToggle'));
+    if (_t && !(opts && opts.silent) && !prefersReducedMotion()) { _t.classList.remove('vt-sliding'); void _t.offsetWidth; _t.classList.add('vt-sliding'); }
+    document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
+    closeDetail();   // a stale post/poster detail shouldn't survive the switch
+    if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
+    if (mode === 'posters') renderPosters(); else renderPosts();
+  }
+  document.querySelectorAll('#browseToggle button').forEach(btn => {
+    btn.addEventListener('click', () => { if (btn.dataset.mode !== browseMode) setBrowseMode(btn.dataset.mode); });
+  });
+
+  // The browse-mode bar only earns its place once there are posters to browse
+  // (mirrors the query-builder bar, which stays hidden until filters matter).
+  function syncBrowseBar() {
+    const bar = document.getElementById('browseBar');
+    if (!bar) return;
+    const show = buildUsers().length > 0;
+    bar.style.display = show ? 'flex' : 'none';
+    if (show) positionViewThumb(document.getElementById('browseToggle'));
+  }
+
+  // --- Poster grid (投稿者ビュー) ------------------------------------------
+  // Cards derived from post author fields (buildUsers — no fetching). Click =
+  // inspector (poster profile), double-click = jump to that poster's posts.
+  let posterList = [];
+  function posterMonogram(u) {
+    const s = (u.displayName || u.screenName || '').trim();
+    return s ? escapeHtml(s[0].toUpperCase()) : '?';
+  }
+  function filteredPosters() {
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    // Identity-less records (no name AND no handle) collapse into one meaningless
+    // "(unknown)" bucket — keep them out of the poster grid (the sidebar user
+    // filter still lists them via buildUsers).
+    let list = buildUsers().filter((u) => u.displayName || u.screenName);
+    if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
+    // Most-posts first (the natural "who do I save most"); name breaks ties.
+    return list.slice().sort((a, b) => b.count - a.count || (a.displayName || a.screenName || '').localeCompare(b.displayName || b.screenName || ''));
+  }
+  function renderPosters(keepLimit) {
+    const grid = document.getElementById('posterGrid');
+    const empty = document.getElementById('emptyState');
+    const countEl = document.getElementById('postCount');
+    posterList = filteredPosters();
+    countEl.textContent = MSG.posterCount(posterList.length);
+    syncBrowseBar();
+    if (posterList.length === 0) {
+      grid.innerHTML = '';   // empty .poster-grid collapses to 0 height
+      empty.style.display = 'block';
+      const q = document.getElementById('searchBox').value.trim();
+      if (buildUsers().length === 0 && !q) {
+        empty.innerHTML = `<p><strong>${MSG.posterEmptyTitle}</strong></p><p>${MSG.posterEmptyDesc}</p>`;
+      } else {
+        empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` +
+          `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
+      }
+      return;
+    }
+    empty.style.display = 'none';
+    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
+    grid.innerHTML = posterList.map((u, i) => {
+      const pfName = u.platform ? (PF_NAME[u.platform] || u.platform) : '';
+      const avatar = u.avatarFile ? `<img src="${fileSrc(u.avatarFile)}" alt="" loading="lazy">` : posterMonogram(u);
+      const hasName = !!u.displayName;
+      const name = hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)');
+      const handleRow = (hasName && u.screenName) ? `<div class="poster-handle">@${escapeHtml(u.screenName)}</div>` : '';
+      const pf = u.platform ? `<span class="pf-tag"><span class="pf-dot ${u.platform}"></span>${escapeHtml(pfName)}</span>` : '';
+      return `<div class="poster-card" data-index="${i}" tabindex="0">`
+        + `<div class="poster-av">${avatar}</div>`
+        + `<div class="poster-meta">`
+        + `<div class="poster-name">${escapeHtml(name)}</div>`
+        + handleRow
+        + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
+        + `</div></div>`;
+    }).join('');
+  }
+  // Jump from a poster to its posts: posts mode + a single user filter for it.
+  function openPosterPosts(u) {
+    if (!u) return;
+    activeFilters = activeFilters.filter((f) => f.type !== 'user');   // "this poster", not OR-ed with a prior one
+    setBrowseMode('posts');
+    addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
+  }
+  function showPosterDetail(u) {
+    if (!u) return;
+    const box = document.getElementById('postDetailBox');
+    const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(k)}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
+    const pfName = u.platform ? (PF_NAME[u.platform] || u.platform) : '';
+    const avatarImg = u.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(u.avatarFile)}" alt="">` : '';
+    const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
+    box.innerHTML =
+      `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
+      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span></div>` +
+      row(MSG.detailUser, u.screenName ? '@' + u.screenName : '') +
+      row(MSG.detailPlatform, pfName) +
+      row(MSG.detailPosts, formatCount(u.count)) +
+      row(MSG.detailFollowers, u.followers != null ? formatCount(u.followers) : '') +
+      row(MSG.detailJoined, u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '') +
+      `<div class="iv-insp-actions">` +
+      `<a class="iv-insp-open" id="pdPosterPosts">${escapeHtml(MSG.posterViewPosts)} →</a>` +
+      `</div>`;
+    document.getElementById('postDetail').hidden = false;
+    inspectedKey = 'poster:' + u.key;
+    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));
+    const idx = posterList.indexOf(u);
+    if (idx >= 0) { const card = document.querySelector('.poster-card[data-index="' + idx + '"]'); if (card) card.classList.add('inspected'); }
+    const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
+    const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
+  }
+  document.getElementById('posterGrid').addEventListener('click', (e) => {
+    const card = e.target.closest('.poster-card');
+    if (!card) return;
+    const u = posterList[parseInt(card.dataset.index, 10)];
+    if (!u) return;
+    // Re-click the inspected poster toggles it closed (same idiom as the ℹ button).
+    if (!document.getElementById('postDetail').hidden && inspectedKey === 'poster:' + u.key) { closeDetail(); return; }
+    showPosterDetail(u);
+  });
+  document.getElementById('posterGrid').addEventListener('dblclick', (e) => {
+    const card = e.target.closest('.poster-card');
+    if (!card) return;
+    const u = posterList[parseInt(card.dataset.index, 10)];
+    if (u) openPosterPosts(u);
   });
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
@@ -3882,7 +4045,7 @@
   let _searchRenderTimer = null;
   document.getElementById('searchBox').addEventListener('input', () => {
     clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = setTimeout(() => renderPosts(), 150);
+    _searchRenderTimer = setTimeout(() => { if (browseMode === 'posters') renderPosters(); else renderPosts(); }, 150);
   });
 
   // --- リアルタイム検索サジェスト -------------------------------------------

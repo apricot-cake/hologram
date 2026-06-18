@@ -558,6 +558,60 @@
     .view-toggle button.active { color: var(--text); }
     [data-theme="dark"] .view-toggle button.active { color: var(--text-strong); }
 
+    /* Browse-mode toggle (投稿 / 投稿者): reuses .view-toggle visuals but shows a
+       text label in BOTH states (the semantic switch is less self-evident than
+       card/tile/list). 2 segments, so the thumb fallback is /2. */
+    .browse-bar { margin: 0 0 16px; }
+    .browse-toggle { width: max-content; }
+    .browse-toggle button { padding: 0 14px; gap: 7px; height: 30px; }
+    .browse-toggle .vt-ico { width: 15px; height: 15px; }
+    .browse-toggle .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; }
+    .browse-toggle .vt-thumb { width: calc((100% - 6px) / 2); }
+
+    /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
+       @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
+    .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    .poster-card {
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-width: 0;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+      cursor: pointer; transition: background .15s, border-color .15s, transform .15s, box-shadow .15s;
+    }
+    .poster-card:hover { background: var(--hover); transform: scale(1.02); box-shadow: var(--shadow-sm); }
+    .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out both; }
+    .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
+    .poster-av {
+      width: 44px; height: 44px; border-radius: 50%; flex: none; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface-3); color: var(--text-muted);
+      font-weight: 600; font-size: 17px; border: 1px solid var(--border-soft);
+    }
+    .poster-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .poster-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+    .poster-name { font-weight: 600; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .poster-handle { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .poster-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+    .poster-foot .pf-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+    .poster-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+    /* Poster inspector header: bigger avatar + name (reuses .iv-insp-avatar sizing). */
+    .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
+    .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
+    .iv-poster-head .iv-poster-name { font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Mode visibility: the body class is the single source of truth (an inline
+       display set by renderPosts, or .poster-grid's display:grid, would otherwise
+       beat the [hidden] attribute — so use !important here). */
+    body.browse-posters #postGrid { display: none !important; }
+    body:not(.browse-posters) #posterGrid { display: none !important; }
+    /* Poster mode hides the post-only chrome (filters/sort/density/active bar +
+       tagging launcher + workspace tray) — only the search box stays useful. */
+    body.browse-posters #postActiveBar,
+    body.browse-posters #filterRows,
+    body.browse-posters #pinnedSection,
+    body.browse-posters #tileSizeRow,
+    body.browse-posters #tagStartBtn,
+    body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
+    body.browse-posters #postsToolbar .sb-section:has(#sortSelect),
+    body.browse-posters .sb-section:has(#wsRow) { display: none !important; }
+
     /* Tile-size ± (shown only in the tile density) */
     /* Tile size: thin slider, small→large glyphs at the ends */
     .tile-size { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
@@ -1509,7 +1563,7 @@
         <div class="toolbar" id="postsToolbar">
           <div class="sb-section">
             <div class="sb-title" id="sbViewTitle"></div>
-            <div class="view-toggle"><i class="vt-thumb" aria-hidden="true"></i>
+            <div class="view-toggle" id="densityToggle"><i class="vt-thumb" aria-hidden="true"></i>
               <button data-view="card" id="viewCard" class="active"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg><span class="vt-label" id="viewCardLabel"></span></button>
               <button data-view="tile" id="viewTile"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="vt-label" id="viewTileLabel"></span></button>
               <button data-view="list" id="viewList"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span class="vt-label" id="viewListLabel"></span></button>
@@ -1651,9 +1705,19 @@
         <span class="tag-edit-hint" id="tagEditHint"></span>
         <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
       </div>
+      <!-- Browse-mode switch: 投稿グリッド ↔ 投稿者グリッド（同じタブ内でスイッチ）。
+           segmented control = macOS式の凹トラック＋浮きつまみ（密度トグルと同語彙、
+           ただし広域セレクタ衝突を避けるため id で別管理）。前例: Bluesky/Xのプロフィールタブ。 -->
+      <div class="browse-bar" id="browseBar" style="display:none">
+        <div class="view-toggle browse-toggle" id="browseToggle"><i class="vt-thumb" aria-hidden="true"></i>
+          <button data-mode="posts" id="browsePostsBtn" class="active"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/></svg><span class="vt-label" id="browsePostsLabel"></span></button>
+          <button data-mode="posters" id="browsePostersBtn"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="vt-label" id="browsePostersLabel"></span></button>
+        </div>
+      </div>
       <!-- Posts tab -->
       <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
+        <div id="posterGrid" class="poster-grid"></div>
         <div id="emptyState" class="empty-state" style="display:none;"></div>
       </div>
 
