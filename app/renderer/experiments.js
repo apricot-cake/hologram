@@ -23,13 +23,13 @@
     '  background-size: 26px 26px;',
     '}',
     /* ガラスサイドバー: 背後のグリッドを「透かす」=読み抜けるレンズに寄せる。
-       DESIGN.md「dense text は材質を厚く（42%）」に従い 42% の薄さ＋真の屈折 #liquidGlass
+       DESIGN.md「dense text は材質を厚く（42%）」に従い 42% の薄さ＋真の屈折 #glassRefract
        （feTurbulence→feDisplacementMap で背後を実際に歪ませる）。frost(blur)は背後を隠す
        ので使わない。これでグリッドが歪んで透ける本物のガラスになる。 */
     'body.exp-glass-sb #sidebar {',
     '  background-color: color-mix(in srgb, var(--sidebar-bg) 35%, transparent);',
-    '  -webkit-backdrop-filter: url(#liquidGlass) saturate(155%);',
-    '  backdrop-filter: url(#liquidGlass) saturate(155%);',
+    '  -webkit-backdrop-filter: url(#glassRefract) saturate(155%);',
+    '  backdrop-filter: url(#glassRefract) saturate(155%);',
     '}',
     /* 実験パネル */
     '#expPanel {',
