@@ -1127,7 +1127,10 @@ function createWindow(show = true) {
     title: 'Corpus',
     paintWhenInitiallyHidden: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: dark ? '#0e0f11' : '#f6f7f9', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 38 },
+    // color MUST match --tabbar-bg (dark #0e0f11 / light #eceef2) so the caption-
+    // button strip blends into the tab bar instead of floating. height 37 = 1px less
+    // than --tabbar-h(38) so the tab bar's bottom border peeks under the buttons.
+    titleBarOverlay: { color: dark ? '#0e0f11' : '#eceef2', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 37 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

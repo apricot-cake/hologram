@@ -24,7 +24,7 @@
     if (sel && sel.value !== pref) sel.value = pref;
     if (window.corpus && window.corpus.setTitleBarOverlay) {
       var d = (resolve(pref) === 'dark');
-      try { window.corpus.setTitleBarOverlay({ color: d ? '#0e0f11' : '#f6f7f9', symbolColor: d ? '#9aa3af' : '#5b6470' }); } catch (e) {}
+      try { window.corpus.setTitleBarOverlay({ color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 }); } catch (e) {}
     }
     return pref;
   }
