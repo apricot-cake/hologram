@@ -14,22 +14,38 @@
 
   // --- 注入CSS（style-src 'unsafe-inline' は許可されている） ---
   var css = [
-    /* グリッド背景: appBody の地に方眼。線色は --text の混色でテーマ自動追従。
-       ガラス越しに透けて見えるよう濃いめ（薄いと屈折させる対象が無く透けない）。 */
+    /* グリッド背景: appBody の地に方眼（控えめ）。線色は --text 混色でテーマ自動追従。
+       被る要素（サイドバー/フライアウト）の中だけ別途濃いグリッドを敷いて、
+       ガラスが濃いグリッドを透かしているように相対的に見せる（下記）。 */
     'body.exp-grid #appBody {',
     '  background-image:',
-    '    linear-gradient(to right, color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px),',
-    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px);',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px);',
     '  background-size: 26px 26px;',
     '}',
-    /* ガラスサイドバー: 背後のグリッドを「透かす」=読み抜けるレンズに寄せる。
-       DESIGN.md「dense text は材質を厚く（42%）」に従い 42% の薄さ＋真の屈折 #glassRefract
-       （feTurbulence→feDisplacementMap で背後を実際に歪ませる）。frost(blur)は背後を隠す
-       ので使わない。これでグリッドが歪んで透ける本物のガラスになる。 */
+    /* ガラスサイドバー: 自前の濃いグリッド(26%)を半透明フィル(--sidebar-bg 48%)の下に
+       敷き、背後は #glassRefract で屈折させる。=「ガラスが濃いグリッドを透かしている」
+       ように見える（被る要素だけ濃く＝相対的に透け感UP）。グローバル(7%)とは別物。
+       多層背景は先頭が最前面なので [フィル, 縦線, 横線] の順。 */
     'body.exp-glass-sb #sidebar {',
-    '  background-color: color-mix(in srgb, var(--sidebar-bg) 35%, transparent);',
-    '  -webkit-backdrop-filter: url(#glassRefract) saturate(155%);',
-    '  backdrop-filter: url(#glassRefract) saturate(155%);',
+    '  background-color: transparent;',
+    '  background-image:',
+    '    linear-gradient(color-mix(in srgb, var(--sidebar-bg) 48%, transparent), color-mix(in srgb, var(--sidebar-bg) 48%, transparent)),',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px);',
+    '  background-size: auto, 26px 26px, 26px 26px;',
+    '  -webkit-backdrop-filter: url(#glassRefract) saturate(150%);',
+    '  backdrop-filter: url(#glassRefract) saturate(150%);',
+    '}',
+    /* フライアウト/メニューも被る要素なので同様に濃いグリッドを敷く（グリッド背景ON時）。
+       基底の --glass-bg 半透明フィルの下に濃いグリッド。backdrop の屈折は基底CSSのまま。 */
+    'body.exp-grid .qf-popover, body.exp-grid .fold-menu {',
+    '  background-color: transparent;',
+    '  background-image:',
+    '    linear-gradient(var(--glass-bg), var(--glass-bg)),',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 24%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 24%, transparent) 1px, transparent 1px);',
+    '  background-size: auto, 26px 26px, 26px 26px;',
     '}',
     /* 実験パネル */
     '#expPanel {',
