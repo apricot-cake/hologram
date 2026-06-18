@@ -1184,6 +1184,21 @@ if (!gotSingleInstanceLock) {
   const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
   createWindow(!SMOKE && !startMin);   // start-minimized → create hidden, then show inactive below
   watchSaveFolder();
+  // Dev-only: hot-reload the renderer when its source (js/html/css) changes, so
+  // iterating on UI/CSS needs no manual reload — and no terminal-spawning reload
+  // command from outside. Packaged builds never watch.
+  if (!SMOKE && !app.isPackaged) {
+    try {
+      let _rendererReloadT = null;
+      fs.watch(path.join(__dirname, 'renderer'), { recursive: true }, (_e, fn) => {
+        if (!fn || !/\.(js|html|css)$/i.test(String(fn))) return;
+        clearTimeout(_rendererReloadT);
+        _rendererReloadT = setTimeout(() => {
+          if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
+        }, 180);
+      });
+    } catch { /* dev watcher is best-effort */ }
+  }
   if (!SMOKE) {
     armBackupSchedule();                                  // interval スケジュールを起動
     // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
