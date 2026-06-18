@@ -10,26 +10,16 @@
   // Static keys are pre-resolved strings; interpolated keys are bound functions.
   const MSG = {
     // tabs / search / sort
-    tabPosts: _s('tabPosts'),
     tabTags: _s('tabTags'),
-    emptyHashtags: _s('emptyHashtags'),
     tabSettings: _s('tabSettings'),
     searchPlaceholder: _s('searchPlaceholder'),
-    searchHashtags: _s('searchHashtags'),
     searchTags: _s('searchTags'),
-    tabUsers: _s('tabUsers'),
-    searchUsers: _s('searchUsers'),
-    emptyUsers: _s('emptyUsers'),
     sidebarAuthors: _s('sidebarAuthors'),
     searchAuthors: _s('searchAuthors'),
-    kindTitle: _s('kindTitle'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
-    userKindTitle: _s('userKindTitle'),
     userKindMedia: _s('userKindMedia'),
     userKindPlain: _s('userKindPlain'),
-    multiOnly: _s('multiOnly'),
-    expandAll: _s('expandAll'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
     tipInfo: _s('tipInfo'),
     tipSelect: _s('tipSelect'),
@@ -40,15 +30,12 @@
     sbSortTitle: _s('sbSortTitle'),
     sbViewTitle: _s('sbViewTitle'),
     tipTagCycle: _s('tipTagCycle'),
-    sbFilterTip: _s('sbFilterTip'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
     engParticle: _s('engParticle'),
     ctxManage: _s('ctxManage'),
     ctxWsAdd: _s('ctxWsAdd'),
     ctxWsRemove: _s('ctxWsRemove'),
-    qcAndLabel: _s('qcAndLabel'),
-    qcOrLabel: _s('qcOrLabel'),
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
     tileOverlay: _s('tileOverlay'),
@@ -61,8 +48,6 @@
     qbHelp4: _s('qbHelp4'),
     qbHelp5: _s('qbHelp5'),
     qbHelp6: _s('qbHelp6'),
-    tagGroupsTitle: _s('tagGroupsTitle'),
-    qfAdd: _s('qfAdd'),
     qfCatFolder: _s('qfCatFolder'),
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
@@ -183,27 +168,18 @@
     cleared: _s('cleared'),
 
     // settings > backup（指定フォルダへの増分エクスポート）
-    backupTitle: _s('backupTitle'),
     hintBackup: _s('hintBackup'),
     backupDirNone: _s('backupDirNone'),
     backupChoose: _s('backupChoose'),
     backupClear: _s('backupClear'),
-    backupContentTitle: _s('backupContentTitle'),
-    backupContentMeta: _s('backupContentMeta'),
-    backupContentMedia: _s('backupContentMedia'),
-    backupScheduleTitle: _s('backupScheduleTitle'),
     backupInterval: _s('backupInterval'),
     backupIntervalUnit: _s('backupIntervalUnit'),
     unitDay: _s('unitDay'),
     unitWeek: _s('unitWeek'),
     unitMonth: _s('unitMonth'),
-    backupRunNow: _s('backupRunNow'),
-    backupRunning: _s('backupRunning'),
-    backupNotSet: _s('backupNotSet'),
     backupOverlap: _s('backupOverlap'),
     backupLastLabel: _s('backupLastLabel'),
     backupItemsUnit: _s('backupItemsUnit'),
-    backupSkipLabel: _s('backupSkipLabel'),
 
     // settings > trash
     trashTitle: _s('trashTitle'),
@@ -224,12 +200,6 @@
     exportFailed: _s('exportFailed'),
 
     // engagement labels
-    engagementLikes: _s('engagementLikes'),
-    engagementReposts: _s('engagementReposts'),
-    engagementReplies: _s('engagementReplies'),
-    engagementBookmarks: _s('engagementBookmarks'),
-    engagementViews: _s('engagementViews'),
-    engagementSuffix: _s('engagementSuffix'),
 
     // view toggle + selection
     viewCard: _s('viewCard'),
@@ -247,8 +217,6 @@
     deleted: _s('deleted'),
 
     // post card
-    dateTypePost: _s('dateTypePost'),
-    dateTypeCaptured: _s('dateTypeCaptured'),
     clickToExpand: _s('clickToExpand'),
     tipOpen: _s('tipOpen'),
     lbPrev: _s('lbPrev'),
@@ -260,15 +228,11 @@
 
     // stats formatters (pure formatting, no translation)
     likes: (n) => n != null ? `${formatCount(n)}` : '',
-    reposts: (n) => n != null ? `${formatCount(n)} RT` : '',
-    replies: (n) => n != null ? `${formatCount(n)}` : '',
-    bookmarks: (n) => n != null ? `${formatCount(n)}` : '',
 
     // edit overlay
     tagsLabel: _s('tagsLabel'),
     addTag: _s('addTag'),
     tagPlaceholder: _s('tagPlaceholder'),
-    applyToSelected: _s('applyToSelected'),
 
     // query/sidebar filters
     qfPlatform: _s('qfPlatform'),
@@ -277,7 +241,6 @@
     qfDate: _s('qfDate'),
     qfEngagement: _s('qfEngagement'),
     qfTag: _s('qfTag'),
-    qfMedia: _s('qfMedia'),
     qfMediaTitle: _s('qfMediaTitle'),
     qfInstance: _s('qfInstance'),
     qfPost: _s('qfPost'),
@@ -292,14 +255,11 @@
     qfDelete: _s('qfDelete'),
     qfDatePost: _s('qfDatePost'),
     qfDateCaptured: _s('qfDateCaptured'),
-    qfDateFrom: _s('qfDateFrom'),
-    qfDateTo: _s('qfDateTo'),
     qfEngLikes: _s('qfEngLikes'),
     qfEngReposts: _s('qfEngReposts'),
     qfEngReplies: _s('qfEngReplies'),
     qfEngBookmarks: _s('qfEngBookmarks'),
     qfEngViews: _s('qfEngViews'),
-    qfEngSuffix: _s('qfEngSuffix'),
     qfEngGte: _s('qfEngGte'),
     qfEngLte: _s('qfEngLte'),
     searchExact: _s('searchExact'),
