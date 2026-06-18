@@ -613,6 +613,27 @@
     #posterControls .poster-fav-only .pfo-star { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
     #posterControls .poster-fav-only.active .pfo-star { fill: var(--accent); stroke: var(--accent); }
     #posterControls .poster-sort-title { margin-top: 0; }
+    /* Poster folders: sidebar list (text rows + hover, active = monotone contrast)
+       + create input. Membership is assigned from the poster inspector (chips). */
+    .pf-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+    .pf-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 7px; cursor: pointer; color: var(--text); }
+    .pf-row:hover { background: var(--hover); }
+    .pf-row.active { background: var(--accent-subtle); color: var(--text-strong); }
+    .pf-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+    .pf-row-n { font-size: 11px; color: var(--text-muted); }
+    .pf-row-del { display: none; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: 5px; line-height: 0; }
+    .pf-row:hover .pf-row-del, .pf-row:focus-within .pf-row-del { display: inline-flex; }
+    .pf-row-del:hover { color: var(--danger); background: var(--hover); }
+    .pf-new { display: flex; gap: 6px; margin-top: 8px; }
+    .pf-new-input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--field-bg); color: var(--text); font-size: 12.5px; }
+    .pf-new-btn { flex: none; }
+    /* Inspector folder chips (toggle membership + ＋ new). */
+    .iv-poster-folders-row .iv-insp-v { width: 100%; }
+    .iv-poster-folder-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .iv-folder-chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--text); cursor: pointer; white-space: nowrap; }
+    .iv-folder-chip:hover { background: var(--chip-bg-hover); }
+    .iv-folder-chip.on { background: var(--accent-subtle); color: var(--text-strong); border-color: var(--accent-soft); }
+    .iv-folder-add { color: var(--text-muted); font-weight: 600; }
     /* Poster inspector header: bigger avatar + name (reuses .iv-insp-avatar sizing). */
     .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
     .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
@@ -1636,6 +1657,12 @@
           </select>
           <div class="sb-title poster-pf-title" id="sbPosterPlatformTitle"></div>
           <div class="sb-chips" id="posterPlatformChips"></div>
+          <div class="sb-title poster-pf-title" id="sbPosterFoldersTitle"></div>
+          <div class="pf-list" id="posterFolderList"></div>
+          <div class="pf-new">
+            <input type="text" id="posterFolderNewInput" class="pf-new-input" autocomplete="off">
+            <button type="button" class="btn-outline pf-new-btn" id="posterFolderCreateBtn"></button>
+          </div>
         </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
              with that category's values (multi-select, stays open). The badge

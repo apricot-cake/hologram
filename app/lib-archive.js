@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json'];
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
@@ -88,7 +88,8 @@ const MERGERS = {
   'tag-groups.json': mergeTagGroups,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
-  'poster-favorites.json': mergeUngrouped   // same { keys } shape → union merge
+  'poster-favorites.json': mergeUngrouped,   // same { keys } shape → union merge
+  'poster-folders.json': mergeFolders        // same { folders } shape → id-union merge
 };
 
 // --- Build ---------------------------------------------------------------------

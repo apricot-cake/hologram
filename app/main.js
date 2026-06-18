@@ -61,6 +61,7 @@ function getSaveFolder() {
 const INTERNAL_FILES = new Set([
   'config.json', '.index.json', 'tag-groups.json', 'ungrouped.json',
   'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json',
+  'poster-folders.json',
 ]);
 
 // Watch the save folder and tell the renderer to refresh when files change
@@ -358,6 +359,30 @@ ipcMain.handle('set-poster-favorites', (_e, keys) => {
   try {
     fs.writeFileSync(path.join(folder, 'poster-favorites.json'),
       JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// Named poster folders (poster view). { folders: [{ id, name, items:[posterKey] }] }
+// — same shape as folders.json (minus workspace), so import reuses mergeFolders.
+ipcMain.handle('get-poster-folders', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { folders: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-folders.json'), 'utf8'));
+    return { folders: Array.isArray(j.folders) ? j.folders : [] };
+  } catch {
+    return { folders: [] };
+  }
+});
+ipcMain.handle('set-poster-folders', (_e, data) => {
+  const folder = getSaveFolder();
+  if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
+  try {
+    fs.writeFileSync(path.join(folder, 'poster-folders.json'),
+      JSON.stringify({ folders: data.folders }, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };
@@ -787,7 +812,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }

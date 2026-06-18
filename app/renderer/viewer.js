@@ -143,6 +143,14 @@
     posterFavAdd: _s('posterFavAdd'),
     posterFavRemove: _s('posterFavRemove'),
     posterFavOnly: _s('posterFavOnly'),
+    sbPosterFoldersTitle: _s('sbPosterFoldersTitle'),
+    posterFolderNewPlaceholder: _s('posterFolderNewPlaceholder'),
+    posterFolderCreate: _s('posterFolderCreate'),
+    posterFolderDeleteConfirm: _f1('posterFolderDeleteConfirm'),
+    posterFolderRenamePrompt: _s('posterFolderRenamePrompt'),
+    ivPosterFolders: _s('ivPosterFolders'),
+    posterFolderAdded: _f1('posterFolderAdded'),
+    posterFolderRemoved: _f1('posterFolderRemoved'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -325,6 +333,9 @@
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   setText('sbPosterPlatformTitle', MSG.sbPosterPlatformTitle);
   setText('posterFavOnlyLabel', MSG.posterFavOnly);
+  setText('sbPosterFoldersTitle', MSG.sbPosterFoldersTitle);
+  setText('posterFolderCreateBtn', MSG.posterFolderCreate);
+  { const i = document.getElementById('posterFolderNewInput'); if (i) i.placeholder = MSG.posterFolderNewPlaceholder; }
   { const ps = document.getElementById('posterSortSelect');
     if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; ps.options[2].textContent = MSG.posterSortRecent; } }
   setText('settingsThemeTitle', MSG.themeTitle);
@@ -3842,6 +3853,47 @@
     for (const s of stars) if (s) { s.classList.toggle('on', on); const t = on ? MSG.posterFavRemove : MSG.posterFavAdd; s.title = t; s.setAttribute('aria-label', t); }
     if (posterFavOnly) renderPosters();   // favorites-only view: drop the just-unfavorited card
   }
+
+  // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
+  let posterFolders = [];            // persisted to poster-folders.json
+  let posterFolderFilter = null;     // fid currently filtered, or null
+  const pfGenId = () => 'pf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  function persistPosterFolders() { if (window.corpus.setPosterFolders) window.corpus.setPosterFolders({ folders: posterFolders }).catch(() => { /* best-effort */ }); }
+  function posterFolderById(id) { return posterFolders.find((f) => f.id === id) || null; }
+  function posterFolderHas(id, key) { const f = posterFolderById(id); return !!(f && f.items.includes(key)); }
+  function createPosterFolder(name) {
+    name = (name || '').trim(); if (!name) return null;
+    const f = { id: pfGenId(), name, items: [] };
+    posterFolders.push(f); persistPosterFolders();
+    return f;
+  }
+  function deletePosterFolder(id) {
+    posterFolders = posterFolders.filter((f) => f.id !== id);
+    if (posterFolderFilter === id) posterFolderFilter = null;
+    persistPosterFolders();
+  }
+  function togglePosterFolderMember(id, key) {
+    const f = posterFolderById(id); if (!f) return false;
+    const wasIn = f.items.includes(key);
+    if (wasIn) f.items = f.items.filter((k) => k !== key); else f.items.push(key);
+    persistPosterFolders();
+    if (window.corpusUI) window.corpusUI.notify((wasIn ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
+    renderPosterFolders();   // counts changed
+    if (posterFolderFilter) renderPosters();   // membership change may add/remove from the filtered grid
+    return !wasIn;
+  }
+  function renderPosterFolders() {
+    const host = document.getElementById('posterFolderList');
+    if (!host) return;
+    host.innerHTML = posterFolders.map((f) => {
+      const active = posterFolderFilter === f.id;
+      return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0">`
+        + `<span class="pf-row-name">${escapeHtml(f.name)}</span>`
+        + `<span class="pf-row-n">${f.items.length}</span>`
+        + `<button class="pf-row-del" data-pfdel="${escapeAttr(f.id)}" aria-label="delete" title="${escapeAttr(MSG.posterFolderDeleteConfirm(f.name).split('\n')[0])}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>`
+        + `</div>`;
+    }).join('');
+  }
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
     return s ? escapeHtml(s[0].toUpperCase()) : '?';
@@ -3852,6 +3904,7 @@
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = namedPosters();
     if (posterFavOnly) list = list.filter((u) => posterFavorites.has(u.key));
+    if (posterFolderFilter) { const f = posterFolderById(posterFolderFilter); const set = new Set(f ? f.items : []); list = list.filter((u) => set.has(u.key)); }
     if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
@@ -3882,6 +3935,7 @@
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
     renderPosterPlatformChips();
+    renderPosterFolders();
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
     syncBrowseBar();
@@ -3956,6 +4010,10 @@
       row(MSG.detailFollowers, u.followers != null ? formatCount(u.followers) : '') +
       row(MSG.detailJoined, u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '') +
       worksHtml +
+      `<div class="iv-insp-row iv-poster-folders-row"><span class="iv-insp-k">${escapeHtml(MSG.ivPosterFolders)}</span><span class="iv-insp-v"><div class="iv-poster-folder-chips">` +
+      posterFolders.map((f) => `<button class="iv-folder-chip${posterFolderHas(f.id, u.key) ? ' on' : ''}" data-pffid="${escapeAttr(f.id)}">${escapeHtml(f.name)}</button>`).join('') +
+      `<button class="iv-folder-chip iv-folder-add" id="pdFolderNew" title="${escapeAttr(MSG.posterFolderNewPlaceholder)}">＋</button>` +
+      `</div></span></div>` +
       `<div class="iv-insp-actions">` +
       `<a class="iv-insp-open" id="pdPosterPosts">${escapeHtml(MSG.posterViewPosts)} →</a>` +
       `</div>`;
@@ -3967,6 +4025,14 @@
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
     const fb = document.getElementById('pdFavBtn'); if (fb) fb.onclick = () => toggleFavorite(u);
+    box.querySelectorAll('.iv-folder-chip[data-pffid]').forEach((ch) => {
+      ch.onclick = () => { const on = togglePosterFolderMember(ch.dataset.pffid, u.key); ch.classList.toggle('on', on); };
+    });
+    { const fn = document.getElementById('pdFolderNew');
+      if (fn) fn.onclick = () => {
+        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
+        if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) { togglePosterFolderMember(nf.id, u.key); showPosterDetail(u); } }
+      }; }
     box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
       t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) openGallery(buildGroupGalleryItems(g), 0); };
     });
@@ -4007,6 +4073,31 @@
   });
   { const fo = document.getElementById('posterFavOnlyBtn');
     if (fo) fo.addEventListener('click', () => { posterFavOnly = !posterFavOnly; fo.classList.toggle('active', posterFavOnly); renderPosters(); }); }
+  // Poster folders: sidebar list (click row = filter toggle, × = delete, dblclick = rename) + create.
+  document.getElementById('posterFolderList').addEventListener('click', (e) => {
+    const del = e.target.closest('.pf-row-del');
+    if (del) {
+      e.stopPropagation();
+      const f = posterFolderById(del.dataset.pfdel); if (!f) return;
+      if (!window.confirm(MSG.posterFolderDeleteConfirm(f.name))) return;
+      deletePosterFolder(f.id); renderPosterFolders(); renderPosters();
+      return;
+    }
+    const row = e.target.closest('.pf-row'); if (!row) return;
+    posterFolderFilter = (posterFolderFilter === row.dataset.fid) ? null : row.dataset.fid;
+    renderPosterFolders(); renderPosters();
+  });
+  document.getElementById('posterFolderList').addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.pf-row'); if (!row) return;
+    const f = posterFolderById(row.dataset.fid); if (!f) return;
+    const name = window.prompt(MSG.posterFolderRenamePrompt, f.name);
+    if (name && name.trim()) { f.name = name.trim(); persistPosterFolders(); renderPosterFolders(); }
+  });
+  { const inp = document.getElementById('posterFolderNewInput');
+    const btn = document.getElementById('posterFolderCreateBtn');
+    const doCreate = () => { if (!inp) return; const f = createPosterFolder(inp.value); if (f) { inp.value = ''; renderPosterFolders(); } };
+    if (btn) btn.addEventListener('click', doCreate);
+    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') doCreate(); }); }
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
   // quantize the real width to "how many columns fit", so their track maps to
@@ -4756,6 +4847,7 @@ render()
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterFavorites ? await window.corpus.getPosterFavorites() : null; posterFavorites = new Set((r && r.keys) || []); } catch { /* default empty */ }
+  try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; posterFolders = (r && r.folders) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   await initTabs();
