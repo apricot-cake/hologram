@@ -22,6 +22,9 @@
     '    linear-gradient(to right, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px),',
     '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px);',
     '  background-size: 26px 26px;',
+    /* fixed = viewport 原点にタイル固定。サイドバー/フライアウトの濃いグリッドも fixed に
+       すると同じ位相に揃い、1枚の連続グリッドが被る要素だけ濃く見える（=地続き）。 */
+    '  background-attachment: fixed;',
     '}',
     /* ガラスサイドバー: 自前の濃いグリッド(26%)を半透明フィル(--sidebar-bg 48%)の下に
        敷き、背後は #glassRefract で屈折させる。=「ガラスが濃いグリッドを透かしている」
@@ -34,6 +37,7 @@
     '    linear-gradient(to right, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px),',
     '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px);',
     '  background-size: auto, 26px 26px, 26px 26px;',
+    '  background-attachment: fixed;',   /* 背景グリッドと同位相に揃える（地続き） */
     '  -webkit-backdrop-filter: url(#glassRefract) saturate(150%);',
     '  backdrop-filter: url(#glassRefract) saturate(150%);',
     '}',
@@ -46,6 +50,7 @@
     '    linear-gradient(to right, color-mix(in srgb, var(--text) 24%, transparent) 1px, transparent 1px),',
     '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 24%, transparent) 1px, transparent 1px);',
     '  background-size: auto, 26px 26px, 26px 26px;',
+    '  background-attachment: fixed;',   /* 背景グリッドと同位相に揃える（地続き） */
     '}',
     /* 実験パネル */
     '#expPanel {',
