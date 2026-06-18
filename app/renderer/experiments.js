@@ -34,8 +34,8 @@
     '  background-color: transparent;',
     '  background-image:',
     '    linear-gradient(color-mix(in srgb, var(--sidebar-bg) 48%, transparent), color-mix(in srgb, var(--sidebar-bg) 48%, transparent)),',
-    '    linear-gradient(to right, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px),',
-    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 26%, transparent) 1px, transparent 1px);',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1px);',
     '  background-size: auto, 26px 26px, 26px 26px;',
     '  background-attachment: fixed;',   /* 背景グリッドと同位相に揃える（地続き） */
     '  -webkit-backdrop-filter: url(#glassRefract) saturate(150%);',
