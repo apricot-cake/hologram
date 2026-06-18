@@ -130,6 +130,11 @@
       posterEmptyTitle: '投稿者がいません',
       posterEmptyDesc: 'SNS投稿を保存すると、投稿者がここに並びます。',
       detailPosts: '投稿数',
+      sbPosterSortTitle: '並び順',
+      sbPosterPlatformTitle: 'プラットフォーム',
+      posterSortCount: '投稿数順',
+      posterSortName: '名前順',
+      posterSortRecent: '最新投稿順',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -418,6 +423,11 @@
       posterEmptyTitle: 'No posters yet',
       posterEmptyDesc: 'Save posts from SNS and their posters will appear here.',
       detailPosts: 'Posts',
+      sbPosterSortTitle: 'Sort',
+      sbPosterPlatformTitle: 'Platform',
+      posterSortCount: 'Most posts',
+      posterSortName: 'Name',
+      posterSortRecent: 'Recent',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',

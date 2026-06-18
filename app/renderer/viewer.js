@@ -135,6 +135,11 @@
     posterEmptyTitle: _s('posterEmptyTitle'),
     posterEmptyDesc: _s('posterEmptyDesc'),
     detailPosts: _s('detailPosts'),
+    sbPosterSortTitle: _s('sbPosterSortTitle'),
+    sbPosterPlatformTitle: _s('sbPosterPlatformTitle'),
+    posterSortCount: _s('posterSortCount'),
+    posterSortName: _s('posterSortName'),
+    posterSortRecent: _s('posterSortRecent'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -314,6 +319,10 @@
   setText('browsePostsLabel', MSG.browsePosts);
   setText('browsePostersLabel', MSG.browsePosters);
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
+  setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
+  setText('sbPosterPlatformTitle', MSG.sbPosterPlatformTitle);
+  { const ps = document.getElementById('posterSortSelect');
+    if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; ps.options[2].textContent = MSG.posterSortRecent; } }
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
@@ -458,6 +467,7 @@
     btn.addEventListener('click', (e) => { e.stopPropagation(); openCsPop(sel, btn); });
   }
   enhanceSelect(sortSelect);
+  enhanceSelect(document.getElementById('posterSortSelect'));
 
   // --- Query Field ---
   const ENG_TYPE_LABELS = {
@@ -1666,7 +1676,7 @@
       let u = map.get(key);
       if (!u) {
         u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '',
-              avatarFile: '', followers: null, authorCreatedAt: '', count: 0 };
+              avatarFile: '', followers: null, authorCreatedAt: '', latest: '', count: 0 };
         map.set(key, u);
       }
       u.count++;
@@ -1677,6 +1687,7 @@
       if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
       if (u.followers == null && p.followers != null) u.followers = p.followers;
       if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
+      if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;   // ISO strings compare lexically
     }
     _cachedUsers = [...map.values()];
     _buildUsersGen = _allPostsGeneration;
@@ -3808,24 +3819,47 @@
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   let posterList = [];
+  let posterSort = 'count';          // 'count' | 'name' | 'recent'
+  let posterPlatforms = new Set();   // active platform filter (empty = all)
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
     return s ? escapeHtml(s[0].toUpperCase()) : '?';
   }
+  // Named posters only — the identity-less ('(unknown)') bucket stays out of the grid.
+  function namedPosters() { return buildUsers().filter((u) => u.displayName || u.screenName); }
   function filteredPosters() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
-    // Identity-less records (no name AND no handle) collapse into one meaningless
-    // "(unknown)" bucket — keep them out of the poster grid (the sidebar user
-    // filter still lists them via buildUsers).
-    let list = buildUsers().filter((u) => u.displayName || u.screenName);
+    let list = namedPosters();
+    if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
-    // Most-posts first (the natural "who do I save most"); name breaks ties.
-    return list.slice().sort((a, b) => b.count - a.count || (a.displayName || a.screenName || '').localeCompare(b.displayName || b.screenName || ''));
+    const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
+    list = list.slice();
+    if (posterSort === 'name') list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
+    else if (posterSort === 'recent') list.sort((a, b) => (b.latest || '').localeCompare(a.latest || '') || b.count - a.count);
+    else list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b)));   // 'count' (default)
+    return list;
+  }
+  // Platform filter chips for poster mode — only platforms actually present.
+  const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
+  function renderPosterPlatformChips() {
+    const host = document.getElementById('posterPlatformChips');
+    if (!host) return;
+    const present = new Set(namedPosters().map((u) => u.platform).filter(Boolean));
+    for (const p of [...posterPlatforms]) if (!present.has(p)) posterPlatforms.delete(p);   // prune stale
+    const platforms = [...present].sort((a, b) => {
+      const ia = PF_ORDER.indexOf(a), ib = PF_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    host.innerHTML = platforms.map((p) => {
+      const on = posterPlatforms.has(p);
+      return `<button class="sb-chip${on ? ' active' : ''}" data-platform="${escapeAttr(p)}"><span class="pf-dot ${p}"></span>${escapeHtml(PF_NAME[p] || p)}</button>`;
+    }).join('');
   }
   function renderPosters(keepLimit) {
     const grid = document.getElementById('posterGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
+    renderPosterPlatformChips();
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
     syncBrowseBar();
@@ -3906,6 +3940,16 @@
     if (!card) return;
     const u = posterList[parseInt(card.dataset.index, 10)];
     if (u) openPosterPosts(u);
+  });
+  // Poster-mode sort + platform filter (sidebar, shown only while browsing posters).
+  { const ps = document.getElementById('posterSortSelect');
+    if (ps) ps.addEventListener('change', () => { posterSort = ps.value; renderPosters(); }); }
+  document.getElementById('posterPlatformChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.sb-chip[data-platform]');
+    if (!chip) return;
+    const p = chip.dataset.platform;
+    if (posterPlatforms.has(p)) posterPlatforms.delete(p); else posterPlatforms.add(p);
+    renderPosters();
   });
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)

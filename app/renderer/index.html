@@ -596,6 +596,11 @@
     .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
     .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
     .iv-poster-head .iv-poster-name { font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Poster-mode sidebar controls: only while browsing posters. */
+    #posterControls { display: none; }
+    body.browse-posters #posterControls { display: block; }
+    #posterControls .poster-pf-title { margin-top: 14px; }
+    #posterControls #posterPlatformChips { margin-top: 6px; }
     /* Mode visibility: the body class is the single source of truth (an inline
        display set by renderPosts, or .poster-grid's display:grid, would otherwise
        beat the [hidden] attribute — so use !important here). */
@@ -1593,6 +1598,18 @@
               <option value="likes-pct"></option>
             </select>
           </div>
+        </div>
+        <!-- Poster-mode controls (sort + platform filter). Shown only while
+             browsing posters (CSS body.browse-posters); mirrors the post sidebar. -->
+        <div class="sb-section" id="posterControls">
+          <div class="sb-title" id="sbPosterSortTitle"></div>
+          <select id="posterSortSelect">
+            <option value="count"></option>
+            <option value="name"></option>
+            <option value="recent"></option>
+          </select>
+          <div class="sb-title poster-pf-title" id="sbPosterPlatformTitle"></div>
+          <div class="sb-chips" id="posterPlatformChips"></div>
         </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
              with that category's values (multi-select, stays open). The badge
