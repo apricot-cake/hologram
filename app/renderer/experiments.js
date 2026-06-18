@@ -14,11 +14,12 @@
 
   // --- 注入CSS（style-src 'unsafe-inline' は許可されている） ---
   var css = [
-    /* グリッド背景: appBody の地に方眼。線色は --text の7%混色でテーマ自動追従 */
+    /* グリッド背景: appBody の地に方眼。線色は --text の混色でテーマ自動追従。
+       ガラス越しに透けて見えるよう濃いめ（薄いと屈折させる対象が無く透けない）。 */
     'body.exp-grid #appBody {',
     '  background-image:',
-    '    linear-gradient(to right, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px),',
-    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1px);',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px);',
     '  background-size: 26px 26px;',
     '}',
     /* ガラスサイドバー: 背後のグリッドを「透かす」=読み抜けるレンズに寄せる。
@@ -26,7 +27,7 @@
        （feTurbulence→feDisplacementMap で背後を実際に歪ませる）。frost(blur)は背後を隠す
        ので使わない。これでグリッドが歪んで透ける本物のガラスになる。 */
     'body.exp-glass-sb #sidebar {',
-    '  background-color: color-mix(in srgb, var(--sidebar-bg) 42%, transparent);',
+    '  background-color: color-mix(in srgb, var(--sidebar-bg) 35%, transparent);',
     '  -webkit-backdrop-filter: url(#liquidGlass) saturate(155%);',
     '  backdrop-filter: url(#liquidGlass) saturate(155%);',
     '}',
