@@ -121,7 +121,15 @@
     }
     .tab-new:hover { background: var(--hover); color: var(--text); }
     .tab-rename-input { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; border: none; outline: none; background: transparent; color: inherit; padding: 0; user-select: text; /* parent .tab-item is user-select:none */ }
-    #appBody { display: flex; flex: 1; min-height: 0; }
+    #appBody {
+      display: flex; flex: 1; min-height: 0;
+      /* 背景グリッド（方眼）。線色は --text 混色でライト/ダーク自動追従。26px セル。
+         コンテンツの背後に薄く敷く控えめなテクスチャ。 */
+      background-image:
+        linear-gradient(to right, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
 
     /* --- Single left sidebar (Claude-Desktop style): brand + mode nav at the
        top, then the active mode's controls below. One column, no second rail. --- */
@@ -2318,7 +2326,5 @@
   <script src="search.js"></script>
   <script src="viewer.js"></script>
   <script src="shell.js"></script>
-  <!-- デザイン実験トグル（グリッド背景/ガラスサイドバー・隔離）。撤去時はこの行とファイルを削除。 -->
-  <script src="experiments.js"></script>
 </body>
 </html>
