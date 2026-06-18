@@ -3821,6 +3821,7 @@
   let posterList = [];
   let posterSort = 'count';          // 'count' | 'name' | 'recent'
   let posterPlatforms = new Set();   // active platform filter (empty = all)
+  let posterWorkGroups = [];         // recent works shown in the poster inspector
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
     return s ? escapeHtml(s[0].toUpperCase()) : '?';
@@ -3907,6 +3908,17 @@
     const pfName = u.platform ? (PF_NAME[u.platform] || u.platform) : '';
     const avatarImg = u.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(u.avatarFile)}" alt="">` : '';
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
+    // Recent works: group this poster's posts (newest first) and preview the lead
+    // image of each. Click → open that work in the gallery (over the inspector).
+    posterWorkGroups = groupRecords(allPosts.filter((p) => userKey(p) === u.key))
+      .sort((a, b) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
+      .slice(0, 6);
+    const worksHtml = posterWorkGroups.length
+      ? `<div class="iv-poster-works">${posterWorkGroups.map((g, i) => {
+          const f = (g.files && g.files[0]) || captureFile(g.rep);
+          return f ? `<img class="iv-poster-thumb" data-work="${i}" src="${fileSrc(f, 200)}" alt="" loading="lazy">` : '';
+        }).join('')}</div>`
+      : '';
     box.innerHTML =
       `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
       `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span></div>` +
@@ -3915,6 +3927,7 @@
       row(MSG.detailPosts, formatCount(u.count)) +
       row(MSG.detailFollowers, u.followers != null ? formatCount(u.followers) : '') +
       row(MSG.detailJoined, u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '') +
+      worksHtml +
       `<div class="iv-insp-actions">` +
       `<a class="iv-insp-open" id="pdPosterPosts">${escapeHtml(MSG.posterViewPosts)} →</a>` +
       `</div>`;
@@ -3925,6 +3938,9 @@
     if (idx >= 0) { const card = document.querySelector('.poster-card[data-index="' + idx + '"]'); if (card) card.classList.add('inspected'); }
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
+    box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
+      t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) openGallery(buildGroupGalleryItems(g), 0); };
+    });
   }
   document.getElementById('posterGrid').addEventListener('click', (e) => {
     const card = e.target.closest('.poster-card');
