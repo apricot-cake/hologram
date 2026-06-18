@@ -55,6 +55,15 @@
   --indigo-700: #4a4490;
   --indigo-800: #3e3978;
 
+  /* ---- Primitive: sky (水色) — the product accent as of 2026-06-18 (replaced
+     indigo). --sky-600 は白文字/✓が乗る FILL 用、淡い 300 は選択リング等の輪郭用。 ---- */
+  --sky-300: #8ad3ec;
+  --sky-400: #4fbfe6;
+  --sky-500: #28a8db;
+  --sky-600: #1397cc;
+  --sky-700: #0f82b3;
+  --sky-800: #0a6e96;
+
   /* ---- Primitive: status ---- */
   --red-500:    #e5484d;
   --red-600:    #d13438;
@@ -97,7 +106,7 @@
 
   --hover:         var(--gray-100);
   --active:        var(--gray-150);
-  --focus-ring:    color-mix(in oklch, var(--indigo-500) 45%, transparent);
+  --focus-ring:    color-mix(in oklch, var(--sky-500) 45%, transparent);
   /* Sidebar rows sit on the Mica gradient; a solid hover washed out where the
      gradient is lightest (near-white top, ユーザー指摘). A translucent darken
      keeps the hover contrast uniform down the whole gradient. */
@@ -124,20 +133,22 @@
      it. Dark chips already clear their bg, so dark keeps the soft --border. */
   --chip-border:   var(--gray-300);
 
-  /* Indigo accent, TWO steps. --accent is the DARK step: white text/✓ rides on
+  /* Sky (水色) accent, TWO steps. --accent is the FILL step: white text/✓ rides on
      it (primary button, selection check), and it reads as colored text on light
      (links, focus). --accent-soft is the PALE step for outlines only (selection
-     ring, logo tick) where nothing rides on top. */
-  --accent:         var(--indigo-700);
-  --accent-hover:   var(--indigo-800);
+     ring, logo tick) where nothing rides on top. NB: 水色 is lighter than the old
+     indigo, so white-on-accent contrast is lower (~3:1 vs 8:1) — sky-600 keeps the
+     hue while staying usable for ✓/large primary text. */
+  --accent:         var(--sky-600);
+  --accent-hover:   var(--sky-700);
   --accent-fg:      #ffffff;
   /* Accent as FOREGROUND/TEXT (links, hover labels, active-row ink, accent icons).
      Distinct from --accent because --accent is tuned as a FILL (white rides on it);
      reused as text it's too dark on the dark surface (dark indigo-600 = 2.88:1 —
      user hit this on the reset hover). Light keeps indigo-700 (8.3:1 on white);
      dark uses the lighter indigo-300 (7.4:1). Guarded ≥4.5 both themes. */
-  --accent-text:    var(--indigo-700);
-  --accent-soft:    var(--indigo-400);
+  --accent-text:    var(--sky-800);
+  --accent-soft:    var(--sky-300);
   /* "subtle/border" are now MONOTONE: active filter/tag/workspace/query pills use
      grey contrast, not an accent tint (DESIGN.md「モノトーン基調＋機能アクセント」).
      The names are kept so the many consumers don't have to change. */
@@ -204,7 +215,7 @@
   --hover:         #2a2d33;
   --active:        #34373d;
   --sidebar-row-hover: rgba(255, 255, 255, 0.09);
-  --focus-ring:    color-mix(in oklch, var(--indigo-400) 55%, transparent);
+  --focus-ring:    color-mix(in oklch, var(--sky-500) 55%, transparent);
 
   /* dark: track recessed below the sidebar (#202226), thumb raised above it */
   --seg-track:     #1a1c20;
@@ -217,13 +228,13 @@
      so the soft border suffices (no light-on-light problem). */
   --chip-border:   var(--border);
 
-  --accent:         var(--indigo-600);
-  --accent-hover:   #6760c4;
+  --accent:         var(--sky-500);
+  --accent-hover:   var(--sky-400);
   --accent-fg:      #ffffff;
-  /* Dark accent-as-text: the lighter indigo-300 (7.4:1 on the dark surface), NOT
-     the fill-tuned --accent (indigo-600 = 2.88:1, unreadable as text). See light note. */
-  --accent-text:    var(--indigo-300);
-  --accent-soft:    var(--indigo-300);
+  /* Dark accent-as-text: the lighter sky-300 (high contrast on the dark surface),
+     NOT the fill-tuned --accent (too low as text). See light note. */
+  --accent-text:    var(--sky-300);
+  --accent-soft:    var(--sky-400);
   /* monotone active (grey contrast over the dark sidebar), not an accent tint */
   --accent-subtle:  #2d323c;
   --accent-subtle-fg: var(--text-strong);

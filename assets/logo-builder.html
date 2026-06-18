@@ -15,14 +15,14 @@
   .vv{font-size:11px;color:#475569;min-width:34px;font-variant-numeric:tabular-nums;}
   button{padding:5px 11px;border-radius:999px;border:1px solid #d4dbe5;background:#fff;color:#475569;font-size:12px;cursor:pointer;}
   button.on{border-color:#0f172a;color:#0f172a;font-weight:600;}
-  .sl{width:118px;accent-color:#6f68c8;cursor:pointer;}
+  .sl{width:118px;accent-color:#28a8db;cursor:pointer;}
   .modebtn{margin-left:auto;}
   .banner{display:flex;align-items:center;gap:26px;padding:32px 38px;border-radius:14px;border:1px solid;transition:background .15s,border-color .15s;}
   .wm{font-size:38px;font-weight:500;letter-spacing:-.01em;line-height:1;font-family:'IBM Plex Mono',monospace;}
   .tag{font-size:15px;font-weight:500;margin-top:9px;}
   .sub{font-size:12.5px;line-height:1.65;margin-top:6px;max-width:400px;}
   .exp{margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-  .exp button{background:#6f68c8;color:#fff;border:none;padding:8px 16px;font-weight:600;border-radius:8px;}
+  .exp button{background:#28a8db;color:#fff;border:none;padding:8px 16px;font-weight:600;border-radius:8px;}
   .exp .alt{background:#475569;}
   #msg{font-size:12px;color:#16a34a;}
   textarea{width:100%;height:120px;margin-top:10px;font-family:monospace;font-size:11px;border:1px solid #d4dbe5;border-radius:8px;padding:10px;box-sizing:border-box;}
@@ -76,14 +76,14 @@
     return bracket(gap,ink)+'<g transform="translate(36,28) scale('+size+') translate(-36,-28)">'+glyph(ac)+'</g>';
   }
   function iconSVG(){
-    var ink=(mode==='light')?'#23222c':'#e9e7f3',ac=(mode==='light')?'#6f68c8':'#a59ee8';
+    var ink=(mode==='light')?'#23222c':'#e9e7f3',ac=(mode==='light')?'#28a8db':'#8ad3ec';
     var inner='<g transform="translate('+(36+dx)+','+(28+dy)+') scale('+gs+') translate(-36,-28)">'+svgBody(ink,ac)+'</g>';
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 56" role="img" aria-label="corpus">\n  '+inner+'\n</svg>';
   }
   function apply(){
     var T=(mode==='light')
-      ?{ink:'#23222c',ac:'#6f68c8',panel:'#ffffff',bd:'#e6e8ee',wm:'#1a1a24',tag:'#1a1a24',sub:'#5a5f6b'}
-      :{ink:'#e9e7f3',ac:'#a59ee8',panel:'#16171a',bd:'#2a2a30',wm:'#f0eff7',tag:'#f0eff7',sub:'#9aa0ac'};
+      ?{ink:'#23222c',ac:'#28a8db',panel:'#ffffff',bd:'#e6e8ee',wm:'#1a1a24',tag:'#1a1a24',sub:'#5a5f6b'}
+      :{ink:'#e9e7f3',ac:'#8ad3ec',panel:'#16171a',bd:'#2a2a30',wm:'#f0eff7',tag:'#f0eff7',sub:'#9aa0ac'};
     svg.innerHTML='<g transform="translate('+(36+dx)+','+(28+dy)+') scale('+gs+') translate(-36,-28)">'+svgBody(T.ink,T.ac)+'</g>';
     banner.style.background=T.panel;banner.style.borderColor=T.bd;
     wm.style.color=T.wm;tag.style.color=T.tag;sub.style.color=T.sub;
