@@ -33,13 +33,22 @@
     'body.exp-glass-sb #sidebar {',
     '  background-color: transparent;',
     '  background-image:',
-    '    linear-gradient(color-mix(in srgb, var(--sidebar-bg) 48%, transparent), color-mix(in srgb, var(--sidebar-bg) 48%, transparent)),',
-    '    linear-gradient(to right, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1px),',
-    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1px);',
+    '    linear-gradient(color-mix(in srgb, var(--sidebar-bg) 33%, transparent), color-mix(in srgb, var(--sidebar-bg) 33%, transparent)),',
+    '    linear-gradient(to right, color-mix(in srgb, var(--text) 10%, transparent) 1px, transparent 1px),',
+    '    linear-gradient(to bottom, color-mix(in srgb, var(--text) 10%, transparent) 1px, transparent 1px);',
     '  background-size: auto, 26px 26px, 26px 26px;',
     '  background-attachment: fixed;',   /* 背景グリッドと同位相に揃える（地続き） */
-    '  -webkit-backdrop-filter: url(#glassRefract) saturate(150%);',
-    '  backdrop-filter: url(#glassRefract) saturate(150%);',
+    /* フィルを薄く＋縁の光（rim・inset ハイライト・斜めスペキュラ）でガラス感を出す。
+       平らな半透明塗りだとガラスに見えない＝DESIGN.md の .glass-* と同じ縁づくり。 */
+    '  -webkit-backdrop-filter: url(#glassRefract) saturate(170%) brightness(1.05);',
+    '  backdrop-filter: url(#glassRefract) saturate(170%) brightness(1.05);',
+    '  border: 1px solid var(--glass-rim);',
+    '  box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop), var(--shadow-md);',
+    '  isolation: isolate;',
+    '}',
+    'body.exp-glass-sb #sidebar::before {',
+    '  content: ""; position: absolute; inset: 0; border-radius: inherit;',
+    '  pointer-events: none; z-index: -1; background: var(--glass-sheen);',
     '}',
     /* フライアウト/メニューも被る要素なので同様に濃いグリッドを敷く（グリッド背景ON時）。
        基底の --glass-bg 半透明フィルの下に濃いグリッド。backdrop の屈折は基底CSSのまま。 */
