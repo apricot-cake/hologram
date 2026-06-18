@@ -1003,8 +1003,15 @@
     if (!document.contains(e.target)) return;
     if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
         !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) hideQfPop();
+    // date/eng popovers (no backdrop now): close on outside click, but NOT on a
+    // filter-row click — those switch to the new row (handled by the row handler).
+    const dp = document.getElementById('qfDatePopover');
+    const ep = document.getElementById('qfEngPopover');
+    if ((dp.style.display === 'block' || ep.style.display === 'block') &&
+        !dp.contains(e.target) && !ep.contains(e.target) &&
+        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) closeAllMenus();
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideQfPop(); closeAllMenus(); } });
 
   // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
   const qbHelpPop = document.createElement('div');
@@ -1058,28 +1065,21 @@
     }
   });
 
-  // Menu/popover backdrop
-  let qfBackdrop = null;
-
+  // 日付/エンゲージのポップオーバーは値フライアウト(qfPop)と同じ「行クリックで開閉・
+  // 外側クリックで閉じる」挙動に統一する。旧実装は全画面 .qf-backdrop(z999) が
+  // クリックを奪い、開いている間は他の行へワンクリックで切り替えられなかった
+  // （クリックが backdrop に吸われて closeAllMenus するだけ＝ユーザー報告のバグ）。
+  // backdrop は撤去し、下の document クリックハンドラ + 行ハンドラで開閉する。
   function closeAllMenus() {
     document.getElementById('qfDatePopover').style.display = 'none';
     document.getElementById('qfEngPopover').style.display = 'none';
-    if (qfBackdrop) { qfBackdrop.remove(); qfBackdrop = null; }
-  }
-
-  function createBackdrop() {
-    closeAllMenus();
-    qfBackdrop = document.createElement('div');
-    qfBackdrop.className = 'qf-backdrop';
-    qfBackdrop.addEventListener('click', closeAllMenus);
-    document.body.appendChild(qfBackdrop);
   }
 
   // Date popover
   let editingDateIdx = null;
 
   function openDatePopover(idx) {
-    createBackdrop();
+    closeAllMenus();   // close the other popover if open (no backdrop anymore)
     editingDateIdx = idx;
     const existing = idx != null ? activeFilters[idx] : null;
     const popover = document.getElementById('qfDatePopover');
@@ -1145,7 +1145,7 @@
   let editingEngIdx = null;
 
   function openEngPopover(idx) {
-    createBackdrop();
+    closeAllMenus();   // close the other popover if open (no backdrop anymore)
     editingEngIdx = idx;
     const existing = idx != null ? activeFilters[idx] : null;
     const popover = document.getElementById('qfEngPopover');
@@ -1233,14 +1233,16 @@
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   document.getElementById('filterRows').addEventListener('click', (e) => {
     const sub = e.target.closest('[data-tag-group]');
-    if (sub) {
-      const gid = sub.dataset.tagGroup;
-      showQfPopAt('tag', sub, gid === '__all' ? null : gid);
-      return;
-    }
     const row = e.target.closest('[data-qfrow]');
-    if (!row) return;
-    const cat = row.dataset.qfrow;
+    if (!sub && !row) return;
+    const cat = sub ? 'tag' : row.dataset.qfrow;
+    const dp = document.getElementById('qfDatePopover');
+    const ep = document.getElementById('qfEngPopover');
+    // Re-clicking the row whose popover is already open = toggle it closed.
+    if (cat === 'date' && dp.style.display === 'block') { closeAllMenus(); return; }
+    if (cat === 'engagement' && ep.style.display === 'block') { closeAllMenus(); return; }
+    closeAllMenus();   // switching rows closes any open date/eng popover first
+    if (sub) { const gid = sub.dataset.tagGroup; showQfPopAt('tag', sub, gid === '__all' ? null : gid); return; }
     if (cat === 'tag' && tagGroups.length) { hideQfPop(); toggleTagGroupsCollapsed(); return; }
     if (cat === 'date') { hideQfPop(); openDatePopover(null); return; }
     if (cat === 'engagement') { hideQfPop(); openEngPopover(null); return; }
