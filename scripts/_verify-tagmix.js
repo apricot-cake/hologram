@@ -1,12 +1,14 @@
 'use strict';
-// Throwaway: verify per-tag-chip AND/OR cycling with mixing.
-// Seeds: p1[A], p2[A,B], p3[B,C], p4[C].
-//   click A      -> A=OR    -> p1,p2          = 2
-//   click A again-> A=AND   -> p1,p2          = 2 (chip shows ＋, class .and)
-//   click B      -> +B=OR   -> A必須 ∧ Bいずれか -> p2 = 1  (mixed!)
-//   click B again-> B=AND   -> A∧B            -> p2 = 1
-//   click A      -> A off   -> B=AND          -> p2,p3 = 2
-//   active-bar pill for AND tag carries ＋ prefix.
+// Throwaway: verify the inline drag query builder (docs/design-query-builder.md 改訂③).
+// The faceted per-type select was removed; conditions are flat at the top level and
+// combine with AND by default, the AND/OR connector toggles on click, and ≠ negates.
+// Seeds: p1[A], p2[A], p3[A,B], p4[].
+//   open tag flyout, click A -> [A]            -> p1,p2,p3      = 3
+//   click B                  -> [A かつ B]      -> A∧B = p3      = 1   (top-level AND default)
+//   click connector          -> [A または B]    -> A∨B = p1..p3  = 3   (connector is clickable)
+//   click connector again    -> [A かつ B]      -> A∧B           = 1
+//   ≠ on the B pill          -> [A かつ ≠B]     -> A∧¬B = p1,p2  = 2   (negation)
+//   structure: no .qc-op-sel / no .qc-group / pills are draggable / has .qb-op
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -20,7 +22,7 @@ fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-const tagSets = [['A'], ['A', 'B'], ['B', 'C'], ['C']];
+const tagSets = [['A'], ['A'], ['A', 'B'], []];
 for (let i = 0; i < 4; i++) {
   const id = '170000000000' + i + '-tm' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
@@ -35,47 +37,33 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  await waitFor(() => cards() >= 4);
-  localStorage.setItem('corpus.pinnedTags', JSON.stringify(['A', 'B', 'C']));
-  document.getElementById('searchBox').dispatchEvent(new Event('input', { bubbles: true }));
-  await wait(80);   // re-render → pinned chips appear
-  const tagChip = (v) => document.querySelector('#sbPinnedTags .sb-chip[data-filter-value="' + v + '"]');
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pillByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-pill')].find((p) => (p.querySelector('.qb-pill-label') || {}).textContent === t);
+  await waitFor(() => cards() >= 4);
 
-  // チップは単純トグル。「かつ」入りはピルをドラッグして行う（DnDを実打鍵）。
-  const dragPillTo = (pillText, zoneName) => {
-    const pill = [...document.querySelectorAll('#queryChips .sb-active-chip')].find(c => c.textContent === pillText);
-    const zone = document.querySelector('#queryChips .qc-zone[data-zone="' + zoneName + '"]');
-    const dt = new DataTransfer();
-    pill.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-  };
-  click(tagChip('A')); await wait(60);
-  const orA = cards();                                     // 2（A=または）
-  dragPillTo('#A', 'and'); await wait(80);
-  const andA = cards();                                    // 2（A=かつ）
-  const chipAnd = tagChip('A').classList.contains('and') && tagChip('A').textContent.startsWith('＋');
-  const andField = (document.querySelector('#queryChips .qc-zone[data-zone="and"] .qc-zone-label') || {}).textContent === 'かつ' &&
-    !!document.querySelector('#queryChips .qc-zone[data-zone="and"] .sb-active-chip');
-  click(tagChip('B')); await wait(60);
-  const mixed = cards();                                   // 1 (A必須 ∧ Bいずれか)
-  dragPillTo('#B', 'and'); await wait(80);
-  const bothAnd = cards();                                 // 1 (A∧B)
-  click(tagChip('A')); await wait(60);                     // トグル＝解除
-  const offA = cards();                                    // 2 (B必須)
+  // タグ行クリックで全タグフライアウトを開き、A・B を順に選ぶ（フライアウトは開いたまま）
+  click(document.querySelector('#filterRows [data-qfrow="tag"]')); await wait(80);
+  click(document.querySelector('.qf-pop [data-qfval="A"]')); await wait(80);
+  const onlyA = cards();                                 // [A] → 3
+  click(document.querySelector('.qf-pop [data-qfval="B"]')); await wait(80);
+  const andAB = cards();                                 // top-level AND default → A∧B → 1
+  // 連結語（かつ/または）はクリックで一括トグル
+  const op = () => document.querySelector('#queryChips .qb-op-root');
+  const opShown = !!op();
+  click(op()); await wait(80);
+  const orAB = cards();                                  // A∨B → 3
+  click(op()); await wait(80);
+  const andAB2 = cards();                                // back to A∧B → 1
+  // ≠ で B を否定（A かつ ≠B）
+  const bPill = pillByLabel('B');
+  click(bPill.querySelector('.qb-neg-btn')); await wait(80);
+  const andNotB = cards();                               // A∧¬B → p1,p2 → 2
+  const bNeg = !!pillByLabel('B') && pillByLabel('B').classList.contains('neg');
 
-  // --- connector pulldown: (AND field) ⟨かつ/または⟩ (OR field) ---
-  click(tagChip('C')); await wait(60);                     // B=and, C=or
-  const joinAndCount = cards();                            // B必須 ∧ C → p3 = 1
-  const joinSel = document.getElementById('qcJoinSel');
-  const joinShown = !!joinSel && joinSel.value === 'and';
-  joinSel.value = 'or'; joinSel.dispatchEvent(new Event('change', { bubbles: true })); await wait(60);
-  const joinOrCount = cards();                             // B∨C → p2,p3,p4 = 3
-  const joinValAfter = (document.getElementById('qcJoinSel') || {}).value;
-  // pills are draggable between the two always-visible zones
-  const zones = document.querySelectorAll('#queryChips .qc-zone').length === 2;
-  const draggable = !!document.querySelector('#queryChips .sb-active-chip[draggable="true"]');
-  return { orA, andA, chipAnd, andField, mixed, bothAnd, offA, joinAndCount, joinShown, joinOrCount, joinValAfter, zones, draggable };
+  const noOpSel = !document.querySelector('#queryChips .qc-op-sel');
+  const noGroupCls = !document.querySelector('#queryChips .qc-group');
+  const pillsDraggable = [...document.querySelectorAll('#queryChips .qb-pill')].every((p) => p.getAttribute('draggable') === 'true');
+  return { onlyA, andAB, opShown, orAB, andAB2, andNotB, bNeg, noOpSel, noGroupCls, pillsDraggable };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -86,12 +74,10 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.orA === 2 && r.andA === 2 && r.chipAnd === true && r.andField === true &&
-    r.mixed === 1 && r.bothAnd === 1 && r.offA === 2 &&
-    r.joinAndCount === 1 && r.joinShown === true && r.joinOrCount === 3 && r.joinValAfter === 'or' &&
-    r.zones === true && r.draggable === true;
-  console.log(`orA=${r.orA} andA=${r.andA} chipAnd=${r.chipAnd} andField=${r.andField} mixed=${r.mixed} bothAnd=${r.bothAnd} offA=${r.offA}` +
-    ` joinAnd=${r.joinAndCount} joinShown=${r.joinShown} joinOr=${r.joinOrCount} joinVal=${r.joinValAfter} zones=${r.zones} drag=${r.draggable}`);
+  const ok = r.onlyA === 3 && r.andAB === 1 && r.opShown === true && r.orAB === 3 && r.andAB2 === 1 &&
+    r.andNotB === 2 && r.bNeg === true && r.noOpSel === true && r.noGroupCls === true && r.pillsDraggable === true;
+  console.log(`onlyA=${r.onlyA} andAB=${r.andAB} opShown=${r.opShown} orAB=${r.orAB} andAB2=${r.andAB2}` +
+    ` andNotB=${r.andNotB} bNeg=${r.bNeg} noOpSel=${r.noOpSel} noGroupCls=${r.noGroupCls} pillsDraggable=${r.pillsDraggable}`);
   console.log(ok ? 'TAGMIX_VERIFY_PASS' : 'TAGMIX_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

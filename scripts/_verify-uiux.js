@@ -137,12 +137,11 @@ const evalSeeded = `(async () => {
   const guardModal = document.activeElement !== sb;
   document.getElementById('settingsClose').click(); await wait(60);
 
-  // --- query builder: ⓘ help has 6 rows; no hover tooltips on the builder ---
+  // --- query builder: ⓘ help has 6 rows; the old faceted structure is gone (改訂③) ---
   document.getElementById('qbHelpBtn').click(); await wait(60);
   const helpRows = document.querySelectorAll('.qb-help-pop .qh-row').length === 6;
   document.getElementById('qbHelpBtn').click(); await wait(40);
-  const noQbTips = ![...document.querySelectorAll('#queryChips .qc-zone, #queryChips .qc-join-sel')]
-    .some((el) => el.hasAttribute('title'));
+  const noQbTips = !document.querySelector('#queryChips .qc-group, #queryChips .qc-op-sel, #queryChips [data-qb-open]');
 
   // --- filtered-empty CTA ---
   sb.value = 'zzz該当なしzzz'; sb.dispatchEvent(new Event('input', { bubbles: true })); await wait(150);

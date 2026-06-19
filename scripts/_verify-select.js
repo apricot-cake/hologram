@@ -184,26 +184,20 @@ const evalJs = `(async () => {
   const menuClosed = !menu.classList.contains('show');
 
   console.log('CHK sec-mix');
-  // --- Folders join the AND/OR expression like tags: F={c0,c1}, G={c0} ---
+  // --- Folders join the boolean query like any condition: F={c0,c1}, G={c0}.
+  //     改訂③: top level = AND by default; the AND/OR between them toggles on click. ---
   const cardCount = () => grid.querySelectorAll('.post-card').length;
   const chipByName = (n) => [...document.querySelectorAll('#postFolderChips .sb-chip')].find((c) => c.textContent.includes(n));
   chipByName('F').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
-  const fOr = cardCount() === 2;                       // F(or) → 2
+  const fOr = cardCount() === 2;                       // F alone → 2
   chipByName('G').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
-  const fgOr = cardCount() === 2;                      // F∨G → 2
-  // G を「かつ」へはピルのドラッグで移す（チップのサイクルは廃止済み）
-  {
-    const pill = [...document.querySelectorAll('#queryChips .sb-active-chip')].find(c => c.textContent === 'G');
-    const zone = document.querySelector('#queryChips .qc-zone[data-zone="and"]');
-    const dt = new DataTransfer();
-    pill.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-  }
-  await wait(80);
-  const gAndF = cardCount() === 1;                     // (G)∧(F) → c0 = 1
-  const js = document.getElementById('qcJoinSel');
-  js.value = 'or'; js.dispatchEvent(new Event('change', { bubbles: true })); await wait(60);
-  const gOrF = cardCount() === 2;                      // (G)∨(F) → 2
+  const gAndF = cardCount() === 1;                     // F∧G (top-level AND default) → c0 = 1
+  // click the AND/OR connector to flip the top-level operator to または(OR)
+  const opBtn = () => document.querySelector('#queryChips .qb-op-root');
+  opBtn().dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(80);
+  const gOrF = cardCount() === 2;                      // F∨G → 2
+  opBtn().dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
+  const fgOr = cardCount() === 1;                      // back to F∧G → 1
 
   return { bodyNoSelect, ringSelects, shiftRange, ringDeselects, ctrlA, cleared, inputGuard, ringHollow,
     modeOn, bodyTogglesInMode, imgTogglesInMode, ringAlwaysOn, btnsHidden, imgCursorPointer, modeExits,

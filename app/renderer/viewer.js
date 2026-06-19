@@ -38,9 +38,11 @@
     ctxWsRemove: _s('ctxWsRemove'),
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
+    qbAddGroup: _s('qbAddGroup'),
+    qbAddGroupTip: _s('qbAddGroupTip'),
+    qbTipNegate: _s('qbTipNegate'),
+    qbTipOp: _s('qbTipOp'),
     tileOverlay: _s('tileOverlay'),
-    qcDropHere: _s('qcDropHere'),
-    qcDropMove: _s('qcDropMove'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
     qbHelp2: _s('qbHelp2'),
@@ -576,63 +578,65 @@
     ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QC_GLYPH[type]}</svg>`
     : '');
 
+  // Inline query builder: render queryTree as draggable pills + parenthesised
+  // groups directly on the bar (docs/design-query-builder.md 改訂③). Fills
+  // qbNodeMap so drag/drop + the bar click handler can resolve data-nid → node.
   function renderQueryChips() {
     const container = document.getElementById('queryChips');
-    const prevLabels = new Set(Array.from(container.querySelectorAll('.sb-active-chip')).map(el => el.textContent.trim()));
+    const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-pill')).map(el => el.textContent.trim()));
     const bar = document.getElementById('postActiveBar');
-    // クエリビルダ: 「かつ」「または」の2フィールドを常時表示し、全フィルタを
-    // 要素（ピル）として配置。ピルはドラッグで他方のフィールドへ移動できる。
-    // 式 = (かつフィールド) ⟨かつ/または⟩ (またはフィールド)。
     const sbEl = document.getElementById('searchBox');
     const searchVal = sbEl ? sbEl.value.trim() : '';
-    // ビルダは常時表示（＋フィルタの入口を兼ねるため、空でもバーを出す）。
-    // リセットは「消すものがある」ときだけ（空のバーにボタンが浮かない）。
+    // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
     if (bar) bar.style.display = '';
     // The query bar is a full-width top bar; the floating sidebar offsets its sticky
     // top by this height. Measure after layout (chips can wrap to多段).
     if (bar) requestAnimationFrame(() => document.documentElement.style.setProperty('--activebar-h', bar.offsetHeight + 'px'));
     const resetBtn = document.getElementById('postResetBtn');
-    if (resetBtn) resetBtn.style.display = (activeFilters.length || searchVal) ? '' : 'none';
-    let special = '';
-    if (searchVal) special += `<span class="sb-active-chip qc-search" data-special="search">${qcGlyph('search')}${escapeHtml(searchVal)}</span>`;
-    const pill = (i, label, type) => `<span class="sb-active-chip qc-${type}" draggable="true" data-filter-idx="${i}">${qcGlyph(type)}${escapeHtml(label)}</span>`;
-    const andPills = [];
-    const orPills = [];
-    activeFilters.forEach((f, i) => {
-      (f.mode === 'or' ? orPills : andPills).push(pill(i, filterLabel(f), f.type));
-    });
-    // フィールドはラベルを箱の中に持つ（外置きだと束ねている感が出ない）。
-    // さらにピルの間に小さく「かつ/または」を挟み、「この箱の中は全部この
-    // 演算子で結合」だと一目で読めるようにする。
-    // 空フィールド: 反対側にピルがあれば「ここへドラッグで移動」、無ければ（なし）。
-    const zone = (name, pills, otherHas) => {
-      const word = name === 'and' ? MSG.qcJoinAnd : MSG.qcJoinOr;
-      const body = pills.length
-        ? pills.join(`<span class="qc-op">${escapeHtml(word)}</span>`)
-        : `<span class="qc-zone-empty">${otherHas ? MSG.qcDropMove : MSG.qcDropHere}</span>`;
-      // No hover tooltips here — the ⓘ help popover is the single explainer.
-      return `<span class="qc-zone" data-zone="${name}">` +
-        `<span class="qc-zone-label">${escapeHtml(word)}</span>` + body + `</span>`;
+    const hasQuery = queryTree.children.length > 0;
+    if (resetBtn) resetBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
+
+    qbNodeMap = new Map();
+    let idc = 0;
+    const NE = '≠';
+    const opWord = (op) => escapeHtml(op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd);
+    // A condition leaf → draggable pill (with hover ≠); a group → its members
+    // joined by clickable operator connectors, wrapped in literal parens (root has
+    // no parens and its connectors are .qb-op-root, fixed at the top level).
+    const renderNode = (node, isRoot) => {
+      const id = 'n' + (idc++);
+      qbNodeMap.set(id, node);
+      if (node.kind === 'cond') {
+        return `<span class="qb-pill sb-active-chip qc-${node.type}${node.neg ? ' neg' : ''}" draggable="true" data-nid="${id}">` +
+          qcGlyph(node.type) + (node.neg ? `<span class="qb-ne">${NE}</span>` : '') +
+          `<span class="qb-pill-label">${escapeHtml(filterLabel(node))}</span>` +
+          `<button type="button" class="qb-neg-btn${node.neg ? ' on' : ''}" data-act="neg" data-nid="${id}" title="${escapeAttr(MSG.qbTipNegate)}" tabindex="-1">${NE}</button>` +
+          `</span>`;
+      }
+      const opCls = isRoot ? 'qb-op qb-op-root' : 'qb-op';
+      const conn = `<button type="button" class="${opCls}" data-act="op" data-nid="${id}" title="${escapeAttr(MSG.qbTipOp)}"${isRoot ? '' : ' draggable="true"'}>${opWord(node.op)}</button>`;
+      const inner = node.children.map((c) => renderNode(c, false)).join(conn);
+      if (isRoot) return inner;   // root: bare members, no parens / no negation
+      return `<span class="qb-grp${node.neg ? ' neg' : ''}" data-nid="${id}">` +
+        `<button type="button" class="qb-neg-btn qb-neg-grp${node.neg ? ' on' : ''}" data-act="neggrp" data-nid="${id}" title="${escapeAttr(MSG.qbTipNegate)}" tabindex="-1">${NE}</button>` +
+        `<span class="qb-paren qb-paren-l" draggable="true">${node.neg ? NE : ''}(</span>` +
+        inner +
+        `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
+        `</span>`;
     };
-    const joinSel = `<select class="qc-join-sel" id="qcJoinSel">` +
-      `<option value="and"${tagJoin !== 'or' ? ' selected' : ''}>${MSG.qcJoinAnd}</option>` +
-      `<option value="or"${tagJoin === 'or' ? ' selected' : ''}>${MSG.qcJoinOr}</option></select>`;
-    container.innerHTML = special +
-      zone('and', andPills, orPills.length > 0) +
-      joinSel +
-      zone('or', orPills, andPills.length > 0);
+    const searchSeg = searchVal
+      ? `<span class="sb-active-chip qc-search" data-special="search">${qcGlyph('search')}${escapeHtml(searchVal)}</span>` +
+        (hasQuery ? `<span class="qc-conn">${escapeHtml(MSG.qcJoinAnd)}</span>` : '')
+      : '';
+    const addBtn = hasQuery
+      ? `<button type="button" class="qb-group-add" data-qb-group-add title="${escapeAttr(MSG.qbAddGroupTip)}">( )</button>`
+      : '';
+    container.innerHTML = searchSeg + renderNode(queryTree, true) + addBtn;
     if (!prefersReducedMotion()) {
-      container.querySelectorAll('.sb-active-chip').forEach(el => {
-        if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new');
-      });
+      container.querySelectorAll('.qb-pill').forEach(el => { if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new'); });
     }
-    // Connector (かつ/または): swap the native <select> for the glass custom
-    // dropdown so the OPEN list is glass (cs-pop = glass-frost), matching the
-    // sort/search pulldowns. The bar re-renders often, so prune the detached
-    // previous select from csHosts before enhancing the fresh one.
+    // No custom <select>s in the bar anymore; prune any detached hosts left over.
     for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
-    const jsel = document.getElementById('qcJoinSel');
-    if (jsel) { enhanceSelect(jsel); if (jsel.__csBtn) jsel.__csBtn.classList.add('cs-join-btn'); }
   }
 
   function formatShortDate(dateStr) {
@@ -684,41 +688,61 @@
     updateSidebarTags();
   }
 
+  // Sidebar entry points (flyout / chips / date-eng popovers / folders / workspace)
+  // all add a NEW condition at the TOP level of the tree (改訂③: 新しい条件はトップ
+  // 階層に載る). Structure (groups / nesting) is built only by dragging on the bar.
   function addFilter(filter) {
-    // Prevent exact duplicates
-    const isDup = activeFilters.some(f => {
-      if (f.type !== filter.type) return false;
-      if (filter.type === 'date' || filter.type === 'engagement') return false;
-      return f.value === filter.value;
-    });
-    if (isDup) return;
-    // date + kind are single-valued (択一): a new one replaces the existing.
-    if (filter.type === 'date' || filter.type === 'kind') {
-      activeFilters = activeFilters.filter(f => f.type !== filter.type);
-    }
-    activeFilters.push(filter);
-    renderQueryChips();
-    renderPosts();
+    // date + kind are single-valued (択一): a new one replaces the existing anywhere.
+    if (filter.type === 'date' || filter.type === 'kind') removeCondsMatching((c) => c.type === filter.type);
+    // Prevent exact duplicates (anywhere in the tree).
+    else if (filter.type !== 'engagement' && qHasValue(filter.type, filter.value)) return;
+    queryTree.children.push(Object.assign({ kind: 'cond' }, filter));
+    cleanupTree();
+    afterQueryChange();
   }
 
+  // Remove the condition(s) matching the shadow filter at `index` (called from the
+  // sidebar toggle handlers, which findIndex into activeFilters). Bar-pill removal
+  // targets a specific tree node by id (see the queryChips click handler).
   function removeFilter(index) {
-    activeFilters.splice(index, 1);
-    renderQueryChips();
-    renderPosts();
+    const f = activeFilters[index];
+    if (!f) return;
+    removeCondsMatching((c) => sameLeaf(c, f));
+    afterQueryChange();
   }
 
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
-  // タグ結合・日付・エンゲージも含めて消す。renderPosts() が sidebar の active 状態も同期。
+  // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   function resetAllFilters() {
-    activeFilters = [];
-    tagJoin = 'and';
+    queryTree = emptyTree();
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
-    renderQueryChips();
-    renderPostFolders();
-    renderPosts();
+    afterQueryChange();
   }
   document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
+
+  // Back/forward through the per-tab view history: buttons + Alt+←/→ + mouse
+  // side buttons. Guarded so they never fire while typing, with an overlay open,
+  // or in poster mode (mirrors the Ctrl+A guard convention).
+  document.getElementById('navBackBtn').addEventListener('click', navBack);
+  document.getElementById('navFwdBtn').addEventListener('click', navForward);
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (!navAllowed()) return;
+    e.preventDefault();
+    if (e.key === 'ArrowLeft') navBack(); else navForward();
+  });
+  // Mouse back/forward (buttons 3/4). DOM events fire in the renderer on most
+  // platforms; preventDefault stops any stray in-page navigation.
+  window.addEventListener('mouseup', (e) => {
+    if (e.button !== 3 && e.button !== 4) return;
+    if (!navAllowed()) return;
+    e.preventDefault();
+    if (e.button === 3) navBack(); else navForward();
+  });
 
   // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
   document.getElementById('emptyState').addEventListener('click', (e) => {
@@ -729,47 +753,6 @@
       else resetAllFilters();
     }
     else if (btn.id === 'emptyImportBtn') document.getElementById('importZipInput').click();
-  });
-
-  // ⟨かつ/または⟩ connector (pulldown, delegated — the bar re-renders often)
-  document.getElementById('queryChips').addEventListener('change', (e) => {
-    if (e.target && e.target.id === 'qcJoinSel') {
-      tagJoin = e.target.value === 'or' ? 'or' : 'and';
-      renderPosts();
-    }
-  });
-
-  // Drag a pill between the かつ/または fields to change how it combines.
-  const qcContainer = document.getElementById('queryChips');
-  qcContainer.addEventListener('dragstart', (e) => {
-    const p = e.target.closest && e.target.closest('.sb-active-chip[data-filter-idx]');
-    if (!p) return;
-    e.dataTransfer.setData('text/plain', p.dataset.filterIdx);
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  qcContainer.addEventListener('dragover', (e) => {
-    const z = e.target.closest && e.target.closest('.qc-zone');
-    if (!z) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    z.classList.add('drag-over');
-  });
-  qcContainer.addEventListener('dragleave', (e) => {
-    const z = e.target.closest && e.target.closest('.qc-zone');
-    if (z) z.classList.remove('drag-over');
-  });
-  qcContainer.addEventListener('drop', (e) => {
-    const z = e.target.closest && e.target.closest('.qc-zone');
-    if (!z) return;
-    e.preventDefault();
-    z.classList.remove('drag-over');
-    const f = activeFilters[parseInt(e.dataTransfer.getData('text/plain'), 10)];
-    if (!f) return;
-    const mode = z.dataset.zone === 'or' ? 'or' : 'and';
-    if ((f.mode === 'or') === (mode === 'or')) return;   // same field
-    f.mode = mode;
-    renderPostFolders();   // ＋プレフィクス等の同期（タグ側は updateSidebarState 経由）
-    renderPosts();
   });
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く ----
@@ -784,7 +767,8 @@
     qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
   }
   function qfValues(cat) {
-    const act = (type, v) => activeFilters.some(f => f.type === type && f.value === v);
+    // "on" = this value already exists anywhere in the query tree.
+    const act = (type, v) => qHasValue(type, v);
     switch (cat) {
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
       case 'userKind': return [['media', MSG.userKindMedia], ['plain', MSG.userKindPlain]].map(([v, l]) => ({ v, l, on: act('userKind', v) }));
@@ -985,7 +969,7 @@
       if (i >= 0) {
         removeFilter(i);
       } else if (vtype === 'tag' || vtype === 'folder' || vtype === 'hashtag') {
-        addFilter({ type: vtype, value: v, mode: 'or' });
+        addFilter({ type: vtype, value: v });
       } else if (vtype === 'user') {
         const u = buildUsers().find(x => x.key === v);
         addFilter({ type: 'user', value: v, label: u ? (u.displayName || u.screenName) : v });
@@ -1039,31 +1023,43 @@
   qbHelpBtn.addEventListener('blur', hideQbHelp);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbHelp(); });
 
-  // Chip click handler
+  // Bar interaction (click): toggle a group's operator, negate a pill/group, clear
+  // search, remove a condition, or wrap the whole expression in a group (改訂③).
   document.getElementById('queryChips').addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-active-chip');
-    if (!chip) return;
-    // 特殊ピル（検索・フォルダ）はそれぞれの状態を解除して再描画。
-    if (chip.dataset.special === 'search') {
-      const sb = document.getElementById('searchBox');
-      if (sb) sb.value = '';
-      renderPosts();   // → updateSidebarState → renderQueryChips
+    if (e.target.closest('[data-qb-group-add]')) { wrapAllInGroup(); return; }
+    const opBtn = e.target.closest('.qb-op[data-act="op"]');
+    if (opBtn) { const n = nodeById(opBtn.dataset.nid); if (n) { n.op = opposite(n.op); afterQueryChange(); } return; }
+    const negBtn = e.target.closest('.qb-neg-btn[data-act]');
+    if (negBtn) { const n = nodeById(negBtn.dataset.nid); if (n) { n.neg = !n.neg; afterQueryChange(); } return; }
+    // 検索の特殊ピルは検索を解除。
+    if (e.target.closest('[data-special="search"]')) {
+      const sb = document.getElementById('searchBox'); if (sb) sb.value = '';
+      afterQueryChange();
       return;
     }
-    const idx = parseInt(chip.dataset.filterIdx, 10);
-    const filter = activeFilters[idx];
-    if (!filter) return;
-
-    if (filter.type === 'date') {
-      openDatePopover(idx);
-    } else if (filter.type === 'engagement') {
-      openEngPopover(idx);
-    } else {
-      const wasFolder = filter.type === 'folder';
-      removeFilter(idx);
-      if (wasFolder) renderPostFolders();   // sync the sidebar folder chips
-    }
+    const pill = e.target.closest('.qb-pill');
+    if (!pill) return;
+    const node = nodeById(pill.dataset.nid);
+    if (!node || node.kind !== 'cond') return;
+    // 日付・反応は編集ポップへ。それ以外はクリックでその条件を解除（改訂③）。
+    if (node.type === 'date') { openDatePopover(node); return; }
+    if (node.type === 'engagement') { openEngPopover(node); return; }
+    removeNode(node);
   });
+  // グループ追加ボタン: 今の式ぜんぶを一発で囲う＝ネストのショートカット（押すたび深く）。
+  function wrapAllInGroup() {
+    if (!queryTree.children.length) return;
+    const g = { kind: 'group', op: queryTree.op, neg: false, children: queryTree.children };
+    queryTree = { kind: 'group', op: 'and', neg: false, children: [g] };
+    cleanupTree();   // single-condition wrap collapses (nothing meaningful to group)
+    afterQueryChange();
+  }
+  function removeNode(node) {
+    const pmap = treeParentMap();
+    detachNode(node, pmap);
+    cleanupTree();
+    afterQueryChange();
+  }
 
   // 日付/エンゲージのポップオーバーは値フライアウト(qfPop)と同じ「行クリックで開閉・
   // 外側クリックで閉じる」挙動に統一する。旧実装は全画面 .qf-backdrop(z999) が
@@ -1075,13 +1071,13 @@
     document.getElementById('qfEngPopover').style.display = 'none';
   }
 
-  // Date popover
-  let editingDateIdx = null;
+  // Date popover. editingDateNode = the date cond being edited (null = new).
+  let editingDateNode = null;
 
-  function openDatePopover(idx) {
+  function openDatePopover(node) {
     closeAllMenus();   // close the other popover if open (no backdrop anymore)
-    editingDateIdx = idx;
-    const existing = idx != null ? activeFilters[idx] : null;
+    editingDateNode = node || null;
+    const existing = editingDateNode;
     const popover = document.getElementById('qfDatePopover');
     const anchor = document.querySelector('#filterRows [data-qfrow="date"]');
     const rect = anchor.getBoundingClientRect();
@@ -1094,7 +1090,7 @@
     dateTypeBtn.dataset.field = dateType;
     dateTypeBtn.classList.toggle('active', dateType === 'capturedAt');
 
-    document.getElementById('qfDateDelete').style.display = idx != null ? '' : 'none';
+    document.getElementById('qfDateDelete').style.display = editingDateNode ? '' : 'none';
     document.getElementById('qfDateDelete').textContent = MSG.qfDelete;
     document.getElementById('qfDateApply').textContent = MSG.qfApply;
 
@@ -1122,32 +1118,28 @@
     const to = document.getElementById('qfDateTo').value;
     const dateField = document.getElementById('qfDateType').dataset.field;
     if (!from && !to) { closeAllMenus(); return; }
-    if (editingDateIdx != null) {
-      activeFilters[editingDateIdx] = { type: 'date', dateField, from, to };
+    if (editingDateNode) {
+      // Edit in place (keeps its position / group in the tree).
+      Object.assign(editingDateNode, { dateField, from, to });
+      afterQueryChange();
     } else {
-      // Remove any existing date filter first
-      activeFilters = activeFilters.filter(f => f.type !== 'date');
-      activeFilters.push({ type: 'date', dateField, from, to });
+      addFilter({ type: 'date', dateField, from, to });   // replaces any existing date
     }
     closeAllMenus();
-    renderQueryChips();
-    renderPosts();
   });
 
   document.getElementById('qfDateDelete').addEventListener('click', () => {
-    if (editingDateIdx != null) {
-      removeFilter(editingDateIdx);
-    }
+    if (editingDateNode) removeNode(editingDateNode);
     closeAllMenus();
   });
 
-  // Engagement popover
-  let editingEngIdx = null;
+  // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
+  let editingEngNode = null;
 
-  function openEngPopover(idx) {
+  function openEngPopover(node) {
     closeAllMenus();   // close the other popover if open (no backdrop anymore)
-    editingEngIdx = idx;
-    const existing = idx != null ? activeFilters[idx] : null;
+    editingEngNode = node || null;
+    const existing = editingEngNode;
     const popover = document.getElementById('qfEngPopover');
     const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]');
     const rect = anchor.getBoundingClientRect();
@@ -1164,7 +1156,7 @@
     opBtn.dataset.op = op;
     opBtn.classList.toggle('active', op === 'lte');
 
-    document.getElementById('qfEngDelete').style.display = idx != null ? '' : 'none';
+    document.getElementById('qfEngDelete').style.display = editingEngNode ? '' : 'none';
     document.getElementById('qfEngDelete').textContent = MSG.qfDelete;
     document.getElementById('qfEngApply').textContent = MSG.qfApply;
 
@@ -1189,23 +1181,20 @@
     const min = parseInt(document.getElementById('qfEngMin').value, 10);
     const op = document.getElementById('qfEngOp').dataset.op || 'gte';
     if (!min || min <= 0) { closeAllMenus(); return; }
-    const filter = { type: 'engagement', engType, min, op };
-    if (editingEngIdx != null) {
-      activeFilters[editingEngIdx] = filter;
+    if (editingEngNode) {
+      // Edit in place (keeps its position / group in the tree).
+      Object.assign(editingEngNode, { engType, min, op });
+      afterQueryChange();
     } else {
-      // Remove existing filter for same engType (prevent gte+lte on same type)
-      activeFilters = activeFilters.filter(f => !(f.type === 'engagement' && f.engType === engType));
-      activeFilters.push(filter);
+      // Remove any existing condition for the same engType (no gte+lte on one type).
+      removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType);
+      addFilter({ type: 'engagement', engType, min, op });
     }
     closeAllMenus();
-    renderQueryChips();
-    renderPosts();
   });
 
   document.getElementById('qfEngDelete').addEventListener('click', () => {
-    if (editingEngIdx != null) {
-      removeFilter(editingEngIdx);
-    }
+    if (editingEngNode) removeNode(editingEngNode);
     closeAllMenus();
   });
 
@@ -1289,7 +1278,7 @@
   // チップの ＋/濃色表示は状態の反映としてだけ残る。
   function toggleTagFilter(value) {
     const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
-    if (existIdx < 0) addFilter({ type: 'tag', value, mode: 'or' });
+    if (existIdx < 0) addFilter({ type: 'tag', value });
     else removeFilter(existIdx);
     updateSidebarState();
   }
@@ -1345,7 +1334,7 @@
     const { filterType: type, filterValue: value } = chip.dataset;
     const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
     if (existIdx >= 0) { removeFilter(existIdx); }
-    else if (type === 'tag' || type === 'folder' || type === 'hashtag') { addFilter({ type, value, mode: 'or' }); }
+    else if (type === 'tag' || type === 'folder' || type === 'hashtag') { addFilter({ type, value }); }
     else if (type === 'user') { const u = buildUsers().find(x => x.key === value); addFilter({ type, value, label: u ? (u.displayName || u.screenName) : value }); }
     else { addFilter({ type, value }); }
     if (type === 'folder') renderPostFolders();
@@ -1524,7 +1513,170 @@
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
-  let tagJoin = 'and';           // connector between the AND group and the OR group (tags+folders)
+  // --- Query builder: a boolean condition tree is the single source of truth ---
+  // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
+  // groups; no auto type-grouping). queryTree is ALWAYS a root group (op 'and' by
+  // default). activeFilters is a derived flat shadow of its leaves, used only for
+  // sidebar highlight / row badges / tab title / counts — never mutated directly.
+  function emptyTree() { return { kind: 'group', op: 'and', neg: false, children: [] }; }
+  let queryTree = emptyTree();
+  function currentTree() { return queryTree; }
+  function treeLeaves(n, out) { out = out || []; if (!n) return out; if (n.kind === 'cond') out.push(n); else (n.children || []).forEach((c) => treeLeaves(c, out)); return out; }
+  // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
+  function facetTreeFrom(f, ops) {
+    const root = emptyTree();
+    const NO_OP = new Set(['date', 'engagement', 'workspace']);
+    const byType = new Map();
+    for (const x of f) { if (!byType.has(x.type)) byType.set(x.type, []); byType.get(x.type).push(x); }
+    for (const [type, list] of byType) {
+      const leaves = list.map((x) => Object.assign({ kind: 'cond' }, x));
+      if (NO_OP.has(type)) { root.children.push(...leaves); continue; }
+      const op = (ops || {})[type] || 'or';
+      root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves });
+    }
+    return root;
+  }
+
+  // --- Tree mutation helpers (all operate on queryTree; callers re-sync + render). ---
+  function treeParentMap() { const m = new Map(); (function rec(n) { (n.children || []).forEach((c) => { m.set(c, n); rec(c); }); })(queryTree); return m; }
+  function nodeContains(a, b) { if (a === b) return true; if (!a || a.kind !== 'group') return false; return (a.children || []).some((c) => nodeContains(c, b)); }
+  function detachNode(node, pmap) { const par = pmap.get(node); if (!par) return; const i = par.children.indexOf(node); if (i >= 0) par.children.splice(i, 1); }
+  function opposite(op) { return op === 'and' ? 'or' : 'and'; }
+  // Auto-clean: drop empty groups, collapse single-member non-root groups (folding
+  // their negation into the survivor) — “1メンバーになったら括弧は自動で消える”.
+  function cleanupTree() {
+    (function rec(node) {
+      if (node.kind !== 'group') return;
+      const out = [];
+      for (let c of node.children) {
+        rec(c);
+        if (c.kind === 'group') {
+          if (!c.children.length) continue;                                   // drop empty
+          if (c.children.length === 1) { const only = c.children[0]; if (c.neg) only.neg = !only.neg; out.push(only); continue; }  // collapse singleton
+        }
+        out.push(c);
+      }
+      node.children = out;
+    })(queryTree);
+  }
+  function qHasValue(type, value) { return treeLeaves(queryTree).some((c) => c.type === type && c.value === value); }
+  function removeCondsMatching(pred) {
+    (function rec(node) {
+      if (node.kind !== 'group') return;
+      node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
+      node.children.forEach(rec);
+    })(queryTree);
+    cleanupTree();
+  }
+  function sameLeaf(c, f) {
+    if (c.type !== f.type) return false;
+    if (f.type === 'date') return true;                       // single date condition
+    if (f.type === 'engagement') return c.engType === f.engType;
+    return c.value === f.value;
+  }
+  // activeFilters mirrors the tree's leaves (deduped) so sidebar highlight / row
+  // badges / tab title keep working (the tree holds the structure / operators).
+  function syncShadow() {
+    const seen = new Set();
+    const out = [];
+    for (const c of treeLeaves(queryTree)) {
+      if (c.type === 'date' || c.type === 'engagement') { const f = Object.assign({}, c); delete f.kind; delete f.neg; out.push(f); continue; }
+      const k = c.type + ' ' + c.value;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const f = { type: c.type, value: c.value };
+      if (c.label) f.label = c.label;
+      out.push(f);
+    }
+    activeFilters = out;
+  }
+  // One canonical refresh after any tree mutation: rebuild the shadow, then
+  // renderPosts() (which itself runs updateSidebarState → renderQueryChips).
+  function afterQueryChange() { syncShadow(); renderPostFolders(); renderPosts(); }
+
+  // --- Inline builder interaction: drag pills/groups into parenthesised groups ---
+  // (docs/design-query-builder.md 改訂③). renderQueryChips() fills qbNodeMap
+  // (data-nid → node); drag/drop + the bar click handler mutate queryTree directly.
+  let qbNodeMap = new Map();      // data-nid → tree node (rebuilt each render)
+  let qbDragId = null;            // node id currently being dragged
+  const nodeById = (id) => qbNodeMap.get(id) || null;
+  const chips = document.getElementById('queryChips');
+
+  function qbClearDropHints() { chips.querySelectorAll('.qb-drop-into, .qb-drop-on').forEach((el) => el.classList.remove('qb-drop-into', 'qb-drop-on')); chips.classList.remove('qb-drop-root'); }
+  // Where does a drag-event drop? onto a pill (merge → pair group), onto a group
+  // frame (wrap → nest), inside a group body (add member), or the bar background
+  // (→ root). Uses the event's target (the element under the pointer in HTML5 DnD),
+  // falling back to elementFromPoint for safety.
+  function qbDropTarget(e) {
+    let el = (e.target && e.target.nodeType === 1) ? e.target : null;
+    if (!el || !chips.contains(el)) el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || !chips.contains(el)) return { kind: 'root' };
+    const pill = el.closest('.qb-pill');
+    if (pill) return { kind: 'pill', nid: pill.dataset.nid, el: pill };
+    const frame = el.closest('.qb-paren, .qb-op:not(.qb-op-root)');
+    if (frame) { const g = frame.closest('.qb-grp'); if (g && !g.classList.contains('qb-root')) return { kind: 'frame', nid: g.dataset.nid, el: g }; }
+    const grp = el.closest('.qb-grp:not(.qb-root)');
+    if (grp) return { kind: 'inside', nid: grp.dataset.nid, el: grp };
+    return { kind: 'root' };
+  }
+  // Drag start: a pill drags that condition; a paren / operator label drags the
+  // whole enclosing group (掴む対象で「中身 vs 丸ごと」を分ける). The root has no
+  // parens and its operator labels are .qb-op-root (not draggable).
+  chips.addEventListener('dragstart', (e) => {
+    const handle = e.target.closest('.qb-pill, .qb-paren, .qb-op:not(.qb-op-root)');
+    if (!handle) { e.preventDefault(); return; }
+    let id, dragEl;
+    if (handle.classList.contains('qb-pill')) { id = handle.dataset.nid; dragEl = handle; }
+    else { const g = handle.closest('.qb-grp'); id = g && g.dataset.nid; dragEl = g; }
+    if (!id) { e.preventDefault(); return; }
+    qbDragId = id;
+    try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+    if (dragEl) requestAnimationFrame(() => dragEl.classList.add('qb-dragging'));
+  });
+  chips.addEventListener('dragend', () => {
+    qbDragId = null;
+    chips.querySelectorAll('.qb-dragging').forEach((el) => el.classList.remove('qb-dragging'));
+    qbClearDropHints();
+  });
+  chips.addEventListener('dragover', (e) => {
+    if (!qbDragId) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    qbClearDropHints();
+    const t = qbDropTarget(e);
+    const drag = nodeById(qbDragId);
+    const tnode = t.nid ? nodeById(t.nid) : queryTree;
+    if (drag && tnode && (tnode === drag || nodeContains(drag, tnode))) return;   // can't drop into self / own descendant
+    if (t.kind === 'pill' || t.kind === 'frame') t.el.classList.add('qb-drop-on');
+    else if (t.kind === 'inside') t.el.classList.add('qb-drop-into');
+    else chips.classList.add('qb-drop-root');
+  });
+  chips.addEventListener('dragleave', (e) => { if (e.target === chips) qbClearDropHints(); });
+  chips.addEventListener('drop', (e) => {
+    if (!qbDragId) return;
+    e.preventDefault();
+    const t = qbDropTarget(e);
+    const drag = nodeById(qbDragId);
+    qbDragId = null;
+    qbClearDropHints();
+    if (!drag) return;
+    const target = t.nid ? nodeById(t.nid) : queryTree;
+    if (!target || target === drag || nodeContains(drag, target)) return;   // can't drop onto itself / own descendant
+    const pmap = treeParentMap();
+    detachNode(drag, pmap);                          // remove from its current parent first
+    if (t.kind === 'pill' || t.kind === 'frame') {   // wrap target + drag in a new group (pair / nest)
+      const par = pmap.get(target) || queryTree;
+      const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
+      const i = par.children.indexOf(target); if (i >= 0) par.children[i] = g; else par.children.push(g);
+    } else if (t.kind === 'inside') {                // add as a member of the group
+      target.children.push(drag);
+    } else {                                         // bar background → move to the top level
+      queryTree.children.push(drag);
+    }
+    cleanupTree();
+    afterQueryChange();
+  });
+
   const CF = () => window.corpusFolders;   // shared folder module
 
   // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
@@ -1912,14 +2064,10 @@
       }
     }
 
-    // ---- Query-builder evaluation ----
-    // Every filter is an element with a predicate. AND field (mode !== 'or'):
-    // single-valued attributes (kind/platform/user/instance/postType/media) are
-    // OR'd within their type and AND'd across types (classic faceted search);
-    // tag/folder/date/engagement elements are individually required.
-    // OR field (mode === 'or') matches when ANY element matches.
-    // Both fields combine via the user-selected connector (tagJoin).
-    const SINGLE_VALUED = ['kind', 'platform', 'user', 'instance', 'postType', 'media', 'userKind'];
+    // ---- Query-builder evaluation: boolean condition tree ----
+    // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
+    // conditions, built directly by the inline drag builder; evalNode walks it
+    // recursively. See docs/design-query-builder.md「改訂③」.
     const predOf = (f) => {
       switch (f.type) {
         // 'post' = SNS投稿（リンクあり＝拡張で取得: キャプチャもドラッグも）/
@@ -1958,27 +2106,13 @@
         default: return () => true;
       }
     };
-    const andElems = activeFilters.filter(f => f.mode !== 'or');
-    const orElems = activeFilters.filter(f => f.mode === 'or');
-    let andOk = null;
-    if (andElems.length) {
-      const groups = [];    // a group passes when SOME of its preds match
-      const singles = {};
-      for (const f of andElems) {
-        if (SINGLE_VALUED.includes(f.type)) (singles[f.type] = singles[f.type] || []).push(predOf(f));
-        else groups.push([predOf(f)]);   // individually required
-      }
-      for (const t of Object.keys(singles)) groups.push(singles[t]);
-      andOk = (p) => groups.every(g => g.some(fn => fn(p)));
-    }
-    let orOk = null;
-    if (orElems.length) {
-      const preds = orElems.map(predOf);
-      orOk = (p) => preds.some(fn => fn(p));
-    }
-    if (andOk && orOk) posts = posts.filter(tagJoin === 'or' ? (p) => andOk(p) || orOk(p) : (p) => andOk(p) && orOk(p));
-    else if (andOk) posts = posts.filter(andOk);
-    else if (orOk) posts = posts.filter(orOk);
+    const evalNode = (n, p) => {
+      if (n.kind === 'cond') { const r = predOf(n)(p); return n.neg ? !r : r; }
+      const r = n.op === 'or' ? n.children.some((c) => evalNode(c, p)) : n.children.every((c) => evalNode(c, p));
+      return n.neg ? !r : r;
+    };
+    const queryRoot = currentTree();   // the boolean query tree (root group)
+    if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p));
 
     // Sticky records: items un-matched by a recent mutation stay visible
     // (cleared on the next filter change / data refresh).
@@ -2009,29 +2143,41 @@
   let tabs = [];
   let activeTabId = null;
   let _tabPersistTimer = null;
+  // Per-tab view-history for browser-style back/forward. Holds JSON snapshots of
+  // snapshotState(); navIdx points at the current entry. Linear: navigating back
+  // then making a fresh change drops the forward entries. In-memory per session
+  // (rides on the tab object across switches; not written to disk).
+  let navHist = [];
+  let navIdx = -1;
+  let appBooted = false;   // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
+  const NAV_CAP = 60;
   function snapshotState() {
     return {
+      // queryTree is the source of truth; f (the shadow) is kept for the tab title
+      // (tabTitleOf reads state.f) and for migrating older persisted states.
       f: JSON.parse(JSON.stringify(activeFilters)),
-      join: tagJoin,
+      tree: JSON.parse(JSON.stringify(queryTree)),
       search: document.getElementById('searchBox').value,
       sort: sortSelect.value,
       multi: multiOnly
     };
   }
   // Called from every fresh renderPosts(): keep the tab title + persistence in sync
-  // with the current state, and record it for the stickyRecs change-detection below.
-  // (The view-history mechanism this used to feed has been removed.)
+  // with the current state, record it for the stickyRecs change-detection below,
+  // and push it onto the per-tab back/forward history (see pushNavHistory).
   function syncTitleAndPersist() {
     const snap = snapshotState();
     lastRenderedState = JSON.stringify(snap);
     if (restoringState) return;
+    pushNavHistory(snap);   // record this view for back/forward (skipped while restoring)
     document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
     updateActiveTabTitle(); persistTabsDebounced();
   }
   function applyState(s) {
     restoringState = true;
-    activeFilters = JSON.parse(JSON.stringify(s.f));
-    tagJoin = s.join;
+    // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
+    queryTree = s.tree ? JSON.parse(JSON.stringify(s.tree)) : facetTreeFrom(s.f || [], s.ops || {});
+    syncShadow();
     document.getElementById('searchBox').value = s.search;
     sortSelect.value = s.sort;
     refreshCustomSelects();
@@ -2041,6 +2187,54 @@
     renderPosts();
     restoringState = false;
     document.title = tabTitleOf(s, { allCount: allPosts.length }).text + ' — Corpus';
+  }
+
+  // --- View history (browser-style back/forward) ---
+  function updateNavButtons() {
+    const b = document.getElementById('navBackBtn'), f = document.getElementById('navFwdBtn');
+    if (b) b.disabled = navIdx <= 0;
+    if (f) f.disabled = navIdx >= navHist.length - 1;
+  }
+  // Record a fresh view. Called from syncTitleAndPersist on every real render
+  // that isn't a restore. No-op when the state equals the current entry, so
+  // background refreshes / re-renders of the same query don't pile up.
+  function pushNavHistory(snap) {
+    if (!appBooted) return;
+    const s = JSON.stringify(snap);
+    if (navIdx >= 0 && navHist[navIdx] === s) return;
+    if (navIdx < navHist.length - 1) navHist = navHist.slice(0, navIdx + 1);   // drop forward branch
+    navHist.push(s);
+    if (navHist.length > NAV_CAP) navHist = navHist.slice(navHist.length - NAV_CAP);
+    navIdx = navHist.length - 1;
+    updateNavButtons();
+  }
+  function navTo(idx) {
+    if (idx < 0 || idx >= navHist.length || idx === navIdx) return;
+    navIdx = idx;
+    applyState(JSON.parse(navHist[navIdx]));   // restoringState in applyState guards the re-push
+    updateNavButtons();
+    persistTabsDebounced();
+  }
+  function navBack() { navTo(navIdx - 1); }
+  function navForward() { navTo(navIdx + 1); }
+  // Adopt (or seed) a tab's history when it becomes active.
+  function adoptTabNav(t) {
+    if (t && Array.isArray(t._navHist) && t._navHist.length) {
+      navHist = t._navHist;
+      navIdx = (typeof t._navIdx === 'number') ? Math.max(0, Math.min(t._navIdx, navHist.length - 1)) : navHist.length - 1;
+    } else {
+      navHist = [JSON.stringify(snapshotState())];
+      navIdx = 0;
+    }
+    updateNavButtons();
+  }
+  // Nav is post-mode only and yields to typing / open overlays / poster mode.
+  function navAllowed() {
+    if (browseMode === 'posters') return false;
+    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return false;
+    if (!document.getElementById('settingsView').hidden) return false;
+    if (!document.getElementById('ivFolderModal').hidden) return false;
+    return true;
   }
 
   // --- Window tabs ---
@@ -2078,6 +2272,8 @@
     t.state = snapshotState();
     t._scrollTop = window.scrollY;    // remember content scroll per tab (persisted too)
     t._renderLimit = renderLimit;     // …and how far the windowed list had grown
+    t._navHist = navHist;             // carry the back/forward history with the tab
+    t._navIdx = navIdx;
   }
   // Restore a tab's remembered renderLimit (re-render to it so a deep-scroll layout is
   // reproduced) then its content scroll. rAF×2 so the re-rendered content has laid out.
@@ -2138,15 +2334,17 @@
     const t = tabs.find((t) => t.id === id);
     if (!t) return;
     if (t.state) applyState(t.state); else renderPosts();
+    adoptTabNav(t);
     restoreTabView(t);
     renderTabs(); persistTabsDebounced();
   }
   function addTab() {
     saveActiveTabState();
     const id = genTabId();
-    tabs.push({ id, pinned: false, title: null, state: { f: [], join: 'or', search: '', sort: 'date-desc', multi: false } });
+    tabs.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
     activeTabId = id;
-    applyState({ f: [], join: 'or', search: '', sort: sortSelect.value, multi: false });
+    applyState({ f: [], ops: {}, search: '', sort: sortSelect.value, multi: false });
+    adoptTabNav(tabs.find((t) => t.id === id));   // fresh tab → fresh history (seeded with the empty view)
     requestAnimationFrame(() => window.scrollTo(0, 0));   // new tab starts at the top
     renderTabs(); persistTabsDebounced();
   }
@@ -2165,6 +2363,7 @@
       activeTabId = tabs[ni].id;
       const t = tabs[ni];
       if (t.state) applyState(t.state); else renderPosts();
+      adoptTabNav(t);
       restoreTabView(t);
     }
     renderTabs(); persistTabsDebounced();
@@ -2191,6 +2390,7 @@
     tabs.splice(idx + 1, 0, nt);
     activeTabId = nt.id;
     if (nt.state && Object.keys(nt.state).length) applyState(nt.state); else renderPosts();
+    adoptTabNav(nt);   // duplicate starts its own history at the copied view
     renderTabs(); persistTabsDebounced();
   }
   async function initTabs() {
@@ -2207,8 +2407,9 @@
       }
       const at = tabs.find((t) => t.id === activeTabId);
       if (at && at.state) {
-        activeFilters = JSON.parse(JSON.stringify(at.state.f || []));
-        tagJoin = at.state.join || 'or';
+        // queryTree is the truth; migrate older states (f + ops, no tree).
+        queryTree = at.state.tree ? JSON.parse(JSON.stringify(at.state.tree)) : facetTreeFrom(at.state.f || [], at.state.ops || {});
+        syncShadow();
         document.getElementById('searchBox').value = at.state.search || '';
         sortSelect.value = at.state.sort || 'date-desc';
         refreshCustomSelects();
@@ -2948,12 +3149,11 @@
     const list = CF().all();
     const existing = new Set(allPosts.filter(p => p.url && p.captureId).map(p => p.captureId));
     if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">' + escapeHtml(MSG.foldersNone) + '</span>'; return; }
-    const state = new Map(activeFilters.filter(f => f.type === 'folder').map(f => [f.value, f.mode === 'and' ? 'and' : 'or']));
+    const active = new Set(activeFilters.filter(f => f.type === 'folder').map(f => f.value));
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;
-      const st = state.get(f.id);
-      const cls = st ? (st === 'and' ? ' active and' : ' active') : '';
-      return `<button class="sb-chip${cls}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${st === 'and' ? '＋' : ''}${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      const on = active.has(f.id);
+      return `<button class="sb-chip${on ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
@@ -2975,7 +3175,7 @@
     if (!chip) return;
     const fid = chip.dataset.fid;
     const existIdx = activeFilters.findIndex(f => f.type === 'folder' && f.value === fid);
-    if (existIdx < 0) addFilter({ type: 'folder', value: fid, mode: 'or' });
+    if (existIdx < 0) addFilter({ type: 'folder', value: fid });
     else removeFilter(existIdx);
     renderPostFolders();
   });
@@ -2988,7 +3188,7 @@
     const clear = document.getElementById('wsClear');
     if (row) row.addEventListener('click', () => {
       const idx = activeFilters.findIndex(f => f.type === 'workspace');
-      if (idx < 0) addFilter({ type: 'workspace', value: '*', mode: 'or' });
+      if (idx < 0) addFilter({ type: 'workspace', value: '*' });
       else removeFilter(idx);
       renderWorkspace();
     });
@@ -3949,7 +4149,9 @@
   function renderPosters(keepLimit) {
     const grid = document.getElementById('posterGrid');
     const empty = document.getElementById('emptyState');
-    const countEl = document.getElementById('postCount');
+    // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数は
+    // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
+    const countEl = document.getElementById('posterCount');
     renderPosterPlatformChips();
     renderPosterFolders();
     posterList = filteredPosters();
@@ -3992,7 +4194,7 @@
   // Jump from a poster to its posts: posts mode + a single user filter for it.
   function openPosterPosts(u) {
     if (!u) return;
-    activeFilters = activeFilters.filter((f) => f.type !== 'user');   // "this poster", not OR-ed with a prior one
+    removeCondsMatching((c) => c.type === 'user');   // "this poster", not OR-ed with a prior one
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
   }
@@ -4303,11 +4505,11 @@
     sb.value = '';   // タイプした文字は「探すため」のもの — 本文検索には残さない
     hideSuggest();
     if (it.kind === 'tag') {
-      addFilter({ type: 'tag', value: it.value, mode: 'or' });
+      addFilter({ type: 'tag', value: it.value });
     } else if (it.kind === 'user') {
       addFilter({ type: 'user', value: it.value, label: it.label });
     } else {
-      addFilter({ type: 'folder', value: it.value, mode: 'or' });
+      addFilter({ type: 'folder', value: it.value });
       renderPostFolders();
     }
     updateSidebarState();
@@ -4847,9 +5049,9 @@ render()
   // when the folder list/default changes.
   if (CF()) CF().onChange((kind) => {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    const before = activeFilters.length;
-    activeFilters = activeFilters.filter((f) => f.type !== 'folder' || CF().byId(f.value));
-    if (activeFilters.length !== before) renderQueryChips();
+    const before = treeLeaves(queryTree).length;
+    removeCondsMatching((c) => c.type === 'folder' && !CF().byId(c.value));
+    if (treeLeaves(queryTree).length !== before) { syncShadow(); renderQueryChips(); }
     renderPostFolders();
     if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
   });
@@ -4867,6 +5069,7 @@ render()
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   await initTabs();
+  appBooted = true;   // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();
   // First paint done — restore the active tab's renderLimit + scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));

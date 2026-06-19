@@ -62,7 +62,7 @@ const evalJs = `(async () => {
   // a search term becomes a pill too
   const sb = document.getElementById('searchBox');
   sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
-  await sleep(80);
+  await sleep(260);   // 検索入力は 150ms デバウンス後に描画される（それを越えて待つ）
   const searchPill = !!document.querySelector('#queryChips .sb-active-chip[data-special="search"]');
   // clicking the search pill clears the search
   document.querySelector('#queryChips .sb-active-chip[data-special="search"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
