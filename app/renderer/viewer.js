@@ -3179,7 +3179,8 @@
     else removeFilter(existIdx);
     renderPostFolders();
   });
-  document.getElementById('postFolderManage')?.addEventListener('click', () => { if (CF()) CF().openManager(); });
+  // フォルダ管理の起動口はフライアウト下部の #qfFolderManage（→ CF().openManager()）に統一。
+  // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
 
   // Workspace: chip toggles a "show only the tray" filter; 空にする empties the
   // tray itself (confirmed — it reads nothing like removing the filter).

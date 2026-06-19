@@ -32,12 +32,27 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   const grid = document.getElementById('postGrid');
+  // Make getComputedStyle reliable in the offscreen SMOKE window: render every card
+  // eagerly (the app's smoke-capture hook disables content-visibility:auto) and kill
+  // transitions/animations — the offscreen window never ticks them, so a transitioned
+  // property (e.g. .select-check opacity .1s) would stay stuck at its start value.
+  document.documentElement.classList.add('smoke-capture');
+  const noAnim = document.createElement('style');
+  noAnim.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
+  document.head.appendChild(noAnim);
   await waitFor(() => grid.querySelectorAll('.post-card').length >= 5);
   const bar = document.getElementById('selectionBar');
   const card = (i) => grid.querySelector('.post-card[data-index="' + i + '"]');
   const ring = (i) => card(i).querySelector('.select-check');
   const click = (el, opts) => el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, opts)));
   const selCount = () => grid.querySelectorAll('.post-card.selected').length;
+  // Folders moved from inline #postFolderChips to the sidebar flyout (data-qfrow="folder"
+  // → .qf-pop values). Counts come from the CF() API now (no inline count chips).
+  const folderId = (name) => (window.corpusFolders.all().find((f) => f.name === name) || {}).id;
+  const folderCount = (name) => (window.corpusFolders.all().find((f) => f.name === name) || { items: [] }).items.length;
+  const openFolderFlyout = async () => { document.querySelector('#filterRows [data-qfrow="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(70); };
+  const flyoutFolderRow = (name) => { const id = folderId(name); return [...document.querySelectorAll('.qf-pop.show [data-qfval]')].find((r) => r.dataset.qfval === id); };
+  const escKey = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
   // card BODY click must NOT select (entry path removed)
   click(card(0).querySelector('.post-meta') || card(0));
@@ -93,7 +108,8 @@ const evalJs = `(async () => {
   await wait(40);
   const lb = document.getElementById('lightbox');
   const imgTogglesInMode = selCount() === 3 && card(2).classList.contains('selected') && !lb.classList.contains('show');
-  // rings are forced visible + hover actions hidden while selecting
+  // rings are forced visible + hover actions hidden while selecting (card(4) is
+  // unselected → proves the .selecting rule, not just .selected).
   const ringAlwaysOn = getComputedStyle(ring(4)).opacity === '1';
   const btnsHidden = getComputedStyle(card(4).querySelector('.info-btn')).display === 'none';
   // image cursor is a plain pointer (no zoom-in magnifier) while selecting
@@ -127,7 +143,8 @@ const evalJs = `(async () => {
   const stillSelected = selCount() === 2;
 
   // bulk フォルダに追加: create folder F, then 一括「フォルダに追加」→ picker → F
-  document.getElementById('postFolderManage').click();
+  // フォルダ作成モーダルは現行の起動口 CF().openManager() で開く（旧 postFolderManage は撤去済み）
+  window.corpusFolders.openManager();
   await wait(30);
   document.getElementById('ivFolderNewName').value = 'F';
   document.getElementById('ivFolderCreate').click();
@@ -137,14 +154,15 @@ const evalJs = `(async () => {
   await wait(50);
   document.querySelector('.fold-menu.show .fm-row[data-fid]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(120);
-  const chipN = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
-  const bulkFolderAdds = chipN === '2';
+  const bulkFolderAdds = folderCount('F') === 2;          // 2 selected cards joined folder F
 
-  // the active-bar folder pill is a styled rounded-rect chip
+  // the active-bar folder pill is a styled rounded-rect chip (改訂③: フォルダはフライアウトから追加)
   document.getElementById('cancelSelectBtn').click();
   await wait(60);
-  document.querySelector('#postFolderChips .sb-chip').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await openFolderFlyout();
+  flyoutFolderRow('F').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(80);
+  escKey(); await wait(40);                               // close the flyout
   const fp = document.querySelector('#queryChips .sb-active-chip.qc-folder');
   const fpCs = fp ? getComputedStyle(fp) : null;
   const folderPillChip = !!fpCs && fpCs.borderRadius === '6px' && fpCs.backgroundColor !== 'rgba(0, 0, 0, 0)';
@@ -152,12 +170,13 @@ const evalJs = `(async () => {
   console.log('CHK sec-ctx');
   // --- card context menu → フォルダに追加 → picker (no ★/default) ---
   // create a 2nd folder G, clear the folder filter, then right-click a card
-  document.getElementById('postFolderManage').click(); await wait(30);
+  window.corpusFolders.openManager(); await wait(30);
   document.getElementById('ivFolderNewName').value = 'G';
   document.getElementById('ivFolderCreate').click(); await wait(50);
   document.getElementById('ivFolderClose').click();
-  // clear the F filter (チップは単純トグル)
-  document.querySelector('#postFolderChips .sb-chip.active').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  // clear the F filter: click its bar pill (改訂③: ピルのクリックで条件解除)
+  const fPill = document.querySelector('#queryChips .qb-pill.qc-folder');
+  if (fPill) fPill.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(80);
   console.log('CHK pre-ctx cards=' + grid.querySelectorAll('.post-card').length);
   grid.querySelector('.post-card').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
@@ -176,8 +195,7 @@ const evalJs = `(async () => {
   const gRow = [...menu.querySelectorAll('.fm-row[data-fid]')].find((r) => r.querySelector('.fm-name').textContent === 'G');
   gRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(100);
-  const gChip = [...document.querySelectorAll('#postFolderChips .sb-chip')].find((c) => c.textContent.includes('G'));
-  const addedToG = !!gChip && gChip.querySelector('.iv-tagn').textContent === '1';
+  const addedToG = folderCount('G') === 1;               // the right-clicked card joined G
   // folders.json persists { folders, workspace } and NO defaultId
   const rb2 = await window.corpus.getFolders();
   const noDefaultId = !('defaultId' in rb2);
@@ -185,12 +203,14 @@ const evalJs = `(async () => {
 
   console.log('CHK sec-mix');
   // --- Folders join the boolean query like any condition: F={c0,c1}, G={c0}.
-  //     改訂③: top level = AND by default; the AND/OR between them toggles on click. ---
+  //     改訂③: top level = AND by default; the AND/OR between them toggles on click.
+  //     Folder conditions are added from the sidebar flyout (no inline chips). ---
   const cardCount = () => grid.querySelectorAll('.post-card').length;
-  const chipByName = (n) => [...document.querySelectorAll('#postFolderChips .sb-chip')].find((c) => c.textContent.includes(n));
-  chipByName('F').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
+  await openFolderFlyout();
+  flyoutFolderRow('F').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
   const fOr = cardCount() === 2;                       // F alone → 2
-  chipByName('G').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
+  flyoutFolderRow('G').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
+  escKey(); await wait(40);                            // close the flyout
   const gAndF = cardCount() === 1;                     // F∧G (top-level AND default) → c0 = 1
   // click the AND/OR connector to flip the top-level operator to または(OR)
   const opBtn = () => document.querySelector('#queryChips .qb-op-root');
