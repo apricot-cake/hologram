@@ -1313,7 +1313,6 @@
     .content-activebar .qb-trail { flex: none; display: flex; align-items: center; gap: 8px; }
     .content-activebar .post-count { flex: none; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
     .content-activebar .sb-reset { flex-shrink: 0; }
-    .content-activebar .iv-andor { flex-shrink: 0; margin-left: auto; }
     .sb-activebar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
@@ -2197,12 +2196,10 @@
     /* The card currently shown in the inspector — tinted ring, not solid */
     .post-card.inspected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
 
-    /* AND/OR toggle for multi-select filters (tags) */
-    .iv-andor { font-size: 11px; font-weight: 600; padding: 2px 9px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-subtle); color: var(--accent-subtle-fg); cursor: pointer; margin-left: 4px; vertical-align: middle; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
-    .iv-andor:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
-    .iv-andor.or { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+    /* (Old .iv-andor AND/OR toggle removed in the query-builder 改訂③ redesign —
+       operators are now the inline .qb-op connector.) */
 
-    /* Folder chips (★ default) + management modal */
+    /* Folder management modal */
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
     .iv-folder-new .search-box { flex: 1; }
     .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }

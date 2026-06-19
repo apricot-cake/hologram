@@ -44,17 +44,23 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  // Folders moved to the sidebar flyout (data-qfrow="folder" → .qf-pop values);
+  // membership/counts come from the CF() API. Management opens from the flyout footer.
+  const folders = () => window.corpusFolders.all();
+  const openFolderFlyout = async () => { document.querySelector('#filterRows [data-qfrow="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(70); };
+  const folderRow = (id) => [...document.querySelectorAll('.qf-pop.show [data-qfval]')].find((r) => r.dataset.qfval === id);
+  const escKey = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
   await waitFor(() => grid.querySelectorAll('.post-card').length >= 3);
   const totalBefore = grid.querySelectorAll('.post-card').length;
 
-  // create a folder (no auto-default ★ anymore)
-  click($('postFolderManage')); await sleep(30);
+  // create a folder via the management modal (no auto-default ★ anymore)
+  window.corpusFolders.openManager(); await sleep(30);
   const modalOpen = !$('ivFolderModal').hidden;
   $('ivFolderNewName').value = '一次資料';
   click($('ivFolderCreate')); await sleep(50);
-  const chips = document.querySelectorAll('#postFolderChips .sb-chip').length;
-  const noStar = !document.querySelector('#postFolderChips .iv-foldstar');   // default removed → no ★
+  const chips = folders().length;                          // one folder now exists
+  const noStar = !document.querySelector('.iv-foldstar');  // default folder removed → no ★ anywhere
   click($('ivFolderClose')); await sleep(20);
 
   // hover keeps only the ⚡/ℹ pair — folder/edit/delete/open moved off the card
@@ -68,10 +74,12 @@ const evalJs = `(async () => {
   click(document.querySelector('.card-menu .fm-row[data-act="folder"]')); await sleep(40);
   const menuOpen = !!document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop)');
   click(document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop) .fm-row[data-fid]')); await sleep(50);
-  const countText = (document.querySelector('#postFolderChips .sb-chip .iv-tagn') || {}).textContent;
+  const countText = String((folders()[0] || { items: [] }).items.length);   // the card joined the folder
 
-  // filter by the folder chip → only the added card
-  click(document.querySelector('#postFolderChips .sb-chip')); await sleep(50);
+  // filter by the folder via the sidebar flyout → only the added card
+  await openFolderFlyout();
+  click(folderRow(folders()[0].id)); await sleep(60);
+  escKey(); await sleep(30);   // close the flyout
   const filteredCount = grid.querySelectorAll('.post-card').length;
 
   // persistence: { folders, workspace }, no defaultId
@@ -87,9 +95,9 @@ const evalJs = `(async () => {
   const ws1 = grid.querySelector('.post-card[data-index="1"] .ws-btn');
   click(ws1); await sleep(50);
   const wsIn = ws1.classList.contains('in');
-  const wsCount = ($('wsChip').querySelector('.iv-tagn') || {}).textContent;
+  const wsCount = $('wsBadge').textContent;   // workspace count badge on the sidebar row
   // filter to the workspace → only that card
-  click($('wsChip')); await sleep(60);
+  click($('wsRow')); await sleep(60);
   const wsFiltered = grid.querySelectorAll('.post-card').length;
   const wsPill = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-workspace')].length === 1;
   // persisted to folders.json workspace[]
@@ -100,8 +108,7 @@ const evalJs = `(async () => {
   window.confirm = () => true;
   click($('wsClear')); await sleep(60);
   const rb3 = await window.corpus.getFolders();
-  const wsCleared = (rb3.workspace || []).length === 0 &&
-    ($('wsChip').querySelector('.iv-tagn') || {}).textContent === '0';
+  const wsCleared = (rb3.workspace || []).length === 0 && $('wsBadge').textContent === '0';
 
   return { totalBefore, modalOpen, chips, noStar, hoverPair, ctxOpen, menuOpen, countText, filteredCount,
     persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, wsCleared };
