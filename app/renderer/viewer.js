@@ -77,6 +77,10 @@
     detailImageOf: _s('detailImageOf'),
     imageOf: _f2('imageOf'),
     detailTags: _s('detailTags'),
+    detailSourceTags: _s('detailSourceTags'),
+    tipAdoptTag: _s('tipAdoptTag'),
+    tagAdopted: _f1('tagAdopted'),
+    editAdoptSource: _s('editAdoptSource'),
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
@@ -2107,6 +2111,7 @@
         posts = posts.filter(p => {
           const hay = [p.text, p.title, p.eagleName, p.screenName, p.displayName]
             .concat(p.tags || [])
+            .concat(p.hashtags || [])
             .map(x => (x == null ? '' : String(x))).join(' ');
           return matchHay(hay);
         });
@@ -2117,7 +2122,8 @@
           (p.eagleName || '').toLowerCase().includes(query) ||
           (p.screenName || '').toLowerCase().includes(query) ||
           (p.displayName || '').toLowerCase().includes(query) ||
-          (p.tags || []).some(t => t.toLowerCase().includes(query))
+          (p.tags || []).some(t => t.toLowerCase().includes(query)) ||
+          (p.hashtags || []).some(t => t.toLowerCase().includes(query))
         );
       }
     }
@@ -3615,9 +3621,17 @@
     if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
     if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
     if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
-    const tags = (Array.isArray(p.hashtags) ? p.hashtags : []).concat(Array.isArray(p.tags) ? p.tags : []);
-    const tagsHtml = tags.length
-      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${tags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
+    // User tags and source tags (pixiv / SNS hashtags) get separate rows so the
+    // origin reads at a glance. Source tags already adopted into `tags` are hidden
+    // from the source row; the rest are clickable to adopt (promote to a user tag).
+    const userTags = Array.isArray(p.tags) ? p.tags : [];
+    const userSet = new Set(userTags);
+    const srcTags = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h) => !userSet.has(h));
+    const tagsHtml = userTags.length
+      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${userTags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
+      : '';
+    const srcTagsHtml = srcTags.length
+      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailSourceTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${srcTags.map((t) => `<button type="button" class="iv-insp-tag iv-insp-tag-src" data-adopt="${escapeAttr(t)}" title="${escapeAttr(MSG.tipAdoptTag)}">${escapeHtml(t)}</button>`).join('')}</div></span></div>`
       : '';
     // Poster row carries the locally-saved avatar (psimg://) when present, so the
     // inspector keeps its "label: value" rhythm while adding a face to the name.
@@ -3663,6 +3677,7 @@
       row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
       row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
       tagsHtml +
+      srcTagsHtml +
       `<div class="iv-insp-actions">` +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
       `<a class="iv-insp-open" id="pdEdit">${escapeHtml(MSG.tipEdit)}</a>` +
@@ -3690,6 +3705,30 @@
     const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
     const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
     const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
+    box.querySelectorAll('[data-adopt]').forEach((btn) => { btn.onclick = () => adoptSourceTag(g, btn.dataset.adopt); });
+  }
+
+  // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
+  // the inspected group. Persisted + undoable, mirroring the edit overlay's save.
+  async function adoptSourceTag(g, tag) {
+    if (!tag) return;
+    const recs = (g.records && g.records.length) ? g.records : [g.rep];
+    const undoRecords = [];
+    for (const r of recs) {
+      const prev = (r.tags || []).slice();
+      if (prev.includes(tag)) continue;
+      const newTags = [...prev, tag];
+      try { await window.corpus.updateTags(r.image || r.video, newTags); } catch { /* keep going */ }
+      const idx = allPosts.findIndex((p) => p.captureId === r.captureId);
+      if (idx >= 0) allPosts[idx].tags = newTags.slice();
+      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags });
+    }
+    if (!undoRecords.length) return;   // all records already had it
+    pushUndo('tags', undoRecords);
+    renderPosts(true);
+    const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+    if (fresh) showDetail(fresh);
+    showToast(MSG.tagAdopted(tag));
   }
   // Esc closes the inspector — registered in CAPTURE phase so it can check
   // what else is open BEFORE those handlers dismiss themselves on the same
@@ -3796,16 +3835,32 @@
     const picker = document.getElementById('editPicker');
     if (!picker) return;
     const groups = groupedTagVocab(editPickQuery);
-    if (!groups.length) {
+    // Source tags (pixiv / SNS hashtags) from the card(s) being edited, offered as
+    // a dedicated section for one-click adoption. They reuse the .edit-pick-chip
+    // markup + data-pick, so the existing picker handler adopts them into editTags.
+    const q = editPickQuery.toLowerCase();
+    const srcSet = new Set();
+    for (const r of editingRecords) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) {
+      if (!q || h.toLowerCase().includes(q)) srcSet.add(h);
+    }
+    const srcTags = [...srcSet];
+    if (!groups.length && !srcTags.length) {
       picker.innerHTML = `<span class="edit-empty">${escapeHtml(editPickQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
       return;
     }
     const sel = new Set(editTags);
-    picker.innerHTML = groups.map((g) =>
+    const chip = (t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+    let html = '';
+    if (srcTags.length) {
+      html += `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(MSG.editAdoptSource)}</div><div class="edit-pick-chips">` +
+        srcTags.map(chip).join('') + `</div></div>`;
+    }
+    html += groups.map((g) =>
       `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(g.name)}</div><div class="edit-pick-chips">` +
-      g.tags.map((t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('') +
+      g.tags.map(chip).join('') +
       `</div></div>`
     ).join('');
+    picker.innerHTML = html;
   }
 
   document.getElementById('editTagsList').addEventListener('click', (e) => {

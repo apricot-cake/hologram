@@ -2075,6 +2075,9 @@
     .iv-insp-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border-soft); }
     .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
+    /* Source-tag chips are buttons: dashed outline signals "click to adopt". */
+    .iv-insp-tag-src { border: 1px dashed var(--border-soft); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; line-height: 1.5; transition: background .12s, color .12s, border-color .12s; }
+    .iv-insp-tag-src:hover { background: var(--hover); color: var(--text); border-color: var(--accent-soft); }
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
