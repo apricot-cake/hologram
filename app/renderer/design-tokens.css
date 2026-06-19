@@ -317,7 +317,7 @@
   --control-sm: 28px;
   --control-md: 34px;
   --control-lg: 40px;
-  --tabbar-h: 38px;
+  --tabbar-h: 44px;
   /* Height of the full-width query-builder top bar. Updated in JS from the bar's
      measured height (it wraps when many chips), so the floating sidebar below can
      offset its sticky top to clear it. */
