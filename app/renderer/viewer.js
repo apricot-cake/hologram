@@ -2177,6 +2177,7 @@
     restoringState = true;
     // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
     queryTree = s.tree ? JSON.parse(JSON.stringify(s.tree)) : facetTreeFrom(s.f || [], s.ops || {});
+    cleanupTree();   // self-heal vestigial single-member groups (e.g. one-value per-type groups from migration)
     syncShadow();
     document.getElementById('searchBox').value = s.search;
     sortSelect.value = s.sort;
@@ -2409,6 +2410,7 @@
       if (at && at.state) {
         // queryTree is the truth; migrate older states (f + ops, no tree).
         queryTree = at.state.tree ? JSON.parse(JSON.stringify(at.state.tree)) : facetTreeFrom(at.state.f || [], at.state.ops || {});
+        cleanupTree();   // self-heal vestigial single-member groups (migration / legacy persisted trees)
         syncShadow();
         document.getElementById('searchBox').value = at.state.search || '';
         sortSelect.value = at.state.sort || 'date-desc';
