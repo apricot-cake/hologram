@@ -40,8 +40,9 @@
     qcJoinOr: _s('qcJoinOr'),
     qbAddGroup: _s('qbAddGroup'),
     qbAddGroupTip: _s('qbAddGroupTip'),
-    qbTipNegate: _s('qbTipNegate'),
     qbTipOp: _s('qbTipOp'),
+    qbMenuNeg: _s('qbMenuNeg'),
+    qbMenuNegGroup: _s('qbMenuNegGroup'),
     tileOverlay: _s('tileOverlay'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
@@ -599,10 +600,13 @@
     qbNodeMap = new Map();
     let idc = 0;
     const NE = '≠';
+    // Small ✕ glyph for the in-pill delete button (revealed on hover, inside bounds).
+    const delIc = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
     const opWord = (op) => escapeHtml(op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd);
-    // A condition leaf → draggable pill (with hover ≠); a group → its members
-    // joined by clickable operator connectors, wrapped in literal parens (root has
-    // no parens and its connectors are .qb-op-root, fixed at the top level).
+    // A condition leaf → draggable pill (hover ✕ removes it; right-click opens the
+    // negate / delete menu); a group → its members joined by clickable operator
+    // connectors, wrapped in literal parens (root has no parens and its connectors
+    // are .qb-op-root). A negated pill / group shows a leading ≠.
     const renderNode = (node, isRoot) => {
       const id = 'n' + (idc++);
       qbNodeMap.set(id, node);
@@ -610,7 +614,7 @@
         return `<span class="qb-pill sb-active-chip qc-${node.type}${node.neg ? ' neg' : ''}" draggable="true" data-nid="${id}">` +
           qcGlyph(node.type) + (node.neg ? `<span class="qb-ne">${NE}</span>` : '') +
           `<span class="qb-pill-label">${escapeHtml(filterLabel(node))}</span>` +
-          `<button type="button" class="qb-neg-btn${node.neg ? ' on' : ''}" data-act="neg" data-nid="${id}" title="${escapeAttr(MSG.qbTipNegate)}" tabindex="-1">${NE}</button>` +
+          `<button type="button" class="qb-del-btn" data-act="del" data-nid="${id}" title="${escapeAttr(MSG.qfDelete)}" aria-label="${escapeAttr(MSG.qfDelete)}" tabindex="-1">${delIc}</button>` +
           `</span>`;
       }
       const opCls = isRoot ? 'qb-op qb-op-root' : 'qb-op';
@@ -618,7 +622,6 @@
       const inner = node.children.map((c) => renderNode(c, false)).join(conn);
       if (isRoot) return inner;   // root: bare members, no parens / no negation
       return `<span class="qb-grp${node.neg ? ' neg' : ''}" data-nid="${id}">` +
-        `<button type="button" class="qb-neg-btn qb-neg-grp${node.neg ? ' on' : ''}" data-act="neggrp" data-nid="${id}" title="${escapeAttr(MSG.qbTipNegate)}" tabindex="-1">${NE}</button>` +
         `<span class="qb-paren qb-paren-l" draggable="true">${node.neg ? NE : ''}(</span>` +
         inner +
         `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
@@ -1023,14 +1026,15 @@
   qbHelpBtn.addEventListener('blur', hideQbHelp);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbHelp(); });
 
-  // Bar interaction (click): toggle a group's operator, negate a pill/group, clear
-  // search, remove a condition, or wrap the whole expression in a group (改訂③).
+  // Bar interaction (click): toggle a group's operator, clear search, delete a
+  // condition (the ✕ button), or wrap the whole expression in a group. Negation and
+  // a redundant delete live in the right-click menu (see chips 'contextmenu' below).
   document.getElementById('queryChips').addEventListener('click', (e) => {
     if (e.target.closest('[data-qb-group-add]')) { wrapAllInGroup(); return; }
     const opBtn = e.target.closest('.qb-op[data-act="op"]');
     if (opBtn) { const n = nodeById(opBtn.dataset.nid); if (n) { n.op = opposite(n.op); afterQueryChange(); } return; }
-    const negBtn = e.target.closest('.qb-neg-btn[data-act]');
-    if (negBtn) { const n = nodeById(negBtn.dataset.nid); if (n) { n.neg = !n.neg; afterQueryChange(); } return; }
+    const delBtn = e.target.closest('.qb-del-btn[data-act="del"]');
+    if (delBtn) { const n = nodeById(delBtn.dataset.nid); if (n) removeNode(n); return; }
     // 検索の特殊ピルは検索を解除。
     if (e.target.closest('[data-special="search"]')) {
       const sb = document.getElementById('searchBox'); if (sb) sb.value = '';
@@ -1041,10 +1045,10 @@
     if (!pill) return;
     const node = nodeById(pill.dataset.nid);
     if (!node || node.kind !== 'cond') return;
-    // 日付・反応は編集ポップへ。それ以外はクリックでその条件を解除（改訂③）。
+    // 日付・反応は左クリックで編集ポップへ。それ以外のピルは左クリックでは何もしない
+    // （削除は✕ボタン、否定は右クリックのメニュー）。ピル本体はドラッグのつかみどころ。
     if (node.type === 'date') { openDatePopover(node); return; }
     if (node.type === 'engagement') { openEngPopover(node); return; }
-    removeNode(node);
   });
   // グループ追加ボタン: 今の式ぜんぶを一発で囲う＝ネストのショートカット（押すたび深く）。
   function wrapAllInGroup() {
@@ -1676,6 +1680,60 @@
     cleanupTree();
     afterQueryChange();
   });
+
+  // --- Query-builder right-click menu: negate / delete a pill or group. Negation is
+  // a low-frequency operation, so (like the card menu, DESIGN.md) it lives behind a
+  // right-click rather than a hover badge that crowds the surface (改訂③ revisited).
+  const qbMenu = document.createElement('div');
+  qbMenu.className = 'fold-menu qb-menu';
+  document.body.appendChild(qbMenu);
+  let qbMenuNode = null;
+  function hideQbMenu() { qbMenu.classList.remove('show'); qbMenuNode = null; }
+  const QB_IC = {
+    neg: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
+    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+  };
+  function showQbMenu(node, isGroup, x, y) {
+    qbMenuNode = node;
+    const row = (act, ic, label, cls, on) =>
+      `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+    qbMenu.innerHTML =
+      row('neg', QB_IC.neg, isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, '', !!node.neg) +
+      '<div class="fm-sep"></div>' +
+      row('del', QB_IC.del, MSG.qfDelete, 'fm-danger');
+    qbMenu.style.left = x + 'px';
+    qbMenu.style.top = y + 'px';
+    qbMenu.classList.add('show');
+    const r = qbMenu.getBoundingClientRect();   // clamp into the viewport
+    if (r.right > innerWidth - 8) qbMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
+    if (r.bottom > innerHeight - 8) qbMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+  }
+  // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
+  chips.addEventListener('contextmenu', (e) => {
+    const pill = e.target.closest('.qb-pill');
+    if (pill) {
+      const n = nodeById(pill.dataset.nid);
+      if (n && n.kind === 'cond') { e.preventDefault(); hideQbMenu(); showQbMenu(n, false, e.clientX, e.clientY); }
+      return;
+    }
+    const frameEl = e.target.closest('.qb-paren, .qb-op:not(.qb-op-root)');
+    const g = frameEl ? frameEl.closest('.qb-grp:not(.qb-root)') : e.target.closest('.qb-grp:not(.qb-root)');
+    if (g) {
+      const n = nodeById(g.dataset.nid);
+      if (n && n.kind === 'group') { e.preventDefault(); hideQbMenu(); showQbMenu(n, true, e.clientX, e.clientY); }
+    }
+  });
+  qbMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const rowEl = e.target.closest('.fm-row');
+    const n = qbMenuNode;
+    hideQbMenu();
+    if (!rowEl || !n) return;
+    if (rowEl.dataset.act === 'neg') { n.neg = !n.neg; afterQueryChange(); }
+    else if (rowEl.dataset.act === 'del') { removeNode(n); }
+  });
+  document.addEventListener('click', (e) => { if (qbMenu.classList.contains('show') && !qbMenu.contains(e.target)) hideQbMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbMenu(); });
 
   const CF = () => window.corpusFolders;   // shared folder module
 

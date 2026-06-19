@@ -54,9 +54,11 @@ const evalJs = `(async () => {
   const orAB = cards();                                  // A∨B → 3
   click(op()); await wait(80);
   const andAB2 = cards();                                // back to A∧B → 1
-  // ≠ で B を否定（A かつ ≠B）
+  // ≠ で B を否定（右クリック→メニュー「除外」）。A かつ ≠B
+  const rclick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }));
   const bPill = pillByLabel('B');
-  click(bPill.querySelector('.qb-neg-btn')); await wait(80);
+  rclick(bPill); await wait(80);
+  click(document.querySelector('.qb-menu [data-act="neg"]')); await wait(80);
   const andNotB = cards();                               // A∧¬B → p1,p2 → 2
   const bNeg = !!pillByLabel('B') && pillByLabel('B').classList.contains('neg');
 

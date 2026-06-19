@@ -1410,8 +1410,9 @@
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
     /* Inline query builder (docs/design-query-builder.md 改訂③): conditions are
        draggable pills (.qb-pill); groups show literal parentheses (.qb-paren); the
-       AND/OR between members is a clickable toggle (.qb-op); ≠ (.qb-neg-btn) negates
-       a pill or a group. Pills reuse the .sb-active-chip glass material. */
+       AND/OR between members is a clickable toggle (.qb-op); a hover ✕ (.qb-del-btn)
+       removes a pill and right-click opens the negate / delete menu (.qb-menu); a
+       negated pill / group shows a leading ≠. Pills reuse .sb-active-chip glass. */
     .qb-pill { position: relative; cursor: grab; }
     .qb-pill:active { cursor: grabbing; }
     .qb-pill .qb-pill-label { min-width: 0; }
@@ -1427,16 +1428,18 @@
     .qb-op:hover { background: var(--hover); color: var(--text); }
     /* Read-only 「かつ」 between the search echo and the query. */
     .qc-conn { font-size: 11px; color: var(--text-subtle); margin: 0 4px; align-self: center; pointer-events: none; }
-    /* ≠ negate toggle: a small round badge at the corner, hidden until the pill /
-       group is hovered; stays lit (accent) while the condition is negated. */
-    .qb-neg-btn { position: absolute; top: -7px; right: -6px; z-index: 2; width: 16px; height: 16px;
-      display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 50%;
-      background: var(--surface); box-shadow: var(--shadow-xs); color: var(--text-muted);
-      font-size: 11px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .1s, color .1s; }
-    .qb-neg-grp { left: -9px; right: auto; }
-    .qb-pill:hover > .qb-neg-btn, .qb-grp:hover > .qb-neg-grp, .qb-neg-btn.on { opacity: 1; }
-    .qb-neg-btn:hover { color: var(--text); }
-    .qb-neg-btn.on { color: var(--accent-text); }
+    /* ✕ delete: tucked at the pill's right edge, INSIDE its bounds (the old ≠ corner
+       badge floated outside and overlapped neighbours / the row above). Reserves its
+       slot always so revealing it on hover causes no layout shift. Negate + a
+       redundant delete live in the right-click menu. */
+    .qb-pill:hover { opacity: 1; }   /* cancel .sb-active-chip's click-fade: plain pills no longer act on left-click */
+    .qb-del-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 15px; height: 15px; margin-left: 1px; margin-right: -4px; padding: 0; border: none;
+      border-radius: 50%; background: none; color: var(--text-muted); cursor: pointer; opacity: 0;
+      transition: opacity .12s, color .12s, background .12s; }
+    .qb-pill:hover .qb-del-btn { opacity: .75; }
+    .qb-del-btn:hover { opacity: 1; color: var(--danger); background: color-mix(in srgb, var(--red-500) 16%, transparent); }
+    .qb-del-btn svg { display: block; }
     /* Drag affordances: dim the dragged element, light the drop target. */
     .qb-dragging { opacity: .4; }
     .qb-drop-on { outline: 2px solid var(--accent-soft); outline-offset: 2px; border-radius: 999px; }
