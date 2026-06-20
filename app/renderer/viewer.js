@@ -414,6 +414,8 @@
   if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('activebarLabel', MSG.activebarLabel);
+  setText('sbWorkRowTitle', MSG.kindWork);
+  setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
   setText('sbFolderRowTitle', MSG.qfCatFolder);
@@ -814,6 +816,15 @@
         out.push({ v: '__multi', l: MSG.qfMultiImage, on: multiOnly });
         return out;
       }
+      case 'work':
+      case 'character': {
+        // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
+        // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter and
+        // pins as a tag — the kind only scopes which tags this flyout offers.
+        const kindTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort()
+          .filter(t => tagKindOf(t) === cat);
+        return kindTags.map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag' }));
+      }
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
         const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
@@ -866,7 +877,7 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    const PINNABLE = new Set(['tag', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'userKind', 'folder']);
+    const PINNABLE = new Set(['tag', 'work', 'character', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'userKind', 'folder']);
     const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
     const curPins = PINNABLE.has(qfCat) ? loadPins() : null;
     const rowOf = (it) => {
@@ -1276,6 +1287,14 @@
     for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
     counts.platform = (counts.platform || 0) + (counts.instance || 0);
     if (multiOnly) counts.media = (counts.media || 0) + 1;   // 複数画像 folded into メディア
+    // 用語帳: split the tag badge by 種別 so a 作品/キャラ filter lights its own row's
+    // badge, leaving the タグ row badge for general (未分類) tags only.
+    let tagWork = 0, tagChar = 0, tagGen = 0;
+    for (const f of activeFilters) if (f.type === 'tag') {
+      const k = tagKindOf(f.value);
+      if (k === 'work') tagWork++; else if (k === 'character') tagChar++; else tagGen++;
+    }
+    counts.tag = tagGen; counts.work = tagWork; counts.character = tagChar;
     document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
       const n = counts[b.dataset.badge] || 0;
       b.textContent = n || '';
@@ -1298,6 +1317,7 @@
   async function setTagKind(tag, kind) {
     if (kind) tagTypes[tag] = kind; else delete tagTypes[tag];
     try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes); } catch { /* best-effort */ }
+    updateSidebarTags();   // a newly classified tag may reveal/hide its 作品/キャラ section
   }
   // 3状態サイクルは全廃: チップは単純トグル（追加=「または」/解除）。
   // 「すべて含む（かつ）」にしたいときはビルダのピルを「かつ」へドラッグ。
@@ -1352,7 +1372,25 @@
       const glyph = TYPE_IC[p.type] ? `<span class="pin-ic">${TYPE_IC[p.type]}</span>` : '';
       return `<button class="sb-chip${active ? ' active' : ''}" data-filter-type="${escapeAttr(p.type)}" data-filter-value="${escapeAttr(p.value)}">${glyph}${escapeHtml(filterLabel(p))}</button>`;
     }).join('');
+    updateKindRows();
     updateSidebarTagGroups();
+  }
+  // 用語帳 (Phase 2 ②): the 作品/キャラ rows are progressively disclosed — each appears
+  // only once at least one tag wears that 種別. No kinds set → no rows → zero trace for
+  // people who just save posts (Corpus isn't illustration-only).
+  function updateKindRows() {
+    const tags = _cachedTagSet || new Set();
+    let hasWork = false, hasChar = false;
+    for (const t of tags) {
+      const k = tagKindOf(t);
+      if (k === 'work') hasWork = true;
+      else if (k === 'character') hasChar = true;
+      if (hasWork && hasChar) break;
+    }
+    const wr = document.getElementById('sbWorkRow');
+    const cr = document.getElementById('sbCharRow');
+    if (wr) wr.style.display = hasWork ? '' : 'none';
+    if (cr) cr.style.display = hasChar ? '' : 'none';
   }
   document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
     const chip = e.target.closest('.sb-chip[data-filter-type]');
