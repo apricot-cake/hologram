@@ -73,10 +73,13 @@ async function main() {
     else console.log(typeof r.result.value === 'string' ? r.result.value : JSON.stringify(r.result.value, null, 2));
   } else {
     await send('Page.enable', {});
+    // A minimized window stops painting → blank frames. Restore + focus before capture.
+    try { const w = await send('Browser.getWindowForTarget', {}); if (w && w.windowId != null) await send('Browser.setWindowBounds', { windowId: w.windowId, bounds: { windowState: 'normal' } }); } catch (e) { /* ignore */ }
+    try { await send('Page.bringToFront', {}); } catch (e) { /* ignore */ }
     // fromSurface:false captures from the renderer's compositor instead of the OS
     // window surface, so it still works when the window is minimized/occluded
     // (a minimized window has no surface → "-32000 Unable to capture screenshot").
-    const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false, fromSurface: false });
+    const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false, fromSurface: process.env.CDP_SURFACE === '1' });
     const out = arg || 'scripts/_shot.jpg';
     fs.writeFileSync(out, Buffer.from(r.data, 'base64'));
     console.log('wrote', out, Buffer.from(r.data, 'base64').length, 'bytes');
