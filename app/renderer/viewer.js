@@ -3975,33 +3975,30 @@
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
-  // Recognition-over-recall: every existing tag, grouped, click to toggle on this
-  // card. Filtered by the input; the input also creates a brand-new tag on Enter.
-  function renderEditPicker() {
-    const picker = document.getElementById('editPicker');
-    if (!picker) return;
-    const groups = groupedTagVocab(editPickQuery);
-    // Source tags (pixiv / SNS hashtags) from the card(s) being edited, offered as
-    // a dedicated section for one-click adoption. They reuse the .edit-pick-chip
-    // markup + data-pick, so the existing picker handler adopts them into editTags.
-    const q = editPickQuery.toLowerCase();
+  // Recognition-over-recall: every existing tag, grouped, click to toggle. Shared by
+  // the bulk-edit modal AND the inspector inline editor — the caller passes the host
+  // element, the current selection, the records to read source (pixiv/SNS) tags from,
+  // and the search query. Clicks are handled by each host's own delegated listener.
+  function renderTagPicker({ host, selectedTags, recordsForSource, query }) {
+    if (!host) return;
+    const q = (query || '').toLowerCase();
+    const groups = groupedTagVocab(query || '');
     const srcSet = new Set();
-    for (const r of editingRecords) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) {
+    for (const r of (recordsForSource || [])) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) {
       if (!q || h.toLowerCase().includes(q)) srcSet.add(h);
     }
     const srcTags = [...srcSet];
     if (!groups.length && !srcTags.length) {
-      picker.innerHTML = `<span class="edit-empty">${escapeHtml(editPickQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
+      host.innerHTML = `<span class="edit-empty">${escapeHtml(query ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
       return;
     }
-    const sel = new Set(editTags);
+    const sel = selectedTags instanceof Set ? selectedTags : new Set(selectedTags || []);
     const chip = (t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
     let html = '';
-    // 共起候補（作品→キャラ）: when this card carries a 作品 tag and the user isn't
-    // searching, surface characters that have co-occurred with it. Suggestions only —
-    // not pre-applied, the full vocab still follows below, the why is in the tooltip.
+    // 共起候補（作品→キャラ）: when a 作品 tag is set and the user isn't searching,
+    // surface co-occurring characters. Suggestions only — full vocab still follows.
     if (!q) {
-      const workTags = editTags.filter((t) => tagKindOf(t) === 'work');
+      const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
       if (workTags.length) {
         const cands = charCandidatesFor(workTags).filter(([t]) => !sel.has(t)).slice(0, 8);
         if (cands.length) {
@@ -4022,7 +4019,12 @@
       g.tags.map(chip).join('') +
       `</div></div>`
     ).join('');
-    picker.innerHTML = html;
+    host.innerHTML = html;
+  }
+
+  // Modal (bulk) picker: thin wrapper over the shared renderer.
+  function renderEditPicker() {
+    renderTagPicker({ host: document.getElementById('editPicker'), selectedTags: editTags, recordsForSource: editingRecords, query: editPickQuery });
   }
 
   document.getElementById('editTagsList').addEventListener('click', (e) => {
@@ -4075,6 +4077,27 @@
       document.getElementById('editTagAdd').click();
     }
   });
+
+  // Modal chrome: lock background scroll + darken the native titlebar while any
+  // full-screen overlay is up (the scrim can't cover the OS window controls or the
+  // page scrollbar, so they'd otherwise stay bright). Driven by observing each
+  // overlay's visibility so no open/close site can be missed. The inspector
+  // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
+  (function setupModalChrome() {
+    const ids = ['editOverlay', 'confirmOverlay', 'ivFolderModal', 'lightbox'];
+    const visible = (el) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
+    const sync = () => {
+      const open = ids.some((id) => visible(document.getElementById(id)));
+      document.documentElement.classList.toggle('modal-open', open);
+      document.body.classList.toggle('modal-open', open);
+      if (window.corpusTheme && window.corpusTheme.applyTitleBar) window.corpusTheme.applyTitleBar(open);
+    };
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
+    }
+    sync();
+  })();
 
   document.getElementById('editCancel').addEventListener('click', () => {
     editingPost = null;

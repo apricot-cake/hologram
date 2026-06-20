@@ -1086,6 +1086,9 @@
     }
     .confirm-box p { margin-bottom: 16px; font-size: 14px; }
     .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
+    /* While a modal scrim is up, lock background scroll so the page scrollbar (which
+       paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
+    html.modal-open, body.modal-open { overflow: hidden; }
 
     /* --- Tags --- */
     .tags-label { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }

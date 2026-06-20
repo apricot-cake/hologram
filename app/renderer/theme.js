@@ -16,16 +16,28 @@
   function systemDark() { return !!(mql && mql.matches); }
   function resolve(p) { p = cleanPref(p); return p === 'auto' ? (systemDark() ? 'dark' : 'light') : p; }
 
+  // Native titlebar overlay (Windows). While a modal scrim is up we darken it so the
+  // OS window controls don't stay bright against the dimmed page (modalDark).
+  var modalDark = false;
+  function barColors() {
+    var d = (resolve(pref) === 'dark');
+    if (modalDark) return { color: d ? '#0a0a0c' : '#9a9c9f', symbolColor: d ? '#7a818b' : '#34373c', height: 37 };
+    return { color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
+  }
+  function setBar() {
+    if (window.corpus && window.corpus.setTitleBarOverlay) {
+      try { window.corpus.setTitleBarOverlay(barColors()); } catch (e) {}
+    }
+  }
+  function applyTitleBar(modal) { modalDark = !!modal; setBar(); }
+
   function apply(p) {
     pref = cleanPref(p);
     if (resolve(pref) === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     else document.documentElement.removeAttribute('data-theme');
     var sel = document.getElementById('themeSelect');
     if (sel && sel.value !== pref) sel.value = pref;
-    if (window.corpus && window.corpus.setTitleBarOverlay) {
-      var d = (resolve(pref) === 'dark');
-      try { window.corpus.setTitleBarOverlay({ color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 }); } catch (e) {}
-    }
+    setBar();   // modalDark-aware; keeps the dark titlebar if a modal is open
     return pref;
   }
   function get() { return pref; }
@@ -53,7 +65,7 @@
     else if (mql.addListener) mql.addListener(onSys);
   }
 
-  window.corpusTheme = { apply: apply, get: get, set: set, resolve: function () { return resolve(pref); } };
+  window.corpusTheme = { apply: apply, get: get, set: set, resolve: function () { return resolve(pref); }, applyTitleBar: applyTitleBar };
 
   // 2) Wire the Settings select + reconcile with config once DOM/IPC are ready.
   function init() {
