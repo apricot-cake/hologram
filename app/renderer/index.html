@@ -2214,6 +2214,19 @@
     }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
     .iv-insp-actions .iv-insp-open { margin-top: 0; }
+    /* Inspector inline tag editor — shown only in tagging-edit (CSS-gated). */
+    .iv-tag-edit { display: none; }
+    body.tagging.tagging-edit .iv-tag-edit { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+    body.tagging.tagging-edit .iv-tag-view { display: none; }
+    .iv-tag-label { font-size: 11px; color: var(--text-muted); }
+    .iv-tag-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .iv-tag-chips .tag-chip { cursor: pointer; font-size: 11px; transition: background .12s, color .12s; }
+    .iv-tag-chips .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
+    .iv-tag-addrow { display: flex; gap: 6px; }
+    .iv-tag-addrow input { flex: 1; min-width: 0; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; outline: none; }
+    .iv-tag-addrow input:focus { border-color: var(--accent); }
+    .iv-tag-addrow .btn-outline { flex-shrink: 0; padding: 5px 11px; font-size: 12px; }
+    .iv-tag-picker.edit-picker { margin-top: 2px; max-height: 42vh; }
     /* The card currently shown in the inspector — tinted ring, not solid */
     .post-card.inspected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
 

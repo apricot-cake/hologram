@@ -1501,6 +1501,12 @@
       if (idx >= 0) allPosts[idx].tags = r.tags.slice();
     }
     renderPosts(true);
+    // Keep the inspector in sync if it's showing the affected group (undo isn't fired
+    // while typing in the add input, so a full re-render here is safe).
+    if (!document.getElementById('postDetail').hidden && inspectedKey) {
+      const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+      if (fresh) showDetail(fresh);
+    }
   }
 
   async function doUndo() {
@@ -3257,7 +3263,7 @@
     if (!rowEl || !g) return;
     const act = rowEl.dataset.act;
     if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
-    else if (act === 'edit') openEditOverlay(g.rep, g.records);
+    else if (act === 'edit') { if (taggingApi) taggingApi.enter('edit'); showDetail(g); }
     else if (act === 'tagmode') { if (taggingApi) taggingApi.enter(); }
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
@@ -3681,8 +3687,11 @@
       const card = e.target.closest('.post-card'); if (!card) return;
       e.preventDefault(); e.stopPropagation();
       const g = viewGroups[parseInt(card.dataset.index, 10)]; if (!g) return;
-      if (axis === 'edit') openEditOverlay(g.rep, g.records);
-      else stampCard(card, g);
+      if (axis === 'edit') {
+        // Edit axis: open the inspector for inline tag editing (re-click same card closes).
+        if (!document.getElementById('postDetail').hidden && inspectedKey === postIdKey(g.rep)) closeDetail();
+        else showDetail(g);
+      } else stampCard(card, g);
     }, true);
 
     // Esc leaves tagging mode (unless the gallery / edit overlay is on top).
@@ -3730,6 +3739,55 @@
     renderPosts(true);
     showToast(MSG.ungroupDone);
   }
+  // --- Inspector inline tag editor (active in tagging-edit mode) ---
+  // Source of truth = the records' real tags. Each change saves immediately (mirrors
+  // adoptSourceTag) and re-renders only the affected sub-parts so the input keeps focus
+  // and the picker keeps its scroll. The edit UI shows via CSS only when body.tagging-edit;
+  // plain browsing sees the read-only view.
+  let ivPickQuery = '';
+  function sameTags(a, b) { if (a.length !== b.length) return false; const s = new Set(a); return b.every((t) => s.has(t)); }
+
+  function refreshInspectorTags(g) {
+    const host = document.getElementById('ivTagChips');
+    if (!host || !g) return;
+    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
+    host.innerHTML = tags.length
+      ? tags.map((t, i) => `<span class="tag-chip" data-remove-tag="${i}" data-tag="${escapeAttr(t)}">${escapeHtml(t)} ×</span>`).join('')
+      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
+  }
+
+  function refreshInspectorPicker(g) {
+    const host = document.getElementById('ivTagPicker');
+    if (!host || !g) return;
+    const keep = host.scrollTop;
+    renderTagPicker({ host, selectedTags: g.rep.tags || [], recordsForSource: g.records, query: ivPickQuery });
+    host.scrollTop = keep;
+  }
+
+  // Apply a tag mutation to every record of the inspected group, persist immediately,
+  // record undo, and refresh grid + inspector sub-parts (NOT a full showDetail — so the
+  // image/meta don't flicker and the input keeps focus).
+  async function applyInspectorTagChange(g, mutate) {
+    if (!g) return;
+    const recs = (g.records && g.records.length) ? g.records : [g.rep];
+    keepCurrentVisible();   // removing a tag can un-match an active tag filter
+    const undoRecords = [];
+    for (const r of recs) {
+      const prev = (r.tags || []).slice();
+      const next = mutate(prev.slice());
+      if (!next || sameTags(prev, next)) continue;
+      try { await window.corpus.updateTags(r.image || r.video, next); } catch { /* keep going */ }
+      const idx = allPosts.findIndex((p) => p.captureId === r.captureId);
+      if (idx >= 0) allPosts[idx].tags = next.slice();
+      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next });
+    }
+    if (!undoRecords.length) return;
+    pushUndo('tags', undoRecords);
+    renderPosts(true);
+    const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+    if (fresh) { refreshInspectorTags(fresh); refreshInspectorPicker(fresh); }
+  }
+
   function showDetail(g) {
     if (!g) return;
     const p = g.rep;
@@ -3796,16 +3854,17 @@
       row(MSG.detailUpdated, p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
       row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
       row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
-      tagsHtml +
-      srcTagsHtml +
+      `<div id="ivTagEdit" class="iv-tag-edit"><div class="iv-tag-label">${escapeHtml(MSG.detailTags)}</div><div id="ivTagChips" class="iv-tag-chips"></div><div class="iv-tag-addrow"><input type="text" id="ivTagInput" placeholder="${escapeAttr(MSG.tagNewName)}" autocomplete="off"><button class="btn-outline" id="ivTagAdd">${escapeHtml(MSG.tagAddBtn)}</button></div><div id="ivTagPicker" class="edit-picker iv-tag-picker"></div></div>` +
+      `<div id="ivTagView" class="iv-tag-view">${tagsHtml}${srcTagsHtml}</div>` +
       `<div class="iv-insp-actions">` +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
-      `<a class="iv-insp-open" id="pdEdit">${escapeHtml(MSG.tipEdit)}</a>` +
       (srcImageUrl ? `<a class="iv-insp-open" id="pdSauce">${escapeHtml(MSG.detailSauce)} ↗</a>` : '') +
       (srcImageUrl ? `<a class="iv-insp-open" id="pdAscii">${escapeHtml(MSG.detailAscii)} ↗</a>` : '') +
       groupBtn +
       `</div>`;
     document.getElementById('postDetail').hidden = false;
+    refreshInspectorTags(g);
+    if (document.body.classList.contains('tagging-edit')) refreshInspectorPicker(g);
     // While open, a card click swaps the panel (not zoom) → plain pointer.
     document.getElementById('postGrid').classList.add('insp-open');
     // Ring-mark the inspected card so swapping content stays traceable.
@@ -3819,7 +3878,6 @@
     refreshTileSlider();   // inline column narrows the grid — re-derive the track
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const o = document.getElementById('pdOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
-    const ed = document.getElementById('pdEdit'); if (ed) ed.onclick = () => openEditOverlay(g.rep, g.records);
     const sa = document.getElementById('pdSauce'); if (sa) sa.onclick = () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl));
     const as = document.getElementById('pdAscii'); if (as) as.onclick = () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl));
     const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
@@ -4097,6 +4155,49 @@
       if (el) new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
     }
     sync();
+  })();
+
+  // Inspector inline tag editor — delegated events on the persistent #postDetail
+  // (its inner box is regenerated by showDetail, so listeners live on the host, not
+  // the box). Each handler re-finds the inspected group via inspectedKey.
+  (function setupInspectorTagEditor() {
+    const panel = document.getElementById('postDetail');
+    if (!panel) return;
+    const freshG = () => viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey) || null;
+    const addTyped = () => {
+      const input = document.getElementById('ivTagInput');
+      if (!input) return;
+      const tag = input.value.trim();
+      const g = freshG();
+      if (tag && g) applyInspectorTagChange(g, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
+      input.value = ''; ivPickQuery = '';
+      const g2 = freshG(); if (g2) refreshInspectorPicker(g2);
+      input.focus();
+    };
+    panel.addEventListener('click', (e) => {
+      if (e.target.closest('#ivTagAdd')) { addTyped(); return; }
+      const rm = e.target.closest('#ivTagChips [data-remove-tag]');
+      if (rm) { const i = parseInt(rm.dataset.removeTag, 10); applyInspectorTagChange(freshG(), (prev) => prev.filter((_, k) => k !== i)); return; }
+      const pick = e.target.closest('#ivTagPicker .edit-pick-chip');
+      if (pick) { const t = pick.dataset.pick; applyInspectorTagChange(freshG(), (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); return; }
+    });
+    panel.addEventListener('contextmenu', (e) => {
+      const chip = e.target.closest('#ivTagChips [data-tag], #ivTagPicker .edit-pick-chip');
+      if (!chip) return;
+      e.preventDefault();
+      const tag = chip.dataset.tag || chip.dataset.pick;
+      if (tag && taggingApi && taggingApi.showKindMenu) {
+        taggingApi.showKindMenu(tag, e.clientX, e.clientY, () => { const g = freshG(); if (g) { refreshInspectorTags(g); refreshInspectorPicker(g); } });
+      }
+    });
+    panel.addEventListener('input', (e) => {
+      if (e.target.id !== 'ivTagInput') return;
+      ivPickQuery = e.target.value.trim();
+      const g = freshG(); if (g) refreshInspectorPicker(g);
+    });
+    panel.addEventListener('keydown', (e) => {
+      if (e.target.id === 'ivTagInput' && e.key === 'Enter') { e.preventDefault(); addTyped(); }
+    });
   })();
 
   document.getElementById('editCancel').addEventListener('click', () => {
