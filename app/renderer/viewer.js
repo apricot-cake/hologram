@@ -329,6 +329,22 @@
     if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
     if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
   }
+  // Open an anchored flyout to the RIGHT of anchorRect (tops aligned), then clamp into
+  // the viewport. opts.maxHeight caps the height to the space below the final top so a
+  // long scrolling list never overruns the screen (its inner scroller takes over). The
+  // caller makes el visible first (.show / display:block) so it can be measured. Shared
+  // by the sidebar filter flyout and the date / engagement popovers.
+  function placeFlyout(el, anchorRect, opts = {}) {
+    el.style.maxHeight = '';   // reset before measuring (a prior open may have capped it)
+    el.style.right = 'auto';
+    el.style.left = (anchorRect.right + 8) + 'px';
+    el.style.top = anchorRect.top + 'px';
+    const pr = el.getBoundingClientRect();
+    if (pr.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    let top = anchorRect.top;
+    if (pr.bottom > innerHeight - 8) { top = Math.max(8, innerHeight - pr.height - 8); el.style.top = top + 'px'; }
+    if (opts.maxHeight) el.style.maxHeight = (innerHeight - top - 8) + 'px';
+  }
 
   // --- Apply i18n to static elements ---
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -961,20 +977,10 @@
     qfAnchor = anchorEl;
     qfTagGroup = tagGroupId || null;
     renderQfPop();
-    const r = anchorEl.getBoundingClientRect();
-    qfPop.style.maxHeight = '';   // reset before measuring (a prior open may have set it)
-    qfPop.style.left = (r.right + 8) + 'px';
-    qfPop.style.top = r.top + 'px';
     qfPop.classList.add('show');
-    const pr = qfPop.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) qfPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    // Clamp the top so the bottom fits, THEN cap max-height to the space from the final
-    // top to the viewport bottom — so a long list never overruns the screen (its inner
-    // .qf-vals scrolls instead of the bottom being clipped).
-    let top = r.top;
-    if (pr.bottom > innerHeight - 8) top = Math.max(8, innerHeight - pr.height - 8);
-    qfPop.style.top = top + 'px';
-    qfPop.style.maxHeight = (innerHeight - top - 8) + 'px';
+    // Right-anchored flyout; maxHeight caps a long value list so its inner .qf-vals
+    // scrolls instead of overrunning the viewport bottom (shared placeFlyout).
+    placeFlyout(qfPop, anchorEl.getBoundingClientRect(), { maxHeight: true });
   }
   qfPop.addEventListener('click', (e) => {
     if (e.target.closest('#qfFolderManage')) { if (CF()) CF().openManager(); hideQfPop(); return; }
@@ -1138,12 +1144,7 @@
     // Open to the RIGHT of the row (same as the category flyouts) — opening
     // straight down covered the rows below and made switching awkward.
     popover.style.display = 'block';
-    popover.style.left = (rect.right + 8) + 'px';
-    popover.style.top = rect.top + 'px';
-    popover.style.right = 'auto';
-    const pr = popover.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) popover.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    if (pr.bottom > innerHeight - 8) popover.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
+    placeFlyout(popover, rect);
   }
 
   document.getElementById('qfDateType').addEventListener('click', function() {
@@ -1202,12 +1203,7 @@
     document.getElementById('qfEngApply').textContent = MSG.qfApply;
 
     popover.style.display = 'block';
-    popover.style.left = (rect.right + 8) + 'px';
-    popover.style.top = rect.top + 'px';
-    popover.style.right = 'auto';
-    const pr = popover.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) popover.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    if (pr.bottom > innerHeight - 8) popover.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
+    placeFlyout(popover, rect);
   }
 
   document.getElementById('qfEngOp').addEventListener('click', function() {
@@ -2589,13 +2585,10 @@
       ].join('');
       document.body.appendChild(menu);
       tabMenu = menu;
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = (e.clientY + 4) + 'px';
       menu.classList.add('show');
-      const r = menu.getBoundingClientRect();
-      const { innerWidth: W, innerHeight: H } = window;
-      let x = e.clientX, y = e.clientY + 4;
-      if (x + r.width > W - 8) x = W - r.width - 8;
-      if (y + r.height > H - 8) y = e.clientY - r.height - 4;
-      menu.style.left = x + 'px'; menu.style.top = y + 'px';
+      clampIntoView(menu);   // same cursor-menu clamp as the other context menus
       menu.addEventListener('click', (ev) => {
         const row = ev.target.closest('[data-tab-act]');
         if (!row) return;
