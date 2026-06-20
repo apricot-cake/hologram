@@ -1505,6 +1505,7 @@
       const idx = allPosts.findIndex(p => p.captureId === r.captureId);
       if (idx >= 0) allPosts[idx].tags = r.tags.slice();
     }
+    markPostsMutated();
     renderPosts(true);
     // Keep the inspector in sync if it's showing the affected group (undo isn't fired
     // while typing in the add input, so a full re-render here is safe).
@@ -1543,6 +1544,12 @@
   // --- State ---
   let allPosts = [];
   let _allPostsGeneration = 0;  // bumped on every allPosts replacement; invalidates sidebar caches
+  // In-place edits (tag add/remove, single delete) mutate allPosts records without
+  // replacing the array, so the generation counter won't advance on its own. It gates
+  // the sidebar tag/author/instance caches and buildUsers, so mutators must call this —
+  // otherwise a newly-added tag never reaches the sidebar rows (and a removed author /
+  // instance lingers) even though renderPosts redraws the grid and flyouts.
+  function markPostsMutated() { _allPostsGeneration++; }
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts';   // 'posts' | 'posters' (what the content area browses)
@@ -3423,6 +3430,7 @@
       if (idx >= 0) allPosts.splice(idx, 1);
       _postsById.delete(r.captureId);   // keep the delta cache in sync with the optimistic removal
     }
+    markPostsMutated();   // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders();   // 削除した captureId をフォルダから即時掃除
     renderPostFolders();
@@ -3571,6 +3579,7 @@
         const r = recs.find((x) => x.captureId === u.captureId); if (r) r.tags = u.newTags.slice();
         const i = allPosts.findIndex((p) => p.captureId === u.captureId); if (i >= 0) allPosts[i].tags = u.newTags.slice();
       }
+      markPostsMutated();   // stamping skips renderPosts; just invalidate so the next render rebuilds the sidebar
       pushUndo('tags', undoRecords);
       if (cardEl) { cardEl.classList.toggle('stamp-on', !has); updateCardTagLabel(cardEl, g); }
       showToast(has ? MSG.tagStampedOff(loaded) : MSG.tagStampedOn(loaded));
@@ -3788,6 +3797,7 @@
     }
     if (!undoRecords.length) return;
     pushUndo('tags', undoRecords);
+    markPostsMutated();
     renderPosts(true);
     const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
     if (fresh) { refreshInspectorTags(fresh); refreshInspectorPicker(fresh); }
@@ -3908,6 +3918,7 @@
     }
     if (!undoRecords.length) return;   // all records already had it
     pushUndo('tags', undoRecords);
+    markPostsMutated();
     renderPosts(true);
     const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
     if (fresh) showDetail(fresh);
@@ -4238,6 +4249,7 @@
       if (idx >= 0) allPosts[idx].tags = u.newTags.slice();
     }
     pushUndo('tags', undoRecords);
+    markPostsMutated();
     renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
 
     const n = editingRecords.length;
