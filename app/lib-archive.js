@@ -8,7 +8,7 @@
 //   library/<captureId>.jpg            screenshot
 //   library/<captureId>.json           sidecar (verbatim)
 //   library/<captureId>-media-N.<ext>  original media
-//   library/folders.json|tag-groups.json|ungrouped.json|manual-groups.json
+//   library/folders.json|tag-groups.json|tag-types.json|ungrouped.json|manual-groups.json
 //   corpus-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
 //
 // Excluded from the snapshot: config.json (machine-specific: paths, extension id)
@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json'];
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
@@ -72,6 +72,17 @@ function mergeTagGroups(cur, inc) {
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
 }
+// Tag → kind map (用語帳). Union of entries; the CURRENT library wins on a tag
+// already classified locally (don't let an import overwrite a deliberate kind).
+function mergeTagTypes(cur, inc) {
+  const types = {};
+  for (const [t, k] of Object.entries((inc && inc.types) || {})) if (k) types[String(t)] = String(k);
+  for (const [t, k] of Object.entries((cur && cur.types) || {})) if (k) types[String(t)] = String(k);
+  const labels = { ...((inc && inc.labels) || {}), ...((cur && cur.labels) || {}) };
+  const out = { types };
+  if (Object.keys(labels).length) out.labels = labels;
+  return out;
+}
 function mergeManualGroups(cur, inc) {
   const seen = new Set(); const out = [];
   for (const g of [...(cur.groups || []), ...(inc.groups || [])]) {
@@ -86,6 +97,7 @@ function mergeManualGroups(cur, inc) {
 const MERGERS = {
   'folders.json': mergeFolders,
   'tag-groups.json': mergeTagGroups,
+  'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
   'poster-favorites.json': mergeUngrouped,   // same { keys } shape → union merge
@@ -176,5 +188,5 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
 module.exports = {
   EXPORT_SKIP, ORG_MERGE,
   buildCompleteZip, buildImagesZip, importCompleteZip,
-  mergeFolders, mergeTagGroups, mergeUngrouped, mergeManualGroups
+  mergeFolders, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups
 };

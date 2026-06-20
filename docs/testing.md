@@ -27,10 +27,12 @@
 ### スモークテスト
 
 - `test-bridge.js` / `test-media.js` / `test-app-render.js` / `test-app-ipc.js` / `test-app-hashtags.js` / `test-app-watch.js` / `test-app-media.js` / `test-app-users.js` / `test-app-instances.js` — ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示/ユーザータブ/インスタンスフィルタ
+- `test-app-tagtypes.js` — タグ用語帳（種別）IPC `get/set-tag-types` を実Electron mainで往復＋`tag-types.json` のディスク永続を検証（CORPUS_SMOKE harness）
 
 ### 退行・セキュリティ・正しさ
 
 - `test-archive-zipslip.js` — import ZIP の Zip-Slip 退行テスト（バックスラッシュ/`..`/絶対パスのエントリが save folder 外へ書き込まれないことを検証）
+- `test-tag-types.js` — タグ用語帳マージ（`lib-archive.js#mergeTagTypes`）の単体＋import統合。種別の和集合・衝突時はローカル（現ライブラリ）優先・ラベルマージ・null安全、`importCompleteZip` で `tag-types.json` がマージされる（インポートがローカル分類を上書きしない）ことを検証
 - `test-bridge-ssrf.js` — `media-download.js#fetchStillImage` の SSRF/サイズ上限ガード（IPリテラルの private/予約・localhost系・private へのリダイレクトを fetch 前に拒否、上限超過 body をストリームで中断）
 - `test-avatar-fill.js` — `backfill-metadata.js --avatars` の実機実行（fetchスタブを`-r`プリロード）＝`avatar`有り&`avatarFile`無しのサイドカーに `<base>-avatar.<ext>` をDLして `avatarFile` 付与・既にある/avatar無しはスキップ。`pixivRefererFor` の単体も兼ねる
 - `test-metadata-origin.js` — `fetchPostMetadata` の `expectedHost` 制約（Misskey/Mastodon のインスタンスhost が sender tab と不一致なら fetch せず空レコード／一致時と固定hostの X は通す）

@@ -104,6 +104,12 @@
     tagNoTags: _s('tagNoTags'),
     tagStampedOn: _f1('tagStampedOn'),
     tagStampedOff: _f1('tagStampedOff'),
+    tagKindHeader: _s('tagKindHeader'),
+    kindWork: _s('kindWork'),
+    kindCharacter: _s('kindCharacter'),
+    kindGeneral: _s('kindGeneral'),
+    tagKindSet: _f1('tagKindSet'),
+    tagKindCleared: _s('tagKindCleared'),
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
@@ -1281,6 +1287,18 @@
   // 行ボタン（押すとそのグループのタグがフライアウトで開く）。タグ本体は
   // 青天井に増えるが、グループはユーザーが作る有限リストなので常設できる。
   let tagGroups = [];   // {id,name,tags[]} from tag-groups.json (loaded at startup)
+  // 用語帳 (Phase 2 ①): a tag's 種別 is an attribute of the TAG. `tagTypes` maps a
+  // tag string → kind ('work' | 'character'); tags absent from it are 一般 (general).
+  // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
+  // later category sections; here we only assign + reflect the kind on the tag itself.
+  let tagTypes = {};
+  const KIND_LABEL = () => ({ work: MSG.kindWork, character: MSG.kindCharacter });
+  function tagKindOf(tag) { return tagTypes[tag] || null; }
+  function kindLabel(kind) { return KIND_LABEL()[kind] || ''; }
+  async function setTagKind(tag, kind) {
+    if (kind) tagTypes[tag] = kind; else delete tagTypes[tag];
+    try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes); } catch { /* best-effort */ }
+  }
   // 3状態サイクルは全廃: チップは単純トグル（追加=「または」/解除）。
   // 「すべて含む（かつ）」にしたいときはビルダのピルを「かつ」へドラッグ。
   // チップの ＋/濃色表示は状態の反映としてだけ残る。
@@ -3410,7 +3428,12 @@
         palette.innerHTML = `<span class="tag-pal-empty">${escapeHtml(palQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
         return;
       }
-      const chip = (t) => `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+      const chip = (t) => {
+        const k = tagKindOf(t);
+        const dot = k ? `<span class="tag-pal-kind tk-${k}"></span>` : '';
+        const title = k ? ` title="${escapeAttr(kindLabel(k))}"` : '';
+        return `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}"${k ? ` data-kind="${k}"` : ''} data-tag="${escapeAttr(t)}"${title}>${dot}${escapeHtml(t)}</button>`;
+      };
       palette.innerHTML = groups.map((g) =>
         `<div class="tag-pal-group"><div class="tag-pal-gname">${escapeHtml(g.name)}</div><div class="tag-pal-chips">${g.tags.map(chip).join('')}</div></div>`
       ).join('');
@@ -3546,6 +3569,55 @@
       const t = chip.dataset.tag;
       loadTag(t === loaded ? null : t);   // click the loaded chip again to unload
     });
+
+    // Right-click a palette chip → set its 種別 (用語帳 entry). A deliberately quiet
+    // option tucked into tag management (段階的開示): assigning a kind is the TAG's
+    // attribute, so no post is touched. The kind blooms as a dot on the chip.
+    const kindMenu = document.createElement('div');
+    kindMenu.className = 'fold-menu';
+    document.body.appendChild(kindMenu);
+    let kindMenuTag = null;
+    function hideKindMenu() { kindMenu.classList.remove('show'); kindMenuTag = null; }
+    function showKindMenu(tag, x, y) {
+      kindMenuTag = tag;
+      const cur = tagKindOf(tag);
+      const row = (k, label) => {
+        const dot = k ? `<span class="tk-dot tk-${k}"></span>` : '';
+        const on = (k || null) === cur;
+        return `<div class="fm-row" data-kind="${k || '__none'}"><span class="fm-ic">${dot}</span>` +
+          `<span class="fm-name">${escapeHtml(label)}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+      };
+      kindMenu.innerHTML =
+        `<div class="fm-head">${escapeHtml(MSG.tagKindHeader)}</div>` +
+        row('work', MSG.kindWork) +
+        row('character', MSG.kindCharacter) +
+        '<div class="fm-sep"></div>' +
+        row('', MSG.kindGeneral);
+      kindMenu.style.left = x + 'px';
+      kindMenu.style.top = y + 'px';
+      kindMenu.classList.add('show');
+      const r = kindMenu.getBoundingClientRect();   // clamp into the viewport
+      if (r.right > innerWidth - 8) kindMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
+      if (r.bottom > innerHeight - 8) kindMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+    }
+    palette.addEventListener('contextmenu', (e) => {
+      const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
+      e.preventDefault();
+      showKindMenu(chip.dataset.tag, e.clientX, e.clientY);
+    });
+    kindMenu.addEventListener('click', async (e) => {
+      e.stopPropagation();   // survive the capture-phase document hider below
+      const rowEl = e.target.closest('.fm-row'); const tag = kindMenuTag;
+      hideKindMenu();
+      if (!rowEl || !tag) return;
+      const kind = rowEl.dataset.kind === '__none' ? '' : rowEl.dataset.kind;
+      if ((tagKindOf(tag) || '') === kind) return;   // already that kind — no write
+      await setTagKind(tag, kind);
+      renderPalette();
+      showToast(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
+    });
+    document.addEventListener('click', (e) => { if (kindMenu.classList.contains('show') && !kindMenu.contains(e.target)) hideKindMenu(); }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideKindMenu(); });
     if (palSearch) palSearch.addEventListener('input', () => { palQuery = palSearch.value.trim(); renderPalette(); });
     newAdd.addEventListener('click', createTag);
     newGroup.addEventListener('change', () => { newGroupName.style.display = newGroup.value === '__new' ? '' : 'none'; });
@@ -5184,6 +5256,7 @@ render()
   try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; posterFolders = (r && r.folders) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
+  try { const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null; tagTypes = (r && r.types) || {}; } catch { /* default empty */ }
   await initTabs();
   appBooted = true;   // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();

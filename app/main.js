@@ -59,7 +59,7 @@ function getSaveFolder() {
 // IGNORE them — otherwise each write self-triggers a full library reload
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
 const INTERNAL_FILES = new Set([
-  'config.json', '.index.json', 'tag-groups.json', 'ungrouped.json',
+  'config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json',
   'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json',
   'poster-folders.json',
 ]);
@@ -309,6 +309,39 @@ ipcMain.handle('set-tag-groups', (_e, groups) => {
   try {
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'tag-groups.json'), JSON.stringify({ groups }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// Tag "vocabulary book" (用語帳): a tag's 種別 (kind) is an attribute of the TAG,
+// not of any post — so classifying a few hundred distinct tags needs zero post
+// migration. Lives as <saveFolder>/tag-types.json: { types: { "<tag>": "work"|
+// "character" } }. Tags absent from the map are implicitly 一般 (general). The
+// renamable work⊃character pair powers the (later) copyright/character sections;
+// `labels` is reserved/pass-through for that phase.
+ipcMain.handle('get-tag-types', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { types: {}, labels: null };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'tag-types.json'), 'utf8'));
+    const types = (j && j.types && typeof j.types === 'object') ? j.types : {};
+    const labels = (j && j.labels && typeof j.labels === 'object') ? j.labels : null;
+    return { types, labels };
+  } catch {
+    return { types: {}, labels: null };
+  }
+});
+
+ipcMain.handle('set-tag-types', (_e, types, labels) => {
+  const folder = getSaveFolder();
+  if (!folder || !types || typeof types !== 'object') return { ok: false };
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    const out = { types };
+    if (labels && typeof labels === 'object') out.labels = labels;
+    fs.writeFileSync(path.join(folder, 'tag-types.json'), JSON.stringify(out, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };
@@ -812,7 +845,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'tag-types.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
