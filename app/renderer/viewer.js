@@ -4182,7 +4182,10 @@
     panel.addEventListener('click', (e) => {
       if (e.target.closest('#ivTagAdd')) { addTyped(); return; }
       const rm = e.target.closest('#ivTagChips [data-remove-tag]');
-      if (rm) { const i = parseInt(rm.dataset.removeTag, 10); applyInspectorTagChange(freshG(), (prev) => prev.filter((_, k) => k !== i)); return; }
+      // Remove by value, not positional index: a group merges multiple records whose
+      // tag arrays may be ordered differently, so applying the rep's index positionally
+      // to each record could delete a different tag. The chip carries the exact value.
+      if (rm) { const tagVal = rm.dataset.tag; applyInspectorTagChange(freshG(), (prev) => prev.filter((t) => t !== tagVal)); return; }
       const pick = e.target.closest('#ivTagPicker .edit-pick-chip');
       if (pick) { const t = pick.dataset.pick; applyInspectorTagChange(freshG(), (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); return; }
     });
