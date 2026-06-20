@@ -827,7 +827,8 @@
       }
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
-        const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort();
+        // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
+        const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].filter(t => !tagKindOf(t)).sort();
         if (qfTagGroup) {
           if (qfTagGroup === '__other') {
             const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
@@ -1452,21 +1453,25 @@
     host.classList.toggle('collapsed', tagGroupsCollapsed);
     _rebuildSidebarSets();
     const allTagSet = _cachedTagSet;
+    // 用語帳: kinded tags graduated to the 作品/キャラ rows — the タグ section counts
+    // and lists general tags only, so they aren't shown / counted twice.
+    const genTags = [...allTagSet].filter(t => !tagKindOf(t));
+    const genSet = new Set(genTags);
     const activeTags = new Set(activeFilters.filter(f => f.type === 'tag').map(f => f.value));
     const rows = [];
-    if (allTagSet.size) {
-      rows.push(`<button class="sb-subrow" type="button" data-tag-group="__all"><span class="sb-subrow-name">${escapeHtml(MSG.tagAllRow)}</span><span class="sb-subrow-count">${allTagSet.size}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+    if (genTags.length) {
+      rows.push(`<button class="sb-subrow" type="button" data-tag-group="__all"><span class="sb-subrow-name">${escapeHtml(MSG.tagAllRow)}</span><span class="sb-subrow-count">${genTags.length}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
     }
     for (const g of tagGroups) {
-      const count = (g.tags || []).filter(t => allTagSet.has(t)).length;
+      const count = (g.tags || []).filter(t => genSet.has(t)).length;
       if (!count) continue;
       const active = (g.tags || []).some(t => activeTags.has(t));
       rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="${escapeAttr(g.id)}"><span class="sb-subrow-name">${escapeHtml(g.name || '')}</span><span class="sb-subrow-count">${count}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
     }
     const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
-    const otherCount = [...allTagSet].filter(t => !grouped.has(t)).length;
+    const otherCount = genTags.filter(t => !grouped.has(t)).length;
     if (otherCount) {
-      const active = [...activeTags].some(t => !grouped.has(t));
+      const active = [...activeTags].some(t => !grouped.has(t) && !tagKindOf(t));
       rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="__other"><span class="sb-subrow-name">${escapeHtml(MSG.tagGroupOther)}</span><span class="sb-subrow-count">${otherCount}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
     }
     inner.innerHTML = rows.join('');
@@ -3907,12 +3912,21 @@
     const byJa = (a, b) => a.localeCompare(b, 'ja');
     const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
     const out = [];
+    // 用語帳: 作品/キャラ are first-class categories — surface them as their own
+    // sections ahead of the freeform groups, and pull kinded tags OUT of their
+    // group / 未分類 so each tag shows once (種別 takes precedence, danbooru-style).
+    const kindSec = { work: [], character: [] };
+    for (const [t, k] of Object.entries(tagTypes)) if (k === 'work' || k === 'character') kindSec[k].push(t);
+    for (const [k, name] of [['work', MSG.kindWork], ['character', MSG.kindCharacter]]) {
+      const tags = kindSec[k].filter(ok).sort(byJa);
+      if (tags.length) out.push({ name, tags });
+    }
     for (const g of tagGroups) {
-      const tags = (g.tags || []).filter(ok).sort(byJa);
+      const tags = (g.tags || []).filter((t) => !tagKindOf(t)).filter(ok).sort(byJa);
       if (tags.length) out.push({ name: g.name, tags });
     }
     const applied = new Set();
-    for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t)) applied.add(t);
+    for (const p of allPosts) for (const t of (Array.isArray(p.tags) ? p.tags : [])) if (!grouped.has(t) && !tagKindOf(t)) applied.add(t);
     const ungrouped = [...applied].filter(ok).sort(byJa);
     if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
     return out;
