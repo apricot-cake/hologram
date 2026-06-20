@@ -81,6 +81,9 @@
     tipAdoptTag: _s('tipAdoptTag'),
     tagAdopted: _f1('tagAdopted'),
     editAdoptSource: _s('editAdoptSource'),
+    editCoocCharsOf: _f1('editCoocCharsOf'),
+    editCoocChars: _s('editCoocChars'),
+    editCoocWhy: _f2('editCoocWhy'),
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
@@ -3953,6 +3956,23 @@
       : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
   }
 
+  // Tag co-occurrence: 作品 → characters that have shared a post with any of these
+  // 作品 tags, most-frequent first. Deterministic + explainable (the count IS the
+  // confidence). 種別 already fixes the two hard guesses (which tags relate, which is
+  // the parent), so what's left — which character belongs to which work — is high
+  // precision (a character co-occurs with ~one work).
+  function charCandidatesFor(workTags) {
+    if (!workTags || !workTags.length) return [];
+    const works = new Set(workTags);
+    const counts = new Map();
+    for (const p of allPosts) {
+      const tags = Array.isArray(p.tags) ? p.tags : [];
+      if (!tags.some((t) => works.has(t))) continue;
+      for (const t of tags) if (tagKindOf(t) === 'character') counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
   // Recognition-over-recall: every existing tag, grouped, click to toggle on this
   // card. Filtered by the input; the input also creates a brand-new tag on Enter.
   function renderEditPicker() {
@@ -3975,6 +3995,22 @@
     const sel = new Set(editTags);
     const chip = (t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
     let html = '';
+    // 共起候補（作品→キャラ）: when this card carries a 作品 tag and the user isn't
+    // searching, surface characters that have co-occurred with it. Suggestions only —
+    // not pre-applied, the full vocab still follows below, the why is in the tooltip.
+    if (!q) {
+      const workTags = editTags.filter((t) => tagKindOf(t) === 'work');
+      if (workTags.length) {
+        const cands = charCandidatesFor(workTags).filter(([t]) => !sel.has(t)).slice(0, 8);
+        if (cands.length) {
+          const gname = workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars;
+          const who = workTags.join('・');
+          html += `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(gname)}</div><div class="edit-pick-chips">` +
+            cands.map(([t, n]) => `<button class="edit-pick-chip" data-pick="${escapeAttr(t)}" title="${escapeAttr(MSG.editCoocWhy(who, n))}">${escapeHtml(t)}</button>`).join('') +
+            `</div></div>`;
+        }
+      }
+    }
     if (srcTags.length) {
       html += `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(MSG.editAdoptSource)}</div><div class="edit-pick-chips">` +
         srcTags.map(chip).join('') + `</div></div>`;
