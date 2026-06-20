@@ -939,6 +939,11 @@
     mb.classList.toggle('fuzzy', fz);
     mb.title = MSG.searchModeTitle;
   }
+  // Keep the in-flyout toggle labeled correctly when the mode is changed elsewhere
+  // (e.g. the main #searchModeBtn). syncQfMode no-ops while the flyout is closed
+  // because #qfModeBtn is absent from the DOM (its `if (!mb) return` guard). Registered
+  // once here — same scope as the qfPop listeners below (runs on setup, not per render).
+  if (window.corpusSearch) window.corpusSearch.onChange(syncQfMode);
   qfPop.addEventListener('input', (e) => { if (e.target.classList.contains('qf-find')) applyQfFind(); });
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl, tagGroupId) {
