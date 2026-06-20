@@ -320,6 +320,15 @@
   // Shared trash glyph (poster-folder delete + workspace clear). One source so the
   // icon can't drift between the JS-rendered button and the static #wsClear button.
   const ICON_TRASH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
+  // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
+  // margin). Shared by the cursor-placed context menus (query-builder / folder /
+  // card / 種別) so the clamp formula stays in one place instead of drifting between
+  // copies. Anchored flyouts (cs/qf/tab) keep their own placement strategy.
+  function clampIntoView(el) {
+    const r = el.getBoundingClientRect();
+    if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
+    if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+  }
 
   // --- Apply i18n to static elements ---
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -1778,9 +1787,7 @@
     qbMenu.style.left = x + 'px';
     qbMenu.style.top = y + 'px';
     qbMenu.classList.add('show');
-    const r = qbMenu.getBoundingClientRect();   // clamp into the viewport
-    if (r.right > innerWidth - 8) qbMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
-    if (r.bottom > innerHeight - 8) qbMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+    clampIntoView(qbMenu);
   }
   // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
   chips.addEventListener('contextmenu', (e) => {
@@ -3186,9 +3193,7 @@
     foldMenu.style.left = x + 'px';
     foldMenu.style.top = y + 'px';
     foldMenu.classList.add('show');
-    const r = foldMenu.getBoundingClientRect();   // clamp into the viewport
-    if (r.right > innerWidth - 8) foldMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
-    if (r.bottom > innerHeight - 8) foldMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+    clampIntoView(foldMenu);
   }
   foldMenu.addEventListener('click', (e) => {
     if (!CF()) { hideFoldMenu(); return; }
@@ -3243,9 +3248,7 @@
     cardMenu.style.left = x + 'px';
     cardMenu.style.top = y + 'px';
     cardMenu.classList.add('show');
-    const r = cardMenu.getBoundingClientRect();   // clamp into the viewport
-    if (r.right > innerWidth - 8) cardMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
-    if (r.bottom > innerHeight - 8) cardMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+    clampIntoView(cardMenu);
   }
   document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
     const card = e.target.closest('.post-card');
@@ -3654,9 +3657,7 @@
       kindMenu.style.left = x + 'px';
       kindMenu.style.top = y + 'px';
       kindMenu.classList.add('show');
-      const r = kindMenu.getBoundingClientRect();   // clamp into the viewport
-      if (r.right > innerWidth - 8) kindMenu.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
-      if (r.bottom > innerHeight - 8) kindMenu.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
+      clampIntoView(kindMenu);
     }
     palette.addEventListener('contextmenu', (e) => {
       const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
