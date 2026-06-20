@@ -177,7 +177,7 @@
     const host = $('ivFolderList'); if (!host) return;
     const list = store.all();
     host.innerHTML = list.length ? list.map((f) => {
-      return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}">` +
+      return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}" draggable="true">` +
         `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
         `<span class="iv-fold-n">${f.items.length}</span>` +
         `<button class="iv-fold-btn" data-fact="rename" title="${escapeHtml(t('foldRename'))}">✎</button>` +
@@ -209,6 +209,35 @@
       }
       renderModal(); notify('list');   // store.rename/remove persist on success
     });
+    // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
+    // notify so the sidebar chips re-render in the new order.
+    const flist = $('ivFolderList');
+    let dragId = null;
+    const clearMarks = () => flist.querySelectorAll('.iv-drop-before, .iv-drop-after').forEach((el) => el.classList.remove('iv-drop-before', 'iv-drop-after'));
+    const dropBefore = (row, clientY) => { const r = row.getBoundingClientRect(); return clientY < r.top + r.height / 2; };
+    flist.addEventListener('dragstart', (e) => {
+      const row = e.target.closest('.iv-folder-row'); if (!row) return;
+      dragId = row.dataset.fid;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragId); } catch { /* some engines disallow */ }
+      row.classList.add('iv-dragging');
+    });
+    flist.addEventListener('dragover', (e) => {
+      if (!dragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearMarks();
+      const row = e.target.closest('.iv-folder-row');
+      if (row && row.dataset.fid !== dragId) row.classList.add(dropBefore(row, e.clientY) ? 'iv-drop-before' : 'iv-drop-after');
+    });
+    flist.addEventListener('drop', (e) => {
+      if (!dragId) return;
+      e.preventDefault();
+      const row = e.target.closest('.iv-folder-row');
+      if (row && row.dataset.fid !== dragId && store.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) { renderModal(); notify('list'); }
+      dragId = null;
+    });
+    flist.addEventListener('dragend', () => { dragId = null; clearMarks(); flist.querySelectorAll('.iv-dragging').forEach((el) => el.classList.remove('iv-dragging')); });
   }
 
   bind();

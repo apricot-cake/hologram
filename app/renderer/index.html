@@ -2194,7 +2194,10 @@
     .iv-folder-new .search-box { flex: 1; }
     .iv-folder-list { display: flex; flex-direction: column; gap: 2px; }
     .iv-folder-empty { color: var(--muted); font-size: 12px; padding: 10px 2px; }
-    .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); }
+    .iv-folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); cursor: grab; }
+    .iv-folder-row.iv-dragging { opacity: 0.45; }
+    .iv-folder-row.iv-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+    .iv-folder-row.iv-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
     .iv-fold-name { flex: 1; word-break: break-word; }
     .iv-fold-n { color: var(--muted); font-size: 11px; }
     .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
