@@ -301,7 +301,7 @@
       qfPostType: '投稿タイプ',
       qfMediaTitle: 'メディアタイプ',
       qfDate: '日付',
-      qfEngagement: 'エンゲージメント',
+      qfEngagement: '反応',
       qfTag: 'タグ',
       qfInstance: 'インスタンス',
       qfPost: 'ポスト',

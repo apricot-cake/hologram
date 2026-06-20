@@ -85,7 +85,7 @@ BACKLOG「UX再設計の指摘（2026-06-20）」のタグ付けUX＋ナビ/検�
 現状の i18n は既に平易・温かい声をかなり持つ（`wsEmptyConfirm`/`foldDeleteConfirm` 等の括弧の安心、`qbHelp*` の平たい口語）。揃える対象は少数:
 
 - **(確定・DQ7同梱)** 検索モード `searchExact`「通常」→「ぴったり」／`searchFuzzy`「あいまい」→「おおまか」／`searchModeTitle`「探し方を切替（ぴったり＝入力どおり ／ おおまか＝タイプミスや言い回しも）」。EN: Exact / Loose。おおまか側に1行ヒント（新キー例 `searchLooseHint`「タイプミスや言い回しの違いも拾う」）。
-- **(整合・即)** `qfEngagement`「エンゲージメント」→「反応」（カードの `detailEngagement` が既に「反応」＝1概念1語に統一。EN は Engagement で既に一致）。
+- **(整合・即)✅適用済み** `qfEngagement`「エンゲージメント」→「反応」（カードの `detailEngagement` が既に「反応」＝1概念1語に統一。EN は Engagement で既に一致）。
 - **(任意・低)** `postCount`「$1 件ヒット」の「ヒット」は軽いジャーゴン＝「$1 件」へ寄せるか検討（影響小）。
 - **据え置き（原語・ドメイン語）**: プラットフォーム名／`インスタンス`／`セルフリプ`／`キャプチャ`／import・export 等は原語のまま（CLAUDE.md 識別子方針）。`危険な操作`/Danger Zone も安全UIの定番として維持。
 - **規範の手本（変更なし）**: `wsEmptyConfirm`/`foldDeleteConfirm`/`posterFolderDeleteConfirm`/`qbHelp*` は声の見本＝崩さない。
