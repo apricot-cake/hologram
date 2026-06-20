@@ -41,6 +41,7 @@
       sbSortTitle: '並び順',
       sbViewTitle: '表示',
       tipTagCycle: 'クリックで追加/解除。同じ種類を2つ以上選ぶと「すべて含む」「除外」に切り替えられます',
+      tipFolderFilter: 'クリックでこのフォルダで絞り込み / 解除',
       engParticle: 'が',
       ctxManage: 'フォルダを管理…',
       // viewer: folder management modal + folder/workspace toasts (folders.js)
@@ -360,6 +361,7 @@
       sbSortTitle: 'Sort',
       sbViewTitle: 'View',
       tipTagCycle: 'Click to add/remove. With 2+ of the same kind, switch to All or Exclude',
+      tipFolderFilter: 'Click to filter by this folder / clear',
       engParticle: '',
       ctxManage: 'Manage folders…',
       // viewer: folder management modal + folder/workspace toasts (folders.js)

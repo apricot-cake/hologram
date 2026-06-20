@@ -28,6 +28,7 @@
     sbSortTitle: _s('sbSortTitle'),
     sbViewTitle: _s('sbViewTitle'),
     tipTagCycle: _s('tipTagCycle'),
+    tipFolderFilter: _s('tipFolderFilter'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
     engParticle: _s('engParticle'),
@@ -3290,7 +3291,7 @@
     host.innerHTML = list.map(f => {
       const n = f.items.filter(c => existing.has(c)).length;
       const on = active.has(f.id);
-      return `<button class="sb-chip${on ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipTagCycle}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
+      return `<button class="sb-chip${on ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipFolderFilter}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
     }).join('');
   }
   // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
