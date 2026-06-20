@@ -3620,12 +3620,14 @@
     // option tucked into tag management (段階的開示): assigning a kind is the TAG's
     // attribute, so no post is touched. The kind blooms as a dot on the chip.
     const kindMenu = document.createElement('div');
-    kindMenu.className = 'fold-menu';
+    kindMenu.className = 'fold-menu kind-menu';
     document.body.appendChild(kindMenu);
     let kindMenuTag = null;
+    let kindMenuOnChanged = null;   // re-render after a kind change (palette or edit picker)
     function hideKindMenu() { kindMenu.classList.remove('show'); kindMenuTag = null; }
-    function showKindMenu(tag, x, y) {
+    function showKindMenu(tag, x, y, onChanged) {
       kindMenuTag = tag;
+      kindMenuOnChanged = onChanged || null;
       const cur = tagKindOf(tag);
       const row = (k, label) => {
         const dot = k ? `<span class="tk-dot tk-${k}"></span>` : '';
@@ -3649,7 +3651,7 @@
     palette.addEventListener('contextmenu', (e) => {
       const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
       e.preventDefault();
-      showKindMenu(chip.dataset.tag, e.clientX, e.clientY);
+      showKindMenu(chip.dataset.tag, e.clientX, e.clientY, renderPalette);
     });
     kindMenu.addEventListener('click', async (e) => {
       e.stopPropagation();   // survive the capture-phase document hider below
@@ -3659,7 +3661,7 @@
       const kind = rowEl.dataset.kind === '__none' ? '' : rowEl.dataset.kind;
       if ((tagKindOf(tag) || '') === kind) return;   // already that kind — no write
       await setTagKind(tag, kind);
-      renderPalette();
+      if (kindMenuOnChanged) kindMenuOnChanged();
       showToast(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
     });
     document.addEventListener('click', (e) => { if (kindMenu.classList.contains('show') && !kindMenu.contains(e.target)) hideKindMenu(); }, true);
@@ -3696,7 +3698,7 @@
     // (enter() adds them) so grid affordances never leak outside tagging.
     editBtn.classList.toggle('active', axis === 'edit');
     stampBtn.classList.toggle('active', axis === 'stamp');
-    taggingApi = { enter, exit, isActive: () => active, getAxis: () => axis, refreshMarks };
+    taggingApi = { enter, exit, isActive: () => active, getAxis: () => axis, refreshMarks, showKindMenu };
   })();
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
@@ -4040,6 +4042,16 @@
     if (i >= 0) editTags.splice(i, 1); else editTags.push(t);
     renderEditTags();
     renderEditPicker();
+  });
+
+  // Right-click a picker chip → set its 種別 (shares the stamp palette's kind menu via
+  // taggingApi). Same quiet 段階的開示 entry as the palette, now reachable while editing
+  // a card — assign 作品/キャラ in the same flow you're tagging in.
+  document.getElementById('editPicker').addEventListener('contextmenu', (e) => {
+    const chip = e.target.closest('.edit-pick-chip');
+    if (!chip) return;
+    e.preventDefault();
+    if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(chip.dataset.pick, e.clientX, e.clientY, renderEditPicker);
   });
 
   document.getElementById('editTagAdd').addEventListener('click', () => {

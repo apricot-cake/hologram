@@ -1160,6 +1160,7 @@
       backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
       border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
+    .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
     .fold-menu.show { display: block; animation: corpusPopIn 150ms var(--ease-out) both; }
     .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
     .fold-menu .fm-row {
