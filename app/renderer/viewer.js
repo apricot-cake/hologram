@@ -18,8 +18,6 @@
     searchAuthors: _s('searchAuthors'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
-    userKindMedia: _s('userKindMedia'),
-    userKindPlain: _s('userKindPlain'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
     tipInfo: _s('tipInfo'),
     tipSelect: _s('tipSelect'),
@@ -516,7 +514,6 @@
   function filterLabel(f) {
     switch (f.type) {
       case 'kind':       return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
-      case 'userKind':   return f.value === 'media' ? MSG.userKindMedia : MSG.userKindPlain;
       case 'platform':   return f.value === '__none' ? MSG.qfPlatformNone : (({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value);
       case 'postType':   return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
       case 'date': {
@@ -577,7 +574,6 @@
   // dropped per-type tints; the icon now carries the "which filter" cue).
   const QC_GLYPH = {
     kind: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-    userKind: '<path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/>',
     platform: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     postType: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     media: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/>',
@@ -697,7 +693,6 @@
     }
     try { return JSON.parse(localStorage.getItem(PIN_KEY)) || []; } catch { return []; }
   }
-  function isPinned(type, value) { return loadPins().some(p => p.type === type && p.value === value); }
   function togglePin(type, value) {
     const pins = loadPins();
     const i = pins.findIndex(p => p.type === type && p.value === value);
@@ -789,7 +784,6 @@
     const act = (type, v) => qHasValue(type, v);
     switch (cat) {
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
-      case 'userKind': return [['media', MSG.userKindMedia], ['plain', MSG.userKindPlain]].map(([v, l]) => ({ v, l, on: act('userKind', v) }));
       case 'platform': {
         // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
         const names = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
@@ -881,7 +875,7 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    const PINNABLE = new Set(['tag', 'work', 'character', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'userKind', 'folder']);
+    const PINNABLE = new Set(['tag', 'work', 'character', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'folder']);
     const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
     const curPins = PINNABLE.has(qfCat) ? loadPins() : null;
     const rowOf = (it) => {
@@ -1328,15 +1322,6 @@
     try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes); } catch { /* best-effort */ }
     updateSidebarTags();   // a newly classified tag may reveal/hide its 作品/キャラ section
   }
-  // 3状態サイクルは全廃: チップは単純トグル（追加=「または」/解除）。
-  // 「すべて含む（かつ）」にしたいときはビルダのピルを「かつ」へドラッグ。
-  // チップの ＋/濃色表示は状態の反映としてだけ残る。
-  function toggleTagFilter(value) {
-    const existIdx = activeFilters.findIndex(f => f.type === 'tag' && f.value === value);
-    if (existIdx < 0) addFilter({ type: 'tag', value });
-    else removeFilter(existIdx);
-    updateSidebarState();
-  }
   const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   const TYPE_IC = {
     tag:      _ic('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/>'),
@@ -1347,7 +1332,6 @@
     postType: _ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
     media:    _ic('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/>'),
     kind:     _ic('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
-    userKind: _ic('<path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/>'),
     folder:   _ic('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
   };
   // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
@@ -2220,7 +2204,6 @@
         // 'image' = 取り込み画像（リンクなし＝手動追加）。キャプチャ/ドラッグの別は
         // 区別する価値がないので url の有無を本質的な軸にする。
         case 'kind': return (p) => (f.value === 'post') === !!p.url;
-        case 'userKind': return (p) => p.userKind === f.value;
         case 'platform': return (p) => f.value === '__none' ? !p.platform : p.platform === f.value;
         case 'user': return (p) => userKey(p) === f.value;
         case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
@@ -4019,20 +4002,6 @@
     return out;
   }
 
-  function openEditOverlay(post, records) {
-    editingPost = post;
-    editingRecords = (records && records.length) ? records : [post];
-    editTags = [...(post.tags || [])];
-    editAdditive = false;
-    editPickQuery = '';
-    document.getElementById('editTagsLabel').textContent = MSG.tagsLabel;
-    const inp = document.getElementById('editTagInput'); inp.value = '';
-    renderEditTags();
-    renderEditPicker();
-    document.getElementById('editOverlay').classList.add('show');
-    inp.focus();
-  }
-
   function renderEditTags() {
     const container = document.getElementById('editTagsList');
     container.innerHTML = editTags.length
@@ -5331,98 +5300,6 @@
     }
   });
 
-  // --- Export HTML builder ---
-  function buildExportHtml(postsData) {
-    return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<title>Corpus Export</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font:14px/1.6 -apple-system,'Segoe UI',sans-serif;background:#f5f5f5;color:#333;padding:24px 32px;max-width:960px;margin:0 auto}
-h1{font-size:20px;font-weight:600;margin-bottom:16px}
-.toolbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.search-box{flex:1;min-width:200px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;outline:none}
-.search-box:focus{border-color:#1d9bf0}
-select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff;cursor:pointer}
-.count{font-size:12px;color:#999;align-self:center}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-.card{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);cursor:pointer;transition:box-shadow .15s}
-.card:hover{box-shadow:0 4px 12px rgba(0,0,0,0.12)}
-.card img{width:100%;display:block;max-height:300px;object-fit:cover}
-.meta{padding:12px}
-.meta .user{font-weight:600;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
-.badge{font-size:10px;font-weight:500;padding:1px 6px;border-radius:3px;color:#fff;text-transform:uppercase}
-.badge.x{background:#000}.badge.bluesky{background:#0085ff}.badge.misskey{background:#96d04a;color:#333}.badge.mastodon{background:#6364ff}.badge.pixiv{background:#0096fa}
-.meta .text{font-size:13px;color:#555;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px}
-.meta .stats{display:flex;gap:12px;font-size:12px;color:#999}
-.meta .date{font-size:11px;color:#bbb;margin-top:4px}
-.empty{text-align:center;padding:60px 20px;color:#999}
-</style>
-</head>
-<body>
-<h1>Corpus Export</h1>
-<div class="toolbar">
-<input type="text" class="search-box" id="q" placeholder="Search...">
-<select id="sort">
-<option value="date-desc">Newest</option>
-<option value="date-asc">Oldest</option>
-<option value="likes">Likes</option>
-</select>
-<select id="pf">
-<option value="all">All</option>
-<option value="x">X</option>
-<option value="bluesky">Bluesky</option>
-<option value="misskey">Misskey</option>
-<option value="mastodon">Mastodon</option>
-<option value="pixiv">pixiv</option>
-</select>
-<span class="count" id="cnt"></span>
-</div>
-<div class="grid" id="g"></div>
-<div class="empty" id="e" style="display:none"></div>
-<script id="corpusData" type="application/json">${JSON.stringify(postsData).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))}</script>
-<script>
-(function(){
-var posts=JSON.parse(document.getElementById('corpusData').textContent);
-var q=document.getElementById('q'),s=document.getElementById('sort'),pf=document.getElementById('pf');
-function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-function fmt(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':String(n)}
-function fmtDate(d){if(!d)return'';var dt=new Date(d);return dt.toLocaleDateString()+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
-function render(){
-var fp=posts.slice(),qv=q.value.trim().toLowerCase(),pv=pf.value,sv=s.value;
-if(qv)fp=fp.filter(function(p){return(p.text||'').toLowerCase().indexOf(qv)>=0||(p.screenName||'').toLowerCase().indexOf(qv)>=0||(p.displayName||'').toLowerCase().indexOf(qv)>=0});
-if(pv!=='all')fp=fp.filter(function(p){return p.platform===pv});
-if(sv==='date-desc')fp.sort(function(a,b){return new Date(b.date||0)-new Date(a.date||0)});
-else if(sv==='date-asc')fp.sort(function(a,b){return new Date(a.date||0)-new Date(b.date||0)});
-else if(sv==='likes')fp.sort(function(a,b){return(b.likes||0)-(a.likes||0)});
-document.getElementById('cnt').textContent=fp.length+' posts';
-var g=document.getElementById('g'),e=document.getElementById('e');
-if(!fp.length){g.innerHTML='';g.style.display='none';e.style.display='block';e.innerHTML='<p>No results</p>';return}
-g.style.display='grid';e.style.display='none';
-g.innerHTML=fp.map(function(p){
-var st=[];
-if(p.likes!=null)st.push('\\u2764 '+fmt(p.likes));
-if(p.reposts!=null)st.push('\\ud83d\\udd01 '+fmt(p.reposts));
-if(p.replies!=null)st.push('\\ud83d\\udcac '+fmt(p.replies));
-return '<div class="card" data-url="'+esc(p.url||'')+'">'
-+(p.image?'<img src="'+p.image+'" loading="lazy">':'')
-+'<div class="meta"><div class="user"><span class="badge '+(p.platform||'')+'">'+(p.platform||'').toUpperCase()+'</span>'+esc(p.displayName||p.screenName||'')
-+(p.screenName?' <span style="color:#999;font-weight:400">@'+esc(p.screenName)+'</span>':'')
-+'</div>'+((p.text||p.title)?'<div class="text">'+esc(p.text||p.title)+'</div>':'')
-+'<div class="stats">'+st.join(' &middot; ')+'</div>'
-+'<div class="date">'+fmtDate(p.date)+'</div></div></div>'
-}).join('')}
-q.addEventListener('input',render);s.addEventListener('change',render);pf.addEventListener('change',render);
-document.getElementById('g').addEventListener('click',function(e){var c=e.target.closest('.card');if(!c)return;var u=c.getAttribute('data-url')||'';if(/^https?:\\/\\//i.test(u))window.open(u,'_blank','noopener')});
-render()
-})();
-</script>
-</body>
-</html>`;
-  }
-
   // --- Utility functions ---
   function formatCount(n) {
     if (n == null) return '';
@@ -5442,24 +5319,6 @@ render()
     return _dateFmt.format(d) + ' ' + _timeFmt.format(d);
   }
 
-  function formatExportDate() {
-    const d = new Date();
-    return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join('-');
-  }
-
-  function pad(n) { return String(n).padStart(2, '0'); }
-
-  function buildFilename(post, index) {
-    const dateStr = post.date ? formatFilenameDate(post.date) : 'unknown-date';
-    return index > 0 ? `${dateStr} (${index})` : dateStr;
-  }
-
-  function formatFilenameDate(isoStr) {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return 'unknown-date';
-    return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join('-');
-  }
-
   function escapeHtml(str) { return window.corpusUI.escapeHtml(str); }
 
   // escapeHtml (textContent->innerHTML) does NOT escape quotes, so it is unsafe
@@ -5469,15 +5328,6 @@ render()
     return String(str == null ? '' : str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function readFileAsText(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
   }
 
   // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid

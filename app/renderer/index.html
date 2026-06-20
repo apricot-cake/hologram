@@ -251,15 +251,8 @@
     .settings-view-title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); color: var(--text-strong); }
     .settings-view-head .icon-btn { width: 30px; height: 30px; }
     .settings-view-head .icon-btn svg { width: 17px; height: 17px; }
-    /* Toggle switch (Settings → 外観) */
+    /* Settings rows (Settings → 外観) */
     .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
-    .switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; }
-    .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-    .switch-track { position: absolute; inset: 0; background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; transition: background .15s, border-color .15s; }
-    .switch-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-xs); transition: transform .15s; }
-    .switch input:checked + .switch-track { background: var(--accent); border-color: var(--accent); }
-    .switch input:checked + .switch-track::after { transform: translateX(16px); background: #fff; }
-    .switch input:focus-visible + .switch-track { box-shadow: var(--ring); }
     .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     /* スクロールするのは内側の .sb-scroll だけ。アクティブフィルタバーはその外側の
        固定フッターにして、スクロールバーがバーに被らないようにする。 */
@@ -337,10 +330,6 @@
     .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
     .mirror-status { font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
     .mirror-status.is-error { color: var(--danger); }
-    .toolbar-row {
-      display: flex; flex-direction: column; gap: 6px; align-items: stretch;
-      margin-bottom: 12px;
-    }
     .search-box {
       width: 100%; box-sizing: border-box;
       padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
@@ -422,7 +411,7 @@
        border-subtle on surface-3 and the fields sank into the background —
        user report. Borders remain an input-only affordance.) */
     #sidebar .chip:not(.active), #sidebar select, #sidebar .search-box,
-    #sidebar .date-input, #sidebar input[type="number"], #sidebar .sb-tag-filter {
+    #sidebar .date-input, #sidebar input[type="number"] {
       background: var(--field-bg); border-color: var(--border-strong); color: var(--text);
     }
     /* icon buttons (history ←→ etc.): ghost — bare glyph, fill on hover */
@@ -444,7 +433,7 @@
     @media (prefers-reduced-transparency: reduce) {
       #sidebar #sbTop { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--shadow-md); }
     }
-    #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus, #sidebar .sb-tag-filter:focus { border-color: var(--accent); }
+    #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus { border-color: var(--accent); }
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
        dense list, so tall bars waste vertical room (vertical padding only —
        the 12px side padding carries the 23px text axis). */
@@ -998,7 +987,6 @@
     input[type="text"]:focus { border-color: var(--accent); }
     .hint { font-size: 12px; color: var(--text-subtle); margin-top: 6px; }
     .actions { display: flex; align-items: center; margin-top: 16px; }
-    .link-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
 
     /* --- Buttons --- */
     .btn {
@@ -1020,11 +1008,6 @@
     }
     .btn-danger:hover { background: var(--danger-bg); }
 
-    .status-msg {
-      font-size: 13px; margin-left: 12px;
-      opacity: 0; transition: opacity 0.2s;
-    }
-    .status-msg.show { opacity: 1; }
     a { color: var(--accent-text); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
@@ -1240,21 +1223,7 @@
       z-index: 1001; min-width: 260px;
     }
 
-    /* --- App layout: persistent left sidebar (nav + controls) + content --- */
-    .app-layout {
-      display: flex; gap: 24px; align-items: flex-start;
-    }
-    .app-sidebar {
-      width: 250px; flex-shrink: 0;
-      /* Match body's 24px top padding so the sticky bar doesn't jump up / crowd
-         the tabs against the window edge when the content scrolls. */
-      position: sticky; top: calc(var(--tabbar-h) + 24px); align-self: flex-start;
-      max-height: calc(100vh - var(--tabbar-h) - 24px); overflow-y: auto; overflow-x: hidden;
-      padding-right: 8px;
-    }
-    .app-sidebar input, .app-sidebar select {
-      max-width: 100%; box-sizing: border-box;
-    }
+    /* --- App layout: content column beside the persistent left #sidebar --- */
     .app-content { flex: 1; min-width: 0; }
 
     /* フラットなサイドバー: セクションごとの白カード/影は低コントラストでノイズだったので撤去。
@@ -1363,11 +1332,6 @@
     }
     .sb-feature .sb-feature-ic svg { width: 15px; height: 15px; }
     .sb-feature svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent-text); }
-    .sb-tag-filter {
-      width: 100%; margin-bottom: 6px; padding: 5px 12px;
-      border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none;
-    }
-    .sb-tag-filter:focus { border-color: var(--accent); }
     /* Value chips: FILLED pill, no outline (GitHub topics / Notion tags).
        The transparent border keeps geometry so the active tint border can
        appear without layout shift. Hover = neutral lift, never accent. */
@@ -1484,14 +1448,6 @@
     /* No permanent drag-grip glyph on pills: draggability is signalled by the
        grab cursor, the empty-zone "ここへドラッグで移動" hint and the ⓘ help.
        (The tiny ⋮⋮ read as a squashed 三 and added noise to every pill.) */
-    /* ＋フィルタ (Linear-style popover trigger) */
-    .qf-add {
-      font-size: 11px; padding: 3px 10px; border-radius: 12px; flex-shrink: 0;
-      border: 1px dashed var(--border-strong); background: transparent;
-      color: var(--text-muted); cursor: pointer; white-space: nowrap;
-      transition: color .12s, border-color .12s;
-    }
-    .qf-add:hover { color: var(--accent-text); border-color: var(--accent); }
     .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; }
     .qf-find-wrap { position: relative; display: flex; align-items: center; margin: 2px 4px 4px; }
     .qf-pop .qf-find {
@@ -1552,14 +1508,6 @@
     .search-suggest .sg-ic { flex-shrink: 0; font-size: 11px; }
     .search-suggest .sg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .search-suggest .sg-n { flex-shrink: 0; font-size: 10px; color: var(--text-subtle); }
-    /* サイドバーのタグ節: タググループごとの小見出し付きブロック */
-    .sb-taggroup { margin-top: 8px; }
-    .sb-taggroup:first-child { margin-top: 0; }
-  /* Sub-section labels (ピン留め / グループ) are CHILDREN of タグ: smaller +
-     lighter than a section title, and indented one step in (with their chips)
-     so the nesting reads. Section titles are 11px uppercase --text-muted at the
-     gutter; these are 10px --text-subtle, nested +12px. */
-  .sb-subtitle { font-size: 10px; color: var(--text-subtle); margin: 12px 0 5px; padding-left: 12px; text-transform: none; letter-spacing: 0; }
   /* Filter rows: one-line category buttons; a flyout with the values opens
      beside the row. Badge = number of active filters of that type. */
   /* Category rows: borderless text rows with a soft fill ONLY on hover
@@ -1620,7 +1568,6 @@
     margin-left: 13px; padding-left: 10px;
     border-left: 2px solid var(--border-strong);
   }
-  .sb-sublabel { font-size: 11px; color: var(--text-muted); }
   .sb-sub .date-input { width: 100%; }
   </style>
 </head>
@@ -2060,7 +2007,6 @@
        away with that view. -->
   <style>
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
-    .iv-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg); cursor: pointer; margin-bottom: 8px; }
     .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
     .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
     .iv-htbtn:disabled { opacity: .5; cursor: default; }
