@@ -3708,13 +3708,21 @@
       } else stampCard(card, g);
     }, true);
 
-    // Esc leaves tagging mode (unless the gallery / edit overlay is on top).
+    // Esc leaves tagging mode — but only when nothing transient is on top. Registered
+    // in CAPTURE phase (like the inspector's Esc) so it inspects open popovers BEFORE
+    // the bubble-phase closers dismiss them on the same press: an open menu / popover /
+    // overlay wins the first Esc (closed by its own handler), the mode exits on the next.
     document.addEventListener('keydown', (e) => {
       if (!active || e.key !== 'Escape') return;
       if (lightbox.classList.contains('show')) return;
       if (document.getElementById('editOverlay').classList.contains('show')) return;
+      if (document.querySelector('.confirm-overlay.show')) return;
+      if (document.querySelector('.fold-menu.show')) return;   // foldMenu / qf flyout / card / kind menus all share .fold-menu
+      const dp = document.getElementById('qfDatePopover');
+      const ep = document.getElementById('qfEngPopover');
+      if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
       exit();
-    });
+    }, true);
 
     // Reflect the persisted axis on the (hidden) toggle WITHOUT touching body
     // classes — the tagging-stamp/edit body classes only exist while in the mode
