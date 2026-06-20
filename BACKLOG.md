@@ -12,7 +12,7 @@
 
 ## 監査の残（未対応のみ）
 - **perf 残（低優先・任意）**: masonry の「もっと読み込む」(150件境界)のチラつきは解消済み＝load-more は新スライスのみ既存列へ greedy 追記（`renderPosts` の FAST PATH・ガード外れは全再構築へフォールバック）。選択モードの全再構築も解消＝選択/全選択/解除/キャンセルは `syncSelectionClasses` でクラス直接切替（内容が変わるグループ化/削除だけ再描画）。残る微最適化: `viewGroups` の filter署名メモ化・他のクラス系トグル（タイル overlay / エンゲージ表示）。いずれも体感影響は小さい。（補足: `content-visibility` は base `.post-card` で既に有効＝オフは masonry 限定で、offscreen カードを採寸して詰める都合と両立しない既知トレードオフ。"再有効化"の余地ではない。）
-- **viewer.js 多角レビューの修正（report 精査済み・実装が残）**: ultracode の多角レビュー（5レンズ×adversarial verify・採用28/却下3）の確定リストを [docs/reviews/viewer-js-review-2026-06-20.md](docs/reviews/viewer-js-review-2026-06-20.md) に保全。誤タグ削除バグは 3e63e36 で修正済み、残りは全20件ユーザー承認済み（2026-06-20）＝実装待ち。着手順の目安＝**C1 実害バグ（in-place 編集/削除が `_allPostsGeneration` を bump せず sidebar/投稿者キャッシュが stale）→ A dead-code 一括除去（HTMLエクスポート残骸~110行・userKind フィルタ一式・openEditOverlay・未使用ヘルパ/CSS）→ B 重複の大物（フライアウト7箇所→共有 popup・posterFolders→folders.js ファクトリ化・escapeAttr 委譲）→ 小粒（D 簡素化・E 陳腐化 docs 是正）**。redesignOverlap（スタンプ軸/ピン留め/browse切替/検索モード/bulk種別ドット）は下記 UX再設計の実装時にまとめて処理。
+- **viewer.js 多角レビューの修正（19/20 実装済み・残は B1 本体のみ）**: ultracode の多角レビュー（5レンズ×adversarial verify・採用28/却下3）の確定リストを [docs/reviews/viewer-js-review-2026-06-20.md](docs/reviews/viewer-js-review-2026-06-20.md) に保全。**2026-06-20 に C1, C3 ／ A1–A6 ／ B2–B7 ／ D1, D2 ／ E1–E3 を実装済み**（git 参照・実機 CDP 検証済み）。**残＝B1（フライアウト共有化）の本体**: 完全一致の4カーソル配置メニューは共有 `clampIntoView` に集約済みだが、配置戦略がドリフトしている分（tab-menu=カーソル上フリップ／cs-pop=ドロップダウン上フリップ／qf=maxHeight）の統一と、外側クリック/Esc の document リスナー1組への集約が未了。可視挙動が変わるので**7ポップを画面端で開く実機検証とセットで対話セッション時に実施**。redesignOverlap（スタンプ軸/ピン留め/browse切替/検索モード/bulk種別ドット）は下記 UX再設計の実装時にまとめて処理。
 
 ## その他
 - **複数ウィンドウの許可**: 同時に複数のアプリウィンドウを開けるように（現状の単一ウィンドウ制約を緩める）。
