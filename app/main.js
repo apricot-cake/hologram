@@ -955,6 +955,7 @@ async function runBackup(reason) {
   if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
   if (backupRunning) return { ok: false, error: 'busy' };
   backupRunning = true;
+  if (win && !win.isDestroyed()) win.webContents.send('backup-start');   // sidebar sync icon → syncing
   // written = new files copied; pruned = files deleted (propagated deletions)
   const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
   try {

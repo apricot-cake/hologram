@@ -222,6 +222,7 @@
     backupOverlap: _s('backupOverlap'),
     backupLastLabel: _s('backupLastLabel'),
     backupItemsUnit: _s('backupItemsUnit'),
+    backupSyncing: _s('backupSyncing'),
 
     // settings > trash
     trashTitle: _s('trashTitle'),
@@ -5075,18 +5076,30 @@
       if ((+now - +d) < 2 * 86400000) return `昨 ${hhmm}`;
       return `${d.getMonth() + 1}/${d.getDate()}`;
     };
+    // Familiar circular-arrows sync glyph (refresh-cw) + a warning triangle for the
+    // error state, so the rail reads as a sync indicator rather than a bare ↑/⚠.
+    const MS_ICON_SYNC = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+    const MS_ICON_WARN = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+    let mirrorSyncing = false;
     function updateMirrorStatus() {
       const el = document.getElementById('mirrorStatus');
       if (!el) return;
-      if (!cfg || !cfg.dir) { el.textContent = ''; el.className = 'mirror-status'; el.title = ''; return; }
-      const r = cfg.lastResult;
-      if (!r) { el.textContent = ''; el.title = ''; return; }
-      if (r.ok === false && r.error) {
-        el.textContent = '⚠'; el.className = 'mirror-status is-error'; el.title = r.error; return;
+      // No backup folder configured → nothing in the rail (progressive disclosure).
+      if (!cfg || !cfg.dir) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
+      // Syncing now: spinning sync glyph in the accent colour.
+      if (mirrorSyncing) {
+        el.innerHTML = MS_ICON_SYNC; el.className = 'mirror-status is-syncing'; el.title = MSG.backupSyncing; return;
       }
+      const r = cfg.lastResult;
+      if (!r) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
+      // Last run failed: warning glyph in the danger colour + the error as the hint.
+      if (r.ok === false && r.error) {
+        el.innerHTML = MS_ICON_WARN; el.className = 'mirror-status is-error'; el.title = r.error; return;
+      }
+      // Synced OK: muted sync glyph + the last-run time, with the count in the hint.
       el.className = 'mirror-status';
       const t = fmtMirrorTime(r.at);
-      el.textContent = t ? `↑ ${t}` : '';
+      el.innerHTML = MS_ICON_SYNC + (t ? `<span class="ms-t">${escapeHtml(t)}</span>` : '');
       let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
@@ -5144,8 +5157,11 @@
     });
     $('backupIntervalUnit').addEventListener('change', (e) => save({ intervalUnit: e.target.value }));
 
+    if (window.corpus.onBackupStart) {
+      window.corpus.onBackupStart(() => { mirrorSyncing = true; updateMirrorStatus(); });
+    }
     if (window.corpus.onBackupDone) {
-      window.corpus.onBackupDone((_e, r) => { if (cfg && r) { cfg.lastResult = r; renderStatus(); } });
+      window.corpus.onBackupDone((_e, r) => { mirrorSyncing = false; if (cfg && r) cfg.lastResult = r; renderStatus(); });
     }
 
     load();

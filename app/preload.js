@@ -42,6 +42,7 @@ setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   pickBackupDir: () => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: () => ipcRenderer.invoke('run-backup'),
   importImages: () => ipcRenderer.invoke('import-images'),
+  onBackupStart: (cb) => ipcRenderer.on('backup-start', cb),
   onBackupDone: (cb) => ipcRenderer.on('backup-done', cb),
   // cb receives the changed-sidecar hint (null | [] | [names…]); the raw IPC
   // event is not forwarded.
