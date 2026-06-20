@@ -100,7 +100,7 @@ BACKLOG「UX再設計の指摘（2026-06-20）」のタグ付けUX＋ナビ/検�
 
 全文は run `wf_68bac9c6-660` 出力。以下は確定（敵対的裏取り済み）の高優先項目:
 
-- **P0（データ破損・要優先）** `viewer.js`: **インスペクタのタグ削除がインデックス基準で別レコードの誤タグを消す**。チップが `data-remove-tag` に rep 相対 index `i` を埋め、削除時に同じ `i` を全レコードへ positional 適用。グループ結合で各レコードのタグ配列の並びが異なると**無言で別タグが消える**。`refreshInspectorTags`(3755-3762)/クリックハンドラ(4184-4185)/`applyInspectorTagChange`(3775-3794)。**修正＝値で削除**（`prev.filter(t => t !== tagValue)`・チップは `data-tag` を既に持つ）。インライン編集（commit 830f382）で実発火・再設計対象外。
+- **P0（データ破損・要優先）✅修正済み（commit `3e63e36`・値で削除へ変更）** `viewer.js`: **インスペクタのタグ削除がインデックス基準で別レコードの誤タグを消す**。チップが `data-remove-tag` に rep 相対 index `i` を埋め、削除時に同じ `i` を全レコードへ positional 適用。グループ結合で各レコードのタグ配列の並びが異なると**無言で別タグが消える**。`refreshInspectorTags`(3755-3762)/クリックハンドラ(4184-4185)/`applyInspectorTagChange`(3775-3794)。**修正＝値で削除**（`prev.filter(t => t !== tagValue)`・チップは `data-tag` を既に持つ）。インライン編集（commit 830f382）で実発火・再設計対象外。
 - **P1** `viewer.js`: in-place なタグ編集/単体削除が `_allPostsGeneration` を更新せず**サイドバーのタグ/著者キャッシュが陳腐化**（`_rebuildSidebarSets`/`buildUsers` が early-return）。各変更パスの `renderPosts(true)` 直前で世代をインクリメント。
 - **P1** `viewer.js`: **HTMLエクスポート残骸 約110行が完全未呼び出し**（`buildExportHtml`/`formatExportDate`/`pad`/`buildFilename`/`formatFilenameDate`/`readFileAsText`・5312-5458）。現役は ZIP 経路。一括削除（`formatCount`/`formatDate`/`escapeHtml` は残す）。
 - **P1** `viewer.js`: **userKind フィルタ一式が UI 到達不能な死コード**（`qfValues` case 792/`predOf` 2216/`filterLabel` 519/glyph・icon/PINNABLE/i18n）。入口の `data-qfrow="userKind"` 行が無い。削除＋DESIGN.md L151 の文言更新。
