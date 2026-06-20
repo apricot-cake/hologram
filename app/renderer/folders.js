@@ -10,8 +10,57 @@
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  let folders = [];           // [{ id, name, items:[captureId] }] — permanent shelves
+
+  // Folder-list store shared by the library folders (below) and the poster folders
+  // (viewer.js, via window.corpusFolderStore). Owns the {id,name,items[]} array + id
+  // minting + membership toggling. The caller supplies persist() (the library store
+  // writes a workspace into the same file) and does its own toast / re-render, since
+  // those differ per view. Pure data layer — no DOM.
+  function createFolderStore({ idPrefix, persist }) {
+    let folders = [];
+    const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    const all = () => folders;
+    const setAll = (list) => { folders = Array.isArray(list) ? list : []; };
+    const byId = (id) => folders.find((f) => f.id === id) || null;
+    const has = (id, key) => { const f = byId(id); return !!(f && f.items.includes(key)); };
+    function create(name) {
+      const nm = (name || '').trim(); if (!nm) return null;
+      const f = { id: genId(), name: nm, items: [] };
+      folders.push(f); persist();
+      return f;
+    }
+    function remove(id) { folders = folders.filter((f) => f.id !== id); persist(); }
+    function rename(id, name) {
+      const f = byId(id); const nm = (name || '').trim();
+      if (!f || !nm) return false;
+      f.name = nm; persist(); return true;
+    }
+    // Toggle one key or a whole group of keys in folder id; anchorKey decides the
+    // resulting state (a tile's representative id). Returns 'added' | 'removed' | null.
+    function toggleIn(id, keys, anchorKey) {
+      const f = byId(id); if (!f) return null;
+      const ids = (Array.isArray(keys) ? keys : [keys]).filter((k) => k != null);
+      if (!ids.length) return null;
+      const anchor = anchorKey != null ? anchorKey : ids[0];
+      const wasIn = f.items.includes(anchor);
+      if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
+      else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
+      persist();
+      return wasIn ? 'removed' : 'added';
+    }
+    // Drop keys no longer present (deleted items). Returns true if anything changed.
+    function reconcile(existing) {
+      let changed = false;
+      folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
+      return changed;
+    }
+    return { all, setAll, byId, has, create, remove, rename, toggleIn, reconcile };
+  }
+  window.corpusFolderStore = createFolderStore;
+
   let workspace = [];         // [captureId] — the single ephemeral tray (one-click)
+  // Library folders [{ id, name, items:[captureId] }] — permanent shelves.
+  const store = createFolderStore({ idPrefix: 'f', persist: () => persist() });
   let loaded = false;
   let loadPromise = null;
   const subs = [];
@@ -36,25 +85,24 @@
   }
 
   function escapeHtml(s) { return window.corpusUI.escapeHtml(s); }
-  function genId() { return 'f-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders, workspace }).catch(() => { /* best-effort */ });
+    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders: store.all(), workspace }).catch(() => { /* best-effort */ });
   }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
   async function doLoad() {
     try {
       const r = (window.corpus && window.corpus.getFolders) ? await window.corpus.getFolders() : null;
-      folders = (r && r.folders) || [];
+      store.setAll((r && r.folders) || []);
       workspace = (r && Array.isArray(r.workspace)) ? r.workspace.slice() : [];
-    } catch { folders = []; workspace = []; }
+    } catch { store.setAll([]); workspace = []; }
     loaded = true;
   }
   function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
 
-  function byId(id) { return folders.find((f) => f.id === id) || null; }
-  function has(id, cid) { const f = byId(id); return !!(f && f.items.includes(cid)); }
+  const byId = store.byId;
+  const has = store.has;
 
   // --- Workspace: a single ephemeral tray. One-click add/remove (no picking),
   // easy to clear. Folders stay the permanent, named, multi-shelf system. ---
@@ -85,9 +133,9 @@
   }
 
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
+  // store.reconcile handles the folder lists; workspace is library-only so stays here.
   function reconcile(existing) {
-    let changed = false;
-    folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
+    let changed = store.reconcile(existing);
     const wn = workspace.length;
     workspace = workspace.filter((c) => existing.has(c));
     if (workspace.length !== wn) changed = true;
@@ -97,17 +145,12 @@
   // Toggle membership of captureIds[] in folder fid. anchorCid decides the
   // current state (the tile's representative id). Returns 'added' | 'removed' | null.
   function toggleIn(fid, captureIds, anchorCid) {
-    const f = byId(fid); if (!f) return null;
-    const ids = (captureIds || []).filter(Boolean);
-    if (!ids.length) return null;
-    const anchor = anchorCid != null ? anchorCid : ids[0];
-    const wasIn = f.items.includes(anchor);
-    if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
-    else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
-    persist();
-    toast(wasIn ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]));
+    const f = byId(fid); if (!f) return null;   // capture the name before toggling for the toast
+    const res = store.toggleIn(fid, captureIds, anchorCid);
+    if (!res) return null;
+    toast(res === 'removed' ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]));
     notify('membership');
-    return wasIn ? 'removed' : 'added';
+    return res;
   }
 
   // --- toast (shared, top-level #ivToast) ---
@@ -119,7 +162,8 @@
   function closeManager() { const m = $('ivFolderModal'); if (m) m.hidden = true; }
   function renderModal() {
     const host = $('ivFolderList'); if (!host) return;
-    host.innerHTML = folders.length ? folders.map((f) => {
+    const list = store.all();
+    host.innerHTML = list.length ? list.map((f) => {
       return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}">` +
         `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
         `<span class="iv-fold-n">${f.items.length}</span>` +
@@ -130,10 +174,9 @@
   }
   function create() {
     const inp = $('ivFolderNewName'); if (!inp) return;
-    const name = (inp.value || '').trim(); if (!name) return;
-    folders.push({ id: genId(), name, items: [] });
+    if (!store.create(inp.value)) return;   // store mints the id + persists
     inp.value = '';
-    persist(); renderModal(); notify('list');
+    renderModal(); notify('list');
   }
 
   function bind() {
@@ -146,19 +189,19 @@
       const row = e.target.closest('.iv-folder-row'); if (!row) return;
       const act = e.target.closest('[data-fact]'); if (!act) return;
       const fid = row.dataset.fid; const f = byId(fid); if (!f) return;
-      if (act.dataset.fact === 'rename') { const name = window.prompt(t('foldRenamePrompt'), f.name); if (name && name.trim()) f.name = name.trim(); }
+      if (act.dataset.fact === 'rename') { store.rename(fid, window.prompt(t('foldRenamePrompt'), f.name)); }
       else if (act.dataset.fact === 'delete') {
         if (!window.confirm(t('foldDeleteConfirm', [f.name]))) return;
-        folders = folders.filter((x) => x.id !== fid);
+        store.remove(fid);
       }
-      persist(); renderModal(); notify('list');
+      renderModal(); notify('list');   // store.rename/remove persist on success
     });
   }
 
   bind();
 
   window.corpusFolders = {
-    load, all: () => folders, byId, has,
+    load, all: () => store.all(), byId, has,
     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
     reconcile, toggleIn, openManager, closeManager, isManagerOpen,
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded

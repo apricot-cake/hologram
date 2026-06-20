@@ -4487,37 +4487,31 @@
   }
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
-  let posterFolders = [];            // persisted to poster-folders.json
+  // Reuses the shared folder-list store (folders.js createFolderStore) so the
+  // CRUD/id-minting/toggle logic isn't reimplemented; only the persist target
+  // (poster-folders.json) and the view-specific toast/re-render live here.
   let posterFolderFilter = null;     // fid currently filtered, or null
-  const pfGenId = () => 'pf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
-  function persistPosterFolders() { if (window.corpus.setPosterFolders) window.corpus.setPosterFolders({ folders: posterFolders }).catch(() => { /* best-effort */ }); }
-  function posterFolderById(id) { return posterFolders.find((f) => f.id === id) || null; }
-  function posterFolderHas(id, key) { const f = posterFolderById(id); return !!(f && f.items.includes(key)); }
-  function createPosterFolder(name) {
-    name = (name || '').trim(); if (!name) return null;
-    const f = { id: pfGenId(), name, items: [] };
-    posterFolders.push(f); persistPosterFolders();
-    return f;
-  }
+  function persistPosterFolders() { if (window.corpus.setPosterFolders) window.corpus.setPosterFolders({ folders: pfStore.all() }).catch(() => { /* best-effort */ }); }
+  const pfStore = window.corpusFolderStore({ idPrefix: 'pf', persist: persistPosterFolders });
+  const posterFolderById = pfStore.byId;
+  const posterFolderHas = pfStore.has;
+  function createPosterFolder(name) { return pfStore.create(name); }
   function deletePosterFolder(id) {
-    posterFolders = posterFolders.filter((f) => f.id !== id);
-    if (posterFolderFilter === id) posterFolderFilter = null;
-    persistPosterFolders();
+    pfStore.remove(id);
+    if (posterFolderFilter === id) posterFolderFilter = null;   // drop the filter if its folder is gone
   }
   function togglePosterFolderMember(id, key) {
-    const f = posterFolderById(id); if (!f) return false;
-    const wasIn = f.items.includes(key);
-    if (wasIn) f.items = f.items.filter((k) => k !== key); else f.items.push(key);
-    persistPosterFolders();
-    showToast((wasIn ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
+    const res = pfStore.toggleIn(id, key); if (!res) return false;
+    const f = posterFolderById(id);
+    showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
     renderPosterFolders();   // counts changed
     if (posterFolderFilter) renderPosters();   // membership change may add/remove from the filtered grid
-    return !wasIn;
+    return res === 'added';
   }
   function renderPosterFolders() {
     const host = document.getElementById('posterFolderList');
     if (!host) return;
-    host.innerHTML = posterFolders.map((f) => {
+    host.innerHTML = pfStore.all().map((f) => {
       const active = posterFolderFilter === f.id;
       return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0">`
         + `<span class="pf-row-name">${escapeHtml(f.name)}</span>`
@@ -4645,7 +4639,7 @@
       row(MSG.detailJoined, u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '') +
       worksHtml +
       `<div class="iv-insp-row iv-poster-folders-row"><span class="iv-insp-k">${escapeHtml(MSG.ivPosterFolders)}</span><span class="iv-insp-v"><div class="iv-poster-folder-chips">` +
-      posterFolders.map((f) => `<button class="iv-folder-chip${posterFolderHas(f.id, u.key) ? ' on' : ''}" data-pffid="${escapeAttr(f.id)}">${escapeHtml(f.name)}</button>`).join('') +
+      pfStore.all().map((f) => `<button class="iv-folder-chip${posterFolderHas(f.id, u.key) ? ' on' : ''}" data-pffid="${escapeAttr(f.id)}">${escapeHtml(f.name)}</button>`).join('') +
       `<button class="iv-folder-chip iv-folder-add" id="pdFolderNew" title="${escapeAttr(MSG.posterFolderNewPlaceholder)}">＋</button>` +
       `</div></span></div>` +
       `<div class="iv-insp-actions">` +
@@ -4724,8 +4718,7 @@
   document.getElementById('posterFolderList').addEventListener('dblclick', (e) => {
     const row = e.target.closest('.pf-row'); if (!row) return;
     const f = posterFolderById(row.dataset.fid); if (!f) return;
-    const name = window.prompt(MSG.posterFolderRenamePrompt, f.name);
-    if (name && name.trim()) { f.name = name.trim(); persistPosterFolders(); renderPosterFolders(); }
+    if (pfStore.rename(f.id, window.prompt(MSG.posterFolderRenamePrompt, f.name))) renderPosterFolders();
   });
   { const inp = document.getElementById('posterFolderNewInput');
     const btn = document.getElementById('posterFolderCreateBtn');
@@ -5357,7 +5350,7 @@
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterFavorites ? await window.corpus.getPosterFavorites() : null; posterFavorites = new Set((r && r.keys) || []); } catch { /* default empty */ }
-  try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; posterFolders = (r && r.folders) || []; } catch { /* default empty */ }
+  try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; pfStore.setAll((r && r.folders) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null; tagTypes = (r && r.types) || {}; } catch { /* default empty */ }
