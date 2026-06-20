@@ -163,6 +163,7 @@
     posterFolderCreate: _s('posterFolderCreate'),
     posterFolderDeleteConfirm: _f1('posterFolderDeleteConfirm'),
     posterFolderRenamePrompt: _s('posterFolderRenamePrompt'),
+    posterMenuNewFolder: _s('posterMenuNewFolder'),
     ivPosterFolders: _s('ivPosterFolders'),
     posterFolderAdded: _f1('posterFolderAdded'),
     posterFolderRemoved: _f1('posterFolderRemoved'),
@@ -4684,6 +4685,57 @@
     const u = posterList[parseInt(fb.dataset.favIndex, 10)];
     if (u) toggleFavorite(u);
   }, true);
+  // Poster context menu (right-click a card): assign to poster folders + quick actions,
+  // so folder membership no longer requires opening the inspector. Reuses the shared
+  // .fold-menu chrome + clampIntoView; folder rows toggle in place (menu stays open).
+  const posterMenu = document.createElement('div');
+  posterMenu.className = 'fold-menu';
+  document.body.appendChild(posterMenu);
+  let posterMenuKey = null;
+  function hidePosterMenu() { posterMenu.classList.remove('show'); posterMenuKey = null; }
+  function renderPosterMenu(u) {
+    const fav = posterFavorites.has(u.key);
+    posterMenu.innerHTML =
+      `<div class="fm-row" data-pm-act="posts"><span class="fm-name">${escapeHtml(MSG.posterViewPosts)}</span></div>` +
+      `<div class="fm-row" data-pm-act="fav"><span class="fm-name">${escapeHtml(fav ? MSG.posterFavRemove : MSG.posterFavAdd)}</span></div>` +
+      '<div class="fm-sep"></div>' +
+      pfStore.all().map((f) => `<div class="fm-row" data-pm-fid="${escapeAttr(f.id)}"><span class="fm-name">${escapeHtml(f.name)}</span>${posterFolderHas(f.id, u.key) ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('') +
+      `<div class="fm-row fm-manage" data-pm-act="newfolder">${escapeHtml(MSG.posterMenuNewFolder)}</div>`;
+  }
+  function showPosterMenu(u, x, y) {
+    posterMenuKey = u.key;
+    renderPosterMenu(u);
+    posterMenu.style.left = x + 'px';
+    posterMenu.style.top = y + 'px';
+    posterMenu.classList.add('show');
+    clampIntoView(posterMenu);
+  }
+  posterMenu.addEventListener('click', (e) => {
+    const u = posterMenuKey ? posterList.find((p) => p.key === posterMenuKey) : null;
+    if (!u) { hidePosterMenu(); return; }
+    const act = e.target.closest('[data-pm-act]');
+    if (act) {
+      const a = act.dataset.pmAct;
+      if (a === 'posts') { hidePosterMenu(); openPosterPosts(u); return; }
+      if (a === 'fav') { hidePosterMenu(); toggleFavorite(u); return; }
+      if (a === 'newfolder') {
+        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
+        if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) togglePosterFolderMember(nf.id, u.key); }
+        hidePosterMenu(); return;
+      }
+    }
+    const fr = e.target.closest('.fm-row[data-pm-fid]');
+    if (fr) { togglePosterFolderMember(fr.dataset.pmFid, u.key); renderPosterMenu(u); }   // keep open to assign more
+  });
+  document.addEventListener('click', (e) => { if (posterMenu.classList.contains('show') && !posterMenu.contains(e.target)) hidePosterMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePosterMenu(); });
+  document.getElementById('posterGrid').addEventListener('contextmenu', (e) => {
+    const card = e.target.closest('.poster-card');
+    if (!card) return;
+    e.preventDefault();
+    const u = posterList[parseInt(card.dataset.index, 10)];
+    if (u) showPosterMenu(u, e.clientX, e.clientY);
+  });
   // Poster-mode sort + platform filter + favorites-only (sidebar, poster mode only).
   { const ps = document.getElementById('posterSortSelect');
     if (ps) ps.addEventListener('change', () => { posterSort = ps.value; renderPosters(); }); }
