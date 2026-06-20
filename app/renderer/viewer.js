@@ -316,6 +316,10 @@
     tabCloseOthers: _s('tabCloseOthers')
   };
 
+  // Shared trash glyph (poster-folder delete + workspace clear). One source so the
+  // icon can't drift between the JS-rendered button and the static #wsClear button.
+  const ICON_TRASH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
+
   // --- Apply i18n to static elements ---
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   const setAttr = (id, attr, val) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, val); };
@@ -326,7 +330,7 @@
   setText('sbAuthorTitle', MSG.sidebarAuthors);
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
   const wsClearEl = document.getElementById('wsClear');
-  if (wsClearEl) { wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
+  if (wsClearEl) { wsClearEl.innerHTML = ICON_TRASH; wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
@@ -514,7 +518,7 @@
   function filterLabel(f) {
     switch (f.type) {
       case 'kind':       return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
-      case 'platform':   return f.value === '__none' ? MSG.qfPlatformNone : (({ x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' })[f.value] || f.value);
+      case 'platform':   return f.value === '__none' ? MSG.qfPlatformNone : (PF_NAME[f.value] || f.value);
       case 'postType':   return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
       case 'date': {
         const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
@@ -786,7 +790,6 @@
       case 'kind': return [['post', MSG.kindPost], ['image', MSG.kindImage]].map(([v, l]) => ({ v, l, on: act('kind', v) }));
       case 'platform': {
         // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
-        const names = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
         const hostsOf = (plat) => {
           const set = new Set();
           for (const p of allPosts) if (p.platform === plat) { const h = hostOf(p.url); if (h) set.add(h); }
@@ -794,7 +797,7 @@
         };
         const out = [];
         for (const v of ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv']) {
-          out.push({ v, l: names[v], on: act('platform', v) });
+          out.push({ v, l: PF_NAME[v], on: act('platform', v) });
           if (v === 'misskey' || v === 'mastodon') {
             for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true });
           }
@@ -1314,9 +1317,9 @@
   // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
   // later category sections; here we only assign + reflect the kind on the tag itself.
   let tagTypes = {};
-  const KIND_LABEL = () => ({ work: MSG.kindWork, character: MSG.kindCharacter });
+  const KIND_LABEL = { work: MSG.kindWork, character: MSG.kindCharacter };   // MSG is finalized at load
   function tagKindOf(tag) { return tagTypes[tag] || null; }
-  function kindLabel(kind) { return KIND_LABEL()[kind] || ''; }
+  function kindLabel(kind) { return KIND_LABEL[kind] || ''; }
   async function setTagKind(tag, kind) {
     if (kind) tagTypes[tag] = kind; else delete tagTypes[tag];
     try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes); } catch { /* best-effort */ }
@@ -2773,10 +2776,13 @@
 
   function renderPosts(keepLimit) {
     if (!keepLimit) renderLimit = RENDER_PAGE;
+    // View signature (filter/sort/search/view) — stable across this render, so
+    // compute once and reuse for both the sticky-drop check and the fast-path guard.
+    const stateSig = JSON.stringify(snapshotState());
     // A genuine filter/search/sort change drops the sticky survivors (they only
     // outlive in-place mutations, not user-driven view changes).
     if (!keepLimit && stickyRecs.size && lastRenderedState !== null &&
-        JSON.stringify(snapshotState()) !== lastRenderedState) {
+        stateSig !== lastRenderedState) {
       stickyRecs.clear();
     }
     updateSidebarState();
@@ -2841,7 +2847,7 @@
     {
       const wrap = grid.querySelector('.mcols');
       const rendered = wrap ? wrap.querySelectorAll('.post-card').length : 0;
-      const sameQuery = lastRenderedState !== null && JSON.stringify(snapshotState()) === lastRenderedState;
+      const sameQuery = lastRenderedState !== null && stateSig === lastRenderedState;
       if (keepLimit && currentView === 'card' && wrap && rendered > 0 &&
           _allPostsGeneration === _lastRenderGen && sameQuery &&
           wrap.children.length === masonryColCount(grid.clientWidth) &&
@@ -4502,7 +4508,7 @@
     const wasIn = f.items.includes(key);
     if (wasIn) f.items = f.items.filter((k) => k !== key); else f.items.push(key);
     persistPosterFolders();
-    if (window.corpusUI) window.corpusUI.notify((wasIn ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
+    showToast((wasIn ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
     renderPosterFolders();   // counts changed
     if (posterFolderFilter) renderPosters();   // membership change may add/remove from the filtered grid
     return !wasIn;
@@ -4515,7 +4521,7 @@
       return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0">`
         + `<span class="pf-row-name">${escapeHtml(f.name)}</span>`
         + `<span class="pf-row-n">${f.items.length}</span>`
-        + `<button class="pf-row-del" data-pfdel="${escapeAttr(f.id)}" aria-label="delete" title="${escapeAttr(MSG.posterFolderDeleteConfirm(f.name).split('\n')[0])}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>`
+        + `<button class="pf-row-del" data-pfdel="${escapeAttr(f.id)}" aria-label="delete" title="${escapeAttr(MSG.posterFolderDeleteConfirm(f.name).split('\n')[0])}">${ICON_TRASH}</button>`
         + `</div>`;
     }).join('');
   }
@@ -5320,15 +5326,10 @@
   }
 
   function escapeHtml(str) { return window.corpusUI.escapeHtml(str); }
-
-  // escapeHtml (textContent->innerHTML) does NOT escape quotes, so it is unsafe
-  // inside a double-quoted attribute (a `"` in API-sourced text would break out).
-  // Use this for any attribute value built from post content.
-  function escapeAttr(str) {
-    return String(str == null ? '' : str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
+  // corpusUI.escapeHtml is quote-safe (escapes " and '), so attribute values are
+  // safe through the same call — escapeAttr stays as a named alias to keep the
+  // intent ("this value lands in an attribute") legible at the 35 call sites.
+  function escapeAttr(str) { return window.corpusUI.escapeHtml(str); }
 
   // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid
   // #333 #toast; unified to #ivToast so viewer + folders share one look.
