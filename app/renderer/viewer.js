@@ -4509,7 +4509,7 @@
     if (!host) return;
     host.innerHTML = pfStore.all().map((f) => {
       const active = posterFolderFilter === f.id;
-      return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0">`
+      return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0" draggable="true">`
         + `<span class="pf-row-name">${escapeHtml(f.name)}</span>`
         + `<span class="pf-row-n">${f.items.length}</span>`
         + `<button class="pf-row-del" data-pfdel="${escapeAttr(f.id)}" aria-label="delete" title="${escapeAttr(MSG.posterFolderDeleteConfirm(f.name).split('\n')[0])}">${ICON_TRASH}</button>`
@@ -4767,6 +4767,36 @@
     const f = posterFolderById(row.dataset.fid); if (!f) return;
     if (pfStore.rename(f.id, window.prompt(MSG.posterFolderRenamePrompt, f.name))) renderPosterFolders();
   });
+  // Drag-and-drop reorder of poster folders. A thin accent edge marks the drop side
+  // (above/below the hovered row); persisted via pfStore.move on drop.
+  { const pfList = document.getElementById('posterFolderList');
+    let pfDragId = null;
+    const clearDropMarks = () => pfList.querySelectorAll('.pf-drop-before, .pf-drop-after').forEach((el) => el.classList.remove('pf-drop-before', 'pf-drop-after'));
+    const dropSide = (row, clientY) => { const r = row.getBoundingClientRect(); return clientY < r.top + r.height / 2; };   // true = before
+    pfList.addEventListener('dragstart', (e) => {
+      const row = e.target.closest('.pf-row'); if (!row) return;
+      pfDragId = row.dataset.fid;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', pfDragId); } catch { /* some engines disallow */ }
+      row.classList.add('pf-dragging');
+    });
+    pfList.addEventListener('dragover', (e) => {
+      if (!pfDragId) return;
+      e.preventDefault();   // mark as a valid drop target
+      e.dataTransfer.dropEffect = 'move';
+      clearDropMarks();
+      const row = e.target.closest('.pf-row');
+      if (row && row.dataset.fid !== pfDragId) row.classList.add(dropSide(row, e.clientY) ? 'pf-drop-before' : 'pf-drop-after');
+    });
+    pfList.addEventListener('drop', (e) => {
+      if (!pfDragId) return;
+      e.preventDefault();
+      const row = e.target.closest('.pf-row');
+      if (row && row.dataset.fid !== pfDragId && pfStore.move(pfDragId, row.dataset.fid, dropSide(row, e.clientY))) renderPosterFolders();
+      pfDragId = null;
+    });
+    pfList.addEventListener('dragend', () => { pfDragId = null; clearDropMarks(); pfList.querySelectorAll('.pf-dragging').forEach((el) => el.classList.remove('pf-dragging')); });
+  }
   { const inp = document.getElementById('posterFolderNewInput');
     const btn = document.getElementById('posterFolderCreateBtn');
     const doCreate = () => { if (!inp) return; const f = createPosterFolder(inp.value); if (f) { inp.value = ''; renderPosterFolders(); } };

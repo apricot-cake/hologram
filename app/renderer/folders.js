@@ -54,7 +54,20 @@
       folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
       return changed;
     }
-    return { all, setAll, byId, has, create, remove, rename, toggleIn, reconcile };
+    // Reorder: place draggedId before/after targetId (drag-and-drop). Returns true
+    // if the order changed.
+    function move(draggedId, targetId, before) {
+      if (draggedId === targetId) return false;
+      const from = folders.findIndex((f) => f.id === draggedId);
+      if (from < 0) return false;
+      const [item] = folders.splice(from, 1);
+      const to = folders.findIndex((f) => f.id === targetId);
+      if (to < 0) folders.push(item);
+      else folders.splice(before ? to : to + 1, 0, item);
+      persist();
+      return true;
+    }
+    return { all, setAll, byId, has, create, remove, rename, toggleIn, reconcile, move };
   }
   window.corpusFolderStore = createFolderStore;
 
