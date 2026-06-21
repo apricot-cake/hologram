@@ -1,8 +1,7 @@
-# viewer.js 多角レビュー報告（ultracode・2026-06-20）
+# viewer.js 多角レビュー報告（2026-06-20）
 
-> 出典: セッション `c015e887` で実行した ultracode workflow 2本。
-> - `wf_36c08bf6`（Phase1・現状調査）= タグ付けUX / ナビ・検索・ピン・同期 の実装マップ＋DESIGN制約の抽出
-> - `wf_68bac9c6`（Phase2・多角レビュー）= 5レンズ（陳腐化BACKLOG / 重複 / 簡素化 / バグ / デッドコード）で finding を出し、各々を adversarial verify
+> - Phase1（現状調査）= タグ付けUX / ナビ・検索・ピン・同期 の実装マップ＋DESIGN制約の抽出
+> - Phase2（多角レビュー）= 5レンズ（陳腐化BACKLOG / 重複 / 簡素化 / バグ / デッドコード）で finding を出し、各々を adversarial verify
 >
 > 31 findings を検証 → **採用28 / 却下3 / うち修正済み1**。本ファイルは「報告の精査用に整形した確定リスト」。**修正の実行はこれから**（redesignOverlap と却下を除く採用分が対象）。
 > 行番号はレビュー時点（viewer.js 5504行時点）のもの。実装時は前後にズレうるので識別子で確認すること。
