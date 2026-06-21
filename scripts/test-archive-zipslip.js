@@ -39,9 +39,10 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   assert.ok(fs.existsSync(path.join(dest, 'cap2.jpg')), 'cap2.jpg should import');
   assert.strictEqual(res.imported, 2, 'exactly the 2 legit captures imported, got ' + res.imported);
 
-  // folders.json merged.
-  const merged = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
-  assert.ok(merged.folders.some((f) => f.id === 'f1'), 'folders.json merged');
+  // legacy folders.json folds into collections.json (folders.json is retired).
+  const merged = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
+  assert.ok(merged.collections.some((c) => c.id === 'f1'), 'imported folders.json folded into collections.json');
+  assert.ok(!fs.existsSync(path.join(dest, 'folders.json')), 'no local folders.json resurrected');
 
   // Nothing escaped the destination.
   const escapeTargets = [

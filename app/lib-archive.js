@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
+const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
@@ -58,6 +58,39 @@ function mergeFolders(cur, inc) {
   const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId
     : (folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null);
   return { folders, defaultId };
+}
+// Collections (the unified folders+workspace container). id-union on items; name/
+// kind/created/tree are LOCAL-wins (cur put first, dup only unions items). activeId
+// stays local if it still points at a live collection (never import someone else's
+// active); posterWorkspace unions.
+function mergeCollections(cur, inc) {
+  const byId = new Map();
+  const put = (c) => {
+    if (!c || typeof c.id !== 'string') return;
+    if (byId.has(c.id)) { const e = byId.get(c.id); for (const it of (c.items || [])) e.items.add(String(it)); return; }
+    const e = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: (typeof c.created === 'number' ? c.created : null), items: new Set((c.items || []).map(String)) };
+    if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
+    byId.set(c.id, e);
+  };
+  for (const c of ((cur && cur.collections) || [])) put(c);
+  for (const c of ((inc && inc.collections) || [])) put(c);
+  const collections = [...byId.values()].map((c) => { const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] }; if (c.tree) o.tree = c.tree; return o; });
+  const valid = new Set(collections.map((c) => c.id));
+  const activeId = (cur && valid.has(cur.activeId)) ? cur.activeId : ((inc && valid.has(inc.activeId)) ? inc.activeId : null);
+  const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
+  return { collections, activeId, posterWorkspace };
+}
+// Convert a legacy folders.json into the collections shape (for folding an old
+// export ZIP into a migrated library). Folders → static collections; the incoming
+// workspace is dropped (don't import a foreign active tray); posterWorkspace rides along.
+function foldersToCollections(legacy) {
+  const folders = Array.isArray(legacy && legacy.folders) ? legacy.folders : [];
+  const collections = folders.filter((f) => f && typeof f.id === 'string').map((f) => ({
+    id: f.id, name: String(f.name || f.id), kind: 'static', created: null,
+    items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [],
+  }));
+  const posterWorkspace = Array.isArray(legacy && legacy.posterWorkspace) ? [...new Set(legacy.posterWorkspace.map(String))] : [];
+  return { collections, activeId: null, posterWorkspace };
 }
 function mergeTagGroups(cur, inc) {
   const byId = new Map();
@@ -111,7 +144,8 @@ function mergePosterTags(cur, inc) {
   return { tags };
 }
 const MERGERS = {
-  'folders.json': mergeFolders,
+  'folders.json': mergeFolders,          // legacy ZIPs — folded into collections.json on import
+  'collections.json': mergeCollections,
   'tag-groups.json': mergeTagGroups,
   'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
@@ -196,6 +230,13 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     if (!orgEntries[name]) continue;
     let inc = {};
     try { inc = JSON.parse(await orgEntries[name].async('string')); } catch { inc = {}; }
+    if (name === 'folders.json') {
+      // Legacy export: fold its folders into collections.json (don't resurrect the
+      // retired folders.json on a migrated library).
+      const merged = mergeCollections(readCur('collections.json'), foldersToCollections(inc));
+      try { fs.writeFileSync(path.join(destFolder, 'collections.json'), JSON.stringify(merged, null, 2), 'utf8'); } catch { /* ignore */ }
+      continue;
+    }
     const merged = MERGERS[name](readCur(name), inc);
     try { fs.writeFileSync(path.join(destFolder, name), JSON.stringify(merged, null, 2), 'utf8'); } catch { /* ignore */ }
   }
@@ -205,5 +246,5 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
 module.exports = {
   EXPORT_SKIP, ORG_MERGE,
   buildCompleteZip, buildImagesZip, importCompleteZip,
-  mergeFolders, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups
+  mergeFolders, mergeCollections, foldersToCollections, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups
 };

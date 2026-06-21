@@ -60,7 +60,7 @@ function getSaveFolder() {
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
 const INTERNAL_FILES = new Set([
   'config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json',
-  'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json',
+  'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json',
   'poster-folders.json', 'poster-tags.json',
 ]);
 
@@ -508,6 +508,80 @@ ipcMain.handle('set-folders', (_e, data) => {
   }
 });
 
+// `collections` — the unified container that supersedes folders + workspace
+// (Phase① of the collection feature). <saveFolder>/collections.json:
+//   { collections:[{id,name,kind:'static',created,items:[captureId]}], activeId, posterWorkspace:[posterKey] }
+// `activeId` points at the one-click ⚡ target (the old single workspace). On first
+// read we migrate any existing folders.json into this shape, then DELETE folders.json
+// (clean cutover — no backup, by design). get/set-folders stay for the migration read
+// and for folding a legacy folders.json out of an imported ZIP (lib-archive.js).
+function normCollections(arr) {
+  return Array.isArray(arr) ? arr
+    .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
+    .map((c) => {
+      const out = {
+        id: c.id, name: c.name,
+        kind: c.kind === 'dynamic' ? 'dynamic' : 'static',
+        created: typeof c.created === 'number' ? c.created : null,
+        items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
+      };
+      if (c.tree && typeof c.tree === 'object') out.tree = c.tree;   // forward-compat (dynamic, Phase④)
+      return out;
+    }) : [];
+}
+// Shape a legacy folders.json into the collections model. Folders become static
+// collections (ids preserved); a non-empty workspace becomes one collection set as
+// active. Returns null when there is nothing to migrate.
+function migrateFoldersToCollections(folder) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8')); } catch { return null; }
+  const folders = Array.isArray(j.folders) ? j.folders : [];
+  const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
+  const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
+  const collections = normCollections(folders.map((f) => ({ id: f.id, name: f.name, kind: 'static', created: null, items: f.items })));
+  let activeId = null;
+  if (workspace.length) {
+    const id = 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    collections.push({ id, name: 'ワークスペース', kind: 'static', created: null, items: workspace });
+    activeId = id;
+  }
+  return { collections, activeId, posterWorkspace };
+}
+ipcMain.handle('get-collections', () => {
+  const folder = getSaveFolder();
+  const empty = { collections: [], activeId: null, posterWorkspace: [] };
+  if (!folder) return empty;
+  // 1) already migrated → read collections.json
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'collections.json'), 'utf8'));
+    const collections = normCollections(j.collections);
+    const ids = new Set(collections.map((c) => c.id));
+    const activeId = (typeof j.activeId === 'string' && ids.has(j.activeId)) ? j.activeId : null;
+    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
+    return { collections, activeId, posterWorkspace };
+  } catch { /* not migrated yet — fall through */ }
+  // 2) migrate a legacy folders.json once, write collections.json, delete folders.json
+  const migrated = migrateFoldersToCollections(folder);
+  if (!migrated) return empty;
+  try { fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify(migrated, null, 2), 'utf8'); } catch { return migrated; }
+  try { fs.unlinkSync(path.join(folder, 'folders.json')); } catch { /* best-effort */ }
+  return migrated;
+});
+ipcMain.handle('set-collections', (_e, data) => {
+  const folder = getSaveFolder();
+  if (!folder) return { ok: false };
+  try {
+    const collections = normCollections(data && data.collections);
+    const ids = new Set(collections.map((c) => c.id));
+    const activeId = (data && typeof data.activeId === 'string' && ids.has(data.activeId)) ? data.activeId : null;
+    const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
+    fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify({ collections, activeId, posterWorkspace }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
 ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
   try { if (win) win.setTitleBarOverlay(opts); } catch { /* non-Windows or overlay-less build */ }
 });
@@ -876,7 +950,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'tag-types.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json' || f === 'poster-tags.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'tag-types.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'collections.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json' || f === 'poster-tags.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }

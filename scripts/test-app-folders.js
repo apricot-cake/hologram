@@ -1,11 +1,12 @@
 'use strict';
 
-// Verifies the post-view folder + workspace features (default folder removed):
+// Verifies the post-view folder + workspace features (collections data model):
 //  - create a folder via the shared management modal (no auto-default / no ★)
 //  - 📁 button opens a picker; clicking a folder row adds the card; chip counts + filters
-//  - folders.json persists { folders, workspace } (no defaultId)
-//  - ⚡ workspace button one-click adds to the single tray (filled), sidebar
+//  - collections.json persists { collections, activeId, posterWorkspace }
+//  - ⚡ workspace button one-click adds to the ACTIVE collection (filled), sidebar
 //    chip counts + filters, クリア empties it
+//  - the active collection is hidden from the folder manager (all() excludes it)
 // Seeds 3 standalone illustration records → 3 cards.
 //
 //   node scripts/test-app-folders.js
@@ -82,10 +83,10 @@ const evalJs = `(async () => {
   escKey(); await sleep(30);   // close the flyout
   const filteredCount = grid.querySelectorAll('.post-card').length;
 
-  // persistence: { folders, workspace }, no defaultId
-  const rb = await window.corpus.getFolders();
-  const f0 = rb.folders[0] || {};
-  const persistedFolders = rb.folders.length;
+  // persistence: collections.json { collections, activeId, posterWorkspace }, no defaultId
+  const rb = await window.corpus.getCollections();
+  const f0 = rb.collections[0] || {};
+  const persistedFolders = rb.collections.length;          // only the folder yet (no active)
   const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
   const noDefaultId = !('defaultId' in rb);
   $('postResetBtn').click(); await sleep(50);
@@ -100,18 +101,25 @@ const evalJs = `(async () => {
   click($('wsRow')); await sleep(60);
   const wsFiltered = grid.querySelectorAll('.post-card').length;
   const wsPill = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-workspace')].length === 1;
-  // persisted to folders.json workspace[]
-  const rb2 = await window.corpus.getFolders();
-  const wsPersist = Array.isArray(rb2.workspace) && rb2.workspace.length === 1;
+  // persisted to collections.json as the ACTIVE collection (1 item)
+  const rb2 = await window.corpus.getCollections();
+  const active2 = rb2.collections.find((c) => c.id === rb2.activeId);
+  const wsPersist = !!active2 && active2.items.length === 1;
+  // the active collection must NOT appear in the folder manager (all() hides it)
+  window.corpusFolders.openManager(); await sleep(40);
+  const mgrRows = document.querySelectorAll('#ivFolderList .iv-folder-row').length;
+  const activeHidden = mgrRows === window.corpusFolders.all().length && window.corpusFolders.all().length === 1;
+  click($('ivFolderClose')); await sleep(20);
   // 空にする empties the tray (confirmed; stub the dialog here)
   $('postResetBtn').click(); await sleep(40);
   window.confirm = () => true;
   click($('wsClear')); await sleep(60);
-  const rb3 = await window.corpus.getFolders();
-  const wsCleared = (rb3.workspace || []).length === 0 && $('wsBadge').textContent === '0';
+  const rb3 = await window.corpus.getCollections();
+  const active3 = rb3.collections.find((c) => c.id === rb3.activeId);
+  const wsCleared = (!active3 || active3.items.length === 0) && $('wsBadge').textContent === '0';
 
   return { totalBefore, modalOpen, chips, noStar, hoverPair, ctxOpen, menuOpen, countText, filteredCount,
-    persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, wsCleared };
+    persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, activeHidden, wsCleared };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -128,10 +136,10 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'hoverPair', 'ctxOpen', 'menuOpen', 'countText', 'filteredCount',
-    'persistedFolders', 'persistedItems', 'noDefaultId', 'wsIn', 'wsCount', 'wsFiltered', 'wsPill', 'wsPersist', 'wsCleared'];
+    'persistedFolders', 'persistedItems', 'noDefaultId', 'wsIn', 'wsCount', 'wsFiltered', 'wsPill', 'wsPersist', 'activeHidden', 'wsCleared'];
   const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, hoverPair: true, ctxOpen: true, menuOpen: true, countText: '1',
     filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, wsIn: true, wsCount: '1',
-    wsFiltered: 1, wsPill: true, wsPersist: true, wsCleared: true };
+    wsFiltered: 1, wsPill: true, wsPersist: true, activeHidden: true, wsCleared: true };
   const ok = keys.every((k) => r[k] === expect[k]);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'FOLDERS_TEST_PASS' : 'FOLDERS_TEST_FAIL');
