@@ -4251,7 +4251,9 @@
       return;
     }
     const sel = selectedTags instanceof Set ? selectedTags : new Set(selectedTags || []);
-    const chip = (t) => `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${escapeHtml(t)}</button>`;
+    // 種別ドット（用語帳）: a 作品/キャラ tag wears a small category dot here too, so the
+    // bulk modal / inspector picker reads the same as the sidebar rows + stamp palette.
+    const chip = (t) => { const k = tagKindOf(t); const dot = k ? `<span class="tag-pal-kind tk-${k}"></span>` : ''; return `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${dot}${escapeHtml(t)}</button>`; };
     let html = '';
     // 共起候補（作品→キャラ）: when a 作品 tag is set and the user isn't searching,
     // surface co-occurring characters. Suggestions only — full vocab still follows.
