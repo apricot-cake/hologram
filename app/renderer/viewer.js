@@ -78,6 +78,7 @@
     detailTags: _s('detailTags'),
     detailSourceTags: _s('detailSourceTags'),
     tipAdoptTag: _s('tipAdoptTag'),
+    ctxViewPoster: _s('ctxViewPoster'),
     tagAdopted: _f1('tagAdopted'),
     editAdoptSource: _s('editAdoptSource'),
     editCoocCharsOf: _f1('editCoocCharsOf'),
@@ -3402,12 +3403,15 @@
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-    wizard: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>'
+    wizard: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>',
+    poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
   };
   function showCardMenu(g, x, y) {
     cardMenuGroup = g;
     cardMenuSrcUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
     const inWs = !!(CF() && CF().inWorkspace(g.rep.captureId));
+    // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
+    const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
     const row = (act, ic, label, cls) =>
       `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span></div>`;
     cardMenu.innerHTML =
@@ -3417,6 +3421,7 @@
       row('folder', CM_IC.folder, MSG.tipFolder) +
       (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
+      (canPoster ? row('poster', CM_IC.poster, MSG.ctxViewPoster) : '') +
       (cardMenuSrcUrl ? '<div class="fm-sep"></div>' + row('sauce', CM_IC.sauce, MSG.detailSauce) + row('ascii', CM_IC.sauce, MSG.detailAscii) : '') +
       '<div class="fm-sep"></div>' +
       row('delete', CM_IC.del, MSG.tipDelete, 'fm-danger');
@@ -3448,6 +3453,7 @@
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
+    else if (act === 'poster') jumpToPoster(g.rep);
     else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(cardMenuSrcUrl));
     else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(cardMenuSrcUrl));
     else if (act === 'delete') requestDeleteGroup(g);
@@ -4003,8 +4009,12 @@
     // Poster row carries the locally-saved avatar (psimg://) when present, so the
     // inspector keeps its "label: value" rhythm while adding a face to the name.
     const avatarImg = p.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(p.avatarFile)}" alt="">` : '';
+    // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
+    // migrations); when it does, the name+avatar links to it (双方向ナビ: posts ↔ posters).
+    const jumpUser = p.url ? buildUsers().find((u) => u.key === userKey(p)) : null;
+    const authorInner = `${avatarImg}<span>${escapeHtml(p.displayName || '')}</span>`;
     const authorRow = (p.displayName || avatarImg)
-      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailAuthor)}</span><span class="iv-insp-v iv-insp-author">${avatarImg}<span>${escapeHtml(p.displayName || '')}</span></span></div>`
+      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailAuthor)}</span><span class="iv-insp-v iv-insp-author">${jumpUser ? `<button type="button" class="iv-insp-author-link" id="pdPosterJump" title="${escapeAttr(MSG.ctxViewPoster)}">${authorInner}</button>` : authorInner}</span></div>`
       : '';
     const heading = p.title || p.text || '';
     const thumbFile = g.files[0] || captureFile(p);
@@ -4073,6 +4083,7 @@
     const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
     const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
     box.querySelectorAll('[data-adopt]').forEach((btn) => { btn.onclick = () => adoptSourceTag(g, btn.dataset.adopt); });
+    const pj = document.getElementById('pdPosterJump'); if (pj && jumpUser) pj.onclick = () => jumpToPoster(p);
   }
 
   // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
@@ -5012,6 +5023,16 @@
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
     posterReturn = u.key;   // set LAST (setBrowseMode clears it): reset returns to posters while this user filter is active
+  }
+  // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster
+  // view and open that poster's inspector. Only SNS posts have a poster in buildUsers()
+  // (url-less Eagle migrations don't), so callers guard on existence before offering it.
+  function jumpToPoster(p) {
+    if (!p || !p.url) return;
+    const u = buildUsers().find((x) => x.key === userKey(p));
+    if (!u) return;
+    setBrowseMode('posters');   // clears any stale detail, then we open the poster's
+    showPosterDetail(u);
   }
   // --- Poster inspector inline tag editor ---
   // Mirrors the post inspector's tag editor (refreshInspectorTags/Picker + the

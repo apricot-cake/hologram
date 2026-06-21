@@ -2129,6 +2129,16 @@
     .iv-insp-k { color: var(--muted); flex: 0 0 72px; }
     .iv-insp-v { flex: 1; word-break: break-word; }
     .iv-insp-author { display: flex; align-items: center; gap: 7px; }
+    /* Author name+avatar as a jump-to-poster link (双方向ナビ). Looks like text until
+       hover, where it tints + rings the avatar to read as actionable. */
+    .iv-insp-author-link {
+      display: inline-flex; align-items: center; gap: 7px;
+      border: none; background: none; padding: 0; margin: 0;
+      font: inherit; color: inherit; text-align: left; cursor: pointer;
+      transition: color .12s;
+    }
+    .iv-insp-author-link:hover { color: var(--accent-text); }
+    .iv-insp-author-link:hover .iv-insp-avatar { box-shadow: 0 0 0 2px var(--accent-soft); }
     .iv-insp-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border-soft); }
     .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
