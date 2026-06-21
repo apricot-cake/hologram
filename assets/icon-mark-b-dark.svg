@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" role="img" aria-label="corpus">
+  <!-- Mark B (dark surfaces): light tile, fat ink braces { } as the vessel, solid sky heart nested inside. -->
+  <!-- Trinity kept: braces { } + heart together, braces are the heavy structural element. -->
+  <rect x="4" y="4" width="48" height="48" rx="13" fill="#e9e7f3"/>
+  <g fill="none" stroke="#23222c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- left brace { -->
+    <path d="M21 13 q-5 0 -5 5.6 v3.2 q0 4 -4 5.6 q4 1.6 4 5.6 v3.2 q0 5.6 5 5.6"/>
+    <!-- right brace } -->
+    <path d="M35 13 q5 0 5 5.6 v3.2 q0 4 4 5.6 q-4 1.6 -4 5.6 v3.2 q0 5.6 -5 5.6"/>
+  </g>
+  <!-- solid sky heart nested between the braces -->
+  <path d="M28 37 C22.5 32.2 20.5 29.1 21.7 26.4 C22.6 24.5 25.4 24.5 26.8 26.3 C27.4 27 27.7 27.5 28 28.2 C28.3 27.5 28.6 27 29.2 26.3 C30.6 24.5 33.4 24.5 34.3 26.4 C35.5 29.1 33.5 32.2 28 37 Z" fill="#8ad3ec" stroke="#8ad3ec" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>
