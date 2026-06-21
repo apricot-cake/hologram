@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" role="img" aria-label="corpus">
+  <!-- Mark A (light surfaces): ink tile, solid sky heart centered, thin brace strokes flanking. -->
+  <!-- Trinity kept: braces { } + heart together. Square fill reads at 16px. -->
+  <rect x="4" y="4" width="48" height="48" rx="13" fill="#23222c"/>
+  <g fill="none" stroke="#e9e7f3" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- left brace { -->
+    <path d="M19 15 q-4.5 0 -4.5 5.2 v3 q0 3.6 -3.6 5.1 q3.6 1.5 3.6 5.1 v3 q0 5.2 4.5 5.2"/>
+    <!-- right brace } -->
+    <path d="M37 15 q4.5 0 4.5 5.2 v3 q0 3.6 3.6 5.1 q-3.6 1.5 -3.6 5.1 v3 q0 5.2 -4.5 5.2"/>
+  </g>
+  <!-- solid sky heart (square heart, rounded corners) -->
+  <path d="M28 39.5 C21 33.5 18.4 29.6 20 26.2 C21.2 23.7 24.7 23.7 26.5 26 C27.2 26.9 27.6 27.5 28 28.4 C28.4 27.5 28.8 26.9 29.5 26 C31.3 23.7 34.8 23.7 36 26.2 C37.6 29.6 35 33.5 28 39.5 Z" fill="#28a8db" stroke="#28a8db" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>
