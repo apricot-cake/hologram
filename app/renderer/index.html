@@ -1197,7 +1197,7 @@
     /* Tag-kind menu (用語帳): non-interactive header + kind dots. Dot colors follow
        danbooru's tag-category convention (copyright=purple, character=green). */
     .fold-menu .fm-head { padding: 4px 8px 3px; font-size: 10px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--text-subtle); pointer-events: none; }
-    .tk-dot { width: 8px; height: 8px; border-radius: 999px; }
+    .tk-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
     .tk-work { background: var(--tint-purple-bd); }
     .tk-character { background: var(--tint-green-bd); }
 
@@ -1380,6 +1380,11 @@
       background: color-mix(in srgb, var(--accent) 30%, var(--surface));
       border-color: var(--accent); color: var(--accent-subtle-fg);
     }
+    /* Poster tag filter (投稿者タグ②): selected chips wear the 種別 dot inline; the
+       clear-all chip reads quietly (it's an action, not an active filter). */
+    .poster-tag-chip { display: inline-flex; align-items: center; gap: 5px; }
+    .poster-tag-clear { color: var(--text-muted); }
+    .poster-tag-clear:hover { color: var(--text-strong); }
 
     /* Active-filter pills = one uniform GLASS material (monotone). The old
        per-type rainbow tints (qc-platform/postType/date/…) read as "color groups
@@ -1699,6 +1704,13 @@
           </select>
           <div class="sb-title poster-pf-title" id="sbPosterPlatformTitle"></div>
           <div class="sb-chips" id="posterPlatformChips"></div>
+          <!-- Poster tag filter: chosen tags AND-combine; the +button opens the
+               shared qf flyout (qfCat 'poster-tag'). Section auto-hides when no
+               poster carries a tag (renderPosterTagFilters). -->
+          <div id="posterTagFilterSection" style="display:none;">
+            <div class="sb-title poster-pf-title" id="sbPosterTagsTitle"></div>
+            <div class="sb-chips poster-tag-filter" id="posterTagFilterRow"></div>
+          </div>
           <div class="sb-title poster-pf-title" id="sbPosterFoldersTitle"></div>
           <div class="pf-list" id="posterFolderList"></div>
           <div class="pf-new">

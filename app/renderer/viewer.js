@@ -168,6 +168,9 @@
     ivPosterTags: _s('ivPosterTags'),
     posterFolderAdded: _f1('posterFolderAdded'),
     posterFolderRemoved: _f1('posterFolderRemoved'),
+    sbPosterTagsTitle: _s('sbPosterTagsTitle'),
+    posterTagFilterAdd: _s('posterTagFilterAdd'),
+    posterTagFilterClear: _s('posterTagFilterClear'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -380,6 +383,7 @@
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   setText('sbPosterPlatformTitle', MSG.sbPosterPlatformTitle);
   setText('posterFavOnlyLabel', MSG.posterFavOnly);
+  setText('sbPosterTagsTitle', MSG.sbPosterTagsTitle);
   setText('sbPosterFoldersTitle', MSG.sbPosterFoldersTitle);
   setText('posterFolderCreateBtn', MSG.posterFolderCreate);
   { const i = document.getElementById('posterFolderNewInput'); if (i) i.placeholder = MSG.posterFolderNewPlaceholder; }
@@ -845,6 +849,13 @@
         out.push({ v: '__multi', l: MSG.qfMultiImage, on: multiOnly });
         return out;
       }
+      case 'poster-tag': {
+        // Poster-mode sidebar tag filter: lists tags actually applied to posters.
+        // Unlike the post tag cases this does NOT touch the post query — it toggles
+        // posterTagFilter (handled in the qfPop click branch). "on" = already chosen.
+        // kind rides along so renderQfPop can draw the 種別 dot (作品/キャラ).
+        return posterFilterVocab().map((t) => ({ v: t, l: t, on: posterTagFilter.has(t), kind: tagKindOf(t) }));
+      }
       case 'work':
       case 'character': {
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
@@ -917,7 +928,10 @@
       const pinHtml = (curPins && !isMulti)
         ? `<span class="qf-pin${curPins.some(p => p.type === vtype && p.value === it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" data-pintype="${escapeAttr(vtype)}" title="${MSG.tipPin}">${PIN_SVG}</span>`
         : '';
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}><span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}${pinHtml}</div>`;
+      // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the
+      // shared category dot so the poster-tag flyout isn't flattened (作品=紫/キャラ=緑).
+      const kindDot = it.kind ? `<span class="tk-dot tk-${it.kind}" title="${escapeAttr(kindLabel(it.kind))}"></span>` : '';
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}${pinHtml}</div>`;
     };
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
@@ -1013,6 +1027,17 @@
         renderPosts();
         return;
       }
+      // Poster-tag flyout: toggle posterTagFilter (a transient browse Set), NOT the
+      // post query. Stays open so several tags can be AND-ed in one pass.
+      if (qfCat === 'poster-tag') {
+        if (posterTagFilter.has(v)) posterTagFilter.delete(v); else posterTagFilter.add(v);
+        renderQfPop();
+        renderPosterTagFilters();   // rebuilds the row → re-point the anchor at the fresh +button
+        const freshAnchor = document.querySelector('#posterTagFilterRow .poster-tag-add');
+        if (freshAnchor) qfAnchor = freshAnchor;   // keep same-anchor re-click = toggle-close
+        renderPosters();
+        return;
+      }
       const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
       const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
       if (i >= 0) {
@@ -1035,7 +1060,8 @@
     // click even though contains() can no longer see it
     if (!document.contains(e.target)) return;
     if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
-        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) hideQfPop();
+        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]') &&
+        !e.target.closest('[data-poster-tag-add]')) hideQfPop();
     // date/eng popovers (no backdrop now): close on outside click, but NOT on a
     // filter-row click — those switch to the new row (handled by the row handler).
     const dp = document.getElementById('qfDatePopover');
@@ -4553,8 +4579,27 @@
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
   let posterTags = {};
+  // Sidebar tag filter (poster mode): chosen tags AND-combine — a poster must carry
+  // every selected tag to stay in the grid. Mirrors posterFolderFilter, but for tags.
+  // Not persisted: it's a transient browse filter, like the platform/favorites chips.
+  let posterTagFilter = new Set();
   function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
   function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
+  // Tags actually applied to at least one poster — the vocabulary the filter offers.
+  // Kinded (作品/キャラ) tags stay in (種別 dots distinguish them); order is by 種別
+  // (作品 → キャラ → 一般) then ja-collation so the flyout reads like the palette.
+  function posterFilterVocab() {
+    const set = new Set();
+    for (const arr of Object.values(posterTags)) for (const t of (Array.isArray(arr) ? arr : [])) set.add(t);
+    const rank = (t) => { const k = tagKindOf(t); return k === 'work' ? 0 : k === 'character' ? 1 : 2; };
+    return [...set].sort((a, b) => (rank(a) - rank(b)) || a.localeCompare(b, 'ja'));
+  }
+  function clearPosterTagFilter() {
+    if (!posterTagFilter.size) return;
+    posterTagFilter.clear();
+    renderPosterTagFilters();
+    renderPosters();
+  }
   const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg>';
   function persistFavorites() { if (window.corpus.setPosterFavorites) window.corpus.setPosterFavorites([...posterFavorites]).catch(() => { /* best-effort */ }); }
   function toggleFavorite(u) {
@@ -4604,6 +4649,31 @@
         + `</div>`;
     }).join('');
   }
+  // Poster-mode tag filter row: an "add tag" button (opens the shared qf flyout) plus
+  // a chip per chosen tag (× to drop it). 作品/キャラ chips wear the 種別 dot like the
+  // palette/flyout. Hidden entirely when no poster carries any tag (nothing to offer).
+  function renderPosterTagFilters() {
+    const host = document.getElementById('posterTagFilterRow');
+    const wrap = document.getElementById('posterTagFilterSection');
+    if (!host) return;
+    const vocab = posterFilterVocab();
+    const present = new Set(vocab);
+    for (const t of [...posterTagFilter]) if (!present.has(t)) posterTagFilter.delete(t);   // prune tags no poster carries anymore
+    const hasVocab = vocab.length > 0;
+    if (wrap) wrap.style.display = hasVocab ? '' : 'none';
+    if (!hasVocab) { host.innerHTML = ''; return; }
+    const chips = [...posterTagFilter].map((t) => {
+      const k = tagKindOf(t);
+      const dot = k ? `<span class="tk-dot tk-${k}" title="${escapeAttr(kindLabel(k))}"></span>` : '';
+      return `<span class="sb-chip active poster-tag-chip" data-ptdel="${escapeAttr(t)}">${dot}${escapeHtml(t)} ×</span>`;
+    }).join('');
+    const addBtn = `<button type="button" class="sb-chip poster-tag-add" data-poster-tag-add title="${escapeAttr(MSG.posterTagFilterAdd)}">+ ${escapeHtml(MSG.posterTagFilterAdd)}</button>`;
+    // Clear-all only earns its spot once a 2nd tag is picked (one tag = just × it).
+    const clearBtn = posterTagFilter.size > 1
+      ? `<button type="button" class="sb-chip poster-tag-clear" data-poster-tag-clear>${escapeHtml(MSG.posterTagFilterClear)}</button>`
+      : '';
+    host.innerHTML = chips + addBtn + clearBtn;
+  }
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
     return s ? escapeHtml(s[0].toUpperCase()) : '?';
@@ -4615,6 +4685,7 @@
     let list = namedPosters();
     if (posterFavOnly) list = list.filter((u) => posterFavorites.has(u.key));
     if (posterFolderFilter) { const f = posterFolderById(posterFolderFilter); const set = new Set(f ? f.items : []); list = list.filter((u) => set.has(u.key)); }
+    if (posterTagFilter.size) { const want = [...posterTagFilter]; list = list.filter((u) => { const have = new Set(posterTagsOf(u.key)); return want.every((t) => have.has(t)); }); }
     if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
@@ -4647,6 +4718,7 @@
     // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
     const countEl = document.getElementById('posterCount');
     renderPosterPlatformChips();
+    renderPosterTagFilters();
     renderPosterFolders();
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
@@ -4879,6 +4951,19 @@
   });
   { const fo = document.getElementById('posterFavOnlyBtn');
     if (fo) fo.addEventListener('click', () => { posterFavOnly = !posterFavOnly; fo.classList.toggle('active', posterFavOnly); renderPosters(); }); }
+  // Poster tag filter: + button opens the shared qf flyout; a chip's × drops that tag.
+  { const ptRow = document.getElementById('posterTagFilterRow');
+    if (ptRow) ptRow.addEventListener('click', (e) => {
+      const add = e.target.closest('.poster-tag-add');
+      if (add) { showQfPopAt('poster-tag', add); return; }
+      if (e.target.closest('.poster-tag-clear')) { clearPosterTagFilter(); hideQfPop(); return; }
+      const del = e.target.closest('.poster-tag-chip');
+      if (del) {
+        posterTagFilter.delete(del.dataset.ptdel);
+        renderPosterTagFilters(); renderPosters();
+        if (qfCat === 'poster-tag' && qfPop.classList.contains('show')) renderQfPop();   // keep flyout checkmarks in sync
+      }
+    }); }
   // Poster folders: sidebar list (click row = filter toggle, × = delete, dblclick = rename) + create.
   document.getElementById('posterFolderList').addEventListener('click', (e) => {
     const del = e.target.closest('.pf-row-del');
