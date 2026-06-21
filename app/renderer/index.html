@@ -624,7 +624,11 @@
        library colors, ghost info/fav (over the row, not an image). */
     .poster-grid.list-view { display: flex; flex-direction: column; gap: 4px; }
     .poster-grid.list-view .poster-card { flex-direction: row; align-items: center; gap: 10px; padding: 7px 38px 7px 10px; border-radius: 8px; box-shadow: none; }
+    /* Rows don't lift (the whole-row scale jitters); the avatar zooms inside its
+       circular frame instead — poster-av's overflow:hidden clips the growth. */
     .poster-grid.list-view .poster-card:hover { transform: none; box-shadow: var(--shadow-sm); }
+    .poster-grid.list-view .poster-av img { transition: transform 0.18s var(--ease-out); }
+    .poster-grid.list-view .poster-card:hover .poster-av img { transform: scale(1.08); }
     .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); font-size: 15px; }
     .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
     .poster-grid.list-view .poster-fav, .poster-grid.list-view .poster-info { background: transparent; color: var(--text-subtle); }
@@ -753,7 +757,14 @@
        (Pinterest/gallery idiom). Cards & tiles only — list rows would jitter.
        Transform origin is the center; off under prefers-reduced-motion. */
     .post-grid:not(.list-view) .post-card:hover { transform: scale(1.02); z-index: 1; }
-    @media (prefers-reduced-motion: reduce) { .post-card:hover { transform: none; } }
+    /* List rows don't lift (they'd jitter); the thumbnail zooms within its frame
+       instead — the post-card's overflow:hidden clips the growth (枠内ズーム). */
+    .post-grid.list-view .card-img { transition: transform 0.18s var(--ease-out); }
+    .post-grid.list-view .post-card:hover .card-img { transform: scale(1.06); }
+    @media (prefers-reduced-motion: reduce) {
+      .post-card:hover, .post-grid.list-view .post-card:hover .card-img,
+      .poster-grid.list-view .poster-card:hover .poster-av img { transform: none; }
+    }
     .post-card img {
       width: 100%; display: block;
       max-height: 300px; object-fit: cover; cursor: zoom-in;
