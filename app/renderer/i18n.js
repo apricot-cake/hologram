@@ -166,6 +166,9 @@
       ivPosterTags: 'タグ',
       posterFolderAdded: '「$1」に追加',
       posterFolderRemoved: '「$1」から外す',
+      sbPosterTagsTitle: 'タグ',
+      posterTagFilterAdd: 'タグで絞り込み',
+      posterTagFilterClear: 'タグ絞り込みを解除',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -489,6 +492,9 @@
       ivPosterTags: 'Tags',
       posterFolderAdded: 'Added to "$1"',
       posterFolderRemoved: 'Removed from "$1"',
+      sbPosterTagsTitle: 'Tags',
+      posterTagFilterAdd: 'Filter by tag',
+      posterTagFilterClear: 'Clear tag filter',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',
