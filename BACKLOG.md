@@ -6,10 +6,9 @@
 
 調査結果込みで焼いてある＝次セッションは再調査せず着手できる。完了したらこのリストから削除。
 
-1. **[bug] スクロールバーがクエリビルダー帯に侵食**（スクショ報告・未調査）: ライブラリ表示でコンテンツ列の縦スクロールバーが、全幅の上部バー（`#postActiveBar`＝「フィルタ … N 件ヒット」）の右端に重なって見える。候補＝上部バーがスクロールバー幅を勘案していない／コンテンツ列の overflow と上部バーの z 重なり。実機 :9222 で要調査→修正（CDP eval で rect 比較できる＝`scripts/cdp-verify.js`）。
-2. **ホバー拡大を list 表示へ展開**（調査済み・実装待ち）: card/tile はカード全体 `scale(1.02)`（index.html `.post-grid:not(.list-view) .post-card:hover` L759／投稿者は `.poster-card:hover` L584）。list は「行全体だと jitter」で意図的に除外中（投稿者 list も `.poster-grid.list-view .poster-card:hover{transform:none}` L631）。**方針＝list はサムネ画像だけズーム**（`.post-grid.list-view .post-card:hover .card-img` と `.poster-grid.list-view .poster-card:hover .poster-av img` に `transform: scale(1.05〜1.08)`＋`transition`、サムネ枠 overflow:hidden 前提＝枠内ズーム）。card/tile は現状維持。
-3. **ホバーにタグ付与ボタン**（3個ルール変更で決定済み）: ユーザー判断でホバーボタンを **2個→3個まで許容**（⚡ws・ℹinfo・🏷タグ）。実装＝(a) DESIGN.md L144「2個まで」→「3個まで」・L145「3個以上却下」→「4個以上却下」 (b) カードHTML（index.html L3130-3131 の ws-btn/info-btn 隣）に tag-btn 追加（タグSVG・`data-tagedit="${i}"`） (c) `.tag-btn` CSS を info/ws と同パターンで card/tile/list 各ビュー＋`.act-pill` 追従（`:has(.tag-btn:hover)` を L1243-1244, L944-945 に）＋`.selecting` 非表示（L876）＋dark 背景（L2378-2379）に併記。card/list は `right:72px`、tile は `calc(6px + 2*(var(--act)+4px))` (d) クリック＝右クリック edit と同じ `taggingApi.enter('edit'); showDetail(g)`（viewer.js postGrid click ＋ ズーム/swap スキップ `.info-btn, .ws-btn` に `.tag-btn` 追加：L3872, L4143） (e) i18n `tipTagEdit`＝「タグ編集」/「Edit tags」＋ MSG マッピング。SMOKE 窓で検証可。
-4. **コレクション統合（資料ビュー）**（設計確定・モック合意・段階実装＝下記「資料ビューの新設」参照）: 大。①データモデル統合（folders.json＋workspace→コレクション）→②コレクションビュー（第3モード）→③サムネのタイル詰め→④動的=保存検索の吸収。実装時に DESIGN.md L150「ワークスペース vs フォルダ」を見直す。
+1. **ホバー拡大を list 表示へ展開**（調査済み・実装待ち）: card/tile はカード全体 `scale(1.02)`（index.html `.post-grid:not(.list-view) .post-card:hover` L759／投稿者は `.poster-card:hover` L584）。list は「行全体だと jitter」で意図的に除外中（投稿者 list も `.poster-grid.list-view .poster-card:hover{transform:none}` L631）。**方針＝list はサムネ画像だけズーム**（`.post-grid.list-view .post-card:hover .card-img` と `.poster-grid.list-view .poster-card:hover .poster-av img` に `transform: scale(1.05〜1.08)`＋`transition`、サムネ枠 overflow:hidden 前提＝枠内ズーム）。card/tile は現状維持。
+2. **ホバーにタグ付与ボタン**（3個ルール変更で決定済み）: ユーザー判断でホバーボタンを **2個→3個まで許容**（⚡ws・ℹinfo・🏷タグ）。実装＝(a) DESIGN.md L144「2個まで」→「3個まで」・L145「3個以上却下」→「4個以上却下」 (b) カードHTML（index.html L3130-3131 の ws-btn/info-btn 隣）に tag-btn 追加（タグSVG・`data-tagedit="${i}"`） (c) `.tag-btn` CSS を info/ws と同パターンで card/tile/list 各ビュー＋`.act-pill` 追従（`:has(.tag-btn:hover)` を L1243-1244, L944-945 に）＋`.selecting` 非表示（L876）＋dark 背景（L2378-2379）に併記。card/list は `right:72px`、tile は `calc(6px + 2*(var(--act)+4px))` (d) クリック＝右クリック edit と同じ `taggingApi.enter('edit'); showDetail(g)`（viewer.js postGrid click ＋ ズーム/swap スキップ `.info-btn, .ws-btn` に `.tag-btn` 追加：L3872, L4143） (e) i18n `tipTagEdit`＝「タグ編集」/「Edit tags」＋ MSG マッピング。SMOKE 窓で検証可。
+3. **コレクション統合（資料ビュー）**（設計確定・モック合意・段階実装＝下記「資料ビューの新設」参照）: 大。①データモデル統合（folders.json＋workspace→コレクション）→②コレクションビュー（第3モード）→③サムネのタイル詰め→④動的=保存検索の吸収。実装時に DESIGN.md L150「ワークスペース vs フォルダ」を見直す。
 
 ## 作者まわり（クラスタ）
 - **著者プロフィールの表示**: インスペクタに実装済み＝フォロワー数・登録日のテキスト行＋投稿者名の横に円形アバター。アバターはオフライン保存方式（DL ロジックは `native-host/media-download.js` に共有化＝capture/import/backfill で同一の SSRFガード/上限。`avatarFile` を psimg:// で表示。pixiv アバターは Referer ゲート対応済み。X/pixiv のフォロワー/作成日は公開APIに無く graceful 隠し）。取込(import-posts)・backfill(`--all`/再取得時)・既存データ(`backfill-metadata.js --avatars`＝API無しでアバターのみDL)の各経路にアバターDLを追加済み。**残**: 投稿者ビューにもアバター表示済み（実装は下記）だが、既存ライブラリは未backfillで `avatarFile` が無くモノグラム表示＝個人作業で `backfill-metadata.js --avatars` を流すと実画像に。
@@ -87,7 +86,7 @@
 
 ### タグ付けUX（クラスタ・2026-06-21 方向確定＝実装フェーズへ）
 **ユーザー確定（2026-06-21）**: タグ付けは ①カードごとの編集（インスペクタ＝実装済み）＋ ②複数選択→一括、の2本に集約。**スタンプ軸**と「カード編集/スタンプ」**軸切替トグルを廃止**、**サイドバーのタグ付け起動ボタン（#tagStartBtn）も廃止**。スタンプ用のサイドバーパレット切替も廃止対象（タグ付けはモードでなくカード単位＋一括で解く）。
-- **コンテンツのホバーボタンにタグ付与ボタンを追加（3個ルール変更で決定済み＝冒頭の着手順③）**: カード→タグ編集（インスペクタ）への発見性ある導線。**制約＝クエリビルダー（上部バー）には侵入させない**。ホバー2個原則は**ユーザー判断で「3個まで」に緩和して解決**（⚡ws・ℹinfo・🏷タグ＝⚡置換/出し分けでなく上限変更）。実装詳細は冒頭「次の着手順③」。
+- **コンテンツのホバーボタンにタグ付与ボタンを追加（3個ルール変更で決定済み＝冒頭の着手順②）**: カード→タグ編集（インスペクタ）への発見性ある導線。**制約＝クエリビルダー（上部バー）には侵入させない**。ホバー2個原則は**ユーザー判断で「3個まで」に緩和して解決**（⚡ws・ℹinfo・🏷タグ＝⚡置換/出し分けでなく上限変更）。実装詳細は冒頭「次の着手順②」。
 - **タグのピン留めセクション廃止**: スマートフォルダ（保存できる動的検索・下記）で代替できるため不要、とユーザー判断。
 
 ### ナビ/検索UI
