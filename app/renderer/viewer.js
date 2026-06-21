@@ -800,12 +800,15 @@
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   function resetAllFilters() {
-    const bounce = posterReturn;   // capture before afterQueryChange clears it
+    // Bounce back to the poster grid only if we drilled in from a poster AND that
+    // poster's user filter is still active (check before emptying the tree).
+    const bounce = posterReturn && qHasValue('user', posterReturn);
     queryTree = emptyTree();
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     afterQueryChange();
-    if (bounce) setBrowseMode('posters');   // a poster drill-in → reset returns to the poster grid
+    posterReturn = null;
+    if (bounce) setBrowseMode('posters');
   }
   document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
 
@@ -1709,10 +1712,11 @@
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts';   // 'posts' | 'posters' (what the content area browses)
-  // Set when a poster click jumped us into posts mode with that poster's `user` filter,
-  // so a bare query reset bounces back to the poster grid (where the drill-in started)
-  // instead of just emptying the post query. Cleared by any other query change / mode switch.
-  let posterReturn = false;
+  // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
+  // A query reset bounces back to the poster grid AS LONG AS that user filter is still
+  // active (you're still looking at this poster's posts, even with extra library filters
+  // added). Removing the user filter or switching mode ends it. null = no pending return.
+  let posterReturn = null;
   let multiOnly = false;      // show only items with more than one image
   let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180;         // tile view: edge px (pref imageTileSize)
@@ -1842,7 +1846,7 @@
   }
   // One canonical refresh after any tree mutation: rebuild the shadow, then
   // renderPosts() (which itself runs updateSidebarState → renderQueryChips).
-  function afterQueryChange() { posterReturn = false; syncShadow(); renderPostFolders(); renderPosts(); }
+  function afterQueryChange() { syncShadow(); renderPostFolders(); renderPosts(); }
 
   // --- Inline builder interaction: drag pills/groups into parenthesised groups ---
   // (docs/design-query-builder.md 改訂③). renderQueryChips() fills qbNodeMap
@@ -4669,7 +4673,7 @@
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
   function setBrowseMode(mode, opts) {
     mode = (mode === 'posters') ? 'posters' : 'posts';
-    posterReturn = false;   // an explicit mode switch ends any pending poster-return
+    posterReturn = null;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
     document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     const _t = document.querySelector('#browseToggle .vt-thumb');
@@ -5001,7 +5005,7 @@
     removeCondsMatching((c) => c.type === 'user');   // "this poster", not OR-ed with a prior one
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
-    posterReturn = true;   // set LAST (setBrowseMode/addFilter clear it): a bare reset returns to posters
+    posterReturn = u.key;   // set LAST (setBrowseMode clears it): reset returns to posters while this user filter is active
   }
   // --- Poster inspector inline tag editor ---
   // Mirrors the post inspector's tag editor (refreshInspectorTags/Picker + the
