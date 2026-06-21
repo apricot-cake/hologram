@@ -569,11 +569,13 @@
     /* Browse-mode toggle (ライブラリ / 投稿者): reuses .view-toggle visuals but shows a
        text label in BOTH states (the semantic switch is less self-evident than
        card/tile/list). 2 segments, so the thumb fallback is /2. */
-    .browse-bar { margin: 0 0 16px; }
-    .browse-toggle { width: max-content; }
-    /* flex:0 0 auto = each segment sizes to its own content (no shrinking that
-       wrapped "投稿者"); --text keeps the inactive label readable on the track. */
-    .browse-toggle button { flex: 0 0 auto; padding: 0 14px; gap: 7px; height: 30px; color: var(--text); white-space: nowrap; }
+    /* Lives at the sidebar top now (.browse-bar-section = a .sb-section), so it
+       fills the column like the density toggle: full width, equal segments. */
+    .browse-bar-section { margin-bottom: 16px; }
+    .browse-toggle { width: 100%; }
+    /* flex:1 + nowrap = equal segments that don't wrap "投稿者"; --text keeps the
+       inactive label readable on the track. */
+    .browse-toggle button { flex: 1; padding: 0 10px; gap: 7px; height: 30px; color: var(--text); white-space: nowrap; }
     .browse-toggle .vt-ico { width: 15px; height: 15px; }
     .browse-toggle .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
     .browse-toggle .vt-thumb { width: calc((100% - 6px) / 2); }
@@ -628,13 +630,38 @@
     .poster-card:hover .poster-info, .poster-info:focus-visible { opacity: 1; }
     .poster-info:hover { background: var(--hover); transform: scale(1.1); }
     .poster-info svg { width: 16px; height: 16px; display: block; }
+    /* Tile density: square tiles led by the avatar (アイコン) image; name+PF+count
+       in a bottom gradient overlay (mirrors the post tile). Monogram fills the tile
+       when no avatar is saved. */
+    .poster-grid.tile-view { grid-template-columns: repeat(auto-fill, minmax(var(--ptile-size, 132px), 1fr)); gap: 10px; }
+    .poster-grid.tile-view .poster-card { aspect-ratio: 1; padding: 0; gap: 0; border-radius: 12px; overflow: hidden; }
+    .poster-grid.tile-view .poster-av { width: 100%; height: 100%; border-radius: 0; border: none; font-size: 34px; }
+    .poster-grid.tile-view .poster-meta { position: absolute; left: 0; right: 0; bottom: 0; gap: 1px; padding: 18px 10px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); pointer-events: none; }
+    .poster-grid.tile-view .poster-name { color: #fff; font-size: 12px; }
+    .poster-grid.tile-view .poster-handle { display: none; }
+    .poster-grid.tile-view .poster-foot { margin-top: 1px; }
+    .poster-grid.tile-view .poster-foot .pf-tag, .poster-grid.tile-view .poster-count { color: rgba(255,255,255,.82); }
+    /* info/fav float over the avatar — dark glass so they read on any image. */
+    .poster-grid.tile-view .poster-info { top: 6px; right: 32px; }
+    .poster-grid.tile-view .poster-fav { top: 6px; right: 6px; }
+    .poster-grid.tile-view .poster-info, .poster-grid.tile-view .poster-fav { background: rgba(0,0,0,.34); color: #fff; }
+    .poster-grid.tile-view .poster-info:hover, .poster-grid.tile-view .poster-fav:hover { background: rgba(0,0,0,.5); }
+    .poster-grid.tile-view .poster-fav.on { color: var(--accent); }
+    /* List density: full-width compact rows (no pop-scale on hover). */
+    .poster-grid.list-view { display: flex; flex-direction: column; gap: 2px; }
+    .poster-grid.list-view .poster-card { border-radius: 8px; padding: 7px 38px 7px 10px; gap: 10px; }
+    .poster-grid.list-view .poster-av { width: 34px; height: 34px; font-size: 14px; }
+    .poster-grid.list-view .poster-card:hover { transform: none; }
     /* Inspector star sits inline at the end of the head row (not absolute). */
     .iv-poster-fav { position: static; opacity: 1; flex: none; }
-    /* Favorites-only toggle chip in the poster sidebar. */
-    #posterControls .poster-fav-only { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; }
-    #posterControls .poster-fav-only .pfo-star { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
-    #posterControls .poster-fav-only.active .pfo-star { fill: var(--accent); stroke: var(--accent); }
     #posterControls .poster-sort-title { margin-top: 0; }
+    #posterFilterRows { margin-top: 22px; }
+    /* Favorites / workspace are toggle rows (no flyout): active = monotone contrast
+       (DESIGN: アクティブはグレー面、色は機能的一点だけ). The favorites star fills
+       with the accent when on (shares the card star's語彙). */
+    .sb-row.poster-toggle-row.active { background: var(--accent-subtle); color: var(--text-strong); }
+    .sb-row.poster-toggle-row.active .sb-row-ic { color: var(--text-strong); }
+    #posterFavRow.active .sb-row-ic svg { fill: var(--accent); stroke: var(--accent); }
     /* Poster folders: sidebar list (text rows + hover, active = monotone contrast)
        + create input. Membership is assigned from the poster inspector (chips). */
     .pf-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
@@ -669,10 +696,8 @@
     .iv-poster-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; cursor: pointer; background: var(--surface-3); border: 1px solid var(--border-soft); transition: transform .15s; }
     .iv-poster-thumb:hover { transform: scale(1.04); }
     /* Poster-mode sidebar controls: only while browsing posters. */
-    #posterControls { display: none; }
-    body.browse-posters #posterControls { display: block; }
-    #posterControls .poster-pf-title { margin-top: 14px; }
-    #posterControls #posterPlatformChips { margin-top: 6px; }
+    #posterControls, #posterViewSection { display: none; }
+    body.browse-posters #posterControls, body.browse-posters #posterViewSection { display: block; }
     /* Mode visibility: the body class is the single source of truth (an inline
        display set by renderPosts, or .poster-grid's display:grid, would otherwise
        beat the [hidden] attribute — so use !important here). */
@@ -1652,6 +1677,31 @@
           <button class="btn-outline" id="cancelSelectBtn"></button>
         </div>
         <div class="sb-scroll">
+        <!-- Browse-mode switch: ライブラリ（投稿グリッド）↔ 投稿者（投稿者グリッド）。
+             サイドバー先頭に常設（両モードで表示・body.browse-posters の非表示対象に入れない）。
+             segmented control = macOS式の凹トラック＋浮きつまみ（密度トグルと同語彙、
+             ただし広域セレクタ衝突を避けるため id で別管理）。前例: Bluesky/Xのプロフィールタブ。 -->
+        <div class="sb-section browse-bar-section">
+          <div class="view-toggle browse-toggle" id="browseToggle"><i class="vt-thumb" aria-hidden="true"></i>
+            <button data-mode="posts" id="browsePostsBtn" class="active"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/></svg><span class="vt-label" id="browsePostsLabel"></span></button>
+            <button data-mode="posters" id="browsePostersBtn"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="vt-label" id="browsePostersLabel"></span></button>
+          </div>
+        </div>
+        <!-- Poster-mode view density (card/tile/list) — only while browsing posters.
+             Mirrors #densityToggle; the tile view leads with the avatar (アイコン) image. -->
+        <div class="sb-section" id="posterViewSection">
+          <div class="sb-title" id="sbPosterViewTitle"></div>
+          <div class="view-toggle" id="posterDensityToggle"><i class="vt-thumb" aria-hidden="true"></i>
+            <button data-pview="card" class="active"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg><span class="vt-label" id="posterViewCardLabel"></span></button>
+            <button data-pview="tile"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="vt-label" id="posterViewTileLabel"></span></button>
+            <button data-pview="list"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span class="vt-label" id="posterViewListLabel"></span></button>
+          </div>
+          <div class="tile-size" id="posterTileSizeRow" style="display:none">
+            <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <input type="range" id="posterTileSlider" step="1" title="タイルの大きさ">
+            <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+        </div>
         <!-- Feature launcher: enter tagging mode (card-edit / stamp toggle). -->
         <button class="sb-feature" id="tagStartBtn" type="button">
           <span class="sb-feature-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span>
@@ -1695,27 +1745,33 @@
              browsing posters (CSS body.browse-posters); mirrors the post sidebar. -->
         <div class="sb-section" id="posterControls">
           <span class="post-count" id="posterCount" style="display:block; margin-bottom:12px; color:var(--text-muted);"></span>
-          <button class="sb-chip poster-fav-only" id="posterFavOnlyBtn" type="button"><svg class="pfo-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg><span id="posterFavOnlyLabel"></span></button>
           <div class="sb-title poster-sort-title" id="sbPosterSortTitle"></div>
           <select id="posterSortSelect">
             <option value="count"></option>
             <option value="name"></option>
             <option value="recent"></option>
           </select>
-          <div class="sb-title poster-pf-title" id="sbPosterPlatformTitle"></div>
-          <div class="sb-chips" id="posterPlatformChips"></div>
-          <!-- Poster tag filter: chosen tags AND-combine; the +button opens the
-               shared qf flyout (qfCat 'poster-tag'). Section auto-hides when no
-               poster carries a tag (renderPosterTagFilters). -->
-          <div id="posterTagFilterSection" style="display:none;">
-            <div class="sb-title poster-pf-title" id="sbPosterTagsTitle"></div>
-            <div class="sb-chips poster-tag-filter" id="posterTagFilterRow"></div>
-          </div>
-          <div class="sb-title poster-pf-title" id="sbPosterFoldersTitle"></div>
-          <div class="pf-list" id="posterFolderList"></div>
-          <div class="pf-new">
-            <input type="text" id="posterFolderNewInput" class="pf-new-input" autocomplete="off">
-            <button type="button" class="btn-outline pf-new-btn" id="posterFolderCreateBtn"></button>
+          <!-- Filter rows (mirror #filterRows): each row opens a flyout of that
+               category's values; the badge counts active selections. Poster-only
+               categories — library-specific filters (engagement / media / hashtag /
+               取得元 / 投稿者) are excluded. Selections write the posterXxx state
+               (NOT the post query), AND-combined in filteredPosters. -->
+          <div class="sb-section" id="posterFilterRows">
+            <div class="sb-title" id="sbPosterFilterTitle"></div>
+            <button class="sb-row" type="button" data-qfrow="poster-platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPosterPlatformRowName"></span><span class="sb-row-badge" data-badge="poster-platform"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-work" id="sbPosterWorkRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M14.83 14.83a4 4 0 1 1 0-5.66"/></svg></span><span class="sb-row-name" id="sbPosterWorkRowName"></span><span class="sb-row-badge" data-badge="poster-work"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-character" id="sbPosterCharRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span><span class="sb-row-name" id="sbPosterCharRowName"></span><span class="sb-row-badge" data-badge="poster-character"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-tag" id="sbPosterTagRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg></span><span class="sb-row-name" id="sbPosterTagRowName"></span><span class="sb-row-badge" data-badge="poster-tag"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-instance" id="sbPosterInstRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg></span><span class="sb-row-name" id="sbPosterInstRowName"></span><span class="sb-row-badge" data-badge="poster-instance"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-date"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></span><span class="sb-row-name" id="sbPosterDateRowName"></span><span class="sb-row-badge" data-badge="poster-date"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <button class="sb-row poster-toggle-row" type="button" id="posterFavRow"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span><span class="sb-row-name" id="sbPosterFavRowName"></span></button>
+            <button class="sb-row" type="button" data-qfrow="poster-folder"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="sb-row-name" id="sbPosterFolderRowName"></span><span class="sb-row-badge" data-badge="poster-folder"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+            <!-- Workspace tray (poster side): toggle row + clear (mirrors #wsRow). -->
+            <div class="ws-row-wrap">
+              <button class="sb-row poster-toggle-row ws-row" type="button" id="posterWsRow"><span class="sb-row-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></span><span class="sb-row-name" id="sbPosterWsRowName"></span></button>
+              <span class="sb-row-badge" id="posterWsBadge"></span>
+              <button class="ws-clear-btn" id="posterWsClear" type="button" aria-label="空にする" style="display:none;"></button>
+            </div>
           </div>
         </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
@@ -1829,15 +1885,6 @@
         </div>
         <span class="tag-edit-hint" id="tagEditHint"></span>
         <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
-      </div>
-      <!-- Browse-mode switch: 投稿グリッド ↔ 投稿者グリッド（同じタブ内でスイッチ）。
-           segmented control = macOS式の凹トラック＋浮きつまみ（密度トグルと同語彙、
-           ただし広域セレクタ衝突を避けるため id で別管理）。前例: Bluesky/Xのプロフィールタブ。 -->
-      <div class="browse-bar" id="browseBar" style="display:none">
-        <div class="view-toggle browse-toggle" id="browseToggle"><i class="vt-thumb" aria-hidden="true"></i>
-          <button data-mode="posts" id="browsePostsBtn" class="active"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/></svg><span class="vt-label" id="browsePostsLabel"></span></button>
-          <button data-mode="posters" id="browsePostersBtn"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="vt-label" id="browsePostersLabel"></span></button>
-        </div>
       </div>
       <!-- Posts tab -->
       <div class="tab-panel active" id="panelPosts">
@@ -2031,6 +2078,28 @@
     <div style="display:flex;gap:6px;justify-content:flex-end;">
       <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
       <button class="btn-outline" id="qfEngApply" style="background:var(--indigo-600);color:#fff;border-color:var(--indigo-600);"></button>
+    </div>
+  </div>
+
+  <!-- Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
+       Separate from #qfDatePopover so the post-side handlers (addFilter/queryTree)
+       stay untouched; this writes the transient posterDate state. -->
+  <div class="qf-popover" id="posterDatePopover" style="display:none;">
+    <div style="margin-bottom:8px;">
+      <select class="engagement-select" id="posterDateDim" style="width:100%;">
+        <option value="latest"></option>
+        <option value="lastCapture"></option>
+        <option value="authorCreatedAt"></option>
+      </select>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+      <input type="date" class="date-input" id="posterDateFrom">
+      <span style="font-size:12px;color:var(--text-subtle);">〜</span>
+      <input type="date" class="date-input" id="posterDateTo">
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button class="btn-outline qf-popover-delete" id="posterDateClear" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
+      <button class="btn-outline" id="posterDateApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
     </div>
   </div>
 

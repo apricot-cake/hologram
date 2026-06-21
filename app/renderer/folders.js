@@ -72,8 +72,17 @@
   window.corpusFolderStore = createFolderStore;
 
   let workspace = [];         // [captureId] — the single ephemeral tray (one-click)
+  let posterWorkspace = [];   // [posterKey] — the poster-side tray, kept in a SEPARATE
+                              // namespace so the captureId workspace API stays untouched.
   // Library folders [{ id, name, items:[captureId] }] — permanent shelves.
   const store = createFolderStore({ idPrefix: 'f', persist: () => persist() });
+  // The management modal (#ivFolderModal) is shared: by default it edits the library
+  // store, but openManager({store,onChange}) re-points it at the poster folder store
+  // (viewer.js pfStore) so both views get the same CRUD + drag-reorder UI. Each store
+  // owns its own persist (folders.json vs poster-folders.json); mgrAfter re-renders
+  // the view that owns the rows.
+  let mgrStore = store;
+  let mgrAfter = () => notify('list');
   let loaded = false;
   let loadPromise = null;
   const subs = [];
@@ -100,7 +109,7 @@
   function escapeHtml(s) { return window.corpusUI.escapeHtml(s); }
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders: store.all(), workspace }).catch(() => { /* best-effort */ });
+    if (window.corpus && window.corpus.setFolders) window.corpus.setFolders({ folders: store.all(), workspace, posterWorkspace }).catch(() => { /* best-effort */ });
   }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
@@ -109,7 +118,8 @@
       const r = (window.corpus && window.corpus.getFolders) ? await window.corpus.getFolders() : null;
       store.setAll((r && r.folders) || []);
       workspace = (r && Array.isArray(r.workspace)) ? r.workspace.slice() : [];
-    } catch { store.setAll([]); workspace = []; }
+      posterWorkspace = (r && Array.isArray(r.posterWorkspace)) ? r.posterWorkspace.slice() : [];
+    } catch { store.setAll([]); workspace = []; posterWorkspace = []; }
     loaded = true;
   }
   function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
@@ -145,6 +155,39 @@
     return n;
   }
 
+  // Poster-side tray — mirrors the captureId workspace above but keyed by posterKey
+  // (platform:userId). Separate namespace so the post-side API/reconcile is unchanged.
+  function inPosterWorkspace(key) { return posterWorkspace.includes(key); }
+  function posterWorkspaceItems() { return posterWorkspace.slice(); }
+  function posterWorkspaceCount(existing) { return existing ? posterWorkspace.filter((k) => existing.has(k)).length : posterWorkspace.length; }
+  function togglePosterWorkspace(keys, anchorKey) {
+    const ids = (keys || []).filter(Boolean);
+    if (!ids.length) return null;
+    const anchor = anchorKey != null ? anchorKey : ids[0];
+    const wasIn = posterWorkspace.includes(anchor);
+    if (wasIn) posterWorkspace = posterWorkspace.filter((k) => !ids.includes(k));
+    else ids.forEach((k) => { if (!posterWorkspace.includes(k)) posterWorkspace.push(k); });
+    persist();
+    toast(wasIn ? t('wsRemoved') : t('wsAdded'));
+    notify('poster-workspace');
+    return wasIn ? 'removed' : 'added';
+  }
+  function clearPosterWorkspace() {
+    if (!posterWorkspace.length) return 0;
+    const n = posterWorkspace.length;
+    posterWorkspace = [];
+    persist();
+    toast(t('wsCleared'));
+    notify('poster-workspace');
+    return n;
+  }
+  // Drop posterKeys no longer backed by any post (the poster vanished). Persists once.
+  function reconcilePoster(existing) {
+    const n = posterWorkspace.length;
+    posterWorkspace = posterWorkspace.filter((k) => existing.has(k));
+    if (posterWorkspace.length !== n) { persist(); notify('poster-workspace'); }
+  }
+
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
   // store.reconcile handles the folder lists; workspace is library-only so stays here.
   function reconcile(existing) {
@@ -171,11 +214,17 @@
 
   // --- management modal ---
   function isManagerOpen() { const m = $('ivFolderModal'); return !!(m && !m.hidden); }
-  function openManager() { renderModal(); const m = $('ivFolderModal'); if (m) m.hidden = false; setTimeout(() => { try { $('ivFolderNewName').focus(); } catch { /* ignore */ } }, 0); }
-  function closeManager() { const m = $('ivFolderModal'); if (m) m.hidden = true; }
+  function openManager(opts) {
+    mgrStore = (opts && opts.store) || store;
+    mgrAfter = (opts && opts.onChange) || (() => notify('list'));
+    renderModal();
+    const m = $('ivFolderModal'); if (m) m.hidden = false;
+    setTimeout(() => { try { $('ivFolderNewName').focus(); } catch { /* ignore */ } }, 0);
+  }
+  function closeManager() { const m = $('ivFolderModal'); if (m) m.hidden = true; mgrStore = store; mgrAfter = () => notify('list'); }
   function renderModal() {
     const host = $('ivFolderList'); if (!host) return;
-    const list = store.all();
+    const list = mgrStore.all();
     host.innerHTML = list.length ? list.map((f) => {
       return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}" draggable="true">` +
         `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
@@ -187,9 +236,9 @@
   }
   function create() {
     const inp = $('ivFolderNewName'); if (!inp) return;
-    if (!store.create(inp.value)) return;   // store mints the id + persists
+    if (!mgrStore.create(inp.value)) return;   // store mints the id + persists
     inp.value = '';
-    renderModal(); notify('list');
+    renderModal(); mgrAfter();
   }
 
   function bind() {
@@ -201,13 +250,13 @@
     $('ivFolderList').addEventListener('click', (e) => {
       const row = e.target.closest('.iv-folder-row'); if (!row) return;
       const act = e.target.closest('[data-fact]'); if (!act) return;
-      const fid = row.dataset.fid; const f = byId(fid); if (!f) return;
-      if (act.dataset.fact === 'rename') { store.rename(fid, window.prompt(t('foldRenamePrompt'), f.name)); }
+      const fid = row.dataset.fid; const f = mgrStore.byId(fid); if (!f) return;
+      if (act.dataset.fact === 'rename') { mgrStore.rename(fid, window.prompt(t('foldRenamePrompt'), f.name)); }
       else if (act.dataset.fact === 'delete') {
         if (!window.confirm(t('foldDeleteConfirm', [f.name]))) return;
-        store.remove(fid);
+        mgrStore.remove(fid);
       }
-      renderModal(); notify('list');   // store.rename/remove persist on success
+      renderModal(); mgrAfter();   // mgrStore.rename/remove persist on success
     });
     // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
     // notify so the sidebar chips re-render in the new order.
@@ -234,7 +283,7 @@
       if (!dragId) return;
       e.preventDefault();
       const row = e.target.closest('.iv-folder-row');
-      if (row && row.dataset.fid !== dragId && store.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) { renderModal(); notify('list'); }
+      if (row && row.dataset.fid !== dragId && mgrStore.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) { renderModal(); mgrAfter(); }
       dragId = null;
     });
     flist.addEventListener('dragend', () => { dragId = null; clearMarks(); flist.querySelectorAll('.iv-dragging').forEach((el) => el.classList.remove('iv-dragging')); });
@@ -245,6 +294,7 @@
   window.corpusFolders = {
     load, all: () => store.all(), byId, has,
     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
+    inPosterWorkspace, togglePosterWorkspace, clearPosterWorkspace, posterWorkspaceItems, posterWorkspaceCount, reconcilePoster,
     reconcile, toggleIn, openManager, closeManager, isManagerOpen,
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };

@@ -121,6 +121,7 @@
     wsEmpty: _s('wsEmpty'),
     wsEmptyTip: _s('wsEmptyTip'),
     wsEmptyConfirm: _s('wsEmptyConfirm'),
+    posterWsEmptyConfirm: _s('posterWsEmptyConfirm'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -171,6 +172,10 @@
     sbPosterTagsTitle: _s('sbPosterTagsTitle'),
     posterTagFilterAdd: _s('posterTagFilterAdd'),
     posterTagFilterClear: _s('posterTagFilterClear'),
+    posterDateLastPost: _s('posterDateLastPost'),
+    posterDateLastCapture: _s('posterDateLastCapture'),
+    posterDateCreated: _s('posterDateCreated'),
+    posterDateClear: _s('posterDateClear'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -363,6 +368,9 @@
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
   const wsClearEl = document.getElementById('wsClear');
   if (wsClearEl) { wsClearEl.innerHTML = ICON_TRASH; wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
+  setText('sbPosterWsRowName', MSG.workspaceTitle);
+  const posterWsClearEl = document.getElementById('posterWsClear');
+  if (posterWsClearEl) { posterWsClearEl.innerHTML = ICON_TRASH; posterWsClearEl.title = MSG.wsEmptyTip; posterWsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
@@ -377,18 +385,30 @@
   setText('viewCardLabel', MSG.viewCard);
   setText('viewTileLabel', MSG.viewTile);
   setText('viewListLabel', MSG.viewList);
+  setText('sbPosterViewTitle', MSG.sbViewTitle);
+  setText('posterViewCardLabel', MSG.viewCard);
+  setText('posterViewTileLabel', MSG.viewTile);
+  setText('posterViewListLabel', MSG.viewList);
   setText('browsePostsLabel', MSG.browsePosts);
   setText('browsePostersLabel', MSG.browsePosters);
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
-  setText('sbPosterPlatformTitle', MSG.sbPosterPlatformTitle);
-  setText('posterFavOnlyLabel', MSG.posterFavOnly);
-  setText('sbPosterTagsTitle', MSG.sbPosterTagsTitle);
-  setText('sbPosterFoldersTitle', MSG.sbPosterFoldersTitle);
-  setText('posterFolderCreateBtn', MSG.posterFolderCreate);
-  { const i = document.getElementById('posterFolderNewInput'); if (i) i.placeholder = MSG.posterFolderNewPlaceholder; }
+  // Poster filter rows reuse the post-side row labels (same concepts).
+  setText('sbPosterFilterTitle', MSG.sbFilterTitle);
+  setText('sbPosterPlatformRowName', MSG.qfPlatform);
+  setText('sbPosterWorkRowName', MSG.kindWork);
+  setText('sbPosterCharRowName', MSG.kindCharacter);
+  setText('sbPosterTagRowName', MSG.qfTag);
+  setText('sbPosterInstRowName', MSG.qfInstance);
+  setText('sbPosterDateRowName', MSG.qfDate);
+  setText('sbPosterFavRowName', MSG.posterFavOnly);
+  setText('sbPosterFolderRowName', MSG.qfCatFolder);
   { const ps = document.getElementById('posterSortSelect');
     if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; ps.options[2].textContent = MSG.posterSortRecent; } }
+  { const pd = document.getElementById('posterDateDim');
+    if (pd) { pd.options[0].textContent = MSG.posterDateLastPost; pd.options[1].textContent = MSG.posterDateLastCapture; pd.options[2].textContent = MSG.posterDateCreated; } }
+  setText('posterDateApply', MSG.qfApply);
+  setText('posterDateClear', MSG.posterDateClear);
   setText('settingsThemeTitle', MSG.themeTitle);
   setText('settingsThemeLabel', MSG.themeMode);
   setText('themeOptAuto', MSG.themeAuto);
@@ -813,7 +833,7 @@
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
   let qfTagGroup = null;   // タグサブ行クリック時にセット（グループ絞り込み）
   function hideQfPop() {
-    document.querySelectorAll('#filterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
+    document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
     qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
   }
   function qfValues(cat) {
@@ -850,12 +870,30 @@
         return out;
       }
       case 'poster-tag': {
-        // Poster-mode sidebar tag filter: lists tags actually applied to posters.
-        // Unlike the post tag cases this does NOT touch the post query — it toggles
-        // posterTagFilter (handled in the qfPop click branch). "on" = already chosen.
-        // kind rides along so renderQfPop can draw the 種別 dot (作品/キャラ).
-        return posterFilterVocab().map((t) => ({ v: t, l: t, on: posterTagFilter.has(t), kind: tagKindOf(t) }));
+        // Poster-mode sidebar tag filter: lists GENERAL (non-kinded) tags applied to
+        // posters. 作品/キャラ live in their own rows. Unlike the post tag cases this
+        // does NOT touch the post query — it toggles posterTagFilter (handled in the
+        // qfPop click branch). "on" = already chosen.
+        return posterFilterVocab().filter((t) => !tagKindOf(t)).map((t) => ({ v: t, l: t, on: posterTagFilter.has(t) }));
       }
+      case 'poster-work':
+      case 'poster-character': {
+        // 作品/キャラ rows: the poster tags whose 種別 matches. They share posterTagFilter
+        // with the general タグ row (one Set); the kind only scopes which this flyout offers.
+        const kind = cat === 'poster-work' ? 'work' : 'character';
+        return posterFilterVocab().filter((t) => tagKindOf(t) === kind).map((t) => ({ v: t, l: t, on: posterTagFilter.has(t), kind }));
+      }
+      case 'poster-platform': {
+        const present = new Set(namedPosters().map((u) => u.platform).filter(Boolean));
+        return [...present].sort((a, b) => { const ia = PF_ORDER.indexOf(a), ib = PF_ORDER.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
+          .map((v) => ({ v, l: PF_NAME[v] || v, on: posterPlatforms.has(v) }));
+      }
+      case 'poster-instance': {
+        const hosts = new Set();
+        for (const u of namedPosters()) if (u.instance) hosts.add(u.instance);
+        return [...hosts].sort().map((h) => ({ v: h, l: h, on: posterInstanceFilter.has(h) }));
+      }
+      case 'poster-folder': return pfStore.all().map((f) => ({ v: f.id, l: f.name, on: posterFolderFilter === f.id }));
       case 'work':
       case 'character': {
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
@@ -938,12 +976,12 @@
     // Find box only for genuinely long, open-ended lists (tags/authors). The
     // platform list is short + fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter(it => it.ghead == null).length;
-    const find = (qfCat !== 'platform' && (qfTagGroup || valueCount > 8))
+    const find = (!['platform', 'poster-platform'].includes(qfCat) && (qfTagGroup || valueCount > 8))
       ? `<div class="qf-find-wrap"><input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off"><button type="button" class="qf-mode-btn" id="qfModeBtn"></button></div>`
       : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
-    const footer = (qfCat === 'folder' && CF())
+    const footer = ((qfCat === 'folder' || qfCat === 'poster-folder') && CF())
       ? `<div class="qf-footer"><button class="qf-footer-link" type="button" id="qfFolderManage">${escapeHtml(MSG.ctxManage)}</button></div>`
       : '';
     qfPop.innerHTML =
@@ -988,7 +1026,7 @@
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl, tagGroupId) {
     if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
-    document.querySelectorAll('#filterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
+    document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
     anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
@@ -1000,7 +1038,14 @@
     placeFlyout(qfPop, anchorEl.getBoundingClientRect(), { maxHeight: true });
   }
   qfPop.addEventListener('click', (e) => {
-    if (e.target.closest('#qfFolderManage')) { if (CF()) CF().openManager(); hideQfPop(); return; }
+    if (e.target.closest('#qfFolderManage')) {
+      if (CF()) {
+        // Reuse the shared modal for whichever folder store this flyout is about.
+        if (qfCat === 'poster-folder') CF().openManager({ store: pfStore, onChange: () => { renderPosterFilterRows(); renderPosters(); } });
+        else CF().openManager();
+      }
+      hideQfPop(); return;
+    }
     // バー内の 通常/あいまい トグル（メイン検索と共有のモードを切替→絞り込み再適用）
     if (e.target.closest('.qf-mode-btn')) {
       if (window.corpusSearch) window.corpusSearch.toggle();
@@ -1027,15 +1072,28 @@
         renderPosts();
         return;
       }
-      // Poster-tag flyout: toggle posterTagFilter (a transient browse Set), NOT the
-      // post query. Stays open so several tags can be AND-ed in one pass.
-      if (qfCat === 'poster-tag') {
+      // Poster-mode flyouts toggle the transient posterXxx browse state (NOT the post
+      // query), stay open for several picks, and refresh the row badges. The sidebar
+      // rows are stable elements, so no anchor re-pointing is needed (unlike the old
+      // chip +button). 作品/キャラ/タグ all share the one posterTagFilter Set.
+      if (qfCat === 'poster-tag' || qfCat === 'poster-work' || qfCat === 'poster-character') {
         if (posterTagFilter.has(v)) posterTagFilter.delete(v); else posterTagFilter.add(v);
-        renderQfPop();
-        renderPosterTagFilters();   // rebuilds the row → re-point the anchor at the fresh +button
-        const freshAnchor = document.querySelector('#posterTagFilterRow .poster-tag-add');
-        if (freshAnchor) qfAnchor = freshAnchor;   // keep same-anchor re-click = toggle-close
-        renderPosters();
+        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        return;
+      }
+      if (qfCat === 'poster-platform') {
+        if (posterPlatforms.has(v)) posterPlatforms.delete(v); else posterPlatforms.add(v);
+        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        return;
+      }
+      if (qfCat === 'poster-instance') {
+        if (posterInstanceFilter.has(v)) posterInstanceFilter.delete(v); else posterInstanceFilter.add(v);
+        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        return;
+      }
+      if (qfCat === 'poster-folder') {
+        posterFolderFilter = (posterFolderFilter === v) ? null : v;   // single-select
+        renderQfPop(); renderPosterFilterRows(); renderPosters();
         return;
       }
       const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
@@ -1066,8 +1124,9 @@
     // filter-row click — those switch to the new row (handled by the row handler).
     const dp = document.getElementById('qfDatePopover');
     const ep = document.getElementById('qfEngPopover');
-    if ((dp.style.display === 'block' || ep.style.display === 'block') &&
-        !dp.contains(e.target) && !ep.contains(e.target) &&
+    const pd = document.getElementById('posterDatePopover');
+    if ((dp.style.display === 'block' || ep.style.display === 'block' || (pd && pd.style.display === 'block')) &&
+        !dp.contains(e.target) && !ep.contains(e.target) && !(pd && pd.contains(e.target)) &&
         !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) closeAllMenus();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideQfPop(); closeAllMenus(); } });
@@ -1145,6 +1204,7 @@
   function closeAllMenus() {
     document.getElementById('qfDatePopover').style.display = 'none';
     document.getElementById('qfEngPopover').style.display = 'none';
+    const pd = document.getElementById('posterDatePopover'); if (pd) pd.style.display = 'none';
   }
 
   // Date popover. editingDateNode = the date cond being edited (null = new).
@@ -1202,6 +1262,37 @@
   document.getElementById('qfDateDelete').addEventListener('click', () => {
     if (editingDateNode) removeNode(editingDateNode);
     closeAllMenus();
+  });
+
+  // Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
+  // Separate from the post date popover — writes the transient posterDate state.
+  function openPosterDatePopover(anchorRow) {
+    closeAllMenus();
+    const popover = document.getElementById('posterDatePopover');
+    const anchor = anchorRow || document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
+    if (!anchor) return;
+    document.getElementById('posterDateDim').value = posterDate.dim || 'latest';
+    document.getElementById('posterDateFrom').value = posterDate.from || '';
+    document.getElementById('posterDateTo').value = posterDate.to || '';
+    document.getElementById('posterDateClear').style.display = (posterDate.from || posterDate.to) ? '' : 'none';
+    popover.style.display = 'block';
+    placeFlyout(popover, anchor.getBoundingClientRect());
+  }
+  document.getElementById('posterDateApply').addEventListener('click', () => {
+    posterDate = {
+      dim: document.getElementById('posterDateDim').value || 'latest',
+      from: document.getElementById('posterDateFrom').value || '',
+      to: document.getElementById('posterDateTo').value || ''
+    };
+    closeAllMenus();
+    renderPosterFilterRows();
+    renderPosters();
+  });
+  document.getElementById('posterDateClear').addEventListener('click', () => {
+    posterDate = { dim: posterDate.dim, from: '', to: '' };
+    closeAllMenus();
+    renderPosterFilterRows();
+    renderPosters();
   });
 
   // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
@@ -2032,7 +2123,8 @@
       let u = map.get(key);
       if (!u) {
         u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '',
-              avatarFile: '', followers: null, authorCreatedAt: '', latest: '', count: 0 };
+              avatarFile: '', followers: null, authorCreatedAt: '', instance: '',
+              latest: '', firstPost: '', lastCapture: '', firstCapture: '', count: 0 };
         map.set(key, u);
       }
       u.count++;
@@ -2043,7 +2135,13 @@
       if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
       if (u.followers == null && p.followers != null) u.followers = p.followers;
       if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
-      if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;   // ISO strings compare lexically
+      if (!u.instance && (p.platform === 'misskey' || p.platform === 'mastodon')) { const h = hostOf(p.url); if (h) u.instance = h; }
+      // Aggregate date range across this poster's posts (ISO strings compare lexically).
+      // latest/firstPost = 最終/初回投稿日; lastCapture/firstCapture = 最終/初回取得日.
+      if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;
+      if (p.date && (!u.firstPost || p.date < u.firstPost)) u.firstPost = p.date;
+      if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;
+      if (p.capturedAt && (!u.firstCapture || p.capturedAt < u.firstCapture)) u.firstCapture = p.capturedAt;
     }
     _cachedUsers = [...map.values()];
     _buildUsersGen = _allPostsGeneration;
@@ -2218,7 +2316,11 @@
       }
     }
   }
-  function reconcileFolders() { if (CF()) CF().reconcile(new Set(allPosts.map(p => p.captureId))); }
+  function reconcileFolders() {
+    if (!CF()) return;
+    CF().reconcile(new Set(allPosts.map(p => p.captureId)));
+    if (CF().reconcilePoster) CF().reconcilePoster(new Set(buildUsers().map(u => u.key)));   // drop posterKeys whose poster vanished
+  }
 
   function getFilteredPosts() {
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
@@ -2839,7 +2941,7 @@
       stickyRecs.clear();
     }
     updateSidebarState();
-    syncBrowseBar();   // reveal the 投稿/投稿者 switch once there are posters
+    syncBrowseBar();   // keep the ライブラリ/投稿者 toggle's glass thumb measured
     const grid = document.getElementById('postGrid');
     const empty = document.getElementById('emptyState');
     const countEl = document.getElementById('postCount');
@@ -4557,14 +4659,12 @@
     btn.addEventListener('click', () => { if (btn.dataset.mode !== browseMode) setBrowseMode(btn.dataset.mode); });
   });
 
-  // The browse-mode bar only earns its place once there are posters to browse
-  // (mirrors the query-builder bar, which stays hidden until filters matter).
+  // The browse toggle is a permanent sidebar fixture now (both modes — moved out
+  // of the content area). Just keep its glass thumb measured: the poster count /
+  // grid changes can resize the sidebar column (scrollbar appears/disappears).
   function syncBrowseBar() {
-    const bar = document.getElementById('browseBar');
-    if (!bar) return;
-    const show = buildUsers().length > 0;
-    bar.style.display = show ? 'flex' : 'none';
-    if (show) positionViewThumb(document.getElementById('browseToggle'));
+    const t = document.getElementById('browseToggle');
+    if (t) positionViewThumb(t);
   }
 
   // --- Poster grid (投稿者ビュー) ------------------------------------------
@@ -4572,6 +4672,38 @@
   // inspector (poster profile), double-click = jump to that poster's posts.
   let posterList = [];
   let posterSort = 'count';          // 'count' | 'name' | 'recent'
+  // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
+  // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
+  let posterView = 'card';           // 'card' | 'tile' | 'list'
+  let posterTileSize = 132;          // tile view: avatar tile edge px
+  const PTILE_MIN = 96, PTILE_MAX = 220;
+  // Poster grid density toggle (card / tile / list) — mirrors #densityToggle but
+  // writes posterView (separate from currentView) and re-renders the poster grid.
+  // Defined here (after PTILE_* / posterView) so the slider setup doesn't hit a TDZ.
+  document.querySelectorAll('#posterDensityToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.pview === posterView) return;
+      document.querySelectorAll('#posterDensityToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      posterView = btn.dataset.pview;
+      positionViewThumb(document.getElementById('posterDensityToggle'));
+      const _thumb = document.querySelector('#posterDensityToggle .vt-thumb');
+      if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
+      window.corpus.setPref('posterViewMode', posterView);
+      renderPosters();
+    });
+  });
+  (function setupPosterTileSlider() {
+    const sl = document.getElementById('posterTileSlider');
+    if (!sl) return;
+    sl.min = PTILE_MIN; sl.max = PTILE_MAX;
+    sl.addEventListener('input', () => {
+      posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, parseInt(sl.value, 10) || 132));
+      const g = document.getElementById('posterGrid');
+      if (g) g.style.setProperty('--ptile-size', posterTileSize + 'px');   // live re-flow, no re-render
+      window.corpus.setPref('posterTileSize', posterTileSize);
+    });
+  })();
   let posterPlatforms = new Set();   // active platform filter (empty = all)
   let posterWorkGroups = [];         // recent works shown in the poster inspector
   let posterFavorites = new Set();   // starred poster keys (persisted poster-favorites.json)
@@ -4583,6 +4715,11 @@
   // every selected tag to stay in the grid. Mirrors posterFolderFilter, but for tags.
   // Not persisted: it's a transient browse filter, like the platform/favorites chips.
   let posterTagFilter = new Set();
+  let posterInstanceFilter = new Set();   // active misskey/mastodon host filter (transient)
+  let posterWorkspaceFilter = false;      // sidebar toggle: show only posters in the workspace tray
+  // Date-range filter (transient): which poster date to test + from/to (YYYY-MM-DD).
+  // dim: 'authorCreatedAt'(アカウント作成日) | 'lastCapture'(最終取得日) | 'latest'(最終投稿日).
+  let posterDate = { dim: 'latest', from: '', to: '' };
   function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
   function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
   // Tags actually applied to at least one poster — the vocabulary the filter offers.
@@ -4597,7 +4734,7 @@
   function clearPosterTagFilter() {
     if (!posterTagFilter.size) return;
     posterTagFilter.clear();
-    renderPosterTagFilters();
+    renderPosterFilterRows();
     renderPosters();
   }
   const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg>';
@@ -4633,46 +4770,57 @@
     const res = pfStore.toggleIn(id, key); if (!res) return false;
     const f = posterFolderById(id);
     showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
-    renderPosterFolders();   // counts changed
+    renderPosterFilterRows();   // folder badge count changed
     if (posterFolderFilter) renderPosters();   // membership change may add/remove from the filtered grid
     return res === 'added';
   }
-  function renderPosterFolders() {
-    const host = document.getElementById('posterFolderList');
-    if (!host) return;
-    host.innerHTML = pfStore.all().map((f) => {
-      const active = posterFolderFilter === f.id;
-      return `<div class="pf-row${active ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" tabindex="0" draggable="true">`
-        + `<span class="pf-row-name">${escapeHtml(f.name)}</span>`
-        + `<span class="pf-row-n">${f.items.length}</span>`
-        + `<button class="pf-row-del" data-pfdel="${escapeAttr(f.id)}" aria-label="delete" title="${escapeAttr(MSG.posterFolderDeleteConfirm(f.name).split('\n')[0])}">${ICON_TRASH}</button>`
-        + `</div>`;
-    }).join('');
-  }
-  // Poster-mode tag filter row: an "add tag" button (opens the shared qf flyout) plus
-  // a chip per chosen tag (× to drop it). 作品/キャラ chips wear the 種別 dot like the
-  // palette/flyout. Hidden entirely when no poster carries any tag (nothing to offer).
-  function renderPosterTagFilters() {
-    const host = document.getElementById('posterTagFilterRow');
-    const wrap = document.getElementById('posterTagFilterSection');
-    if (!host) return;
+  // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the
+  // 作品/キャラ/タグ/インスタンス rows only when posters actually carry such values
+  // (段階的開示), prune selections that no longer have a backing value, then refresh
+  // every row badge + the favorites toggle state. The rows themselves are static HTML
+  // in #posterFilterRows (stable flyout anchors); this only mutates text/visibility.
+  function renderPosterFilterRows() {
     const vocab = posterFilterVocab();
     const present = new Set(vocab);
-    for (const t of [...posterTagFilter]) if (!present.has(t)) posterTagFilter.delete(t);   // prune tags no poster carries anymore
-    const hasVocab = vocab.length > 0;
-    if (wrap) wrap.style.display = hasVocab ? '' : 'none';
-    if (!hasVocab) { host.innerHTML = ''; return; }
-    const chips = [...posterTagFilter].map((t) => {
-      const k = tagKindOf(t);
-      const dot = k ? `<span class="tk-dot tk-${k}" title="${escapeAttr(kindLabel(k))}"></span>` : '';
-      return `<span class="sb-chip active poster-tag-chip" data-ptdel="${escapeAttr(t)}">${dot}${escapeHtml(t)} ×</span>`;
-    }).join('');
-    const addBtn = `<button type="button" class="sb-chip poster-tag-add" data-poster-tag-add title="${escapeAttr(MSG.posterTagFilterAdd)}">+ ${escapeHtml(MSG.posterTagFilterAdd)}</button>`;
-    // Clear-all only earns its spot once a 2nd tag is picked (one tag = just × it).
-    const clearBtn = posterTagFilter.size > 1
-      ? `<button type="button" class="sb-chip poster-tag-clear" data-poster-tag-clear>${escapeHtml(MSG.posterTagFilterClear)}</button>`
-      : '';
-    host.innerHTML = chips + addBtn + clearBtn;
+    for (const t of [...posterTagFilter]) if (!present.has(t)) posterTagFilter.delete(t);
+    const named = namedPosters();
+    const platsPresent = new Set(named.map((u) => u.platform).filter(Boolean));
+    for (const p of [...posterPlatforms]) if (!platsPresent.has(p)) posterPlatforms.delete(p);
+    const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
+    for (const h of [...posterInstanceFilter]) if (!instPresent.has(h)) posterInstanceFilter.delete(h);
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    show('sbPosterWorkRow', vocab.some((t) => tagKindOf(t) === 'work'));
+    show('sbPosterCharRow', vocab.some((t) => tagKindOf(t) === 'character'));
+    show('sbPosterTagRow', vocab.some((t) => !tagKindOf(t)));
+    show('sbPosterInstRow', instPresent.size > 0);
+    const sel = [...posterTagFilter];
+    const counts = {
+      'poster-platform': posterPlatforms.size,
+      'poster-work': sel.filter((t) => tagKindOf(t) === 'work').length,
+      'poster-character': sel.filter((t) => tagKindOf(t) === 'character').length,
+      'poster-tag': sel.filter((t) => !tagKindOf(t)).length,
+      'poster-instance': posterInstanceFilter.size,
+      'poster-date': (posterDate.from || posterDate.to) ? 1 : 0,
+      'poster-folder': posterFolderFilter ? 1 : 0
+    };
+    document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
+      const n = counts[b.dataset.badge] || 0;
+      b.textContent = n || '';
+      b.classList.toggle('on', n > 0);
+    });
+    const favRow = document.getElementById('posterFavRow');
+    if (favRow) favRow.classList.toggle('active', posterFavOnly);
+    // Workspace tray row: active when filtering, badge = count present this session,
+    // clear button only when non-empty (mirrors the post #wsRow).
+    const wsRow = document.getElementById('posterWsRow');
+    if (wsRow && CF()) {
+      const n = CF().posterWorkspaceCount(new Set(named.map((u) => u.key)));
+      wsRow.classList.toggle('active', posterWorkspaceFilter);
+      const wsBadge = document.getElementById('posterWsBadge');
+      if (wsBadge) { wsBadge.textContent = n || ''; wsBadge.classList.toggle('on', n > 0); }
+      const wsClear = document.getElementById('posterWsClear');
+      if (wsClear) wsClear.style.display = n > 0 ? '' : 'none';
+    }
   }
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
@@ -4687,6 +4835,15 @@
     if (posterFolderFilter) { const f = posterFolderById(posterFolderFilter); const set = new Set(f ? f.items : []); list = list.filter((u) => set.has(u.key)); }
     if (posterTagFilter.size) { const want = [...posterTagFilter]; list = list.filter((u) => { const have = new Set(posterTagsOf(u.key)); return want.every((t) => have.has(t)); }); }
     if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
+    if (posterInstanceFilter.size) list = list.filter((u) => posterInstanceFilter.has(u.instance));
+    if (posterWorkspaceFilter && CF()) list = list.filter((u) => CF().inPosterWorkspace(u.key));
+    // Date-range filter (3 dims): account-created / last-fetched / last-posted, exclusive end.
+    if (posterDate.from || posterDate.to) {
+      const field = posterDate.dim;
+      const from = posterDate.from ? new Date(posterDate.from + 'T00:00:00') : null;
+      let to = null; if (posterDate.to) { to = new Date(posterDate.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
+      list = list.filter((u) => { const v = u[field]; if (!v) return false; const d = new Date(v); return (!from || d >= from) && (!to || d < to); });
+    }
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
@@ -4695,34 +4852,27 @@
     else list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b)));   // 'count' (default)
     return list;
   }
-  // Platform filter chips for poster mode — only platforms actually present.
+  // Platform display order — shared by the poster-platform flyout (qfValues).
   const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
-  function renderPosterPlatformChips() {
-    const host = document.getElementById('posterPlatformChips');
-    if (!host) return;
-    const present = new Set(namedPosters().map((u) => u.platform).filter(Boolean));
-    for (const p of [...posterPlatforms]) if (!present.has(p)) posterPlatforms.delete(p);   // prune stale
-    const platforms = [...present].sort((a, b) => {
-      const ia = PF_ORDER.indexOf(a), ib = PF_ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    });
-    host.innerHTML = platforms.map((p) => {
-      const on = posterPlatforms.has(p);
-      return `<button class="sb-chip${on ? ' active' : ''}" data-platform="${escapeAttr(p)}"><span class="pf-dot ${p}"></span>${escapeHtml(PF_NAME[p] || p)}</button>`;
-    }).join('');
-  }
   function renderPosters(keepLimit) {
     const grid = document.getElementById('posterGrid');
     const empty = document.getElementById('emptyState');
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数は
     // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
     const countEl = document.getElementById('posterCount');
-    renderPosterPlatformChips();
-    renderPosterTagFilters();
-    renderPosterFolders();
+    renderPosterFilterRows();
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
     syncBrowseBar();
+    // Density: toggle the grid layout classes + tile-size axis (tile view only).
+    grid.classList.toggle('tile-view', posterView === 'tile');
+    grid.classList.toggle('list-view', posterView === 'list');
+    grid.style.setProperty('--ptile-size', posterTileSize + 'px');
+    positionViewThumb(document.getElementById('posterDensityToggle'));
+    const ptsRow = document.getElementById('posterTileSizeRow');
+    if (ptsRow) ptsRow.style.display = posterView === 'tile' ? 'flex' : 'none';
+    const ptsSlider = document.getElementById('posterTileSlider');
+    if (ptsSlider) ptsSlider.value = posterTileSize;
     if (posterList.length === 0) {
       grid.innerHTML = '';   // empty .poster-grid collapses to 0 height
       empty.style.display = 'block';
@@ -4901,6 +5051,7 @@
     posterMenu.innerHTML =
       `<div class="fm-row" data-pm-act="posts"><span class="fm-name">${escapeHtml(MSG.posterViewPosts)}</span></div>` +
       `<div class="fm-row" data-pm-act="fav"><span class="fm-name">${escapeHtml(fav ? MSG.posterFavRemove : MSG.posterFavAdd)}</span></div>` +
+      (CF() ? `<div class="fm-row" data-pm-act="ws"><span class="fm-name">${escapeHtml(CF().inPosterWorkspace(u.key) ? MSG.ctxWsRemove : MSG.ctxWsAdd)}</span></div>` : '') +
       '<div class="fm-sep"></div>' +
       pfStore.all().map((f) => `<div class="fm-row" data-pm-fid="${escapeAttr(f.id)}"><span class="fm-name">${escapeHtml(f.name)}</span>${posterFolderHas(f.id, u.key) ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('') +
       `<div class="fm-row fm-manage" data-pm-act="newfolder">${escapeHtml(MSG.posterMenuNewFolder)}</div>`;
@@ -4921,6 +5072,12 @@
       const a = act.dataset.pmAct;
       if (a === 'posts') { hidePosterMenu(); openPosterPosts(u); return; }
       if (a === 'fav') { hidePosterMenu(); toggleFavorite(u); return; }
+      if (a === 'ws') {
+        if (CF()) CF().togglePosterWorkspace([u.key]);
+        renderPosterFilterRows();
+        if (posterWorkspaceFilter) renderPosters();
+        hidePosterMenu(); return;
+      }
       if (a === 'newfolder') {
         const name = window.prompt(MSG.posterFolderRenamePrompt, '');
         if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) togglePosterFolderMember(nf.id, u.key); }
@@ -4939,85 +5096,43 @@
     const u = posterList[parseInt(card.dataset.index, 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
-  // Poster-mode sort + platform filter + favorites-only (sidebar, poster mode only).
+  // Poster-mode sort (sidebar). The remaining poster filters are rows → flyouts.
   { const ps = document.getElementById('posterSortSelect');
     if (ps) ps.addEventListener('change', () => { posterSort = ps.value; renderPosters(); }); }
-  document.getElementById('posterPlatformChips').addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-chip[data-platform]');
-    if (!chip) return;
-    const p = chip.dataset.platform;
-    if (posterPlatforms.has(p)) posterPlatforms.delete(p); else posterPlatforms.add(p);
-    renderPosters();
-  });
-  { const fo = document.getElementById('posterFavOnlyBtn');
-    if (fo) fo.addEventListener('click', () => { posterFavOnly = !posterFavOnly; fo.classList.toggle('active', posterFavOnly); renderPosters(); }); }
-  // Poster tag filter: + button opens the shared qf flyout; a chip's × drops that tag.
-  { const ptRow = document.getElementById('posterTagFilterRow');
-    if (ptRow) ptRow.addEventListener('click', (e) => {
-      const add = e.target.closest('.poster-tag-add');
-      if (add) { showQfPopAt('poster-tag', add); return; }
-      if (e.target.closest('.poster-tag-clear')) { clearPosterTagFilter(); hideQfPop(); return; }
-      const del = e.target.closest('.poster-tag-chip');
-      if (del) {
-        posterTagFilter.delete(del.dataset.ptdel);
-        renderPosterTagFilters(); renderPosters();
-        if (qfCat === 'poster-tag' && qfPop.classList.contains('show')) renderQfPop();   // keep flyout checkmarks in sync
-      }
-    }); }
-  // Poster folders: sidebar list (click row = filter toggle, × = delete, dblclick = rename) + create.
-  document.getElementById('posterFolderList').addEventListener('click', (e) => {
-    const del = e.target.closest('.pf-row-del');
-    if (del) {
-      e.stopPropagation();
-      const f = posterFolderById(del.dataset.pfdel); if (!f) return;
-      if (!window.confirm(MSG.posterFolderDeleteConfirm(f.name))) return;
-      deletePosterFolder(f.id); renderPosterFolders(); renderPosters();
+  // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
+  // flyout (poster-* categories); the date row opens the date popover; favorites is a
+  // toggle row (no flyout). Selections live in the transient posterXxx state.
+  document.getElementById('posterFilterRows').addEventListener('click', (e) => {
+    if (e.target.closest('#posterWsClear')) {
+      if (!window.confirm(MSG.posterWsEmptyConfirm)) return;
+      if (CF()) CF().clearPosterWorkspace();
+      renderPosterFilterRows();
+      if (posterWorkspaceFilter) renderPosters();
       return;
     }
-    const row = e.target.closest('.pf-row'); if (!row) return;
-    posterFolderFilter = (posterFolderFilter === row.dataset.fid) ? null : row.dataset.fid;
-    renderPosterFolders(); renderPosters();
+    if (e.target.closest('#posterWsRow')) {
+      posterWorkspaceFilter = !posterWorkspaceFilter;
+      hideQfPop();
+      renderPosterFilterRows();   // flip the row's active class + badge
+      renderPosters();
+      return;
+    }
+    if (e.target.closest('#posterFavRow')) {
+      posterFavOnly = !posterFavOnly;
+      hideQfPop();
+      renderPosterFilterRows();   // flip the row's active class
+      renderPosters();
+      return;
+    }
+    const row = e.target.closest('[data-qfrow]');
+    if (!row) return;
+    const cat = row.dataset.qfrow;
+    const dp = document.getElementById('qfDatePopover');
+    if (cat === 'poster-date' && dp.style.display === 'block') { closeAllMenus(); return; }   // re-click closes
+    closeAllMenus();   // switching rows closes any open date popover first
+    if (cat === 'poster-date') { hideQfPop(); openPosterDatePopover(row); return; }
+    showQfPopAt(cat, row);
   });
-  document.getElementById('posterFolderList').addEventListener('dblclick', (e) => {
-    const row = e.target.closest('.pf-row'); if (!row) return;
-    const f = posterFolderById(row.dataset.fid); if (!f) return;
-    if (pfStore.rename(f.id, window.prompt(MSG.posterFolderRenamePrompt, f.name))) renderPosterFolders();
-  });
-  // Drag-and-drop reorder of poster folders. A thin accent edge marks the drop side
-  // (above/below the hovered row); persisted via pfStore.move on drop.
-  { const pfList = document.getElementById('posterFolderList');
-    let pfDragId = null;
-    const clearDropMarks = () => pfList.querySelectorAll('.pf-drop-before, .pf-drop-after').forEach((el) => el.classList.remove('pf-drop-before', 'pf-drop-after'));
-    const dropSide = (row, clientY) => { const r = row.getBoundingClientRect(); return clientY < r.top + r.height / 2; };   // true = before
-    pfList.addEventListener('dragstart', (e) => {
-      const row = e.target.closest('.pf-row'); if (!row) return;
-      pfDragId = row.dataset.fid;
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', pfDragId); } catch { /* some engines disallow */ }
-      row.classList.add('pf-dragging');
-    });
-    pfList.addEventListener('dragover', (e) => {
-      if (!pfDragId) return;
-      e.preventDefault();   // mark as a valid drop target
-      e.dataTransfer.dropEffect = 'move';
-      clearDropMarks();
-      const row = e.target.closest('.pf-row');
-      if (row && row.dataset.fid !== pfDragId) row.classList.add(dropSide(row, e.clientY) ? 'pf-drop-before' : 'pf-drop-after');
-    });
-    pfList.addEventListener('drop', (e) => {
-      if (!pfDragId) return;
-      e.preventDefault();
-      const row = e.target.closest('.pf-row');
-      if (row && row.dataset.fid !== pfDragId && pfStore.move(pfDragId, row.dataset.fid, dropSide(row, e.clientY))) renderPosterFolders();
-      pfDragId = null;
-    });
-    pfList.addEventListener('dragend', () => { pfDragId = null; clearDropMarks(); pfList.querySelectorAll('.pf-dragging').forEach((el) => el.classList.remove('pf-dragging')); });
-  }
-  { const inp = document.getElementById('posterFolderNewInput');
-    const btn = document.getElementById('posterFolderCreateBtn');
-    const doCreate = () => { if (!inp) return; const f = createPosterFolder(inp.value); if (f) { inp.value = ''; renderPosterFolders(); } };
-    if (btn) btn.addEventListener('click', doCreate);
-    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') doCreate(); }); }
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
   // quantize the real width to "how many columns fit", so their track maps to
@@ -5125,8 +5240,15 @@
   window.corpus.getPrefs().then((prefs) => {
     if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
       currentView = prefs.viewMode;
-      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+      // Scope to #densityToggle: a bare .view-toggle selector would strip .active
+      // from the browse / poster toggles (their buttons carry no data-view).
+      document.querySelectorAll('#densityToggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
     }
+    if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
+      posterView = prefs.posterViewMode;
+      document.querySelectorAll('#posterDensityToggle button').forEach(b => b.classList.toggle('active', b.dataset.pview === posterView));
+    }
+    if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
     positionViewThumb();   // place the glass thumb on the restored active button
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
     if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
@@ -5666,6 +5788,12 @@
   await initTabs();
   appBooted = true;   // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();
+  // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
+  // buildUsers has data for the poster grid. silent = no history/pref echo.
+  try {
+    const prefs = await window.corpus.getPrefs();
+    if (prefs && prefs.browseMode === 'posters') setBrowseMode('posters', { silent: true });
+  } catch { /* stay in library mode */ }
   // First paint done — restore the active tab's renderLimit + scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));
   // Persist scroll changes too (debounced), not only state/tab-switch changes, so the

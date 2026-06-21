@@ -31,6 +31,7 @@
       wsEmpty: '空にする',
       wsEmptyTip: 'ワークスペースの中身をすべて出します（投稿自体は削除されません）',
       wsEmptyConfirm: 'ワークスペースを空にしますか？\n（入れた投稿をすべて出すだけで、投稿自体は削除されません）',
+      posterWsEmptyConfirm: 'ワークスペースを空にしますか？\n（入れた投稿者をすべて出すだけで、投稿者自体は削除されません）',
       ctxWsAdd: 'ワークスペースに追加',
       ctxWsRemove: 'ワークスペースから外す',
       tipSelect: '選択（Shiftで範囲選択）',
@@ -169,6 +170,10 @@
       sbPosterTagsTitle: 'タグ',
       posterTagFilterAdd: 'タグで絞り込み',
       posterTagFilterClear: 'タグ絞り込みを解除',
+      posterDateLastPost: '最終投稿日',
+      posterDateLastCapture: '最終取得日',
+      posterDateCreated: 'アカウント作成日',
+      posterDateClear: 'クリア',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -357,6 +362,7 @@
       wsEmpty: 'Empty',
       wsEmptyTip: 'Take everything out of the workspace (the posts themselves are not deleted)',
       wsEmptyConfirm: 'Empty the workspace?\n(This only takes the posts out of the tray — nothing is deleted.)',
+      posterWsEmptyConfirm: 'Empty the workspace?\n(This only takes the posters out of the tray — nothing is deleted.)',
       ctxWsAdd: 'Add to workspace',
       ctxWsRemove: 'Remove from workspace',
       tipSelect: 'Select (Shift for range)',
@@ -495,6 +501,10 @@
       sbPosterTagsTitle: 'Tags',
       posterTagFilterAdd: 'Filter by tag',
       posterTagFilterClear: 'Clear tag filter',
+      posterDateLastPost: 'Last post',
+      posterDateLastCapture: 'Last saved',
+      posterDateCreated: 'Account created',
+      posterDateClear: 'Clear',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',

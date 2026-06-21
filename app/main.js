@@ -478,16 +478,17 @@ ipcMain.handle('set-manual-groups', (_e, groups) => {
 // (The old `defaultId` key is dropped on read/write — default folder was removed.)
 ipcMain.handle('get-folders', () => {
   const folder = getSaveFolder();
-  if (!folder) return { folders: [], workspace: [] };
+  if (!folder) return { folders: [], workspace: [], posterWorkspace: [] };
   try {
     const j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
     const folders = Array.isArray(j.folders) ? j.folders
       .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
       .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
     const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
-    return { folders, workspace };
+    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
+    return { folders, workspace, posterWorkspace };
   } catch {
-    return { folders: [], workspace: [] };
+    return { folders: [], workspace: [], posterWorkspace: [] };
   }
 });
 ipcMain.handle('set-folders', (_e, data) => {
@@ -499,7 +500,8 @@ ipcMain.handle('set-folders', (_e, data) => {
       .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
       .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
     const workspace = (data && Array.isArray(data.workspace)) ? [...new Set(data.workspace.map(String))] : [];
-    fs.writeFileSync(path.join(folder, 'folders.json'), JSON.stringify({ folders, workspace }, null, 2), 'utf8');
+    const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
+    fs.writeFileSync(path.join(folder, 'folders.json'), JSON.stringify({ folders, workspace, posterWorkspace }, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };
@@ -557,7 +559,7 @@ ipcMain.handle('open-image-window', (_event, image) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 ipcMain.handle('get-prefs', () => {
@@ -572,7 +574,10 @@ ipcMain.handle('get-prefs', () => {
     listThumb: (Number.isFinite(cfg.listThumb) ? cfg.listThumb : null),    // list view: thumbnail px
     tileOverlay: cfg.tileOverlay !== false,   // was missing → pref never restored on restart
     searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal',   // 検索方式: 通常 / あいまい
-    theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto'   // システム / ライト / ダーク
+    theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto',   // システム / ライト / ダーク
+    browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts',   // ライブラリ / 投稿者（起動時に復元）
+    posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card',   // 投稿者グリッドの表示密度
+    posterTileSize: (Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null)   // 投稿者タイルの一辺px
   };
 });
 
