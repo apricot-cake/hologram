@@ -5,6 +5,7 @@
 - スクリプト/テストのカタログと手順: [docs/testing.md](docs/testing.md)
 - ユーザー向け機能説明: [README.md](README.md)
 - 残タスク: [BACKLOG.md](BACKLOG.md)
+- 並列開発の運用（オーケストレータ＋worktree隔離ワーカー）: [docs/parallel-ops.md](docs/parallel-ops.md)（進行台帳 [parallel/STATE.md](parallel/STATE.md)）
 
 # 守るルール
 
