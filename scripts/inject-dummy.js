@@ -13,7 +13,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { configDir } = require('../native-host/paths');
+const { configDir, defaultLibraryDir } = require('../native-host/paths');
 
 function resolveFolder() {
   const arg = process.argv.find((a, i) => i >= 2 && !a.startsWith('--') && !a.endsWith('.js'));
@@ -22,7 +22,7 @@ function resolveFolder() {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
   } catch { /* no config */ }
-  return path.join(os.homedir(), 'Corpus');
+  return defaultLibraryDir();   // SAME default the app uses (was ~/Corpus, which the app never watches)
 }
 
 const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon: '#6364ff' };
@@ -103,6 +103,19 @@ app.whenReady().then(async () => {
       `return c.toDataURL('image/jpeg',0.72);})()`
     );
 
+    // Dummy avatar: a colored circle + the poster's initial on white. Distinguishable
+    // from the monogram fallback (which is a grey square) so a glance tells real-but-
+    // un-backfilled posters apart from these dummies. Lets the poster tile/inspector
+    // avatar path be exercised without real avatarFile data.
+    const initial = (p.displayName || p.screenName || '?').trim().charAt(0) || '?';
+    const avDataUrl = await win.webContents.executeJavaScript(
+      `(()=>{const c=document.getElementById('c'),x=c.getContext('2d');` +
+      `x.fillStyle='#ffffff';x.fillRect(0,0,320,200);` +
+      `x.fillStyle=${JSON.stringify(color)};x.beginPath();x.arc(160,100,92,0,Math.PI*2);x.fill();` +
+      `x.fillStyle='#ffffff';x.textAlign='center';x.textBaseline='middle';x.font='bold 96px sans-serif';x.fillText(${JSON.stringify(initial)},160,106);` +
+      `return c.toDataURL('image/jpeg',0.82);})()`
+    );
+
     const date = new Date(base - i * 3 * 86400000).toISOString();
     const capturedAt = new Date(base - i * 3 * 86400000 + 3600000).toISOString();
     const rec = {
@@ -127,9 +140,11 @@ app.whenReady().then(async () => {
       isQuote: p.type === 'quote' || null,
       isThread: p.type === 'thread' || null,
       quotedUrl: p.quotedUrl || null,
+      avatarFile: `${id}-avatar.jpg`,
       tags: p.tags || []
     };
     fs.writeFileSync(path.join(folder, `${id}.jpg`), Buffer.from(dataUrl.split(',')[1], 'base64'));
+    fs.writeFileSync(path.join(folder, `${id}-avatar.jpg`), Buffer.from(avDataUrl.split(',')[1], 'base64'));
     fs.writeFileSync(path.join(folder, `${id}.json`), JSON.stringify(rec, null, 2), 'utf8');
   }
 
