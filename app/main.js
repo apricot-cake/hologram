@@ -511,7 +511,7 @@ ipcMain.handle('set-folders', (_e, data) => {
 // `collections` — the unified container that supersedes folders + workspace
 // (Phase① of the collection feature). <saveFolder>/collections.json:
 //   { collections:[{id,name,kind:'static',created,items:[captureId]}], activeId, posterWorkspace:[posterKey] }
-// `activeId` points at the one-click ⚡ target (the old single workspace). On first
+// `activeId` points at the one-click 🔖 target (the old single workspace). On first
 // read we migrate any existing folders.json into this shape, then DELETE folders.json
 // (clean cutover — no backup, by design). get/set-folders stay for the migration read
 // and for folding a legacy folders.json out of an imported ZIP (lib-archive.js).

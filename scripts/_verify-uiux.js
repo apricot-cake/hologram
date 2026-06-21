@@ -64,7 +64,7 @@ const evalSeeded = `(async () => {
   const dedupOk = !!imgCard && !imgCard.querySelector('.post-meta .text');
   const noBadge = !!imgCard && !imgCard.querySelector('.platform-badge') &&
     imgCard.querySelector('.user').textContent.trim() === 'IMG_123';
-  // hover keeps only the ⚡/ℹ pair (the rest lives in the right-click menu)
+  // hover keeps the 🔖/ℹ/🏷 buttons (the rest lives in the right-click menu)
   const noUrlPacked = !!imgCard &&
     !imgCard.querySelector('.open-btn, .fold-btn, .edit-btn, .delete-btn') &&
     getComputedStyle(imgCard.querySelector('.info-btn')).right === '8px' &&

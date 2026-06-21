@@ -6,8 +6,7 @@
 
 調査結果込みで焼いてある＝次セッションは再調査せず着手できる。完了したらこのリストから削除。
 
-1. **コレクション統合（資料ビュー）**（設計確定・モック合意・段階実装＝下記「資料ビューの新設」参照）: 大。**①データモデル統合 実装済み（2026-06-21）**＝folders+workspace を `collections.json` へ統合（`{collections:[{id,name,kind:'static',created,items}], activeId, posterWorkspace}`）。UI 不変の facade（`corpusFolders.all()` は active 除外＝旧フォルダ一覧／workspace 系 API は active コレクション操作）。起動時に folders.json を移行→削除（クリーン切替・可逆機構なし）。active=旧 workspace（`activeId`・空なら初回⚡で遅延生成）。import は collections を MERGERS 登録＋旧 folders.json は collections へ畳み込み。残: **②コレクションビュー（第3モード）→③サムネのタイル詰め→④動的=保存検索の吸収**。②着手時に DESIGN.md L150「ワークスペース vs フォルダ」を見直す。kind:'dynamic'（tree フィールド）は④で追加（正規化は pass-through 予約済み）。
-2. **⚡（ワークスペース→コレクション）ボタンのアイコンをレンチ→ブックマークに（確定 2026-06-21・小・Phase②と独立）**: 現状アプリは lucide「レンチ（wrench）」1種を**5箇所**で使用（共通の `m15 12-8.373…` パスで grep 可）＝① viewer.js:2581 アクティブフィルタチップの icon map `workspace:`（w12）② viewer.js:3137 カードホバー `.ws-btn`（w15）③ viewer.js:3410 カード右クリックメニュー icon `ws:`（w14）④ index.html:1780 投稿者側ワークスペース行 ⑤ index.html:1818 サイドバー `#wsRow`（w14）。**方針＝lucide bookmark へ全置換**＝各 `<svg>` の viewBox/width/height/stroke はそのまま、`<path>` を `M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z` 1本に差し替え（レンチは3パス→bookmarkは1パス）。`.in`/`.added` の状態表現（`.ws-btn.in::after` のアクセントドット・hover赤）は**現状維持**＝path のみ差し替え。**理由**＝「作業台＝レンチ」は設定/編集と誤読され“集める”動詞を表さない／bookmark は集める・保存の定番でトグルが直感的・16pxでも生き残る。**併せて⚡略記の掃除**＝実装は一度も⚡を描いておらず⚡は文章上の略記なので、表記をブックマーク基準に直すか落とす（DESIGN.md L111/L144/L150/L154・viewer.js コメント L3398/L3877）。確定時に DESIGN.md「ブランド／ロゴ」or「操作語彙」へアイコン方針を1行明記。**呼称**（ワークスペース→コレクション・i18n `workspaceTitle`）の見直しは別途＝Phase②で扱う。
+1. **コレクション統合（資料ビュー）**（設計確定・モック合意・段階実装＝下記「資料ビューの新設」参照）: 大。**①データモデル統合 実装済み（2026-06-21）**＝folders+workspace を `collections.json` へ統合（`{collections:[{id,name,kind:'static',created,items}], activeId, posterWorkspace}`）。UI 不変の facade（`corpusFolders.all()` は active 除外＝旧フォルダ一覧／workspace 系 API は active コレクション操作）。起動時に folders.json を移行→削除（クリーン切替・可逆機構なし）。active=旧 workspace（`activeId`・空なら初回🔖で遅延生成）。import は collections を MERGERS 登録＋旧 folders.json は collections へ畳み込み。残: **②コレクションビュー（第3モード）→③サムネのタイル詰め→④動的=保存検索の吸収**。②着手時に DESIGN.md L150「ワークスペース vs フォルダ」を見直す。kind:'dynamic'（tree フィールド）は④で追加（正規化は pass-through 予約済み）。
 
 ## 作者まわり（クラスタ）
 - **著者プロフィールの表示**: インスペクタに実装済み＝フォロワー数・登録日のテキスト行＋投稿者名の横に円形アバター。アバターはオフライン保存方式（DL ロジックは `native-host/media-download.js` に共有化＝capture/import/backfill で同一の SSRFガード/上限。`avatarFile` を psimg:// で表示。pixiv アバターは Referer ゲート対応済み。X/pixiv のフォロワー/作成日は公開APIに無く graceful 隠し）。取込(import-posts)・backfill(`--all`/再取得時)・既存データ(`backfill-metadata.js --avatars`＝API無しでアバターのみDL)の各経路にアバターDLを追加済み。**残**: 投稿者ビューにもアバター表示済み（実装は下記）だが、既存ライブラリは未backfillで `avatarFile` が無くモノグラム表示＝個人作業で `backfill-metadata.js --avatars` を流すと実画像に。
@@ -85,7 +84,6 @@
 
 ### タグ付けUX（クラスタ・2026-06-21 方向確定＝実装フェーズへ）
 **ユーザー確定（2026-06-21）**: タグ付けは ①カードごとの編集（インスペクタ＝実装済み）＋ ②複数選択→一括、の2本に集約。**スタンプ軸**と「カード編集/スタンプ」**軸切替トグルを廃止**、**サイドバーのタグ付け起動ボタン（#tagStartBtn）も廃止**。スタンプ用のサイドバーパレット切替も廃止対象（タグ付けはモードでなくカード単位＋一括で解く）。
-- **コンテンツのホバーボタンにタグ付与ボタンを追加（3個ルール変更で決定済み＝冒頭の着手順②）**: カード→タグ編集（インスペクタ）への発見性ある導線。**制約＝クエリビルダー（上部バー）には侵入させない**。ホバー2個原則は**ユーザー判断で「3個まで」に緩和して解決**（⚡ws・ℹinfo・🏷タグ＝⚡置換/出し分けでなく上限変更）。実装詳細は冒頭「次の着手順②」。
 - **タグのピン留めセクション廃止**: スマートフォルダ（保存できる動的検索・下記）で代替できるため不要、とユーザー判断。
 
 ### ナビ/検索UI

@@ -19,7 +19,7 @@
   // persist() and does its own toast / re-render, since those differ per view. Pure
   // data layer — no DOM.
   // withActive (library only) generalizes folders into "collections": each carries
-  // kind/created, and one collection can be the ACTIVE one (the ⚡ one-click tray =
+  // kind/created, and one collection can be the ACTIVE one (the 🔖 one-click tray =
   // the old single workspace). all() hides the active one so the folder UI looks
   // unchanged; allRaw() returns every collection (what we persist). The poster store
   // omits withActive, so its surface/behavior is exactly as before.
@@ -49,7 +49,7 @@
       f.name = nm; persist(); return true;
     }
     // Active-collection accessors (withActive only). ensureActive lazily mints the
-    // tray collection on the first ⚡ when none exists (empty old workspace migrated
+    // tray collection on the first 🔖 when none exists (empty old workspace migrated
     // to activeId=null). 'c-' prefix marks it as the workspace-origin collection.
     const getActiveId = () => activeId;
     const setActiveId = (id) => { activeId = (typeof id === 'string' && byId(id)) ? id : null; };
@@ -102,7 +102,7 @@
   let posterWorkspace = [];   // [posterKey] — the poster-side tray, kept in a SEPARATE
                               // namespace so the captureId workspace API stays untouched.
   // Library collections [{ id, name, kind, created, items:[captureId] }] — the unified
-  // container (folders + the active workspace tray). withActive marks one as the ⚡ target.
+  // container (folders + the active workspace tray). withActive marks one as the 🔖 target.
   const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), withActive: true });
   // The management modal (#ivFolderModal) is shared: by default it edits the library
   // store, but openManager({store,onChange}) re-points it at the poster folder store
@@ -157,7 +157,7 @@
   const byId = store.byId;
   const has = store.has;
 
-  // --- Workspace = the ACTIVE collection (the ⚡ one-click tray). The old single
+  // --- Workspace = the ACTIVE collection (the 🔖 one-click tray). The old single
   // ephemeral array is now just whichever collection activeId points at; the API
   // shape is unchanged so the sidebar tray UI keeps working. ---
   function inWorkspace(cid) { return store.has(store.getActiveId(), cid); }

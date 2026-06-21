@@ -53,7 +53,7 @@ const evalJs = `(async () => {
   const filtered = cards() === 2;
   const card0 = grid.querySelector('.post-card[data-index="0"]');
   console.log('CHK card0=' + !!card0);
-  // tag edit moved into the card context menu (hover keeps only ⚡/ℹ)
+  // open tag edit via the card context menu's "edit" row (also on hover as 🏷)
   card0.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
   await wait(40);
   document.querySelector('.card-menu.show .fm-row[data-act="edit"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));

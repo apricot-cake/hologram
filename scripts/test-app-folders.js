@@ -4,7 +4,7 @@
 //  - create a folder via the shared management modal (no auto-default / no ★)
 //  - 📁 button opens a picker; clicking a folder row adds the card; chip counts + filters
 //  - collections.json persists { collections, activeId, posterWorkspace }
-//  - ⚡ workspace button one-click adds to the ACTIVE collection (filled), sidebar
+//  - 🔖 workspace button one-click adds to the ACTIVE collection (filled), sidebar
 //    chip counts + filters, クリア empties it
 //  - the active collection is hidden from the folder manager (all() excludes it)
 // Seeds 3 standalone illustration records → 3 cards.
@@ -64,7 +64,7 @@ const evalJs = `(async () => {
   const noStar = !document.querySelector('.iv-foldstar');  // default folder removed → no ★ anywhere
   click($('ivFolderClose')); await sleep(20);
 
-  // hover keeps only the ⚡/ℹ pair — folder/edit/delete/open moved off the card
+  // hover keeps the 🔖/ℹ/🏷 buttons — folder/delete/open/poster moved off the card
   const hoverPair = !!grid.querySelector('.post-card .ws-btn') && !!grid.querySelector('.post-card .info-btn') &&
     !grid.querySelector('.post-card .fold-btn, .post-card .edit-btn, .post-card .delete-btn, .post-card .open-btn');
 
@@ -92,7 +92,7 @@ const evalJs = `(async () => {
   $('postResetBtn').click(); await sleep(50);
 
   // === Workspace ===
-  // ⚡ one-click add card 1 → filled, sidebar count 1
+  // 🔖 one-click add card 1 → filled, sidebar count 1
   const ws1 = grid.querySelector('.post-card[data-index="1"] .ws-btn');
   click(ws1); await sleep(50);
   const wsIn = ws1.classList.contains('in');
