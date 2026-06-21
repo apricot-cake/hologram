@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
@@ -94,6 +94,22 @@ function mergeManualGroups(cur, inc) {
   }
   return { groups: out };
 }
+// Per-poster tags: { tags: { posterKey: [tag, …] } }. Union the tag lists per
+// posterKey so importing never drops a poster's existing tags.
+function mergePosterTags(cur, inc) {
+  const out = {};
+  const add = (src) => {
+    for (const [k, list] of Object.entries((src && src.tags) || {})) {
+      if (!Array.isArray(list)) continue;
+      const set = out[k] || (out[k] = new Set());
+      for (const t of list) set.add(String(t));
+    }
+  };
+  add(cur); add(inc);
+  const tags = {};
+  for (const [k, set] of Object.entries(out)) tags[k] = [...set];
+  return { tags };
+}
 const MERGERS = {
   'folders.json': mergeFolders,
   'tag-groups.json': mergeTagGroups,
@@ -101,7 +117,8 @@ const MERGERS = {
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
   'poster-favorites.json': mergeUngrouped,   // same { keys } shape → union merge
-  'poster-folders.json': mergeFolders        // same { folders } shape → id-union merge
+  'poster-folders.json': mergeFolders,       // same { folders } shape → id-union merge
+  'poster-tags.json': mergePosterTags        // { tags:{posterKey:[…]} } → per-key union
 };
 
 // --- Build ---------------------------------------------------------------------

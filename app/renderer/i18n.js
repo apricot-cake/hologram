@@ -163,6 +163,7 @@
       posterFolderRenamePrompt: 'フォルダ名',
       posterMenuNewFolder: '新しいフォルダへ追加…',
       ivPosterFolders: 'フォルダ',
+      ivPosterTags: 'タグ',
       posterFolderAdded: '「$1」に追加',
       posterFolderRemoved: '「$1」から外す',
 
@@ -485,6 +486,7 @@
       posterFolderRenamePrompt: 'Folder name',
       posterMenuNewFolder: 'Add to new folder…',
       ivPosterFolders: 'Folders',
+      ivPosterTags: 'Tags',
       posterFolderAdded: 'Added to "$1"',
       posterFolderRemoved: 'Removed from "$1"',
 
