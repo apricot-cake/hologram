@@ -560,7 +560,7 @@
 
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
-    .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--pcard-size, 200px), 1fr)); gap: 14px; }
     .poster-card {
       position: relative;   /* anchor the favorite star */
       display: flex; align-items: center; gap: 12px; padding: 12px 38px 12px 14px; min-width: 0;
@@ -1679,7 +1679,7 @@
           </div>
           <div class="tile-size" id="posterTileSizeRow" style="display:none">
             <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-            <input type="range" id="posterTileSlider" step="1" title="タイルの大きさ">
+            <input type="range" id="posterTileSlider" step="1" title="表示の大きさ">
             <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           </div>
         </div>

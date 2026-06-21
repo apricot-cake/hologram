@@ -559,7 +559,7 @@ ipcMain.handle('open-image-window', (_event, image) => {
 });
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 ipcMain.handle('get-prefs', () => {
@@ -577,7 +577,8 @@ ipcMain.handle('get-prefs', () => {
     theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto',   // システム / ライト / ダーク
     browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts',   // ライブラリ / 投稿者（起動時に復元）
     posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card',   // 投稿者グリッドの表示密度
-    posterTileSize: (Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null)   // 投稿者タイルの一辺px
+    posterTileSize: (Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null),   // 投稿者タイルの一辺px
+    posterCardSize: (Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null)    // 投稿者カードの最小列幅px
   };
 });
 

@@ -4692,10 +4692,49 @@
   // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
   let posterView = 'card';           // 'card' | 'tile' | 'list'
   let posterTileSize = 132;          // tile view: avatar tile edge px
+  let posterCardSize = 200;          // card view: min column width px
   const PTILE_MIN = 96, PTILE_MAX = 220;
+  const PCARD_MIN = 150, PCARD_MAX = 340;
+  // Which size the slider drives, per density (mirrors the post viewSizeState). The
+  // grid layouts read --ptile-size (tile) / --pcard-size (card) via auto-fill minmax;
+  // list is a full-width stack with no size axis, so it returns null (slider hidden).
+  function posterSizeState() {
+    if (posterView === 'tile') return { get: () => posterTileSize, set: (v) => { posterTileSize = v; }, min: PTILE_MIN, max: PTILE_MAX, varName: '--ptile-size', pref: 'posterTileSize' };
+    if (posterView === 'card') return { get: () => posterCardSize, set: (v) => { posterCardSize = v; }, min: PCARD_MIN, max: PCARD_MAX, varName: '--pcard-size', pref: 'posterCardSize' };
+    return null;
+  }
+  // The slider track maps to COLUMN COUNTS (like the post tile slider), not raw px:
+  // the auto-fill minmax(size,1fr) grid stretches columns, so changing the min only
+  // moves the layout at column-count thresholds. Mapping each detent to one column
+  // count makes every step visible (no dead zones). Right = larger = fewer columns.
+  function posterGridMetrics() {
+    const grid = document.getElementById('posterGrid');
+    if (!grid) return null;
+    const W = Math.floor(grid.getBoundingClientRect().width);
+    if (!W) return null;
+    const gv = parseFloat(getComputedStyle(grid).columnGap);
+    return { W, g: Number.isFinite(gv) ? gv : 14 };
+  }
+  const pColsFor = (size, m) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
+  const pSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
+  function refreshPosterSlider() {
+    const sl = document.getElementById('posterTileSlider');
+    const row = document.getElementById('posterTileSizeRow');
+    if (!sl) return;
+    const st = posterSizeState();
+    if (!st) { if (row) row.style.display = 'none'; return; }
+    const m = posterGridMetrics();
+    if (!m) return;
+    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g)));   // fewest cols whose size stays ≤ max
+    const nSmall = Math.max(nBig, pColsFor(st.min, m));                  // most cols (smallest)
+    if (row) row.style.display = nBig === nSmall ? 'none' : 'flex';      // single stop conveys nothing → hide
+    sl.step = '1'; sl.min = String(nBig); sl.max = String(nSmall);
+    const n = Math.min(nSmall, Math.max(nBig, pColsFor(st.get(), m)));
+    sl.value = String(nBig + nSmall - n);                               // inverted: right = larger
+  }
   // Poster grid density toggle (card / tile / list) — mirrors #densityToggle but
   // writes posterView (separate from currentView) and re-renders the poster grid.
-  // Defined here (after PTILE_* / posterView) so the slider setup doesn't hit a TDZ.
+  // Defined here (after PTILE_*/PCARD_*/posterView) so the slider setup doesn't hit a TDZ.
   document.querySelectorAll('#posterDensityToggle button').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.pview === posterView) return;
@@ -4709,17 +4748,24 @@
       renderPosters();
     });
   });
-  (function setupPosterTileSlider() {
+  (function setupPosterSizeSlider() {
     const sl = document.getElementById('posterTileSlider');
     if (!sl) return;
-    sl.min = PTILE_MIN; sl.max = PTILE_MAX;
     sl.addEventListener('input', () => {
-      posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, parseInt(sl.value, 10) || 132));
+      const st = posterSizeState();
+      const m = posterGridMetrics();
+      if (!st || !m) return;
+      const nBig = parseInt(sl.min, 10), nSmall = parseInt(sl.max, 10);
+      const n = nBig + nSmall - parseInt(sl.value, 10);            // un-invert → target column count
+      const size = Math.max(st.min, Math.min(st.max, pSizeFor(n, m)));
+      st.set(size);
       const g = document.getElementById('posterGrid');
-      if (g) g.style.setProperty('--ptile-size', posterTileSize + 'px');   // live re-flow, no re-render
-      window.corpus.setPref('posterTileSize', posterTileSize);
+      if (g) g.style.setProperty(st.varName, size + 'px');         // live re-flow, no re-render
+      window.corpus.setPref(st.pref, size);
     });
   })();
+  // The column counts depend on the grid width — re-derive the track on resize.
+  window.addEventListener('resize', () => { if (browseMode === 'posters') refreshPosterSlider(); }, { passive: true });
   let posterPlatforms = new Set();   // active platform filter (empty = all)
   let posterWorkGroups = [];         // recent works shown in the poster inspector
   let posterFavorites = new Set();   // starred poster keys (persisted poster-favorites.json)
@@ -4900,11 +4946,11 @@
     grid.classList.toggle('tile-view', posterView === 'tile');
     grid.classList.toggle('list-view', posterView === 'list');
     grid.style.setProperty('--ptile-size', posterTileSize + 'px');
+    grid.style.setProperty('--pcard-size', posterCardSize + 'px');
     positionViewThumb(document.getElementById('posterDensityToggle'));
-    const ptsRow = document.getElementById('posterTileSizeRow');
-    if (ptsRow) ptsRow.style.display = posterView === 'tile' ? 'flex' : 'none';
-    const ptsSlider = document.getElementById('posterTileSlider');
-    if (ptsSlider) ptsSlider.value = posterTileSize;
+    // Size slider: card + tile (auto-fill grids) have a size axis; list (full-width stack)
+    // doesn't. The track maps to column counts so every step reflows (no dead zones).
+    refreshPosterSlider();
     if (posterList.length === 0) {
       grid.innerHTML = '';   // empty .poster-grid collapses to 0 height
       empty.style.display = 'block';
@@ -5286,6 +5332,7 @@
       document.querySelectorAll('#posterDensityToggle button').forEach(b => b.classList.toggle('active', b.dataset.pview === posterView));
     }
     if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
+    if (Number.isFinite(prefs.posterCardSize)) posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
     positionViewThumb();   // place the glass thumb on the restored active button
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
     if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
