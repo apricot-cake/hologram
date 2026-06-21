@@ -45,6 +45,9 @@
 - ワーカーは `parallel/<slug>` に積むだけ。main へは出さない。
 - 統合が `git log main..parallel/<slug>` で中身を確認し、`git merge --no-ff` か `cherry-pick`。
 - 衝突は統合が解消（ワーカーは互いの作業を知らない）。
+- **注意（実証済み）: ワーカーはセッション開始時の main から分岐する**（統合がセッション中に入れたコミットを含まないことがある）。
+  `git merge-base main parallel/<slug>` で起点を確認。`git diff main..parallel/<slug>` で基盤ファイルが「消えて」見えても慌てない
+  ── `git show --stat <commit>` でワーカーが実際に触ったファイルを見れば、削除ではなく古い起点に無いだけと分かる（3-way マージが main 側を保持する）。
 
 ## node_modules
 

@@ -3,7 +3,7 @@
 > 進行中の並列タスクと担当ブランチの一覧。運用は [docs/parallel-ops.md](../docs/parallel-ops.md)。
 > 統合（オーケストレータ）が毎ラウンド更新する。新セッションはまずここと `git branch --list 'parallel/*'` を読む。
 
-最終更新: 2026-06-21（立ち上げ直後・進行タスクなし）
+最終更新: 2026-06-21（poster-tags をマージ・実機確認はユーザーが普通に使って実施）
 
 ## 進行中
 
@@ -15,7 +15,7 @@
 
 | slug | branch | merged | notes |
 |------|--------|--------|-------|
-| —    | —      | —      | （なし）|
+| poster-tags | parallel/poster-tags | 7ef9e03 | 投稿者へのタグ付け①付与基盤（main/preload/lib-archive/viewer/i18n/index.html）。ワーカー commit e72f9fc を 3-way マージ。実機確認はユーザーが普通に使って実施。要確認点: タグ編集セクションを常時表示にした設計判断・undo非対応 |
 
 ## 凡例
 
