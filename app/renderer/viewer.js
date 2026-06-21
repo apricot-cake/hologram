@@ -1511,11 +1511,30 @@
     }
   }
 
+  // Poster-tag variant: posterTags[key] is the source of truth (NOT a post record),
+  // so undo/redo re-applies the captured tag list per poster key and keeps an open
+  // poster inspector in sync (mirrors applyTagUndo's inspector refresh).
+  async function applyPosterTagUndo(records) {
+    for (const r of records) {
+      if (r.tags && r.tags.length) posterTags[r.key] = r.tags.slice(); else delete posterTags[r.key];
+    }
+    persistPosterTags();
+    if (!document.getElementById('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
+      const k = inspectedKey.slice('poster:'.length);
+      refreshPosterTags(k);
+      refreshPosterPicker(k);
+    }
+  }
+
   async function doUndo() {
     const entry = undoStack.pop();
     if (!entry) return;
-    const reverse = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.prevTags }));
-    await applyTagUndo(reverse);
+    if (entry.type === 'poster-tags') {
+      await applyPosterTagUndo(entry.records.map(r => ({ key: r.key, tags: r.prevTags })));
+    } else {
+      const reverse = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.prevTags }));
+      await applyTagUndo(reverse);
+    }
     redoStack.push(entry);
     showToast('Undo');
   }
@@ -1523,8 +1542,12 @@
   async function doRedo() {
     const entry = redoStack.pop();
     if (!entry) return;
-    const forward = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.newTags }));
-    await applyTagUndo(forward);
+    if (entry.type === 'poster-tags') {
+      await applyPosterTagUndo(entry.records.map(r => ({ key: r.key, tags: r.newTags })));
+    } else {
+      const forward = entry.records.map(r => ({ captureId: r.captureId, image: r.image, tags: r.newTags }));
+      await applyTagUndo(forward);
+    }
     undoStack.push(entry);
     if (undoStack.length > UNDO_MAX) undoStack.shift();
     showToast('Redo');
@@ -3951,7 +3974,7 @@
     if (insp.contains(e.target)) return;
     if (!e.target.closest('#mode-post')) return;   // sidebar/overlays: leave it open
     if (e.target.closest('.info-btn')) return;     // ℹ = swap to that card
-    if (e.target.closest('.poster-card')) return;  // poster click = swap to that poster
+    if (e.target.closest('.poster-card')) return;  // poster click = go to that poster's posts
     e.preventDefault();
     e.stopPropagation();
     closeDetail();
@@ -3980,7 +4003,8 @@
   // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
   // ungrouped tags that exist on posts), each section filtered by `query`. Shared
   // by the stamp palette and the card-edit picker.
-  function groupedTagVocab(query) {
+  function groupedTagVocab(query, opts) {
+    const scope = (opts && opts.scope) || 'post';
     const q = (query || '').toLowerCase();
     const ok = (t) => !q || t.toLowerCase().includes(q);
     const byJa = (a, b) => a.localeCompare(b, 'ja');
@@ -3994,6 +4018,18 @@
     for (const [k, name] of [['work', MSG.kindWork], ['character', MSG.kindCharacter]]) {
       const tags = kindSec[k].filter(ok).sort(byJa);
       if (tags.length) out.push({ name, tags });
+    }
+    // Poster scope shares 作品/キャラ (a tag's 種別 is a global attribute of the
+    // string) but keeps a SEPARATE general pool: the freeform post groups
+    // (人物/角度/形式) and post-applied tags are post-content descriptors,
+    // meaningless for a person. The poster general pool grows from poster-applied
+    // tags instead (posterTags), so people get their own vocabulary.
+    if (scope === 'poster') {
+      const applied = new Set();
+      for (const arr of Object.values(posterTags)) for (const t of (Array.isArray(arr) ? arr : [])) if (!tagKindOf(t)) applied.add(t);
+      const general = [...applied].filter(ok).sort(byJa);
+      if (general.length) out.push({ name: MSG.tagGroupOther, tags: general });
+      return out;
     }
     for (const g of tagGroups) {
       const tags = (g.tags || []).filter((t) => !tagKindOf(t)).filter(ok).sort(byJa);
@@ -4034,10 +4070,10 @@
   // the bulk-edit modal AND the inspector inline editor — the caller passes the host
   // element, the current selection, the records to read source (pixiv/SNS) tags from,
   // and the search query. Clicks are handled by each host's own delegated listener.
-  function renderTagPicker({ host, selectedTags, recordsForSource, query }) {
+  function renderTagPicker({ host, selectedTags, recordsForSource, query, scope }) {
     if (!host) return;
     const q = (query || '').toLowerCase();
-    const groups = groupedTagVocab(query || '');
+    const groups = groupedTagVocab(query || '', { scope: scope || 'post' });
     const srcSet = new Set();
     for (const r of (recordsForSource || [])) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) {
       if (!q || h.toLowerCase().includes(q)) srcSet.add(h);
@@ -4645,6 +4681,7 @@
         + handleRow
         + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
         + `</div>`
+        + `<button class="poster-info" data-pinfo="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>`
         + `<button class="poster-fav${fav ? ' on' : ''}" data-fav-index="${i}" title="${favTip}" aria-label="${favTip}">${STAR_SVG}</button>`
         + `</div>`;
     }).join('');
@@ -4675,17 +4712,20 @@
     const host = document.getElementById('pdTagPicker');
     if (!host) return;
     const keep = host.scrollTop;
-    renderTagPicker({ host, selectedTags: posterTagsOf(key), recordsForSource: [], query: pdPickQuery });
+    renderTagPicker({ host, selectedTags: posterTagsOf(key), recordsForSource: [], query: pdPickQuery, scope: 'poster' });
     host.scrollTop = keep;
   }
   // Apply a tag mutation to a poster, persist, and refresh the inspector sub-parts
-  // (so the input keeps focus and the picker keeps its scroll). No undo stack: poster
-  // tags are a lightweight per-poster list, not the post-tag mutation history.
+  // (so the input keeps focus and the picker keeps its scroll). Records the change on
+  // the shared undo stack (type 'poster-tags') so Ctrl+Z works the same as for posts.
   function applyPosterTagChange(key, mutate) {
     if (!key) return;
     const prev = posterTagsOf(key);
     const next = mutate(prev.slice());
     if (!next) return;
+    const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
+    if (!changed) return;
+    pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
     if (next.length) posterTags[key] = next; else delete posterTags[key];
     persistPosterTags();
     refreshPosterTags(key);
@@ -4757,15 +4797,15 @@
     if (!card) return;
     const u = posterList[parseInt(card.dataset.index, 10)];
     if (!u) return;
-    // Re-click the inspected poster toggles it closed (same idiom as the ℹ button).
-    if (!document.getElementById('postDetail').hidden && inspectedKey === 'poster:' + u.key) { closeDetail(); return; }
-    showPosterDetail(u);
-  });
-  document.getElementById('posterGrid').addEventListener('dblclick', (e) => {
-    const card = e.target.closest('.poster-card');
-    if (!card) return;
-    const u = posterList[parseInt(card.dataset.index, 10)];
-    if (u) openPosterPosts(u);
+    // ℹ opens the inspector (shared idiom with post cards' .info-btn); re-click the
+    // inspected poster's ℹ toggles it closed.
+    if (e.target.closest('.poster-info')) {
+      if (!document.getElementById('postDetail').hidden && inspectedKey === 'poster:' + u.key) { closeDetail(); return; }
+      showPosterDetail(u);
+      return;
+    }
+    // A plain card click drills into that poster's posts (posts mode + user filter).
+    openPosterPosts(u);
   });
   // Star toggle on a poster card — capture phase so it pre-empts the card-open click.
   document.getElementById('posterGrid').addEventListener('click', (e) => {

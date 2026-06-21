@@ -616,6 +616,18 @@
     .poster-fav svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
     .poster-fav.on { color: var(--accent); }
     .poster-fav.on svg { fill: currentColor; stroke: currentColor; }
+    /* ℹ inspector button — mirrors the star, sits to its left. ℹ = open inspector
+       (shared idiom with the post card's .info-btn); a card click goes to posts. */
+    .poster-info {
+      position: absolute; top: 8px; right: 38px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; border-radius: 50%; cursor: pointer; padding: 0;
+      color: var(--text-subtle); opacity: 0;
+      transition: opacity .15s, background .15s, color .15s, transform .15s;
+    }
+    .poster-card:hover .poster-info, .poster-info:focus-visible { opacity: 1; }
+    .poster-info:hover { background: var(--hover); transform: scale(1.1); }
+    .poster-info svg { width: 16px; height: 16px; display: block; }
     /* Inspector star sits inline at the end of the head row (not absolute). */
     .iv-poster-fav { position: static; opacity: 1; flex: none; }
     /* Favorites-only toggle chip in the poster sidebar. */
