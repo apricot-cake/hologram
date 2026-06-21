@@ -317,6 +317,11 @@
   --control-sm: 28px;
   --control-md: 34px;
   --control-lg: 40px;
+  /* Scrollbar width — kept in sync with the ::-webkit-scrollbar rule. The header
+     bands paint a gutter cap of this width so the reserved scrollbar gutter
+     (scrollbar-gutter: stable) doesn't show the content bg through the right edge
+     of the (white) query bar. */
+  --scrollbar-w: 10px;
   --tabbar-h: 44px;
   /* Height of the full-width query-builder top bar. Updated in JS from the bar's
      measured height (it wraps when many chips), so the floating sidebar below can
