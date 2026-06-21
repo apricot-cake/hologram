@@ -2170,7 +2170,7 @@
     .inspector:not([hidden]) { animation: corpusPanelIn .2s ease-out; }
     @media (max-width: 1279px) {
       .inspector {
-        position: fixed; top: 0; right: 0;
+        position: fixed; top: var(--tabbar-h); right: 0;
         border-left: 1px solid var(--glass-border); box-shadow: var(--shadow-lg), var(--glass-edge);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
         /* Floating over the grid -> glass. The inline (wide) column stays
