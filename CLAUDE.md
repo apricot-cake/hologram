@@ -1,3 +1,17 @@
+# プロジェクト概要
+
+**Corpus** = SNS で見かけた投稿を画像とメタデータごと丸ごとローカル保存し、あとから整理・検索できる「自分だけの SNS ライブラリ」。すべて手元の PC に保存し、サーバーへは何も送らない。
+
+対応プラットフォーム: X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
+
+**3 つの構成要素**（データは一方向に流れる）:
+
+1. `extension/` — Chrome 拡張（MV3）。`Alt+S` で投稿をクリック保存、または画像ドラッグ保存。投稿 URL から各 SNS の API でメタデータを取得・正規化。
+2. `native-host/` — Native Messaging ブリッジ。保存先フォルダ（`%LOCALAPPDATA%\Corpus\library`）に `<captureId>.jpg`（純 JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）+ メディア/アバター画像を書き出す。
+3. `app/` — Electron デスクトップアプリ。サイドカーを走査して閲覧・検索・整理（タグ/フォルダ/ワークスペース/投稿者ビュー等）。保存先フォルダを `fs.watch` で監視し新規キャプチャを自動反映。
+
+技術スタック: Electron + 素の JS（フレームワーク無し）/ Chrome MV3 / Node でテスト可能なロジック分離。
+
 # ドキュメント
 
 - 詳細な構成・実装メモ: [docs/architecture.md](docs/architecture.md)
