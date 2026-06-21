@@ -138,10 +138,10 @@
       foldersNone: 'なし',
       postCount: '$1 件ヒット',
 
-      // viewer: 投稿/投稿者 モード切替・投稿者ビュー
-      browsePosts: '投稿',
+      // viewer: ライブラリ/投稿者 モード切替・投稿者ビュー
+      browsePosts: 'ライブラリ',
       browsePosters: '投稿者',
-      browseModeTitle: '表示を切替（投稿 / 投稿者）',
+      browseModeTitle: '表示を切替（ライブラリ / 投稿者）',
       posterCount: '$1 人',
       posterPosts: '投稿 $1 件',
       posterViewPosts: 'この投稿者の投稿を見る',
@@ -461,10 +461,10 @@
       foldersNone: 'None',
       postCount: '$1 hits',
 
-      // viewer: Posts/Posters mode toggle + poster view
-      browsePosts: 'Posts',
+      // viewer: Library/Posters mode toggle + poster view
+      browsePosts: 'Library',
       browsePosters: 'Posters',
-      browseModeTitle: 'Switch view (Posts / Posters)',
+      browseModeTitle: 'Switch view (Library / Posters)',
       posterCount: '$1 posters',
       posterPosts: '$1 posts',
       posterViewPosts: "View this poster's posts",

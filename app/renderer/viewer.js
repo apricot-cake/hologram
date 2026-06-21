@@ -140,7 +140,7 @@
     foldersNone: _s('foldersNone'),
     postCount: _f1('postCount'),
 
-    // 投稿/投稿者 モード切替・投稿者ビュー
+    // ライブラリ/投稿者 モード切替・投稿者ビュー
     browsePosts: _s('browsePosts'),
     browsePosters: _s('browsePosters'),
     browseModeTitle: _s('browseModeTitle'),
