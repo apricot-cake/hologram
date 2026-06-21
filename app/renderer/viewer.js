@@ -1738,6 +1738,12 @@
   // filter/view/search change; the load-more path passes keepLimit=true.
   const RENDER_PAGE = 150;
   let renderLimit = RENDER_PAGE;
+
+  // #mode-post is the scroll container (the page itself never scrolls), so scroll
+  // position is read/written there, not on window.
+  const contentScrollEl = () => document.getElementById('mode-post');
+  const contentScrollTop = () => { const el = contentScrollEl(); return el ? el.scrollTop : 0; };
+  const scrollContentTo = (y) => { const el = contentScrollEl(); if (el) el.scrollTop = y; };
   let moreObserver = null;
   // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
   let manualGroups = [];        // [[captureId,…],…] — user-built groups (win over auto)
@@ -2124,15 +2130,15 @@
     btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
   })();
 
-  // Back-to-top for the CONTENT area. The post grid grows the document, so the
-  // window itself scrolls (html has scrollbar-gutter:stable) — watch window
-  // scroll, not an inner container.
+  // Back-to-top for the CONTENT area. #mode-post is the scroll container (the page
+  // itself never scrolls), so watch its scrollTop, not the window.
   (function setupContentTop() {
     const btn = document.getElementById('contentTop');
-    if (!btn) return;
-    const onScroll = () => { btn.style.display = window.scrollY > 300 ? 'flex' : 'none'; };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    const scroller = contentScrollEl();
+    if (!btn || !scroller) return;
+    const onScroll = () => { btn.style.display = scroller.scrollTop > 300 ? 'flex' : 'none'; };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    btn.addEventListener('click', () => scroller.scrollTo({ top: 0, behavior: 'smooth' }));
     onScroll();
   })();
 
@@ -2580,7 +2586,7 @@
     _tabPersistTimer = setTimeout(() => {
       if (!window.corpus.setTabs) return;
       const at = tabs.find((t) => t.id === activeTabId);
-      if (at) { at.state = snapshotState(); at._scrollTop = window.scrollY; at._renderLimit = renderLimit; }
+      if (at) { at.state = snapshotState(); at._scrollTop = contentScrollTop(); at._renderLimit = renderLimit; }
       // scrollTop + renderLimit ride along so the view restores across RESTART, not
       // just tab switches (main.js writes the payload verbatim — no whitelist).
       window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, renderLimit: t._renderLimit })) });
@@ -2590,7 +2596,7 @@
     const t = tabs.find((t) => t.id === activeTabId);
     if (!t) return;
     t.state = snapshotState();
-    t._scrollTop = window.scrollY;    // remember content scroll per tab (persisted too)
+    t._scrollTop = contentScrollTop();    // remember content scroll per tab (persisted too)
     t._renderLimit = renderLimit;     // …and how far the windowed list had grown
     t._navHist = navHist;             // carry the back/forward history with the tab
     t._navIdx = navIdx;
@@ -2603,7 +2609,7 @@
     const lim = Math.min((typeof t._renderLimit === 'number' ? t._renderLimit : RENDER_PAGE), RENDER_PAGE * 8);
     if (lim > renderLimit) { renderLimit = lim; renderPosts(true); }
     const y = (typeof t._scrollTop === 'number') ? t._scrollTop : 0;
-    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
   }
   function updateActiveTabTitle() {
     if (!activeTabId) return;
@@ -2665,7 +2671,7 @@
     activeTabId = id;
     applyState({ f: [], ops: {}, search: '', sort: sortSelect.value, multi: false });
     adoptTabNav(tabs.find((t) => t.id === id));   // fresh tab → fresh history (seeded with the empty view)
-    requestAnimationFrame(() => window.scrollTo(0, 0));   // new tab starts at the top
+    requestAnimationFrame(() => scrollContentTo(0));   // new tab starts at the top
     renderTabs(); persistTabsDebounced();
   }
   function closeTab(id) {
@@ -2925,7 +2931,7 @@
     grid.appendChild(sentinel);
     moreObserver = new IntersectionObserver((entries) => {
       if (entries.some((en) => en.isIntersecting)) { renderLimit += RENDER_PAGE; renderPosts(true); }
-    }, { rootMargin: '800px' });
+    }, { root: contentScrollEl(), rootMargin: '800px' });
     moreObserver.observe(sentinel);
   }
   // Card images with a reserved height (shotW/shotH or cached aspect) don't re-pack
@@ -5934,7 +5940,8 @@
   // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
   // remembered position is current at restart. persistTabsDebounced captures scrollY.
   let _scrollPersistTimer = null;
-  window.addEventListener('scroll', () => {
+  const _contentScroller = contentScrollEl();
+  if (_contentScroller) _contentScroller.addEventListener('scroll', () => {
     clearTimeout(_scrollPersistTimer);
     _scrollPersistTimer = setTimeout(persistTabsDebounced, 400);
   }, { passive: true });

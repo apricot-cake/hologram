@@ -9,11 +9,6 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* Reserve the viewport scrollbar gutter permanently: otherwise the bar
-       pops in/out as content grows and the grid width jumps ±10px, which
-       breaks the tile slider's exact column-fit math mid-drag. */
-    html { scrollbar-gutter: stable; }
-
     /* --- Design tokens (colours, type, spacing, light/dark) live in
        design-tokens.css, linked above. Legacy var names (--fg / --muted /
        --border-soft …) are aliased there onto the new semantic tokens, so the
@@ -22,7 +17,7 @@
     body {
       font: 14px/1.6 var(--font-sans);
       background: var(--bg); color: var(--fg);
-      display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden;
+      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
     }
     #tabBar {
       height: var(--tabbar-h); flex-shrink: 0; display: flex; align-items: center;
@@ -146,12 +141,9 @@
       --sb-gutter: 12px;
       width: 248px; flex-shrink: 0; z-index: 30;
       /* Floating "window" sidebar (Claude-app style): rounded card with a margin on
-         all sides, starting BELOW the full-width query-builder bar. It sticks under
-         the tab bar + query bar as the window scrolls. */
-      position: sticky;
-      top: calc(var(--tabbar-h) + var(--activebar-h) + var(--sidebar-float));
-      height: calc(100vh - var(--tabbar-h) - var(--activebar-h) - var(--sidebar-float) * 2);
-      margin: var(--sidebar-float) var(--sidebar-float) var(--sidebar-float) var(--sidebar-float);
+         all sides. appBody is a fixed-height flex row (the content area scrolls, not
+         the page), so the sidebar just stretches to it — no sticky needed. */
+      margin: var(--sidebar-float);
       /* Flat fill — the vertical gradient was dropped (user). */
       background-color: var(--sidebar-bg);
       display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
@@ -272,8 +264,12 @@
     }
     #sidebar select, #sidebar input.search-box { width: 100%; }
 
-    #appMain { flex: 1; min-width: 0; display: flex; }
-    #mode-post { flex: 1; min-width: 0; padding: 24px 32px; overflow-anchor: none; }
+    #appMain { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
+    /* The content area is the scroll container (not the page): the scrollbar stays
+       inside the grid column, never crossing the tab/query bands or the sidebar.
+       scrollbar-gutter:stable keeps the column width from jumping ±10px as the bar
+       toggles (the tile slider's column-fit math depends on a stable width). */
+    #mode-post { flex: 1; min-width: 0; min-height: 0; padding: 24px 32px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
 
     /* --- Modern scrollbars (Chromium/Electron). NOTE: setting the standard
        `scrollbar-width` property disables these ::-webkit-scrollbar rules in
@@ -286,23 +282,6 @@
     }
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--text-muted) 70%, transparent); background-clip: padding-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
-
-    /* Scrollbar-gutter caps. html reserves a permanent --scrollbar-w gutter
-       (scrollbar-gutter: stable). The full-width header bands (tab strip + query
-       bar) live inside body, which is that much narrower than the viewport, so the
-       content bg shows through the gutter strip and the white query bar looks like
-       the scrollbar bites a grey notch out of its right edge (ユーザー報告). Paint
-       the gutter with each band's own fill. Fixed positioning escapes body's
-       overflow-x:hidden; body has no view-transition-name so these don't fight the
-       mode-switch snapshots. The query bar's cap is dropped in poster mode where
-       that band is hidden. */
-    body::before, body::after {
-      content: ''; position: fixed; right: 0; width: var(--scrollbar-w);
-      z-index: 60; pointer-events: none;
-    }
-    body::before { top: 0; height: var(--tabbar-h); background: var(--tabbar-bg); }
-    body::after { top: var(--tabbar-h); height: var(--activebar-h); background: var(--sidebar-bg); }
-    body.browse-posters::after { display: none; }
 
     /* Sidebar scrollbar: auto-hide (macOS / Claude-Desktop overlay language).
        A permanently-visible thumb drew a vertical line down the sidebar's right
@@ -2265,9 +2244,8 @@
        never disappears, only the layering changes. Esc/× closes; clicking a
        card while it is open swaps the content (double-click → gallery). */
     .inspector {
-      width: 320px; flex-shrink: 0; position: sticky;
-      top: calc(var(--tabbar-h) + var(--activebar-h)); height: calc(100vh - var(--tabbar-h) - var(--activebar-h));
-      overflow-y: auto; overscroll-behavior: contain; z-index: 25;
+      width: 320px; flex-shrink: 0;
+      height: 100%; overflow-y: auto; overscroll-behavior: contain; z-index: 25;
       background: var(--surface); border-left: 1px solid var(--border);
       padding: 16px 18px; font-size: 12px;
     }
@@ -2275,7 +2253,7 @@
     .inspector:not([hidden]) { animation: corpusPanelIn .2s ease-out; }
     @media (max-width: 1279px) {
       .inspector {
-        position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0;
+        position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0; bottom: 0; height: auto;
         border-left: 1px solid var(--glass-border); box-shadow: var(--shadow-lg), var(--glass-edge);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
         /* Floating over the grid -> glass. The inline (wide) column stays
@@ -2388,7 +2366,6 @@
       .glass-lens::before, .glass-frost::before, .glass-relief::before { background: none; }
       .sb-active-chip { background: var(--surface-3); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: var(--border); }
       .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      body::after { background: var(--bg); }
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
