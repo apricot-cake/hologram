@@ -237,6 +237,9 @@
     unitMonth: _s('unitMonth'),
     backupOverlap: _s('backupOverlap'),
     backupLastLabel: _s('backupLastLabel'),
+    mirrorDone: _s('mirrorDone'),
+    mirrorSyncingShort: _s('mirrorSyncingShort'),
+    mirrorFailed: _s('mirrorFailed'),
     backupItemsUnit: _s('backupItemsUnit'),
     backupSyncing: _s('backupSyncing'),
 
@@ -5519,20 +5522,10 @@
       const p = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     };
-    const fmtMirrorTime = (iso) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return '';
-      const now = new Date();
-      const p = (n) => String(n).padStart(2, '0');
-      const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
-      if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return hhmm;
-      if ((+now - +d) < 2 * 86400000) return `昨 ${hhmm}`;
-      return `${d.getMonth() + 1}/${d.getDate()}`;
-    };
-    // Familiar circular-arrows sync glyph (refresh-cw) + a warning triangle for the
-    // error state, so the rail reads as a sync indicator rather than a bare ↑/⚠.
+    // Status glyphs: spinning circular-arrows (syncing), a check (done) and a warning
+    // triangle (error). Paired with an explicit word so the rail says WHAT it is.
     const MS_ICON_SYNC = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+    const MS_ICON_DONE = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
     const MS_ICON_WARN = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     let mirrorSyncing = false;
     function updateMirrorStatus() {
@@ -5540,20 +5533,22 @@
       if (!el) return;
       // No backup folder configured → nothing in the rail (progressive disclosure).
       if (!cfg || !cfg.dir) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
-      // Syncing now: spinning sync glyph in the accent colour.
+      // Syncing now: spinning glyph + "バックアップ中…".
       if (mirrorSyncing) {
-        el.innerHTML = MS_ICON_SYNC; el.className = 'mirror-status is-syncing'; el.title = MSG.backupSyncing; return;
+        el.innerHTML = MS_ICON_SYNC + `<span class="ms-t">${escapeHtml(MSG.mirrorSyncingShort)}</span>`;
+        el.className = 'mirror-status is-syncing'; el.title = MSG.backupSyncing; return;
       }
       const r = cfg.lastResult;
       if (!r) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
-      // Last run failed: warning glyph in the danger colour + the error as the hint.
+      // Last run failed: warning glyph + "バックアップ失敗", the error as the hint.
       if (r.ok === false && r.error) {
-        el.innerHTML = MS_ICON_WARN; el.className = 'mirror-status is-error'; el.title = r.error; return;
+        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorFailed)}</span>`;
+        el.className = 'mirror-status is-error'; el.title = r.error; return;
       }
-      // Synced OK: muted sync glyph + the last-run time, with the count in the hint.
-      el.className = 'mirror-status';
-      const t = fmtMirrorTime(r.at);
-      el.innerHTML = MS_ICON_SYNC + (t ? `<span class="ms-t">${escapeHtml(t)}</span>` : '');
+      // Synced OK: check glyph + "バックアップ済み"; the precise last-run time + count
+      // go to the tooltip (the rail is too narrow for both, and the word is the point).
+      el.className = 'mirror-status is-done';
+      el.innerHTML = MS_ICON_DONE + `<span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>`;
       let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;

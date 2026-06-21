@@ -328,7 +328,7 @@
     /* 件数はサイドバー左下（設定の歯車の隣）に常駐。subtle だと読めないと
        指摘があったので muted（セカンダリの標準）まで上げる */
     .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
-    .mirror-status { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 90px; }
+    .mirror-status { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 150px; }
     .mirror-status .ms-ic { flex-shrink: 0; }
     .mirror-status .ms-t { overflow: hidden; text-overflow: ellipsis; }
     .mirror-status.is-error { color: var(--danger); }
@@ -517,49 +517,27 @@
       width: calc((100% - 8px) / 3);   /* card fallback before JS measures left/width */
       border-radius: 6px;
       transition: left .22s var(--ease-out), width .22s var(--ease-out);
-      /* LIGHT glass bead — CONVEX, not a diagonal smear: clear-ish CENTRE (the grey track
-         shows through the thinnest part) → brighter toward the rim, a symmetric luminous
-         RIM (the 縁感), and a top-centre dome highlight (::before) = reads as a bulging
-         lens. No diagonal colour wash / no bottom inner-shadow (those read lopsided &
-         concave). Frost blur keeps it translucent. (Dark recipe below.) */
-      background: radial-gradient(105% 92% at 50% 50%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.34) 56%, rgba(255,255,255,0.55) 100%);
-      backdrop-filter: blur(6px) saturate(130%);
-      -webkit-backdrop-filter: blur(6px) saturate(130%);
+      /* FLAT frosted glass (no convex bead): an even translucent fill, a thin bright rim,
+         and a soft drop. The frost blur carries the glass; NO centre-clear→rim radial,
+         dome highlight, inner bloom or convex lift — those read as a bulging plastic
+         bead (user pref 2026-06-21: フラットなガラス感). Dark recipe below. */
+      background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0.40));
+      backdrop-filter: blur(7px) saturate(125%);
+      -webkit-backdrop-filter: blur(7px) saturate(125%);
       box-shadow:
-        inset 0 0 0 1px rgba(255,255,255,0.92),     /* bright glass rim — symmetric all around (縁感) */
-        inset 0 0 6px 0 rgba(255,255,255,0.42),       /* inner edge bloom (luminous rim) */
-        0 0 0 0.5px rgba(20,22,40,0.10),              /* crisp outer hairline = defined edge */
-        0 1px 1px rgba(20,22,40,0.06),
-        0 6px 14px -6px rgba(20,22,40,0.20);          /* convex lift */
+        inset 0 0 0 1px rgba(255,255,255,0.70),     /* thin glass rim (縁感) */
+        0 1px 2px rgba(20,22,40,0.10);              /* soft flat drop */
     }
-    /* Top-centre dome highlight — light hitting the top of the bulge (convex cue). Symmetric
-       horizontally, so the clear/bright area sits centred, not in a corner. LIGHT only;
-       dark keeps its previous diagonal gloss (it was already approved). */
-    .vt-thumb::before {
-      content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-      background: radial-gradient(62% 44% at 50% 14%, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.14) 52%, transparent 74%);
-    }
-    [data-theme="dark"] .vt-thumb::before {
-      background: linear-gradient(135deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.16) 20%, transparent 44%);
-    }
+    /* No dome highlight — flat glass in both themes (the ::before convex cue is retired). */
+    .vt-thumb::before { display: none; }
     [data-theme="dark"] .vt-thumb {
-      background:
-        radial-gradient(135% 150% at 20% -10%, rgba(129,140,248,0.16), transparent 52%),
-        radial-gradient(135% 150% at 105% 110%, rgba(56,189,248,0.13), transparent 52%),
-        linear-gradient(180deg, color-mix(in srgb, var(--seg-thumb) 88%, #fff) 0%, var(--seg-thumb) 100%);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--seg-thumb) 94%, #fff) 0%, var(--seg-thumb) 100%);
       box-shadow:
-        inset 0 1px 0.5px var(--glass-hi),
-        inset 1.5px 1.5px 0 rgba(255,150,170,0.10),
-        inset -1.5px -1.5px 0 rgba(120,170,255,0.12),
         inset 0 0 0 1px var(--glass-rim),
-        var(--glass-drop-sm);
+        0 1px 2px rgba(0,0,0,0.28);
     }
-    /* Liquid-glass "jelly" slide: the thumb momentarily bulges as it moves between
-       segments (Apple Liquid Glass = the indicator grows a touch mid-travel, then settles).
-       Re-triggered per click in JS (toggle .vt-sliding). Runs alongside the left/width slide. */
-    @keyframes vtBulge { 0% { transform: scale(1); } 42% { transform: scale(1.11); } 100% { transform: scale(1); } }
-    .vt-thumb.vt-sliding { animation: vtBulge .34s var(--ease-out); }
-    @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } .vt-thumb.vt-sliding { animation: none; } }
+    /* Flat slide — no jelly bulge (the mid-travel scale pulse read as the thumb puffing up). */
+    @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
     .view-toggle button { position: relative; z-index: 1; }
     /* Active glyph: light uses a soft grey (the glass thumb IS the active cue, so the
        icon needn't go near-black); dark keeps bright ink to read on the dark thumb. */
