@@ -2238,7 +2238,8 @@
        never disappears, only the layering changes. Esc/× closes; clicking a
        card while it is open swaps the content (double-click → gallery). */
     .inspector {
-      width: 320px; flex-shrink: 0; position: sticky; top: var(--tabbar-h); height: calc(100vh - var(--tabbar-h));
+      width: 320px; flex-shrink: 0; position: sticky;
+      top: calc(var(--tabbar-h) + var(--activebar-h)); height: calc(100vh - var(--tabbar-h) - var(--activebar-h));
       overflow-y: auto; overscroll-behavior: contain; z-index: 25;
       background: var(--surface); border-left: 1px solid var(--border);
       padding: 16px 18px; font-size: 12px;
@@ -2247,7 +2248,7 @@
     .inspector:not([hidden]) { animation: corpusPanelIn .2s ease-out; }
     @media (max-width: 1279px) {
       .inspector {
-        position: fixed; top: var(--tabbar-h); right: 0;
+        position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0;
         border-left: 1px solid var(--glass-border); box-shadow: var(--shadow-lg), var(--glass-edge);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
         /* Floating over the grid -> glass. The inline (wide) column stays
