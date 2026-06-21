@@ -165,6 +165,7 @@
     posterFolderRenamePrompt: _s('posterFolderRenamePrompt'),
     posterMenuNewFolder: _s('posterMenuNewFolder'),
     ivPosterFolders: _s('ivPosterFolders'),
+    ivPosterTags: _s('ivPosterTags'),
     posterFolderAdded: _f1('posterFolderAdded'),
     posterFolderRemoved: _f1('posterFolderRemoved'),
 
@@ -4199,6 +4200,52 @@
     });
   })();
 
+  // Poster inspector tag editor — mirrors the post editor above with the poster ids
+  // (pdTag*), keyed by the inspected poster (inspectedKey = 'poster:<key>'). Shares
+  // the same delegated #postDetail panel; the box is regenerated per showPosterDetail.
+  (function setupPosterTagEditor() {
+    const panel = document.getElementById('postDetail');
+    if (!panel) return;
+    const posterKey = () => (typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) ? inspectedKey.slice('poster:'.length) : null;
+    const addTyped = () => {
+      const input = document.getElementById('pdTagInput');
+      const key = posterKey();
+      if (!input || !key) return;
+      const tag = input.value.trim();
+      if (tag) applyPosterTagChange(key, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
+      input.value = ''; pdPickQuery = '';
+      refreshPosterPicker(key);
+      input.focus();
+    };
+    panel.addEventListener('click', (e) => {
+      const key = posterKey(); if (!key) return;
+      if (e.target.closest('#pdTagAdd')) { addTyped(); return; }
+      const rm = e.target.closest('#pdTagChips [data-tag]');
+      if (rm) { const t = rm.dataset.tag; applyPosterTagChange(key, (prev) => prev.filter((x) => x !== t)); return; }
+      const pick = e.target.closest('#pdTagPicker .edit-pick-chip');
+      if (pick) { const t = pick.dataset.pick; applyPosterTagChange(key, (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); return; }
+    });
+    panel.addEventListener('contextmenu', (e) => {
+      const key = posterKey(); if (!key) return;
+      const chip = e.target.closest('#pdTagChips [data-tag], #pdTagPicker .edit-pick-chip');
+      if (!chip) return;
+      e.preventDefault();
+      const tag = chip.dataset.tag || chip.dataset.pick;
+      if (tag && taggingApi && taggingApi.showKindMenu) {
+        taggingApi.showKindMenu(tag, e.clientX, e.clientY, () => { const k = posterKey(); if (k) { refreshPosterTags(k); refreshPosterPicker(k); } });
+      }
+    });
+    panel.addEventListener('input', (e) => {
+      if (e.target.id !== 'pdTagInput') return;
+      const key = posterKey(); if (!key) return;
+      pdPickQuery = e.target.value.trim();
+      refreshPosterPicker(key);
+    });
+    panel.addEventListener('keydown', (e) => {
+      if (e.target.id === 'pdTagInput' && e.key === 'Enter') { e.preventDefault(); addTyped(); }
+    });
+  })();
+
   document.getElementById('editCancel').addEventListener('click', () => {
     editingPost = null;
     editAdditive = false;
@@ -4467,6 +4514,11 @@
   let posterWorkGroups = [];         // recent works shown in the poster inspector
   let posterFavorites = new Set();   // starred poster keys (persisted poster-favorites.json)
   let posterFavOnly = false;         // sidebar toggle: show only favorited posters
+  // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
+  // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
+  let posterTags = {};
+  function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
+  function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
   const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg>';
   function persistFavorites() { if (window.corpus.setPosterFavorites) window.corpus.setPosterFavorites([...posterFavorites]).catch(() => { /* best-effort */ }); }
   function toggleFavorite(u) {
@@ -4604,6 +4656,41 @@
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
   }
+  // --- Poster inspector inline tag editor ---
+  // Mirrors the post inspector's tag editor (refreshInspectorTags/Picker + the
+  // delegated handlers), but the source of truth is posterTags[key] (NOT a post's
+  // tags), persisted to poster-tags.json. Posters carry no source (pixiv/SNS) tags,
+  // so the picker is fed recordsForSource:[]. The UI shows whenever the poster
+  // inspector is open (no tagging-edit gate — there is no poster tagging mode).
+  let pdPickQuery = '';
+  function refreshPosterTags(key) {
+    const host = document.getElementById('pdTagChips');
+    if (!host) return;
+    const tags = posterTagsOf(key);
+    host.innerHTML = tags.length
+      ? tags.map((t) => `<span class="tag-chip" data-tag="${escapeAttr(t)}">${escapeHtml(t)} ×</span>`).join('')
+      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
+  }
+  function refreshPosterPicker(key) {
+    const host = document.getElementById('pdTagPicker');
+    if (!host) return;
+    const keep = host.scrollTop;
+    renderTagPicker({ host, selectedTags: posterTagsOf(key), recordsForSource: [], query: pdPickQuery });
+    host.scrollTop = keep;
+  }
+  // Apply a tag mutation to a poster, persist, and refresh the inspector sub-parts
+  // (so the input keeps focus and the picker keeps its scroll). No undo stack: poster
+  // tags are a lightweight per-poster list, not the post-tag mutation history.
+  function applyPosterTagChange(key, mutate) {
+    if (!key) return;
+    const prev = posterTagsOf(key);
+    const next = mutate(prev.slice());
+    if (!next) return;
+    if (next.length) posterTags[key] = next; else delete posterTags[key];
+    persistPosterTags();
+    refreshPosterTags(key);
+    refreshPosterPicker(key);
+  }
   function showPosterDetail(u) {
     if (!u) return;
     const box = document.getElementById('postDetailBox');
@@ -4638,6 +4725,7 @@
       pfStore.all().map((f) => `<button class="iv-folder-chip${posterFolderHas(f.id, u.key) ? ' on' : ''}" data-pffid="${escapeAttr(f.id)}">${escapeHtml(f.name)}</button>`).join('') +
       `<button class="iv-folder-chip iv-folder-add" id="pdFolderNew" title="${escapeAttr(MSG.posterFolderNewPlaceholder)}">＋</button>` +
       `</div></span></div>` +
+      `<div id="pdTagEdit" class="iv-tag-edit iv-tag-edit-poster"><div class="iv-tag-label">${escapeHtml(MSG.ivPosterTags)}</div><div id="pdTagChips" class="iv-tag-chips"></div><div class="iv-tag-addrow"><input type="text" id="pdTagInput" placeholder="${escapeAttr(MSG.tagNewName)}" autocomplete="off"><button class="btn-outline" id="pdTagAdd">${escapeHtml(MSG.tagAddBtn)}</button></div><div id="pdTagPicker" class="edit-picker iv-tag-picker"></div></div>` +
       `<div class="iv-insp-actions">` +
       `<a class="iv-insp-open" id="pdPosterPosts">${escapeHtml(MSG.posterViewPosts)} →</a>` +
       `</div>`;
@@ -4660,6 +4748,9 @@
     box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
       t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) openGallery(buildGroupGalleryItems(g), 0); };
     });
+    pdPickQuery = '';
+    refreshPosterTags(u.key);
+    refreshPosterPicker(u.key);
   }
   document.getElementById('posterGrid').addEventListener('click', (e) => {
     const card = e.target.closest('.poster-card');
@@ -5443,6 +5534,7 @@
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterFavorites ? await window.corpus.getPosterFavorites() : null; posterFavorites = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; pfStore.setAll((r && r.folders) || []); } catch { /* default empty */ }
+  try { const r = window.corpus.getPosterTags ? await window.corpus.getPosterTags() : null; posterTags = (r && r.tags) || {}; } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null; tagTypes = (r && r.types) || {}; } catch { /* default empty */ }

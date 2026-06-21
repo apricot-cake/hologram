@@ -61,7 +61,7 @@ function getSaveFolder() {
 const INTERNAL_FILES = new Set([
   'config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json',
   'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json',
-  'poster-folders.json',
+  'poster-folders.json', 'poster-tags.json',
 ]);
 
 // Watch the save folder and tell the renderer to refresh when files change
@@ -416,6 +416,31 @@ ipcMain.handle('set-poster-folders', (_e, data) => {
   try {
     fs.writeFileSync(path.join(folder, 'poster-folders.json'),
       JSON.stringify({ folders: data.folders }, null, 2), 'utf8');
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
+// Per-poster tags (poster view). { tags: { "<posterKey>": ["tag", …] } } — the
+// poster-level peer of poster-favorites/poster-folders. Shares the post tag
+// vocabulary (tag-groups/tag-types) but is keyed by poster, NOT stored on posts.
+ipcMain.handle('get-poster-tags', () => {
+  const folder = getSaveFolder();
+  if (!folder) return { tags: {} };
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-tags.json'), 'utf8'));
+    return { tags: (j && typeof j.tags === 'object' && j.tags) ? j.tags : {} };
+  } catch {
+    return { tags: {} };
+  }
+});
+ipcMain.handle('set-poster-tags', (_e, data) => {
+  const folder = getSaveFolder();
+  if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
+  try {
+    fs.writeFileSync(path.join(folder, 'poster-tags.json'),
+      JSON.stringify({ tags: data.tags }, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };
@@ -845,7 +870,7 @@ ipcMain.handle('clear-all', async () => {
   const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
   try {
     for (const f of fs.readdirSync(folder)) {
-      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'tag-types.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json') continue;
+      if (f === 'config.json' || f === '.index.json' || f === 'tag-groups.json' || f === 'tag-types.json' || f === 'ungrouped.json' || f === 'manual-groups.json' || f === 'folders.json' || f === 'tabs.json' || f === 'poster-favorites.json' || f === 'poster-folders.json' || f === 'poster-tags.json') continue;
       if (CLEAR_RE.test(f)) {
         try { fs.unlinkSync(path.join(folder, f)); count++; } catch { /* skip */ }
       }
