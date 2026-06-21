@@ -14,9 +14,29 @@
 // Port via $CDP_PORT (default 9223). Page target = the one loading index.html.
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const cp = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = process.env.CDP_PORT || 9223;
+
+// OS-level window control for the Electron window. This Electron build's CDP has
+// NO Browser.* domain (Browser.getWindowForTarget -> -32601), so a minimized window
+// (which stops painting -> blank/black capture even with fromSurface:false) can't be
+// restored over CDP. Shell out to user32 instead. cmd: 9=SW_RESTORE, 6=SW_MINIMIZE.
+function osShowWindow(cmd) {
+  const ps1 = `Add-Type @"
+using System;using System.Runtime.InteropServices;
+public class W{[DllImport("user32.dll")]public static extern bool ShowWindowAsync(IntPtr h,int n);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);}
+"@
+$p=Get-Process electron -ErrorAction SilentlyContinue|Where-Object{$_.MainWindowHandle -ne 0}|Select-Object -First 1
+if($p){[void][W]::ShowWindowAsync($p.MainWindowHandle, ${cmd}); if(${cmd} -eq 9){[void][W]::SetForegroundWindow($p.MainWindowHandle)}}
+`;
+  const f = path.join(os.tmpdir(), 'corpus-cdp-win.ps1');
+  fs.writeFileSync(f, ps1, 'utf8');
+  try { cp.execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore' }); } catch (e) { /* best-effort */ }
+}
 
 function getTarget() {
   return new Promise((resolve, reject) => {
@@ -73,16 +93,20 @@ async function main() {
     else console.log(typeof r.result.value === 'string' ? r.result.value : JSON.stringify(r.result.value, null, 2));
   } else {
     await send('Page.enable', {});
-    // A minimized window stops painting → blank frames. Restore + focus before capture.
-    try { const w = await send('Browser.getWindowForTarget', {}); if (w && w.windowId != null) await send('Browser.setWindowBounds', { windowId: w.windowId, bounds: { windowState: 'normal' } }); } catch (e) { /* ignore */ }
+    await send('Runtime.enable', {});
+    // A minimized window stops painting → blank/black frames (even fromSurface:false).
+    // Detect it (Windows minimized → screenX == -32000), restore at the OS level, then
+    // re-minimize afterward so the window is left exactly as found (the user keeps it
+    // minimized to stay out of the way — don't pop it up for good).
+    let wasMin = false;
+    try { const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true }); wasMin = !!(r && r.result && r.result.value); } catch (e) { /* ignore */ }
+    if (wasMin) { osShowWindow(9); await new Promise((r) => setTimeout(r, 400)); }   // SW_RESTORE + repaint
     try { await send('Page.bringToFront', {}); } catch (e) { /* ignore */ }
-    // fromSurface:false captures from the renderer's compositor instead of the OS
-    // window surface, so it still works when the window is minimized/occluded
-    // (a minimized window has no surface → "-32000 Unable to capture screenshot").
     const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false, fromSurface: process.env.CDP_SURFACE === '1' });
     const out = arg || 'scripts/_shot.jpg';
     fs.writeFileSync(out, Buffer.from(r.data, 'base64'));
     console.log('wrote', out, Buffer.from(r.data, 'base64').length, 'bytes');
+    if (wasMin) osShowWindow(6);   // SW_MINIMIZE — leave the window as we found it
   }
   ws.close();
 }
