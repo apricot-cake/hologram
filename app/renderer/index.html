@@ -1269,6 +1269,9 @@
       box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border); padding: 16px;
       z-index: 1001; min-width: 260px;
     }
+    /* Poster date popover: 日付の種類 / 並び替え / 期間 を小見出し付きで縦に積む。 */
+    .pd-field { margin-bottom: 10px; }
+    .pd-label { display: block; font-size: 10.5px; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 4px; }
 
     /* --- App layout: content column beside the persistent left #sidebar --- */
     .app-content { flex: 1; min-width: 0; }
@@ -1749,7 +1752,6 @@
           <select id="posterSortSelect">
             <option value="count"></option>
             <option value="name"></option>
-            <option value="recent"></option>
           </select>
           <!-- Filter rows (mirror #filterRows): each row opens a flyout of that
                category's values; the badge counts active selections. Poster-only
@@ -2085,17 +2087,29 @@
        Separate from #qfDatePopover so the post-side handlers (addFilter/queryTree)
        stay untouched; this writes the transient posterDate state. -->
   <div class="qf-popover" id="posterDatePopover" style="display:none;">
-    <div style="margin-bottom:8px;">
+    <div class="pd-field">
+      <span class="pd-label" id="posterDateDimLabel"></span>
       <select class="engagement-select" id="posterDateDim" style="width:100%;">
         <option value="latest"></option>
         <option value="lastCapture"></option>
         <option value="authorCreatedAt"></option>
       </select>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
-      <input type="date" class="date-input" id="posterDateFrom">
-      <span style="font-size:12px;color:var(--text-subtle);">〜</span>
-      <input type="date" class="date-input" id="posterDateTo">
+    <div class="pd-field">
+      <span class="pd-label" id="posterDateDirLabel"></span>
+      <select class="engagement-select" id="posterDateDir" style="width:100%;">
+        <option value="none"></option>
+        <option value="desc"></option>
+        <option value="asc"></option>
+      </select>
+    </div>
+    <div class="pd-field">
+      <span class="pd-label" id="posterDateRangeLabel"></span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="date" class="date-input" id="posterDateFrom">
+        <span style="font-size:12px;color:var(--text-subtle);">〜</span>
+        <input type="date" class="date-input" id="posterDateTo">
+      </div>
     </div>
     <div style="display:flex;gap:6px;justify-content:flex-end;">
       <button class="btn-outline qf-popover-delete" id="posterDateClear" style="color:var(--danger);border-color:var(--danger);display:none;"></button>

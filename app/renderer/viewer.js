@@ -176,6 +176,12 @@
     posterDateLastCapture: _s('posterDateLastCapture'),
     posterDateCreated: _s('posterDateCreated'),
     posterDateClear: _s('posterDateClear'),
+    posterDateDimLabel: _s('posterDateDimLabel'),
+    posterDateDirLabel: _s('posterDateDirLabel'),
+    posterDateRangeLabel: _s('posterDateRangeLabel'),
+    posterDateDirNone: _s('posterDateDirNone'),
+    posterDateDirNewest: _s('posterDateDirNewest'),
+    posterDateDirOldest: _s('posterDateDirOldest'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -404,9 +410,14 @@
   setText('sbPosterFavRowName', MSG.posterFavOnly);
   setText('sbPosterFolderRowName', MSG.qfCatFolder);
   { const ps = document.getElementById('posterSortSelect');
-    if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; ps.options[2].textContent = MSG.posterSortRecent; } }
+    if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; } }
   { const pd = document.getElementById('posterDateDim');
     if (pd) { pd.options[0].textContent = MSG.posterDateLastPost; pd.options[1].textContent = MSG.posterDateLastCapture; pd.options[2].textContent = MSG.posterDateCreated; } }
+  { const pdir = document.getElementById('posterDateDir');
+    if (pdir) { pdir.options[0].textContent = MSG.posterDateDirNone; pdir.options[1].textContent = MSG.posterDateDirNewest; pdir.options[2].textContent = MSG.posterDateDirOldest; } }
+  setText('posterDateDimLabel', MSG.posterDateDimLabel);
+  setText('posterDateDirLabel', MSG.posterDateDirLabel);
+  setText('posterDateRangeLabel', MSG.posterDateRangeLabel);
   setText('posterDateApply', MSG.qfApply);
   setText('posterDateClear', MSG.posterDateClear);
   setText('settingsThemeTitle', MSG.themeTitle);
@@ -1272,15 +1283,17 @@
     const anchor = anchorRow || document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
     if (!anchor) return;
     document.getElementById('posterDateDim').value = posterDate.dim || 'latest';
+    document.getElementById('posterDateDir').value = posterDate.dir || 'none';
     document.getElementById('posterDateFrom').value = posterDate.from || '';
     document.getElementById('posterDateTo').value = posterDate.to || '';
-    document.getElementById('posterDateClear').style.display = (posterDate.from || posterDate.to) ? '' : 'none';
+    document.getElementById('posterDateClear').style.display = (posterDate.from || posterDate.to || posterDate.dir !== 'none') ? '' : 'none';
     popover.style.display = 'block';
     placeFlyout(popover, anchor.getBoundingClientRect());
   }
   document.getElementById('posterDateApply').addEventListener('click', () => {
     posterDate = {
       dim: document.getElementById('posterDateDim').value || 'latest',
+      dir: document.getElementById('posterDateDir').value || 'none',
       from: document.getElementById('posterDateFrom').value || '',
       to: document.getElementById('posterDateTo').value || ''
     };
@@ -1289,7 +1302,7 @@
     renderPosters();
   });
   document.getElementById('posterDateClear').addEventListener('click', () => {
-    posterDate = { dim: posterDate.dim, from: '', to: '' };
+    posterDate = { dim: posterDate.dim, dir: 'none', from: '', to: '' };   // keep the axis, drop sort + range
     closeAllMenus();
     renderPosterFilterRows();
     renderPosters();
@@ -4671,7 +4684,7 @@
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   let posterList = [];
-  let posterSort = 'count';          // 'count' | 'name' | 'recent'
+  let posterSort = 'count';          // 'count' | 'name' (date sorting lives in posterDate.dir)
   // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
   // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
   let posterView = 'card';           // 'card' | 'tile' | 'list'
@@ -4717,9 +4730,11 @@
   let posterTagFilter = new Set();
   let posterInstanceFilter = new Set();   // active misskey/mastodon host filter (transient)
   let posterWorkspaceFilter = false;      // sidebar toggle: show only posters in the workspace tray
-  // Date-range filter (transient): which poster date to test + from/to (YYYY-MM-DD).
-  // dim: 'authorCreatedAt'(アカウント作成日) | 'lastCapture'(最終取得日) | 'latest'(最終投稿日).
-  let posterDate = { dim: 'latest', from: '', to: '' };
+  // Date control (transient): a single date axis drives BOTH sorting and range-filtering.
+  // dim: 'authorCreatedAt'(作成日) | 'lastCapture'(取得日) | 'latest'(投稿日).
+  // dir: 'none'(並べ替えなし) | 'desc'(新しい順) | 'asc'(古い順) — when ≠none it overrides
+  //      the 投稿数/名前 sort select. from/to = YYYY-MM-DD range filter on that same dim.
+  let posterDate = { dim: 'latest', dir: 'none', from: '', to: '' };
   function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
   function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
   // Tags actually applied to at least one poster — the vocabulary the filter offers.
@@ -4800,7 +4815,7 @@
       'poster-character': sel.filter((t) => tagKindOf(t) === 'character').length,
       'poster-tag': sel.filter((t) => !tagKindOf(t)).length,
       'poster-instance': posterInstanceFilter.size,
-      'poster-date': (posterDate.from || posterDate.to) ? 1 : 0,
+      'poster-date': (posterDate.from || posterDate.to || posterDate.dir !== 'none') ? 1 : 0,
       'poster-folder': posterFolderFilter ? 1 : 0
     };
     document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
@@ -4847,9 +4862,23 @@
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
-    if (posterSort === 'name') list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
-    else if (posterSort === 'recent') list.sort((a, b) => (b.latest || '').localeCompare(a.latest || '') || b.count - a.count);
-    else list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b)));   // 'count' (default)
+    if (posterDate.dir === 'desc' || posterDate.dir === 'asc') {
+      // Date sort (from the date control) overrides the 投稿数/名前 select. Posters with
+      // no value for that date axis sort last regardless of direction.
+      const f = posterDate.dim, asc = posterDate.dir === 'asc';
+      list.sort((a, b) => {
+        const av = a[f] || '', bv = b[f] || '';
+        if (!av && !bv) return b.count - a.count;
+        if (!av) return 1;
+        if (!bv) return -1;
+        const c = av.localeCompare(bv);   // ISO strings compare lexically
+        return (asc ? c : -c) || (b.count - a.count);
+      });
+    } else if (posterSort === 'name') {
+      list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
+    } else {
+      list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b)));   // 'count' (default)
+    }
     return list;
   }
   // Platform display order — shared by the poster-platform flyout (qfValues).
@@ -5098,7 +5127,12 @@
   });
   // Poster-mode sort (sidebar). The remaining poster filters are rows → flyouts.
   { const ps = document.getElementById('posterSortSelect');
-    if (ps) ps.addEventListener('change', () => { posterSort = ps.value; renderPosters(); }); }
+    if (ps) ps.addEventListener('change', () => {
+      posterSort = ps.value;
+      posterDate.dir = 'none';   // picking 投稿数/名前 clears any date sort (keeps the date range)
+      renderPosterFilterRows();  // date badge may drop if it was only a sort
+      renderPosters();
+    }); }
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
   // flyout (poster-* categories); the date row opens the date popover; favorites is a
   // toggle row (no flyout). Selections live in the transient posterXxx state.

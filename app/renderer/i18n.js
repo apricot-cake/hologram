@@ -174,6 +174,12 @@
       posterDateLastCapture: '最終取得日',
       posterDateCreated: 'アカウント作成日',
       posterDateClear: 'クリア',
+      posterDateDimLabel: '日付の種類',
+      posterDateDirLabel: '並び替え',
+      posterDateRangeLabel: '期間',
+      posterDateDirNone: '並べ替えなし',
+      posterDateDirNewest: '新しい順',
+      posterDateDirOldest: '古い順',
 
       // viewer: empty states
       emptyTitle: '投稿がありません',
@@ -505,6 +511,12 @@
       posterDateLastCapture: 'Last saved',
       posterDateCreated: 'Account created',
       posterDateClear: 'Clear',
+      posterDateDimLabel: 'Date field',
+      posterDateDirLabel: 'Sort',
+      posterDateRangeLabel: 'Range',
+      posterDateDirNone: "Don't sort",
+      posterDateDirNewest: 'Newest first',
+      posterDateDirOldest: 'Oldest first',
 
       emptyTitle: 'No posts yet',
       emptyDesc: 'Save a post from SNS and it will appear here.',
