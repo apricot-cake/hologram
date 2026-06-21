@@ -5000,9 +5000,15 @@
     }).join('');
   }
   // Jump from a poster to its posts: posts mode + a single user filter for it.
+  // We want ONLY this poster's posts, so drop every post filter carried over from
+  // the prior posts view (tags/date/media/search/engagement) — not just a previous
+  // user filter — otherwise unrelated leftover filters AND-narrow the result and
+  // hide posts the user expects to see.
   function openPosterPosts(u) {
     if (!u) return;
-    removeCondsMatching((c) => c.type === 'user');   // "this poster", not OR-ed with a prior one
+    queryTree = emptyTree();
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
     posterReturn = u.key;   // set LAST (setBrowseMode clears it): reset returns to posters while this user filter is active
