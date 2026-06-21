@@ -20,6 +20,7 @@
     kindImage: _s('kindImage'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
     tipInfo: _s('tipInfo'),
+    tipTagEdit: _s('tipTagEdit'),
     tipSelect: _s('tipSelect'),
     tagSelected: _s('tagSelected'),
     folderSelected: _s('folderSelected'),
@@ -3135,6 +3136,7 @@
         <div class="act-pill" aria-hidden="true"></div>
         <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
+        <button class="tag-btn" data-tagedit="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
         ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" data-cap="${escapeAttr(p.captureId || '')}"${aspRatio ? ` style="aspect-ratio:${aspRatio}"` : ''} loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
         ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
         <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
@@ -3875,7 +3877,7 @@
     // The corner buttons (ℹ info / ⚡ workspace) still work — we skip them.
     postGrid.addEventListener('click', (e) => {
       if (!active) return;
-      if (e.target.closest('.info-btn, .ws-btn')) return;
+      if (e.target.closest('.info-btn, .ws-btn, .tag-btn')) return;
       const card = e.target.closest('.post-card'); if (!card) return;
       e.preventDefault(); e.stopPropagation();
       const g = viewGroups[parseInt(card.dataset.index, 10)]; if (!g) return;
@@ -4146,7 +4148,7 @@
     if (!matchMedia('(max-width: 1279px)').matches) return;
     if (insp.contains(e.target)) return;
     if (!e.target.closest('#mode-post')) return;   // sidebar/overlays: leave it open
-    if (e.target.closest('.info-btn')) return;     // ℹ = swap to that card
+    if (e.target.closest('.info-btn, .tag-btn')) return;  // ℹ/🏷 = swap to that card
     if (e.target.closest('.poster-card')) return;  // poster click = go to that poster's posts
     e.preventDefault();
     e.stopPropagation();
@@ -4162,6 +4164,16 @@
       closeDetail();
       return;
     }
+    showDetail(g);
+  });
+  // 🏷 button on card → enter edit-tagging + open inspector (same as right-click "edit")
+  document.getElementById('postGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tag-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const g = viewGroups[parseInt(btn.dataset.tagedit, 10)];
+    if (!g) return;
+    if (taggingApi) taggingApi.enter('edit');
     showDetail(g);
   });
 

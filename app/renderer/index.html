@@ -880,7 +880,7 @@
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .info-btn, .post-grid.selecting .ws-btn, .post-grid.selecting .act-pill { display: none; }
+    .post-grid.selecting .info-btn, .post-grid.selecting .ws-btn, .post-grid.selecting .tag-btn, .post-grid.selecting .act-pill { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -906,9 +906,9 @@
     .post-grid.list-view .post-meta {
       display: flex; flex-wrap: wrap; align-items: baseline;
       gap: 3px 10px; padding: 9px 14px; flex: 1; min-width: 0;
-      /* keep the right gutter clear for the hover pair (ℹ@8 + ws@40, 28px wide)
-         so the right-aligned date never sits under them */
-      padding-right: 76px;
+      /* keep the right gutter clear for the hover trio (ℹ@8 + ws@40 + tag@72,
+         28px wide) so the right-aligned date never sits under them */
+      padding-right: 104px;
     }
     /* text is the hero: full width, up to 2 lines, darker and a touch larger */
     .post-grid.list-view .post-meta .text {
@@ -941,16 +941,18 @@
        180×0.13=23.4px) rounds width and height differently at fractional
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .info-btn, .post-grid.tile-view .ws-btn {
+    .post-grid.tile-view .info-btn, .post-grid.tile-view .ws-btn, .post-grid.tile-view .tag-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
-    /* Same relative order as card/list (⚡ → ℹ, left to right) */
+    /* Same relative order as card/list (🏷 → ⚡ → ℹ, left to right) */
     .post-grid.tile-view .info-btn { right: 6px; }
     .post-grid.tile-view .ws-btn { right: calc(6px + var(--act) + 4px); }
+    .post-grid.tile-view .tag-btn { right: calc(6px + 2 * (var(--act) + 4px)); }
     .post-grid.tile-view .act-pill { width: var(--act); height: var(--act); top: 6px; right: 6px; }
     .post-grid.tile-view .post-card:has(.ws-btn:hover) .act-pill { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .post-card:has(.info-btn:hover) .act-pill { right: 6px; }
-    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg { width: 60%; height: 60%; }
+    .post-grid.tile-view .post-card:has(.tag-btn:hover) .act-pill { right: calc(6px + 2 * (var(--act) + 4px)); }
+    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg, .post-grid.tile-view .tag-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -1151,7 +1153,7 @@
     /* Hover buttons are glass (they float OVER the thumbnail = transient over
        content). The blur layer is enabled only on the hovered card so 150
        offscreen-invisible buttons don't each cost a backdrop pass. */
-    .post-card:hover .ws-btn, .post-card:hover .info-btn {
+    .post-card:hover .ws-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn {
       backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%);
     }
     .post-card:hover .ws-btn { opacity: 1; }
@@ -1231,6 +1233,21 @@
     .post-card:hover .info-btn { opacity: 1; }
     .post-grid.list-view .info-btn { top: 50%; right: 8px; transform: translateY(-50%); }
 
+    /* --- 🏷 edit-tags button on card (third hover pill, left of ℹ/⚡). The
+       2-button cap was lifted to 3 (⚡ws · ℹinfo · 🏷tags) by user call. --- */
+    .tag-btn {
+      position: absolute; top: 8px; right: 72px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(20,22,26,0.42); color: #fff; border: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
+      z-index: 1;
+    }
+    .tag-btn svg { display: block; }
+    .post-card:hover .tag-btn { opacity: 1; }
+    .post-grid.list-view .tag-btn { top: 50%; right: 72px; transform: translateY(-50%); }
+
     /* Liquid hover highlight: ONE accent blob shared by the two hover buttons,
        gliding between them (iPadOS pointer-style), driven by :has() — no JS.
        It sits under the buttons (earlier in DOM, same z-index), so opaque
@@ -1249,6 +1266,7 @@
     }
     .post-card:has(.ws-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
+    .post-card:has(.tag-btn:hover) .act-pill { right: 72px; opacity: 1; }
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
 
     /* --- Popovers --- */
@@ -2380,8 +2398,8 @@
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .ws-btn, .info-btn { background: rgba(0,0,0,0.6); }
-      .post-card:hover .ws-btn, .post-card:hover .info-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .ws-btn, .info-btn, .tag-btn { background: rgba(0,0,0,0.6); }
+      .post-card:hover .ws-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
   </style>
 
