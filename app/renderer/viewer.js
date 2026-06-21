@@ -240,6 +240,8 @@
     mirrorDone: _s('mirrorDone'),
     mirrorSyncingShort: _s('mirrorSyncingShort'),
     mirrorFailed: _s('mirrorFailed'),
+    timeToday: _s('timeToday'),
+    timeYesterday: _s('timeYesterday'),
     backupItemsUnit: _s('backupItemsUnit'),
     backupSyncing: _s('backupSyncing'),
 
@@ -798,10 +800,12 @@
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   function resetAllFilters() {
+    const bounce = posterReturn;   // capture before afterQueryChange clears it
     queryTree = emptyTree();
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     afterQueryChange();
+    if (bounce) setBrowseMode('posters');   // a poster drill-in → reset returns to the poster grid
   }
   document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
 
@@ -1705,6 +1709,10 @@
   let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card';   // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts';   // 'posts' | 'posters' (what the content area browses)
+  // Set when a poster click jumped us into posts mode with that poster's `user` filter,
+  // so a bare query reset bounces back to the poster grid (where the drill-in started)
+  // instead of just emptying the post query. Cleared by any other query change / mode switch.
+  let posterReturn = false;
   let multiOnly = false;      // show only items with more than one image
   let tileOverlay = true;     // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180;         // tile view: edge px (pref imageTileSize)
@@ -1834,7 +1842,7 @@
   }
   // One canonical refresh after any tree mutation: rebuild the shadow, then
   // renderPosts() (which itself runs updateSidebarState → renderQueryChips).
-  function afterQueryChange() { syncShadow(); renderPostFolders(); renderPosts(); }
+  function afterQueryChange() { posterReturn = false; syncShadow(); renderPostFolders(); renderPosts(); }
 
   // --- Inline builder interaction: drag pills/groups into parenthesised groups ---
   // (docs/design-query-builder.md 改訂③). renderQueryChips() fills qbNodeMap
@@ -4661,6 +4669,7 @@
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
   function setBrowseMode(mode, opts) {
     mode = (mode === 'posters') ? 'posters' : 'posts';
+    posterReturn = false;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
     document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     const _t = document.querySelector('#browseToggle .vt-thumb');
@@ -4992,6 +5001,7 @@
     removeCondsMatching((c) => c.type === 'user');   // "this poster", not OR-ed with a prior one
     setBrowseMode('posts');
     addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
+    posterReturn = true;   // set LAST (setBrowseMode/addFilter clear it): a bare reset returns to posters
   }
   // --- Poster inspector inline tag editor ---
   // Mirrors the post inspector's tag editor (refreshInspectorTags/Picker + the
@@ -5569,6 +5579,21 @@
       const p = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     };
+    // Compact, natural relative time for the always-visible rail line (今日/昨日/M/D).
+    const fmtBackupTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+      const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      const yest = new Date(now); yest.setDate(now.getDate() - 1);
+      if (sameDay(d, now)) return `${MSG.timeToday} ${hhmm}`;
+      if (sameDay(d, yest)) return `${MSG.timeYesterday} ${hhmm}`;
+      if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hhmm}`;
+      return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    };
     // Status glyphs: spinning circular-arrows (syncing), a check (done) and a warning
     // triangle (error). Paired with an explicit word so the rail says WHAT it is.
     const MS_ICON_SYNC = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
@@ -5592,10 +5617,11 @@
         el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorFailed)}</span>`;
         el.className = 'mirror-status is-error'; el.title = r.error; return;
       }
-      // Synced OK: check glyph + "バックアップ済み"; the precise last-run time + count
-      // go to the tooltip (the rail is too narrow for both, and the word is the point).
+      // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
+      // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
       el.className = 'mirror-status is-done';
-      el.innerHTML = MS_ICON_DONE + `<span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>`;
+      const ts = fmtBackupTime(r.at);
+      el.innerHTML = MS_ICON_DONE + `<span class="ms-body"><span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>${ts ? `<span class="ms-time">${escapeHtml(ts)}</span>` : ''}</span>`;
       let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;

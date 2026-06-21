@@ -328,9 +328,11 @@
     /* 件数はサイドバー左下（設定の歯車の隣）に常駐。subtle だと読めないと
        指摘があったので muted（セカンダリの標準）まで上げる */
     .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
-    .mirror-status { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 150px; }
+    .mirror-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; overflow: hidden; max-width: 150px; }
     .mirror-status .ms-ic { flex-shrink: 0; }
+    .mirror-status .ms-body { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
     .mirror-status .ms-t { overflow: hidden; text-overflow: ellipsis; }
+    .mirror-status .ms-time { font-size: 9.5px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; }
     .mirror-status.is-error { color: var(--danger); }
     .mirror-status.is-syncing { color: var(--accent-text); }
     .mirror-status.is-syncing .ms-ic { animation: ms-spin 0.9s linear infinite; }
@@ -517,24 +519,31 @@
       width: calc((100% - 8px) / 3);   /* card fallback before JS measures left/width */
       border-radius: 6px;
       transition: left .22s var(--ease-out), width .22s var(--ease-out);
-      /* FLAT frosted glass (no convex bead): an even translucent fill, a thin bright rim,
-         and a soft drop. The frost blur carries the glass; NO centre-clear→rim radial,
-         dome highlight, inner bloom or convex lift — those read as a bulging plastic
-         bead (user pref 2026-06-21: フラットなガラス感). Dark recipe below. */
-      background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0.40));
-      backdrop-filter: blur(7px) saturate(125%);
-      -webkit-backdrop-filter: blur(7px) saturate(125%);
+      /* Rich but FLAT liquid glass (2026-06-21): a bright frosted fill with real
+         REFRACTION of the track (backdrop url(#glassRefract)) for the liquid quality, a
+         crisp defining outer edge + a thin TOP light-line (glass catching light on its
+         top edge) for contrast. NO convex dome / centre-clear radial / bulge — flat,
+         just richer + higher-contrast than the previous near-invisible flat version. */
+      background: linear-gradient(180deg, rgba(255,255,255,0.80), rgba(255,255,255,0.60));
+      backdrop-filter: blur(5px) saturate(155%) url(#glassRefract);
+      -webkit-backdrop-filter: blur(5px) saturate(155%);
       box-shadow:
-        inset 0 0 0 1px rgba(255,255,255,0.70),     /* thin glass rim (縁感) */
-        0 1px 2px rgba(20,22,40,0.10);              /* soft flat drop */
+        inset 0 1px 0 rgba(255,255,255,0.95),       /* thin top light-line (edge catch) */
+        inset 0 0 0 1px rgba(255,255,255,0.55),      /* bright glass rim */
+        0 0 0 0.5px rgba(20,22,40,0.16),             /* crisp outer hairline = defined vs track */
+        0 2px 5px -1px rgba(20,22,40,0.22);          /* soft drop = sits above the track */
     }
     /* No dome highlight — flat glass in both themes (the ::before convex cue is retired). */
     .vt-thumb::before { display: none; }
     [data-theme="dark"] .vt-thumb {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--seg-thumb) 94%, #fff) 0%, var(--seg-thumb) 100%);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--seg-thumb) 86%, #fff) 0%, var(--seg-thumb) 100%);
+      backdrop-filter: blur(5px) saturate(135%) url(#glassRefract);
+      -webkit-backdrop-filter: blur(5px) saturate(135%);
       box-shadow:
+        inset 0 1px 0 var(--glass-hi),
         inset 0 0 0 1px var(--glass-rim),
-        0 1px 2px rgba(0,0,0,0.28);
+        0 0 0 0.5px rgba(0,0,0,0.35),
+        0 2px 5px -1px rgba(0,0,0,0.40);
     }
     /* Flat slide — no jelly bulge (the mid-travel scale pulse read as the thumb puffing up). */
     @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
@@ -551,9 +560,10 @@
        fills the column like the density toggle: full width, equal segments. */
     .browse-bar-section { margin-bottom: 16px; }
     .browse-toggle { width: 100%; }
-    /* flex:1 + nowrap = equal segments that don't wrap "投稿者"; --text keeps the
-       inactive label readable on the track. */
-    .browse-toggle button { flex: 1; padding: 0 10px; gap: 7px; height: 30px; color: var(--text); white-space: nowrap; }
+    /* flex:1 + nowrap = equal segments that don't wrap "投稿者". Color is inherited from
+       .view-toggle button (inactive = --text-muted, active = --text) so the text matches
+       the density toggle exactly (no --text override on both states). */
+    .browse-toggle button { flex: 1; padding: 0 10px; gap: 7px; height: 30px; white-space: nowrap; }
     .browse-toggle .vt-ico { width: 15px; height: 15px; }
     .browse-toggle .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
     .browse-toggle .vt-thumb { width: calc((100% - 6px) / 2); }
@@ -561,75 +571,69 @@
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
     .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--pcard-size, 200px), 1fr)); gap: 14px; }
+    /* Card density (default): a vertical card LED BY THE AVATAR IMAGE (アイコンを画像
+       部分に＝ライブラリのカードと同じ構造). Library colors (surface + subtle border +
+       shadow) so it has the same contrast as post cards, not the flatter --surface-2. */
     .poster-card {
-      position: relative;   /* anchor the favorite star */
-      display: flex; align-items: center; gap: 12px; padding: 12px 38px 12px 14px; min-width: 0;
-      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
-      cursor: pointer; transition: background .15s, border-color .15s, transform .15s, box-shadow .15s;
+      position: relative;
+      display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+      background: var(--surface); border: 1px solid var(--border-subtle); border-radius: 10px;
+      box-shadow: var(--shadow-sm); cursor: pointer;
+      transition: box-shadow .15s, border-color .15s, transform .18s var(--ease-out);
     }
-    .poster-card:hover { background: var(--hover); transform: scale(1.02); box-shadow: var(--shadow-sm); }
+    .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); }
     .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out both; }
     .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
     .poster-av {
-      width: 44px; height: 44px; border-radius: 50%; flex: none; overflow: hidden;
+      width: 100%; aspect-ratio: 1; flex: none; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
-      background: var(--surface-3); color: var(--text-muted);
-      font-weight: 600; font-size: 17px; border: 1px solid var(--border-soft);
+      background: var(--surface-3); color: var(--text-muted); font-weight: 600; font-size: 44px;
     }
     .poster-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .poster-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+    .poster-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 9px 11px 10px; }
     .poster-name { font-weight: 600; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .poster-handle { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .poster-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
     .poster-foot .pf-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
     .poster-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
-    /* Favorite star (GitHub スター / iOS ハートの語彙): subtle on hover, accent when on. */
-    .poster-fav {
-      position: absolute; top: 8px; right: 8px; width: 26px; height: 26px;
+    /* info/fav float over the avatar image (top-right) — dark glass so they read on any
+       avatar (card + tile). List overrides them to a plain ghost button over the row. */
+    .poster-fav, .poster-info {
+      position: absolute; top: 8px; width: 26px; height: 26px;
       display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; border-radius: 50%; cursor: pointer; padding: 0;
-      color: var(--text-subtle); opacity: 0;
+      border: none; border-radius: 50%; cursor: pointer; padding: 0; opacity: 0;
+      background: rgba(0,0,0,.34); color: #fff;
       transition: opacity .15s, background .15s, color .15s, transform .15s;
     }
-    .poster-card:hover .poster-fav, .poster-fav:focus-visible, .poster-fav.on { opacity: 1; }
-    .poster-fav:hover { background: var(--hover); transform: scale(1.1); }
+    .poster-fav { right: 8px; }
+    .poster-info { right: 38px; }
+    .poster-card:hover .poster-fav, .poster-fav:focus-visible, .poster-fav.on,
+    .poster-card:hover .poster-info, .poster-info:focus-visible { opacity: 1; }
+    .poster-fav:hover, .poster-info:hover { background: rgba(0,0,0,.5); transform: scale(1.1); }
     .poster-fav svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
     .poster-fav.on { color: var(--accent); }
     .poster-fav.on svg { fill: currentColor; stroke: currentColor; }
-    /* ℹ inspector button — mirrors the star, sits to its left. ℹ = open inspector
-       (shared idiom with the post card's .info-btn); a card click goes to posts. */
-    .poster-info {
-      position: absolute; top: 8px; right: 38px; width: 26px; height: 26px;
-      display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; border-radius: 50%; cursor: pointer; padding: 0;
-      color: var(--text-subtle); opacity: 0;
-      transition: opacity .15s, background .15s, color .15s, transform .15s;
-    }
-    .poster-card:hover .poster-info, .poster-info:focus-visible { opacity: 1; }
-    .poster-info:hover { background: var(--hover); transform: scale(1.1); }
     .poster-info svg { width: 16px; height: 16px; display: block; }
-    /* Tile density: square tiles led by the avatar (アイコン) image; name+PF+count
-       in a bottom gradient overlay (mirrors the post tile). Monogram fills the tile
-       when no avatar is saved. */
+    /* Tile density: same avatar-led square but meta OVERLAID (compact, no card chrome). */
     .poster-grid.tile-view { grid-template-columns: repeat(auto-fill, minmax(var(--ptile-size, 132px), 1fr)); gap: 10px; }
-    .poster-grid.tile-view .poster-card { aspect-ratio: 1; padding: 0; gap: 0; border-radius: 12px; overflow: hidden; }
-    .poster-grid.tile-view .poster-av { width: 100%; height: 100%; border-radius: 0; border: none; font-size: 34px; }
+    .poster-grid.tile-view .poster-card { border-radius: 12px; }
+    .poster-grid.tile-view .poster-av { font-size: 34px; }
     .poster-grid.tile-view .poster-meta { position: absolute; left: 0; right: 0; bottom: 0; gap: 1px; padding: 18px 10px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); pointer-events: none; }
     .poster-grid.tile-view .poster-name { color: #fff; font-size: 12px; }
     .poster-grid.tile-view .poster-handle { display: none; }
     .poster-grid.tile-view .poster-foot { margin-top: 1px; }
     .poster-grid.tile-view .poster-foot .pf-tag, .poster-grid.tile-view .poster-count { color: rgba(255,255,255,.82); }
-    /* info/fav float over the avatar — dark glass so they read on any image. */
-    .poster-grid.tile-view .poster-info { top: 6px; right: 32px; }
-    .poster-grid.tile-view .poster-fav { top: 6px; right: 6px; }
-    .poster-grid.tile-view .poster-info, .poster-grid.tile-view .poster-fav { background: rgba(0,0,0,.34); color: #fff; }
-    .poster-grid.tile-view .poster-info:hover, .poster-grid.tile-view .poster-fav:hover { background: rgba(0,0,0,.5); }
-    .poster-grid.tile-view .poster-fav.on { color: var(--accent); }
-    /* List density: full-width compact rows (no pop-scale on hover). */
-    .poster-grid.list-view { display: flex; flex-direction: column; gap: 2px; }
-    .poster-grid.list-view .poster-card { border-radius: 8px; padding: 7px 38px 7px 10px; gap: 10px; }
-    .poster-grid.list-view .poster-av { width: 34px; height: 34px; font-size: 14px; }
-    .poster-grid.list-view .poster-card:hover { transform: none; }
+    .poster-grid.tile-view .poster-info { right: 32px; }
+    /* List density: full-width compact rows — small circular avatar + inline meta,
+       library colors, ghost info/fav (over the row, not an image). */
+    .poster-grid.list-view { display: flex; flex-direction: column; gap: 4px; }
+    .poster-grid.list-view .poster-card { flex-direction: row; align-items: center; gap: 10px; padding: 7px 38px 7px 10px; border-radius: 8px; box-shadow: none; }
+    .poster-grid.list-view .poster-card:hover { transform: none; box-shadow: var(--shadow-sm); }
+    .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); font-size: 15px; }
+    .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
+    .poster-grid.list-view .poster-fav, .poster-grid.list-view .poster-info { background: transparent; color: var(--text-subtle); }
+    .poster-grid.list-view .poster-fav:hover, .poster-grid.list-view .poster-info:hover { background: var(--hover); color: var(--text); }
+    .poster-grid.list-view .poster-fav.on { color: var(--accent); }
     /* Inspector star sits inline at the end of the head row (not absolute). */
     .iv-poster-fav { position: static; opacity: 1; flex: none; }
     #posterControls .poster-sort-title { margin-top: 0; }
