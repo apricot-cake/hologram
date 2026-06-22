@@ -415,6 +415,9 @@
   setText('browsePostersLabel', MSG.browsePosters);
   setText('browseCollectionsLabel', MSG.browseCollections);
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
+  // Per-button tooltips so the icon-only (inactive) segments still name themselves on hover.
+  { const lbl = { posts: MSG.browsePosts, posters: MSG.browsePosters, collections: MSG.browseCollections };
+    document.querySelectorAll('#browseToggle button').forEach((b) => { if (lbl[b.dataset.mode]) b.title = lbl[b.dataset.mode]; }); }
   setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
   setText('collectionNewLabel', MSG.collNew);
   { const cs = document.getElementById('collectionSortSelect');

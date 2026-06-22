@@ -549,20 +549,19 @@
     .view-toggle button.active { color: var(--text); }
     [data-theme="dark"] .view-toggle button.active { color: var(--text-strong); }
 
-    /* Browse-mode toggle (ライブラリ / 投稿者): reuses .view-toggle visuals but shows a
-       text label in BOTH states (the semantic switch is less self-evident than
-       card/tile/list). 2 segments, so the thumb fallback is /2. */
-    /* Lives at the sidebar top now (.browse-bar-section = a .sb-section), so it
-       fills the column like the density toggle: full width, equal segments. */
+    /* Browse-mode toggle (ライブラリ / 投稿者 / コレクション): reuses .view-toggle visuals.
+       3 labels don't fit the sidebar width, so only the ACTIVE segment shows its label
+       (Material-3 nav style: active = icon + label pill that grows to fill; the others
+       are icon-only chips that size to content). Per-button title tooltips name the
+       inactive icons (set in viewer.js). The glass thumb measures the active button. */
+    /* Lives at the sidebar top now (.browse-bar-section = a .sb-section), full width. */
     .browse-bar-section { margin-bottom: 16px; }
     .browse-toggle { width: 100%; }
-    /* flex:1 + nowrap = equal segments that don't wrap "投稿者". Color is inherited from
-       .view-toggle button (inactive = --text-muted, active = --text) so the text matches
-       the density toggle exactly (no --text override on both states). */
-    .browse-toggle button { flex: 1; padding: 0 10px; gap: 7px; height: 30px; white-space: nowrap; }
+    .browse-toggle button { flex: 0 1 auto; padding: 0 11px; gap: 7px; height: 30px; white-space: nowrap; }
+    .browse-toggle button.active { flex: 1 1 auto; }   /* active grows to fit its label */
     .browse-toggle .vt-ico { width: 15px; height: 15px; }
-    .browse-toggle .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
-    .browse-toggle .vt-thumb { width: calc((100% - 6px) / 2); }
+    .browse-toggle .vt-label { display: none; }
+    .browse-toggle button.active .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
 
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
