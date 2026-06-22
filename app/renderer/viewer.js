@@ -5374,6 +5374,8 @@
     else list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     return list;
   }
+  // Placeholder for an empty collection's cover — the same layers glyph as the view toggle.
+  const COLL_EMPTY_ICON = '<svg class="ct-empty-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>';
   function renderCollections() {
     const grid = document.getElementById('collectionGrid'); if (!grid) return;
     const activeId = CF() ? CF().activeId() : null;
@@ -5391,12 +5393,15 @@
       return;
     }
     grid.innerHTML = collectionList.map((c, i) => {
-      const thumbs = collectionThumbs(c);
-      const cells = [0, 1, 2, 3].map((k) => thumbs[k] ? `<img src="${fileSrc(thumbs[k], 200)}" alt="" loading="lazy">` : '<span class="ct-empty"></span>').join('');
+      const thumbs = collectionThumbs(c);   // 0..4 files; tiles pack to fill the square by count
+      const n = thumbs.length;
+      const cells = n
+        ? thumbs.map((f) => `<img src="${fileSrc(f, 200)}" alt="" loading="lazy">`).join('')
+        : COLL_EMPTY_ICON;
       const isActive = c.id === activeId;
       const star = isActive ? '<span class="col-star">★</span>' : '';
       return `<div class="collection-card${isActive ? ' active' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
-        + `<div class="collection-thumbs${thumbs.length ? '' : ' empty'}">${cells}</div>`
+        + `<div class="collection-thumbs ${n ? 'n' + n : 'empty'}">${cells}</div>`
         + `<div class="collection-meta">`
         + `<div class="collection-name">${star}${escapeHtml(c.name)}</div>`
         + `<div class="collection-count">${escapeHtml(MSG.collItemCount(collectionItemCount(c)))}</div>`
