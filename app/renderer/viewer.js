@@ -27,7 +27,6 @@
     tagSelectedTitle: _s('tagSelectedTitle'),
     sbSearchTitle: _s('sbSearchTitle'),
     sbSortTitle: _s('sbSortTitle'),
-    sbViewTitle: _s('sbViewTitle'),
     tipTagCycle: _s('tipTagCycle'),
     tipFolderFilter: _s('tipFolderFilter'),
     sbFilterTitle: _s('sbFilterTitle'),
@@ -398,7 +397,6 @@
   setText('viewCardLabel', MSG.viewCard);
   setText('viewTileLabel', MSG.viewTile);
   setText('viewListLabel', MSG.viewList);
-  setText('sbPosterViewTitle', MSG.sbViewTitle);
   setText('posterViewCardLabel', MSG.viewCard);
   setText('posterViewTileLabel', MSG.viewTile);
   setText('posterViewListLabel', MSG.viewList);
@@ -483,7 +481,6 @@
   // the in-bar toggle button by syncSearchToggle (the old select was removed).
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
-  setText('sbViewTitle', MSG.sbViewTitle);
   // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
   setText('sbEngParticle', MSG.engParticle);
   const engParticleEl = document.getElementById('sbEngParticle');

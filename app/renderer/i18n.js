@@ -41,7 +41,6 @@
       tagSelectedTitle: '選択した投稿にタグを追加（既存のタグは残ります）',
       sbSearchTitle: '検索',
       sbSortTitle: '並び順',
-      sbViewTitle: '表示',
       tipTagCycle: 'クリックで追加/解除。同じ種類を2つ以上選ぶと「すべて含む」「除外」に切り替えられます',
       tipFolderFilter: 'クリックでこのフォルダで絞り込み / 解除',
       engParticle: 'が',
@@ -141,10 +140,10 @@
       foldersNone: 'なし',
       postCount: '$1 件ヒット',
 
-      // viewer: ライブラリ/投稿者 モード切替・投稿者ビュー
+      // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
       browsePosts: 'ライブラリ',
       browsePosters: '投稿者',
-      browseModeTitle: '表示を切替（ライブラリ / 投稿者）',
+      browseModeTitle: 'ライブラリ / 投稿者 を切替',
       posterCount: '$1 人',
       posterPosts: '投稿 $1 件',
       posterViewPosts: 'この投稿者の投稿を見る',
@@ -385,7 +384,6 @@
       tagSelectedTitle: 'Add tags to the selected posts (existing tags are kept)',
       sbSearchTitle: 'Search',
       sbSortTitle: 'Sort',
-      sbViewTitle: 'View',
       tipTagCycle: 'Click to add/remove. With 2+ of the same kind, switch to All or Exclude',
       tipFolderFilter: 'Click to filter by this folder / clear',
       engParticle: '',
@@ -485,10 +483,10 @@
       foldersNone: 'None',
       postCount: '$1 hits',
 
-      // viewer: Library/Posters mode toggle + poster view
+      // viewer: Library/Posters view toggle + poster view
       browsePosts: 'Library',
       browsePosters: 'Posters',
-      browseModeTitle: 'Switch view (Library / Posters)',
+      browseModeTitle: 'Switch: Library / Posters',
       posterCount: '$1 posters',
       posterPosts: '$1 posts',
       posterViewPosts: "View this poster's posts",
