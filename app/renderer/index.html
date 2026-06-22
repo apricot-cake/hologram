@@ -578,7 +578,9 @@
       transition: box-shadow .15s, border-color .15s, transform .18s var(--ease-out);
     }
     .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); }
-    .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out both; }
+    /* backwards (not both): a forwards fill pins transform:none and kills :hover scale
+       (see the .post-grid.anim-in note for the full reasoning). */
+    .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out backwards; }
     .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
     .poster-av {
       width: 100%; aspect-ratio: 1; flex: none; overflow: hidden;
@@ -2414,8 +2416,13 @@
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
     @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
     @keyframes corpusPillIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
-    /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search. */
-    .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out both; }
+    /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search.
+       Fill is `backwards`, NOT `both`: the grid keeps .anim-in until the next render,
+       so a forwards fill would pin the final `transform: none` on every card forever —
+       and an animation's value outranks the `:hover` rule, which silently killed the
+       hover-scale lift. `backwards` still holds the hidden pre-start state but stops
+       contributing a transform once the run ends, so :hover scale works again. */
+    .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out backwards; }
 
     /* Empty state: same slide-in as cards when first shown. */
     .empty-state.anim-in { animation: corpusCardIn .26s ease-out both; }
