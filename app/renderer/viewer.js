@@ -157,9 +157,6 @@
     posterSortCount: _s('posterSortCount'),
     posterSortName: _s('posterSortName'),
     posterSortRecent: _s('posterSortRecent'),
-    posterFavAdd: _s('posterFavAdd'),
-    posterFavRemove: _s('posterFavRemove'),
-    posterFavOnly: _s('posterFavOnly'),
     sbPosterFoldersTitle: _s('sbPosterFoldersTitle'),
     posterFolderNewPlaceholder: _s('posterFolderNewPlaceholder'),
     posterFolderCreate: _s('posterFolderCreate'),
@@ -412,7 +409,6 @@
   setText('sbPosterTagRowName', MSG.qfTag);
   setText('sbPosterInstRowName', MSG.qfInstance);
   setText('sbPosterDateRowName', MSG.qfDate);
-  setText('sbPosterFavRowName', MSG.posterFavOnly);
   setText('sbPosterFolderRowName', MSG.qfCatFolder);
   { const ps = document.getElementById('posterSortSelect');
     if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; } }
@@ -4809,14 +4805,12 @@
   window.addEventListener('resize', () => { if (browseMode === 'posters') refreshPosterSlider(); }, { passive: true });
   let posterPlatforms = new Set();   // active platform filter (empty = all)
   let posterWorkGroups = [];         // recent works shown in the poster inspector
-  let posterFavorites = new Set();   // starred poster keys (persisted poster-favorites.json)
-  let posterFavOnly = false;         // sidebar toggle: show only favorited posters
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
   let posterTags = {};
   // Sidebar tag filter (poster mode): chosen tags AND-combine — a poster must carry
   // every selected tag to stay in the grid. Mirrors posterFolderFilter, but for tags.
-  // Not persisted: it's a transient browse filter, like the platform/favorites chips.
+  // Not persisted: it's a transient browse filter, like the platform chips.
   let posterTagFilter = new Set();
   let posterInstanceFilter = new Set();   // active misskey/mastodon host filter (transient)
   let posterWorkspaceFilter = false;      // sidebar toggle: show only posters in the workspace tray
@@ -4841,20 +4835,6 @@
     posterTagFilter.clear();
     renderPosterFilterRows();
     renderPosters();
-  }
-  const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg>';
-  function persistFavorites() { if (window.corpus.setPosterFavorites) window.corpus.setPosterFavorites([...posterFavorites]).catch(() => { /* best-effort */ }); }
-  function toggleFavorite(u) {
-    if (!u) return;
-    const on = !posterFavorites.has(u.key);
-    if (on) posterFavorites.add(u.key); else posterFavorites.delete(u.key);
-    persistFavorites();
-    // Sync the two possible star buttons (card + inspector) without a full re-render.
-    const idx = posterList.indexOf(u);
-    const stars = [idx >= 0 ? document.querySelector('.poster-fav[data-fav-index="' + idx + '"]') : null,
-                   (inspectedKey === 'poster:' + u.key) ? document.getElementById('pdFavBtn') : null];
-    for (const s of stars) if (s) { s.classList.toggle('on', on); const t = on ? MSG.posterFavRemove : MSG.posterFavAdd; s.title = t; s.setAttribute('aria-label', t); }
-    if (posterFavOnly) renderPosters();   // favorites-only view: drop the just-unfavorited card
   }
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
@@ -4882,7 +4862,7 @@
   // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the
   // 作品/キャラ/タグ/インスタンス rows only when posters actually carry such values
   // (段階的開示), prune selections that no longer have a backing value, then refresh
-  // every row badge + the favorites toggle state. The rows themselves are static HTML
+  // every row badge + the workspace toggle state. The rows themselves are static HTML
   // in #posterFilterRows (stable flyout anchors); this only mutates text/visibility.
   function renderPosterFilterRows() {
     const vocab = posterFilterVocab();
@@ -4913,8 +4893,6 @@
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
-    const favRow = document.getElementById('posterFavRow');
-    if (favRow) favRow.classList.toggle('active', posterFavOnly);
     // Workspace tray row: active when filtering, badge = count present this session,
     // clear button only when non-empty (mirrors the post #wsRow).
     const wsRow = document.getElementById('posterWsRow');
@@ -4936,7 +4914,6 @@
   function filteredPosters() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = namedPosters();
-    if (posterFavOnly) list = list.filter((u) => posterFavorites.has(u.key));
     if (posterFolderFilter) { const f = posterFolderById(posterFolderFilter); const set = new Set(f ? f.items : []); list = list.filter((u) => set.has(u.key)); }
     if (posterTagFilter.size) { const want = [...posterTagFilter]; list = list.filter((u) => { const have = new Set(posterTagsOf(u.key)); return want.every((t) => have.has(t)); }); }
     if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
@@ -5013,8 +4990,8 @@
       const name = hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)');
       const handleRow = (hasName && u.screenName) ? `<div class="poster-handle">@${escapeHtml(u.screenName)}</div>` : '';
       const pf = u.platform ? `<span class="pf-tag"><span class="pf-dot ${u.platform}"></span>${escapeHtml(pfName)}</span>` : '';
-      const fav = posterFavorites.has(u.key);
-      const favTip = escapeAttr(fav ? MSG.posterFavRemove : MSG.posterFavAdd);
+      const inWs = !!(CF() && CF().inPosterWorkspace(u.key));
+      // Hover actions mirror the library card (🏷 tag → 🔖 collection → ℹ info, L→R).
       return `<div class="poster-card" data-index="${i}" tabindex="0">`
         + `<div class="poster-av">${avatar}</div>`
         + `<div class="poster-meta">`
@@ -5022,8 +4999,9 @@
         + handleRow
         + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
         + `</div>`
+        + `<button class="poster-tag" data-ptag="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>`
+        + `<button class="poster-ws${inWs ? ' in' : ''}" data-pws="${i}" title="${MSG.tipWorkspace}" aria-label="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>`
         + `<button class="poster-info" data-pinfo="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>`
-        + `<button class="poster-fav${fav ? ' on' : ''}" data-fav-index="${i}" title="${favTip}" aria-label="${favTip}">${STAR_SVG}</button>`
         + `</div>`;
     }).join('');
   }
@@ -5107,12 +5085,9 @@
           return f ? `<img class="iv-poster-thumb" data-work="${i}" src="${fileSrc(f, 200)}" alt="" loading="lazy">` : '';
         }).join('')}</div>`
       : '';
-    const fav = posterFavorites.has(u.key);
-    const favTip = escapeAttr(fav ? MSG.posterFavRemove : MSG.posterFavAdd);
     box.innerHTML =
       `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
-      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span>` +
-      `<button class="poster-fav iv-poster-fav${fav ? ' on' : ''}" id="pdFavBtn" title="${favTip}" aria-label="${favTip}">${STAR_SVG}</button></div>` +
+      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span></div>` +
       row(MSG.detailUser, u.screenName ? '@' + u.screenName : '') +
       row(MSG.detailPlatform, pfName) +
       row(MSG.detailPosts, formatCount(u.count)) +
@@ -5134,7 +5109,6 @@
     if (idx >= 0) { const card = document.querySelector('.poster-card[data-index="' + idx + '"]'); if (card) card.classList.add('inspected'); }
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
-    const fb = document.getElementById('pdFavBtn'); if (fb) fb.onclick = () => toggleFavorite(u);
     box.querySelectorAll('.iv-folder-chip[data-pffid]').forEach((ch) => {
       ch.onclick = () => { const on = togglePosterFolderMember(ch.dataset.pffid, u.key); ch.classList.toggle('on', on); };
     });
@@ -5162,18 +5136,26 @@
       showPosterDetail(u);
       return;
     }
+    // 🏷 → open the inspector and focus its tag input (mirrors the library 🏷 button).
+    if (e.target.closest('.poster-tag')) {
+      showPosterDetail(u);
+      const inp = document.getElementById('pdTagInput'); if (inp) inp.focus();
+      return;
+    }
+    // 🔖 → toggle this poster's membership in the active collection (workspace tray).
+    if (e.target.closest('.poster-ws')) {
+      if (CF()) {
+        CF().togglePosterWorkspace([u.key]);
+        const btn = e.target.closest('.poster-ws');
+        if (btn) btn.classList.toggle('in', CF().inPosterWorkspace(u.key));
+        renderPosterFilterRows();
+        if (posterWorkspaceFilter) renderPosters();
+      }
+      return;
+    }
     // A plain card click drills into that poster's posts (posts mode + user filter).
     openPosterPosts(u);
   });
-  // Star toggle on a poster card — capture phase so it pre-empts the card-open click.
-  document.getElementById('posterGrid').addEventListener('click', (e) => {
-    const fb = e.target.closest('.poster-fav');
-    if (!fb) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const u = posterList[parseInt(fb.dataset.favIndex, 10)];
-    if (u) toggleFavorite(u);
-  }, true);
   // Poster context menu (right-click a card): assign to poster folders + quick actions,
   // so folder membership no longer requires opening the inspector. Reuses the shared
   // .fold-menu chrome + clampIntoView; folder rows toggle in place (menu stays open).
@@ -5183,10 +5165,8 @@
   let posterMenuKey = null;
   function hidePosterMenu() { posterMenu.classList.remove('show'); posterMenuKey = null; }
   function renderPosterMenu(u) {
-    const fav = posterFavorites.has(u.key);
     posterMenu.innerHTML =
       `<div class="fm-row" data-pm-act="posts"><span class="fm-name">${escapeHtml(MSG.posterViewPosts)}</span></div>` +
-      `<div class="fm-row" data-pm-act="fav"><span class="fm-name">${escapeHtml(fav ? MSG.posterFavRemove : MSG.posterFavAdd)}</span></div>` +
       (CF() ? `<div class="fm-row" data-pm-act="ws"><span class="fm-name">${escapeHtml(CF().inPosterWorkspace(u.key) ? MSG.ctxWsRemove : MSG.ctxWsAdd)}</span></div>` : '') +
       '<div class="fm-sep"></div>' +
       pfStore.all().map((f) => `<div class="fm-row" data-pm-fid="${escapeAttr(f.id)}"><span class="fm-name">${escapeHtml(f.name)}</span>${posterFolderHas(f.id, u.key) ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('') +
@@ -5207,7 +5187,6 @@
     if (act) {
       const a = act.dataset.pmAct;
       if (a === 'posts') { hidePosterMenu(); openPosterPosts(u); return; }
-      if (a === 'fav') { hidePosterMenu(); toggleFavorite(u); return; }
       if (a === 'ws') {
         if (CF()) CF().togglePosterWorkspace([u.key]);
         renderPosterFilterRows();
@@ -5241,8 +5220,8 @@
       renderPosters();
     }); }
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
-  // flyout (poster-* categories); the date row opens the date popover; favorites is a
-  // toggle row (no flyout). Selections live in the transient posterXxx state.
+  // flyout (poster-* categories); the date row opens the date popover; the workspace row
+  // is a toggle (no flyout). Selections live in the transient posterXxx state.
   document.getElementById('posterFilterRows').addEventListener('click', (e) => {
     if (e.target.closest('#posterWsClear')) {
       if (!window.confirm(MSG.posterWsEmptyConfirm)) return;
@@ -5255,13 +5234,6 @@
       posterWorkspaceFilter = !posterWorkspaceFilter;
       hideQfPop();
       renderPosterFilterRows();   // flip the row's active class + badge
-      renderPosters();
-      return;
-    }
-    if (e.target.closest('#posterFavRow')) {
-      posterFavOnly = !posterFavOnly;
-      hideQfPop();
-      renderPosterFilterRows();   // flip the row's active class
       renderPosters();
       return;
     }
@@ -5929,7 +5901,6 @@
   if (CF()) await CF().load();   // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try { const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null; ungrouped = new Set((r && r.keys) || []); } catch { /* default empty */ }
-  try { const r = window.corpus.getPosterFavorites ? await window.corpus.getPosterFavorites() : null; posterFavorites = new Set((r && r.keys) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null; pfStore.setAll((r && r.folders) || []); } catch { /* default empty */ }
   try { const r = window.corpus.getPosterTags ? await window.corpus.getPosterTags() : null; posterTags = (r && r.tags) || {}; } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }

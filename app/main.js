@@ -373,30 +373,8 @@ ipcMain.handle('set-ungrouped', (_e, keys) => {
   }
 });
 
-// Favorited posters (poster view). Poster keys (platform:userId) the user starred.
-// Lives as <saveFolder>/poster-favorites.json: { keys: [...] } — same shape as
-// ungrouped, so it rides the same export/backup/merge machinery.
-ipcMain.handle('get-poster-favorites', () => {
-  const folder = getSaveFolder();
-  if (!folder) return { keys: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-favorites.json'), 'utf8'));
-    return { keys: Array.isArray(j.keys) ? j.keys : [] };
-  } catch {
-    return { keys: [] };
-  }
-});
-ipcMain.handle('set-poster-favorites', (_e, keys) => {
-  const folder = getSaveFolder();
-  if (!folder) return { ok: false };
-  try {
-    fs.writeFileSync(path.join(folder, 'poster-favorites.json'),
-      JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
-});
+// (poster favorites feature removed; legacy <saveFolder>/poster-favorites.json is
+// still listed in INTERNAL_FILES so the post index keeps skipping it.)
 
 // Named poster folders (poster view). { folders: [{ id, name, items:[posterKey] }] }
 // — same shape as folders.json (minus workspace), so import reuses mergeFolders.
@@ -423,7 +401,7 @@ ipcMain.handle('set-poster-folders', (_e, data) => {
 });
 
 // Per-poster tags (poster view). { tags: { "<posterKey>": ["tag", …] } } — the
-// poster-level peer of poster-favorites/poster-folders. Shares the post tag
+// poster-level peer of poster-folders. Shares the post tag
 // vocabulary (tag-groups/tag-types) but is keyed by poster, NOT stored on posts.
 ipcMain.handle('get-poster-tags', () => {
   const folder = getSaveFolder();
