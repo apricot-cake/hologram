@@ -156,6 +156,8 @@
     sbPosterPlatformTitle: _s('sbPosterPlatformTitle'),
     posterSortCount: _s('posterSortCount'),
     posterSortName: _s('posterSortName'),
+    posterSortNewest: _s('posterSortNewest'),
+    posterSortOldest: _s('posterSortOldest'),
     posterSortRecent: _s('posterSortRecent'),
     sbPosterFoldersTitle: _s('sbPosterFoldersTitle'),
     posterFolderNewPlaceholder: _s('posterFolderNewPlaceholder'),
@@ -411,13 +413,12 @@
   setText('sbPosterDateRowName', MSG.qfDate);
   setText('sbPosterFolderRowName', MSG.qfCatFolder);
   { const ps = document.getElementById('posterSortSelect');
-    if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName; } }
+    if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName;
+      if (ps.options[2]) ps.options[2].textContent = MSG.posterSortNewest;
+      if (ps.options[3]) ps.options[3].textContent = MSG.posterSortOldest; } }
   { const pd = document.getElementById('posterDateDim');
     if (pd) { pd.options[0].textContent = MSG.posterDateLastPost; pd.options[1].textContent = MSG.posterDateLastCapture; pd.options[2].textContent = MSG.posterDateCreated; } }
-  { const pdir = document.getElementById('posterDateDir');
-    if (pdir) { pdir.options[0].textContent = MSG.posterDateDirNone; pdir.options[1].textContent = MSG.posterDateDirNewest; pdir.options[2].textContent = MSG.posterDateDirOldest; } }
   setText('posterDateDimLabel', MSG.posterDateDimLabel);
-  setText('posterDateDirLabel', MSG.posterDateDirLabel);
   setText('posterDateRangeLabel', MSG.posterDateRangeLabel);
   setText('posterDateApply', MSG.qfApply);
   setText('posterDateClear', MSG.posterDateClear);
@@ -652,6 +653,7 @@
     hashtag: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
     folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     instance: '<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="12" width="18" height="8" rx="2"/><line x1="7" y1="8" x2="7.01" y2="8"/><line x1="7" y1="16" x2="7.01" y2="16"/>',
+    workspace: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
     search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   };
   const qcGlyph = (type) => (QC_GLYPH[type]
@@ -801,29 +803,28 @@
       }
       case 'poster-tag': {
         // Poster-mode sidebar tag filter: lists GENERAL (non-kinded) tags applied to
-        // posters. 作品/キャラ live in their own rows. Unlike the post tag cases this
-        // does NOT touch the post query — it toggles posterTagFilter (handled in the
-        // qfPop click branch). "on" = already chosen.
-        return posterFilterVocab().filter((t) => !tagKindOf(t)).map((t) => ({ v: t, l: t, on: posterTagFilter.has(t) }));
+        // posters. 作品/キャラ live in their own rows. Picking one adds/removes a tag leaf
+        // in the poster query tree (posterQB), NOT the post query. "on" = already chosen.
+        return posterFilterVocab().filter((t) => !tagKindOf(t)).map((t) => ({ v: t, l: t, on: posterQB.qHasValue('tag', t) }));
       }
       case 'poster-work':
       case 'poster-character': {
-        // 作品/キャラ rows: the poster tags whose 種別 matches. They share posterTagFilter
-        // with the general タグ row (one Set); the kind only scopes which this flyout offers.
+        // 作品/キャラ rows: the poster tags whose 種別 matches. They map to the same tag
+        // leaf type as the general タグ row; the kind only scopes which this flyout offers.
         const kind = cat === 'poster-work' ? 'work' : 'character';
-        return posterFilterVocab().filter((t) => tagKindOf(t) === kind).map((t) => ({ v: t, l: t, on: posterTagFilter.has(t), kind }));
+        return posterFilterVocab().filter((t) => tagKindOf(t) === kind).map((t) => ({ v: t, l: t, on: posterQB.qHasValue('tag', t), kind }));
       }
       case 'poster-platform': {
         const present = new Set(namedPosters().map((u) => u.platform).filter(Boolean));
         return [...present].sort((a, b) => { const ia = PF_ORDER.indexOf(a), ib = PF_ORDER.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
-          .map((v) => ({ v, l: PF_NAME[v] || v, on: posterPlatforms.has(v) }));
+          .map((v) => ({ v, l: PF_NAME[v] || v, on: posterQB.qHasValue('platform', v) }));
       }
       case 'poster-instance': {
         const hosts = new Set();
         for (const u of namedPosters()) if (u.instance) hosts.add(u.instance);
-        return [...hosts].sort().map((h) => ({ v: h, l: h, on: posterInstanceFilter.has(h) }));
+        return [...hosts].sort().map((h) => ({ v: h, l: h, on: posterQB.qHasValue('instance', h) }));
       }
-      case 'poster-folder': return pfStore.all().map((f) => ({ v: f.id, l: f.name, on: posterFolderFilter === f.id }));
+      case 'poster-folder': return pfStore.all().map((f) => ({ v: f.id, l: f.name, on: posterQB.qHasValue('folder', f.id) }));
       case 'work':
       case 'character': {
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
@@ -1002,28 +1003,28 @@
         renderPosts();
         return;
       }
-      // Poster-mode flyouts toggle the transient posterXxx browse state (NOT the post
-      // query), stay open for several picks, and refresh the row badges. The sidebar
-      // rows are stable elements, so no anchor re-pointing is needed (unlike the old
-      // chip +button). 作品/キャラ/タグ all share the one posterTagFilter Set.
+      // Poster flyouts toggle a top-level leaf in the poster query tree (addFilter /
+      // removeByLeaf both refresh rows + bar + grid); the flyout stays open for picks.
+      // 作品/キャラ/タグ all map to one tag leaf type (種別 only scopes which the row offers).
       if (qfCat === 'poster-tag' || qfCat === 'poster-work' || qfCat === 'poster-character') {
-        if (posterTagFilter.has(v)) posterTagFilter.delete(v); else posterTagFilter.add(v);
-        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        if (posterQB.qHasValue('tag', v)) posterQB.removeByLeaf('tag', v); else posterQB.addFilter({ type: 'tag', value: v });
+        renderQfPop();
         return;
       }
       if (qfCat === 'poster-platform') {
-        if (posterPlatforms.has(v)) posterPlatforms.delete(v); else posterPlatforms.add(v);
-        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        if (posterQB.qHasValue('platform', v)) posterQB.removeByLeaf('platform', v); else posterQB.addFilter({ type: 'platform', value: v });
+        renderQfPop();
         return;
       }
       if (qfCat === 'poster-instance') {
-        if (posterInstanceFilter.has(v)) posterInstanceFilter.delete(v); else posterInstanceFilter.add(v);
-        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        if (posterQB.qHasValue('instance', v)) posterQB.removeByLeaf('instance', v); else posterQB.addFilter({ type: 'instance', value: v });
+        renderQfPop();
         return;
       }
       if (qfCat === 'poster-folder') {
-        posterFolderFilter = (posterFolderFilter === v) ? null : v;   // single-select
-        renderQfPop(); renderPosterFilterRows(); renderPosters();
+        // folder is single-valued (singleValueTypes): addFilter replaces any existing folder leaf.
+        if (posterQB.qHasValue('folder', v)) posterQB.removeByLeaf('folder', v); else posterQB.addFilter({ type: 'folder', value: v });
+        renderQfPop();
         return;
       }
       const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
@@ -1157,35 +1158,35 @@
 
   // Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
   // Separate from the post date popover — writes the transient posterDate state.
-  function openPosterDatePopover(anchorRow) {
+  // arg = the date leaf to edit (from openLeafEditor) OR the row element (from the row click).
+  // Range only — the 並べ替え方向 moved to the sort select (フィルタとソートの分離).
+  function openPosterDatePopover(arg) {
     closeAllMenus();
+    const editNode = (arg && arg.kind === 'cond') ? arg : null;
+    editingPosterDateNode = editNode;
     const popover = document.getElementById('posterDatePopover');
-    const anchor = anchorRow || document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
+    const anchor = document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
     if (!anchor) return;
-    document.getElementById('posterDateDim').value = posterDate.dim || 'latest';
-    document.getElementById('posterDateDir').value = posterDate.dir || 'none';
-    document.getElementById('posterDateFrom').value = posterDate.from || '';
-    document.getElementById('posterDateTo').value = posterDate.to || '';
-    document.getElementById('posterDateClear').style.display = (posterDate.from || posterDate.to || posterDate.dir !== 'none') ? '' : 'none';
+    const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
+    document.getElementById('posterDateDim').value = (existing && existing.dateField) || 'latest';
+    document.getElementById('posterDateFrom').value = (existing && existing.from) || '';
+    document.getElementById('posterDateTo').value = (existing && existing.to) || '';
+    document.getElementById('posterDateClear').style.display = existing ? '' : 'none';
     popover.style.display = 'block';
     placeFlyout(popover, anchor.getBoundingClientRect());
   }
   document.getElementById('posterDateApply').addEventListener('click', () => {
-    posterDate = {
-      dim: document.getElementById('posterDateDim').value || 'latest',
-      dir: document.getElementById('posterDateDir').value || 'none',
-      from: document.getElementById('posterDateFrom').value || '',
-      to: document.getElementById('posterDateTo').value || ''
-    };
+    const dateField = document.getElementById('posterDateDim').value || 'latest';
+    const from = document.getElementById('posterDateFrom').value || '';
+    const to = document.getElementById('posterDateTo').value || '';
+    if (!from && !to) { closeAllMenus(); return; }
+    if (editingPosterDateNode) { Object.assign(editingPosterDateNode, { dateField, from, to }); posterQB.refresh(); }
+    else posterQB.addFilter({ type: 'date', dateField, from, to });   // date is single-valued (replaces)
     closeAllMenus();
-    renderPosterFilterRows();
-    renderPosters();
   });
   document.getElementById('posterDateClear').addEventListener('click', () => {
-    posterDate = { dim: posterDate.dim, dir: 'none', from: '', to: '' };   // keep the axis, drop sort + range
+    posterQB.removeByType('date');
     closeAllMenus();
-    renderPosterFilterRows();
-    renderPosters();
   });
 
   // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
@@ -2032,8 +2033,8 @@
       setTree: (t) => { tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree(); cleanupTree(); syncShadow(); },
       resetTree: () => { tree = emptyTree(); },
       addFilter, removeFilter, removeNode,
-      removeByLeaf: (type, value) => removeCondsMatching((c) => c.type === type && c.value === value),
-      removeByType: (type) => removeCondsMatching((c) => c.type === type),
+      removeByLeaf: (type, value) => { if (removeCondsMatching((c) => c.type === type && c.value === value)) refresh(); },
+      removeByType: (type) => { if (removeCondsMatching((c) => c.type === type)) refresh(); },
       removeCondsMatching,
       qHasValue,
       render, refresh, syncShadow,
@@ -4765,7 +4766,7 @@
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   let posterList = [];
-  let posterSort = 'count';          // 'count' | 'name' (date sorting lives in posterDate.dir)
+  let posterSort = 'count';          // 'count' | 'name' | 'date-desc' | 'date-asc'
   // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
   // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
   let posterView = 'card';           // 'card' | 'tile' | 'list'
@@ -4844,22 +4845,12 @@
   })();
   // The column counts depend on the grid width — re-derive the track on resize.
   window.addEventListener('resize', () => { if (browseMode === 'posters') refreshPosterSlider(); }, { passive: true });
-  let posterPlatforms = new Set();   // active platform filter (empty = all)
   let posterWorkGroups = [];         // recent works shown in the poster inspector
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
   let posterTags = {};
-  // Sidebar tag filter (poster mode): chosen tags AND-combine — a poster must carry
-  // every selected tag to stay in the grid. Mirrors posterFolderFilter, but for tags.
-  // Not persisted: it's a transient browse filter, like the platform chips.
-  let posterTagFilter = new Set();
-  let posterInstanceFilter = new Set();   // active misskey/mastodon host filter (transient)
-  let posterWorkspaceFilter = false;      // sidebar toggle: show only posters in the workspace tray
-  // Date control (transient): a single date axis drives BOTH sorting and range-filtering.
-  // dim: 'authorCreatedAt'(作成日) | 'lastCapture'(取得日) | 'latest'(投稿日).
-  // dir: 'none'(並べ替えなし) | 'desc'(新しい順) | 'asc'(古い順) — when ≠none it overrides
-  //      the 投稿数/名前 sort select. from/to = YYYY-MM-DD range filter on that same dim.
-  let posterDate = { dim: 'latest', dir: 'none', from: '', to: '' };
+  // Poster browse filters (platform / tag / instance / folder / date範囲 / workspace) live
+  // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
   function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
   // Tags actually applied to at least one poster — the vocabulary the filter offers.
@@ -4872,17 +4863,13 @@
     return [...set].sort((a, b) => (rank(a) - rank(b)) || a.localeCompare(b, 'ja'));
   }
   function clearPosterTagFilter() {
-    if (!posterTagFilter.size) return;
-    posterTagFilter.clear();
-    renderPosterFilterRows();
-    renderPosters();
+    posterQB.removeByType('tag');   // refreshes rows + bar + grid if anything changed
   }
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
   // Reuses the shared folder-list store (folders.js createFolderStore) so the
   // CRUD/id-minting/toggle logic isn't reimplemented; only the persist target
   // (poster-folders.json) and the view-specific toast/re-render live here.
-  let posterFolderFilter = null;     // fid currently filtered, or null
   function persistPosterFolders() { if (window.corpus.setPosterFolders) window.corpus.setPosterFolders({ folders: pfStore.all() }).catch(() => { /* best-effort */ }); }
   const pfStore = window.corpusFolderStore({ idPrefix: 'pf', persist: persistPosterFolders });
   const posterFolderById = pfStore.byId;
@@ -4890,16 +4877,70 @@
   function createPosterFolder(name) { return pfStore.create(name); }
   function deletePosterFolder(id) {
     pfStore.remove(id);
-    if (posterFolderFilter === id) posterFolderFilter = null;   // drop the filter if its folder is gone
+    posterQB.removeByLeaf('folder', id);   // drop the filter leaf if its folder is gone
   }
   function togglePosterFolderMember(id, key) {
     const res = pfStore.toggleIn(id, key); if (!res) return false;
     const f = posterFolderById(id);
     showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
     renderPosterFilterRows();   // folder badge count changed
-    if (posterFolderFilter) renderPosters();   // membership change may add/remove from the filtered grid
+    if (treeLeaves(posterQB.getTree()).some((c) => c.type === 'folder')) renderPosters();   // membership change may add/remove from the filtered grid
     return res === 'added';
   }
+  // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
+  // against poster (user) objects instead of posts. Leaf types: platform / instance /
+  // tag(作品/キャラ含む) / folder / date(範囲) / workspace. The bar lives in
+  // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
+  function posterPredOf(f) {
+    switch (f.type) {
+      case 'platform': return (u) => u.platform === f.value;
+      case 'instance': return (u) => u.instance === f.value;
+      case 'tag': return (u) => posterTagsOf(u.key).includes(f.value);   // 作品/キャラも同じ tag 型
+      case 'folder': { const fo = posterFolderById(f.value); const set = new Set(fo ? fo.items : []); return (u) => set.has(u.key); }
+      case 'workspace': return (u) => !!(CF() && CF().inPosterWorkspace(u.key));
+      case 'date': {
+        const field = f.dateField || 'latest';   // latest | lastCapture | authorCreatedAt
+        const from = f.from ? new Date(f.from + 'T00:00:00') : null;
+        let to = null; if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }   // exclusive end
+        return (u) => { const v = u[field]; if (!v) return false; const d = new Date(v); return (!from || d >= from) && (!to || d < to); };
+      }
+      default: return () => true;
+    }
+  }
+  // Poster pill label: folder name + date dim are poster-specific; the rest (platform /
+  // instance / tag / workspace) reuse the shared filterLabel.
+  function posterFilterLabel(f) {
+    if (f.type === 'folder') { const fo = posterFolderById(f.value); return fo ? fo.name : f.value; }
+    if (f.type === 'date') {
+      const dimName = f.dateField === 'lastCapture' ? MSG.posterDateLastCapture
+        : f.dateField === 'authorCreatedAt' ? MSG.posterDateCreated : MSG.posterDateLastPost;
+      const fromStr = f.from ? formatShortDate(f.from) : '';
+      const toStr = f.to ? formatShortDate(f.to) : '';
+      return `${dimName}: ${fromStr}〜${toStr}`;
+    }
+    return filterLabel(f);
+  }
+  let posterShadow = [];              // flat leaf shadow of the poster tree (sidebar badges / rows)
+  let editingPosterDateNode = null;   // the date leaf being edited via the popover (null = new)
+  // The poster-side builder instance. transient (no tabs / nav history for posters);
+  // onChange → renderPosters (which redraws the rows + bar + grid).
+  const posterQB = createQueryBuilder({
+    container: document.getElementById('posterQueryChips'),
+    barEl: document.getElementById('posterActiveBar'),
+    resetBtn: document.getElementById('posterResetBtn'),
+    predOf: posterPredOf,
+    labelOf: posterFilterLabel,
+    glyphOf: qcGlyph,
+    getSearchVal: () => { const sb = document.getElementById('searchBox'); return sb ? sb.value : ''; },
+    onClearSearch: () => { const sb = document.getElementById('searchBox'); if (sb) sb.value = ''; renderPosters(); },
+    onChange: () => { renderPosters(); },
+    onShadow: (leaves) => { posterShadow = leaves; },
+    openLeafEditor: (n) => { if (n.type === 'date') openPosterDatePopover(n); },
+    editableLeafTypes: ['date'],
+    singleValueTypes: ['date', 'workspace', 'folder'],   // 択一: 1つ選ぶと既存を置換
+    noDupTypes: [],
+  });
+
   // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the
   // 作品/キャラ/タグ/インスタンス rows only when posters actually carry such values
   // (段階的開示), prune selections that no longer have a backing value, then refresh
@@ -4908,38 +4949,38 @@
   function renderPosterFilterRows() {
     const vocab = posterFilterVocab();
     const present = new Set(vocab);
-    for (const t of [...posterTagFilter]) if (!present.has(t)) posterTagFilter.delete(t);
+    // Drop tag leaves whose value no longer exists in any poster's tags (poster removed/edited).
+    if (posterQB.removeCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
     const named = namedPosters();
-    const platsPresent = new Set(named.map((u) => u.platform).filter(Boolean));
-    for (const p of [...posterPlatforms]) if (!platsPresent.has(p)) posterPlatforms.delete(p);
     const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
-    for (const h of [...posterInstanceFilter]) if (!instPresent.has(h)) posterInstanceFilter.delete(h);
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
     show('sbPosterWorkRow', vocab.some((t) => tagKindOf(t) === 'work'));
     show('sbPosterCharRow', vocab.some((t) => tagKindOf(t) === 'character'));
     show('sbPosterTagRow', vocab.some((t) => !tagKindOf(t)));
     show('sbPosterInstRow', instPresent.size > 0);
-    const sel = [...posterTagFilter];
+    // Row badges count the matching leaves in the poster query tree (shadow).
+    const leaves = posterQB.shadow();
+    const tagLeaves = leaves.filter((f) => f.type === 'tag');
     const counts = {
-      'poster-platform': posterPlatforms.size,
-      'poster-work': sel.filter((t) => tagKindOf(t) === 'work').length,
-      'poster-character': sel.filter((t) => tagKindOf(t) === 'character').length,
-      'poster-tag': sel.filter((t) => !tagKindOf(t)).length,
-      'poster-instance': posterInstanceFilter.size,
-      'poster-date': (posterDate.from || posterDate.to || posterDate.dir !== 'none') ? 1 : 0,
-      'poster-folder': posterFolderFilter ? 1 : 0
+      'poster-platform': leaves.filter((f) => f.type === 'platform').length,
+      'poster-work': tagLeaves.filter((f) => tagKindOf(f.value) === 'work').length,
+      'poster-character': tagLeaves.filter((f) => tagKindOf(f.value) === 'character').length,
+      'poster-tag': tagLeaves.filter((f) => !tagKindOf(f.value)).length,
+      'poster-instance': leaves.filter((f) => f.type === 'instance').length,
+      'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
+      'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0
     };
     document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
       const n = counts[b.dataset.badge] || 0;
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
-    // Workspace tray row: active when filtering, badge = count present this session,
-    // clear button only when non-empty (mirrors the post #wsRow).
+    // Workspace tray row: active when its leaf is in the tree, badge = count present this
+    // session, clear button only when non-empty (mirrors the post #wsRow).
     const wsRow = document.getElementById('posterWsRow');
     if (wsRow && CF()) {
       const n = CF().posterWorkspaceCount(new Set(named.map((u) => u.key)));
-      wsRow.classList.toggle('active', posterWorkspaceFilter);
+      wsRow.classList.toggle('active', posterQB.qHasValue('workspace', '*'));
       const wsBadge = document.getElementById('posterWsBadge');
       if (wsBadge) { wsBadge.textContent = n || ''; wsBadge.classList.toggle('on', n > 0); }
       const wsClear = document.getElementById('posterWsClear');
@@ -4955,27 +4996,20 @@
   function filteredPosters() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = namedPosters();
-    if (posterFolderFilter) { const f = posterFolderById(posterFolderFilter); const set = new Set(f ? f.items : []); list = list.filter((u) => set.has(u.key)); }
-    if (posterTagFilter.size) { const want = [...posterTagFilter]; list = list.filter((u) => { const have = new Set(posterTagsOf(u.key)); return want.every((t) => have.has(t)); }); }
-    if (posterPlatforms.size) list = list.filter((u) => posterPlatforms.has(u.platform));
-    if (posterInstanceFilter.size) list = list.filter((u) => posterInstanceFilter.has(u.instance));
-    if (posterWorkspaceFilter && CF()) list = list.filter((u) => CF().inPosterWorkspace(u.key));
-    // Date-range filter (3 dims): account-created / last-fetched / last-posted, exclusive end.
-    if (posterDate.from || posterDate.to) {
-      const field = posterDate.dim;
-      const from = posterDate.from ? new Date(posterDate.from + 'T00:00:00') : null;
-      let to = null; if (posterDate.to) { to = new Date(posterDate.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
-      list = list.filter((u) => { const v = u[field]; if (!v) return false; const d = new Date(v); return (!from || d >= from) && (!to || d < to); });
-    }
+    // Boolean query tree (platform / instance / tag / folder / date / workspace).
+    const root = posterQB.getTree();
+    if (root.children.length) list = list.filter((u) => posterQB.eval(u));
+    // Search is kept OUT of the tree (same作法 as the post side).
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
     const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
-    if (posterDate.dir === 'desc' || posterDate.dir === 'asc') {
-      // Date sort (from the date control) overrides the 投稿数/名前 select. Posters with
-      // no value for that date axis sort last regardless of direction.
-      const f = posterDate.dim, asc = posterDate.dir === 'asc';
+    // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
+    // query's date leaf (range axis == sort axis), falling back to 最終投稿日 (latest).
+    if (posterSort === 'date-desc' || posterSort === 'date-asc') {
+      const dl = treeLeaves(root).find((c) => c.type === 'date');
+      const field = (dl && dl.dateField) || 'latest', asc = posterSort === 'date-asc';
       list.sort((a, b) => {
-        const av = a[f] || '', bv = b[f] || '';
+        const av = a[field] || '', bv = b[field] || '';
         if (!av && !bv) return b.count - a.count;
         if (!av) return 1;
         if (!bv) return -1;
@@ -4998,6 +5032,7 @@
     // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
     const countEl = document.getElementById('posterCount');
     renderPosterFilterRows();
+    posterQB.render();   // draw the query bar (pills / groups) for the poster tree
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
     syncBrowseBar();
@@ -5190,7 +5225,7 @@
         const btn = e.target.closest('.poster-ws');
         if (btn) btn.classList.toggle('in', CF().inPosterWorkspace(u.key));
         renderPosterFilterRows();
-        if (posterWorkspaceFilter) renderPosters();
+        if (posterQB.qHasValue('workspace', '*')) renderPosters();
       }
       return;
     }
@@ -5231,7 +5266,7 @@
       if (a === 'ws') {
         if (CF()) CF().togglePosterWorkspace([u.key]);
         renderPosterFilterRows();
-        if (posterWorkspaceFilter) renderPosters();
+        if (posterQB.qHasValue('workspace', '*')) renderPosters();
         hidePosterMenu(); return;
       }
       if (a === 'newfolder') {
@@ -5255,9 +5290,14 @@
   // Poster-mode sort (sidebar). The remaining poster filters are rows → flyouts.
   { const ps = document.getElementById('posterSortSelect');
     if (ps) ps.addEventListener('change', () => {
-      posterSort = ps.value;
-      posterDate.dir = 'none';   // picking 投稿数/名前 clears any date sort (keeps the date range)
-      renderPosterFilterRows();  // date badge may drop if it was only a sort
+      posterSort = ps.value;   // 'count' | 'name' | 'date-desc' | 'date-asc'
+      renderPosters();
+    }); }
+  // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
+  { const pr = document.getElementById('posterResetBtn');
+    if (pr) pr.addEventListener('click', () => {
+      posterQB.resetTree();
+      const sb = document.getElementById('searchBox'); if (sb) sb.value = '';
       renderPosters();
     }); }
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
@@ -5268,15 +5308,15 @@
       if (!window.confirm(MSG.posterWsEmptyConfirm)) return;
       if (CF()) CF().clearPosterWorkspace();
       renderPosterFilterRows();
-      if (posterWorkspaceFilter) renderPosters();
+      if (posterQB.qHasValue('workspace', '*')) renderPosters();
       return;
     }
     if (e.target.closest('#posterWsRow')) {
-      posterWorkspaceFilter = !posterWorkspaceFilter;
       hideQfPop();
-      renderPosterFilterRows();   // flip the row's active class + badge
-      renderPosters();
-      return;
+      // Workspace tray = a single workspace leaf in the tree (mirrors the post #wsRow).
+      if (posterQB.qHasValue('workspace', '*')) posterQB.removeByLeaf('workspace', '*');
+      else posterQB.addFilter({ type: 'workspace', value: '*' });
+      return;   // addFilter/removeByLeaf refresh rows + bar + grid
     }
     const row = e.target.closest('[data-qfrow]');
     if (!row) return;
