@@ -658,69 +658,6 @@
     ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QC_GLYPH[type]}</svg>`
     : '');
 
-  // Inline query builder: render queryTree as draggable pills + parenthesised
-  // groups directly on the bar (docs/design-query-builder.md 改訂③). Fills
-  // qbNodeMap so drag/drop + the bar click handler can resolve data-nid → node.
-  function renderQueryChips() {
-    const container = document.getElementById('queryChips');
-    const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-pill')).map(el => el.textContent.trim()));
-    const bar = document.getElementById('postActiveBar');
-    const sbEl = document.getElementById('searchBox');
-    const searchVal = sbEl ? sbEl.value.trim() : '';
-    // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
-    if (bar) bar.style.display = '';
-    // The query bar is a full-width top bar; the floating sidebar offsets its sticky
-    // top by this height. Measure after layout (chips can wrap to多段).
-    if (bar) requestAnimationFrame(() => document.documentElement.style.setProperty('--activebar-h', bar.offsetHeight + 'px'));
-    const resetBtn = document.getElementById('postResetBtn');
-    const hasQuery = queryTree.children.length > 0;
-    if (resetBtn) resetBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
-
-    qbNodeMap = new Map();
-    let idc = 0;
-    const NE = '≠';
-    // Small ✕ glyph for the in-pill delete button (revealed on hover, inside bounds).
-    const delIc = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-    const opWord = (op) => escapeHtml(op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd);
-    // A condition leaf → draggable pill (hover ✕ removes it; right-click opens the
-    // negate / delete menu); a group → its members joined by clickable operator
-    // connectors, wrapped in literal parens (root has no parens and its connectors
-    // are .qb-op-root). A negated pill / group shows a leading ≠.
-    const renderNode = (node, isRoot) => {
-      const id = 'n' + (idc++);
-      qbNodeMap.set(id, node);
-      if (node.kind === 'cond') {
-        return `<span class="qb-pill sb-active-chip qc-${node.type}${node.neg ? ' neg' : ''}" draggable="true" data-nid="${id}">` +
-          qcGlyph(node.type) + (node.neg ? `<span class="qb-ne">${NE}</span>` : '') +
-          `<span class="qb-pill-label">${escapeHtml(filterLabel(node))}</span>` +
-          `<button type="button" class="qb-del-btn" data-act="del" data-nid="${id}" title="${escapeAttr(MSG.qfDelete)}" aria-label="${escapeAttr(MSG.qfDelete)}" tabindex="-1">${delIc}</button>` +
-          `</span>`;
-      }
-      const opCls = isRoot ? 'qb-op qb-op-root' : 'qb-op';
-      const conn = `<button type="button" class="${opCls}" data-act="op" data-nid="${id}" title="${escapeAttr(MSG.qbTipOp)}"${isRoot ? '' : ' draggable="true"'}>${opWord(node.op)}</button>`;
-      const inner = node.children.map((c) => renderNode(c, false)).join(conn);
-      if (isRoot) return inner;   // root: bare members, no parens / no negation
-      return `<span class="qb-grp${node.neg ? ' neg' : ''}" data-nid="${id}">` +
-        `<span class="qb-paren qb-paren-l" draggable="true">${node.neg ? NE : ''}(</span>` +
-        inner +
-        `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
-        `</span>`;
-    };
-    const searchSeg = searchVal
-      ? `<span class="sb-active-chip qc-search" data-special="search">${qcGlyph('search')}${escapeHtml(searchVal)}</span>` +
-        (hasQuery ? `<span class="qc-conn">${escapeHtml(MSG.qcJoinAnd)}</span>` : '')
-      : '';
-    const addBtn = hasQuery
-      ? `<button type="button" class="qb-group-add" data-qb-group-add title="${escapeAttr(MSG.qbAddGroupTip)}">( )</button>`
-      : '';
-    container.innerHTML = searchSeg + renderNode(queryTree, true) + addBtn;
-    if (!prefersReducedMotion()) {
-      container.querySelectorAll('.qb-pill').forEach(el => { if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new'); });
-    }
-    // No custom <select>s in the bar anymore; prune any detached hosts left over.
-    for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
-  }
-
   function formatShortDate(dateStr) {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');
@@ -769,36 +706,13 @@
     updateSidebarTags();
   }
 
-  // Sidebar entry points (flyout / chips / date-eng popovers / folders / workspace)
-  // all add a NEW condition at the TOP level of the tree (改訂③: 新しい条件はトップ
-  // 階層に載る). Structure (groups / nesting) is built only by dragging on the bar.
-  function addFilter(filter) {
-    // date + kind are single-valued (択一): a new one replaces the existing anywhere.
-    if (filter.type === 'date' || filter.type === 'kind') removeCondsMatching((c) => c.type === filter.type);
-    // Prevent exact duplicates (anywhere in the tree).
-    else if (filter.type !== 'engagement' && qHasValue(filter.type, filter.value)) return;
-    queryTree.children.push(Object.assign({ kind: 'cond' }, filter));
-    cleanupTree();
-    afterQueryChange();
-  }
-
-  // Remove the condition(s) matching the shadow filter at `index` (called from the
-  // sidebar toggle handlers, which findIndex into activeFilters). Bar-pill removal
-  // targets a specific tree node by id (see the queryChips click handler).
-  function removeFilter(index) {
-    const f = activeFilters[index];
-    if (!f) return;
-    removeCondsMatching((c) => sameLeaf(c, f));
-    afterQueryChange();
-  }
-
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   function resetAllFilters() {
     // Bounce back to the poster grid only if we drilled in from a poster AND that
     // poster's user filter is still active (check before emptying the tree).
     const bounce = posterReturn && qHasValue('user', posterReturn);
-    queryTree = emptyTree();
+    postQB.resetTree();
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     afterQueryChange();
@@ -1172,45 +1086,6 @@
   qbHelpBtn.addEventListener('focus', showQbHelp);
   qbHelpBtn.addEventListener('blur', hideQbHelp);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbHelp(); });
-
-  // Bar interaction (click): toggle a group's operator, clear search, delete a
-  // condition (the ✕ button), or wrap the whole expression in a group. Negation and
-  // a redundant delete live in the right-click menu (see chips 'contextmenu' below).
-  document.getElementById('queryChips').addEventListener('click', (e) => {
-    if (e.target.closest('[data-qb-group-add]')) { wrapAllInGroup(); return; }
-    const opBtn = e.target.closest('.qb-op[data-act="op"]');
-    if (opBtn) { const n = nodeById(opBtn.dataset.nid); if (n) { n.op = opposite(n.op); afterQueryChange(); } return; }
-    const delBtn = e.target.closest('.qb-del-btn[data-act="del"]');
-    if (delBtn) { const n = nodeById(delBtn.dataset.nid); if (n) removeNode(n); return; }
-    // 検索の特殊ピルは検索を解除。
-    if (e.target.closest('[data-special="search"]')) {
-      const sb = document.getElementById('searchBox'); if (sb) sb.value = '';
-      afterQueryChange();
-      return;
-    }
-    const pill = e.target.closest('.qb-pill');
-    if (!pill) return;
-    const node = nodeById(pill.dataset.nid);
-    if (!node || node.kind !== 'cond') return;
-    // 日付・反応は左クリックで編集ポップへ。それ以外のピルは左クリックでは何もしない
-    // （削除は✕ボタン、否定は右クリックのメニュー）。ピル本体はドラッグのつかみどころ。
-    if (node.type === 'date') { openDatePopover(node); return; }
-    if (node.type === 'engagement') { openEngPopover(node); return; }
-  });
-  // グループ追加ボタン: 今の式ぜんぶを一発で囲う＝ネストのショートカット（押すたび深く）。
-  function wrapAllInGroup() {
-    if (!queryTree.children.length) return;
-    const g = { kind: 'group', op: queryTree.op, neg: false, children: queryTree.children };
-    queryTree = { kind: 'group', op: 'and', neg: false, children: [g] };
-    cleanupTree();   // single-condition wrap collapses (nothing meaningful to group)
-    afterQueryChange();
-  }
-  function removeNode(node) {
-    const pmap = treeParentMap();
-    detachNode(node, pmap);
-    cleanupTree();
-    afterQueryChange();
-  }
 
   // 日付/エンゲージのポップオーバーは値フライアウト(qfPop)と同じ「行クリックで開閉・
   // 外側クリックで閉じる」挙動に統一する。旧実装は全画面 .qf-backdrop(z999) が
@@ -1770,13 +1645,14 @@
   let selectionAnchor = null;    // index in the filtered list, for shift-range select
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
-  // groups; no auto type-grouping). queryTree is ALWAYS a root group (op 'and' by
-  // default). activeFilters is a derived flat shadow of its leaves, used only for
-  // sidebar highlight / row badges / tab title / counts — never mutated directly.
+  // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
+  // implementation via the createQueryBuilder(ctx) factory below; ctx carries the
+  // per-view differences (container, leaf predicate, label, callbacks). The tree is
+  // ALWAYS a root group (op 'and' by default). For posts, activeFilters is a derived
+  // flat shadow of the leaves (sidebar highlight / row badges / tab title / counts).
   function emptyTree() { return { kind: 'group', op: 'and', neg: false, children: [] }; }
-  let queryTree = emptyTree();
-  function currentTree() { return queryTree; }
   function treeLeaves(n, out) { out = out || []; if (!n) return out; if (n.kind === 'cond') out.push(n); else (n.children || []).forEach((c) => treeLeaves(c, out)); return out; }
+  function opposite(op) { return op === 'and' ? 'or' : 'and'; }
   // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
   function facetTreeFrom(f, ops) {
     const root = emptyTree();
@@ -1791,198 +1667,409 @@
     }
     return root;
   }
-
-  // --- Tree mutation helpers (all operate on queryTree; callers re-sync + render). ---
-  function treeParentMap() { const m = new Map(); (function rec(n) { (n.children || []).forEach((c) => { m.set(c, n); rec(c); }); })(queryTree); return m; }
-  function nodeContains(a, b) { if (a === b) return true; if (!a || a.kind !== 'group') return false; return (a.children || []).some((c) => nodeContains(c, b)); }
-  function detachNode(node, pmap) { const par = pmap.get(node); if (!par) return; const i = par.children.indexOf(node); if (i >= 0) par.children.splice(i, 1); }
-  function opposite(op) { return op === 'and' ? 'or' : 'and'; }
-  // Auto-clean: drop empty groups, collapse single-member non-root groups (folding
-  // their negation into the survivor) — “1メンバーになったら括弧は自動で消える”.
-  function cleanupTree() {
-    (function rec(node) {
-      if (node.kind !== 'group') return;
-      const out = [];
-      for (let c of node.children) {
-        rec(c);
-        if (c.kind === 'group') {
-          if (!c.children.length) continue;                                   // drop empty
-          if (c.children.length === 1) { const only = c.children[0]; if (c.neg) only.neg = !only.neg; out.push(only); continue; }  // collapse singleton
-        }
-        out.push(c);
+  // Post-side leaf predicate: a leaf condition → (post)=>bool. Hoisted out of
+  // renderPosts so the shared evalNode (and the poster builder) can reuse the engine.
+  function postPredOf(f) {
+    switch (f.type) {
+      // 'post' = SNS投稿（リンクあり）/ 'image' = 取り込み画像（リンクなし）。url の有無が本質。
+      case 'kind': return (p) => (f.value === 'post') === !!p.url;
+      case 'platform': return (p) => f.value === '__none' ? !p.platform : p.platform === f.value;
+      case 'user': return (p) => userKey(p) === f.value;
+      case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
+      case 'postType': return (p) =>
+        f.value === 'post' ? (!p.isReply && !p.isQuote && !p.isThread) :
+        f.value === 'reply' ? !!p.isReply :
+        f.value === 'quote' ? !!p.isQuote : !!p.isThread;
+      case 'media': return (p) => p.mediaType === f.value;
+      case 'tag':     return (p) => (p.tags     || []).includes(f.value);
+      case 'hashtag': return (p) => (p.hashtags || []).includes(f.value);
+      case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
+      case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
+      case 'date': {
+        const field = f.dateField || 'date';
+        const from = f.from ? new Date(f.from + 'T00:00:00') : null;
+        let to = null;
+        // Exclusive next-day bound so the whole selected end day is included.
+        if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
+        return (p) => {
+          if (!p[field]) return false;
+          const d = new Date(p[field]);
+          return (!from || d >= from) && (!to || d < to);
+        };
       }
-      node.children = out;
-    })(queryTree);
-  }
-  function qHasValue(type, value) { return treeLeaves(queryTree).some((c) => c.type === type && c.value === value); }
-  function removeCondsMatching(pred) {
-    (function rec(node) {
-      if (node.kind !== 'group') return;
-      node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
-      node.children.forEach(rec);
-    })(queryTree);
-    cleanupTree();
-  }
-  function sameLeaf(c, f) {
-    if (c.type !== f.type) return false;
-    if (f.type === 'date') return true;                       // single date condition
-    if (f.type === 'engagement') return c.engType === f.engType;
-    return c.value === f.value;
-  }
-  // activeFilters mirrors the tree's leaves (deduped) so sidebar highlight / row
-  // badges / tab title keep working (the tree holds the structure / operators).
-  function syncShadow() {
-    const seen = new Set();
-    const out = [];
-    for (const c of treeLeaves(queryTree)) {
-      if (c.type === 'date' || c.type === 'engagement') { const f = Object.assign({}, c); delete f.kind; delete f.neg; out.push(f); continue; }
-      const k = c.type + ' ' + c.value;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      const f = { type: c.type, value: c.value };
-      if (c.label) f.label = c.label;
-      out.push(f);
+      case 'engagement': {
+        if (!(f.min > 0)) return () => true;
+        return (p) => f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min;
+      }
+      default: return () => true;
     }
-    activeFilters = out;
   }
-  // One canonical refresh after any tree mutation: rebuild the shadow, then
-  // renderPosts() (which itself runs updateSidebarState → renderQueryChips).
-  function afterQueryChange() { syncShadow(); renderPostFolders(); renderPosts(); }
+  // Recursive evaluation of a query tree against one item, using a view-supplied
+  // leaf predicate factory (predOf). Shared by both builders (post + poster).
+  function evalNode(n, item, predOf) {
+    if (n.kind === 'cond') { const r = predOf(n)(item); return n.neg ? !r : r; }
+    const r = n.op === 'or' ? n.children.some((c) => evalNode(c, item, predOf)) : n.children.every((c) => evalNode(c, item, predOf));
+    return n.neg ? !r : r;
+  }
 
-  // --- Inline builder interaction: drag pills/groups into parenthesised groups ---
-  // (docs/design-query-builder.md 改訂③). renderQueryChips() fills qbNodeMap
-  // (data-nid → node); drag/drop + the bar click handler mutate queryTree directly.
-  let qbNodeMap = new Map();      // data-nid → tree node (rebuilt each render)
-  let qbDragId = null;            // node id currently being dragged
-  const nodeById = (id) => qbNodeMap.get(id) || null;
-  const chips = document.getElementById('queryChips');
+  // The shared inline drag-builder. One instance per view. Encapsulates the tree
+  // state, render, drag/drop, right-click menu, and mutation helpers so two
+  // independent bars (posts / posters) get identical behaviour from one codebase.
+  // ctx: { container, barEl?, resetBtn?, predOf, labelOf, glyphOf, getSearchVal?,
+  //        onClearSearch?, onChange, onShadow?, openLeafEditor?, editableLeafTypes?,
+  //        singleValueTypes?, noDupTypes? }
+  function createQueryBuilder(ctx) {
+    let tree = emptyTree();
+    let qbNodeMap = new Map();      // data-nid → tree node (rebuilt each render)
+    let qbDragId = null;            // node id currently being dragged
+    let shadow = [];                // last computed flat (deduped) leaf shadow
+    const chips = ctx.container;
+    const nodeById = (id) => qbNodeMap.get(id) || null;
+    const editableLeafTypes = ctx.editableLeafTypes || [];
+    const singleValueTypes = ctx.singleValueTypes || [];
+    const noDupTypes = ctx.noDupTypes || [];
 
-  function qbClearDropHints() { chips.querySelectorAll('.qb-drop-into, .qb-drop-on').forEach((el) => el.classList.remove('qb-drop-into', 'qb-drop-on')); chips.classList.remove('qb-drop-root'); }
-  // Where does a drag-event drop? onto a pill (merge → pair group), onto a group
-  // frame (wrap → nest), inside a group body (add member), or the bar background
-  // (→ root). Uses the event's target (the element under the pointer in HTML5 DnD),
-  // falling back to elementFromPoint for safety.
-  function qbDropTarget(e) {
-    let el = (e.target && e.target.nodeType === 1) ? e.target : null;
-    if (!el || !chips.contains(el)) el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || !chips.contains(el)) return { kind: 'root' };
-    const pill = el.closest('.qb-pill');
-    if (pill) return { kind: 'pill', nid: pill.dataset.nid, el: pill };
-    const frame = el.closest('.qb-paren, .qb-op:not(.qb-op-root)');
-    if (frame) { const g = frame.closest('.qb-grp'); if (g && !g.classList.contains('qb-root')) return { kind: 'frame', nid: g.dataset.nid, el: g }; }
-    const grp = el.closest('.qb-grp:not(.qb-root)');
-    if (grp) return { kind: 'inside', nid: grp.dataset.nid, el: grp };
-    return { kind: 'root' };
-  }
-  // Drag start: a pill drags that condition; a paren / operator label drags the
-  // whole enclosing group (掴む対象で「中身 vs 丸ごと」を分ける). The root has no
-  // parens and its operator labels are .qb-op-root (not draggable).
-  chips.addEventListener('dragstart', (e) => {
-    const handle = e.target.closest('.qb-pill, .qb-paren, .qb-op:not(.qb-op-root)');
-    if (!handle) { e.preventDefault(); return; }
-    let id, dragEl;
-    if (handle.classList.contains('qb-pill')) { id = handle.dataset.nid; dragEl = handle; }
-    else { const g = handle.closest('.qb-grp'); id = g && g.dataset.nid; dragEl = g; }
-    if (!id) { e.preventDefault(); return; }
-    qbDragId = id;
-    try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
-    if (dragEl) requestAnimationFrame(() => dragEl.classList.add('qb-dragging'));
-  });
-  chips.addEventListener('dragend', () => {
-    qbDragId = null;
-    chips.querySelectorAll('.qb-dragging').forEach((el) => el.classList.remove('qb-dragging'));
-    qbClearDropHints();
-  });
-  chips.addEventListener('dragover', (e) => {
-    if (!qbDragId) return;
-    e.preventDefault();
-    try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
-    qbClearDropHints();
-    const t = qbDropTarget(e);
-    const drag = nodeById(qbDragId);
-    const tnode = t.nid ? nodeById(t.nid) : queryTree;
-    if (drag && tnode && (tnode === drag || nodeContains(drag, tnode))) return;   // can't drop into self / own descendant
-    if (t.kind === 'pill' || t.kind === 'frame') t.el.classList.add('qb-drop-on');
-    else if (t.kind === 'inside') t.el.classList.add('qb-drop-into');
-    else chips.classList.add('qb-drop-root');
-  });
-  chips.addEventListener('dragleave', (e) => { if (e.target === chips) qbClearDropHints(); });
-  chips.addEventListener('drop', (e) => {
-    if (!qbDragId) return;
-    e.preventDefault();
-    const t = qbDropTarget(e);
-    const drag = nodeById(qbDragId);
-    qbDragId = null;
-    qbClearDropHints();
-    if (!drag) return;
-    const target = t.nid ? nodeById(t.nid) : queryTree;
-    if (!target || target === drag || nodeContains(drag, target)) return;   // can't drop onto itself / own descendant
-    const pmap = treeParentMap();
-    detachNode(drag, pmap);                          // remove from its current parent first
-    if (t.kind === 'pill' || t.kind === 'frame') {   // wrap target + drag in a new group (pair / nest)
-      const par = pmap.get(target) || queryTree;
-      const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
-      const i = par.children.indexOf(target); if (i >= 0) par.children[i] = g; else par.children.push(g);
-    } else if (t.kind === 'inside') {                // add as a member of the group
-      target.children.push(drag);
-    } else {                                         // bar background → move to the top level
-      queryTree.children.push(drag);
-    }
-    cleanupTree();
-    afterQueryChange();
-  });
+    // --- Tree mutation helpers (all operate on THIS instance's tree). ---
+    const treeParentMap = () => { const m = new Map(); (function rec(n) { (n.children || []).forEach((c) => { m.set(c, n); rec(c); }); })(tree); return m; };
+    const nodeContains = (a, b) => { if (a === b) return true; if (!a || a.kind !== 'group') return false; return (a.children || []).some((c) => nodeContains(c, b)); };
+    const detachNode = (node, pmap) => { const par = pmap.get(node); if (!par) return; const i = par.children.indexOf(node); if (i >= 0) par.children.splice(i, 1); };
+    // Auto-clean: drop empty groups, collapse single-member non-root groups (folding
+    // their negation into the survivor) — “1メンバーになったら括弧は自動で消える”.
+    const cleanupTree = () => {
+      (function rec(node) {
+        if (node.kind !== 'group') return;
+        const out = [];
+        for (let c of node.children) {
+          rec(c);
+          if (c.kind === 'group') {
+            if (!c.children.length) continue;                                   // drop empty
+            if (c.children.length === 1) { const only = c.children[0]; if (c.neg) only.neg = !only.neg; out.push(only); continue; }  // collapse singleton
+          }
+          out.push(c);
+        }
+        node.children = out;
+      })(tree);
+    };
+    const qHasValue = (type, value) => treeLeaves(tree).some((c) => c.type === type && c.value === value);
+    const removeCondsMatching = (pred) => {
+      const before = treeLeaves(tree).length;
+      (function rec(node) {
+        if (node.kind !== 'group') return;
+        node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
+        node.children.forEach(rec);
+      })(tree);
+      cleanupTree();
+      return treeLeaves(tree).length !== before;   // changed?
+    };
+    const sameLeaf = (c, f) => {
+      if (c.type !== f.type) return false;
+      if (f.type === 'date') return true;                       // single date condition
+      if (f.type === 'engagement') return c.engType === f.engType;
+      return c.value === f.value;
+    };
+    // Rebuild the flat (deduped) leaf shadow and hand it to the view (onShadow).
+    const syncShadow = () => {
+      const seen = new Set();
+      const out = [];
+      for (const c of treeLeaves(tree)) {
+        if (c.type === 'date' || c.type === 'engagement') { const f = Object.assign({}, c); delete f.kind; delete f.neg; out.push(f); continue; }
+        const k = c.type + ' ' + c.value;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const f = { type: c.type, value: c.value };
+        if (c.label) f.label = c.label;
+        out.push(f);
+      }
+      shadow = out;
+      if (ctx.onShadow) ctx.onShadow(shadow);
+    };
+    // One canonical refresh after any tree mutation: rebuild the shadow, then let
+    // the view re-render (which itself re-renders this bar via render()).
+    const refresh = () => { syncShadow(); ctx.onChange(); };
 
-  // --- Query-builder right-click menu: negate / delete a pill or group. Negation is
-  // a low-frequency operation, so (like the card menu, DESIGN.md) it lives behind a
-  // right-click rather than a hover badge that crowds the surface (改訂③ revisited).
-  const qbMenu = document.createElement('div');
-  qbMenu.className = 'fold-menu qb-menu';
-  document.body.appendChild(qbMenu);
-  let qbMenuNode = null;
-  function hideQbMenu() { qbMenu.classList.remove('show'); qbMenuNode = null; }
-  const QB_IC = {
-    neg: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
-    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
-  };
-  function showQbMenu(node, isGroup, x, y) {
-    qbMenuNode = node;
-    const row = (act, ic, label, cls, on) =>
-      `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
-    qbMenu.innerHTML =
-      row('neg', QB_IC.neg, isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, '', !!node.neg) +
-      '<div class="fm-sep"></div>' +
-      row('del', QB_IC.del, MSG.qfDelete, 'fm-danger');
-    qbMenu.style.left = x + 'px';
-    qbMenu.style.top = y + 'px';
-    qbMenu.classList.add('show');
-    clampIntoView(qbMenu);
+    // --- Render: the tree as draggable pills + parenthesised groups on the bar. ---
+    function render() {
+      const container = chips;
+      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-pill')).map(el => el.textContent.trim()));
+      const bar = ctx.barEl || null;
+      const searchVal = ctx.getSearchVal ? (ctx.getSearchVal() || '').trim() : '';
+      // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
+      if (bar) bar.style.display = '';
+      // The bar is a full-width top bar; the floating sidebar offsets its sticky top
+      // by this height. Measure after layout, and only when the bar is actually shown.
+      if (bar) requestAnimationFrame(() => { const h = bar.offsetHeight; if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px'); });
+      const resetBtn = ctx.resetBtn || null;
+      const hasQuery = tree.children.length > 0;
+      if (resetBtn) resetBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
+      qbNodeMap = new Map();
+      let idc = 0;
+      const NE = '≠';
+      // Small ✕ glyph for the in-pill delete button (revealed on hover, inside bounds).
+      const delIc = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+      const opWord = (op) => escapeHtml(op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd);
+      // A condition leaf → draggable pill (hover ✕ removes; right-click negate/delete);
+      // a group → its members joined by clickable operator connectors, wrapped in
+      // literal parens (root has no parens and its connectors are .qb-op-root).
+      const renderNode = (node, isRoot) => {
+        const id = 'n' + (idc++);
+        qbNodeMap.set(id, node);
+        if (node.kind === 'cond') {
+          return `<span class="qb-pill sb-active-chip qc-${node.type}${node.neg ? ' neg' : ''}" draggable="true" data-nid="${id}">` +
+            ctx.glyphOf(node.type) + (node.neg ? `<span class="qb-ne">${NE}</span>` : '') +
+            `<span class="qb-pill-label">${escapeHtml(ctx.labelOf(node))}</span>` +
+            `<button type="button" class="qb-del-btn" data-act="del" data-nid="${id}" title="${escapeAttr(MSG.qfDelete)}" aria-label="${escapeAttr(MSG.qfDelete)}" tabindex="-1">${delIc}</button>` +
+            `</span>`;
+        }
+        const opCls = isRoot ? 'qb-op qb-op-root' : 'qb-op';
+        const conn = `<button type="button" class="${opCls}" data-act="op" data-nid="${id}" title="${escapeAttr(MSG.qbTipOp)}"${isRoot ? '' : ' draggable="true"'}>${opWord(node.op)}</button>`;
+        const inner = node.children.map((c) => renderNode(c, false)).join(conn);
+        if (isRoot) return inner;   // root: bare members, no parens / no negation
+        return `<span class="qb-grp${node.neg ? ' neg' : ''}" data-nid="${id}">` +
+          `<span class="qb-paren qb-paren-l" draggable="true">${node.neg ? NE : ''}(</span>` +
+          inner +
+          `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
+          `</span>`;
+      };
+      const searchSeg = searchVal
+        ? `<span class="sb-active-chip qc-search" data-special="search">${ctx.glyphOf('search')}${escapeHtml(searchVal)}</span>` +
+          (hasQuery ? `<span class="qc-conn">${escapeHtml(MSG.qcJoinAnd)}</span>` : '')
+        : '';
+      const addBtn = hasQuery
+        ? `<button type="button" class="qb-group-add" data-qb-group-add title="${escapeAttr(MSG.qbAddGroupTip)}">( )</button>`
+        : '';
+      container.innerHTML = searchSeg + renderNode(tree, true) + addBtn;
+      if (!prefersReducedMotion()) {
+        container.querySelectorAll('.qb-pill').forEach(el => { if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new'); });
+      }
+      // No custom <select>s in the bar anymore; prune any detached hosts left over.
+      for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
+    }
+
+    // Sidebar entry points add a NEW condition at the TOP level of the tree (改訂③:
+    // 新しい条件はトップ階層に載る). Structure (groups / nesting) is built only by
+    // dragging on the bar.
+    function addFilter(filter) {
+      // Single-valued types (択一): a new one replaces the existing anywhere.
+      if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
+      // Prevent exact duplicates (anywhere in the tree), except for multi types.
+      else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return;
+      tree.children.push(Object.assign({ kind: 'cond' }, filter));
+      cleanupTree();
+      refresh();
+    }
+    // Remove the condition(s) matching the shadow filter at `index` (sidebar toggle
+    // handlers findIndex into the shadow). Bar-pill removal targets a node by id.
+    function removeFilter(index) {
+      const f = shadow[index];
+      if (!f) return;
+      removeCondsMatching((c) => sameLeaf(c, f));
+      refresh();
+    }
+    function removeNode(node) {
+      const pmap = treeParentMap();
+      detachNode(node, pmap);
+      cleanupTree();
+      refresh();
+    }
+    // グループ追加ボタン: 今の式ぜんぶを一発で囲う＝ネストのショートカット（押すたび深く）。
+    function wrapAllInGroup() {
+      if (!tree.children.length) return;
+      const g = { kind: 'group', op: tree.op, neg: false, children: tree.children };
+      tree = { kind: 'group', op: 'and', neg: false, children: [g] };
+      cleanupTree();   // single-condition wrap collapses (nothing meaningful to group)
+      refresh();
+    }
+
+    // Bar interaction (click): toggle a group's operator, clear search, delete a
+    // condition (the ✕ button), wrap the whole expression, or open a leaf editor
+    // (date/engagement). Negation + a redundant delete live in the right-click menu.
+    chips.addEventListener('click', (e) => {
+      if (e.target.closest('[data-qb-group-add]')) { wrapAllInGroup(); return; }
+      const opBtn = e.target.closest('.qb-op[data-act="op"]');
+      if (opBtn) { const n = nodeById(opBtn.dataset.nid); if (n) { n.op = opposite(n.op); refresh(); } return; }
+      const delBtn = e.target.closest('.qb-del-btn[data-act="del"]');
+      if (delBtn) { const n = nodeById(delBtn.dataset.nid); if (n) removeNode(n); return; }
+      // 検索の特殊ピルは検索を解除。
+      if (e.target.closest('[data-special="search"]')) { if (ctx.onClearSearch) ctx.onClearSearch(); return; }
+      const pill = e.target.closest('.qb-pill');
+      if (!pill) return;
+      const node = nodeById(pill.dataset.nid);
+      if (!node || node.kind !== 'cond') return;
+      // 編集可能な葉（日付・反応）は左クリックで編集ポップへ。それ以外は何もしない
+      // （削除は✕、否定は右クリック、ピル本体はドラッグのつかみどころ）。
+      if (editableLeafTypes.includes(node.type) && ctx.openLeafEditor) ctx.openLeafEditor(node);
+    });
+
+    // --- Drag & drop: drag pills/groups into parenthesised groups (改訂③). ---
+    function qbClearDropHints() { chips.querySelectorAll('.qb-drop-into, .qb-drop-on').forEach((el) => el.classList.remove('qb-drop-into', 'qb-drop-on')); chips.classList.remove('qb-drop-root'); }
+    // Where does a drag-event drop? onto a pill (merge → pair group), a group frame
+    // (wrap → nest), inside a group body (add member), or the bar background (→ root).
+    function qbDropTarget(e) {
+      let el = (e.target && e.target.nodeType === 1) ? e.target : null;
+      if (!el || !chips.contains(el)) el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el || !chips.contains(el)) return { kind: 'root' };
+      const pill = el.closest('.qb-pill');
+      if (pill) return { kind: 'pill', nid: pill.dataset.nid, el: pill };
+      const frame = el.closest('.qb-paren, .qb-op:not(.qb-op-root)');
+      if (frame) { const g = frame.closest('.qb-grp'); if (g && !g.classList.contains('qb-root')) return { kind: 'frame', nid: g.dataset.nid, el: g }; }
+      const grp = el.closest('.qb-grp:not(.qb-root)');
+      if (grp) return { kind: 'inside', nid: grp.dataset.nid, el: grp };
+      return { kind: 'root' };
+    }
+    // Drag start: a pill drags that condition; a paren / operator label drags the
+    // whole enclosing group (掴む対象で「中身 vs 丸ごと」を分ける).
+    chips.addEventListener('dragstart', (e) => {
+      const handle = e.target.closest('.qb-pill, .qb-paren, .qb-op:not(.qb-op-root)');
+      if (!handle) { e.preventDefault(); return; }
+      let id, dragEl;
+      if (handle.classList.contains('qb-pill')) { id = handle.dataset.nid; dragEl = handle; }
+      else { const g = handle.closest('.qb-grp'); id = g && g.dataset.nid; dragEl = g; }
+      if (!id) { e.preventDefault(); return; }
+      qbDragId = id;
+      try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+      if (dragEl) requestAnimationFrame(() => dragEl.classList.add('qb-dragging'));
+    });
+    chips.addEventListener('dragend', () => {
+      qbDragId = null;
+      chips.querySelectorAll('.qb-dragging').forEach((el) => el.classList.remove('qb-dragging'));
+      qbClearDropHints();
+    });
+    chips.addEventListener('dragover', (e) => {
+      if (!qbDragId) return;
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+      qbClearDropHints();
+      const t = qbDropTarget(e);
+      const drag = nodeById(qbDragId);
+      const tnode = t.nid ? nodeById(t.nid) : tree;
+      if (drag && tnode && (tnode === drag || nodeContains(drag, tnode))) return;   // can't drop into self / own descendant
+      if (t.kind === 'pill' || t.kind === 'frame') t.el.classList.add('qb-drop-on');
+      else if (t.kind === 'inside') t.el.classList.add('qb-drop-into');
+      else chips.classList.add('qb-drop-root');
+    });
+    chips.addEventListener('dragleave', (e) => { if (e.target === chips) qbClearDropHints(); });
+    chips.addEventListener('drop', (e) => {
+      if (!qbDragId) return;
+      e.preventDefault();
+      const t = qbDropTarget(e);
+      const drag = nodeById(qbDragId);
+      qbDragId = null;
+      qbClearDropHints();
+      if (!drag) return;
+      const target = t.nid ? nodeById(t.nid) : tree;
+      if (!target || target === drag || nodeContains(drag, target)) return;   // can't drop onto itself / own descendant
+      const pmap = treeParentMap();
+      detachNode(drag, pmap);                          // remove from its current parent first
+      if (t.kind === 'pill' || t.kind === 'frame') {   // wrap target + drag in a new group (pair / nest)
+        const par = pmap.get(target) || tree;
+        const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
+        const i = par.children.indexOf(target); if (i >= 0) par.children[i] = g; else par.children.push(g);
+      } else if (t.kind === 'inside') {                // add as a member of the group
+        target.children.push(drag);
+      } else {                                         // bar background → move to the top level
+        tree.children.push(drag);
+      }
+      cleanupTree();
+      refresh();
+    });
+
+    // --- Right-click menu: negate / delete a pill or group. Negation is a low-
+    // frequency operation, so (like the card menu, DESIGN.md) it lives behind a
+    // right-click rather than a hover badge. One menu DOM per builder instance so
+    // qbMenuNode is never ambiguous between the two bars.
+    const qbMenu = document.createElement('div');
+    qbMenu.className = 'fold-menu qb-menu';
+    document.body.appendChild(qbMenu);
+    let qbMenuNode = null;
+    const hideQbMenu = () => { qbMenu.classList.remove('show'); qbMenuNode = null; };
+    const QB_IC = {
+      neg: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
+      del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+    };
+    function showQbMenu(node, isGroup, x, y) {
+      qbMenuNode = node;
+      const row = (act, ic, label, cls, on) =>
+        `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+      qbMenu.innerHTML =
+        row('neg', QB_IC.neg, isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, '', !!node.neg) +
+        '<div class="fm-sep"></div>' +
+        row('del', QB_IC.del, MSG.qfDelete, 'fm-danger');
+      qbMenu.style.left = x + 'px';
+      qbMenu.style.top = y + 'px';
+      qbMenu.classList.add('show');
+      clampIntoView(qbMenu);
+    }
+    // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
+    chips.addEventListener('contextmenu', (e) => {
+      const pill = e.target.closest('.qb-pill');
+      if (pill) {
+        const n = nodeById(pill.dataset.nid);
+        if (n && n.kind === 'cond') { e.preventDefault(); hideQbMenu(); showQbMenu(n, false, e.clientX, e.clientY); }
+        return;
+      }
+      const frameEl = e.target.closest('.qb-paren, .qb-op:not(.qb-op-root)');
+      const g = frameEl ? frameEl.closest('.qb-grp:not(.qb-root)') : e.target.closest('.qb-grp:not(.qb-root)');
+      if (g) {
+        const n = nodeById(g.dataset.nid);
+        if (n && n.kind === 'group') { e.preventDefault(); hideQbMenu(); showQbMenu(n, true, e.clientX, e.clientY); }
+      }
+    });
+    qbMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rowEl = e.target.closest('.fm-row');
+      const n = qbMenuNode;
+      hideQbMenu();
+      if (!rowEl || !n) return;
+      if (rowEl.dataset.act === 'neg') { n.neg = !n.neg; refresh(); }
+      else if (rowEl.dataset.act === 'del') { removeNode(n); }
+    });
+    document.addEventListener('click', (e) => { if (qbMenu.classList.contains('show') && !qbMenu.contains(e.target)) hideQbMenu(); }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbMenu(); });
+
+    return {
+      getTree: () => tree,
+      // Replace the tree (clone + self-heal singleton groups + recompute shadow).
+      setTree: (t) => { tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree(); cleanupTree(); syncShadow(); },
+      resetTree: () => { tree = emptyTree(); },
+      addFilter, removeFilter, removeNode,
+      removeByLeaf: (type, value) => removeCondsMatching((c) => c.type === type && c.value === value),
+      removeByType: (type) => removeCondsMatching((c) => c.type === type),
+      removeCondsMatching,
+      qHasValue,
+      render, refresh, syncShadow,
+      eval: (item) => evalNode(tree, item, ctx.predOf),
+      hasQuery: () => tree.children.length > 0,
+      shadow: () => shadow,
+    };
   }
-  // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
-  chips.addEventListener('contextmenu', (e) => {
-    const pill = e.target.closest('.qb-pill');
-    if (pill) {
-      const n = nodeById(pill.dataset.nid);
-      if (n && n.kind === 'cond') { e.preventDefault(); hideQbMenu(); showQbMenu(n, false, e.clientX, e.clientY); }
-      return;
-    }
-    const frameEl = e.target.closest('.qb-paren, .qb-op:not(.qb-op-root)');
-    const g = frameEl ? frameEl.closest('.qb-grp:not(.qb-root)') : e.target.closest('.qb-grp:not(.qb-root)');
-    if (g) {
-      const n = nodeById(g.dataset.nid);
-      if (n && n.kind === 'group') { e.preventDefault(); hideQbMenu(); showQbMenu(n, true, e.clientX, e.clientY); }
-    }
+
+  // The post-side builder instance. activeFilters stays a module-level global,
+  // refreshed from the tree shadow (onShadow) so the sidebar / tab title keep working.
+  const postQB = createQueryBuilder({
+    container: document.getElementById('queryChips'),
+    barEl: document.getElementById('postActiveBar'),
+    resetBtn: document.getElementById('postResetBtn'),
+    predOf: postPredOf,
+    labelOf: filterLabel,
+    glyphOf: qcGlyph,
+    getSearchVal: () => { const sb = document.getElementById('searchBox'); return sb ? sb.value : ''; },
+    onClearSearch: () => { const sb = document.getElementById('searchBox'); if (sb) sb.value = ''; afterQueryChange(); },
+    onChange: () => { renderPostFolders(); renderPosts(); },
+    onShadow: (leaves) => { activeFilters = leaves; },
+    openLeafEditor: (n) => { if (n.type === 'date') openDatePopover(n); else if (n.type === 'engagement') openEngPopover(n); },
+    editableLeafTypes: ['date', 'engagement'],
+    singleValueTypes: ['date', 'kind'],
+    noDupTypes: ['engagement'],
   });
-  qbMenu.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const rowEl = e.target.closest('.fm-row');
-    const n = qbMenuNode;
-    hideQbMenu();
-    if (!rowEl || !n) return;
-    if (rowEl.dataset.act === 'neg') { n.neg = !n.neg; afterQueryChange(); }
-    else if (rowEl.dataset.act === 'del') { removeNode(n); }
-  });
-  document.addEventListener('click', (e) => { if (qbMenu.classList.contains('show') && !qbMenu.contains(e.target)) hideQbMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbMenu(); });
+  // Thin module-level wrappers so existing post-side call sites keep their names.
+  function currentTree() { return postQB.getTree(); }
+  function renderQueryChips() { postQB.render(); }
+  function addFilter(filter) { postQB.addFilter(filter); }
+  function removeFilter(index) { postQB.removeFilter(index); }
+  function removeNode(node) { postQB.removeNode(node); }
+  function removeCondsMatching(pred) { return postQB.removeCondsMatching(pred); }
+  function qHasValue(type, value) { return postQB.qHasValue(type, value); }
+  function afterQueryChange() { postQB.refresh(); }
 
   const CF = () => window.corpusFolders;   // shared folder module
 
@@ -2388,50 +2475,8 @@
     // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
     // conditions, built directly by the inline drag builder; evalNode walks it
     // recursively. See docs/design-query-builder.md「改訂③」.
-    const predOf = (f) => {
-      switch (f.type) {
-        // 'post' = SNS投稿（リンクあり＝拡張で取得: キャプチャもドラッグも）/
-        // 'image' = 取り込み画像（リンクなし＝手動追加）。キャプチャ/ドラッグの別は
-        // 区別する価値がないので url の有無を本質的な軸にする。
-        case 'kind': return (p) => (f.value === 'post') === !!p.url;
-        case 'platform': return (p) => f.value === '__none' ? !p.platform : p.platform === f.value;
-        case 'user': return (p) => userKey(p) === f.value;
-        case 'instance': return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
-        case 'postType': return (p) =>
-          f.value === 'post' ? (!p.isReply && !p.isQuote && !p.isThread) :
-          f.value === 'reply' ? !!p.isReply :
-          f.value === 'quote' ? !!p.isQuote : !!p.isThread;
-        case 'media': return (p) => p.mediaType === f.value;
-        case 'tag':     return (p) => (p.tags     || []).includes(f.value);
-        case 'hashtag': return (p) => (p.hashtags || []).includes(f.value);
-        case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
-        case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
-        case 'date': {
-          const field = f.dateField || 'date';
-          const from = f.from ? new Date(f.from + 'T00:00:00') : null;
-          let to = null;
-          // Exclusive next-day bound so the whole selected end day is included.
-          if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
-          return (p) => {
-            if (!p[field]) return false;
-            const d = new Date(p[field]);
-            return (!from || d >= from) && (!to || d < to);
-          };
-        }
-        case 'engagement': {
-          if (!(f.min > 0)) return () => true;
-          return (p) => f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min;
-        }
-        default: return () => true;
-      }
-    };
-    const evalNode = (n, p) => {
-      if (n.kind === 'cond') { const r = predOf(n)(p); return n.neg ? !r : r; }
-      const r = n.op === 'or' ? n.children.some((c) => evalNode(c, p)) : n.children.every((c) => evalNode(c, p));
-      return n.neg ? !r : r;
-    };
     const queryRoot = currentTree();   // the boolean query tree (root group)
-    if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p));
+    if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
 
     // Sticky records: items un-matched by a recent mutation stay visible
     // (cleared on the next filter change / data refresh).
@@ -2475,7 +2520,7 @@
       // queryTree is the source of truth; f (the shadow) is kept for the tab title
       // (tabTitleOf reads state.f) and for migrating older persisted states.
       f: JSON.parse(JSON.stringify(activeFilters)),
-      tree: JSON.parse(JSON.stringify(queryTree)),
+      tree: JSON.parse(JSON.stringify(postQB.getTree())),
       search: document.getElementById('searchBox').value,
       sort: sortSelect.value,
       multi: multiOnly
@@ -2495,9 +2540,7 @@
   function applyState(s) {
     restoringState = true;
     // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
-    queryTree = s.tree ? JSON.parse(JSON.stringify(s.tree)) : facetTreeFrom(s.f || [], s.ops || {});
-    cleanupTree();   // self-heal vestigial single-member groups (e.g. one-value per-type groups from migration)
-    syncShadow();
+    postQB.setTree(s.tree ? s.tree : facetTreeFrom(s.f || [], s.ops || {}));
     document.getElementById('searchBox').value = s.search;
     sortSelect.value = s.sort;
     refreshCustomSelects();
@@ -2728,9 +2771,7 @@
       const at = tabs.find((t) => t.id === activeTabId);
       if (at && at.state) {
         // queryTree is the truth; migrate older states (f + ops, no tree).
-        queryTree = at.state.tree ? JSON.parse(JSON.stringify(at.state.tree)) : facetTreeFrom(at.state.f || [], at.state.ops || {});
-        cleanupTree();   // self-heal vestigial single-member groups (migration / legacy persisted trees)
-        syncShadow();
+        postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
         document.getElementById('searchBox').value = at.state.search || '';
         sortSelect.value = at.state.sort || 'date-desc';
         refreshCustomSelects();
@@ -5012,7 +5053,7 @@
   // hide posts the user expects to see.
   function openPosterPosts(u) {
     if (!u) return;
-    queryTree = emptyTree();
+    postQB.resetTree();
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     setBrowseMode('posts');
@@ -5886,9 +5927,7 @@
   // when the folder list/default changes.
   if (CF()) CF().onChange((kind) => {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    const before = treeLeaves(queryTree).length;
-    removeCondsMatching((c) => c.type === 'folder' && !CF().byId(c.value));
-    if (treeLeaves(queryTree).length !== before) { syncShadow(); renderQueryChips(); }
+    if (postQB.removeCondsMatching((c) => c.type === 'folder' && !CF().byId(c.value))) { postQB.syncShadow(); postQB.render(); }
     renderPostFolders();
     if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
   });
