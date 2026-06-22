@@ -577,7 +577,7 @@
       box-shadow: var(--shadow-sm); cursor: pointer;
       transition: box-shadow .15s, border-color .15s, transform .18s var(--ease-out);
     }
-    .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); }
+    .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); z-index: 1; }
     /* backwards (not both): a forwards fill pins transform:none and kills :hover scale
        (see the .post-grid.anim-in note for the full reasoning). */
     .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out backwards; }
@@ -634,11 +634,9 @@
        library colors, ghost info/ws/tag (over the row, not an image). */
     .poster-grid.list-view { display: flex; flex-direction: column; gap: 4px; }
     .poster-grid.list-view .poster-card { flex-direction: row; align-items: center; gap: 10px; padding: 7px 38px 7px 10px; border-radius: 8px; box-shadow: none; }
-    /* Rows don't lift (the whole-row scale jitters); the avatar zooms inside its
-       circular frame instead — poster-av's overflow:hidden clips the growth. */
-    .poster-grid.list-view .poster-card:hover { transform: none; box-shadow: var(--shadow-sm); }
-    .poster-grid.list-view .poster-av img { transition: transform 0.18s var(--ease-out); }
-    .poster-grid.list-view .poster-card:hover .poster-av img { transform: scale(1.08); }
+    /* List rows lift like cards via the shared .poster-card:hover (scale + shadow +
+       z-index). Base list rows have box-shadow:none, so the hover shadow-md from that
+       rule provides the lift. (Earlier the avatar zoomed in-frame instead.) */
     .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); font-size: 15px; }
     .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
     .poster-grid.list-view .poster-info, .poster-grid.list-view .poster-ws, .poster-grid.list-view .poster-tag { background: transparent; color: var(--text-subtle); }
@@ -757,18 +755,13 @@
     html.smoke-capture .post-card { content-visibility: visible; }
     html.smoke-capture .post-grid .post-card,
     html.smoke-capture .empty-state { animation: none !important; opacity: 1 !important; transform: none !important; }
-    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); }
-    /* Hover lift: a slight scale + the deeper shadow reads as "picked up"
-       (Pinterest/gallery idiom). Cards & tiles only — list rows would jitter.
+    /* Hover lift: deeper shadow + a slight scale reads as "picked up"
+       (Pinterest/gallery idiom). All layouts incl. list rows — the whole row scales
+       as one element; z-index lifts it above neighbors so the grow isn't clipped.
        Transform origin is the center; off under prefers-reduced-motion. */
-    .post-grid:not(.list-view) .post-card:hover { transform: scale(1.02); z-index: 1; }
-    /* List rows don't lift (they'd jitter); the thumbnail zooms within its frame
-       instead — the post-card's overflow:hidden clips the growth (枠内ズーム). */
-    .post-grid.list-view .card-img { transition: transform 0.18s var(--ease-out); }
-    .post-grid.list-view .post-card:hover .card-img { transform: scale(1.06); }
+    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); z-index: 1; }
     @media (prefers-reduced-motion: reduce) {
-      .post-card:hover, .post-grid.list-view .post-card:hover .card-img,
-      .poster-grid.list-view .poster-card:hover .poster-av img { transform: none; }
+      .post-card:hover, .poster-card:hover { transform: none; }
     }
     .post-card img {
       width: 100%; display: block;

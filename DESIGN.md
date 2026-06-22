@@ -212,7 +212,7 @@ semantic 変数のみ参照、primitive 直書き禁止）。
 | アクティブ状態 | **モノトーンのコントラスト**（`--accent-subtle`系＝淡グレー面＋`--text-strong` 文字。accent tint は撤回） | 色の使いすぎは没個性。アクティブはグレー、色は機能的一点だけ（Linear/Vercel/Notion/Things）。ソリッド塗りも禁止 |
 | 件数バッジ | muted 真円 `.sb-row-badge`（`--surface-3` 地＋`--border`＋`--text-muted`・16px・flex 中央）。フィルタ件数もワークスペース件数も**同じパーツ** | 量＝muted（accent 塗りは浮く）。1桁=真円／2桁以上=自動でピル |
 | コントラスト（チップ/バッジ） | サイドバーのチップ/バッジは**可視縁（`--border`）を必ず持つ** | 地の tint だけに頼ると muted 背景で消える＝**再発するコントラスト問題の根治**。縁はコントラスト非依存で背景に左右されない |
-| hover-scale | `transform: scale(1.02)`（＋影リフト）は**サムネ／浮くボタン限定**（カード・タイル・丸ボタン）。常設の行/トグル/チップには付けない | 「持ち上がる」感（Pinterest）。何でも拡大は toy っぽく却下。`prefers-reduced-motion` でオフ |
+| hover-scale | `transform: scale(1.02)`（＋影リフト・`z-index`前面化）は**コンテンツ項目（投稿/投稿者カード＝カード・タイル・リスト行で統一）とサムネ／浮くボタン（丸ボタン）**。サイドバーのナビ行・トグル・チップには付けない | 「持ち上がる」感（Pinterest）。リスト行も行ごと拡大に統一（旧「行には付けない／サムネだけ枠内ズーム」は撤回・2026-06-22）。何でも拡大は toy っぽく却下。`prefers-reduced-motion` でオフ |
 | メニュー／ポップ | `.fold-menu`／`.qf-popover`（ガラス） | フライアウト＝ガラス |
 
 - `ui.js` は `index.html` で `i18n.js → ui.js → folders.js → viewer.js` の順に読み込む（`corpusUI` を後続が参照するため先に）。
