@@ -170,18 +170,12 @@
     posterFolderAdded: _f1('posterFolderAdded'),
     posterFolderRemoved: _f1('posterFolderRemoved'),
     sbPosterTagsTitle: _s('sbPosterTagsTitle'),
-    posterTagFilterAdd: _s('posterTagFilterAdd'),
-    posterTagFilterClear: _s('posterTagFilterClear'),
     posterDateLastPost: _s('posterDateLastPost'),
     posterDateLastCapture: _s('posterDateLastCapture'),
     posterDateCreated: _s('posterDateCreated'),
     posterDateClear: _s('posterDateClear'),
     posterDateDimLabel: _s('posterDateDimLabel'),
-    posterDateDirLabel: _s('posterDateDirLabel'),
     posterDateRangeLabel: _s('posterDateRangeLabel'),
-    posterDateDirNone: _s('posterDateDirNone'),
-    posterDateDirNewest: _s('posterDateDirNewest'),
-    posterDateDirOldest: _s('posterDateDirOldest'),
 
     // empty states
     emptyTitle: _s('emptyTitle'),
@@ -4861,9 +4855,6 @@
     for (const arr of Object.values(posterTags)) for (const t of (Array.isArray(arr) ? arr : [])) set.add(t);
     const rank = (t) => { const k = tagKindOf(t); return k === 'work' ? 0 : k === 'character' ? 1 : 2; };
     return [...set].sort((a, b) => (rank(a) - rank(b)) || a.localeCompare(b, 'ja'));
-  }
-  function clearPosterTagFilter() {
-    posterQB.removeByType('tag');   // refreshes rows + bar + grid if anything changed
   }
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
