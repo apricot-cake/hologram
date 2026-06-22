@@ -142,10 +142,28 @@
     foldersNone: _s('foldersNone'),
     postCount: _f1('postCount'),
 
-    // ライブラリ/投稿者 モード切替・投稿者ビュー
+    // ライブラリ/投稿者/コレクション モード切替・投稿者ビュー
     browsePosts: _s('browsePosts'),
     browsePosters: _s('browsePosters'),
+    browseCollections: _s('browseCollections'),
     browseModeTitle: _s('browseModeTitle'),
+    // コレクションビュー（第3モード）
+    collectionCount: _f1('collectionCount'),
+    collItemCount: _f1('collItemCount'),
+    collNew: _s('collNew'),
+    collNewPrompt: _s('collNewPrompt'),
+    collOpen: _s('collOpen'),
+    collSetActive: _s('collSetActive'),
+    collRename: _s('collRename'),
+    collRenamePrompt: _s('collRenamePrompt'),
+    collDelete: _s('collDelete'),
+    collDeleteConfirm: _f1('collDeleteConfirm'),
+    sbCollectionSortTitle: _s('sbCollectionSortTitle'),
+    collSortName: _s('collSortName'),
+    collSortRecent: _s('collSortRecent'),
+    collSortCount: _s('collSortCount'),
+    collEmptyTitle: _s('collEmptyTitle'),
+    collEmptyDesc: _s('collEmptyDesc'),
     posterCount: _f1('posterCount'),
     posterPosts: _f1('posterPosts'),
     posterViewPosts: _s('posterViewPosts'),
@@ -395,7 +413,12 @@
   setText('posterViewListLabel', MSG.viewList);
   setText('browsePostsLabel', MSG.browsePosts);
   setText('browsePostersLabel', MSG.browsePosters);
+  setText('browseCollectionsLabel', MSG.browseCollections);
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
+  setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
+  setText('collectionNewLabel', MSG.collNew);
+  { const cs = document.getElementById('collectionSortSelect');
+    if (cs) { cs.options[0].textContent = MSG.collSortName; cs.options[1].textContent = MSG.collSortRecent; cs.options[2].textContent = MSG.collSortCount; } }
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   // Poster filter rows reuse the post-side row labels (same concepts).
   setText('sbPosterFilterTitle', MSG.sbFilterTitle);
@@ -562,6 +585,7 @@
   }
   enhanceSelect(sortSelect);
   enhanceSelect(document.getElementById('posterSortSelect'));
+  enhanceSelect(document.getElementById('collectionSortSelect'));
 
   // --- Query Field ---
   const ENG_TYPE_LABELS = {
@@ -2416,7 +2440,7 @@
       allPosts = [..._postsById.values()];
       _allPostsGeneration++;
       stickyRecs.clear();   // 画面更新（再読込）でミューテーション生存分を整理
-      if (browseMode === 'posters') renderPosters(keepLimit); else renderPosts(keepLimit);
+      if (browseMode === 'posters') renderPosters(keepLimit); else if (browseMode === 'collections') renderCollections(); else renderPosts(keepLimit);
       reconcileFolders();
       renderPostFolders();
     } finally {
@@ -2588,7 +2612,7 @@
   }
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
-    if (browseMode === 'posters') return false;
+    if (browseMode !== 'posts') return false;   // history nav is post-view only (posters/collections excluded)
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return false;
     if (!document.getElementById('settingsView').hidden) return false;
     if (!document.getElementById('ivFolderModal').hidden) return false;
@@ -4650,6 +4674,7 @@
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
+    if (browseMode !== 'posts') return;   // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
     e.preventDefault();
     viewGroups.forEach(g => selectedSet.add(postIdKey(g.rep)));
@@ -4732,7 +4757,7 @@
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
   function setBrowseMode(mode, opts) {
-    mode = (mode === 'posters') ? 'posters' : 'posts';
+    mode = (mode === 'posters' || mode === 'collections') ? mode : 'posts';
     posterReturn = null;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
     document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
@@ -4740,9 +4765,10 @@
     positionViewThumb(document.getElementById('browseToggle'));
     if (_t && !(opts && opts.silent) && !prefersReducedMotion()) { _t.classList.remove('vt-sliding'); void _t.offsetWidth; _t.classList.add('vt-sliding'); }
     document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
+    document.body.classList.toggle('browse-collections', mode === 'collections');
     closeDetail();   // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
-    if (mode === 'posters') renderPosters(); else renderPosts();
+    if (mode === 'posters') renderPosters(); else if (mode === 'collections') renderCollections(); else renderPosts();
   }
   document.querySelectorAll('#browseToggle button').forEach(btn => {
     btn.addEventListener('click', () => { if (btn.dataset.mode !== browseMode) setBrowseMode(btn.dataset.mode); });
@@ -5319,6 +5345,124 @@
     showQfPopAt(cat, row);
   });
 
+  // --- Collection view (第3モード) -----------------------------------------
+  // Collections (collections.json) as cards: name + count + a 2×2 thumbnail of the
+  // first items + a ★ on the active one (the 🔖 tray target). Clicking a card drills
+  // into the post view filtered by that collection; the always-present browse toggle
+  // is the reliable way back (no fragile back-button bounce — ユーザー要望).
+  let collectionSort = 'name';   // 'name' | 'recent' | 'count'
+  let collectionList = [];
+  function collectionThumbs(coll) {
+    const files = [];
+    for (const cid of coll.items) {
+      const rec = _postsById.get(cid); if (!rec) continue;   // existing items only
+      const f = densityImage(rec, 'card'); if (f) files.push(f);
+      if (files.length >= 4) break;
+    }
+    return files;
+  }
+  function collectionItemCount(coll) { let n = 0; for (const cid of coll.items) if (_postsById.has(cid)) n++; return n; }
+  function filteredCollections() {
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    let list = (CF() ? CF().allWithActive() : []).slice();
+    if (q) list = list.filter((c) => (c.name || '').toLowerCase().includes(q));
+    if (collectionSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
+    else if (collectionSort === 'count') list.sort((a, b) => collectionItemCount(b) - collectionItemCount(a) || (a.name || '').localeCompare(b.name || ''));
+    else list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return list;
+  }
+  function renderCollections() {
+    const grid = document.getElementById('collectionGrid'); if (!grid) return;
+    const activeId = CF() ? CF().activeId() : null;
+    collectionList = filteredCollections();
+    const countEl = document.getElementById('collectionCount');
+    if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
+    syncBrowseBar();
+    const newCard = `<div class="collection-card new" data-cnew="1" tabindex="0"><div class="ct-newinner">＋</div><div class="collection-meta"><div class="collection-name">${escapeHtml(MSG.collNew)}</div></div></div>`;
+    if (!collectionList.length) {
+      const q = document.getElementById('searchBox').value.trim();
+      const body = q
+        ? `<p><strong>${escapeHtml(MSG.emptySearchTitle)}</strong></p><p>${escapeHtml(MSG.emptySearchDesc)}</p>`
+        : `<p><strong>${escapeHtml(MSG.collEmptyTitle)}</strong></p><p>${escapeHtml(MSG.collEmptyDesc)}</p>`;
+      grid.innerHTML = `<div class="empty-state" style="display:block; grid-column:1/-1;">${body}</div>` + newCard;
+      return;
+    }
+    grid.innerHTML = collectionList.map((c, i) => {
+      const thumbs = collectionThumbs(c);
+      const cells = [0, 1, 2, 3].map((k) => thumbs[k] ? `<img src="${fileSrc(thumbs[k], 200)}" alt="" loading="lazy">` : '<span class="ct-empty"></span>').join('');
+      const isActive = c.id === activeId;
+      const star = isActive ? '<span class="col-star">★</span>' : '';
+      return `<div class="collection-card${isActive ? ' active' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
+        + `<div class="collection-thumbs${thumbs.length ? '' : ' empty'}">${cells}</div>`
+        + `<div class="collection-meta">`
+        + `<div class="collection-name">${star}${escapeHtml(c.name)}</div>`
+        + `<div class="collection-count">${escapeHtml(MSG.collItemCount(collectionItemCount(c)))}</div>`
+        + `</div></div>`;
+    }).join('') + newCard;
+  }
+  // Drill into a collection: post view + a folder filter for it (folder leaf evaluates
+  // CF().has(cid, captureId)). Reset first so it shows ONLY this collection.
+  function openCollection(cid) {
+    if (!(CF() && CF().byId(cid))) return;
+    postQB.resetTree();
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
+    setBrowseMode('posts');
+    addFilter({ type: 'folder', value: cid });
+  }
+  function promptNewCollection() {
+    const name = window.prompt(MSG.collNewPrompt, '');
+    if (name && name.trim() && CF()) CF().createCollection(name);   // notify('list') → onChange → renderCollections
+  }
+  document.getElementById('collectionGrid').addEventListener('click', (e) => {
+    if (e.target.closest('[data-cnew]')) { promptNewCollection(); return; }
+    const card = e.target.closest('.collection-card'); if (!card) return;
+    if (card.dataset.cid) openCollection(card.dataset.cid);
+  });
+  // Collection card right-click menu: open / set active / rename / delete (mirrors the
+  // poster card menu — fold-menu chrome + clampIntoView). One menu DOM for the view.
+  const collMenu = document.createElement('div');
+  collMenu.className = 'fold-menu';
+  document.body.appendChild(collMenu);
+  let collMenuCid = null;
+  function hideCollMenu() { collMenu.classList.remove('show'); collMenuCid = null; }
+  function showCollMenu(c, x, y) {
+    collMenuCid = c.id;
+    const isActive = CF() && CF().activeId() === c.id;
+    collMenu.innerHTML =
+      `<div class="fm-row" data-cm-act="open"><span class="fm-name">${escapeHtml(MSG.collOpen)}</span></div>` +
+      `<div class="fm-row" data-cm-act="active"><span class="fm-name">${escapeHtml(MSG.collSetActive)}</span>${isActive ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>` +
+      `<div class="fm-row" data-cm-act="rename"><span class="fm-name">${escapeHtml(MSG.collRename)}</span></div>` +
+      '<div class="fm-sep"></div>' +
+      `<div class="fm-row fm-danger" data-cm-act="delete"><span class="fm-name">${escapeHtml(MSG.collDelete)}</span></div>`;
+    collMenu.style.left = x + 'px'; collMenu.style.top = y + 'px';
+    collMenu.classList.add('show');
+    clampIntoView(collMenu);
+  }
+  document.getElementById('collectionGrid').addEventListener('contextmenu', (e) => {
+    const card = e.target.closest('.collection-card:not(.new)'); if (!card) return;
+    e.preventDefault();
+    const c = CF() && CF().byId(card.dataset.cid); if (c) showCollMenu(c, e.clientX, e.clientY);
+  });
+  collMenu.addEventListener('click', (e) => {
+    const c = collMenuCid && CF() && CF().byId(collMenuCid);
+    const row = e.target.closest('[data-cm-act]');
+    hideCollMenu();
+    if (!row || !c) return;
+    const a = row.dataset.cmAct;
+    if (a === 'open') openCollection(c.id);
+    else if (a === 'active') CF().setActive(c.id);   // notify('workspace') → onChange → renderCollections
+    else if (a === 'rename') { const nm = window.prompt(MSG.collRenamePrompt, c.name); if (nm && nm.trim()) CF().renameCollection(c.id, nm); }
+    else if (a === 'delete') { if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id); }
+  });
+  document.addEventListener('click', (e) => { if (collMenu.classList.contains('show') && !collMenu.contains(e.target)) hideCollMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCollMenu(); });
+  // Collection sidebar: sort select + new button.
+  { const cs = document.getElementById('collectionSortSelect');
+    if (cs) cs.addEventListener('change', () => { collectionSort = cs.value; renderCollections(); }); }
+  { const cn = document.getElementById('collectionNewBtn');
+    if (cn) cn.addEventListener('click', promptNewCollection); }
+
   // View-size slider — every density has one. The auto-fill grids (tile/card)
   // quantize the real width to "how many columns fit", so their track maps to
   // COLUMN COUNTS (one detent = exactly one column, no dead notches). The
@@ -5464,7 +5608,7 @@
   let _searchRenderTimer = null;
   document.getElementById('searchBox').addEventListener('input', () => {
     clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = setTimeout(() => { if (browseMode === 'posters') renderPosters(); else renderPosts(); }, 150);
+    _searchRenderTimer = setTimeout(() => { if (browseMode === 'posters') renderPosters(); else if (browseMode === 'collections') renderCollections(); else renderPosts(); }, 150);
   });
 
   // --- リアルタイム検索サジェスト -------------------------------------------
@@ -5960,6 +6104,7 @@
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
     if (postQB.removeCondsMatching((c) => c.type === 'folder' && !CF().byId(c.value))) { postQB.syncShadow(); postQB.render(); }
     renderPostFolders();
+    if (browseMode === 'collections') { renderCollections(); return; }   // collection view: refresh the grid (covers create/rename/delete/active)
     if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
   });
   if (window.corpus.onPostsChanged) {
@@ -5984,6 +6129,7 @@
   try {
     const prefs = await window.corpus.getPrefs();
     if (prefs && prefs.browseMode === 'posters') setBrowseMode('posters', { silent: true });
+    else if (prefs && prefs.browseMode === 'collections') setBrowseMode('collections', { silent: true });
   } catch { /* stay in library mode */ }
   // First paint done — restore the active tab's renderLimit + scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));

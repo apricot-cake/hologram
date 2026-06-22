@@ -328,6 +328,16 @@
     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
     inPosterWorkspace, togglePosterWorkspace, clearPosterWorkspace, posterWorkspaceItems, posterWorkspaceCount, reconcilePoster,
     reconcile, toggleIn, openManager, closeManager, isManagerOpen,
+    // Collection view (第3モード): expose the store's CRUD + active accessors so the
+    // grid can list every collection (incl. the active/workspace one, marked ★) and
+    // create/rename/delete/activate from cards. Thin wrappers persist + notify so all
+    // views refresh (store.create/remove/rename persist; setActiveId does not).
+    allWithActive: () => store.allRaw(),
+    activeId: () => store.getActiveId(),
+    createCollection: (name) => { const f = store.create(name); if (f) notify('list'); return f; },
+    renameCollection: (id, name) => { const ok = store.rename(id, name); if (ok) notify('list'); return ok; },
+    removeCollection: (id) => { store.remove(id); notify('list'); },
+    setActive: (id) => { store.setActiveId(id); persist(); notify('workspace'); },
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();
