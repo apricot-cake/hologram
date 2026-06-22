@@ -213,3 +213,28 @@ UI（グループ箱パネル `.qb-panel` ＋ 詳細/編集入口 ＋ qfPop pick
 - **クエリ保存＝ブックマークバー**（手書きメモ0030）: 別機能として後日。
 - 「取り込み画像が投稿タイプ＝ポスト」（`postType` 述語が `url` を見ていない＝SNS投稿でない
   画像が「通常ポスト」に一致）: 別の小バグ。
+
+---
+
+## 改訂 2026-06-22: 投稿者ビューへの展開（共通部品化・実装済み）
+
+改訂③のビルダーを投稿者ビュー(posters)にも適用。コア（木操作・描画・DnD・否定メニュー・
+再帰評価）を `createQueryBuilder(ctx)` factory に共通部品化し、投稿=`postQB`／投稿者=`posterQB`
+の2インスタンスで共有（挙動完全一致・保守1箇所）。`ctx` がビュー差分（コンテナ・葉の述語
+`predOf`・ラベル `labelOf`・各コールバック・`singleValueTypes`/`editableLeafTypes`）を渡す。
+
+- **投稿者の葉の型**: platform / instance / tag（作品・キャラ含む）/ folder / date(範囲) / workspace。
+  述語は `posterPredOf`＝投稿者(user)オブジェクトに対して判定（投稿側は `postPredOf`）。
+  `evalNode(node, item, predOf)` は predOf を引数化して両ビューで共有。
+- **旧 transient フィルタ撤去**: posterTagFilter/posterPlatforms/posterInstanceFilter/
+  posterFolderFilter/posterWorkspaceFilter/posterDate を廃し posterQB の木へ集約。`activeFilters`
+  は投稿側専用シャドウのまま、投稿者側は別変数 `posterShadow`（混ぜない＝投稿のタブ名/WS判定を壊さない）。
+- **UI**: バー＝`#posterActiveBar`／`#posterQueryChips`。`.qb-*` CSS は両ビュー共有、表示は
+  `body.browse-posters` で出し分け。サイドバー行は従来どおり条件の入口（投稿側 #filterRows と同作法）。
+  ワークスペースは専用トグル行を残しつつ内部は木の葉 `type:'workspace'`（投稿側 #wsRow と同作法）。
+- **日付の並べ替え方向は並べ替えセレクトへ分離**（投稿数/名前/日付 新しい順/古い順）＝フィルタとソートの分離。
+  ソート軸は date 葉の `dateField`（無ければ `latest`）に連動。
+- **永続化**: 投稿者ビューはタブ/履歴を持たない（`navAllowed` が posters で false）ため木は transient。
+  snapshotState/applyState/navHist は投稿側専用（posterQB を混ぜない）。
+- 検証: `scripts/_verify-poster-tree.js`（platform で AND→DnDでOR群→連結語トグル→リセット）PASS。
+  投稿側 `_verify-tree`/`_verify-tagmix`/`test-app-postfilter` も回帰なし。
