@@ -14,6 +14,7 @@ const installer = require(path.join(nativeHostDir, 'install'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture).
 const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
+const { pruneDecision, nextBaseline } = require('./backup-guard');
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
@@ -1032,7 +1033,6 @@ const LIBRARY_SUBDIR = 'Corpus-library';
 
 const BACKUP_DEFAULTS = {
   dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
-  retention: 5,           // 直近何世代の ZIP を残すか
   interval: false,        // 一定間隔
   intervalValue: 1,       // 間隔の数
   intervalUnit: 'day',    // 'day' | 'week' | 'month'
@@ -1162,12 +1162,24 @@ async function runBackup(reason) {
       }
     }
 
-    // Prune files present in dest but gone from src (deleted posts propagate)
-    for (const f of destSet) {
-      if (!srcSet.has(f)) {
-        try { await fs.promises.unlink(path.join(dest, f)); result.pruned++; } catch { }
+    // Prune files present in dest but gone from src (deleted posts propagate) —
+    // but refuse to mirror a suspicious collapse of src (backup-guard.js).
+    // Baseline = the src count from the last run we TRUSTED (carried forward when
+    // a run skipped, so one empty/partial blip can't poison the threshold).
+    const prevSummary = b.lastResult || {};
+    const baseline = Number(prevSummary.lastGoodCount) || Number(prevSummary.fileCount) || 0;
+    const decision = pruneDecision({ srcCount: srcSet.size, destCount: destSet.size, baseline });
+    if (decision.skip) {
+      result.pruneSkipped = decision.reason;
+      result.baselineCount = baseline;
+    } else {
+      for (const f of destSet) {
+        if (!srcSet.has(f)) {
+          try { await fs.promises.unlink(path.join(dest, f)); result.pruned++; } catch { }
+        }
       }
     }
+    result.lastGoodCount = nextBaseline(decision.skip, srcSet.size, baseline);
   } catch (err) {
     result.ok = false; result.error = err.message;
   } finally {
@@ -1175,7 +1187,9 @@ async function runBackup(reason) {
   }
   const at = new Date().toISOString();
   const summary = { fileCount: result.fileCount, written: result.written, pruned: result.pruned,
-    reason: result.reason, ok: result.ok, error: result.error || result.firstError || null, at: at };
+    reason: result.reason, ok: result.ok, error: result.error || result.firstError || null, at: at,
+    pruneSkipped: result.pruneSkipped || null, baselineCount: result.baselineCount || 0,
+    lastGoodCount: typeof result.lastGoodCount === 'number' ? result.lastGoodCount : 0 };
   try { writeBackupConfig({ lastRunAt: at, lastResult: summary }); } catch { /* ignore */ }
   if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: at }));
   return result;

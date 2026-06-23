@@ -259,6 +259,9 @@
     mirrorDone: _s('mirrorDone'),
     mirrorSyncingShort: _s('mirrorSyncingShort'),
     mirrorFailed: _s('mirrorFailed'),
+    mirrorGuarded: _s('mirrorGuarded'),
+    backupPruneEmpty: _s('backupPruneEmpty'),
+    backupPruneShrink: _s('backupPruneShrink'),
     timeToday: _s('timeToday'),
     timeYesterday: _s('timeYesterday'),
     backupItemsUnit: _s('backupItemsUnit'),
@@ -5700,6 +5703,12 @@
         el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorFailed)}</span>`;
         el.className = 'mirror-status is-error'; el.title = r.error; return;
       }
+      // Copy ran but the prune was held back (src looked empty/decimated) — warn
+      // loudly so a wrong save-folder can't silently leave the mirror unpruned.
+      if (r.pruneSkipped) {
+        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorGuarded)}</span>`;
+        el.className = 'mirror-status is-error'; el.title = pruneSkipTip(r); return;
+      }
       // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
       // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
       el.className = 'mirror-status is-done';
@@ -5710,12 +5719,26 @@
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
       el.title = tip;
     }
+    // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
+    function pruneSkipTip(r) {
+      if (r.pruneSkipped === 'shrink') {
+        const span = (r.baselineCount && r.fileCount != null)
+          ? `（${r.baselineCount}→${r.fileCount}${MSG.backupItemsUnit}）` : '';
+        return MSG.backupPruneShrink + span;
+      }
+      return MSG.backupPruneEmpty;
+    }
     function renderStatus() {
       if (!cfg || !cfg.dir) { statusEl.textContent = ''; updateMirrorStatus(); return; }
       const r = cfg.lastResult;
       if (!r) { statusEl.textContent = ''; updateMirrorStatus(); return; }
       if (r.ok === false && r.error) {
         statusEl.textContent = `⚠ ${r.error}`;
+        statusEl.style.color = 'var(--danger)';
+        updateMirrorStatus(); return;
+      }
+      if (r.pruneSkipped) {
+        statusEl.textContent = `⚠ ${pruneSkipTip(r)}`;
         statusEl.style.color = 'var(--danger)';
         updateMirrorStatus(); return;
       }
