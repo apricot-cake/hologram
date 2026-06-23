@@ -503,7 +503,10 @@ function normCollections(arr) {
         created: typeof c.created === 'number' ? c.created : null,
         items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
       };
-      if (c.tree && typeof c.tree === 'object') out.tree = c.tree;   // forward-compat (dynamic, Phase④)
+      if (c.kind === 'dynamic') {
+        if (c.tree && typeof c.tree === 'object') out.tree = c.tree;   // saved query tree
+        if (typeof c.q === 'string' && c.q) out.q = c.q;              // saved free-text search
+      }
       return out;
     }) : [];
 }

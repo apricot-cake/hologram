@@ -69,12 +69,15 @@ function mergeCollections(cur, inc) {
     if (!c || typeof c.id !== 'string') return;
     if (byId.has(c.id)) { const e = byId.get(c.id); for (const it of (c.items || [])) e.items.add(String(it)); return; }
     const e = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: (typeof c.created === 'number' ? c.created : null), items: new Set((c.items || []).map(String)) };
-    if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
+    if (c.kind === 'dynamic') {   // saved-search payload rides along (LOCAL-wins, like name/kind)
+      if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
+      if (typeof c.q === 'string' && c.q) e.q = c.q;
+    }
     byId.set(c.id, e);
   };
   for (const c of ((cur && cur.collections) || [])) put(c);
   for (const c of ((inc && inc.collections) || [])) put(c);
-  const collections = [...byId.values()].map((c) => { const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] }; if (c.tree) o.tree = c.tree; return o; });
+  const collections = [...byId.values()].map((c) => { const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] }; if (c.tree) o.tree = c.tree; if (c.q) o.q = c.q; return o; });
   const valid = new Set(collections.map((c) => c.id));
   const activeId = (cur && valid.has(cur.activeId)) ? cur.activeId : ((inc && valid.has(inc.activeId)) ? inc.activeId : null);
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];

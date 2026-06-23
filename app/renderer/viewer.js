@@ -164,6 +164,12 @@
     collSortCount: _s('collSortCount'),
     collEmptyTitle: _s('collEmptyTitle'),
     collEmptyDesc: _s('collEmptyDesc'),
+    collSavePrompt: _s('collSavePrompt'),
+    collSaved: _s('collSaved'),
+    collSaveEmpty: _s('collSaveEmpty'),
+    collDynamicTitle: _s('collDynamicTitle'),
+    collUpdateQuery: _s('collUpdateQuery'),
+    collUpdated: _s('collUpdated'),
     posterCount: _f1('posterCount'),
     posterPosts: _f1('posterPosts'),
     posterViewPosts: _s('posterViewPosts'),
@@ -1821,8 +1827,11 @@
       // by this height. Measure after layout, and only when the bar is actually shown.
       if (bar) requestAnimationFrame(() => { const h = bar.offsetHeight; if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px'); });
       const resetBtn = ctx.resetBtn || null;
+      const saveBtn = ctx.saveBtn || null;
       const hasQuery = tree.children.length > 0;
       if (resetBtn) resetBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
+      // Save-as-dynamic-collection button: shown only when there's something to save.
+      if (saveBtn) saveBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
       qbNodeMap = new Map();
       let idc = 0;
       const NE = '≠';
@@ -2071,6 +2080,7 @@
     container: document.getElementById('queryChips'),
     barEl: document.getElementById('postActiveBar'),
     resetBtn: document.getElementById('postResetBtn'),
+    saveBtn: document.getElementById('saveSearchBtn'),
     predOf: postPredOf,
     labelOf: filterLabel,
     glyphOf: qcGlyph,
@@ -2460,38 +2470,38 @@
     if (CF().reconcilePoster) CF().reconcilePoster(new Set(buildUsers().map(u => u.key)));   // drop posterKeys whose poster vanished
   }
 
+  // Text-search predicate shared by the live filter (getFilteredPosts) and the
+  // dynamic-collection preview (dynamicMatches): 通常＝部分一致 /
+  // あいまい＝サブシーケンス一致（corpusSearch が方式を保持）. Empty query ⇒ match all.
+  function makeTextMatcher(rawQuery) {
+    const raw = (rawQuery || '').trim();
+    if (!raw) return () => true;
+    if (window.corpusSearch && window.corpusSearch.isFuzzy()) {
+      const matchHay = window.corpusSearch.compile(raw);   // クエリは1回だけ正規化・前処理
+      return (p) => matchHay([p.text, p.title, p.eagleName, p.screenName, p.displayName]
+        .concat(p.tags || []).concat(p.hashtags || [])
+        .map((x) => (x == null ? '' : String(x))).join(' '));
+    }
+    const q = raw.toLowerCase();
+    return (p) =>
+      (p.text || '').toLowerCase().includes(q) ||
+      (p.title || '').toLowerCase().includes(q) ||
+      (p.eagleName || '').toLowerCase().includes(q) ||
+      (p.screenName || '').toLowerCase().includes(q) ||
+      (p.displayName || '').toLowerCase().includes(q) ||
+      (p.tags || []).some((t) => t.toLowerCase().includes(q)) ||
+      (p.hashtags || []).some((t) => t.toLowerCase().includes(q));
+  }
+
   function getFilteredPosts() {
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
     // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
     let posts = allPosts.filter(p => p.image || mediaFilesOf(p).length || p.text || p.title);
     const rawQuery = document.getElementById('searchBox').value.trim();
-    const query = rawQuery.toLowerCase();
     const sort = sortSelect.value;
 
     // Text search: 通常＝部分一致 / あいまい＝サブシーケンス一致（corpusSearch が方式を保持）
-    if (query) {
-      const fuzzy = window.corpusSearch && window.corpusSearch.isFuzzy();
-      if (fuzzy) {
-        const matchHay = window.corpusSearch.compile(rawQuery);   // クエリは1回だけ正規化・前処理
-        posts = posts.filter(p => {
-          const hay = [p.text, p.title, p.eagleName, p.screenName, p.displayName]
-            .concat(p.tags || [])
-            .concat(p.hashtags || [])
-            .map(x => (x == null ? '' : String(x))).join(' ');
-          return matchHay(hay);
-        });
-      } else {
-        posts = posts.filter(p =>
-          (p.text || '').toLowerCase().includes(query) ||
-          (p.title || '').toLowerCase().includes(query) ||
-          (p.eagleName || '').toLowerCase().includes(query) ||
-          (p.screenName || '').toLowerCase().includes(query) ||
-          (p.displayName || '').toLowerCase().includes(query) ||
-          (p.tags || []).some(t => t.toLowerCase().includes(query)) ||
-          (p.hashtags || []).some(t => t.toLowerCase().includes(query))
-        );
-      }
-    }
+    if (rawQuery) posts = posts.filter(makeTextMatcher(rawQuery));
 
     // ---- Query-builder evaluation: boolean condition tree ----
     // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
@@ -5355,16 +5365,46 @@
   // is the reliable way back (no fragile back-button bounce — ユーザー要望).
   let collectionSort = 'name';   // 'name' | 'recent' | 'count'
   let collectionList = [];
-  function collectionThumbs(coll) {
-    const files = [];
-    for (const cid of coll.items) {
-      const rec = _postsById.get(cid); if (!rec) continue;   // existing items only
-      const f = densityImage(rec, 'card'); if (f) files.push(f);
-      if (files.length >= 4) break;
+  // Records backing a collection's cover + count. Static = its explicit items
+  // (existing ones only); dynamic = posts matching the saved search (tree + q)
+  // against the CURRENT library (= 開けば最新). Memoized per renderCollections pass
+  // (_collRecCache) so the sort + the card map don't each re-scan allPosts.
+  let _collRecCache = null;
+  function dynamicMatches(coll) {
+    const tree = (coll.tree && Array.isArray(coll.tree.children)) ? coll.tree : null;
+    const matchText = makeTextMatcher(coll.q || '');
+    const out = [];
+    for (const p of allPosts) {
+      if (!(p.image || mediaFilesOf(p).length || p.text || p.title)) continue;   // mirror getFilteredPosts' content gate
+      if (!matchText(p)) continue;
+      if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
+      out.push(p);
     }
+    return out;
+  }
+  function collectionRecords(coll) {
+    if (_collRecCache && _collRecCache.has(coll.id)) return _collRecCache.get(coll.id);
+    let recs;
+    if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
+    else { recs = []; for (const cid of coll.items) { const r = _postsById.get(cid); if (r) recs.push(r); } }
+    if (_collRecCache) _collRecCache.set(coll.id, recs);
+    return recs;
+  }
+  function collectionThumbsFrom(recs) {
+    const files = [];
+    for (const rec of recs) { const f = densityImage(rec, 'card'); if (f) files.push(f); if (files.length >= 4) break; }
     return files;
   }
-  function collectionItemCount(coll) { let n = 0; for (const cid of coll.items) if (_postsById.has(cid)) n++; return n; }
+  function collectionItemCount(coll) { return collectionRecords(coll).length; }
+  // Small condition chips under a dynamic card's name (saved tree leaves + the
+  // free-text q). Capped; purely informational (the mock's optional 条件チップ).
+  function collCondChips(coll) {
+    const chips = [];
+    try { for (const leaf of treeLeaves(coll.tree)) { chips.push(filterLabel(leaf)); if (chips.length >= 4) break; } } catch { /* ignore malformed tree */ }
+    if (coll.q && coll.q.trim() && chips.length < 4) chips.push('“' + coll.q.trim() + '”');
+    if (!chips.length) return '';
+    return `<div class="collection-cond">${chips.map((s) => `<span class="cc">${escapeHtml(s)}</span>`).join('')}</div>`;
+  }
   function filteredCollections() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = (CF() ? CF().allWithActive() : []).slice();
@@ -5376,8 +5416,11 @@
   }
   // Placeholder for an empty collection's cover — the same layers glyph as the view toggle.
   const COLL_EMPTY_ICON = '<svg class="ct-empty-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>';
+  // ⚡ marks a dynamic collection (saved search) before its name — the only dynamic cue.
+  const COLL_BOLT_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
   function renderCollections() {
     const grid = document.getElementById('collectionGrid'); if (!grid) return;
+    _collRecCache = new Map();   // fresh per pass (sort + card map reuse the same scan)
     const activeId = CF() ? CF().activeId() : null;
     collectionList = filteredCollections();
     const countEl = document.getElementById('collectionCount');
@@ -5393,35 +5436,62 @@
       return;
     }
     grid.innerHTML = collectionList.map((c, i) => {
-      const thumbs = collectionThumbs(c);   // 0..4 files; tiles pack to fill the square by count
+      const recs = collectionRecords(c);   // dynamic ⇒ live matches; static ⇒ existing items
+      const thumbs = collectionThumbsFrom(recs);   // 0..4 files; tiles pack to fill the square by count
       const n = thumbs.length;
       const cells = n
         ? thumbs.map((f) => `<img src="${fileSrc(f, 200)}" alt="" loading="lazy">`).join('')
         : COLL_EMPTY_ICON;
       const isActive = c.id === activeId;
-      const star = isActive ? '<span class="col-star">★</span>' : '';
-      return `<div class="collection-card${isActive ? ' active' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
+      const isDyn = c.kind === 'dynamic';
+      // ★ (active, static-only) and ⚡ (dynamic) are mutually exclusive cues before the name.
+      const badge = isActive ? '<span class="col-star">★</span>'
+        : isDyn ? `<span class="col-bolt" title="${escapeAttr(MSG.collDynamicTitle)}">${COLL_BOLT_ICON}</span>` : '';
+      return `<div class="collection-card${isActive ? ' active' : ''}${isDyn ? ' dynamic' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
         + `<div class="collection-thumbs ${n ? 'n' + n : 'empty'}">${cells}</div>`
         + `<div class="collection-meta">`
-        + `<div class="collection-name">${star}${escapeHtml(c.name)}</div>`
-        + `<div class="collection-count">${escapeHtml(MSG.collItemCount(collectionItemCount(c)))}</div>`
+        + `<div class="collection-name">${badge}${escapeHtml(c.name)}</div>`
+        + (isDyn ? collCondChips(c) : '')
+        + `<div class="collection-count">${escapeHtml(MSG.collItemCount(recs.length))}</div>`
         + `</div></div>`;
     }).join('') + newCard;
   }
-  // Drill into a collection: post view + a folder filter for it (folder leaf evaluates
-  // CF().has(cid, captureId)). Reset first so it shows ONLY this collection.
+  // Drill into a collection. Static: post view + a folder filter (folder leaf evaluates
+  // CF().has(cid, captureId)). Dynamic: restore the saved search (tree + free-text) so
+  // the result is shown and can be edited / re-saved. Reset other inputs either way.
   function openCollection(cid) {
-    if (!(CF() && CF().byId(cid))) return;
-    postQB.resetTree();
+    const c = CF() && CF().byId(cid); if (!c) return;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-    set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
+    set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     setBrowseMode('posts');
-    addFilter({ type: 'folder', value: cid });
+    if (c.kind === 'dynamic') {
+      postQB.setTree((c.tree && Array.isArray(c.tree.children)) ? c.tree : null);
+      set('searchBox', c.q || '');
+      afterQueryChange();   // re-renders chips + bar + grid from the restored tree + searchBox
+    } else {
+      postQB.resetTree();
+      set('searchBox', '');
+      addFilter({ type: 'folder', value: cid });   // re-renders
+    }
   }
   function promptNewCollection() {
     const name = window.prompt(MSG.collNewPrompt, '');
     if (name && name.trim() && CF()) CF().createCollection(name);   // notify('list') → onChange → renderCollections
   }
+  // Save the current post-view filter (query tree + free-text) as a NEW dynamic collection
+  // (= a saved search). The post-view "この検索を保存" button calls this.
+  function promptSaveSearch() {
+    if (!CF()) return;
+    const tree = postQB.getTree();
+    const q = document.getElementById('searchBox').value;
+    if (!tree.children.length && !q.trim()) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
+    const name = window.prompt(MSG.collSavePrompt, '');
+    if (!name || !name.trim()) return;
+    CF().createCollection(name, { kind: 'dynamic', tree: JSON.parse(JSON.stringify(tree)), q });
+    CF().toast(MSG.collSaved);
+  }
+  { const sv = document.getElementById('saveSearchBtn');
+    if (sv) sv.addEventListener('click', promptSaveSearch); }
   document.getElementById('collectionGrid').addEventListener('click', (e) => {
     if (e.target.closest('[data-cnew]')) { promptNewCollection(); return; }
     const card = e.target.closest('.collection-card'); if (!card) return;
@@ -5437,9 +5507,14 @@
   function showCollMenu(c, x, y) {
     collMenuCid = c.id;
     const isActive = CF() && CF().activeId() === c.id;
+    // Dynamic: "アクティブにする" (★ = 🔖 tray target) makes no sense for a saved search,
+    // so swap it for "条件を今の絞り込みで更新" (re-save the search from the current filter).
+    const secondRow = c.kind === 'dynamic'
+      ? `<div class="fm-row" data-cm-act="updateq"><span class="fm-name">${escapeHtml(MSG.collUpdateQuery)}</span></div>`
+      : `<div class="fm-row" data-cm-act="active"><span class="fm-name">${escapeHtml(MSG.collSetActive)}</span>${isActive ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
     collMenu.innerHTML =
       `<div class="fm-row" data-cm-act="open"><span class="fm-name">${escapeHtml(MSG.collOpen)}</span></div>` +
-      `<div class="fm-row" data-cm-act="active"><span class="fm-name">${escapeHtml(MSG.collSetActive)}</span>${isActive ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>` +
+      secondRow +
       `<div class="fm-row" data-cm-act="rename"><span class="fm-name">${escapeHtml(MSG.collRename)}</span></div>` +
       '<div class="fm-sep"></div>' +
       `<div class="fm-row fm-danger" data-cm-act="delete"><span class="fm-name">${escapeHtml(MSG.collDelete)}</span></div>`;
@@ -5460,9 +5535,20 @@
     const a = row.dataset.cmAct;
     if (a === 'open') openCollection(c.id);
     else if (a === 'active') CF().setActive(c.id);   // notify('workspace') → onChange → renderCollections
+    else if (a === 'updateq') updateDynamicFromCurrent(c);
     else if (a === 'rename') { const nm = window.prompt(MSG.collRenamePrompt, c.name); if (nm && nm.trim()) CF().renameCollection(c.id, nm); }
     else if (a === 'delete') { if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id); }
   });
+  // Overwrite a dynamic collection's saved condition with the post view's CURRENT
+  // filter (tree + free-text) — re-save the search after tweaking it.
+  function updateDynamicFromCurrent(c) {
+    if (!CF() || c.kind !== 'dynamic') return;
+    const tree = postQB.getTree();
+    const q = document.getElementById('searchBox').value;
+    if (!tree.children.length && !q.trim()) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
+    CF().updateCollection(c.id, { tree: JSON.parse(JSON.stringify(tree)), q });
+    CF().toast(MSG.collUpdated);
+  }
   document.addEventListener('click', (e) => { if (collMenu.classList.contains('show') && !collMenu.contains(e.target)) hideCollMenu(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCollMenu(); });
   // Collection sidebar: sort select + new button.

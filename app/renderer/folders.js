@@ -35,12 +35,27 @@
     }
     const byId = (id) => folders.find((f) => f.id === id) || null;
     const has = (id, key) => { const f = byId(id); return !!(f && f.items.includes(key)); };
-    function create(name) {
+    function create(name, opts) {
       const nm = (name || '').trim(); if (!nm) return null;
       const f = { id: genId(), name: nm, items: [] };
-      if (withActive) { f.kind = 'static'; f.created = Date.now(); }
+      if (withActive) {
+        f.kind = (opts && opts.kind === 'dynamic') ? 'dynamic' : 'static';
+        f.created = Date.now();
+        if (f.kind === 'dynamic') setQuery(f, opts);   // saved-search payload (tree + free-text)
+      }
       folders.push(f); persist();
       return f;
+    }
+    // Copy a saved-search condition (boolean tree + free-text q) onto a dynamic
+    // collection; clears either when absent. Static collections never carry these.
+    function setQuery(f, src) {
+      if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree)); else delete f.tree;
+      if (src && typeof src.q === 'string' && src.q) f.q = src.q; else delete f.q;
+    }
+    // Update a dynamic collection's saved condition in place (= re-save the search).
+    function update(id, patch) {
+      const f = byId(id); if (!f || f.kind !== 'dynamic') return false;
+      setQuery(f, patch); persist(); return true;
     }
     function remove(id) { if (id === activeId) activeId = null; folders = folders.filter((f) => f.id !== id); persist(); }
     function rename(id, name) {
@@ -94,7 +109,7 @@
     }
     return {
       all, allRaw, setAll, byId, has, create, remove, rename, toggleIn, reconcile, move,
-      ...(withActive ? { getActiveId, setActiveId, getActive, ensureActive } : {}),
+      ...(withActive ? { getActiveId, setActiveId, getActive, ensureActive, update } : {}),
     };
   }
   window.corpusFolderStore = createFolderStore;
@@ -334,10 +349,12 @@
     // views refresh (store.create/remove/rename persist; setActiveId does not).
     allWithActive: () => store.allRaw(),
     activeId: () => store.getActiveId(),
-    createCollection: (name) => { const f = store.create(name); if (f) notify('list'); return f; },
+    createCollection: (name, opts) => { const f = store.create(name, opts); if (f) notify('list'); return f; },
+    updateCollection: (id, patch) => { const ok = store.update(id, patch); if (ok) notify('list'); return ok; },
     renameCollection: (id, name) => { const ok = store.rename(id, name); if (ok) notify('list'); return ok; },
     removeCollection: (id) => { store.remove(id); notify('list'); },
-    setActive: (id) => { store.setActiveId(id); persist(); notify('workspace'); },
+    // Dynamic collections (saved searches) are never the 🔖 tray target (★ is static-only).
+    setActive: (id) => { const c = store.byId(id); if (c && c.kind === 'dynamic') return; store.setActiveId(id); persist(); notify('workspace'); },
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();
