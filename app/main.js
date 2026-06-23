@@ -1025,6 +1025,9 @@ ipcMain.handle('import-complete', async (_e, bytes) => {
 // 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
 const BACKUP_SUBDIR = 'Corpus-mirror';
 function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
+// Named subfolder for a relocated library, so picking a folder never dumps
+// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Corpus-mirror).
+const LIBRARY_SUBDIR = 'Corpus-library';
 
 
 const BACKUP_DEFAULTS = {
@@ -1227,7 +1230,14 @@ ipcMain.handle('run-backup', () => runBackup('manual'));
 ipcMain.handle('pick-save-folder', async () => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
-  const dest = res.filePaths[0];
+  const chosen = res.filePaths[0];
+  // Treat the picked folder as a PARENT and put the library in a named subfolder
+  // — never dump sidecars/images flat into a folder that may hold the user's own
+  // files. If they re-pick an existing Corpus-library folder, use it as-is (no
+  // double nesting).
+  const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase()
+    ? chosen
+    : path.join(chosen, LIBRARY_SUBDIR);
   const src = getSaveFolder();
   const v = validateSaveFolder(dest);
   if (!v.ok) return { ok: false, error: v.error };
