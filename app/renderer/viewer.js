@@ -55,8 +55,6 @@
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
     tagAllRow: _s('tagAllRow'),
-    pinnedTags: _s('pinnedTags'),
-    tipPin: _s('tipPin'),
     qfFindPh: _s('qfFindPh'),
     exportModeFull: _s('exportModeFull'),
     exportModeImages: _s('exportModeImages'),
@@ -500,7 +498,6 @@
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
   setText('sbFolderRowTitle', MSG.qfCatFolder);
-  setText('sbPinTitle', MSG.pinnedTags);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
@@ -697,29 +694,6 @@
 
   const PF_NAME = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
-  // --- Pinned filters (📌 任意の属性の値をサイドバーに常駐) ---
-  const PIN_KEY = 'corpus.pinnedFilters';
-  const PIN_KEY_LEGACY = 'corpus.pinnedTags';
-  function loadPins() {
-    const legacy = localStorage.getItem(PIN_KEY_LEGACY);
-    if (legacy) {
-      try {
-        const pins = JSON.parse(legacy).map(t => ({ type: 'tag', value: t }));
-        localStorage.setItem(PIN_KEY, JSON.stringify(pins));
-        localStorage.removeItem(PIN_KEY_LEGACY);
-        return pins;
-      } catch {}
-    }
-    try { return JSON.parse(localStorage.getItem(PIN_KEY)) || []; } catch { return []; }
-  }
-  function togglePin(type, value) {
-    const pins = loadPins();
-    const i = pins.findIndex(p => p.type === type && p.value === value);
-    if (i >= 0) pins.splice(i, 1); else pins.push({ type, value });
-    try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch {}
-    updateSidebarTags();
-  }
-
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   function resetAllFilters() {
@@ -840,8 +814,8 @@
       case 'work':
       case 'character': {
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
-        // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter and
-        // pins as a tag — the kind only scopes which tags this flyout offers.
+        // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
+        // the kind only scopes which tags this flyout offers.
         const kindTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort()
           .filter(t => tagKindOf(t) === cat);
         return kindTags.map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag' }));
@@ -899,20 +873,12 @@
   function renderQfPop() {
     if (!qfCat) return;
     const items = qfValues(qfCat);
-    const PINNABLE = new Set(['tag', 'work', 'character', 'hashtag', 'user', 'platform', 'instance', 'postType', 'media', 'kind', 'folder']);
-    const PIN_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 3h6"/><path d="M10 3l-.6 6L7 12v2h10v-2l-2.4-3L14 3"/><path d="M12 14v7"/></svg>';
-    const curPins = PINNABLE.has(qfCat) ? loadPins() : null;
     const rowOf = (it) => {
       if (it.ghead != null) return `<div class="qf-ghead">${escapeHtml(it.ghead)}</div>`;
-      const vtype = it.type || qfCat;
-      const isMulti = qfCat === 'media' && it.v === '__multi';
-      const pinHtml = (curPins && !isMulti)
-        ? `<span class="qf-pin${curPins.some(p => p.type === vtype && p.value === it.v) ? ' on' : ''}" data-pinval="${escapeAttr(it.v)}" data-pintype="${escapeAttr(vtype)}" title="${MSG.tipPin}">${PIN_SVG}</span>`
-        : '';
       // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the
       // shared category dot so the poster-tag flyout isn't flattened (作品=紫/キャラ=緑).
       const kindDot = it.kind ? `<span class="tk-dot tk-${it.kind}" title="${escapeAttr(kindLabel(it.kind))}"></span>` : '';
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}${pinHtml}</div>`;
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
     };
     const listHtml = items.map(rowOf).join('');
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
@@ -995,13 +961,6 @@
       syncQfMode();
       applyQfFind();
       const fi = document.getElementById('qfFind'); if (fi) fi.focus();
-      return;
-    }
-    // 📌 ピン留めトグル（行クリックの選択とは独立）
-    const pin = e.target.closest('.qf-pin');
-    if (pin) {
-      togglePin(pin.dataset.pintype || qfCat, pin.dataset.pinval);
-      renderQfPop();
       return;
     }
     const val = e.target.closest('[data-qfval]');
@@ -1306,11 +1265,6 @@
 
   // Update sidebar state (chip actives, row badges, tag area, active bar)
   function updateSidebarState() {
-    document.querySelectorAll('.sb-chip[data-filter-type]').forEach(chip => {
-      const type = chip.dataset.filterType;
-      const value = chip.dataset.filterValue;
-      chip.classList.toggle('active', activeFilters.some(f => f.type === type && f.value === value));
-    });
     const sb = document.getElementById('searchBox');
     if (sb) sb.classList.toggle('has-value', !!sb.value.trim());
     renderFilterBadges();
@@ -1358,17 +1312,6 @@
     updateSidebarTags();   // a newly classified tag may reveal/hide its 作品/キャラ section
   }
   const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
-  const TYPE_IC = {
-    tag:      _ic('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/>'),
-    hashtag:  _ic('<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>'),
-    user:     _ic('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
-    platform: _ic('<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'),
-    instance: _ic('<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'),
-    postType: _ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
-    media:    _ic('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/>'),
-    kind:     _ic('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
-    folder:   _ic('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
-  };
   // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
   let _sidebarSetsGen = -1;
   let _cachedTagSet = null, _cachedHtSet = null, _cachedUserSet = null, _cachedInstSet = null;
@@ -1384,22 +1327,9 @@
     _cachedInstSet = new Set(snPosts.filter(p => p.platform === 'misskey' || p.platform === 'mastodon').map(p => hostOf(p.url)).filter(Boolean));
     _sidebarSetsGen = _allPostsGeneration;
   }
+  // Refresh the tag-derived sidebar rows (作品/キャラ 種別 rows + tag-group sub-rows).
   function updateSidebarTags() {
-    const pinHost = document.getElementById('sbPinnedTags');
-    const section = document.getElementById('pinnedSection');
-    if (!pinHost || !section) return;
     _rebuildSidebarSets();
-    const allTagSet = _cachedTagSet, allHtSet = _cachedHtSet, allUserSet = _cachedUserSet, allInstSet = _cachedInstSet;
-    const allFolderSet = new Set(CF() ? CF().all().map(f => f.id) : []);
-    const EXISTS = { tag: v => allTagSet.has(v), hashtag: v => allHtSet.has(v), user: v => allUserSet.has(v), instance: v => allInstSet.has(v), folder: v => allFolderSet.has(v) };
-    const pins = loadPins().filter(p => { const fn = EXISTS[p.type]; return fn ? fn(p.value) : true; });
-    section.style.display = pins.length ? '' : 'none';
-    const activeKey = new Set(activeFilters.map(f => f.type + ':' + f.value));
-    pinHost.innerHTML = pins.map(p => {
-      const active = activeKey.has(p.type + ':' + p.value);
-      const glyph = TYPE_IC[p.type] ? `<span class="pin-ic">${TYPE_IC[p.type]}</span>` : '';
-      return `<button class="sb-chip${active ? ' active' : ''}" data-filter-type="${escapeAttr(p.type)}" data-filter-value="${escapeAttr(p.value)}">${glyph}${escapeHtml(filterLabel(p))}</button>`;
-    }).join('');
     updateKindRows();
     updateSidebarTagGroups();
   }
@@ -1420,25 +1350,6 @@
     if (wr) wr.style.display = hasWork ? '' : 'none';
     if (cr) cr.style.display = hasChar ? '' : 'none';
   }
-  document.getElementById('sbPinnedTags').addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-chip[data-filter-type]');
-    if (!chip) return;
-    const { filterType: type, filterValue: value } = chip.dataset;
-    const existIdx = activeFilters.findIndex(f => f.type === type && f.value === value);
-    if (existIdx >= 0) { removeFilter(existIdx); }
-    else if (type === 'tag' || type === 'folder' || type === 'hashtag') { addFilter({ type, value }); }
-    else if (type === 'user') { const u = buildUsers().find(x => x.key === value); addFilter({ type, value, label: u ? (u.displayName || u.screenName) : value }); }
-    else { addFilter({ type, value }); }
-    if (type === 'folder') renderPostFolders();
-    updateSidebarState();
-  });
-  document.getElementById('sbPinnedTags').addEventListener('contextmenu', (e) => {
-    const chip = e.target.closest('.sb-chip[data-filter-type]');
-    if (!chip) return;
-    e.preventDefault();
-    togglePin(chip.dataset.filterType, chip.dataset.filterValue);
-  });
-
   // --- Tag group sub-rows (Plan A) ---
   const TAGGROUPS_COLLAPSED_KEY = 'corpus.tagGroupsCollapsed';
   let tagGroupsCollapsed = localStorage.getItem(TAGGROUPS_COLLAPSED_KEY) === '1';

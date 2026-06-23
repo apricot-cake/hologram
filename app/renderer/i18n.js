@@ -235,8 +235,6 @@
       ungroupDone: 'グループを解除しました',
       tagGroupOther: '未分類',
       tagAllRow: 'すべてのタグ',
-      pinnedTags: 'ピン留め',
-      tipPin: 'サイドバーにピン留め/解除',
       qfFindPh: '絞り込み…',
       sbFilterTitle: 'フィルタ',
       // viewer: settings > backup（指定フォルダへの増分エクスポート）
@@ -575,8 +573,6 @@
       ungroupDone: 'Ungrouped',
       tagGroupOther: 'Uncategorized',
       tagAllRow: 'All tags',
-      pinnedTags: 'Pinned',
-      tipPin: 'Pin to / unpin from the sidebar',
       qfFindPh: 'Filter…',
       sbFilterTitle: 'Filters',
       // viewer: settings > backup (incremental export to a chosen folder)
