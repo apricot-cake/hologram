@@ -20,6 +20,7 @@ const { configDir } = require('./paths');
 const HOST_NAME = 'com.corpus.host';
 const BRIDGE_PATH = path.join(__dirname, 'bridge.js');
 const PATHS_PATH = path.join(__dirname, 'paths.js');
+const MEDIA_DOWNLOAD_PATH = path.join(__dirname, 'media-download.js');
 
 // Copy the bridge into the (ASCII) config dir and run it from there. The repo
 // may live under a non-ASCII path (e.g. Japanese folders); cmd.exe reads .bat
@@ -30,6 +31,11 @@ function deployBridge() {
   const destBridge = path.join(configDir(), 'bridge.js');
   fs.copyFileSync(BRIDGE_PATH, destBridge);
   fs.copyFileSync(PATHS_PATH, path.join(configDir(), 'paths.js'));
+  // bridge.js runs from the ASCII config dir, so EVERY local module it require()s
+  // must be deployed alongside it — a missing one makes the spawned host crash on
+  // startup ("Error when communicating with the native messaging host"), with no
+  // hint. Keep this in lockstep with bridge.js's require()s: paths + media-download.
+  fs.copyFileSync(MEDIA_DOWNLOAD_PATH, path.join(configDir(), 'media-download.js'));
   return destBridge;
 }
 
@@ -207,6 +213,7 @@ function uninstall() {
   const leftovers = [
     path.join(configDir(), 'bridge.js'),
     path.join(configDir(), 'paths.js'),
+    path.join(configDir(), 'media-download.js'),
     launcherPath(),
     manifestPath()
   ];

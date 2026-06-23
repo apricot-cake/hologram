@@ -165,6 +165,35 @@ function checkDeployedBridge() {
     : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.js. Re-run: node native-host/install.js' };
 }
 
+// --- check: the DEPLOYED bridge actually runs (not just matches by content) ---
+// Spawns configDir/bridge.js exactly as Chrome's launcher would and pings it.
+// Catches a deployed copy that crashes on startup — e.g. a local require()
+// (./media-download) whose file wasn't deployed alongside bridge.js. A content
+// match can't catch this; only running it can.
+function deployedBridgePing() {
+  return new Promise((resolve) => {
+    const deployed = path.join(configDir(), 'bridge.js');
+    if (!fs.existsSync(deployed)) {
+      resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.js` });
+      return;
+    }
+    const child = spawn(process.execPath, [deployed], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = Buffer.alloc(0);
+    let err = '';
+    child.stdout.on('data', (d) => { out = Buffer.concat([out, d]); });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('error', (e) => resolve({ name: 'deployed bridge runs', ok: false, detail: `spawn failed: ${e.message}` }));
+    child.on('close', () => {
+      const pong = parseFrames(out).some((f) => f && f.pong);
+      resolve(pong
+        ? { name: 'deployed bridge runs', ok: true, detail: 'ping→pong from deployed copy' }
+        : { name: 'deployed bridge runs', ok: false, detail: `no pong — deployed host crashed: ${(err.trim().split('\n')[0]) || 'no stderr'}` });
+    });
+    child.stdin.write(frame({ type: 'ping' }));
+    child.stdin.end();
+  });
+}
+
 // --- info: capture.log ---
 function captureLogInfo() {
   const p = path.join(configDir(), 'capture.log');
@@ -179,6 +208,7 @@ function captureLogInfo() {
     checkWritable(),
     checkRegistration(),
     checkDeployedBridge(),
+    await deployedBridgePing(),
     captureLogInfo()
   ];
 
