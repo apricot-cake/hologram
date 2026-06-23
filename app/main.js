@@ -1058,6 +1058,55 @@ function validateBackupDir(dir) {
   return { ok: true };
 }
 
+// --- Save-folder relocation ---
+// Reject a destination that would corrupt the library or loop: the current
+// folder itself, anything nested with it (can't move a folder into its own
+// child), the config dir, or the backup mirror. Last, prove it's writable.
+function validateSaveFolder(dir) {
+  if (!dir || typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'invalid' };
+  const cur = getSaveFolder();
+  if (path.resolve(dir) === path.resolve(cur)) return { ok: false, error: 'same' };
+  if (pathIsInside(dir, cur) || pathIsInside(cur, dir)) return { ok: false, error: 'nested' };
+  if (pathIsInside(dir, configDir()) || pathIsInside(configDir(), dir)) return { ok: false, error: 'config-overlap' };
+  const b = readBackupConfig();
+  if (b && b.dir && (pathIsInside(dir, b.dir) || pathIsInside(b.dir, dir))) return { ok: false, error: 'backup-overlap' };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, `.corpus-write-probe-${Date.now()}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+  } catch { return { ok: false, error: 'not-writable' }; }
+  return { ok: true };
+}
+
+// Copy the WHOLE library (sidecars, images, media, internal metadata, .trash)
+// from src into dest WITHOUT deleting src. The caller flips config to dest only
+// after this succeeds, then removes src — so at every instant a COMPLETE library
+// exists and config points at one of them. This is the crash-safe ordering: the
+// exact invariant whose violation made the library "disappear" before. Aborts
+// before copying anything if a name already exists at dest (never clobbers the
+// user's files there); rolls back partial copies on failure (src untouched).
+async function copyLibraryInto(src, dest) {
+  let entries;
+  try { entries = await fs.promises.readdir(src); } catch { entries = []; }
+  entries = entries.filter((f) => !/\.tmp(-\d+)?$/i.test(f));
+  await fs.promises.mkdir(dest, { recursive: true });
+  for (const f of entries) {
+    if (fs.existsSync(path.join(dest, f))) return { ok: false, error: 'collision', name: f };
+  }
+  const copied = [];
+  try {
+    for (const f of entries) {
+      await fs.promises.cp(path.join(src, f), path.join(dest, f), { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true });
+      copied.push(f);
+    }
+  } catch (e) {
+    for (const c of copied) { try { await fs.promises.rm(path.join(dest, c), { recursive: true, force: true }); } catch { /* best-effort */ } }
+    return { ok: false, error: 'copy-failed', detail: e && e.message };
+  }
+  return { ok: true, entries };
+}
+
 let backupRunning = false;
 async function runBackup(reason) {
   const b = readBackupConfig();
@@ -1170,6 +1219,40 @@ ipcMain.handle('pick-backup-dir', async () => {
   return { ok: true, backup };
 });
 ipcMain.handle('run-backup', () => runBackup('manual'));
+
+// Change where the library lives. Picks a folder, MOVES the existing library
+// there (crash-safe: copy → flip config → delete old), then re-points the watcher
+// and forces the renderer to resync. The native host reads saveFolder from the
+// same config.json, so new captures follow automatically.
+ipcMain.handle('pick-save-folder', async () => {
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+  const dest = res.filePaths[0];
+  const src = getSaveFolder();
+  const v = validateSaveFolder(dest);
+  if (!v.ok) return { ok: false, error: v.error };
+
+  // 1) Copy the whole library into dest. src stays fully intact.
+  const cp = await copyLibraryInto(src, dest);
+  if (!cp.ok) return { ok: false, error: cp.error, name: cp.name };
+
+  // 2) Flip config to dest — dest is now authoritative AND complete.
+  const cfg = readConfig();
+  cfg.saveFolder = dest;
+  writeConfig(cfg);
+
+  // 3) Remove the old copies (best-effort; data is safe at dest regardless).
+  for (const f of cp.entries) {
+    try { await fs.promises.rm(path.join(src, f), { recursive: true, force: true }); } catch { /* harmless leftover */ }
+  }
+
+  // Re-point the watcher and drop the delta baseline so the renderer full-resyncs.
+  watchSaveFolder();
+  _deltaFolder = null;
+  _lastSent = new Map();
+
+  return { ok: true, saveFolder: dest, moved: cp.entries.length };
+});
 
 // 任意の画像ファイルをライブラリ画像として取り込む（ユーザー自前の画像でもOK）。
 // source:'drag' を付けるので画像閲覧に出る。Corpusのメディアのみエクスポートの取り込みも兼ねる。

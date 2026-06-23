@@ -1955,6 +1955,14 @@
     <div class="section">
       <h2 id="settingsDataTitle">Data</h2>
       <div class="data-section">
+        <div style="font-size:13px;font-weight:600;" id="saveFolderSubTitle"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0;">
+          <code id="saveFolderPath" style="flex:1;min-width:200px;font-size:12px;color:var(--text);background:var(--surface-2);padding:6px 10px;border-radius:6px;word-break:break-all;"></code>
+          <button class="btn-outline" id="chooseSaveFolder"></button>
+        </div>
+        <div class="data-hint" id="hintSaveFolder"></div>
+      </div>
+      <div class="data-section" style="margin-top:14px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <!-- mode select + export button are ONE joined control (the pulldown
                only affects export, not the restore button next to it) -->

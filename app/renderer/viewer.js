@@ -212,6 +212,18 @@
 
     // settings > data / danger
     dataTitle: _s('dataTitle'),
+    saveFolderSubTitle: _s('saveFolderSubTitle'),
+    saveFolderChange: _s('saveFolderChange'),
+    saveFolderHint: _s('saveFolderHint'),
+    saveFolderMoving: _s('saveFolderMoving'),
+    saveFolderMoved: _f1('saveFolderMoved'),
+    saveFolderErrSame: _s('saveFolderErrSame'),
+    saveFolderErrNested: _s('saveFolderErrNested'),
+    saveFolderErrOverlap: _s('saveFolderErrOverlap'),
+    saveFolderErrCollision: _s('saveFolderErrCollision'),
+    saveFolderErrNotWritable: _s('saveFolderErrNotWritable'),
+    saveFolderErrCopyFailed: _s('saveFolderErrCopyFailed'),
+    saveFolderErrGeneric: _s('saveFolderErrGeneric'),
     exportZip: _s('exportZip'),
     importZip: _s('importZip'),
     importImages: _s('importImages'),
@@ -448,6 +460,9 @@
   setText('shortcutLink', MSG.shortcutLink);
   setText('hintShortcut', MSG.hintShortcut);
   setText('settingsDataTitle', MSG.dataTitle);
+  setText('saveFolderSubTitle', MSG.saveFolderSubTitle);
+  setText('chooseSaveFolder', MSG.saveFolderChange);
+  setText('hintSaveFolder', MSG.saveFolderHint);
   setText('exportZip', MSG.exportZip);
   setText('importZip', MSG.importZip);
   setText('importImages', MSG.importImages);
@@ -5526,6 +5541,58 @@
       showToast(MSG.importFailed);
     }
   });
+
+  // --- ライブラリの保存先（変更＝既存ライブラリを新フォルダへ安全に移動） ---
+  (function setupSaveFolder() {
+    const pathEl = document.getElementById('saveFolderPath');
+    const btn = document.getElementById('chooseSaveFolder');
+    if (!pathEl || !btn) return;
+
+    const errMsg = (code) => {
+      switch (code) {
+        case 'same': return MSG.saveFolderErrSame;
+        case 'nested': return MSG.saveFolderErrNested;
+        case 'config-overlap':
+        case 'backup-overlap': return MSG.saveFolderErrOverlap;
+        case 'collision': return MSG.saveFolderErrCollision;
+        case 'not-writable': return MSG.saveFolderErrNotWritable;
+        case 'copy-failed': return MSG.saveFolderErrCopyFailed;
+        default: return MSG.saveFolderErrGeneric;
+      }
+    };
+
+    async function load() {
+      let cfg = null;
+      try { cfg = await window.corpus.getConfig(); } catch { /* ignore */ }
+      pathEl.textContent = (cfg && cfg.saveFolder) || '';
+    }
+
+    btn.addEventListener('click', async () => {
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = MSG.saveFolderMoving;
+      try {
+        const res = await window.corpus.pickSaveFolder();
+        if (!res || res.canceled) return;
+        if (res.ok) {
+          pathEl.textContent = res.saveFolder;
+          showToast(MSG.saveFolderMoved(res.moved));
+          await loadPosts();
+        } else {
+          showToast(errMsg(res.error));
+        }
+      } catch {
+        showToast(MSG.saveFolderErrGeneric);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    });
+
+    load();
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', load);
+  })();
 
   // --- バックアップ / 指定フォルダへの増分エクスポート ---
   (function setupBackup() {
