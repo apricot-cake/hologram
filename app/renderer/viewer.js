@@ -87,26 +87,11 @@
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
-    tagStart: _s('tagStart'),
-    tagBarBadge: _s('tagBarBadge'),
-    tagAxisEdit: _s('tagAxisEdit'),
-    tagAxisStamp: _s('tagAxisStamp'),
-    tagAxisEditHint: _s('tagAxisEditHint'),
-    tagAxisStampHint: _s('tagAxisStampHint'),
-    tagLoaded: _s('tagLoaded'),
-    tagPickToLoad: _s('tagPickToLoad'),
-    tagPaletteFilter: _s('tagPaletteFilter'),
     tagPalNoMatch: _s('tagPalNoMatch'),
     editNoTags: _s('editNoTags'),
     tagAddBtn: _s('tagAddBtn'),
     tagNewName: _s('tagNewName'),
-    tagNoGroup: _s('tagNoGroup'),
-    tagNewGroup: _s('tagNewGroup'),
-    tagNewGroupName: _s('tagNewGroupName'),
-    tagDone: _s('tagDone'),
     tagNoTags: _s('tagNoTags'),
-    tagStampedOn: _f1('tagStampedOn'),
-    tagStampedOff: _f1('tagStampedOff'),
     tagKindHeader: _s('tagKindHeader'),
     kindWork: _s('kindWork'),
     kindCharacter: _s('kindCharacter'),
@@ -1648,7 +1633,7 @@
   const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
   let inspectedKey = null;      // postIdKey of the group shown in the inspector (ring marker)
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
-  let taggingApi = null;        // tagging mode (2-axis) API; set by setupTagging() below
+  let taggingApi = null;        // shared 種別 (kind) menu API; set by setupKindMenu() below
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   // card/list serve a thumbnail too now (they used to load the full original —
@@ -3125,7 +3110,6 @@
         setupMoreSentinel(grid);
         requestAnimationFrame(() => newCards.forEach((card) => card.querySelectorAll('.text')
           .forEach((el) => el.classList.toggle('truncated', el.scrollHeight > el.clientHeight))));
-        if (taggingApi && taggingApi.isActive()) taggingApi.refreshMarks();
         return;
       }
     }
@@ -3247,8 +3231,6 @@
         if (el) el.classList.add('inspected');
       }
     }
-
-    if (taggingApi && taggingApi.isActive()) taggingApi.refreshMarks();   // re-apply stamp marks after a rebuild
 
     if (!keepLimit) syncTitleAndPersist();   // keep the tab title + persistence in sync
   }
@@ -3490,8 +3472,6 @@
       `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span></div>`;
     cardMenu.innerHTML =
       (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
-      row('edit', CM_IC.edit, MSG.tipEdit) +
-      row('tagmode', CM_IC.wizard, MSG.tagStart) +
       row('folder', CM_IC.folder, MSG.tipFolder) +
       (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
@@ -3522,8 +3502,6 @@
     if (!rowEl || !g) return;
     const act = rowEl.dataset.act;
     if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
-    else if (act === 'edit') { if (taggingApi) taggingApi.enter('edit'); showDetail(g); }
-    else if (act === 'tagmode') { if (taggingApi) taggingApi.enter(); }
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
     else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
@@ -3685,213 +3663,15 @@
     showToast(MSG.deleted);
   }
 
-  // === Tagging mode (2-axis: card edit ↔ stamp). Replaces the old wizard.
-  // A slim toolbar above the grid toggles between two ways to tag:
-  //   • card edit — click a card → edit that ONE card's tags (1 image → many tags)
-  //   • stamp     — load ONE tag, then click cards to apply/remove it across many
-  //                 (1 tag → many images, Lightroom painter style)
-  // Filtering stays live underneath: narrow the set first, then stamp across it. ===
-  (function setupTagging() {
-    const bar = document.getElementById('tagBar');
-    if (!bar) return;
-    const postGrid = document.getElementById('postGrid');
-    const postActiveBar = document.getElementById('postActiveBar');
-    const editBtn = document.getElementById('tagAxisEditBtn');
-    const stampBtn = document.getElementById('tagAxisStampBtn');
-    const palette = document.getElementById('tagPalette');
-    const palSearch = document.getElementById('tagPalSearch');
-    const loadedLabel = document.getElementById('tagLoadedLabel');
-    const newForm = document.getElementById('tagNewForm');
-    const newInput = document.getElementById('tagNewInput');
-    const newGroup = document.getElementById('tagNewGroup');
-    const newGroupName = document.getElementById('tagNewGroupName');
-    const newAdd = document.getElementById('tagNewAdd');
-    const doneBtn = document.getElementById('tagDoneBtn');
-    const startBtn = document.getElementById('tagStartBtn');
-
-    const AXIS_KEY = 'corpus.tagAxis';
-    let active = false;
-    let axis = localStorage.getItem(AXIS_KEY) === 'edit' ? 'edit' : 'stamp';
-    let loaded = null;       // the loaded stamp tag (stamp axis)
-    let palQuery = '';       // palette search filter
-
-    // --- static labels ---
-    const setT = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
-    setT('tagStartLabel', MSG.tagStart);
-    setT('tagBarBadgeText', MSG.tagBarBadge);
-    setT('tagEditHint', MSG.tagAxisEditHint);
-    editBtn.textContent = MSG.tagAxisEdit;
-    stampBtn.textContent = MSG.tagAxisStamp;
-    editBtn.title = MSG.tagAxisEditHint;
-    stampBtn.title = MSG.tagAxisStampHint;
-    newAdd.textContent = MSG.tagAddBtn;
-    doneBtn.textContent = MSG.tagDone;
-    newInput.placeholder = MSG.tagNewName;
-    newGroupName.placeholder = MSG.tagNewGroupName;
-    if (palSearch) palSearch.placeholder = MSG.tagPaletteFilter;
-
-    // Palette organised by tag-group, filtered by the search box (shared helper).
-    const paletteGroups = () => groupedTagVocab(palQuery);
-
-    // Vertical, grouped palette in the sidebar: each group is a header + a wrapped
-    // row of chips (room to breathe — the old top strip was too narrow).
-    function renderPalette() {
-      const groups = paletteGroups();
-      if (!groups.length) {
-        palette.innerHTML = `<span class="tag-pal-empty">${escapeHtml(palQuery ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
-        return;
-      }
-      const chip = (t) => {
-        const k = tagKindOf(t);
-        const dot = k ? `<span class="tag-pal-kind tk-${k}"></span>` : '';
-        const title = k ? ` title="${escapeAttr(kindLabel(k))}"` : '';
-        return `<button class="tag-pal-chip${t === loaded ? ' loaded' : ''}"${k ? ` data-kind="${k}"` : ''} data-tag="${escapeAttr(t)}"${title}>${dot}${escapeHtml(t)}</button>`;
-      };
-      palette.innerHTML = groups.map((g) =>
-        `<div class="tag-pal-group"><div class="tag-pal-gname">${escapeHtml(g.name)}</div><div class="tag-pal-chips">${g.tags.map(chip).join('')}</div></div>`
-      ).join('');
-    }
-    function renderGroupSelect() {
-      newGroup.innerHTML =
-        `<option value="">${escapeHtml(MSG.tagNoGroup)}</option>` +
-        tagGroups.map((g) => `<option value="${escapeAttr(g.id)}">${escapeHtml(g.name)}</option>`).join('') +
-        `<option value="__new">${escapeHtml(MSG.tagNewGroup)}</option>`;
-      newGroupName.style.display = 'none';
-    }
-    function updateLoadedLabel() {
-      // Only take row width when a tag IS loaded; otherwise the search box + the
-      // visible grouped chips already tell the user to pick one (no long hint).
-      loadedLabel.innerHTML = loaded ? `${escapeHtml(MSG.tagLoaded)} <b>${escapeHtml(loaded)}</b>` : '';
-      loadedLabel.style.display = loaded ? '' : 'none';
-    }
-    function loadTag(t) { loaded = t || null; updateLoadedLabel(); renderPalette(); refreshMarks(); }
-
-    function applyAxis() {
-      document.body.classList.toggle('tagging-stamp', axis === 'stamp');
-      document.body.classList.toggle('tagging-edit', axis === 'edit');
-      editBtn.classList.toggle('active', axis === 'edit');
-      stampBtn.classList.toggle('active', axis === 'stamp');
-    }
-    function setAxis(a) {
-      axis = a === 'edit' ? 'edit' : 'stamp';
-      try { localStorage.setItem(AXIS_KEY, axis); } catch { /* ignore */ }
-      applyAxis();
-      refreshMarks();
-    }
-
-    // The tag bar and the active-filter bar are two stacked sticky bands. When
-    // no filter is active the filter band is hidden, so THIS band becomes the
-    // bottom one (gap before grid + corner fillet via the --solo class).
-    function updateLayout() {
-      if (!active) return;
-      document.documentElement.style.setProperty('--tagbar-h', bar.offsetHeight + 'px');
-      const abHidden = getComputedStyle(postActiveBar).display === 'none';
-      bar.classList.toggle('tag-bar--solo', abHidden);
-    }
-    // Ring + ✓ marker on cards that already carry the loaded stamp.
-    function refreshMarks() {
-      if (!active) return;
-      updateLayout();
-      postGrid.querySelectorAll('.post-card').forEach((card) => {
-        const g = viewGroups[parseInt(card.dataset.index, 10)];
-        const on = !!(axis === 'stamp' && loaded && g && g.records.length &&
-          g.records.every((r) => (r.tags || []).includes(loaded)));
-        card.classList.toggle('stamp-on', on);
-      });
-    }
-    function clearMarks() { postGrid.querySelectorAll('.post-card.stamp-on').forEach((c) => c.classList.remove('stamp-on')); }
-
-    // Refresh just one card's bottom tag chips after a stamp (no full re-render).
-    function updateCardTagLabel(cardEl, g) {
-      const meta = cardEl.querySelector('.post-meta'); if (!meta) return;
-      let label = meta.querySelector('.tags-label');
-      const tags = g.rep.tags || [];
-      if (!tags.length) { if (label) label.remove(); return; }
-      const html = tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('');
-      if (label) label.innerHTML = html;
-      else { label = document.createElement('div'); label.className = 'tags-label'; label.innerHTML = html; meta.appendChild(label); }
-    }
-
-    // Toggle the loaded tag on every record of a group (additive: other tags stay).
-    async function stampCard(cardEl, g) {
-      if (!loaded) { showToast(MSG.tagPickToLoad); return; }
-      const recs = g.records;
-      const has = recs.length > 0 && recs.every((r) => (r.tags || []).includes(loaded));
-      const undoRecords = recs.map((r) => {
-        const prev = (r.tags || []).slice();
-        const next = has ? prev.filter((t) => t !== loaded) : [...new Set([...prev, loaded])];
-        return { captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next };
-      });
-      for (const u of undoRecords) {
-        try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
-        const r = recs.find((x) => x.captureId === u.captureId); if (r) r.tags = u.newTags.slice();
-        const i = allPosts.findIndex((p) => p.captureId === u.captureId); if (i >= 0) allPosts[i].tags = u.newTags.slice();
-      }
-      markPostsMutated();   // stamping skips renderPosts; just invalidate so the next render rebuilds the sidebar
-      pushUndo('tags', undoRecords);
-      if (cardEl) { cardEl.classList.toggle('stamp-on', !has); updateCardTagLabel(cardEl, g); }
-      showToast(has ? MSG.tagStampedOff(loaded) : MSG.tagStampedOn(loaded));
-    }
-
-    // Create a tag (optionally into a group / a new group), then load it as the stamp.
-    async function createTag() {
-      const v = (newInput.value || '').trim(); if (!v) return;
-      const choice = newGroup.value;
-      let changed = false;
-      if (choice === '__new') {
-        const name = (newGroupName.value || '').trim();
-        if (name) { tagGroups.push({ id: 'g' + Date.now().toString(36), name, tags: [v] }); changed = true; }
-      } else if (choice) {
-        const grp = tagGroups.find((g) => g.id === choice);
-        if (grp) { grp.tags = grp.tags || []; if (!grp.tags.includes(v)) { grp.tags.push(v); changed = true; } }
-      }
-      if (changed && window.corpus.setTagGroups) { try { await window.corpus.setTagGroups(tagGroups); } catch { /* best-effort */ } }
-      newInput.value = ''; newGroupName.value = '';
-      renderGroupSelect();
-      loadTag(v);
-      if (typeof updateSidebarTagGroups === 'function') updateSidebarTagGroups();
-    }
-
-    function enter(a) {
-      if (a === 'edit' || a === 'stamp') setAxis(a); else applyAxis();
-      active = true;
-      if (selectedSet.size) clearSelection();
-      bar.style.display = 'flex';
-      document.body.classList.add('tagging');
-      palQuery = ''; if (palSearch) palSearch.value = '';
-      renderPalette();
-      renderGroupSelect();
-      updateLoadedLabel();
-      refreshMarks();
-      updateLayout();
-    }
-    function exit() {
-      active = false;
-      bar.style.display = 'none';
-      document.body.classList.remove('tagging', 'tagging-stamp', 'tagging-edit');
-      clearMarks();
-      renderPosts(true);   // reconcile filter matching after edits
-    }
-
-    // --- events ---
-    if (startBtn) startBtn.addEventListener('click', () => { if (active) exit(); else enter(); });
-    editBtn.addEventListener('click', () => setAxis('edit'));
-    stampBtn.addEventListener('click', () => setAxis('stamp'));
-    doneBtn.addEventListener('click', exit);
-    palette.addEventListener('click', (e) => {
-      const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
-      const t = chip.dataset.tag;
-      loadTag(t === loaded ? null : t);   // click the loaded chip again to unload
-    });
-
-    // Right-click a palette chip → set its 種別 (用語帳 entry). A deliberately quiet
-    // option tucked into tag management (段階的開示): assigning a kind is the TAG's
-    // attribute, so no post is touched. The kind blooms as a dot on the chip.
+  // === Shared 種別 (kind) menu: right-click a tag chip (edit picker / inspector /
+  // poster) to classify it 作品/キャラ/一般. A tag's 種別 is the TAG's own attribute
+  // (no post is touched), surfaced as a quiet 段階的開示 entry inside tag editing. ===
+  (function setupKindMenu() {
     const kindMenu = document.createElement('div');
     kindMenu.className = 'fold-menu kind-menu';
     document.body.appendChild(kindMenu);
     let kindMenuTag = null;
-    let kindMenuOnChanged = null;   // re-render after a kind change (palette or edit picker)
+    let kindMenuOnChanged = null;   // re-render after a kind change (edit picker / inspector / poster)
     function hideKindMenu() { kindMenu.classList.remove('show'); kindMenuTag = null; }
     function showKindMenu(tag, x, y, onChanged) {
       kindMenuTag = tag;
@@ -3914,11 +3694,6 @@
       kindMenu.classList.add('show');
       clampIntoView(kindMenu);
     }
-    palette.addEventListener('contextmenu', (e) => {
-      const chip = e.target.closest('.tag-pal-chip'); if (!chip) return;
-      e.preventDefault();
-      showKindMenu(chip.dataset.tag, e.clientX, e.clientY, renderPalette);
-    });
     kindMenu.addEventListener('click', async (e) => {
       e.stopPropagation();   // survive the capture-phase document hider below
       const rowEl = e.target.closest('.fm-row'); const tag = kindMenuTag;
@@ -3932,50 +3707,7 @@
     });
     document.addEventListener('click', (e) => { if (kindMenu.classList.contains('show') && !kindMenu.contains(e.target)) hideKindMenu(); }, true);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideKindMenu(); });
-    if (palSearch) palSearch.addEventListener('input', () => { palQuery = palSearch.value.trim(); renderPalette(); });
-    newAdd.addEventListener('click', createTag);
-    newGroup.addEventListener('change', () => { newGroupName.style.display = newGroup.value === '__new' ? '' : 'none'; });
-    [newInput, newGroupName].forEach((el) => el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); createTag(); }
-    }));
-
-    // Grid clicks while tagging: capture phase pre-empts gallery/text/select.
-    // The corner buttons (ℹ info / 🔖 workspace / 🏷 tag) still work — we skip them.
-    postGrid.addEventListener('click', (e) => {
-      if (!active) return;
-      if (e.target.closest('.info-btn, .ws-btn, .tag-btn')) return;
-      const card = e.target.closest('.post-card'); if (!card) return;
-      e.preventDefault(); e.stopPropagation();
-      const g = viewGroups[parseInt(card.dataset.index, 10)]; if (!g) return;
-      if (axis === 'edit') {
-        // Edit axis: open the inspector for inline tag editing (re-click same card closes).
-        if (!document.getElementById('postDetail').hidden && inspectedKey === postIdKey(g.rep)) closeDetail();
-        else showDetail(g);
-      } else stampCard(card, g);
-    }, true);
-
-    // Esc leaves tagging mode — but only when nothing transient is on top. Registered
-    // in CAPTURE phase (like the inspector's Esc) so it inspects open popovers BEFORE
-    // the bubble-phase closers dismiss them on the same press: an open menu / popover /
-    // overlay wins the first Esc (closed by its own handler), the mode exits on the next.
-    document.addEventListener('keydown', (e) => {
-      if (!active || e.key !== 'Escape') return;
-      if (lightbox.classList.contains('show')) return;
-      if (document.getElementById('editOverlay').classList.contains('show')) return;
-      if (document.querySelector('.confirm-overlay.show')) return;
-      if (document.querySelector('.fold-menu.show')) return;   // foldMenu / qf flyout / card / kind menus all share .fold-menu
-      const dp = document.getElementById('qfDatePopover');
-      const ep = document.getElementById('qfEngPopover');
-      if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
-      exit();
-    }, true);
-
-    // Reflect the persisted axis on the (hidden) toggle WITHOUT touching body
-    // classes — the tagging-stamp/edit body classes only exist while in the mode
-    // (enter() adds them) so grid affordances never leak outside tagging.
-    editBtn.classList.toggle('active', axis === 'edit');
-    stampBtn.classList.toggle('active', axis === 'stamp');
-    taggingApi = { enter, exit, isActive: () => active, getAxis: () => axis, refreshMarks, showKindMenu };
+    taggingApi = { showKindMenu };
   })();
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
@@ -4007,11 +3739,11 @@
     renderPosts(true);
     showToast(MSG.ungroupDone);
   }
-  // --- Inspector inline tag editor (active in tagging-edit mode) ---
+  // --- Inspector inline tag editor (always available while the inspector is open) ---
   // Source of truth = the records' real tags. Each change saves immediately (mirrors
   // adoptSourceTag) and re-renders only the affected sub-parts so the input keeps focus
-  // and the picker keeps its scroll. The edit UI shows via CSS only when body.tagging-edit;
-  // plain browsing sees the read-only view.
+  // and the picker keeps its scroll. The chips + picker live in the panel itself — tag
+  // editing is per-card here, no mode to enter (matches the poster inspector).
   let ivPickQuery = '';
   function sameTags(a, b) { if (a.length !== b.length) return false; const s = new Set(a); return b.every((t) => s.has(t)); }
 
@@ -4068,15 +3800,12 @@
     if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
     if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
     if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
-    // User tags and source tags (pixiv / SNS hashtags) get separate rows so the
-    // origin reads at a glance. Source tags already adopted into `tags` are hidden
-    // from the source row; the rest are clickable to adopt (promote to a user tag).
+    // Source tags (pixiv / SNS hashtags) get their own row. User tags live in the
+    // always-editable chips block (#ivTagEdit) so they aren't repeated here. Source
+    // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
     const srcTags = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h) => !userSet.has(h));
-    const tagsHtml = userTags.length
-      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${userTags.map((t) => `<span class="iv-insp-tag">${escapeHtml(t)}</span>`).join('')}</div></span></div>`
-      : '';
     const srcTagsHtml = srcTags.length
       ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailSourceTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${srcTags.map((t) => `<button type="button" class="iv-insp-tag iv-insp-tag-src" data-adopt="${escapeAttr(t)}" title="${escapeAttr(MSG.tipAdoptTag)}">${escapeHtml(t)}</button>`).join('')}</div></span></div>`
       : '';
@@ -4128,7 +3857,7 @@
       row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
       row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
       `<div id="ivTagEdit" class="iv-tag-edit"><div class="iv-tag-label">${escapeHtml(MSG.detailTags)}</div><div id="ivTagChips" class="iv-tag-chips"></div><div class="iv-tag-addrow"><input type="text" id="ivTagInput" placeholder="${escapeAttr(MSG.tagNewName)}" autocomplete="off"><button class="btn-outline" id="ivTagAdd">${escapeHtml(MSG.tagAddBtn)}</button></div><div id="ivTagPicker" class="edit-picker iv-tag-picker"></div></div>` +
-      `<div id="ivTagView" class="iv-tag-view">${tagsHtml}${srcTagsHtml}</div>` +
+      `<div id="ivTagView" class="iv-tag-view">${srcTagsHtml}</div>` +
       `<div class="iv-insp-actions">` +
       (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
       (srcImageUrl ? `<a class="iv-insp-open" id="pdSauce">${escapeHtml(MSG.detailSauce)} ↗</a>` : '') +
@@ -4137,7 +3866,7 @@
       `</div>`;
     document.getElementById('postDetail').hidden = false;
     refreshInspectorTags(g);
-    if (document.body.classList.contains('tagging-edit')) refreshInspectorPicker(g);
+    refreshInspectorPicker(g);   // tag editor is always live in the inspector (no mode)
     // While open, a card click swaps the panel (not zoom) → plain pointer.
     document.getElementById('postGrid').classList.add('insp-open');
     // Ring-mark the inspected card so swapping content stays traceable.
@@ -4194,7 +3923,6 @@
     if (lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
     const dp = document.getElementById('qfDatePopover');
@@ -4232,14 +3960,13 @@
     }
     showDetail(g);
   });
-  // 🏷 button on card → enter edit-tagging + open inspector (same as right-click "edit")
+  // 🏷 button on card → open the inspector (tags are editable inline there)
   document.getElementById('postGrid').addEventListener('click', (e) => {
     const btn = e.target.closest('.tag-btn');
     if (!btn) return;
     e.stopPropagation();
     const g = viewGroups[parseInt(btn.dataset.tagedit, 10)];
     if (!g) return;
-    if (taggingApi) taggingApi.enter('edit');
     showDetail(g);
   });
 
@@ -4686,7 +4413,6 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     if (browseMode !== 'posts') return;   // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
     e.preventDefault();
@@ -4707,7 +4433,6 @@
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
     if (!document.getElementById('settingsView').hidden) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
-    if (taggingApi && taggingApi.isActive()) return;   // tagging mode owns grid clicks
     e.preventDefault();
     const sb = document.getElementById('searchBox');
     sb.focus();

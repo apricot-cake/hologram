@@ -727,12 +727,11 @@
     body.browse-posters #postGrid { display: none !important; }
     body:not(.browse-posters) #posterGrid { display: none !important; }
     /* Poster mode hides the post-only chrome (filters/sort/density/active bar +
-       tagging launcher + workspace tray) — only the search box stays useful. */
+       workspace tray) — only the search box stays useful. */
     body.browse-posters #postActiveBar,
     body.browse-posters #filterRows,
     body.browse-posters #pinnedSection,
     body.browse-posters #tileSizeRow,
-    body.browse-posters #tagStartBtn,
     body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
     body.browse-posters #postsToolbar .sb-section:has(#sortSelect),
     body.browse-posters .sb-section:has(#wsRow) { display: none !important; }
@@ -751,7 +750,6 @@
     body.browse-collections #filterRows,
     body.browse-collections #pinnedSection,
     body.browse-collections #tileSizeRow,
-    body.browse-collections #tagStartBtn,
     body.browse-collections #posterViewSection,
     body.browse-collections #postsToolbar .sb-section:has(#densityToggle),
     body.browse-collections #postsToolbar .sb-section:has(#sortSelect),
@@ -1782,11 +1780,6 @@
             <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           </div>
         </div>
-        <!-- Feature launcher: enter tagging mode (card-edit / stamp toggle). -->
-        <button class="sb-feature" id="tagStartBtn" type="button">
-          <span class="sb-feature-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span>
-          <span id="tagStartLabel"></span>
-        </button>
         <div class="toolbar" id="postsToolbar">
           <div class="sb-section">
             <div class="view-toggle" id="densityToggle"><i class="vt-thumb" aria-hidden="true"></i>
@@ -1907,23 +1900,6 @@
         </div><!-- /sb-scroll -->
       </div>
 
-      <!-- Tag palette: replaces the filter sidebar while in tagging (stamp axis).
-           Vertical, grouped, searchable — far roomier than the top toolbar strip. -->
-      <div id="tagPalettePanel" class="tag-palette-panel">
-        <input type="search" class="tpp-search" id="tagPalSearch" autocomplete="off">
-        <div class="tpp-list tag-palette" id="tagPalette"></div>
-        <div class="tpp-new" id="tagNewForm">
-          <div class="tpp-new-row">
-            <input type="text" id="tagNewInput" class="tag-new-input" autocomplete="off">
-            <button type="button" class="btn-outline" id="tagNewAdd"></button>
-          </div>
-          <div class="tpp-new-row">
-            <select id="tagNewGroup" class="tag-new-group"></select>
-            <input type="text" id="tagNewGroupName" class="tag-new-input tag-new-gname" style="display:none" autocomplete="off">
-          </div>
-        </div>
-      </div>
-
     </div><!-- /side-post -->
 
     <!-- Back-to-top: floats above the footer once the filter column is scrolled -->
@@ -1961,21 +1937,6 @@
   <div id="appMain">
   <div id="mode-post">
     <div class="app-content">
-      <!-- Tagging-mode bar: 2 axes (card edit / stamp) + a loaded-tag palette.
-           Hidden until tagging mode is entered. Stacks ABOVE the active-filter
-           bar so filtering stays usable (filter → stamp across the subset). -->
-      <div id="tagBar" class="tag-bar" style="display:none">
-        <span class="tag-bar-badge"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span id="tagBarBadgeText"></span></span>
-        <div class="tag-axis-toggle" id="tagAxisToggle">
-          <button type="button" data-axis="edit" id="tagAxisEditBtn" class="active"></button>
-          <button type="button" data-axis="stamp" id="tagAxisStampBtn"></button>
-        </div>
-        <div class="tag-stamp-zone" id="tagStampZone">
-          <span class="tag-loaded-label" id="tagLoadedLabel"></span>
-        </div>
-        <span class="tag-edit-hint" id="tagEditHint"></span>
-        <button type="button" class="tag-done-btn" id="tagDoneBtn"></button>
-      </div>
       <!-- Posts tab -->
       <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
@@ -2247,101 +2208,6 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
-    /* --- Tagging mode bar (2-axis: card edit / stamp) ---
-       A slim band stacked ABOVE the active-filter bar. The axis toggle is a
-       monotone-contrast segmented control (no accent-tint active — withdrawn);
-       the loaded stamp is marked by an accent-soft EDGE only (DESIGN.md). */
-    .tag-bar {
-      /* Sits in the content column, BELOW the full-width query-builder bar. */
-      position: sticky; top: calc(var(--tabbar-h) + var(--activebar-h)); z-index: 32;
-      display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
-      margin: -24px -32px 16px; padding: 9px 32px;
-      background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
-    }
-    /* When no filters are active the active-filter bar is hidden, so THIS band
-       is the bottom one — give it the gap before the grid + the corner fillet. */
-    .tag-bar.tag-bar--solo { margin-bottom: 16px; }
-    .tag-bar.tag-bar--solo::after {
-      content: ''; position: absolute; left: 0; top: 100%;
-      width: 10px; height: 10px; pointer-events: none;
-      background: radial-gradient(circle 10px at bottom right,
-        var(--border) 0 10.75px, var(--sidebar-bg) 10.75px);
-      -webkit-mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
-              mask: radial-gradient(circle 10px at bottom right, #0000 0 9.5px, #000 10px);
-    }
-    /* (Tagging no longer pushes the query bar down — the query bar is the full-width
-       top bar that always stays at the top; the tag band sticks below it instead.) */
-    .tag-bar-badge { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--text-muted-strong); text-transform: uppercase; letter-spacing: .4px; }
-    .tag-bar-badge svg { color: var(--accent-text); }
-    /* Axis toggle — monotone-contrast segmented control */
-    .tag-axis-toggle { display: inline-flex; flex-shrink: 0; background: var(--chip-bg); border-radius: 999px; padding: 3px; gap: 2px; }
-    .tag-axis-toggle button {
-      border: none; background: transparent; color: var(--text-muted);
-      font-size: 12px; padding: 5px 13px; border-radius: 999px; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 5px; transition: background .12s, color .12s;
-    }
-    .tag-axis-toggle button:hover { color: var(--text); }
-    .tag-axis-toggle button.active { background: var(--surface); color: var(--text-strong); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-    /* Stamp zone in the toolbar = just the loaded-tag readout (the palette moved
-       to the sidebar — a top strip is too narrow for a real tag vocabulary). */
-    .tag-stamp-zone { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-    .tag-loaded-label { font-size: 12px; color: var(--text-muted); flex-shrink: 1; min-width: 0; max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tag-edit-hint { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 0; }
-
-    /* Tag palette panel: while tagging (stamp axis) it REPLACES the filter sidebar
-       — vertical, grouped, searchable, with the full sidebar height to work in. */
-    .tag-palette-panel { display: none; }
-    body.tagging.tagging-stamp #side-post > #controls-posts { display: none; }
-    body.tagging.tagging-stamp .tag-palette-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; padding-top: 4px; }
-    .tpp-search { flex-shrink: 0; width: 100%; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
-    .tpp-search:focus { border-color: var(--accent); }
-    .tpp-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; }
-    .tag-pal-group { display: block; }
-    .tag-pal-gname { display: block; font-size: 10px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px; padding-left: 2px; }
-    .tag-pal-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .tag-pal-chip {
-      display: inline-flex; align-items: center; gap: 5px;
-      border: none; background: var(--chip-bg); color: var(--text);
-      border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer;
-      transition: background .12s, box-shadow .12s, color .12s;
-    }
-    .tag-pal-chip:hover { background: var(--chip-bg-hover); }
-    .tag-pal-chip.loaded { box-shadow: inset 0 0 0 1.5px var(--accent-soft); color: var(--text-strong); font-weight: 600; }
-    /* 種別 dot (用語帳): a tag classified as 作品/キャラ wears a small category dot. */
-    .tag-pal-kind { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
-    .tag-pal-empty { font-size: 12px; color: var(--text-subtle); padding: 8px 2px; }
-    /* New-tag form: persistent at the bottom of the panel (there's room now). */
-    .tpp-new { flex-shrink: 0; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-    .tpp-new-row { display: flex; gap: 6px; }
-    .tag-new-input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
-    .tag-new-input:focus { border-color: var(--accent); }
-    .tag-new-group { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text); }
-    .tpp-new .btn-outline { flex-shrink: 0; padding: 6px 12px; }
-    .tag-done-btn { flex-shrink: 0; margin-left: auto; font-size: 12px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; transition: border-color .12s, color .12s; }
-    .tag-done-btn:hover { border-color: var(--accent); color: var(--accent-text); }
-    /* Axis-conditional visibility */
-    body:not(.tagging-stamp) .tag-stamp-zone { display: none; }
-    body:not(.tagging-edit) .tag-edit-hint { display: none; }
-    /* Stamp affordances on the grid (scoped to in-mode so it never leaks out) */
-    body.tagging.tagging-stamp #postGrid .post-card { cursor: copy; }
-    body.tagging #postGrid .select-check { display: none; }
-    /* "has the loaded stamp": the SAME clean border-overlay ring as selection
-       (painted above the thumb so it reads evenly) — no inset box-shadow / ✓ glyph
-       (those framed unevenly = the "枠が変" report). A small accent disc with a
-       crisp check (SVG, white) marks it without the fragile pseudo-on-pseudo. */
-    .post-card.stamp-on::after {
-      content: ''; position: absolute; inset: 0; z-index: 6;
-      border: 3px solid var(--accent-soft); border-radius: 8px; pointer-events: none;
-    }
-    .post-card.stamp-on::before {
-      content: ''; position: absolute; top: 8px; left: 8px; z-index: 7;
-      width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
-      box-shadow: 0 0 2px 1px rgba(0,0,0,.35); pointer-events: none;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5 13l4 4L19 7'/></svg>");
-      background-repeat: no-repeat; background-position: center; background-size: 12px;
-    }
-
-
     /* Inspector (ℹ): an inline right column at wide widths; below the
        breakpoint the SAME panel floats over the grid as a slide-over — it
        never disappears, only the layering changes. Esc/× closes; clicking a
@@ -2368,12 +2234,9 @@
     }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
     .iv-insp-actions .iv-insp-open { margin-top: 0; }
-    /* Inspector inline tag editor — shown only in tagging-edit (CSS-gated). */
-    .iv-tag-edit { display: none; }
-    body.tagging.tagging-edit .iv-tag-edit { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
-    body.tagging.tagging-edit .iv-tag-view { display: none; }
-    /* Poster inspector tag editor — always shown (posters have no tagging mode). */
-    .iv-tag-edit-poster { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+    /* Inspector inline tag editor — always shown while the inspector is open: tag
+       editing is per-card here, no mode to enter (posts + posters behave the same). */
+    .iv-tag-edit, .iv-tag-edit-poster { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
     .iv-tag-label { font-size: 11px; color: var(--text-muted); }
     .iv-tag-chips { display: flex; flex-wrap: wrap; gap: 5px; }
     .iv-tag-chips .tag-chip { cursor: pointer; font-size: 11px; transition: background .12s, color .12s; }
