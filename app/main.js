@@ -33,16 +33,41 @@ let win = null;
 
 // --- Config ---
 function readConfig() {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   } catch {
+    return {};   // no config yet
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Corrupt config (e.g. a truncation from a pre-atomic-write forced kill).
+    // PRESERVE it instead of letting the caller silently overwrite it with {} —
+    // a truncated config that reads as {} and is then re-written loses
+    // saveFolder/extensionId/backup at once. Keep a copy for recovery/forensics.
+    try { if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`); } catch { /* best-effort */ }
     return {};
   }
 }
 
+// Atomic write: a forced kill or crash mid-write must NEVER leave a truncated
+// config.json. Write to a tmp file, fsync, then rename over the target — readers
+// only ever see the complete old or complete new file. (Non-atomic writeFileSync
+// truncated config.json on a forced kill → readConfig() returned {} → the next
+// write persisted {} → saveFolder/extensionId/backup were lost at once. That
+// cascade is what made a library "disappear".) Mirrors lib-index's snapshot write.
 function writeConfig(cfg) {
   fs.mkdirSync(configDir(), { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  const tmp = `${CONFIG_PATH}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, JSON.stringify(cfg, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, CONFIG_PATH);
 }
 
 // Explicit config wins; otherwise fall back to the shared default library dir
