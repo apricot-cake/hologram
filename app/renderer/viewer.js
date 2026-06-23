@@ -217,6 +217,12 @@
     saveFolderHint: _s('saveFolderHint'),
     saveFolderMoving: _s('saveFolderMoving'),
     saveFolderMoved: _f1('saveFolderMoved'),
+    saveFolderProgressTitle: _s('saveFolderProgressTitle'),
+    logCopyStart: _f1('logCopyStart'),
+    logCopying: _f1('logCopying'),
+    logSwitch: _s('logSwitch'),
+    logCleanup: _s('logCleanup'),
+    logMoveDone: _f1('logMoveDone'),
     saveFolderErrSame: _s('saveFolderErrSame'),
     saveFolderErrNested: _s('saveFolderErrNested'),
     saveFolderErrOverlap: _s('saveFolderErrOverlap'),
@@ -463,6 +469,7 @@
   setText('saveFolderSubTitle', MSG.saveFolderSubTitle);
   setText('chooseSaveFolder', MSG.saveFolderChange);
   setText('hintSaveFolder', MSG.saveFolderHint);
+  setText('saveFolderProgressTitle', MSG.saveFolderProgressTitle);
   setText('exportZip', MSG.exportZip);
   setText('importZip', MSG.importZip);
   setText('importImages', MSG.importImages);
@@ -5547,6 +5554,12 @@
     const pathEl = document.getElementById('saveFolderPath');
     const btn = document.getElementById('chooseSaveFolder');
     if (!pathEl || !btn) return;
+    const box = document.getElementById('saveFolderProgress');
+    const bar = document.getElementById('saveFolderProgressBar');
+    const pctEl = document.getElementById('saveFolderProgressPct');
+    const logEl = document.getElementById('saveFolderProgressLog');
+    let migrating = false;
+    let lastMilestone = 0;
 
     const errMsg = (code) => {
       switch (code) {
@@ -5555,25 +5568,64 @@
         case 'config-overlap':
         case 'backup-overlap': return MSG.saveFolderErrOverlap;
         case 'collision': return MSG.saveFolderErrCollision;
-        case 'not-writable': return MSG.saveFolderErrNotWritable;
         case 'copy-failed': return MSG.saveFolderErrCopyFailed;
+        case 'not-writable': return MSG.saveFolderErrNotWritable;
         default: return MSG.saveFolderErrGeneric;
       }
     };
+
+    const setPercent = (p) => { if (bar) bar.style.width = p + '%'; if (pctEl) pctEl.textContent = p + '%'; };
+    const appendLog = (line) => {
+      if (!logEl) return;
+      const row = document.createElement('div');
+      row.textContent = line;
+      logEl.appendChild(row);
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    const showBox = () => { if (box) box.hidden = false; };
+    const hideBox = () => { if (box) box.hidden = true; };
+    const resetProgress = () => { if (logEl) logEl.textContent = ''; setPercent(0); lastMilestone = 0; };
+
+    // Live migration progress (shown only while/after a move; hidden by default).
+    if (window.corpus.onSaveFolderProgress) {
+      window.corpus.onSaveFolderProgress((p) => {
+        if (!p) return;
+        showBox();
+        if (p.phase === 'copy') {
+          if (p.done === 0) appendLog(MSG.logCopyStart(p.total));
+          setPercent(p.percent);
+          if (p.percent >= lastMilestone + 20 && p.percent < 100) {
+            lastMilestone = p.percent - (p.percent % 20);
+            appendLog(MSG.logCopying(p.percent));
+          }
+        } else if (p.phase === 'switch') {
+          setPercent(100); appendLog(MSG.logSwitch);
+        } else if (p.phase === 'cleanup') {
+          appendLog(MSG.logCleanup);
+        } else if (p.phase === 'done') {
+          setPercent(100); appendLog(MSG.logMoveDone(p.moved));
+        } else if (p.phase === 'error') {
+          appendLog(errMsg(p.error));
+        }
+      });
+    }
 
     async function load() {
       let cfg = null;
       try { cfg = await window.corpus.getConfig(); } catch { /* ignore */ }
       pathEl.textContent = (cfg && cfg.saveFolder) || '';
+      if (!migrating) hideBox();   // 普段は非表示（移行中以外）
     }
 
     btn.addEventListener('click', async () => {
       const prev = btn.textContent;
       btn.disabled = true;
       btn.textContent = MSG.saveFolderMoving;
+      migrating = true;
+      resetProgress();   // box stays hidden until the first progress event (after a folder is picked)
       try {
         const res = await window.corpus.pickSaveFolder();
-        if (!res || res.canceled) return;
+        if (!res || res.canceled) { hideBox(); return; }
         if (res.ok) {
           pathEl.textContent = res.saveFolder;
           showToast(MSG.saveFolderMoved(res.moved));
@@ -5584,6 +5636,7 @@
       } catch {
         showToast(MSG.saveFolderErrGeneric);
       } finally {
+        migrating = false;
         btn.disabled = false;
         btn.textContent = prev;
       }

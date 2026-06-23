@@ -1962,6 +1962,16 @@
         </div>
         <div class="data-hint" id="hintSaveFolder"></div>
       </div>
+      <div class="data-section" id="saveFolderProgress" hidden style="margin-top:14px;">
+        <div style="font-size:13px;font-weight:600;" id="saveFolderProgressTitle"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin:8px 0;">
+          <div style="flex:1;height:8px;background:var(--surface-3);border-radius:999px;overflow:hidden;">
+            <div id="saveFolderProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:999px;transition:width .15s ease;"></div>
+          </div>
+          <span id="saveFolderProgressPct" style="font-size:12px;font-variant-numeric:tabular-nums;min-width:42px;text-align:right;color:var(--text-muted);">0%</span>
+        </div>
+        <div id="saveFolderProgressLog" style="font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-muted);background:var(--surface-2);border-radius:6px;padding:8px 10px;max-height:140px;overflow-y:auto;white-space:pre-wrap;line-height:1.55;"></div>
+      </div>
       <div class="data-section" style="margin-top:14px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <!-- mode select + export button are ONE joined control (the pulldown

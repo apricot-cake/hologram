@@ -1089,7 +1089,7 @@ function validateSaveFolder(dir) {
 // exact invariant whose violation made the library "disappear" before. Aborts
 // before copying anything if a name already exists at dest (never clobbers the
 // user's files there); rolls back partial copies on failure (src untouched).
-async function copyLibraryInto(src, dest) {
+async function copyLibraryInto(src, dest, onProgress) {
   let entries;
   try { entries = await fs.promises.readdir(src); } catch { entries = []; }
   entries = entries.filter((f) => !/\.tmp(-\d+)?$/i.test(f));
@@ -1097,11 +1097,14 @@ async function copyLibraryInto(src, dest) {
   for (const f of entries) {
     if (fs.existsSync(path.join(dest, f))) return { ok: false, error: 'collision', name: f };
   }
+  const total = entries.length;
+  if (onProgress) onProgress(0, total);
   const copied = [];
   try {
     for (const f of entries) {
       await fs.promises.cp(path.join(src, f), path.join(dest, f), { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true });
       copied.push(f);
+      if (onProgress) onProgress(copied.length, total);
     }
   } catch (e) {
     for (const c of copied) { try { await fs.promises.rm(path.join(dest, c), { recursive: true, force: true }); } catch { /* best-effort */ } }
@@ -1242,16 +1245,28 @@ ipcMain.handle('pick-save-folder', async () => {
   const v = validateSaveFolder(dest);
   if (!v.ok) return { ok: false, error: v.error };
 
-  // 1) Copy the whole library into dest. src stays fully intact.
-  const cp = await copyLibraryInto(src, dest);
-  if (!cp.ok) return { ok: false, error: cp.error, name: cp.name };
+  const emit = (payload) => { if (win && !win.isDestroyed()) win.webContents.send('save-folder-progress', payload); };
+
+  // 1) Copy the whole library into dest. src stays fully intact. Throttle copy
+  //    progress to ~100ms so an 18k-file move doesn't flood IPC.
+  let lastEmit = 0;
+  const cp = await copyLibraryInto(src, dest, (done, total) => {
+    const now = Date.now();
+    if (done === 0 || done === total || now - lastEmit >= 100) {
+      lastEmit = now;
+      emit({ phase: 'copy', done, total, percent: total ? Math.floor((done / total) * 100) : 100 });
+    }
+  });
+  if (!cp.ok) { emit({ phase: 'error', error: cp.error }); return { ok: false, error: cp.error, name: cp.name }; }
 
   // 2) Flip config to dest — dest is now authoritative AND complete.
+  emit({ phase: 'switch' });
   const cfg = readConfig();
   cfg.saveFolder = dest;
   writeConfig(cfg);
 
   // 3) Remove the old copies (best-effort; data is safe at dest regardless).
+  emit({ phase: 'cleanup' });
   for (const f of cp.entries) {
     try { await fs.promises.rm(path.join(src, f), { recursive: true, force: true }); } catch { /* harmless leftover */ }
   }
@@ -1261,6 +1276,7 @@ ipcMain.handle('pick-save-folder', async () => {
   _deltaFolder = null;
   _lastSent = new Map();
 
+  emit({ phase: 'done', moved: cp.entries.length });
   return { ok: true, saveFolder: dest, moved: cp.entries.length };
 });
 
