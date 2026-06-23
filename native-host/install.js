@@ -109,16 +109,44 @@ function writeLauncher({ exe, runAsNode, bridgePath }) {
 }
 
 function writeManifest(launcher, extensionId) {
+  // When no extensionId is known (e.g. the app re-registers on every launch but
+  // config has none yet), PRESERVE any existing allowed_origins instead of wiping
+  // it to []. An empty allowed_origins silently forbids the extension and breaks
+  // every save until the id is re-set — the exact failure this whole episode was.
+  // Self-healing: a launch without an id never downgrades a working manifest.
+  let allowedOrigins = extensionId ? [`chrome-extension://${extensionId}/`] : [];
+  if (!extensionId) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(manifestPath(), 'utf8'));
+      if (Array.isArray(prev.allowed_origins) && prev.allowed_origins.length) allowedOrigins = prev.allowed_origins;
+    } catch { /* no prior manifest — leave empty */ }
+  }
   const manifest = {
     name: HOST_NAME,
     description: 'Corpus native messaging host',
     path: launcher,
     type: 'stdio',
-    allowed_origins: extensionId ? [`chrome-extension://${extensionId}/`] : []
+    allowed_origins: allowedOrigins
   };
   const p = manifestPath();
   fs.writeFileSync(p, JSON.stringify(manifest, null, 2), 'utf8');
   return p;
+}
+
+// Persist an explicitly-provided extension id into config.json (preserving the
+// app's other settings), so a later app launch — which reads the id from config
+// to register allowed_origins — keeps the correct origin instead of wiping it.
+function persistExtensionId(id) {
+  if (!id) return;
+  try {
+    const p = path.join(configDir(), 'config.json');
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch { /* fresh config */ }
+    if (cfg.extensionId !== id) {
+      cfg.extensionId = id;
+      fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
+    }
+  } catch { /* best-effort — never block registration */ }
 }
 
 // Browsers that read native messaging host manifests.
@@ -147,6 +175,7 @@ function unixManifestDirs() {
 }
 
 function install({ exe = process.execPath, runAsNode = false, extensionId } = {}) {
+  if (extensionId) persistExtensionId(extensionId);   // explicit id (CLI/app) → make it durable
   const id = extensionId || readExtensionId();
   const bridgePath = deployBridge();
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
