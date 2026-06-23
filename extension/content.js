@@ -83,6 +83,34 @@
     return normalizeRect(siteConfig.getCaptureRect?.(post) || post.getBoundingClientRect());
   }
 
+  // === 診断ログ ===
+
+  // A small, PII-light snapshot of the clicked element so a broken selector can
+  // be diagnosed from capture.log without a repro. outerHTML is truncated (the
+  // tag / data-testid / nearest anchor href is what identifies a selector break).
+  function snapEl(el) {
+    if (!(el instanceof Element)) return null;
+    const anchor = el.closest('a[href]') || (el.querySelector ? el.querySelector('a[href]') : null);
+    return {
+      tag: el.tagName ? el.tagName.toLowerCase() : null,
+      testid: el.getAttribute ? el.getAttribute('data-testid') : null,
+      role: el.getAttribute ? el.getAttribute('role') : null,
+      closestAnchorHref: anchor ? anchor.getAttribute('href') : null,
+      outerHTML: (el.outerHTML || '').slice(0, 400)
+    };
+  }
+
+  // Report a pre-bridge failure (no post element / no permalink) to the
+  // background, which relays it to the host's capture.log. Best-effort.
+  function logCaptureFailure(stage, el) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'logCapture',
+        entry: { stage, phase: 'fail', platform: siteConfig.platform, locationHref: location.href, clickedSnap: snapEl(el) }
+      });
+    } catch { /* ignore — diagnostics are non-essential */ }
+  }
+
   // === イベントハンドラ ===
 
   function onMouseMove(e) {
@@ -105,11 +133,13 @@
     const postUrl = siteConfig.getPermalink(post);
 
     // パーマリンクが取れないとAPIメタデータも取れず、保存しても platform:null の
-    // レコードになりビューアに表示されない。ここで中止する。
+    // レコードになりビューアに表示されない。ここで中止する。理由をバナーに出し、
+    // 掴んだ要素をログに残して原因特定を早める。
     if (!postUrl) {
-      banner.textContent = MSG.failed;
+      logCaptureFailure('permalink', post);
+      banner.textContent = getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]);
       banner.style.background = '#f4212e';
-      setTimeout(cleanup, 1500);
+      setTimeout(cleanup, 2800);
       return;
     }
 
@@ -159,7 +189,13 @@
     e.stopImmediatePropagation();
 
     const post = findPostElement(e.target);
-    if (!post) return;
+    if (!post) {
+      // Keep waiting (retry-friendly — a stray click shouldn't end the session),
+      // but record what was clicked so a broken postSelector is diagnosable from
+      // capture.log without a repro.
+      logCaptureFailure('select', e.target);
+      return;
+    }
     capturePost(post);
   }
 
@@ -257,9 +293,16 @@
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
       const partial = msg.success && msg.metaOk === false;
-      banner.textContent = partial ? MSG.savedNoMeta : (msg.success ? MSG.saved : MSG.failed);
+      if (!msg.success) {
+        // Show WHY it failed (the background passes the stage error), so a broken
+        // save is actionable instead of a bare "failed".
+        banner.textContent = msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
+      } else {
+        banner.textContent = partial ? MSG.savedNoMeta : MSG.saved;
+      }
       banner.style.background = partial ? '#f59e0b' : (msg.success ? '#00ba7c' : '#f4212e');
-      setTimeout(cleanup, partial ? 2800 : 1500);
+      // Hold failures (and partials) longer so the reason is readable.
+      setTimeout(cleanup, (partial || !msg.success) ? 2800 : 1500);
     }
   }
 

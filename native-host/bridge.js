@@ -37,6 +37,44 @@ function logLine(msg) {
   } catch { /* ignore — logging is non-essential */ }
 }
 
+// --- Structured capture diagnostics log ---------------------------------------
+// One JSON line per capture event in capture.log, so a broken save can be
+// diagnosed after the fact: which stage failed and why. The extension relays its
+// pre-bridge stages (select / permalink / capture / crop / metadata) via
+// {type:'log'}; the bridge appends its own final outcome here. Best-effort — must
+// never throw (a logging error must not break a capture). Rotated to one previous
+// generation (capture.log.1) at ~2MB so it can't grow unbounded.
+const CAPTURE_LOG_MAX = 2 * 1024 * 1024;
+
+function appendLog(entry) {
+  try {
+    const file = path.join(configDir(), 'capture.log');
+    try {
+      if (fs.statSync(file).size > CAPTURE_LOG_MAX) fs.renameSync(file, `${file}.1`);
+    } catch { /* no file yet — nothing to rotate */ }
+    fs.appendFileSync(file, JSON.stringify(Object.assign({ ts: new Date().toISOString() }, entry)) + '\n');
+  } catch { /* ignore — logging is non-essential */ }
+}
+
+// One capture.log line for a bridge-side save result (the final stage). The
+// extension logs the earlier stages; this ties the outcome to the same url.
+function logSaveOutcome(type, msg, res, err) {
+  const meta = (msg && msg.metadata) || {};
+  appendLog({
+    stage: 'bridge',
+    phase: err ? 'fail' : 'ok',
+    type,
+    captureId: (res && res.file) || (msg && msg.captureId) || null,
+    platform: meta.platform || null,
+    url: meta.url || null,
+    // metaOk is computed by the extension (whether the post API returned info);
+    // pass-through so a partial save (image saved, post info missing) is visible.
+    metaOk: msg ? msg.metaOk : undefined,
+    mediaCount: res ? res.mediaCount : undefined,
+    error: err ? err.message : undefined
+  });
+}
+
 // --- Save folder resolution (shared config with the desktop app) ---
 // MUST stay in lockstep with the app's getSaveFolder(): explicit config wins,
 // otherwise both fall back to the SAME shared default (defaultLibraryDir).
@@ -205,9 +243,17 @@ process.stdin.on('data', (chunk) => {
       if (msg.type === 'save') {
         // async (downloads original media) — ack is sent once it settles. The
         // process drains naturally so the pending fetch keeps it alive.
-        handleSave(msg).then(sendMessage).catch((err) => sendMessage({ ok: false, error: err.message }));
+        handleSave(msg)
+          .then((res) => { logSaveOutcome('save', msg, res, null); sendMessage(res); })
+          .catch((err) => { logSaveOutcome('save', msg, null, err); sendMessage({ ok: false, error: err.message }); });
       } else if (msg.type === 'saveDragged') {
-        handleSaveDragged(msg).then(sendMessage).catch((err) => sendMessage({ ok: false, error: err.message }));
+        handleSaveDragged(msg)
+          .then((res) => { logSaveOutcome('saveDragged', msg, res, null); sendMessage(res); })
+          .catch((err) => { logSaveOutcome('saveDragged', msg, null, err); sendMessage({ ok: false, error: err.message }); });
+      } else if (msg.type === 'log') {
+        // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
+        appendLog(msg.entry || {});
+        sendMessage({ ok: true });
       } else if (msg.type === 'ping') {
         sendMessage({ ok: true, pong: true });
       } else {
@@ -224,4 +270,4 @@ process.stdin.on('data', (chunk) => {
 // naturally rather than calling process.exit(), so any pending stdout write
 // (the ack) is flushed before the process terminates.
 
-module.exports = { handleSave, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage };
+module.exports = { handleSave, handleSaveDragged, downloadMedia, downloadAvatar, fetchStillImage, appendLog };

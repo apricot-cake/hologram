@@ -19,6 +19,11 @@
       bannerSaved: '画像を保存しました',
       bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
       bannerFailed: '保存に失敗しました',
+      // $1 = reason. Shown when a save fails with a known cause, so the banner
+      // says WHY instead of a bare "failed".
+      bannerFailedReason: '保存に失敗: $1',
+      reasonNoPermalink: '投稿リンクを取得できません',
+      reasonNoPost: '投稿を特定できません',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'ここにドロップで Corpus に保存'
@@ -30,6 +35,9 @@
       bannerSaved: 'Image saved',
       bannerSavedNoMeta: 'Saved (post info unavailable)',
       bannerFailed: 'Save failed',
+      bannerFailedReason: 'Save failed: $1',
+      reasonNoPermalink: 'could not find the post link',
+      reasonNoPost: 'could not identify a post here',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'Drop here to save to Corpus'

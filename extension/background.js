@@ -14,6 +14,22 @@ function getHostname(url) {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
+// --- Capture diagnostics ------------------------------------------------------
+// Fallback ring buffer for log entries that couldn't reach the native host's
+// capture.log (the host failing to launch is exactly the failure we most want
+// recorded). See logCapture / stashLogLocally / the dumpLogs handler.
+const DIAG_PREFIX = 'diaglog_';
+const DIAG_KEEP = 50;
+
+// Tag an error with the pipeline stage it failed at, so the single catch in the
+// message handler can log WHICH stage broke. select/permalink are reported by
+// content.js; capture/crop/metadata/bridge are tagged here.
+function stageError(stage, message) {
+  const err = new Error(message);
+  err.stage = stage;
+  return err;
+}
+
 function isAllowedSender(tabUrl, platformId) {
   const hostname = getHostname(tabUrl);
   if (!hostname) return false;
@@ -58,11 +74,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const tabId = sender.tab.id;
+  const senderHost = getHostname(sender.tab.url);
   captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => {
       console.error(error);
-      notify(tabId, false);
+      void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
+      notify(tabId, false, { error: error?.message });
       sendResponse({ ok: false, error: error?.message });
     });
 
@@ -77,21 +95,49 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   // user switched tabs in the click→capture gap, a different page would be
   // saved under this post's metadata. Verify and bail instead.
   const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-  if (!active || active.id !== tab.id) throw new Error('Tab changed before capture');
+  if (!active || active.id !== tab.id) throw stageError('capture', 'Tab changed before capture');
 
-  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
+  let dataUrl;
+  try {
+    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
+  } catch (err) { throw stageError('capture', err?.message || 'captureVisibleTab failed'); }
+
   const response = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect });
-  if (!response?.croppedDataUrl) throw new Error('Cropping failed');
+  if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
   const jpegBase64 = response.croppedDataUrl.split(',')[1];
 
   // Metadata comes from the platform's API (no DOM scraping).
   // fetchPostMetadata is defined in metadata.js (imported at the top).
   // expectedHost pins the Misskey/Mastodon instance fetch to the sender tab's
   // host (SSRF guard — a hostile page can't aim the fetch at another host).
-  const meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
-  const record = {
+  let meta;
+  try {
+    meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
+  } catch (err) { throw stageError('metadata', err?.message || 'metadata fetch threw'); }
+
+  const record = buildRecord(meta, {
+    captureId, capturedAt, postUrl, sendPlatform,
+    // The screenshot is the primary image; media[] (API original URLs) is what the
+    // bridge downloads, then overwrites with the saved filenames.
+    extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [] }
+  });
+
+  const metaOk = metaFetched(meta);
+  try {
+    await sendToBridge(captureId, jpegBase64, record, metaOk);
+  } catch (err) { throw stageError('bridge', err?.message || 'bridge save failed'); }
+  notify(tab.id, true, { metaOk });
+}
+
+// Build the sidecar record shared by both save paths. The click path adds image +
+// media (the screenshot is the content; media[] carries the API originals the
+// bridge downloads). The drag path leaves image/media to the bridge (the
+// downloaded illustration becomes image, media stays []) and instead records
+// which image of a multi-image post it was. Single source of truth so a new field
+// can't drift between the two paths.
+function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra }) {
+  return Object.assign({
     captureId,
-    image: `${captureId}.jpg`,
     url: meta.url || postUrl || null,
     // meta.platform is null only when the URL didn't parse; fall back to the
     // sender-reported platform (already origin-validated) so the record stays
@@ -116,8 +162,6 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     date: meta.date || null,
     capturedAt,
     updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
-    mediaType: meta.mediaType,
-    media: meta.media || [],
     lang: meta.lang,
     isReply: meta.isReply,
     isQuote: meta.isQuote,
@@ -126,10 +170,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
     replyToId: meta.replyToId,
     hashtags: meta.hashtags || [],
     tags: meta.tags || []
-  };
-
-  await sendToBridge(captureId, jpegBase64, record);
-  notify(tab.id, true, { metaOk: metaFetched(meta) });
+  }, extra);
 }
 
 // Send a message to the native messaging host (which writes the sidecar + image
@@ -173,18 +214,67 @@ function bridgeSend(message) {
   });
 }
 
-// Post-click save: screenshot (base64 JPEG) + metadata.
-function sendToBridge(captureId, jpegBase64, record) {
-  return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record });
+// Post-click save: screenshot (base64 JPEG) + metadata. metaOk (whether the post
+// API returned info) rides along so the host's capture.log records partial saves.
+function sendToBridge(captureId, jpegBase64, record, metaOk) {
+  return bridgeSend({ type: 'save', captureId, image: jpegBase64, metadata: record, metaOk });
 }
 
 // Image-drag save: the host downloads the dragged image itself (no screenshot).
-function sendDraggedToBridge(captureId, imageUrl, imageReferer, record) {
-  return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record });
+function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk) {
+  return bridgeSend({ type: 'saveDragged', captureId, imageUrl, imageReferer, metadata: record, metaOk });
 }
 
 function notify(tabId, success, extra = {}) {
   chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
+}
+
+// Best-effort diagnostics: append one capture event to the native host's
+// capture.log so a broken save can be diagnosed from disk later. Opens its OWN
+// short-lived native connection — not piggybacked on the save (bridgeSend
+// finishes on its first reply), and pre-bridge failures have no save connection
+// at all. NEVER throws and never blocks the save: if the host can't be reached
+// (e.g. it isn't registered — itself worth recording) the entry falls back to a
+// chrome.storage ring buffer that {type:'dumpLogs'} can read back.
+function logCapture(entry) {
+  const full = Object.assign({ ts: new Date().toISOString() }, entry);
+  return new Promise((resolve) => {
+    let settled = false;
+    let port = null;
+    let timer = null;
+    const done = (viaHost) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      try { port?.disconnect(); } catch { /* already gone */ }
+      if (!viaHost) stashLogLocally(full);
+      resolve();
+    };
+    timer = setTimeout(() => done(false), 4000);
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST);
+    } catch { done(false); return; }
+    port.onMessage.addListener(() => done(true));
+    port.onDisconnect.addListener(() => done(false));
+    try { port.postMessage({ type: 'log', entry: full }); } catch { done(false); }
+  });
+}
+
+// Ring buffer for entries that couldn't reach the host. One key per entry
+// (append-only — no read-modify-write race between concurrent captures); ISO ts
+// in the key makes lexical sort == chronological, so trimming drops the oldest.
+function stashLogLocally(entry) {
+  try {
+    const key = `${DIAG_PREFIX}${entry.ts}_${Math.floor(Math.random() * 1e6)}`;
+    chrome.storage.local.set({ [key]: entry }, () => {
+      void chrome.runtime.lastError; // ignore quota / other set errors
+      chrome.storage.local.get(null, (all) => {
+        if (chrome.runtime.lastError) return;
+        const keys = Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX)).sort();
+        if (keys.length > DIAG_KEEP) chrome.storage.local.remove(keys.slice(0, keys.length - DIAG_KEEP));
+      });
+    });
+  } catch { /* ignore — diagnostics are non-essential */ }
 }
 
 // A metadata fetch "succeeded" if the platform API returned any identifying
@@ -211,10 +301,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: false, error: 'Sender origin does not match platform' });
     return false;
   }
+  const senderHost = getHostname(sender.tab.url);
   captureAndSaveDragged(sender.tab, message.platform, message.postUrl, message.imageUrls || [])
     .then((result) => sendResponse({ ok: true, ...result }))
-    .catch((error) => { console.error(error); sendResponse({ ok: false, error: error?.message }); });
+    .catch((error) => {
+      console.error(error);
+      void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
+      sendResponse({ ok: false, error: error?.message });
+    });
   return true; // async response
+});
+
+// Diagnostics relays. content.js reports pre-bridge stage failures (select /
+// permalink) here; {type:'dumpLogs'} reads back the local fallback ring buffer
+// (entries that never reached the host's capture.log).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'logCapture') {
+    void logCapture(Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {}));
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === 'dumpLogs') {
+    chrome.storage.local.get(null, (all) => {
+      const entries = Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX)).sort().map((k) => all[k]);
+      sendResponse({ ok: true, entries });
+    });
+    return true; // async
+  }
+  return false;
 });
 
 async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
@@ -223,53 +337,34 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
 
   // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
   // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
-  const meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
+  let meta;
+  try {
+    meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
+  } catch (err) { throw stageError('metadata', err?.message || 'metadata fetch threw'); }
   const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
-  if (!primary || !primary.url) throw new Error('Could not resolve a dragged image URL');
+  if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
 
-  const record = {
-    captureId,
-    url: meta.url || postUrl || null,
-    platform: meta.platform || sendPlatform || null,
-    text: meta.text,
-    title: meta.title || null,
-    displayName: meta.displayName,
-    screenName: meta.screenName,
-    userId: meta.userId,
-    avatar: meta.avatar,
-    avatarReferer: meta.avatarReferer,
-    followers: meta.followers,
-    authorCreatedAt: meta.authorCreatedAt,
-    likes: meta.likes,
-    reposts: meta.reposts,
-    replies: meta.replies,
-    bookmarks: meta.bookmarks,
-    views: meta.views,
-    // No silent fallback to capture time (same as the click path).
-    date: meta.date || null,
-    capturedAt,
-    updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
-    mediaType: 'image',
-    lang: meta.lang,
-    isReply: meta.isReply,
-    isQuote: meta.isQuote,
-    isThread: meta.isThread,
-    quotedUrl: meta.quotedUrl,
-    replyToId: meta.replyToId,
-    hashtags: meta.hashtags || [],
-    tags: meta.tags || [],
-    // Which image of a multi-image post this is (1-based) + the total. Only
-    // recorded for multi-image posts; imageIndex is null when undeterminable.
-    imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
-    imageIndex: ((meta.media || []).length > 1 && primary.index >= 0) ? primary.index + 1 : null
-    // image + media[] are set by the bridge (image = downloaded original, media = [])
-  };
+  const record = buildRecord(meta, {
+    captureId, capturedAt, postUrl, sendPlatform,
+    extra: {
+      mediaType: 'image',
+      // Which image of a multi-image post this is (1-based) + the total. Only
+      // recorded for multi-image posts; imageIndex is null when undeterminable.
+      imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
+      imageIndex: ((meta.media || []).length > 1 && primary.index >= 0) ? primary.index + 1 : null
+      // image + media[] are set by the bridge (image = downloaded original, media = [])
+    }
+  });
 
-  const ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record);
+  const metaOk = metaFetched(meta);
+  let ack;
+  try {
+    ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
+  } catch (err) { throw stageError('bridge', err?.message || 'bridge save failed'); }
   // Surface metadata-fetch failure to the drop overlay (same partial-success
   // signal as the click-save banner) so a screenshot-less illustration that
   // saved without post info isn't shown as a plain success.
-  return { ...ack, metaOk: metaFetched(meta) };
+  return { ...ack, metaOk };
 }
 
 // Choose which original to save for a dragged image, preferring the platform
