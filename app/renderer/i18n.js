@@ -291,6 +291,7 @@
       confirmOk: '削除する',
       confirmCancel: 'キャンセル',
       cleared: 'データを削除しました',
+      clearBlocked: '設定ファイルが壊れている可能性があるため、全削除を中止しました。アプリを再起動してからやり直してください。',
 
       // viewer: export / import toasts
       exporting: 'エクスポート中...',
@@ -649,6 +650,7 @@
       confirmOk: 'Delete',
       confirmCancel: 'Cancel',
       cleared: 'Data deleted',
+      clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
 
       exporting: 'Exporting...',
       exported: 'Exported',

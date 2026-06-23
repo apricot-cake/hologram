@@ -29,6 +29,7 @@
 - `test-bridge.js` / `test-media.js` / `test-app-render.js` / `test-app-ipc.js` / `test-app-hashtags.js` / `test-app-watch.js` / `test-app-media.js` / `test-app-users.js` / `test-app-instances.js` — ブリッジ/原寸メディアDL/アプリ/IPC/ハッシュタグ/自動更新/原寸メディア表示/ユーザータブ/インスタンスフィルタ
 - `test-app-tagtypes.js` — タグ用語帳（種別）IPC `get/set-tag-types` を実Electron mainで往復＋`tag-types.json` のディスク永続を検証（CORPUS_SMOKE harness）
 - `test-app-backup.js` — 自動バックアップ（増分ミラー）の往復を実Electron mainで検証（CORPUS_SMOKE harness）。保存先と重なる出力先の拒否／`Corpus-mirror` への個別ファイルコピー／2回目は冪等（不変アセットは再コピーしない）／削除の prune 伝播／**prune 安全弁**＝`clear-all` で src が激減しても prune を保留しミラーが無傷で残ること
+- `test-app-recovery.js` — 保存先の冗長化/復元の2回起動統合テスト（2026-06-23 消失対策・CORPUS_SMOKE harness）。①健全な config 起動で `saveFolder.path`（冗長ポインタ）が書かれる ②config.json を破損させて再起動→ポインタから saveFolder を復元し config を修復（破損 config は `.corrupt-*` に退避）。ネイティブホストが空既定へ分岐しないことを担保
 
 ### 退行・セキュリティ・正しさ
 
@@ -40,6 +41,7 @@
 - `test-metadata-correctness.js` — メタ正しさ3件（X引用の screen_name 欠落時に `.../undefined/` を作らない／Bluesky の引用判定を feed.post 埋込限定＝リスト/フィード/スターターパック埋込を除外／Misskey の `rec.url` を bare permalink 化＝query/hash 除去）
 - `test-index.js` — `lib-index.js` の O(changed) 再利用・削除prune・`.index.json` スナップショットからの cold 復元を read計数で検証
 - `test-backup-guard.js` — `backup-guard.js` の prune 安全弁（2026-06-23 ライブラリ消失対策）の単体。src が空／前回比50%未満に激減したら prune を保留（`empty`/`shrink`）・正常な小削除は通す・ちょうど50%は保留しない（strict `<`）・空ミラーは常に通す・保留時はベースラインを据え置いて次回を汚さない（`nextBaseline`）
+- `test-config-recovery.js` — `config-recovery.js` の単体（2026-06-23 消失対策）。`resolveSaveFolder`＝config優先→冗長ポインタ（ディレクトリ実在時のみ）→既定の解決順／`clearAllBlockReason`＝config破損 or「saveFolder喪失だがポインタ在り＝失った状態」のとき破壊的 clear-all を拒否、新規インストール（フォルダ無し・ポインタ無し）と健全な明示フォルダは許可
 - `test-token-parity.js` — design-tokens.css の light/dark テーマ・パリティ（`:root` と `[data-theme=dark]` のセマンティック/影/ガラストークンが両テーマに揃っているかを集合比較。プリミティブ色ランプ・非色構造・dynamic alias は SHARED で除外。片テーマだけ追加すると落ちる＝「白リムがライトで消える」系の片テーマ崩れを構造的に防止）
 - `test-contrast-parity.js` — design-tokens.css のテキストロールの WCAG コントラスト比を両テーマで実測比較（CSSの var() を解決して計算。muted系の中間レンジはターゲット帯[min,max]で両テーマを縛り、text/strong の極端レンジは下限のみ。token-parity の一歩先）
 

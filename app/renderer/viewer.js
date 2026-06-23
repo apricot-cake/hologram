@@ -243,6 +243,7 @@
     confirmOk: _s('confirmOk'),
     confirmCancel: _s('confirmCancel'),
     cleared: _s('cleared'),
+    clearBlocked: _s('clearBlocked'),
 
     // settings > backup（指定フォルダへの増分エクスポート）
     hintBackup: _s('hintBackup'),
@@ -5920,7 +5921,10 @@
       // Double-checked: the OK button is disabled until the keyword matches.
       if (confirmKeywordEl.value.trim() !== MSG.deleteKeyword) return;
       setConfirmKeywordMode(false);
-      await window.corpus.clearAll();
+      const res = await window.corpus.clearAll();
+      // Main refuses the wipe if config is degraded — keep the library on screen
+      // and tell the user to restart (initSaveFolderRedundancy repairs on launch).
+      if (res && res.blocked) { showToast(MSG.clearBlocked); return; }
       _postsById = new Map();   // keep the delta cache in sync with the wipe
       allPosts = [];
       renderPosts();
