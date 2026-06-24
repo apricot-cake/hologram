@@ -21,6 +21,9 @@ const { configDir, defaultLibraryDir } = require('./paths');
 // module so the SSRF guard / size caps are identical across capture, import and
 // backfill. See media-download.js.
 const { downloadMedia, downloadAvatar, fetchStillImage } = require('./media-download');
+// Same pure resolver the desktop app uses, so the bridge and app pick the SAME
+// save folder — including recovering from the redundant pointer. See readSaveFolder.
+const { resolveSaveFolder } = require('./config-recovery');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -76,18 +79,37 @@ function logSaveOutcome(type, msg, res, err) {
 }
 
 // --- Save folder resolution (shared config with the desktop app) ---
-// MUST stay in lockstep with the app's getSaveFolder(): explicit config wins,
-// otherwise both fall back to the SAME shared default (defaultLibraryDir).
+// Resolves through the SAME pure function as the app's getSaveFolder(): explicit
+// config wins, otherwise recover from the redundant saveFolder.path pointer (only
+// if it still resolves to a real dir), otherwise the SAME shared default.
+//
+// The pointer step matters because the app and bridge read config independently.
+// After a truncated config.json drops saveFolder (the 2026-06-23 loss incident),
+// the app heals config from the pointer on its NEXT launch — but the bridge is
+// spawned per-capture by Chrome with the app possibly closed, so without reading
+// the pointer itself it would silently save into defaultLibraryDir() while the
+// app still points at the chosen library = the two going out of sync.
 function readSaveFolder() {
+  let configSaveFolder = null;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
-    if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) {
-      return cfg.saveFolder;
-    }
+    if (cfg && typeof cfg.saveFolder === 'string') configSaveFolder = cfg.saveFolder;
   } catch {
-    // No config yet — fall back to the shared default.
+    // No config yet (or unreadable) — fall through to pointer / default.
   }
-  return defaultLibraryDir();
+  let pointer = null;
+  try {
+    pointer = fs.readFileSync(path.join(configDir(), 'saveFolder.path'), 'utf8').trim() || null;
+  } catch {
+    // No redundant pointer — fine.
+  }
+  let pointerExists = false;
+  if (pointer) {
+    try { pointerExists = fs.statSync(pointer).isDirectory(); } catch { pointerExists = false; }
+  }
+  return resolveSaveFolder({
+    configSaveFolder, pointer, pointerExists, defaultDir: defaultLibraryDir()
+  }).folder;
 }
 
 // --- Native messaging framing (4-byte LE length prefix + UTF-8 JSON) ---

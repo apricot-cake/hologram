@@ -1,12 +1,13 @@
 'use strict';
 
-// Unit tests for save-folder recovery + destructive-op gating (app/config-recovery.js),
-// added after the 2026-06-23 library-loss incident. Pure logic → no Electron needed.
+// Unit tests for save-folder recovery + destructive-op gating
+// (native-host/config-recovery.js), added after the 2026-06-23 library-loss
+// incident. Pure logic → no Electron needed.
 //
 //   node scripts/test-config-recovery.js
 
 const assert = require('assert');
-const { resolveSaveFolder, clearAllBlockReason } = require('../app/config-recovery');
+const { resolveSaveFolder, clearAllBlockReason } = require('../native-host/config-recovery');
 
 let pass = 0;
 function check(name, fn) { fn(); pass++; console.log('  ok  ' + name); }

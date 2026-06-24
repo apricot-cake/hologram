@@ -15,7 +15,9 @@ const installer = require(path.join(nativeHostDir, 'install'));
 const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
 const { pruneDecision, nextBaseline } = require('./backup-guard');
-const { resolveSaveFolder, clearAllBlockReason } = require('./config-recovery');
+// Save-folder resolution + clear-all gating. Shared with the native host (which
+// must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
+const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
 
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
