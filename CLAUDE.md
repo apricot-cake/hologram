@@ -30,7 +30,7 @@
 # 守るルール
 
 - UI 変更時は [DESIGN.md](DESIGN.md) に従う
-- ホットリロードで更新されない変更は、確認を取らずに再起動して反映する（停止/起動コマンドは docs/build.md）。
+- 変更の反映: renderer（`app/renderer/*`）は自動ホットリロード＝操作不要。native-host（`bridge.js`/`paths.js` 等）は更新版を `~/.corpus` へコピーで反映＝**再起動不要**（Chrome がキャプチャ毎に bridge を spawn する）。**実アプリ再起動が要るのは main プロセス（`main.js`/`preload`/`lib-*`）変更の反映だけ**（停止/起動は docs/build.md）。
 - テスト済みケースを再テストしない（`scripts/test-progress.md` を必ず確認）。手順は `docs/testing.md`。
 - コミットは自己判断でこまめに（意味のある単位で）行ってよい。
 - push も自己判断で行ってよい（聞かない）。作業が一段落したら、またはセッションを終える区切りで行い、未 push を溜め込まない（数コミット単位を目安に）。
