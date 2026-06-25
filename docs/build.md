@@ -10,17 +10,20 @@ cd app && npm install && npm start
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
-アプリのコード変更を反映するときは、確認を取らずにアプリを再起動して反映する。
+main プロセス（`main.js`/`preload`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer は自動ホットリロード／native-host は `~/.corpus` へコピーで反映＝再起動不要）。
 
-- 停止:
-  ```powershell
-  try { Get-Process electron -ErrorAction Stop | Where-Object { $_.Path -like '*corpus*' } | Stop-Process -Force -Confirm:$false } catch {}
-  ```
-- 起動:
-  ```powershell
-  Start-Process -FilePath "C:\Users\apricot\local\dev\corpus\app\node_modules\electron\dist\electron.exe" -ArgumentList "." -WorkingDirectory "C:\Users\apricot\local\dev\corpus\app"
-  ```
-- **`npm start` 経由は cmd ウィンドウが出るため使わない**。electron.exe はGUIアプリなので `-WindowStyle Hidden` 不要・コンソールが一切出ない。
+**再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
+
+```powershell
+Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*corpus*' } | Stop-Process -Force
+Start-ScheduledTask -TaskName 'CorpusLaunch'
+```
+
+ユーザーのワンクリックは `restart-app.vbs`（コンソール無しで `restart-app.ps1` を実行）。`restart-app.ps1` は graceful close ＋ `CorpusLaunch` タスクの自己修復（無ければ作成）＋起動をまとめてある。
+
+- **なぜ直接 `Start-Process electron.exe` を使わないか**: Claude のシェルは MSIX パッケージ（`Claude_pzs8sxrjxfjjc`）内で動くため、そこから直接起動した electron はコンテナの子＝HKCU/FS が仮想化され、ネイティブホスト登録が実 Chrome から見えない私的ハイブに入りキャプチャが壊れる。`CorpusLaunch` タスクは Task Scheduler サービス（コンテナ外）が起動する＝**実 HKCU/実 FS で動く**（2026-06-26 にレジストリ probe で実証）。ユーザーが直接起動した場合と同一になる。
+- `CorpusLaunch` タスク定義: `electron.exe "<repo>\app"`／Interactive（ウィンドウが出る）／Limited（非昇格）／トリガー無し（`Start-ScheduledTask` でのみ起動）。`Start-ScheduledTask` が "task not found" を返したら一度 `restart-app.ps1` を実行して作り直す。
+- `npm start` 経由は cmd ウィンドウが出るため使わない（electron.exe はGUIアプリなのでコンソールは出ない）。
 
 ## 検証ルール（実機CDP）
 

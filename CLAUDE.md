@@ -24,7 +24,7 @@
 
 - **配置**: 設定・native-host デプロイ・ログ＝`~/.corpus`（`configDir`、`native-host/paths.js`。上書きは `CORPUS_CONFIG_DIR`）／ライブラリ＝config の `saveFolder`（既定 `~/Corpus/library`・変更可）。**いずれも AppData の外**に置く。
 - **なぜ AppData 外か**: 開発を Claude（MSIX パッケージのデスクトップアプリ `Claude_pzs8sxrjxfjjc`）内から行うと、その子プロセス（Claude のシェル／そこから起動したアプリ）の `%APPDATA%`・`%LOCALAPPDATA%`・HKCU が仮想化され `…\Packages\…\LocalCache\…` へ転送され、実環境（実 Chrome のネイティブホスト・実アプリ）と乖離する。AppData 外なら全プロセスが同一の実体を見て食い違いが消える（2026-06-23 ライブラリ消失・2026-06-24 保存先食い違いの真因がこれ）。
-- **今も仮想化が残る唯一の対象＝HKCU のネイティブホスト登録**（`HKCU\…\NativeMessagingHosts\com.corpus.host`、Chrome 仕様でレジストリ必須＝移動不可・HKLM も admin要＋仮想化で不可）。Claude の `reg` 読みは仮想ハイブで当てにならない（`HKU\<SID>` 直読みも迂回不可・テスト済）。だが**実害はほぼ無い**: 登録は実アプリ起動の `ensureHostRegistered` が毎回書き直す自己修復型で、効果の検証は ① 実 Chrome のキャプチャ成否、② `~/.corpus\bridge.log`／`capture.log`（実体なので Claude も読める）でホスト起動を確認、で取れる。レジストリ値そのものを見たければユーザーが実ターミナルで `reg query`。
+- **HKCU のネイティブホスト登録**（`HKCU\…\NativeMessagingHosts\com.corpus.host`）は Chrome 仕様でレジストリ必須＝ファイル化で逃げられない。だが**アプリを `CorpusLaunch` スケジュールタスク経由で起動すれば**（Claude の再起動＝`restart-app.ps1`／ユーザーのワンクリック＝`restart-app.vbs`、どちらもタスク or コンテナ外実行）、`ensureHostRegistered` の書き込みは **実 HKCU** に入り実 Chrome から見える。タスクは Task Scheduler サービス（＝MSIX コンテナの外）がアプリを起動するため（2026-06-26 にレジストリ probe で実証）。**直接 `Start-Process electron.exe` で起動するとコンテナ内＝私的ハイブに書かれキャプチャが壊れる**ので必ずタスク経由（docs/build.md）。なお Claude 自身の `reg query` 読みは仮想ハイブのまま当てにならない（`HKU\<SID>` 直読みも迂回不可・テスト済）が、実害は小＝確認は ① 実 Chrome のキャプチャ成否、② `~/.corpus\bridge.log`／`capture.log`（実体なので Claude も読める）で取る。
 - **テスト隔離**: テストは `CORPUS_CONFIG_DIR=<tmp>` で configDir をサンドボックス化する（Electron スモークは加えて `CORPUS_SMOKE=1`／`CORPUS_SMOKE_EVAL`）。新規テストもこの規約に従う。
 
 # 守るルール
