@@ -24,7 +24,7 @@
 
 - **配置**: 設定・native-host デプロイ・ログ＝`~/.corpus`（`configDir`、`native-host/paths.js`。上書きは `CORPUS_CONFIG_DIR`）／ライブラリ＝config の `saveFolder`（既定 `~/Corpus/library`・変更可）。**いずれも AppData の外**に置く。
 - **なぜ AppData 外か**: 開発を Claude（MSIX パッケージのデスクトップアプリ `Claude_pzs8sxrjxfjjc`）内から行うと、その子プロセス（Claude のシェル／そこから起動したアプリ）の `%APPDATA%`・`%LOCALAPPDATA%`・HKCU が仮想化され `…\Packages\…\LocalCache\…` へ転送され、実環境（実 Chrome のネイティブホスト・実アプリ）と乖離する。AppData 外なら全プロセスが同一の実体を見て食い違いが消える（2026-06-23 ライブラリ消失・2026-06-24 保存先食い違いの真因がこれ）。
-- **今も仮想化が残る唯一の対象＝HKCU のネイティブホスト登録**（`HKCU\…\NativeMessagingHosts\com.corpus.host`、Chrome 仕様で移動不可）。Claude 側の `reg` 読みは当てにならないので、登録の確認は実 Chrome のキャプチャ成否で取る。迷ったら `(Get-Item <path>).Target` が `…\LocalCache\…` を返すか＝仮想化判定。
+- **今も仮想化が残る唯一の対象＝HKCU のネイティブホスト登録**（`HKCU\…\NativeMessagingHosts\com.corpus.host`、Chrome 仕様でレジストリ必須＝移動不可・HKLM も admin要＋仮想化で不可）。Claude の `reg` 読みは仮想ハイブで当てにならない（`HKU\<SID>` 直読みも迂回不可・テスト済）。だが**実害はほぼ無い**: 登録は実アプリ起動の `ensureHostRegistered` が毎回書き直す自己修復型で、効果の検証は ① 実 Chrome のキャプチャ成否、② `~/.corpus\bridge.log`／`capture.log`（実体なので Claude も読める）でホスト起動を確認、で取れる。レジストリ値そのものを見たければユーザーが実ターミナルで `reg query`。
 - **テスト隔離**: テストは `CORPUS_CONFIG_DIR=<tmp>` で configDir をサンドボックス化する（Electron スモークは加えて `CORPUS_SMOKE=1`／`CORPUS_SMOKE_EVAL`）。新規テストもこの規約に従う。
 
 # 守るルール
