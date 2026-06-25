@@ -96,6 +96,9 @@
     kindGeneral: _s('kindGeneral'),
     tagKindSet: _f1('tagKindSet'),
     tagKindCleared: _s('tagKindCleared'),
+    tagKindRename: _s('tagKindRename'),
+    tagKindRenamePrompt: _s('tagKindRenamePrompt'),
+    tagKindRenamed: _s('tagKindRenamed'),
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
@@ -1328,13 +1331,38 @@
   // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
   // later category sections; here we only assign + reflect the kind on the tag itself.
   let tagTypes = {};
+  // The work/character pair is renamable (種別ペアのリネーム): tagLabels holds the
+  // user's custom names; a kind with no entry falls back to the built-in KIND_LABEL.
+  // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
+  let tagLabels = {};
   const KIND_LABEL = { work: MSG.kindWork, character: MSG.kindCharacter };   // MSG is finalized at load
   function tagKindOf(tag) { return tagTypes[tag] || null; }
-  function kindLabel(kind) { return KIND_LABEL[kind] || ''; }
+  function kindLabel(kind) { return (tagLabels && tagLabels[kind]) || KIND_LABEL[kind] || ''; }
+  // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
+  // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
+  function applyKindLabels() {
+    setText('sbWorkRowTitle', kindLabel('work'));
+    setText('sbCharRowTitle', kindLabel('character'));
+    setText('sbPosterWorkRowName', kindLabel('work'));
+    setText('sbPosterCharRowName', kindLabel('character'));
+  }
+  // Always send BOTH maps so writing one never drops the other (set-tag-types only
+  // keeps the labels it receives).
+  async function persistTagTypes() {
+    try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes, tagLabels); } catch { /* best-effort */ }
+  }
   async function setTagKind(tag, kind) {
     if (kind) tagTypes[tag] = kind; else delete tagTypes[tag];
-    try { if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes); } catch { /* best-effort */ }
+    await persistTagTypes();
     updateSidebarTags();   // a newly classified tag may reveal/hide its 作品/キャラ section
+  }
+  // Rename a 種別 (work/character) globally; blank resets to the built-in label.
+  async function setKindLabel(kind, label) {
+    const v = (label || '').trim();
+    if (v) tagLabels[kind] = v; else delete tagLabels[kind];
+    await persistTagTypes();
+    applyKindLabels();
+    updateSidebarTags();   // section header names + counts re-read kindLabel
   }
   const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
@@ -3619,6 +3647,7 @@
     const kindMenu = document.createElement('div');
     kindMenu.className = 'fold-menu kind-menu';
     document.body.appendChild(kindMenu);
+    const PENCIL_SVG = _ic('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>');
     let kindMenuTag = null;
     let kindMenuOnChanged = null;   // re-render after a kind change (edit picker / inspector / poster)
     function hideKindMenu() { kindMenu.classList.remove('show'); kindMenuTag = null; }
@@ -3629,13 +3658,17 @@
       const row = (k, label) => {
         const dot = k ? `<span class="tk-dot tk-${k}"></span>` : '';
         const on = (k || null) === cur;
+        // The work/character pair carries a quiet ✎ to rename the 種別 globally
+        // (段階的開示: only here, in the tag-management kind menu).
+        const rename = (k === 'work' || k === 'character')
+          ? `<button type="button" class="fm-rename" data-rename="${k}" title="${escapeAttr(MSG.tagKindRename)}">${PENCIL_SVG}</button>` : '';
         return `<div class="fm-row" data-kind="${k || '__none'}"><span class="fm-ic">${dot}</span>` +
-          `<span class="fm-name">${escapeHtml(label)}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+          `<span class="fm-name">${escapeHtml(label)}</span>${rename}${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
       };
       kindMenu.innerHTML =
         `<div class="fm-head">${escapeHtml(MSG.tagKindHeader)}</div>` +
-        row('work', MSG.kindWork) +
-        row('character', MSG.kindCharacter) +
+        row('work', kindLabel('work')) +
+        row('character', kindLabel('character')) +
         '<div class="fm-sep"></div>' +
         row('', MSG.kindGeneral);
       kindMenu.style.left = x + 'px';
@@ -3645,6 +3678,18 @@
     }
     kindMenu.addEventListener('click', async (e) => {
       e.stopPropagation();   // survive the capture-phase document hider below
+      const renameEl = e.target.closest('[data-rename]');
+      if (renameEl) {
+        const k = renameEl.dataset.rename;
+        const onChanged = kindMenuOnChanged;   // hideKindMenu keeps it, but capture for clarity
+        hideKindMenu();
+        const next = window.prompt(MSG.tagKindRenamePrompt, kindLabel(k));
+        if (next === null) return;             // cancelled (empty string = reset to default)
+        await setKindLabel(k, next);
+        if (onChanged) onChanged();
+        showToast(MSG.tagKindRenamed);
+        return;
+      }
       const rowEl = e.target.closest('.fm-row'); const tag = kindMenuTag;
       hideKindMenu();
       if (!rowEl || !tag) return;
@@ -3942,7 +3987,7 @@
     // group / 未分類 so each tag shows once (種別 takes precedence, danbooru-style).
     const kindSec = { work: [], character: [] };
     for (const [t, k] of Object.entries(tagTypes)) if (k === 'work' || k === 'character') kindSec[k].push(t);
-    for (const [k, name] of [['work', MSG.kindWork], ['character', MSG.kindCharacter]]) {
+    for (const [k, name] of [['work', kindLabel('work')], ['character', kindLabel('character')]]) {
       const tags = kindSec[k].filter(ok).sort(byJa);
       if (tags.length) out.push({ name, tags });
     }
@@ -6014,7 +6059,7 @@
   try { const r = window.corpus.getPosterTags ? await window.corpus.getPosterTags() : null; posterTags = (r && r.tags) || {}; } catch { /* default empty */ }
   try { const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null; manualGroups = (r && r.groups) || []; } catch { /* default empty */ }
   try { const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null; tagGroups = (r && r.groups) || []; } catch { /* default empty */ }
-  try { const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null; tagTypes = (r && r.types) || {}; } catch { /* default empty */ }
+  try { const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null; tagTypes = (r && r.types) || {}; tagLabels = (r && r.labels) || {}; applyKindLabels(); } catch { /* default empty */ }
   await initTabs();
   appBooted = true;   // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();

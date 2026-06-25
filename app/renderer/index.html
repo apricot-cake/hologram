@@ -1254,6 +1254,13 @@
     /* High-contrast monotone check (was thin accent ✓ that read as cursive). */
     .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
     .fm-check svg { display: block; }
+    /* Quiet rename ✎ on the 作品/キャラ kind rows — hidden until the row is hovered
+       (段階的開示), so the menu reads as a simple kind picker at rest. */
+    .fm-rename { display: inline-flex; align-items: center; padding: 2px; border: 0; background: none;
+      color: var(--text-subtle); cursor: pointer; border-radius: 4px; opacity: 0; flex-shrink: 0; }
+    .fold-menu .fm-row:hover .fm-rename { opacity: .65; }
+    .fm-rename:hover { opacity: 1; background: var(--sidebar-row-hover); color: var(--text); }
+    .fm-rename svg { display: block; }
     .fm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
     .fm-manage { color: var(--accent-text); }
     .fm-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; }

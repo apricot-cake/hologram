@@ -21,11 +21,12 @@ fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
-// set a kind, clear another (set then delete), then read back the map.
+// set kinds + renamed 種別 labels, then read both maps back (the rename UI persists
+// via the same setTagTypes(types, labels) path).
 const evalJs = `(async () => {
-  await window.corpus.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' });
+  await window.corpus.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' }, { work: 'シリーズ', character: '登場人物' });
   const r = await window.corpus.getTagTypes();
-  return r.types['ブルアカ'] + ',' + r.types['アロナ'];
+  return r.types['ブルアカ'] + ',' + r.types['アロナ'] + ',' + r.labels.work + ',' + r.labels.character;
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -37,11 +38,12 @@ let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
 
 child.on('close', () => {
-  const evalOk = /EVAL_RESULT "work,character"/.test(out);
+  const evalOk = /EVAL_RESULT "work,character,シリーズ,登場人物"/.test(out);
   let fileOk = false;
   try {
     const j = JSON.parse(fs.readFileSync(path.join(saveFolder, 'tag-types.json'), 'utf8'));
-    fileOk = j.types['ブルアカ'] === 'work' && j.types['アロナ'] === 'character';
+    fileOk = j.types['ブルアカ'] === 'work' && j.types['アロナ'] === 'character'
+      && j.labels.work === 'シリーズ' && j.labels.character === '登場人物';
   } catch { /* fileOk stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`ipcRoundTrip=${evalOk} fileWritten=${fileOk}`);
