@@ -39,7 +39,7 @@
 ## 2. ② バックアップ = 透明な増分・最新ミラー（git-remote モデル）
 
 ### メンタルモデル
-「第2のライブラリ」ではなく **「写し（remote）」**。canonical はアプリ固定ストレージ（`%LOCALAPPDATA%\Corpus\library`）。git の remote が「透明・clone 可能なフルコピーなのに rival に見えない」のと同じ位置づけにする：
+「第2のライブラリ」ではなく **「写し（remote）」**。canonical は保存先フォルダ（既定 `~/Corpus/library`・変更可）。git の remote が「透明・clone 可能なフルコピーなのに rival に見えない」のと同じ位置づけにする：
 - アプリが **subordinate な写しとして所有**する。ユーザーが選ぶ「ライブラリ」にはしない。
 - UI は **ambient なステータス**として提示：「バックアップ: ON ／ N 分前に保存 ／ M 件 ／ 宛先」。開いて作業する対象ではない。
 

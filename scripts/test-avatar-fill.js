@@ -53,7 +53,7 @@ fs.writeFileSync(stub, [
   '};'
 ].join('\n'));
 
-const env = Object.assign({}, process.env, { APPDATA: tmp });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
 const res = spawnSync(process.execPath, ['-r', stub, path.join(__dirname, 'backfill-metadata.js'), '--avatars'], { env, encoding: 'utf8' });
 
 check('script exited 0', res.status === 0);

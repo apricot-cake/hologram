@@ -123,7 +123,7 @@ const evalJs = `(async () => {
     swapped, ringMoved, outsideCloses, editOpens, editBack, ringKept, escCloses, cursorBack, galleryNormal,
     dbg: JSON.stringify({ t0, c0: cardText(card0), t2, c2: cardText(card2), narrowMode }) };
 })()`;
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });

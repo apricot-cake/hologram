@@ -14,7 +14,7 @@ const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-render-'));
-const configDir = path.join(tmp, 'Corpus'); // paths.js (win32) => %APPDATA%/Corpus
+const configDir = path.join(tmp, 'Corpus'); // passed as CORPUS_CONFIG_DIR below
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -46,7 +46,7 @@ const shot = path.join(appDir, '.smoke-shot.png');
 try { fs.unlinkSync(shot); } catch {}
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp,
+  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
   CORPUS_SMOKE: '1',
   CORPUS_SMOKE_SHOT: shot
 });

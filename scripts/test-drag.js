@@ -12,7 +12,8 @@ const os = require('os');
 const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-drag-'));
-process.env.APPDATA = tmp; // paths.js (win32) => %APPDATA%/Corpus
+process.env.APPDATA = tmp;
+process.env.CORPUS_CONFIG_DIR = path.join(tmp, 'Corpus'); // isolate configDir to the sandbox
 const configDir = path.join(tmp, 'Corpus');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');

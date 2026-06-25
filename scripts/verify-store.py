@@ -24,9 +24,13 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 
 def config_dir():
+    # Must match native-host/paths.js configDir(): CORPUS_CONFIG_DIR wins, else
+    # per-OS default. Windows is OUT of %APPDATA% (MSIX storage virtualization).
+    override = os.environ.get("CORPUS_CONFIG_DIR")
+    if override:
+        return override
     if os.name == "nt":
-        base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
-        return os.path.join(base, "Corpus")
+        return os.path.join(os.path.expanduser("~"), ".corpus")
     if sys.platform == "darwin":
         return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
@@ -43,8 +47,7 @@ def save_folder():
         pass
     # default library dir — must match native-host/paths.js defaultLibraryDir()
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
-        return os.path.join(base, "Corpus", "library")
+        return os.path.join(os.path.expanduser("~"), "Corpus", "library")
     if sys.platform == "darwin":
         return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus", "library")
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")

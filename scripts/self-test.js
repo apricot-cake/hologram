@@ -70,8 +70,8 @@ function sandboxRoundTrip() {
     fs.mkdirSync(path.join(tmp, 'Corpus'), { recursive: true });
     fs.writeFileSync(path.join(tmp, 'Corpus', 'config.json'), JSON.stringify({ saveFolder }));
     const captureId = '1717500000000-beef';
-    // paths.js (win32) reads APPDATA for configDir; point it at the sandbox.
-    const env = Object.assign({}, process.env, { APPDATA: tmp });
+    // Isolate configDir to the sandbox via CORPUS_CONFIG_DIR.
+    const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
     const child = spawn(process.execPath, [REPO_BRIDGE], { env, stdio: ['pipe', 'pipe', 'ignore'] });
     let out = Buffer.alloc(0);
     child.stdout.on('data', (d) => { out = Buffer.concat([out, d]); });

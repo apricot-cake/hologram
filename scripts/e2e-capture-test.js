@@ -244,7 +244,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 
   const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
   const EXT_DIR = stageExtension();
-  const hostManifestPath = path.join(process.env.APPDATA, 'Corpus', 'com.corpus.host.json');
+  const hostManifestPath = path.join(configDir(), 'com.corpus.host.json');
   const originalHostManifest = fs.existsSync(hostManifestPath) ? fs.readFileSync(hostManifestPath, 'utf8') : null;
   const browser = await puppeteer.launch({
     headless: false,
@@ -277,7 +277,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
       // The unpacked test instance gets a path-derived ID — allow it on the
       // native host so the bridge accepts the connection. Idempotent add; the
       // extra origin is a local unpacked extension only we control.
-      const hostManifest = path.join(process.env.APPDATA, 'Corpus', 'com.corpus.host.json');
+      const hostManifest = path.join(configDir(), 'com.corpus.host.json');
       const hm = JSON.parse(fs.readFileSync(hostManifest, 'utf8'));
       const origin = `chrome-extension://${extId}/`;
       if (!hm.allowed_origins.includes(origin)) {

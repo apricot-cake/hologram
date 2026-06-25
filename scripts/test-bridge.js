@@ -12,7 +12,7 @@ const os = require('os');
 const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-test-'));
-// paths.js (win32) resolves configDir = %APPDATA%/Corpus, so point APPDATA at tmp.
+// Isolate configDir to the sandbox via CORPUS_CONFIG_DIR (set in env below).
 const configDir = path.join(tmp, 'Corpus');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
@@ -36,7 +36,7 @@ const msg = Buffer.from(JSON.stringify(payload), 'utf8');
 const header = Buffer.alloc(4);
 header.writeUInt32LE(msg.length, 0);
 
-const env = Object.assign({}, process.env, { APPDATA: tmp });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
 const child = spawn(process.execPath, [path.join(__dirname, '..', 'native-host', 'bridge.js')], {
   env,
   stdio: ['pipe', 'pipe', 'inherit']

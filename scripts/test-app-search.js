@@ -61,7 +61,7 @@ const evalJs = `(async () => {
   return { normalKana, fuzzyKana, fuzzyTypo, defaultMode, selValue };
 })()`;
 
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });

@@ -85,7 +85,7 @@ const evalJs = `(async () => {
     return { ok: true, log, allFour, pX, onePill, andXBs, orGroup, hasGrp, andGroup, afterReset };
   } catch (e) { return { ok: false, log, err: e.message }; }
 })()`;
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
+const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });

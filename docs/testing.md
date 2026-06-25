@@ -11,7 +11,7 @@
 
 ### ユーティリティ
 
-- `inject-dummy.js` — 保存先に jpg+サイドカー＋**ダミーアバター（`<id>-avatar.jpg`・色付き円＝モノグラムと区別可）** を生成（条件網羅＝PF/種別/メディア/反応/日付/言語/ハッシュタグ/タグ＋投稿者ビューのアバター表示）。引数なしは**アプリと同じ既定保存先**（`defaultLibraryDir`＝`%LOCALAPPDATA%\Corpus\library`）に書く。captureId とコンパニオンは `dummy-` 始まり
+- `inject-dummy.js` — 保存先に jpg+サイドカー＋**ダミーアバター（`<id>-avatar.jpg`・色付き円＝モノグラムと区別可）** を生成（条件網羅＝PF/種別/メディア/反応/日付/言語/ハッシュタグ/タグ＋投稿者ビューのアバター表示）。引数なしは**アプリと同じ既定保存先**（`defaultLibraryDir`＝`~/Corpus/library`）に書く。captureId とコンパニオンは `dummy-` 始まり
 - `verify-store.py` — サイドカーをAPI照合
 - `backfill-metadata.js` — 保存先の欠損メタを保存URLから再取得（再取得時＋`--all` はアバターも未DLなら取得）。`--avatars`＝API無しでアバターのみDL（`avatar` URL有り＆`avatarFile` 無しの既存データ向け）
 - `make-icons.js` — アイコン生成（256px基準）

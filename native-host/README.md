@@ -28,14 +28,14 @@ store. The desktop app owns deletes/edits/index.
 
 ## Config
 
-`<configDir>/config.json` (Windows: `%APPDATA%/Corpus/config.json`):
+`<configDir>/config.json` (Windows: `~/.corpus/config.json`):
 
 ```json
 { "saveFolder": "D:\\Corpus" }
 ```
 
 Written by the desktop app's folder picker. If absent, the bridge falls back to
-`~/Corpus`.
+`~/Corpus/library`. Override the config dir itself with `CORPUS_CONFIG_DIR`.
 
 ## Manual install (dev)
 
