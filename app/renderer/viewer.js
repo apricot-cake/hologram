@@ -2456,6 +2456,8 @@
 
   let lastRenderedState = null;
   let _lastRenderGen = -1;   // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
+  let _lastViewGroups = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
+  let _lastStickySize = 0;    // stickyRecs.size at that build — part of the group-reuse signature
   let restoringState = false;
   let tabs = [];
   let activeTabId = null;
@@ -2970,8 +2972,20 @@
     const countEl = document.getElementById('postCount');
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
-    viewGroups = groupRecords(getFilteredPosts());
-    if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
+    // Reuse the previous build's groups on a pure load-more: re-filtering+grouping
+    // ~9k records on every scroll page was wasted work. Safe only when the view
+    // signature, the data generation, AND the sticky set are all unchanged — the
+    // only inputs to getFilteredPosts/groupRecords (manual grouping bumps the
+    // generation via markPostsMutated). Any mismatch falls through to a fresh build.
+    const canReuseGroups = keepLimit && _lastViewGroups !== null &&
+        lastRenderedState !== null && stateSig === lastRenderedState &&
+        _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
+    if (canReuseGroups) {
+      viewGroups = _lastViewGroups;
+    } else {
+      viewGroups = groupRecords(getFilteredPosts());
+      if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
+    }
     const query = document.getElementById('searchBox').value.trim();
 
     countEl.textContent = MSG.postCount(viewGroups.length);
@@ -3052,6 +3066,7 @@
 
     grid.innerHTML = viewGroups.slice(0, renderLimit).map(cardHtml).join('');
     _lastRenderGen = _allPostsGeneration;   // mark the generation of this FULL build
+    _lastViewGroups = viewGroups; _lastStickySize = stickyRecs.size;   // snapshot for load-more group reuse
     function cardHtml(g, i) {
       const p = g.rep;
       // Engagement: nonzero only (zeros are noise \u2014 every client hides them),
@@ -4319,6 +4334,7 @@
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
     persistManual();
+    markPostsMutated();   // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
     // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
     // class-only). Clear first so the rebuild shows no stale selection.
     selectedSet.clear(); selectionAnchor = null;
@@ -5314,7 +5330,11 @@
   document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
     tileOverlay = e.target.checked;
     window.corpus.setPref('tileOverlay', tileOverlay);
-    renderPosts(true);   // class toggle only — no history entry, no anim replay
+    // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
+    // via CSS), so flip the class directly instead of re-grouping + rebuilding the
+    // grid (a full renderPosts reloaded every tile image = flicker).
+    const grid = document.getElementById('postGrid');
+    if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
   });
 
   // Load saved view mode and skipDeleteConfirm
