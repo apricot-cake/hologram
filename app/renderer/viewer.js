@@ -99,6 +99,8 @@
     tagKindRename: _s('tagKindRename'),
     tagKindRenamePrompt: _s('tagKindRenamePrompt'),
     tagKindRenamed: _s('tagKindRenamed'),
+    homonymConfirm: _f2('homonymConfirm'),
+    homonymDistinguished: _f1('homonymDistinguished'),
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
@@ -3783,6 +3785,43 @@
     if (fresh) { refreshInspectorTags(fresh); refreshInspectorPicker(fresh); }
   }
 
+  // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
+  // elsewhere in the library (the current group excluded, so a just-added tag never
+  // counts itself as history).
+  function worksCooccurringWith(charTag, excludeIds) {
+    const works = new Set();
+    for (const p of allPosts) {
+      if (excludeIds && excludeIds.has(p.captureId)) continue;
+      const tags = Array.isArray(p.tags) ? p.tags : [];
+      if (!tags.includes(charTag)) continue;
+      for (const t of tags) if (tagKindOf(t) === 'work') works.add(t);
+    }
+    return works;
+  }
+  // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
+  // this character was seen with before, it's likely a same-name character from
+  // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
+  // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
+  async function maybeDistinguishHomonym(g, addedTag) {
+    if (!g || tagKindOf(addedTag) !== 'character') return;
+    const cardTags = (g.rep && Array.isArray(g.rep.tags)) ? g.rep.tags : [];
+    const worksNow = cardTags.filter((t) => tagKindOf(t) === 'work');
+    if (!worksNow.length) return;                    // no 作品 context to distinguish by
+    const exclude = new Set((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
+    const past = worksCooccurringWith(addedTag, exclude);
+    if (!past.size) return;                          // no history → stay silent
+    if (worksNow.some((w) => past.has(w))) return;   // seen with one of these works → same character
+    const work = worksNow[0];
+    const distinguished = `${addedTag}（${work}）`;
+    if (cardTags.includes(distinguished)) return;
+    if (!window.confirm(MSG.homonymConfirm(addedTag, work))) return;
+    // The distinguished string stays a character (danbooru-style); record its 種別.
+    if (!tagKindOf(distinguished)) { tagTypes[distinguished] = 'character'; await persistTagTypes(); }
+    await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
+    updateSidebarTags();
+    showToast(MSG.homonymDistinguished(distinguished));
+  }
+
   function showDetail(g) {
     if (!g) return;
     const p = g.rep;
@@ -4171,13 +4210,17 @@
     const panel = document.getElementById('postDetail');
     if (!panel) return;
     const freshG = () => viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey) || null;
-    const addTyped = () => {
+    const addTyped = async () => {
       const input = document.getElementById('ivTagInput');
       if (!input) return;
       const tag = input.value.trim();
       const g = freshG();
-      if (tag && g) applyInspectorTagChange(g, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
       input.value = ''; ivPickQuery = '';
+      if (tag && g) {
+        const adding = !(g.rep.tags || []).includes(tag);
+        await applyInspectorTagChange(g, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
+        if (adding) await maybeDistinguishHomonym(freshG(), tag);   // 同名キャラ検知（別作品）
+      }
       const g2 = freshG(); if (g2) refreshInspectorPicker(g2);
       input.focus();
     };
@@ -4189,7 +4232,15 @@
       // to each record could delete a different tag. The chip carries the exact value.
       if (rm) { const tagVal = rm.dataset.tag; applyInspectorTagChange(freshG(), (prev) => prev.filter((t) => t !== tagVal)); return; }
       const pick = e.target.closest('#ivTagPicker .edit-pick-chip');
-      if (pick) { const t = pick.dataset.pick; applyInspectorTagChange(freshG(), (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); return; }
+      if (pick) {
+        const t = pick.dataset.pick; const g = freshG();
+        const adding = g && !(g.rep.tags || []).includes(t);
+        (async () => {
+          await applyInspectorTagChange(g, (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
+          if (adding) await maybeDistinguishHomonym(freshG(), t);   // 同名キャラ検知（別作品）
+        })();
+        return;
+      }
     });
     panel.addEventListener('contextmenu', (e) => {
       const chip = e.target.closest('#ivTagChips [data-tag], #ivTagPicker .edit-pick-chip');
