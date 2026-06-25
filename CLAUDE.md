@@ -20,6 +20,13 @@
 - ユーザー向け機能説明: [README.md](README.md)
 - 残タスク: [BACKLOG.md](BACKLOG.md)
 
+# ストレージと実行環境（重要）
+
+- **配置**: 設定・native-host デプロイ・ログ＝`~/.corpus`（`configDir`、`native-host/paths.js`。上書きは `CORPUS_CONFIG_DIR`）／ライブラリ＝config の `saveFolder`（既定 `~/Corpus/library`・変更可）。**いずれも AppData の外**に置く。
+- **なぜ AppData 外か**: 開発を Claude（MSIX パッケージのデスクトップアプリ `Claude_pzs8sxrjxfjjc`）内から行うと、その子プロセス（Claude のシェル／そこから起動したアプリ）の `%APPDATA%`・`%LOCALAPPDATA%`・HKCU が仮想化され `…\Packages\…\LocalCache\…` へ転送され、実環境（実 Chrome のネイティブホスト・実アプリ）と乖離する。AppData 外なら全プロセスが同一の実体を見て食い違いが消える（2026-06-23 ライブラリ消失・2026-06-24 保存先食い違いの真因がこれ）。
+- **今も仮想化が残る唯一の対象＝HKCU のネイティブホスト登録**（`HKCU\…\NativeMessagingHosts\com.corpus.host`、Chrome 仕様で移動不可）。Claude 側の `reg` 読みは当てにならないので、登録の確認は実 Chrome のキャプチャ成否で取る。迷ったら `(Get-Item <path>).Target` が `…\LocalCache\…` を返すか＝仮想化判定。
+- **テスト隔離**: テストは `CORPUS_CONFIG_DIR=<tmp>` で configDir をサンドボックス化する（Electron スモークは加えて `CORPUS_SMOKE=1`／`CORPUS_SMOKE_EVAL`）。新規テストもこの規約に従う。
+
 # 守るルール
 
 - UI 変更時は [DESIGN.md](DESIGN.md) に従う
