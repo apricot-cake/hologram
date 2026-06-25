@@ -95,7 +95,10 @@
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       overlay.textContent = partial
         ? t('bannerSavedNoMeta')
-        : (ok ? t('bannerSaved') : (t('bannerFailed') + (res && res.error ? `: ${res.error}` : '')));
+        : (ok ? t('bannerSaved')
+              : (res && res.hostMissing
+                  ? t('bannerHostMissing')   // missing native host → "restart Chrome"
+                  : (t('bannerFailed') + (res && res.error ? `: ${res.error}` : ''))));
       overlay.style.background = partial ? BG_PARTIAL : (ok ? BG_OVER : BG_FAIL);
       setTimeout(() => { hideOverlay(); savingViaDrop = false; }, partial ? 2600 : 1400);
     });

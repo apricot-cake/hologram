@@ -30,6 +30,14 @@ function stageError(stage, message) {
   return err;
 }
 
+// Chrome reports an unregistered native host as "Specified native messaging host
+// not found." A freshly-registered host reads the same way until Chrome restarts
+// (the registry is read at startup), so the right first hint is "restart Chrome"
+// — distinct from a host that launched and then errored (timeout / returned error).
+function isHostMissing(message) {
+  return /host not found|host unavailable|is it installed/i.test(String(message || ''));
+}
+
 function isAllowedSender(tabUrl, platformId) {
   const hostname = getHostname(tabUrl);
   if (!hostname) return false;
@@ -80,7 +88,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .catch((error) => {
       console.error(error);
       void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
-      notify(tabId, false, { error: error?.message });
+      notify(tabId, false, { error: error?.message, hostMissing: isHostMissing(error?.message) });
       sendResponse({ ok: false, error: error?.message });
     });
 
@@ -307,7 +315,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .catch((error) => {
       console.error(error);
       void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
-      sendResponse({ ok: false, error: error?.message });
+      sendResponse({ ok: false, error: error?.message, hostMissing: isHostMissing(error?.message) });
     });
   return true; // async response
 });

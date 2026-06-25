@@ -24,6 +24,9 @@
       bannerFailedReason: '保存に失敗: $1',
       reasonNoPermalink: '投稿リンクを取得できません',
       reasonNoPost: '投稿を特定できません',
+      // host が見つからないとき（未登録／登録直後で Chrome が未再起動）。Chrome は
+      // 起動時にネイティブホスト登録を読むので、まず再起動を促す。
+      bannerHostMissing: 'Corpus の保存先に接続できません。Chrome を再起動してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'ここにドロップで Corpus に保存'
@@ -38,6 +41,7 @@
       bannerFailedReason: 'Save failed: $1',
       reasonNoPermalink: 'could not find the post link',
       reasonNoPost: 'could not identify a post here',
+      bannerHostMissing: "Can't reach Corpus's saver. Please restart Chrome.",
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
       dragDropHint: 'Drop here to save to Corpus'

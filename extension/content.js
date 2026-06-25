@@ -295,8 +295,10 @@
       const partial = msg.success && msg.metaOk === false;
       if (!msg.success) {
         // Show WHY it failed (the background passes the stage error), so a broken
-        // save is actionable instead of a bare "failed".
-        banner.textContent = msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
+        // save is actionable instead of a bare "failed". A missing native host gets
+        // a specific "restart Chrome" hint (the registry is read at startup).
+        banner.textContent = msg.hostMissing ? getMessage('bannerHostMissing')
+          : (msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed);
       } else {
         banner.textContent = partial ? MSG.savedNoMeta : MSG.saved;
       }
