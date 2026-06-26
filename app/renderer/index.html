@@ -1569,61 +1569,6 @@
       border: 1px solid var(--border-strong); border-radius: 6px; background: var(--field-bg);
       color: var(--text-muted-strong); cursor: pointer; font-variant-numeric: tabular-nums; }
     .qb-group-add:hover { background: var(--hover); color: var(--text); }
-    /* 「詳細」= 詳細検索フォームの入口。リセット/保存と同じ trail に並ぶ控えめなボタン。
-       開いている間は active（accent 反転）で状態を示す。 */
-    .qb-adv {
-      flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11px; padding: 4px 10px; cursor: pointer; white-space: nowrap;
-      border: 1px solid var(--border-strong); border-radius: 10px;
-      background: var(--surface); color: var(--text-muted); transition: all .12s;
-    }
-    .qb-adv:hover { border-color: var(--accent); color: var(--accent-text); }
-    .qb-adv.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .qb-adv svg { display: block; }
-    /* 詳細検索フォーム（床）: 全フィルタ軸を1枚に並べるガラスパネル。日付/反応ポップの
-       大型版（同じ glass マテリアル）。各コントロールは postQB ツリーを直接編集する。 */
-    .adv-panel {
-      position: fixed; background: var(--glass-bg); border-radius: 12px;
-      backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
-      box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border);
-      padding: 14px 16px; z-index: 1001; width: 340px; max-width: calc(100vw - 24px);
-      overflow-y: auto; display: flex; flex-direction: column; gap: 13px;
-    }
-    .adv-head { font-size: 12px; font-weight: 700; color: var(--text-muted-strong); text-transform: uppercase; letter-spacing: .5px; }
-    .adv-field { display: flex; flex-direction: column; gap: 6px; }
-    .adv-flabel { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
-    .adv-flabel .qc-ic { width: 14px; height: 14px; opacity: .85; }
-    .adv-hint { font-size: 10.5px; color: var(--text-subtle); }
-    .adv-input, .adv-select, .adv-date, .adv-num {
-      font: inherit; font-size: 13px; color: var(--text); background: var(--field-bg);
-      border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 9px; width: 100%;
-    }
-    .adv-input:focus, .adv-select:focus, .adv-date:focus, .adv-num:focus {
-      outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 18%, transparent);
-    }
-    .adv-opts { display: flex; flex-wrap: wrap; gap: 6px; }
-    .adv-opt {
-      font: inherit; font-size: 12px; cursor: pointer; padding: 4px 11px;
-      border: 1px solid var(--border-strong); border-radius: var(--radius-pill);
-      background: var(--surface); color: var(--text-muted); transition: all .12s;
-    }
-    .adv-opt:hover { border-color: var(--accent); color: var(--accent-text); }
-    .adv-opt.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .adv-row { display: flex; align-items: center; gap: 6px; }
-    .adv-row .adv-select { flex: 1; }
-    .adv-tilde { font-size: 12px; color: var(--text-subtle); flex: none; }
-    .adv-op { flex: none; min-width: 46px; text-align: center; }
-    .adv-num { flex: 1; }
-    .adv-tag-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .adv-tag-chip {
-      display: inline-flex; align-items: center; gap: 3px; font-size: 12px;
-      padding: 3px 4px 3px 9px; border-radius: var(--radius-pill);
-      background: var(--field-bg); border: 1px solid var(--border-strong); color: var(--text);
-    }
-    .adv-tag-x { display: inline-flex; border: none; background: none; color: var(--text-muted); cursor: pointer; padding: 1px; border-radius: 50%; }
-    .adv-tag-x:hover { background: var(--danger); color: #fff; }
-    .adv-tag-x svg { display: block; }
     /* ⓘ クエリビルダの使い方ヘルプ。バーの右端＝ヘルプの定番コーナーに置く
        (margin-left:auto でチップ/リセットを左に寄せ、ⓘ だけ右へ逃がす)。 */
     .qb-help {
@@ -1788,7 +1733,6 @@
     </div>
     <div class="qb-trail">
       <span class="post-count" id="postCount"></span>
-      <button class="qb-adv" id="advSearchBtn" type="button" title="詳細検索"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg><span id="advSearchLabel">詳細</span></button>
       <button class="sb-save-search" id="saveSearchBtn" type="button" title="この絞り込みを動的コレクションとして保存" style="display:none"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存</button>
       <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>

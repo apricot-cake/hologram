@@ -372,14 +372,6 @@
       qfEngViews: '閲覧数（Xのみ）',
       qfEngGte: '以上',
       qfEngLte: '以下',
-      // viewer: 詳細検索フォーム（全フィルタ軸を1パネルに並べる＝「床」）
-      advSearch: '詳細検索',
-      advSearchTip: 'フィールドごとに条件を指定',
-      advKeyword: 'キーワード',
-      advKeywordHint: '本文・タイトル・投稿者・タグを横断',
-      advKeywordPh: 'キーワードを入力',
-      advKindTitle: '種類',
-      advTagPh: 'タグ名で追加…',
       // viewer: window tabs
       tabNew: '新しいタブ',
       tabClose: 'タブを閉じる',
@@ -740,14 +732,6 @@
       qfEngViews: 'Views (X only)',
       qfEngGte: '\u2265',
       qfEngLte: '\u2264',
-      // viewer: advanced search form (all filter axes in one panel)
-      advSearch: 'Advanced search',
-      advSearchTip: 'Search by field',
-      advKeyword: 'Keywords',
-      advKeywordHint: 'Body, title, author, tags',
-      advKeywordPh: 'Enter keywords',
-      advKindTitle: 'Kind',
-      advTagPh: 'Add a tag\u2026',
       // viewer: window tabs
       tabNew: 'New tab',
       tabClose: 'Close tab',
