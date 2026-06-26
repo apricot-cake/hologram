@@ -114,8 +114,6 @@
   }
   window.corpusFolderStore = createFolderStore;
 
-  let posterWorkspace = [];   // [posterKey] — the poster-side tray, kept in a SEPARATE
-                              // namespace so the captureId workspace API stays untouched.
   // Library collections [{ id, name, kind, created, items:[captureId] }] — the unified
   // container (folders + the active workspace tray). withActive marks one as the 🔖 target.
   const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), withActive: true });
@@ -153,7 +151,7 @@
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
     // allRaw() — the active collection MUST be persisted too (all() hides it).
-    if (window.corpus && window.corpus.setCollections) window.corpus.setCollections({ collections: store.allRaw(), activeId: store.getActiveId(), posterWorkspace }).catch(() => { /* best-effort */ });
+    if (window.corpus && window.corpus.setCollections) window.corpus.setCollections({ collections: store.allRaw(), activeId: store.getActiveId() }).catch(() => { /* best-effort */ });
   }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
@@ -163,8 +161,7 @@
       const r = (window.corpus && window.corpus.getCollections) ? await window.corpus.getCollections() : null;
       store.setAll((r && r.collections) || []);
       store.setActiveId((r && typeof r.activeId === 'string') ? r.activeId : null);
-      posterWorkspace = (r && Array.isArray(r.posterWorkspace)) ? r.posterWorkspace.slice() : [];
-    } catch { store.setAll([]); store.setActiveId(null); posterWorkspace = []; }
+    } catch { store.setAll([]); store.setActiveId(null); }
     loaded = true;
   }
   function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
@@ -202,39 +199,6 @@
     toast(t('wsCleared'));
     notify('workspace');
     return n;
-  }
-
-  // Poster-side tray — mirrors the captureId workspace above but keyed by posterKey
-  // (platform:userId). Separate namespace so the post-side API/reconcile is unchanged.
-  function inPosterWorkspace(key) { return posterWorkspace.includes(key); }
-  function posterWorkspaceItems() { return posterWorkspace.slice(); }
-  function posterWorkspaceCount(existing) { return existing ? posterWorkspace.filter((k) => existing.has(k)).length : posterWorkspace.length; }
-  function togglePosterWorkspace(keys, anchorKey) {
-    const ids = (keys || []).filter(Boolean);
-    if (!ids.length) return null;
-    const anchor = anchorKey != null ? anchorKey : ids[0];
-    const wasIn = posterWorkspace.includes(anchor);
-    if (wasIn) posterWorkspace = posterWorkspace.filter((k) => !ids.includes(k));
-    else ids.forEach((k) => { if (!posterWorkspace.includes(k)) posterWorkspace.push(k); });
-    persist();
-    toast(wasIn ? t('wsRemoved') : t('wsAdded'));
-    notify('poster-workspace');
-    return wasIn ? 'removed' : 'added';
-  }
-  function clearPosterWorkspace() {
-    if (!posterWorkspace.length) return 0;
-    const n = posterWorkspace.length;
-    posterWorkspace = [];
-    persist();
-    toast(t('wsCleared'));
-    notify('poster-workspace');
-    return n;
-  }
-  // Drop posterKeys no longer backed by any post (the poster vanished). Persists once.
-  function reconcilePoster(existing) {
-    const n = posterWorkspace.length;
-    posterWorkspace = posterWorkspace.filter((k) => existing.has(k));
-    if (posterWorkspace.length !== n) { persist(); notify('poster-workspace'); }
   }
 
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
@@ -341,7 +305,6 @@
   window.corpusFolders = {
     load, all: () => store.all(), byId, has,
     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
-    inPosterWorkspace, togglePosterWorkspace, clearPosterWorkspace, posterWorkspaceItems, posterWorkspaceCount, reconcilePoster,
     reconcile, toggleIn, openManager, closeManager, isManagerOpen,
     // Collection view (第3モード): expose the store's CRUD + active accessors so the
     // grid can list every collection (incl. the active/workspace one, marked ★) and

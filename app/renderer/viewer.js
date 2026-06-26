@@ -109,7 +109,6 @@
     wsEmpty: _s('wsEmpty'),
     wsEmptyTip: _s('wsEmptyTip'),
     wsEmptyConfirm: _s('wsEmptyConfirm'),
-    posterWsEmptyConfirm: _s('posterWsEmptyConfirm'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -406,9 +405,6 @@
   setText('sbWorkspaceTitle', MSG.workspaceTitle);
   const wsClearEl = document.getElementById('wsClear');
   if (wsClearEl) { wsClearEl.innerHTML = ICON_TRASH; wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
-  setText('sbPosterWsRowName', MSG.workspaceTitle);
-  const posterWsClearEl = document.getElementById('posterWsClear');
-  if (posterWsClearEl) { posterWsClearEl.innerHTML = ICON_TRASH; posterWsClearEl.title = MSG.wsEmptyTip; posterWsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
@@ -2541,7 +2537,6 @@
   function reconcileFolders() {
     if (!CF()) return;
     CF().reconcile(new Set(allPosts.map(p => p.captureId)));
-    if (CF().reconcilePoster) CF().reconcilePoster(new Set(buildUsers().map(u => u.key)));   // drop posterKeys whose poster vanished
   }
 
   // The text-search haystack for one post: the fields the search box scans.
@@ -4787,7 +4782,6 @@
       case 'instance': return (u) => u.instance === f.value;
       case 'tag': return (u) => posterTagsOf(u.key).includes(f.value);   // 作品/キャラも同じ tag 型
       case 'folder': { const fo = posterFolderById(f.value); const set = new Set(fo ? fo.items : []); return (u) => set.has(u.key); }
-      case 'workspace': return (u) => !!(CF() && CF().inPosterWorkspace(u.key));
       case 'date': {
         const field = f.dateField || 'latest';   // latest | lastCapture | authorCreatedAt
         const from = f.from ? new Date(f.from + 'T00:00:00') : null;
@@ -4827,7 +4821,7 @@
     onShadow: (leaves) => { posterShadow = leaves; },
     openLeafEditor: (n) => { if (n.type === 'date') openPosterDatePopover(n); },
     editableLeafTypes: ['date'],
-    singleValueTypes: ['date', 'workspace', 'folder'],   // 択一: 1つ選ぶと既存を置換
+    singleValueTypes: ['date', 'folder'],   // 択一: 1つ選ぶと既存を置換
     noDupTypes: [],
   });
 
@@ -4865,17 +4859,6 @@
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
-    // Workspace tray row: active when its leaf is in the tree, badge = count present this
-    // session, clear button only when non-empty (mirrors the post #wsRow).
-    const wsRow = document.getElementById('posterWsRow');
-    if (wsRow && CF()) {
-      const n = CF().posterWorkspaceCount(new Set(named.map((u) => u.key)));
-      wsRow.classList.toggle('active', posterQB.qHasValue('workspace', '*'));
-      const wsBadge = document.getElementById('posterWsBadge');
-      if (wsBadge) { wsBadge.textContent = n || ''; wsBadge.classList.toggle('on', n > 0); }
-      const wsClear = document.getElementById('posterWsClear');
-      if (wsClear) wsClear.style.display = n > 0 ? '' : 'none';
-    }
   }
   function posterMonogram(u) {
     const s = (u.displayName || u.screenName || '').trim();
@@ -4956,8 +4939,7 @@
       const name = hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)');
       const handleRow = (hasName && u.screenName) ? `<div class="poster-handle">@${escapeHtml(u.screenName)}</div>` : '';
       const pf = u.platform ? `<span class="pf-tag"><span class="pf-dot ${u.platform}"></span>${escapeHtml(pfName)}</span>` : '';
-      const inWs = !!(CF() && CF().inPosterWorkspace(u.key));
-      // Hover actions mirror the library card (🏷 tag → 🔖 collection → ℹ info, L→R).
+      // Hover actions: 🏷 tag → ℹ info (L→R).
       return `<div class="poster-card" data-index="${i}" tabindex="0">`
         + `<div class="poster-av">${avatar}</div>`
         + `<div class="poster-meta">`
@@ -4966,7 +4948,6 @@
         + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
         + `</div>`
         + `<button class="poster-tag" data-ptag="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>`
-        + `<button class="poster-ws${inWs ? ' in' : ''}" data-pws="${i}" title="${MSG.tipWorkspace}" aria-label="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>`
         + `<button class="poster-info" data-pinfo="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>`
         + `</div>`;
     }).join('');
@@ -5108,17 +5089,6 @@
       const inp = document.getElementById('pdTagInput'); if (inp) inp.focus();
       return;
     }
-    // 🔖 → toggle this poster's membership in the active collection (workspace tray).
-    if (e.target.closest('.poster-ws')) {
-      if (CF()) {
-        CF().togglePosterWorkspace([u.key]);
-        const btn = e.target.closest('.poster-ws');
-        if (btn) btn.classList.toggle('in', CF().inPosterWorkspace(u.key));
-        renderPosterFilterRows();
-        if (posterQB.qHasValue('workspace', '*')) renderPosters();
-      }
-      return;
-    }
     // A plain card click drills into that poster's posts (posts mode + user filter).
     openPosterPosts(u);
   });
@@ -5133,7 +5103,6 @@
   function renderPosterMenu(u) {
     posterMenu.innerHTML =
       `<div class="fm-row" data-pm-act="posts"><span class="fm-name">${escapeHtml(MSG.posterViewPosts)}</span></div>` +
-      (CF() ? `<div class="fm-row" data-pm-act="ws"><span class="fm-name">${escapeHtml(CF().inPosterWorkspace(u.key) ? MSG.ctxWsRemove : MSG.ctxWsAdd)}</span></div>` : '') +
       '<div class="fm-sep"></div>' +
       pfStore.all().map((f) => `<div class="fm-row" data-pm-fid="${escapeAttr(f.id)}"><span class="fm-name">${escapeHtml(f.name)}</span>${posterFolderHas(f.id, u.key) ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('') +
       `<div class="fm-row fm-manage" data-pm-act="newfolder">${escapeHtml(MSG.posterMenuNewFolder)}</div>`;
@@ -5153,12 +5122,6 @@
     if (act) {
       const a = act.dataset.pmAct;
       if (a === 'posts') { hidePosterMenu(); openPosterPosts(u); return; }
-      if (a === 'ws') {
-        if (CF()) CF().togglePosterWorkspace([u.key]);
-        renderPosterFilterRows();
-        if (posterQB.qHasValue('workspace', '*')) renderPosters();
-        hidePosterMenu(); return;
-      }
       if (a === 'newfolder') {
         const name = window.prompt(MSG.posterFolderRenamePrompt, '');
         if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) togglePosterFolderMember(nf.id, u.key); }
@@ -5194,20 +5157,6 @@
   // flyout (poster-* categories); the date row opens the date popover; the workspace row
   // is a toggle (no flyout). Selections live in the transient posterXxx state.
   document.getElementById('posterFilterRows').addEventListener('click', (e) => {
-    if (e.target.closest('#posterWsClear')) {
-      if (!window.confirm(MSG.posterWsEmptyConfirm)) return;
-      if (CF()) CF().clearPosterWorkspace();
-      renderPosterFilterRows();
-      if (posterQB.qHasValue('workspace', '*')) renderPosters();
-      return;
-    }
-    if (e.target.closest('#posterWsRow')) {
-      hideQfPop();
-      // Workspace tray = a single workspace leaf in the tree (mirrors the post #wsRow).
-      if (posterQB.qHasValue('workspace', '*')) posterQB.removeByLeaf('workspace', '*');
-      else posterQB.addFilter({ type: 'workspace', value: '*' });
-      return;   // addFilter/removeByLeaf refresh rows + bar + grid
-    }
     const row = e.target.closest('[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
