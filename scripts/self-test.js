@@ -10,8 +10,9 @@
 //      native-messaging framing work (ping + save + sidecar written).
 //   2. config.json parses (reports the resolved save folder).
 //   3. the save folder (or its nearest existing ancestor) is writable.
-//   4. (win32) the native host is registered for Chrome and its manifest +
-//      launcher resolve and allow an extension origin.
+//   4. (win32) the native-host MANIFEST under ~/.corpus resolves (launcher exists,
+//      allows an extension origin). The HKCU pointer is reported as INFO only — an
+//      in-container `reg query` reads the virtual hive and can't be trusted.
 //   5. the DEPLOYED bridge (configDir/bridge.js) matches the repo bridge —
 //      install COPIES bridge.js into the ASCII config dir, so a bridge edit does
 //      nothing until you re-run install. A stale copy is the #1 "my fix didn't
@@ -126,30 +127,43 @@ function checkWritable() {
 }
 
 // --- check 4: native host registration (win32) ---
+// Hard-check the MANIFEST FILE under configDir() (~/.corpus), which is NON-virtualized.
+// We deliberately do NOT hard-fail on the HKCU pointer: a process running inside the MSIX
+// Claude container reads the VIRTUAL hive (see CLAUDE.md), so a `reg query` verdict here is
+// unreliable — the real Chrome consults the real hive. The HKCU value is reported separately
+// as a soft INFO line (checkRegistryPointer). The authoritative signals for "is capture
+// working" are a real-Chrome capture + ~/.corpus/bridge.log / capture.log.
 function checkRegistration() {
   if (process.platform !== 'win32') return { name: 'host registration', ok: true, soft: true, detail: 'skipped (non-win32)' };
-  const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${install.HOST_NAME}`;
-  let regPath = null;
-  try {
-    const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8' });
-    const m = out.match(/REG_SZ\s+(.+?)\s*$/m);
-    regPath = m ? m[1].trim() : null;
-  } catch {
-    return { name: 'host registration', ok: false, detail: `not registered for Chrome — run: node native-host/install.js` };
-  }
-  if (!regPath || !fs.existsSync(regPath)) {
-    return { name: 'host registration', ok: false, detail: `registry points at a missing manifest: ${regPath}` };
+  const manifestPath = path.join(configDir(), `${install.HOST_NAME}.json`);
+  if (!fs.existsSync(manifestPath)) {
+    return { name: 'host registration', ok: false, detail: `manifest missing (${manifestPath}) — run: node native-host/install.js` };
   }
   try {
-    const man = JSON.parse(fs.readFileSync(regPath, 'utf8'));
+    const man = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     const launcherOk = !!man.path && fs.existsSync(man.path);
     const originsOk = Array.isArray(man.allowed_origins) && man.allowed_origins.length > 0;
     const ok = man.name === install.HOST_NAME && launcherOk && originsOk;
-    let detail = `manifest=${regPath}; launcher ${launcherOk ? 'OK' : `MISSING (${man.path})`}`;
+    let detail = `manifest=${manifestPath}; launcher ${launcherOk ? 'OK' : `MISSING (${man.path})`}`;
     if (!originsOk) detail += '; allowed_origins EMPTY — set the extension ID in the app, then re-register';
     return { name: 'host registration', ok, detail };
   } catch (e) {
     return { name: 'host registration', ok: false, detail: `manifest parse error: ${e.message}` };
+  }
+}
+
+// --- info: HKCU pointer (win32) — SOFT, because in-container reads see the VIRTUAL hive ---
+function checkRegistryPointer() {
+  if (process.platform !== 'win32') return { name: 'HKCU pointer (info)', ok: true, soft: true, detail: 'skipped (non-win32)' };
+  const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${install.HOST_NAME}`;
+  const caveat = 'inside the MSIX Claude container this reads the VIRTUAL hive — NOT proof of the real Chrome state; confirm via a real capture + ~/.corpus/bridge.log';
+  try {
+    const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8' });
+    const m = out.match(/REG_SZ\s+(.+?)\s*$/m);
+    const regPath = m ? m[1].trim() : '(no default value)';
+    return { name: 'HKCU pointer (info)', ok: true, soft: true, detail: `${regPath} — ${caveat}` };
+  } catch {
+    return { name: 'HKCU pointer (info)', ok: true, soft: true, detail: `no value visible to this process — ${caveat}` };
   }
 }
 
@@ -207,6 +221,7 @@ function captureLogInfo() {
     checkConfig(),
     checkWritable(),
     checkRegistration(),
+    checkRegistryPointer(),
     checkDeployedBridge(),
     await deployedBridgePing(),
     captureLogInfo()

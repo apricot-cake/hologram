@@ -1,7 +1,9 @@
 // CDP verify harness for the running Corpus Electron app.
-// Launch the app with the debug port first, e.g.:
-//   Start-Process electron.exe -ArgumentList ".", "--remote-debugging-port=9223" -WorkingDirectory app
-// then:
+// The app must already be running with a CDP debug port OUTSIDE the MSIX sandbox. Launch it
+// via the CorpusLaunch scheduled task, whose action carries --remote-debugging-port=9222
+// (see docs/build.md): Start-ScheduledTask -TaskName 'CorpusLaunch'. Do NOT direct-launch
+// electron.exe from Claude's shell — that runs IN the MSIX container (HKCU/FS virtualized)
+// and diverges from the real Chrome / real app. Then:
 //   node scripts/cdp-verify.js eval "<js expr; may return a value or a Promise>"
 //   node scripts/cdp-verify.js shot <out.jpg> [quality]
 //
@@ -11,7 +13,7 @@
 // crop the saved jpg afterward, e.g. with Python PIL:
 //   python -c "from PIL import Image; Image.open('out.jpg').crop((x,y,x2,y2)).save('crop.jpg')"
 //
-// Port via $CDP_PORT (default 9223). Page target = the one loading index.html.
+// Port via $CDP_PORT (default 9222). Page target = the one loading index.html.
 const http = require('http');
 const fs = require('fs');
 const os = require('os');
@@ -19,7 +21,7 @@ const path = require('path');
 const cp = require('child_process');
 const WebSocket = require('ws');
 
-const PORT = process.env.CDP_PORT || 9223;
+const PORT = process.env.CDP_PORT || 9222;
 
 // OS-level window control for the Electron window. This Electron build's CDP has
 // NO Browser.* domain (Browser.getWindowForTarget -> -32601), so a minimized window
