@@ -640,6 +640,7 @@
       case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
       case 'instance':   return f.value;
       case 'user':       return f.label || f.value;
+      case 'text':       return f.value;
       default:           return f.value || f.type;
     }
   }
@@ -660,11 +661,11 @@
     let primaryIconType = null;
     const add = (label, iconType) => { parts.push(label); if (!primaryIconType) primaryIconType = iconType; };
 
-    if (search) { const q = search.length > 12 ? search.slice(0, 12) + '…' : search; add('”' + q + '”', 'search'); }
-
     const byType = {};
     filters.forEach((f) => { (byType[f.type] = byType[f.type] || []).push(f); });
 
+    // Search terms are 'text' leaves now (in state.f), shown first with the magnifier glyph.
+    if (byType.text) byType.text.forEach((f) => { const v = String(f.value || ''); add('”' + (v.length > 12 ? v.slice(0, 12) + '…' : v) + '”', 'search'); });
     if (byType.tag)        byType.tag.forEach((f)        => add(filterLabel(f), 'tag'));
     if (byType.hashtag)    byType.hashtag.forEach((f)    => add(filterLabel(f), 'hashtag'));
     if (byType.user)       byType.user.forEach((f)       => add(filterLabel(f), 'user'));
@@ -697,9 +698,12 @@
     workspace: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
     search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   };
-  const qcGlyph = (type) => (QC_GLYPH[type]
-    ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QC_GLYPH[type]}</svg>`
-    : '');
+  const qcGlyph = (type) => {
+    const g = QC_GLYPH[type === 'text' ? 'search' : type];   // text leaf reuses the magnifier glyph
+    return g
+      ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>`
+      : '';
+  };
 
   function formatShortDate(dateStr) {
     if (!dateStr) return '';
@@ -733,6 +737,7 @@
     // poster's user filter is still active (check before emptying the tree).
     const bounce = posterReturn && qHasValue('user', posterReturn);
     postQB.resetTree();
+    editingTextNode = null;   // the editing text leaf is gone with the tree
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('searchBox', ''); set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     afterQueryChange();
@@ -1111,6 +1116,11 @@
 
   // Date popover. editingDateNode = the date cond being edited (null = new).
   let editingDateNode = null;
+  // The single 'text' leaf bound to the search box (post mode only). While typing,
+  // the box mirrors its value/mode into this node — a real tree leaf. Enter hands it
+  // off (leaf stays, box clears) so the next term is a fresh leaf. null = box empty
+  // or term already confirmed.
+  let editingTextNode = null;
 
   function openDatePopover(node) {
     closeAllMenus();   // close the other popover if open (no backdrop anymore)
@@ -1689,6 +1699,26 @@
         if (!(f.min > 0)) return () => true;
         return (p) => f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min;
       }
+      // Free-text leaf: the search-box term, now a first-class tree citizen.
+      // mode (exact/fuzzy) is frozen onto the leaf at confirm time. The compiled
+      // matcher is memoized on the node — evalNode calls postPredOf per item, so
+      // compiling in the bare factory body would recompile once per post.
+      case 'text': {
+        const q = (f.value || '').trim();
+        if (!q) return () => true;
+        const key = q + ' ' + (f.mode || 'exact');
+        if (f._compiledKey !== key) {
+          f._compiledKey = key;
+          if (f.mode === 'fuzzy' && window.corpusSearch) {
+            const m = window.corpusSearch.compile(q);
+            f._compiled = (p) => m(textHaystackOf(p).join(' '));
+          } else {
+            const lq = q.toLowerCase();
+            f._compiled = (p) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq));
+          }
+        }
+        return f._compiled;
+      }
       default: return () => true;
     }
   }
@@ -1821,7 +1851,9 @@
           `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
           `</span>`;
       };
-      const searchSeg = searchVal
+      // Posts render the search term as a real 'text' leaf in the tree (textInTree),
+      // so suppress the legacy echo chip there. Posters still echo their box term.
+      const searchSeg = (searchVal && !ctx.textInTree)
         ? `<span class="sb-active-chip qc-search" data-special="search">${ctx.glyphOf('search')}${escapeHtml(searchVal)}</span>` +
           (hasQuery ? `<span class="qc-conn">${escapeHtml(MSG.qcJoinAnd)}</span>` : '')
         : '';
@@ -1830,7 +1862,10 @@
         : '';
       container.innerHTML = searchSeg + renderNode(tree, true) + addBtn;
       if (!prefersReducedMotion()) {
-        container.querySelectorAll('.qb-pill').forEach(el => { if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new'); });
+        container.querySelectorAll('.qb-pill').forEach(el => {
+          if (ctx.isEditingLeaf && ctx.isEditingLeaf(qbNodeMap.get(el.dataset.nid))) return;   // skip the live-updating editing chip (per-keystroke flicker)
+          if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new');
+        });
       }
       // No custom <select>s in the bar anymore; prune any detached hosts left over.
       for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
@@ -1843,10 +1878,12 @@
       // Single-valued types (択一): a new one replaces the existing anywhere.
       if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
       // Prevent exact duplicates (anywhere in the tree), except for multi types.
-      else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return;
-      tree.children.push(Object.assign({ kind: 'cond' }, filter));
+      else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
+      const node = Object.assign({ kind: 'cond' }, filter);
+      tree.children.push(node);
       cleanupTree();
       refresh();
+      return node;   // callers binding to the new leaf (e.g. the editing text leaf) need it
     }
     // Remove the condition(s) matching the shadow filter at `index` (sidebar toggle
     // handlers findIndex into the shadow). Bar-pill removal targets a node by id.
@@ -1857,6 +1894,7 @@
       refresh();
     }
     function removeNode(node) {
+      if (ctx.onLeafMutated) ctx.onLeafMutated(node);   // let the view reconcile (e.g. unbind the editing text leaf)
       const pmap = treeParentMap();
       detachNode(node, pmap);
       cleanupTree();
@@ -1947,6 +1985,7 @@
       qbDragId = null;
       qbClearDropHints();
       if (!drag) return;
+      if (ctx.onLeafMutated) ctx.onLeafMutated(drag);   // a dragged editing-text leaf is confirmed (box clears, leaf stays)
       const target = t.nid ? nodeById(t.nid) : tree;
       if (!target || target === drag || nodeContains(drag, target)) return;   // can't drop onto itself / own descendant
       const pmap = treeParentMap();
@@ -2049,9 +2088,14 @@
     onChange: () => { renderPostFolders(); renderPosts(); },
     onShadow: (leaves) => { activeFilters = leaves; },
     openLeafEditor: (n) => { if (n.type === 'date') openDatePopover(n); else if (n.type === 'engagement') openEngPopover(n); },
+    // When the editing text leaf is removed or dragged on the bar, detach it from
+    // the box. textInTree suppresses the legacy echo chip (the term is a real leaf).
+    onLeafMutated: (node) => { if (node === editingTextNode) { editingTextNode = null; const sb = document.getElementById('searchBox'); if (sb) sb.value = ''; } },
+    isEditingLeaf: (node) => node === editingTextNode,
+    textInTree: true,
     editableLeafTypes: ['date', 'engagement'],
     singleValueTypes: ['date', 'kind'],
-    noDupTypes: ['engagement'],
+    noDupTypes: ['engagement', 'text'],
   });
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() { return postQB.getTree(); }
@@ -2430,38 +2474,22 @@
     if (CF().reconcilePoster) CF().reconcilePoster(new Set(buildUsers().map(u => u.key)));   // drop posterKeys whose poster vanished
   }
 
-  // Text-search predicate shared by the live filter (getFilteredPosts) and the
-  // dynamic-collection preview (dynamicMatches): 通常＝部分一致 /
-  // あいまい＝サブシーケンス一致（corpusSearch が方式を保持）. Empty query ⇒ match all.
-  function makeTextMatcher(rawQuery) {
-    const raw = (rawQuery || '').trim();
-    if (!raw) return () => true;
-    if (window.corpusSearch && window.corpusSearch.isFuzzy()) {
-      const matchHay = window.corpusSearch.compile(raw);   // クエリは1回だけ正規化・前処理
-      return (p) => matchHay([p.text, p.title, p.eagleName, p.screenName, p.displayName]
-        .concat(p.tags || []).concat(p.hashtags || [])
-        .map((x) => (x == null ? '' : String(x))).join(' '));
-    }
-    const q = raw.toLowerCase();
-    return (p) =>
-      (p.text || '').toLowerCase().includes(q) ||
-      (p.title || '').toLowerCase().includes(q) ||
-      (p.eagleName || '').toLowerCase().includes(q) ||
-      (p.screenName || '').toLowerCase().includes(q) ||
-      (p.displayName || '').toLowerCase().includes(q) ||
-      (p.tags || []).some((t) => t.toLowerCase().includes(q)) ||
-      (p.hashtags || []).some((t) => t.toLowerCase().includes(q));
+  // The text-search haystack for one post: the fields the search box scans.
+  // Returned as an array so the fuzzy path joins it and the exact path tests
+  // each field individually. Used by the 'text' leaf predicate (postPredOf).
+  function textHaystackOf(p) {
+    return [p.text, p.title, p.eagleName, p.screenName, p.displayName]
+      .concat(p.tags || []).concat(p.hashtags || [])
+      .map((x) => (x == null ? '' : String(x)));
   }
 
   function getFilteredPosts() {
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
     // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
     let posts = allPosts.filter(p => p.image || mediaFilesOf(p).length || p.text || p.title);
-    const rawQuery = document.getElementById('searchBox').value.trim();
     const sort = sortSelect.value;
-
-    // Text search: 通常＝部分一致 / あいまい＝サブシーケンス一致（corpusSearch が方式を保持）
-    if (rawQuery) posts = posts.filter(makeTextMatcher(rawQuery));
+    // The search-box term now lives in the query tree as a 'text' leaf — evaluated by
+    // evalNode below alongside every other condition (no separate text-filter phase).
 
     // ---- Query-builder evaluation: boolean condition tree ----
     // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
@@ -2514,7 +2542,7 @@
       // queryTree is the source of truth; f (the shadow) is kept for the tab title
       // (tabTitleOf reads state.f) and for migrating older persisted states.
       f: JSON.parse(JSON.stringify(activeFilters)),
-      tree: JSON.parse(JSON.stringify(postQB.getTree())),
+      tree: cloneTree(postQB.getTree()),
       search: document.getElementById('searchBox').value,
       sort: sortSelect.value,
       multi: multiOnly
@@ -2536,6 +2564,7 @@
     // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
     postQB.setTree(s.tree ? s.tree : facetTreeFrom(s.f || [], s.ops || {}));
     document.getElementById('searchBox').value = s.search;
+    rebindEditingTextLeaf();   // resume editing the restored term instead of duplicating it
     sortSelect.value = s.sort;
     refreshCustomSelects();
     multiOnly = !!s.multi;
@@ -2767,6 +2796,7 @@
         // queryTree is the truth; migrate older states (f + ops, no tree).
         postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
         document.getElementById('searchBox').value = at.state.search || '';
+        rebindEditingTextLeaf();
         sortSelect.value = at.state.sort || 'date-desc';
         refreshCustomSelects();
         multiOnly = !!at.state.multi;
@@ -5150,13 +5180,24 @@
   // against the CURRENT library (= 開けば最新). Memoized per renderCollections pass
   // (_collRecCache) so the sort + the card map don't each re-scan allPosts.
   let _collRecCache = null;
+  // Fold a legacy free-text q into a tree as a confirmed 'text' leaf (pre-text-leaf
+  // saves stored the search term separately in coll.q). Returns the tree to evaluate —
+  // a pass-through when q is empty or the tree already carries a text leaf.
+  function treeWithLegacyQ(tree, q) {
+    const t = (tree && Array.isArray(tree.children)) ? tree : null;
+    if (!q || !q.trim() || (t && treeLeaves(t).some((c) => c.type === 'text'))) return t;
+    return { kind: 'group', op: 'and', neg: false, children: [
+      ...((t && t.children) || []),
+      { kind: 'cond', type: 'text', value: q.trim(), mode: 'exact' },
+    ] };
+  }
+  // Deep-clone a query tree for persistence, dropping transient memo fields (_compiled…).
+  const cloneTree = (tree) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
   function dynamicMatches(coll) {
-    const tree = (coll.tree && Array.isArray(coll.tree.children)) ? coll.tree : null;
-    const matchText = makeTextMatcher(coll.q || '');
+    const tree = treeWithLegacyQ(coll.tree, coll.q);   // text term lives in the tree now (q = legacy only)
     const out = [];
     for (const p of allPosts) {
       if (!(p.image || mediaFilesOf(p).length || p.text || p.title)) continue;   // mirror getFilteredPosts' content gate
-      if (!matchText(p)) continue;
       if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
       out.push(p);
     }
@@ -5245,11 +5286,14 @@
     set('sbDateFrom', ''); set('sbDateTo', ''); set('sbEngMin', '');
     setBrowseMode('posts');
     if (c.kind === 'dynamic') {
-      postQB.setTree((c.tree && Array.isArray(c.tree.children)) ? c.tree : null);
-      set('searchBox', c.q || '');
-      afterQueryChange();   // re-renders chips + bar + grid from the restored tree + searchBox
+      // Restore the saved tree; text terms ride inside it (legacy q folded in as a leaf).
+      postQB.setTree(treeWithLegacyQ(c.tree, c.q));
+      editingTextNode = null;   // restored text leaves are confirmed; the box stays empty
+      set('searchBox', '');
+      afterQueryChange();   // re-renders chips + bar + grid from the restored tree
     } else {
       postQB.resetTree();
+      editingTextNode = null;
       set('searchBox', '');
       addFilter({ type: 'folder', value: cid });   // re-renders
     }
@@ -5262,12 +5306,12 @@
   // (= a saved search). The post-view "この検索を保存" button calls this.
   function promptSaveSearch() {
     if (!CF()) return;
+    if (browseMode === 'posts') confirmEditingTextLeaf();   // fold any in-progress box term into the tree first
     const tree = postQB.getTree();
-    const q = document.getElementById('searchBox').value;
-    if (!tree.children.length && !q.trim()) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
+    if (!tree.children.length) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
     const name = window.prompt(MSG.collSavePrompt, '');
     if (!name || !name.trim()) return;
-    CF().createCollection(name, { kind: 'dynamic', tree: JSON.parse(JSON.stringify(tree)), q });
+    CF().createCollection(name, { kind: 'dynamic', tree: cloneTree(tree) });
     CF().toast(MSG.collSaved);
   }
   { const sv = document.getElementById('saveSearchBtn');
@@ -5323,10 +5367,10 @@
   // filter (tree + free-text) — re-save the search after tweaking it.
   function updateDynamicFromCurrent(c) {
     if (!CF() || c.kind !== 'dynamic') return;
+    // Called from the collections view; the post-side text term is already a tree leaf.
     const tree = postQB.getTree();
-    const q = document.getElementById('searchBox').value;
-    if (!tree.children.length && !q.trim()) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
-    CF().updateCollection(c.id, { tree: JSON.parse(JSON.stringify(tree)), q });
+    if (!tree.children.length) { CF().toast(MSG.collSaveEmpty); return; }   // nothing to save
+    CF().updateCollection(c.id, { tree: cloneTree(tree) });
     CF().toast(MSG.collUpdated);
   }
   document.addEventListener('click', (e) => { if (collMenu.classList.contains('show') && !collMenu.contains(e.target)) hideCollMenu(); }, true);
@@ -5486,8 +5530,53 @@
   let _searchRenderTimer = null;
   document.getElementById('searchBox').addEventListener('input', () => {
     clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = setTimeout(() => { if (browseMode === 'posters') renderPosters(); else if (browseMode === 'collections') renderCollections(); else renderPosts(); }, 150);
+    _searchRenderTimer = setTimeout(() => {
+      if (browseMode === 'posters') { renderPosters(); return; }
+      if (browseMode === 'collections') { renderCollections(); return; }
+      syncEditingTextLeaf();   // posts: the box edits a 'text' leaf in the query tree
+    }, 150);
   });
+  // Mirror the search box into its bound 'text' leaf (post mode). Empty clears it;
+  // otherwise update the editing leaf in place, or create one and bind to it.
+  function syncEditingTextLeaf() {
+    // self-heal: if the bound leaf was reset / replaced out of the tree, forget it
+    // (otherwise Object.assign below would mutate an orphan node).
+    if (editingTextNode && !treeLeaves(postQB.getTree()).includes(editingTextNode)) editingTextNode = null;
+    const sb = document.getElementById('searchBox');
+    const val = (sb ? sb.value : '').trim();
+    const mode = (window.corpusSearch && window.corpusSearch.isFuzzy()) ? 'fuzzy' : 'exact';
+    if (!val) {
+      if (editingTextNode) { const n = editingTextNode; editingTextNode = null; postQB.removeNode(n); }
+      else renderPosts();
+      return;
+    }
+    if (editingTextNode) {
+      Object.assign(editingTextNode, { value: val, mode });
+      afterQueryChange();
+    } else {
+      editingTextNode = postQB.addFilter({ type: 'text', value: val, mode })
+        || treeLeaves(postQB.getTree()).find((c) => c.type === 'text' && c.value === val) || null;
+      if (!editingTextNode) renderPosts();
+    }
+  }
+  // Enter confirms the editing leaf: flush the current box value into it, then hand
+  // it off — the leaf stays in the tree, the box clears, the next term starts fresh.
+  function confirmEditingTextLeaf() {
+    clearTimeout(_searchRenderTimer);   // beat the debounce so the leaf holds the latest value
+    syncEditingTextLeaf();
+    editingTextNode = null;
+    const sb = document.getElementById('searchBox');
+    if (sb) sb.value = '';
+    afterQueryChange();
+  }
+  // After restoring a tab / history state, re-bind the editing leaf to the tree leaf
+  // matching the restored box value, so resuming typing edits it instead of duplicating.
+  function rebindEditingTextLeaf() {
+    editingTextNode = null;
+    const sb = document.getElementById('searchBox');
+    const val = (sb ? sb.value : '').trim();
+    if (val) editingTextNode = treeLeaves(postQB.getTree()).find((c) => c.type === 'text' && c.value === val) || null;
+  }
 
   // --- リアルタイム検索サジェスト -------------------------------------------
   // タイプのたびに、本文検索と並行してタグ/作者/フォルダの候補を検索ボックス
@@ -5535,6 +5624,9 @@
     if (!it) return;
     const sb = document.getElementById('searchBox');
     sb.value = '';   // タイプした文字は「探すため」のもの — 本文検索には残さない
+    // The user picked a concrete filter instead of a free-text term — drop the
+    // in-progress text leaf the box was building.
+    if (editingTextNode) { const n = editingTextNode; editingTextNode = null; postQB.removeNode(n); }
     hideSuggest();
     if (it.kind === 'tag') {
       addFilter({ type: 'tag', value: it.value });
@@ -5565,15 +5657,19 @@
     sb.addEventListener('focus', renderSuggest);
     sb.addEventListener('blur', () => setTimeout(hideSuggest, 150));
     sb.addEventListener('keydown', (e) => {
-      if (suggestEl.style.display === 'none') return;
+      const suggestOpen = suggestEl.style.display !== 'none';
+      // Enter: pick the highlighted suggestion if one is active, else confirm the text leaf.
+      if (e.key === 'Enter') {
+        if (suggestOpen && suggestIdx >= 0) { e.preventDefault(); applySuggest(suggestItems[suggestIdx]); return; }
+        if (browseMode === 'posts' && sb.value.trim()) { e.preventDefault(); confirmEditingTextLeaf(); return; }
+        return;
+      }
+      if (!suggestOpen) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const d = e.key === 'ArrowDown' ? 1 : -1;
         suggestIdx = (suggestIdx + d + suggestItems.length) % suggestItems.length;
         renderSuggest();
-      } else if (e.key === 'Enter' && suggestIdx >= 0) {
-        e.preventDefault();
-        applySuggest(suggestItems[suggestIdx]);
       } else if (e.key === 'Escape') {
         hideSuggest();
       }
@@ -5611,7 +5707,17 @@
       if (!opt) return;
       window.corpusSearch.setMode(opt.dataset.mode === 'fuzzy' ? 'fuzzy' : 'normal');
     });
-    window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
+    window.corpusSearch.onChange(() => {
+      syncSearchToggle();
+      // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
+      // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads f.mode).
+      if (browseMode === 'posts' && editingTextNode) {
+        editingTextNode.mode = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'exact';
+        afterQueryChange();
+      } else {
+        renderPosts();
+      }
+    });
     syncSearchToggle();
   }
 

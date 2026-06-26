@@ -4,7 +4,7 @@
 //  - the builder bar is always visible; リセット is hidden until a filter exists
 //  - adding a platform filter via its flyout adds a pill and filters the grid
 //  - リセット clears the pills (and hides itself again)
-//  - a search term becomes a pill too; clicking it clears the search
+//  - a search term becomes a real text-leaf pill (qc-text); deleting it clears the search
 // Post-view is the default mode, so no mode switch is needed.
 //
 //   node scripts/test-app-postfilter.js
@@ -59,16 +59,17 @@ const evalJs = `(async () => {
   const pillsAfter = document.querySelectorAll('#queryChips .sb-active-chip').length;
   const resetHiddenAfter = reset.style.display === 'none';
   const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
-  // a search term becomes a pill too
+  // a search term becomes a real text-leaf pill (qc-text), not the legacy 付箋
   const sb = document.getElementById('searchBox');
   sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
   await sleep(260);   // 検索入力は 150ms デバウンス後に描画される（それを越えて待つ）
-  const searchPill = !!document.querySelector('#queryChips .sb-active-chip[data-special="search"]');
-  // clicking the search pill clears the search
-  document.querySelector('#queryChips .sb-active-chip[data-special="search"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const searchPill = !!document.querySelector('#queryChips .qb-pill.qc-text');
+  const noLegacy = !document.querySelector('#queryChips [data-special="search"]');
+  // deleting the text leaf via its ✕ clears the search (box empties, reset hides)
+  document.querySelector('#queryChips .qb-pill.qc-text .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(80);
   const searchCleared = sb.value === '' && reset.style.display === 'none';
-  return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, searchCleared };
+  return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, noLegacy, searchCleared };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -83,8 +84,8 @@ child.on('close', () => {
   const ok = r.barAlwaysOn === true && r.resetHiddenBefore === true && r.pills === 1 &&
     r.resetShown === true && r.cardsFiltered === 3 && r.pillsAfter === 0 &&
     r.resetHiddenAfter === true && r.cardsAfter === 3 &&
-    r.searchPill === true && r.searchCleared === true;
-  console.log(`barAlwaysOn=${r.barAlwaysOn} resetHiddenBefore=${r.resetHiddenBefore} pills=${r.pills} resetShown=${r.resetShown} filtered=${r.cardsFiltered} pillsAfter=${r.pillsAfter} resetHiddenAfter=${r.resetHiddenAfter} cardsAfter=${r.cardsAfter} searchPill=${r.searchPill} searchCleared=${r.searchCleared}`);
+    r.searchPill === true && r.noLegacy === true && r.searchCleared === true;
+  console.log(`barAlwaysOn=${r.barAlwaysOn} resetHiddenBefore=${r.resetHiddenBefore} pills=${r.pills} resetShown=${r.resetShown} filtered=${r.cardsFiltered} pillsAfter=${r.pillsAfter} resetHiddenAfter=${r.resetHiddenAfter} cardsAfter=${r.cardsAfter} searchPill=${r.searchPill} noLegacy=${r.noLegacy} searchCleared=${r.searchCleared}`);
   console.log(ok ? 'POSTFILTER_TEST_PASS' : 'POSTFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
