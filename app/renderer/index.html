@@ -1604,6 +1604,14 @@
     /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
     .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
     .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
+    /* Facet count: how many current-query matches carry this value. Quiet
+       tabular number, sits right of the name (which flexes) before the ✓.
+       0件 → whole row greyed (still pickable); a divider marks the present→absent
+       boundary on flat lists. Muted via color, never opacity (DESIGN.md). */
+    .qf-pop .fm-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .qf-pop .fm-row.off { color: var(--text-muted); }
+    .qf-pop .fm-row.off .fm-count { color: var(--text-subtle); }
+    .qf-pop .qf-div { height: 1px; background: var(--border); margin: 5px 6px; }
     .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
     .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
     .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }

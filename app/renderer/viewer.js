@@ -791,6 +791,18 @@
     document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
     qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
   }
+  // Facet counts: how many CURRENT-QUERY matches carry each tag value.
+  // Population = getFilteredPosts() (every active condition incl. the search
+  // term), so the flyout mirrors the posts you're actually looking at. Built
+  // once per flyout render as a tag→count map (work/character/タグ all read p.tags).
+  // NOTE: self-category exclusion is intentionally NOT done — picking within the
+  // same category narrows the base, so those zeros sink. They stay listed (greyed
+  // but clickable) so you can still pick a value the current results lack.
+  function facetTagCounts() {
+    const m = new Map();
+    for (const p of getFilteredPosts()) for (const t of (p.tags || [])) m.set(t, (m.get(t) || 0) + 1);
+    return m;
+  }
   function qfValues(cat) {
     // "on" = this value already exists anywhere in the query tree.
     const act = (type, v) => qHasValue(type, v);
@@ -853,24 +865,32 @@
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
         // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
         // the kind only scopes which tags this flyout offers.
-        const kindTags = [...new Set(allPosts.flatMap(p => p.tags || []))].sort()
-          .filter(t => tagKindOf(t) === cat);
-        return kindTags.map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag' }));
+        const cnt = facetTagCounts();
+        return [...new Set(allPosts.flatMap(p => p.tags || []))]
+          .filter(t => tagKindOf(t) === cat)
+          .map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0 }))
+          // Facet order: values present in the current results first (count desc),
+          // absent ones sink to the bottom (greyed but still pickable).
+          .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja'));
       }
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
         // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
+        const cnt = facetTagCounts();
+        const item = (t) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0 });
+        // Within a list/group, present values (count desc) precede absent ones.
+        const byCount = (a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
         const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].filter(t => !tagKindOf(t)).sort();
         if (qfTagGroup) {
           if (qfTagGroup === '__other') {
             const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
-            return allTags.filter(t => !grouped.has(t)).map(t => ({ v: t, l: t, on: act('tag', t) }));
+            return allTags.filter(t => !grouped.has(t)).map(item).sort(byCount);
           }
           const g = tagGroups.find(x => x.id === qfTagGroup);
-          if (g) return (g.tags || []).filter(t => allTags.includes(t)).map(t => ({ v: t, l: t, on: act('tag', t) }));
+          if (g) return (g.tags || []).filter(t => allTags.includes(t)).map(item).sort(byCount);
           return [];
         }
-        if (!tagGroups.length) return allTags.map(t => ({ v: t, l: t, on: act('tag', t) }));
+        if (!tagGroups.length) return allTags.map(item).sort(byCount);
         const grouped = new Set();
         const out = [];
         for (const g of tagGroups) {
@@ -878,12 +898,12 @@
           if (!own.length) continue;
           own.forEach(t => grouped.add(t));
           out.push({ ghead: g.name || '' });
-          own.forEach(t => out.push({ v: t, l: t, on: act('tag', t) }));
+          own.map(item).sort(byCount).forEach(it => out.push(it));
         }
         const rest = allTags.filter(t => !grouped.has(t));
         if (rest.length) {
           out.push({ ghead: MSG.tagGroupOther });
-          rest.forEach(t => out.push({ v: t, l: t, on: act('tag', t) }));
+          rest.map(item).sort(byCount).forEach(it => out.push(it));
         }
         return out;
       }
@@ -915,9 +935,23 @@
       // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the
       // shared category dot so the poster-tag flyout isn't flattened (作品=紫/キャラ=緑).
       const kindDot = it.kind ? `<span class="tk-dot tk-${it.kind}" title="${escapeAttr(kindLabel(it.kind))}"></span>` : '';
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+      // Facet count (work/character/タグ): matches in the current results. 0 → greyed
+      // (`off`) yet still pickable. Categories without facet counts omit the badge.
+      const cnt = (it.count != null) ? `<span class="fm-count">${it.count}</span>` : '';
+      const off = (it.count === 0) ? ' off' : '';
+      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}${off}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${cnt}${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
     };
-    const listHtml = items.map(rowOf).join('');
+    // On a FLAT facet list, drop one divider where present (count>0) gives way to
+    // absent (count=0) — the natural border between "the results have these" and
+    // "they don't". Grouped tag lists rely on their group headings, so skip it there.
+    const hasGhead = items.some(it => it.ghead != null);
+    let listHtml = '';
+    let sawPresent = false, dividerDone = false;
+    for (const it of items) {
+      if (!hasGhead && !dividerDone && it.count === 0 && sawPresent) { listHtml += '<div class="qf-div"></div>'; dividerDone = true; }
+      if (it.count > 0) sawPresent = true;
+      listHtml += rowOf(it);
+    }
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
     // Find box only for genuinely long, open-ended lists (tags/authors). The
     // platform list is short + fixed (5 PFs + their instances), so no find box.
@@ -957,6 +991,7 @@
       row.style.display = match ? '' : 'none';
     });
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
+    qfPop.querySelectorAll('.qf-vals .qf-div').forEach((d) => { d.style.display = q ? 'none' : ''; });
   }
   // フライアウト内のセグメント切替に現在のモードを反映（メイン検索と同じ表示）。
   function syncQfMode() {
