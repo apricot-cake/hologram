@@ -1,11 +1,13 @@
 'use strict';
 
-// Verifies the saved-search tree-unification (Stage 3): the search term is saved as
-// a 'text' leaf INSIDE the tree, not in a separate coll.q field.
-//   - type「投稿1」→ one matching card
-//   - click 保存 (prompt overridden) → the dynamic collection has the term as a
-//     text leaf in its tree, NO coll.q, and the box auto-confirmed empty
-// Restore/open and legacy coll.q fallback are exercised on the real app (_verify-dyncoll).
+// Verifies the saved-search tree-unification (Stage 3): the search term lives as a
+// 'text' leaf INSIDE the tree, not in a separate coll.q field — on BOTH save and open.
+//   save:    type「投稿1」→ 1 card → click 保存 (prompt overridden) → the dynamic
+//            collection carries the term as a text leaf, NO coll.q, box auto-confirms empty
+//   restore: new tab (reset) → collections view → open the saved card → the tree (text
+//            leaf included) is restored, box stays empty, 1 card, back in post mode
+//   legacy:  a pre-text-leaf collection that stored only coll.q folds into a text leaf
+//            on open (treeWithLegacyQ) → 1 leaf, 1 card
 //
 //   node scripts/test-app-savesearch.js
 
@@ -57,6 +59,34 @@ const evalJs = `(async () => {
   r.hasQ = c ? ('q' in c) : null;                                              // false: q は保存しない
   r.leaves = c ? (c.tree.children || []).map((n) => n.type + ':' + n.value).join(',') : '';  // text:投稿1
   r.boxAfterSave = sb.value;                                                   // '' (auto-confirm)
+
+  // --- restore: open the saved search and confirm the tree comes back ---
+  const textChips = () => document.querySelectorAll('#queryChips .qb-pill.qc-text').length;
+  const goColl = () => document.querySelector('#browseToggle [data-mode="collections"]').click();
+  const cardByName = (nm) => [...document.querySelectorAll('#collectionGrid .collection-card[data-cid]')]
+    .find((el) => ((el.querySelector('.collection-name') || {}).textContent || '').includes(nm));
+  document.querySelector('.tab-new').click();   // fresh tab = reset the active filters
+  await wait(220);
+  r.tabResetCards = cards();        // 3 (no filter)
+  goColl(); await wait(240);
+  const savedCard = cardByName('テスト保存');
+  r.foundSaved = !!savedCard;
+  if (savedCard) savedCard.click();
+  await wait(280);
+  r.openMode = document.body.classList.contains('browse-collections');   // false (openCollection → posts)
+  r.openChips = textChips();        // 1 (the saved text leaf is restored)
+  r.openCards = cards();            // 1 (投稿1)
+  r.openBox = sb.value;             // '' (restored leaves are confirmed; box empty)
+
+  // --- legacy: a collection holding only coll.q folds into a text leaf on open ---
+  window.corpusFolders.createCollection('レガシ検索', { kind: 'dynamic', q: '投稿2' });
+  goColl(); await wait(240);
+  const legacyCard = cardByName('レガシ検索');
+  r.foundLegacy = !!legacyCard;
+  if (legacyCard) legacyCard.click();
+  await wait(280);
+  r.legacyChips = textChips();      // 1 (q folded into a text leaf)
+  r.legacyCards = cards();          // 1 (投稿2)
   return r;
 })()`;
 
@@ -69,9 +99,15 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.leafCards === 1 && r.saved === true && r.hasQ === false &&
+  const saveOk = r.leafCards === 1 && r.saved === true && r.hasQ === false &&
     r.leaves === 'text:投稿1' && r.boxAfterSave === '';
-  console.log(`leafCards=${r.leafCards} saved=${r.saved} hasQ=${r.hasQ} leaves="${r.leaves}" boxAfterSave="${r.boxAfterSave}"`);
+  const restoreOk = r.tabResetCards === 3 && r.foundSaved === true && r.openMode === false &&
+    r.openChips === 1 && r.openCards === 1 && r.openBox === '';
+  const legacyOk = r.foundLegacy === true && r.legacyChips === 1 && r.legacyCards === 1;
+  const ok = saveOk && restoreOk && legacyOk;
+  console.log(`save: leafCards=${r.leafCards} saved=${r.saved} hasQ=${r.hasQ} leaves="${r.leaves}" boxAfterSave="${r.boxAfterSave}"`);
+  console.log(`restore: tabReset=${r.tabResetCards} foundSaved=${r.foundSaved} openMode=${r.openMode} openChips=${r.openChips} openCards=${r.openCards} openBox="${r.openBox}"`);
+  console.log(`legacy: foundLegacy=${r.foundLegacy} legacyChips=${r.legacyChips} legacyCards=${r.legacyCards}`);
   console.log(ok ? 'SAVESEARCH_TEST_PASS' : 'SAVESEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

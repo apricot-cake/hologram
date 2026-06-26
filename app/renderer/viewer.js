@@ -1738,11 +1738,14 @@
       // mode (exact/fuzzy) is frozen onto the leaf at confirm time. The compiled
       // matcher is memoized on the node — evalNode calls postPredOf per item, so
       // compiling in the bare factory body would recompile once per post.
+      // The !_compiled guard is essential: a node round-tripped through JSON
+      // (saved search / tab state / setTree's clone) keeps the string _compiledKey
+      // but loses the _compiled function — recompile instead of returning undefined.
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
         const key = q + ' ' + (f.mode || 'exact');
-        if (f._compiledKey !== key) {
+        if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
           if (f.mode === 'fuzzy' && window.corpusSearch) {
             const m = window.corpusSearch.compile(q);

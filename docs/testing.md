@@ -30,6 +30,7 @@
 - `test-app-tagtypes.js` — タグ用語帳（種別）IPC `get/set-tag-types` を実Electron mainで往復＋`tag-types.json` のディスク永続を検証（CORPUS_SMOKE harness）
 - `test-app-backup.js` — 自動バックアップ（増分ミラー）の往復を実Electron mainで検証（CORPUS_SMOKE harness）。保存先と重なる出力先の拒否／`Corpus-mirror` への個別ファイルコピー／2回目は冪等（不変アセットは再コピーしない）／削除の prune 伝播／**prune 安全弁**＝`clear-all` で src が激減しても prune を保留しミラーが無傷で残ること
 - `test-app-recovery.js` — 保存先の冗長化/復元の2回起動統合テスト（2026-06-23 消失対策・CORPUS_SMOKE harness）。①健全な config 起動で `saveFolder.path`（冗長ポインタ）が書かれる ②config.json を破損させて再起動→ポインタから saveFolder を復元し config を修復（破損 config は `.corrupt-*` に退避）。ネイティブホストが空既定へ分岐しないことを担保
+- `test-app-textleaf.js` / `test-app-textleaf-or.js` / `test-app-textleaf-stable.js` / `test-app-savesearch.js` — 検索語の `text` 葉化（クエリビルダー参加）の実Electron検証。葉化＋確定＋両立／2葉のORドラッグ→括弧グループ→AND トグル／**タブ復元の二重葉防止＋確定後のモード凍結**／保存検索の保存・**復元**・legacy `coll.q` 畳み込み。復元系（`textleaf-stable`/`savesearch`）は JSON 往復で `text` 葉のメモ化（`_compiledKey` だけ残り `_compiled` を失う）が `postPredOf` を非関数化し復元結果が絞れない退行を踏む経路を含む（`postPredOf` の `!_compiled` ガード・2026-06-26 修正）
 
 ### 退行・セキュリティ・正しさ
 
