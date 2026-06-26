@@ -529,7 +529,6 @@
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
-  setText('sbFolderRowTitle', MSG.qfCatFolder);
   setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
@@ -635,7 +634,7 @@
       case 'engagement': return `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
       case 'tag':        return f.value;
       case 'hashtag':    return `#${f.value}`;
-      case 'folder': {   const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
+      case 'collection': { const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
       case 'workspace':  return MSG.workspaceTitle;
       case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
       case 'instance':   return f.value;
@@ -675,7 +674,7 @@
     if (byType.date)       byType.date.forEach((f)       => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.kind)       byType.kind.forEach((f)       => add(filterLabel(f), 'kind'));
-    filters.filter((f) => f.type === 'workspace' || f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'workspace' || f.type === 'collection').forEach((f) => add(filterLabel(f), f.type));
 
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
@@ -912,7 +911,6 @@
         allPosts.forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
         return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(h => ({ v: h, l: '#' + h, on: act('hashtag', h) }));
       }
-      case 'folder': return (CF() ? CF().all() : []).map(f => ({ v: f.id, l: f.name, on: act('folder', f.id) }));
       case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
         .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key) }));
       case 'instance': {
@@ -965,7 +963,7 @@
       : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
-    const footer = ((qfCat === 'folder' || qfCat === 'poster-folder') && CF())
+    const footer = (qfCat === 'poster-folder' && CF())
       ? `<div class="qf-footer"><button class="qf-footer-link" type="button" id="qfFolderManage">${escapeHtml(MSG.ctxManage)}</button></div>`
       : '';
     qfPop.innerHTML =
@@ -1081,7 +1079,7 @@
       const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
       if (i >= 0) {
         removeFilter(i);
-      } else if (vtype === 'tag' || vtype === 'folder' || vtype === 'hashtag') {
+      } else if (vtype === 'tag' || vtype === 'hashtag') {
         addFilter({ type: vtype, value: v });
       } else if (vtype === 'user') {
         const u = buildUsers().find(x => x.key === v);
@@ -1089,7 +1087,6 @@
       } else {
         addFilter({ type: vtype, value: v });
       }
-      if (vtype === 'folder') renderPostFolders();
       updateSidebarState();
       renderQfPop();   // stays open so several values can be picked in a row
     }
@@ -1716,7 +1713,7 @@
       case 'media': return (p) => p.mediaType === f.value;
       case 'tag':     return (p) => (p.tags     || []).includes(f.value);
       case 'hashtag': return (p) => (p.hashtags || []).includes(f.value);
-      case 'folder': return (p) => !!(CF() && CF().has(f.value, p.captureId));
+      case 'collection': return (p) => !!(CF() && CF().has(f.value, p.captureId));
       case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
       case 'date': {
         const field = f.dateField || 'date';
@@ -3492,8 +3489,8 @@
     if (row && foldMenuGroup) {
       keepCurrentVisible();
       CF().toggleIn(row.dataset.fid, foldMenuGroup.records.map((r2) => r2.captureId), foldMenuGroup.rep.captureId);
-      // re-render only if a folder filter could change the visible set
-      if (activeFilters.some((f) => f.type === 'folder')) renderPosts(true);
+      // re-render only if a collection filter could change the visible set
+      if (activeFilters.some((f) => f.type === 'collection')) renderPosts(true);
     }
     hideFoldMenu();
   });
@@ -3572,20 +3569,9 @@
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
-  function renderPostFolders() {
-    renderWorkspace();
-    const host = document.getElementById('postFolderChips');
-    if (!host || !CF()) return;
-    const list = CF().all();
-    const existing = new Set(allPosts.filter(p => p.url && p.captureId).map(p => p.captureId));
-    if (!list.length) { host.innerHTML = '<span class="iv-folder-empty">' + escapeHtml(MSG.foldersNone) + '</span>'; return; }
-    const active = new Set(activeFilters.filter(f => f.type === 'folder').map(f => f.value));
-    host.innerHTML = list.map(f => {
-      const n = f.items.filter(c => existing.has(c)).length;
-      const on = active.has(f.id);
-      return `<button class="sb-chip${on ? ' active' : ''}" data-fid="${escapeAttr(f.id)}" title="${MSG.tipFolderFilter}">${escapeHtml(f.name)}<span class="iv-tagn">${n}</span></button>`;
-    }).join('');
-  }
+  // postFolderChips was retired (collections moved to the collections view); this
+  // now only keeps the workspace tray entry in sync. Call sites keep the name.
+  function renderPostFolders() { renderWorkspace(); }
   // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
   // to show only its contents; クリア empties it (items themselves are kept).
   function renderWorkspace() {
@@ -3600,15 +3586,6 @@
     if (badge) { badge.textContent = n; badge.classList.toggle('on', n > 0); }
     if (clear) clear.style.display = n > 0 ? '' : 'none';
   }
-  document.getElementById('postFolderChips')?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.sb-chip');
-    if (!chip) return;
-    const fid = chip.dataset.fid;
-    const existIdx = activeFilters.findIndex(f => f.type === 'folder' && f.value === fid);
-    if (existIdx < 0) addFilter({ type: 'folder', value: fid });
-    else removeFilter(existIdx);
-    renderPostFolders();
-  });
   // フォルダ管理の起動口はフライアウト下部の #qfFolderManage（→ CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
 
@@ -5333,7 +5310,7 @@
       postQB.resetTree();
       editingTextNode = null;
       set('searchBox', '');
-      addFilter({ type: 'folder', value: cid });   // re-renders
+      addFilter({ type: 'collection', value: cid });   // re-renders
     }
   }
   function promptNewCollection() {
@@ -5638,8 +5615,6 @@
       .forEach((t) => items.push({ kind: 'tag', value: t, label: t, note: counts.get(t) }));
     buildUsers().filter((u) => hit(u.displayName) || hit(u.screenName)).slice(0, 4)
       .forEach((u) => items.push({ kind: 'user', value: u.key, label: u.displayName || u.screenName || '(unknown)', note: u.count }));
-    (CF() ? CF().all() : []).filter((f) => hit(f.name)).slice(0, 3)
-      .forEach((f) => items.push({ kind: 'folder', value: f.id, label: f.name, note: f.items.length }));
     return items;
   }
   function renderSuggest() {
@@ -5670,9 +5645,6 @@
       addFilter({ type: 'tag', value: it.value });
     } else if (it.kind === 'user') {
       addFilter({ type: 'user', value: it.value, label: it.label });
-    } else {
-      addFilter({ type: 'folder', value: it.value });
-      renderPostFolders();
     }
     updateSidebarState();
   }
@@ -6257,7 +6229,7 @@
   // when the folder list/default changes.
   if (CF()) CF().onChange((kind) => {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c) => c.type === 'folder' && !CF().byId(c.value))) { postQB.syncShadow(); postQB.render(); }
+    if (postQB.removeCondsMatching((c) => c.type === 'collection' && !CF().byId(c.value))) { postQB.syncShadow(); postQB.render(); }
     renderPostFolders();
     if (browseMode === 'collections') { renderCollections(); return; }   // collection view: refresh the grid (covers create/rename/delete/active)
     if (kind === 'list') renderPosts(true);   // folder created/deleted — refresh without anim
