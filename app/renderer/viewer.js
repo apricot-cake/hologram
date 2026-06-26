@@ -28,7 +28,6 @@
     sbSearchTitle: _s('sbSearchTitle'),
     sbSortTitle: _s('sbSortTitle'),
     tipTagCycle: _s('tipTagCycle'),
-    tipFolderFilter: _s('tipFolderFilter'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
     engParticle: _s('engParticle'),
@@ -127,7 +126,6 @@
     reset: _s('reset'),
     close: _s('close'),
     tileSizeTip: _s('tileSizeTip'),
-    foldersNone: _s('foldersNone'),
     postCount: _f1('postCount'),
 
     // ライブラリ/投稿者/コレクション モード切替・投稿者ビュー
