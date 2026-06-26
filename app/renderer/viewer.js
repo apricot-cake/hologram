@@ -358,6 +358,14 @@
     searchModeTitle: _s('searchModeTitle'),
     searchHintExact: _s('searchHintExact'),
     searchHintLoose: _s('searchHintLoose'),
+    // advanced search form
+    advSearch: _s('advSearch'),
+    advSearchTip: _s('advSearchTip'),
+    advKeyword: _s('advKeyword'),
+    advKeywordHint: _s('advKeywordHint'),
+    advKeywordPh: _s('advKeywordPh'),
+    advKindTitle: _s('advKindTitle'),
+    advTagPh: _s('advTagPh'),
     // window tabs
     tabNew: _s('tabNew'),
     tabClose: _s('tabClose'),
@@ -414,6 +422,9 @@
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
+  setText('advSearchLabel', MSG.advSearch);
+  setAttr('advSearchBtn', 'title', MSG.advSearchTip);
+  setAttr('advSearchBtn', 'aria-label', MSG.advSearch);
   setAttr('settingsClose', 'aria-label', MSG.close);
   setAttr('settingsClose', 'title', MSG.close);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
@@ -1258,6 +1269,178 @@
     if (editingEngNode) removeNode(editingEngNode);
     closeAllMenus();
   });
+
+  // --- 詳細検索フォーム (床): every filter axis laid out at once in one glass panel,
+  // the counterpart to the drag bar (天井=ネスト/OR/否定). It edits the SAME postQB
+  // tree as the sidebar flyouts via addFilter/removeFilter/removeByType — each
+  // control toggles a top-level leaf live and reflects tree-wide state (qHasValue),
+  // so it round-trips with the bar without a separate model (BACKLOG「検索バーの
+  // 対象コントロール」段階1: フォーム枠＋既存フィールド転記). 入口はクエリバー右の「詳細」。
+  const advPanel = document.createElement('div');
+  advPanel.className = 'adv-panel';
+  advPanel.style.display = 'none';
+  document.body.appendChild(advPanel);
+  const ADV_DEL = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+  let advEngType = null;   // remembers the engagement type the panel is editing
+  const advBtn = () => document.getElementById('advSearchBtn');
+  // All tags (general + 作品/キャラ) — the form's タグ field is the comprehensive entry
+  // (leaf type is 'tag' regardless of 種別; the sidebar split is presentational only).
+  function advTagVocab() { return [...new Set(allPosts.flatMap((p) => p.tags || []))].sort((a, b) => a.localeCompare(b, 'ja')); }
+  // A check/radio group built from qfValues(cat), minus instance sub-rows (those stay
+  // in the sidebar flyout — the form is PF-level for platform). 'on' mirrors qHasValue.
+  function advGroup(title, cat, glyph) {
+    const items = qfValues(cat).filter((it) => it.ghead == null && !it.sub);
+    const opts = items.map((it) => {
+      const on = (cat === 'media' && it.v === '__multi') ? multiOnly : it.on;
+      return `<button type="button" class="adv-opt${on ? ' on' : ''}" data-adv-cat="${cat}" data-adv-val="${escapeAttr(it.v)}"${it.type ? ` data-adv-type="${escapeAttr(it.type)}"` : ''}>${escapeHtml(it.l)}</button>`;
+    }).join('');
+    return `<div class="adv-field"><div class="adv-flabel">${qcGlyph(glyph)}${escapeHtml(title)}</div><div class="adv-opts">${opts}</div></div>`;
+  }
+  function renderAdvPanel() {
+    if (advPanel.style.display === 'none') return;
+    const sb = document.getElementById('searchBox');
+    const sv = sb ? sb.value : '';
+    const leaves = treeLeaves(currentTree());
+    const dateLeaf = leaves.find((c) => c.type === 'date') || null;
+    const tagLeaves = leaves.filter((c) => c.type === 'tag');
+    // Engagement: one type edited at a time (like the popover). Default to the panel's
+    // remembered type, else the first existing engagement leaf, else likes.
+    const firstEng = leaves.find((c) => c.type === 'engagement') || null;
+    const engType = advEngType || (firstEng && firstEng.engType) || 'likes';
+    const engForType = leaves.find((c) => c.type === 'engagement' && c.engType === engType) || null;
+    const engOp = (engForType && engForType.op) || 'gte';
+
+    const tagChips = tagLeaves.map((c) =>
+      `<span class="adv-tag-chip">${escapeHtml(c.value)}<button type="button" class="adv-tag-x" data-adv-tag-del="${escapeAttr(c.value)}" aria-label="${escapeAttr(MSG.qfDelete)}">${ADV_DEL}</button></span>`
+    ).join('');
+    const tagOpts = advTagVocab().map((t) => `<option value="${escapeAttr(t)}"></option>`).join('');
+    const engOpts = Object.entries(ENG_TYPE_LABELS).map(([k, v]) => `<option value="${k}"${k === engType ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('');
+    const isCaptured = dateLeaf && dateLeaf.dateField === 'capturedAt';
+
+    advPanel.innerHTML =
+      `<div class="adv-head">${escapeHtml(MSG.advSearch)}</div>` +
+      `<div class="adv-field"><div class="adv-flabel">${qcGlyph('search')}${escapeHtml(MSG.advKeyword)}</div>` +
+        `<input type="text" class="adv-input" id="advKeyword" placeholder="${escapeAttr(MSG.advKeywordPh)}" autocomplete="off" value="${escapeAttr(sv)}">` +
+        `<div class="adv-hint">${escapeHtml(MSG.advKeywordHint)}</div></div>` +
+      advGroup(MSG.qfPlatform, 'platform', 'platform') +
+      advGroup(MSG.advKindTitle, 'kind', 'kind') +
+      advGroup(MSG.qfPostType, 'postType', 'postType') +
+      advGroup(MSG.qfMediaTitle, 'media', 'media') +
+      `<div class="adv-field"><div class="adv-flabel">${qcGlyph('tag')}${escapeHtml(MSG.qfTag)}</div>` +
+        (tagChips ? `<div class="adv-tag-chips">${tagChips}</div>` : '') +
+        `<input type="text" class="adv-input" id="advTagInput" list="advTagList" placeholder="${escapeAttr(MSG.advTagPh)}" autocomplete="off">` +
+        `<datalist id="advTagList">${tagOpts}</datalist></div>` +
+      `<div class="adv-field"><div class="adv-flabel">${qcGlyph('date')}${escapeHtml(MSG.qfDate)}</div>` +
+        `<div class="adv-row"><select class="adv-select" id="advDateType"><option value="date"${isCaptured ? '' : ' selected'}>${escapeHtml(MSG.qfDatePost)}</option><option value="capturedAt"${isCaptured ? ' selected' : ''}>${escapeHtml(MSG.qfDateCaptured)}</option></select></div>` +
+        `<div class="adv-row"><input type="date" class="adv-date" id="advDateFrom" value="${escapeAttr((dateLeaf && dateLeaf.from) || '')}"><span class="adv-tilde">〜</span><input type="date" class="adv-date" id="advDateTo" value="${escapeAttr((dateLeaf && dateLeaf.to) || '')}"></div></div>` +
+      `<div class="adv-field"><div class="adv-flabel">${qcGlyph('engagement')}${escapeHtml(MSG.qfEngagement)}</div>` +
+        `<div class="adv-row"><select class="adv-select" id="advEngType">${engOpts}</select></div>` +
+        `<div class="adv-row"><input type="number" class="adv-num" id="advEngMin" min="0" placeholder="0" value="${escapeAttr((engForType && engForType.min) || '')}"><button type="button" class="chip adv-op${engOp === 'lte' ? ' active' : ''}" id="advEngOp" data-op="${engOp}">${escapeHtml(engOp === 'lte' ? MSG.qfEngLte : MSG.qfEngGte)}</button></div></div>`;
+  }
+  function openAdvPanel() {
+    advPanel.style.display = 'block';
+    renderAdvPanel();
+    const b = advBtn();
+    if (!b) return;
+    // Open BELOW the bar, right-aligned to the 詳細 button — so the bar (and the button
+    // itself) stay visible/clickable to toggle it closed (placeFlyout would cover them).
+    const r = b.getBoundingClientRect();
+    advPanel.style.maxHeight = '';
+    advPanel.style.left = '-9999px';
+    advPanel.style.top = (r.bottom + 6) + 'px';
+    const w = advPanel.getBoundingClientRect().width;
+    advPanel.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+    advPanel.style.maxHeight = (innerHeight - (r.bottom + 6) - 8) + 'px';
+    b.classList.add('active');
+  }
+  function closeAdvPanel() {
+    advPanel.style.display = 'none';
+    const b = advBtn(); if (b) b.classList.remove('active');
+  }
+  function toggleAdvPanel() { if (advPanel.style.display === 'block') closeAdvPanel(); else openAdvPanel(); }
+  const advBtnEl = advBtn();
+  if (advBtnEl) advBtnEl.addEventListener('click', toggleAdvPanel);
+
+  // A check/radio option toggles a top-level leaf (post-side): mirrors the sidebar
+  // flyout's value-click. addFilter dedups + replaces single-valued types (kind).
+  function advToggleOpt(cat, v, type) {
+    if (cat === 'media' && v === '__multi') { multiOnly = !multiOnly; renderFilterBadges(); renderPosts(); renderAdvPanel(); return; }
+    const vtype = type || cat;
+    const i = activeFilters.findIndex((f) => f.type === vtype && f.value === v);
+    if (i >= 0) removeFilter(i); else addFilter({ type: vtype, value: v });
+    if (vtype === 'folder') renderPostFolders();
+    updateSidebarState();
+    renderAdvPanel();
+  }
+  function advAddTagFromInput() {
+    const inp = document.getElementById('advTagInput'); if (!inp) return;
+    const v = inp.value.trim();
+    inp.value = '';
+    // Only known tags — an absent tag would filter to nothing (matches the flyout,
+    // which only offers existing tags).
+    if (!v || !advTagVocab().includes(v)) { inp.focus(); return; }
+    if (!qHasValue('tag', v)) addFilter({ type: 'tag', value: v });
+    updateSidebarState();
+    renderAdvPanel();
+    const inp2 = document.getElementById('advTagInput'); if (inp2) inp2.focus();
+  }
+  // 期間: from/to/種類 → upsert the single date leaf (empty both → remove).
+  function applyAdvDate() {
+    const dateField = document.getElementById('advDateType').value || 'date';
+    const from = document.getElementById('advDateFrom').value || '';
+    const to = document.getElementById('advDateTo').value || '';
+    if (!from && !to) postQB.removeByType('date');
+    else addFilter({ type: 'date', dateField, from, to });   // single-valued → replaces
+    updateSidebarState();
+    renderAdvPanel();
+  }
+  // 反応: min/op for the selected engType → upsert that type's leaf (min≤0 → remove).
+  function applyAdvEng() {
+    const engType = document.getElementById('advEngType').value || 'likes';
+    advEngType = engType;
+    const min = parseInt(document.getElementById('advEngMin').value, 10);
+    const op = document.getElementById('advEngOp').dataset.op || 'gte';
+    const changed = removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType);
+    if (min > 0) addFilter({ type: 'engagement', engType, min, op });   // addFilter refreshes
+    else if (changed) afterQueryChange();
+    updateSidebarState();
+    renderAdvPanel();
+  }
+  advPanel.addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-adv-val]');
+    if (opt) { advToggleOpt(opt.dataset.advCat, opt.dataset.advVal, opt.dataset.advType); return; }
+    const tdel = e.target.closest('[data-adv-tag-del]');
+    if (tdel) { postQB.removeByLeaf('tag', tdel.dataset.advTagDel); updateSidebarState(); renderAdvPanel(); return; }
+    const op = e.target.closest('#advEngOp');
+    if (op) { op.dataset.op = op.dataset.op === 'gte' ? 'lte' : 'gte'; applyAdvEng(); return; }
+  });
+  let advKwTimer = null;
+  advPanel.addEventListener('input', (e) => {
+    if (e.target.id === 'advKeyword') {
+      const sb = document.getElementById('searchBox');
+      if (sb) sb.value = e.target.value;
+      updateSidebarState();   // re-renders chips/badges (NOT the panel → keyword keeps focus)
+      clearTimeout(advKwTimer);
+      advKwTimer = setTimeout(renderPosts, 150);   // debounce like the main search box
+    }
+  });
+  advPanel.addEventListener('change', (e) => {
+    if (e.target.id === 'advTagInput') advAddTagFromInput();
+    else if (e.target.id === 'advDateType' || e.target.id === 'advDateFrom' || e.target.id === 'advDateTo') applyAdvDate();
+    else if (e.target.id === 'advEngType') { advEngType = e.target.value; renderAdvPanel(); }   // re-read min/op for the new type
+    else if (e.target.id === 'advEngMin') applyAdvEng();
+  });
+  advPanel.addEventListener('keydown', (e) => {
+    if (e.target.id === 'advTagInput' && e.key === 'Enter') { e.preventDefault(); advAddTagFromInput(); }
+  });
+  // Outside click / Escape closes (the toggle button handles its own click).
+  document.addEventListener('click', (e) => {
+    if (advPanel.style.display !== 'block') return;
+    if (!document.contains(e.target)) return;   // a re-render detached the target = inside click
+    if (advPanel.contains(e.target) || e.target.closest('#advSearchBtn')) return;
+    closeAdvPanel();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && advPanel.style.display === 'block') closeAdvPanel(); });
 
   // --- Sidebar filter controls ---
 
