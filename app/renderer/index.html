@@ -340,21 +340,44 @@
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
     .search-box:focus { border-color: var(--accent); }
-    /* Search field + in-bar mode toggle (was a separate <select> below the box). */
+    /* Search field + leading magnifier (macOS search-field anatomy). */
     .search-wrap { position: relative; display: flex; align-items: center; }
-    .search-wrap .search-box { padding-right: 62px; }
-    /* In-bar 通常⇄あいまい toggle — a small chip parked at the field's right edge.
-       Shared by the main search box and the flyout filter box (user: バー内に統合). */
-    .search-mode-btn, .qf-mode-btn {
-      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-      font-size: 10.5px; line-height: 1.5; color: var(--text-muted);
-      background: var(--chip-bg); border: 1px solid var(--border); border-radius: 999px;
-      padding: 1px 8px; cursor: pointer; white-space: nowrap;
-      transition: background .12s, color .12s, border-color .12s;
+    .search-wrap .search-ico {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      width: 15px; height: 15px; fill: none; stroke: var(--text-subtle);
+      stroke-width: 2; stroke-linecap: round; pointer-events: none;
     }
-    .search-mode-btn:hover, .qf-mode-btn:hover { background: var(--chip-bg-hover); color: var(--text); }
-    /* fuzzy = the non-default mode → marked via grey contrast (DESIGN.md), not a tint. */
-    .search-mode-btn.fuzzy, .qf-mode-btn.fuzzy { color: var(--text-strong); border-color: var(--border-strong); font-weight: 600; }
+    .search-wrap .search-box { padding-left: 31px; }
+    /* Search-mode toggle = macOS segmented control (recessed track + raised thumb):
+       both options stay visible, so the state AND the switch read at a glance — the
+       old lone right-edge chip didn't look like a toggle (BACKLOG: 発見性が低い).
+       Shared by the main search box and, compact, the filter flyout (.seg-control--qf).
+       Labels are behavior-words (ぴったり/おおまか) + a one-line hint (DESIGN「声と語り口」). */
+    .seg-control {
+      position: relative; display: grid; grid-template-columns: 1fr 1fr;
+      background: var(--seg-track); border-radius: var(--radius-md);
+      padding: 3px; margin-top: 8px; user-select: none;
+    }
+    .seg-control .seg-thumb {
+      position: absolute; top: 3px; left: 3px;
+      width: calc(50% - 3px); height: calc(100% - 6px);
+      background: var(--seg-thumb); border-radius: calc(var(--radius-md) - 2px);
+      box-shadow: var(--shadow-xs);
+      transition: transform var(--dur-slow) var(--ease-out);
+    }
+    .seg-control.is-fuzzy .seg-thumb { transform: translateX(100%); }
+    .seg-control .seg-opt {
+      position: relative; z-index: 1; appearance: none; background: transparent;
+      border: 0; font: inherit; font-size: 12px; padding: 5px 4px;
+      color: var(--text-muted); cursor: pointer;
+      border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
+    }
+    .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
+    .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
+    .seg-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+    .seg-control--qf { margin: 2px 4px 4px; }
+    .seg-control--qf .seg-opt { padding: 4px 4px; font-size: 11px; }
+    @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
     .radio-line input { cursor: pointer; }
@@ -1572,12 +1595,11 @@
     .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; }
     .qf-find-wrap { position: relative; display: flex; align-items: center; margin: 2px 4px 4px; }
     .qf-pop .qf-find {
-      width: 100%; padding: 5px 56px 5px 10px; font-size: 12px;
+      width: 100%; padding: 5px 10px; font-size: 12px;
       border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-3);
       color: var(--text); outline: none;
     }
     .qf-pop .qf-find:focus { border-color: var(--accent); }
-    .qf-find-wrap .qf-mode-btn { right: 6px; }
     .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; color: var(--text-muted); padding: 6px 8px 2px; }
     /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
     .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
@@ -1788,9 +1810,15 @@
           <div class="sb-section">
             <div class="sb-title" id="sbSearchTitle"></div>
             <div class="search-wrap">
+              <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
               <input type="text" class="search-box" id="searchBox">
-              <button type="button" class="search-mode-btn" id="searchModeBtn"></button>
             </div>
+            <div class="seg-control" id="searchModeSeg" role="group">
+              <span class="seg-thumb" aria-hidden="true"></span>
+              <button type="button" class="seg-opt" data-mode="normal" id="searchModeExact"></button>
+              <button type="button" class="seg-opt" data-mode="fuzzy" id="searchModeFuzzy"></button>
+            </div>
+            <div class="seg-hint" id="searchModeHint"></div>
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbSortTitle"></div>

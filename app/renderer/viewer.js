@@ -356,6 +356,8 @@
     searchExact: _s('searchExact'),
     searchFuzzy: _s('searchFuzzy'),
     searchModeTitle: _s('searchModeTitle'),
+    searchHintExact: _s('searchHintExact'),
+    searchHintLoose: _s('searchHintLoose'),
     // window tabs
     tabNew: _s('tabNew'),
     tabClose: _s('tabClose'),
@@ -513,8 +515,8 @@
   document.getElementById('editCancel').textContent = MSG.confirmCancel;
   document.getElementById('editSave').textContent = MSG.save;
 
-  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode label is set on
-  // the in-bar toggle button by syncSearchToggle (the old select was removed).
+  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment labels are
+  // set on its two options in the wiring block below (syncSearchToggle reflects state).
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
   // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
@@ -916,7 +918,11 @@
     // platform list is short + fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter(it => it.ghead == null).length;
     const find = (!['platform', 'poster-platform'].includes(qfCat) && (qfTagGroup || valueCount > 8))
-      ? `<div class="qf-find-wrap"><input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off"><button type="button" class="qf-mode-btn" id="qfModeBtn"></button></div>`
+      ? `<div class="qf-find-wrap"><input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off"></div>`
+        + `<div class="seg-control seg-control--qf" id="qfModeSeg" role="group" aria-label="${escapeAttr(MSG.searchModeTitle)}">`
+        + `<span class="seg-thumb" aria-hidden="true"></span>`
+        + `<button type="button" class="seg-opt" data-mode="normal" id="qfModeExact" title="${escapeAttr(MSG.searchHintExact)}">${escapeHtml(MSG.searchExact)}</button>`
+        + `<button type="button" class="seg-opt" data-mode="fuzzy" id="qfModeFuzzy" title="${escapeAttr(MSG.searchHintLoose)}">${escapeHtml(MSG.searchFuzzy)}</button></div>`
       : '';
     // No heading row: the user already clicked the category row, so repeating
     // its name as a (hover-highlighted, seemingly-clickable) row was noise.
@@ -947,18 +953,20 @@
     });
     qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
   }
-  // フライアウトのバー内トグルにラベルを反映（メイン検索ボタンと同じ表示）。
+  // フライアウト内のセグメント切替に現在のモードを反映（メイン検索と同じ表示）。
   function syncQfMode() {
-    const mb = document.getElementById('qfModeBtn');
-    if (!mb || !window.corpusSearch) return;
+    const seg = document.getElementById('qfModeSeg');
+    if (!seg || !window.corpusSearch) return;
     const fz = window.corpusSearch.isFuzzy();
-    mb.textContent = fz ? MSG.searchFuzzy : MSG.searchExact;
-    mb.classList.toggle('fuzzy', fz);
-    mb.title = MSG.searchModeTitle;
+    seg.classList.toggle('is-fuzzy', fz);
+    const ex = document.getElementById('qfModeExact');
+    const fb = document.getElementById('qfModeFuzzy');
+    if (ex) { ex.classList.toggle('is-on', !fz); ex.setAttribute('aria-pressed', String(!fz)); }
+    if (fb) { fb.classList.toggle('is-on', fz); fb.setAttribute('aria-pressed', String(fz)); }
   }
-  // Keep the in-flyout toggle labeled correctly when the mode is changed elsewhere
-  // (e.g. the main #searchModeBtn). syncQfMode no-ops while the flyout is closed
-  // because #qfModeBtn is absent from the DOM (its `if (!mb) return` guard). Registered
+  // Keep the in-flyout segment in sync when the mode is changed elsewhere
+  // (e.g. the main #searchModeSeg). syncQfMode no-ops while the flyout is closed
+  // because #qfModeSeg is absent from the DOM (its `if (!seg) return` guard). Registered
   // once here — same scope as the qfPop listeners below (runs on setup, not per render).
   if (window.corpusSearch) window.corpusSearch.onChange(syncQfMode);
   qfPop.addEventListener('input', (e) => { if (e.target.classList.contains('qf-find')) applyQfFind(); });
@@ -985,9 +993,10 @@
       }
       hideQfPop(); return;
     }
-    // バー内の 通常/あいまい トグル（メイン検索と共有のモードを切替→絞り込み再適用）
-    if (e.target.closest('.qf-mode-btn')) {
-      if (window.corpusSearch) window.corpusSearch.toggle();
+    // セグメント切替（ぴったり/おおまか・メイン検索と共有のモード→絞り込み再適用）
+    const segOpt = e.target.closest('#qfModeSeg .seg-opt');
+    if (segOpt) {
+      if (window.corpusSearch) window.corpusSearch.setMode(segOpt.dataset.mode === 'fuzzy' ? 'fuzzy' : 'normal');
       syncQfMode();
       applyQfFind();
       const fi = document.getElementById('qfFind'); if (fi) fi.focus();
@@ -5578,18 +5587,30 @@
     renderPosts();
   });
 
-  // 検索方式トグル（通常 / あいまい）。検索バー内に統合（旧・別 select は廃止）。
+  // 検索方式の切替（ぴったり / おおまか）＝macOS 風セグメント。両方を常に見せ、
+  // 状態と切替手段がひと目で分かる（旧・右端の単独チップは「切替」と気づけなかった）。
   // corpusSearch がモードを集約＝メイン検索とフライアウト絞り込みで共有する。
-  const searchModeBtn = document.getElementById('searchModeBtn');
+  const searchModeSeg = document.getElementById('searchModeSeg');
+  const searchModeHint = document.getElementById('searchModeHint');
+  const searchModeExact = document.getElementById('searchModeExact');
+  const searchModeFuzzy = document.getElementById('searchModeFuzzy');
+  if (searchModeExact) searchModeExact.textContent = MSG.searchExact;
+  if (searchModeFuzzy) searchModeFuzzy.textContent = MSG.searchFuzzy;
+  if (searchModeSeg) searchModeSeg.setAttribute('aria-label', MSG.searchModeTitle);
   function syncSearchToggle() {
-    if (!searchModeBtn || !window.corpusSearch) return;
+    if (!searchModeSeg || !window.corpusSearch) return;
     const fuzzy = window.corpusSearch.isFuzzy();
-    searchModeBtn.textContent = fuzzy ? MSG.searchFuzzy : MSG.searchExact;
-    searchModeBtn.classList.toggle('fuzzy', fuzzy);
-    searchModeBtn.title = MSG.searchModeTitle;
+    searchModeSeg.classList.toggle('is-fuzzy', fuzzy);
+    if (searchModeExact) { searchModeExact.classList.toggle('is-on', !fuzzy); searchModeExact.setAttribute('aria-pressed', String(!fuzzy)); }
+    if (searchModeFuzzy) { searchModeFuzzy.classList.toggle('is-on', fuzzy); searchModeFuzzy.setAttribute('aria-pressed', String(fuzzy)); }
+    if (searchModeHint) searchModeHint.textContent = fuzzy ? MSG.searchHintLoose : MSG.searchHintExact;
   }
-  if (searchModeBtn && window.corpusSearch) {
-    searchModeBtn.addEventListener('click', () => window.corpusSearch.toggle());
+  if (searchModeSeg && window.corpusSearch) {
+    searchModeSeg.addEventListener('click', (e) => {
+      const opt = e.target.closest('.seg-opt');
+      if (!opt) return;
+      window.corpusSearch.setMode(opt.dataset.mode === 'fuzzy' ? 'fuzzy' : 'normal');
+    });
     window.corpusSearch.onChange(() => { syncSearchToggle(); renderPosts(); });
     syncSearchToggle();
   }
