@@ -75,6 +75,12 @@ const evalJs = `(async () => {
   r.tagCat = cntOf('猫');           // 3
   r.tagDog = cntOf('犬');           // 0
   r.tagDogOff = offOf('犬');        // true (facetDim greys a 0)
+  // --- poster view: counts come from filteredPosters() (population = posters) ---
+  document.querySelector('#browseToggle [data-mode="posters"]').click(); await wait(280);
+  document.querySelector('#posterFilterRows [data-qfrow="poster-platform"]').click(); await wait(220);
+  r.posterPfX = cntOf('x');           // 3 posters (u0,u1,u2)
+  r.posterPfBsky = cntOf('bluesky');  // 1 (u3)
+  r.posterPfMisskey = cntOf('misskey'); // 1 (u4)
   return r;
 })()`;
 
@@ -90,9 +96,11 @@ child.on('close', () => {
   const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfMisskey_all === '1' &&
     r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfMisskey_cat === '0' && r.pfMisskey_off === false;
   const facetDim = r.tagCat === '3' && r.tagDog === '0' && r.tagDogOff === true;
-  const ok = fixed && facetDim;
+  const poster = r.posterPfX === '3' && r.posterPfBsky === '1' && r.posterPfMisskey === '1';
+  const ok = fixed && facetDim && poster;
   console.log(`fixed: pfX_all=${r.pfX_all} bsky=${r.pfBsky_all} misskey=${r.pfMisskey_all} afterCat=${r.afterCatCards} pfX_cat=${r.pfX_cat} misskey_cat=${r.pfMisskey_cat} misskey_off=${r.pfMisskey_off}`);
   console.log(`facetDim: tagCat=${r.tagCat} tagDog=${r.tagDog} tagDogOff=${r.tagDogOff}`);
+  console.log(`poster: pfX=${r.posterPfX} bsky=${r.posterPfBsky} misskey=${r.posterPfMisskey}`);
   console.log(ok ? 'FACETCOUNTS_TEST_PASS' : 'FACETCOUNTS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
