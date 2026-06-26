@@ -790,16 +790,22 @@
     document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
     qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
   }
-  // Facet counts: how many CURRENT-QUERY matches carry each tag value.
-  // Population = getFilteredPosts() (every active condition incl. the search
-  // term), so the flyout mirrors the posts you're actually looking at. Built
-  // once per flyout render as a tag→count map (work/character/タグ all read p.tags).
-  // NOTE: self-category exclusion is intentionally NOT done — picking within the
-  // same category narrows the base, so those zeros sink. They stay listed (greyed
-  // but clickable) so you can still pick a value the current results lack.
-  function facetTagCounts() {
+  // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
+  // Population = getFilteredPosts() (every active condition incl. the search term),
+  // so the flyout mirrors the posts you're actually looking at. keyFn(p) returns one
+  // value or an array of values (tags, hashtags); each increments its bucket. Built
+  // once per flyout render (one cat per render).
+  // NOTE: self-category exclusion is intentionally NOT done — picking within the same
+  // category narrows the base, so those zeros sink. Values absent from the current
+  // results stay listed (greyed but clickable) so you can still pick one.
+  function facetCounts(keyFn) {
     const m = new Map();
-    for (const p of getFilteredPosts()) for (const t of (p.tags || [])) m.set(t, (m.get(t) || 0) + 1);
+    for (const p of getFilteredPosts()) {
+      const k = keyFn(p);
+      if (k == null) continue;
+      if (Array.isArray(k)) { for (const v of k) if (v != null) m.set(v, (m.get(v) || 0) + 1); }
+      else m.set(k, (m.get(k) || 0) + 1);
+    }
     return m;
   }
   function qfValues(cat) {
@@ -814,21 +820,27 @@
           for (const p of allPosts) if (p.platform === plat) { const h = hostOf(p.url); if (h) set.add(h); }
           return [...set].sort();
         };
+        const pcnt = facetCounts(p => p.platform || '__none');
+        const icnt = facetCounts(p => (p.platform === 'misskey' || p.platform === 'mastodon') ? hostOf(p.url) : null);
         const out = [];
         for (const v of ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv']) {
-          out.push({ v, l: PF_NAME[v], on: act('platform', v) });
+          out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
           if (v === 'misskey' || v === 'mastodon') {
-            for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true });
+            for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true, count: icnt.get(h) || 0 });
           }
         }
         // 「プラットフォームなし」= platform 未設定の投稿（取り込み画像など）。
         // 該当が1件もなければ出さない（空振りする項目を並べない）。
-        if (allPosts.some(p => !p.platform)) out.push({ v: '__none', l: MSG.qfPlatformNone, on: act('platform', '__none') });
+        if (allPosts.some(p => !p.platform)) out.push({ v: '__none', l: MSG.qfPlatformNone, on: act('platform', '__none'), count: pcnt.get('__none') || 0 });
         return out;
       }
-      case 'postType': return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v) }));
+      case 'postType': {
+        const cnt = facetCounts(p => { const a = []; if (!p.isReply && !p.isQuote && !p.isThread) a.push('post'); if (p.isReply) a.push('reply'); if (p.isQuote) a.push('quote'); if (p.isThread) a.push('thread'); return a; });
+        return [['post', MSG.qfPost], ['reply', MSG.qfReply], ['quote', MSG.qfQuote], ['thread', MSG.qfThread]].map(([v, l]) => ({ v, l, on: act('postType', v), count: cnt.get(v) || 0 }));
+      }
       case 'media': {
-        const out = [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v) }));
+        const cnt = facetCounts(p => p.mediaType);
+        const out = [['image', MSG.qfImage], ['video', MSG.qfVideo], ['gif', MSG.qfGif]].map(([v, l]) => ({ v, l, on: act('media', v), count: cnt.get(v) || 0 }));
         // 複数画像 = group-level (>1 image); the old standalone checkbox folded
         // in here since it's an attachment property. Routed to multiOnly, not
         // a per-record media filter (which is mediaType image/video/gif).
@@ -864,10 +876,10 @@
         // 用語帳 (Phase 2 ②): a 作品/キャラ section lists the tags whose 種別 matches.
         // They ARE tags (type:'tag'), so picking one adds an ordinary tag filter —
         // the kind only scopes which tags this flyout offers.
-        const cnt = facetTagCounts();
+        const cnt = facetCounts(p => p.tags);
         return [...new Set(allPosts.flatMap(p => p.tags || []))]
           .filter(t => tagKindOf(t) === cat)
-          .map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0 }))
+          .map(t => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0, facetDim: true }))
           // Facet order: values present in the current results first (count desc),
           // absent ones sink to the bottom (greyed but still pickable).
           .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja'));
@@ -875,8 +887,8 @@
       case 'tag': {
         // Include tags from all posts (incl. imported url-less images), not just SNS posts.
         // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
-        const cnt = facetTagCounts();
-        const item = (t) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0 });
+        const cnt = facetCounts(p => p.tags);
+        const item = (t) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
         // Within a list/group, present values (count desc) precede absent ones.
         const byCount = (a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
         const allTags = [...new Set(allPosts.flatMap(p => p.tags || []))].filter(t => !tagKindOf(t)).sort();
@@ -907,20 +919,29 @@
         return out;
       }
       case 'hashtag': {
+        const cnt = facetCounts(p => p.hashtags);
         const counts = {};
         allPosts.forEach(p => (p.hashtags || []).forEach(h => { counts[h] = (counts[h] || 0) + 1; }));
-        return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(h => ({ v: h, l: '#' + h, on: act('hashtag', h) }));
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a])
+          .map(h => ({ v: h, l: '#' + h, on: act('hashtag', h), count: cnt.get(h) || 0, facetDim: true }))
+          .sort((a, b) => b.count - a.count);
       }
-      case 'user': return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
-        .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key) }));
+      case 'user': {
+        const cnt = facetCounts(p => userKey(p));
+        return buildUsers().sort((a, b) => b.count - a.count).slice(0, 100)
+          .map(u => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key), count: cnt.get(u.key) || 0, facetDim: true }))
+          .sort((a, b) => b.count - a.count || (a.l || '').localeCompare(b.l || '', 'ja'));
+      }
       case 'instance': {
+        const cnt = facetCounts(p => (p.platform === 'misskey' || p.platform === 'mastodon') ? hostOf(p.url) : null);
         const hosts = new Map();
         for (const p of allPosts) {
           if (p.platform !== 'misskey' && p.platform !== 'mastodon') continue;
           const h = hostOf(p.url);
           if (h) hosts.set(h, (hosts.get(h) || 0) + 1);
         }
-        return [...hosts.keys()].sort().map(h => ({ v: h, l: h, on: act('instance', h) }));
+        return [...hosts.keys()].sort().map(h => ({ v: h, l: h, on: act('instance', h), count: cnt.get(h) || 0, facetDim: true }))
+          .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l));
       }
       default: return [];
     }
@@ -933,21 +954,23 @@
       // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the
       // shared category dot so the poster-tag flyout isn't flattened (作品=紫/キャラ=緑).
       const kindDot = it.kind ? `<span class="tk-dot tk-${it.kind}" title="${escapeAttr(kindLabel(it.kind))}"></span>` : '';
-      // Facet count (work/character/タグ): matches in the current results. 0 → greyed
-      // (`off`) yet still pickable. Categories without facet counts omit the badge.
+      // Facet count: matches in the current results. On a facetDim list (tags / user /
+      // hashtag / instance) a 0 is greyed (`off`) yet still pickable; fixed short lists
+      // (platform / postType / media) show the badge but keep their order, no greying.
       const cnt = (it.count != null) ? `<span class="fm-count">${it.count}</span>` : '';
-      const off = (it.count === 0) ? ' off' : '';
+      const off = (it.facetDim && it.count === 0) ? ' off' : '';
       return `<div class="fm-row${it.sub ? ' fm-sub' : ''}${off}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${cnt}${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
     };
-    // On a FLAT facet list, drop one divider where present (count>0) gives way to
+    // On a FLAT facetDim list, drop one divider where present (count>0) gives way to
     // absent (count=0) — the natural border between "the results have these" and
-    // "they don't". Grouped tag lists rely on their group headings, so skip it there.
+    // "they don't". Grouped tag lists rely on their group headings, and fixed lists
+    // (no facetDim) keep their order, so neither gets a divider.
     const hasGhead = items.some(it => it.ghead != null);
     let listHtml = '';
     let sawPresent = false, dividerDone = false;
     for (const it of items) {
-      if (!hasGhead && !dividerDone && it.count === 0 && sawPresent) { listHtml += '<div class="qf-div"></div>'; dividerDone = true; }
-      if (it.count > 0) sawPresent = true;
+      if (!hasGhead && !dividerDone && it.facetDim && it.count === 0 && sawPresent) { listHtml += '<div class="qf-div"></div>'; dividerDone = true; }
+      if (it.facetDim && it.count > 0) sawPresent = true;
       listHtml += rowOf(it);
     }
     // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
