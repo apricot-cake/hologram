@@ -448,7 +448,7 @@ ipcMain.handle('set-tag-groups', (_e, groups) => {
   if (!folder || !Array.isArray(groups)) return { ok: false };
   try {
     fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(path.join(folder, 'tag-groups.json'), JSON.stringify({ groups }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'tag-groups.json'), { groups });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -481,7 +481,7 @@ ipcMain.handle('set-tag-types', (_e, types, labels) => {
     fs.mkdirSync(folder, { recursive: true });
     const out = { types };
     if (labels && typeof labels === 'object') out.labels = labels;
-    fs.writeFileSync(path.join(folder, 'tag-types.json'), JSON.stringify(out, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'tag-types.json'), out);
     return { ok: true };
   } catch {
     return { ok: false };
@@ -505,8 +505,8 @@ ipcMain.handle('set-ungrouped', (_e, keys) => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false };
   try {
-    fs.writeFileSync(path.join(folder, 'ungrouped.json'),
-      JSON.stringify({ keys: Array.isArray(keys) ? keys.map(String) : [] }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'ungrouped.json'),
+      { keys: Array.isArray(keys) ? keys.map(String) : [] });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -532,8 +532,7 @@ ipcMain.handle('set-poster-folders', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
   try {
-    fs.writeFileSync(path.join(folder, 'poster-folders.json'),
-      JSON.stringify({ folders: data.folders }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'poster-folders.json'), { folders: data.folders });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -557,8 +556,7 @@ ipcMain.handle('set-poster-tags', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
   try {
-    fs.writeFileSync(path.join(folder, 'poster-tags.json'),
-      JSON.stringify({ tags: data.tags }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'poster-tags.json'), { tags: data.tags });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -583,7 +581,7 @@ ipcMain.handle('set-manual-groups', (_e, groups) => {
   if (!folder) return { ok: false };
   try {
     const clean = Array.isArray(groups) ? groups.filter((g) => Array.isArray(g) && g.length > 1).map((g) => g.map(String)) : [];
-    fs.writeFileSync(path.join(folder, 'manual-groups.json'), JSON.stringify({ groups: clean }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'manual-groups.json'), { groups: clean });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -619,7 +617,7 @@ ipcMain.handle('set-folders', (_e, data) => {
       .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
     const workspace = (data && Array.isArray(data.workspace)) ? [...new Set(data.workspace.map(String))] : [];
     const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
-    fs.writeFileSync(path.join(folder, 'folders.json'), JSON.stringify({ folders, workspace, posterWorkspace }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'folders.json'), { folders, workspace, posterWorkspace });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -680,7 +678,7 @@ ipcMain.handle('get-collections', () => {
   // 2) migrate a legacy folders.json once, write collections.json, delete folders.json
   const migrated = migrateFoldersToCollections(folder);
   if (!migrated) return empty;
-  try { fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify(migrated, null, 2), 'utf8'); } catch { return migrated; }
+  try { writeJsonAtomicSync(path.join(folder, 'collections.json'), migrated); } catch { return migrated; }
   try { fs.unlinkSync(path.join(folder, 'folders.json')); } catch { /* best-effort */ }
   return migrated;
 });
@@ -693,7 +691,7 @@ ipcMain.handle('set-collections', (_e, data) => {
     const activeId = (data && typeof data.activeId === 'string' && ids.has(data.activeId)) ? data.activeId : null;
     const clip = (data && Array.isArray(data.clip)) ? [...new Set(data.clip.map(String))] : [];
     const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
-    fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify({ collections, activeId, clip, posterWorkspace }, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'collections.json'), { collections, activeId, clip, posterWorkspace });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -716,7 +714,7 @@ ipcMain.handle('set-tabs', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false };
   try {
-    fs.writeFileSync(path.join(folder, 'tabs.json'), JSON.stringify(data, null, 2), 'utf8');
+    writeJsonAtomicSync(path.join(folder, 'tabs.json'), data);
     return { ok: true };
   } catch { return { ok: false }; }
 });
@@ -805,6 +803,21 @@ async function writeSidecarAtomic(jsonPath, rec) {
   const tmp = `${jsonPath}.tmp`;
   await fs.promises.writeFile(tmp, JSON.stringify(rec, null, 2), 'utf8');
   await fs.promises.rename(tmp, jsonPath);
+}
+
+// Synchronous sibling of writeSidecarAtomic for the app-internal organization
+// JSON (collections / tags / groups / folders / …). Same crash-safety reason: a
+// non-atomic in-place writeFileSync caught mid-write by a crash/power loss leaves
+// a torn or zero-byte file, whose next get-* read JSON.parse-throws and returns an
+// empty default. The renderer adopts that empty as authoritative and the next edit
+// persist()s it back — permanently losing the organization layer (re-created from
+// nothing, unlike write-once images/sidecars). tmp+rename means a reader only ever
+// sees the complete old or complete new file. The .tmp suffix is invisible to the
+// watcher (its regex matches only image/json, not .tmp).
+function writeJsonAtomicSync(filePath, value) {
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
 }
 
 // Recover the captureId base from a filename. The argument may be the primary

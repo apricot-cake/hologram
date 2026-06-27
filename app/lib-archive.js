@@ -229,6 +229,16 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     } catch { skipped++; }
   }
   const readCur = (file) => { try { return JSON.parse(fs.readFileSync(path.join(destFolder, file), 'utf8')); } catch { return {}; } };
+  // Atomic tmp+rename for the merged organization JSON: a crash mid-merge must not
+  // leave a torn/zero-byte collections.json (etc.) that the app then reads as empty
+  // and persists over — losing the live organization layer. Mirrors the capture
+  // write above; the .tmp-import suffix is invisible to the folder watcher.
+  const writeOrgAtomic = async (file, value) => {
+    const target = path.join(destFolder, file);
+    const tmp = target + '.tmp-import';
+    await fs.promises.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
+    await fs.promises.rename(tmp, target);
+  };
   for (const name of ORG_MERGE) {
     if (!orgEntries[name]) continue;
     let inc = {};
@@ -237,11 +247,11 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
       // Legacy export: fold its folders into collections.json (don't resurrect the
       // retired folders.json on a migrated library).
       const merged = mergeCollections(readCur('collections.json'), foldersToCollections(inc));
-      try { fs.writeFileSync(path.join(destFolder, 'collections.json'), JSON.stringify(merged, null, 2), 'utf8'); } catch { /* ignore */ }
+      try { await writeOrgAtomic('collections.json', merged); } catch { /* ignore */ }
       continue;
     }
     const merged = MERGERS[name](readCur(name), inc);
-    try { fs.writeFileSync(path.join(destFolder, name), JSON.stringify(merged, null, 2), 'utf8'); } catch { /* ignore */ }
+    try { await writeOrgAtomic(name, merged); } catch { /* ignore */ }
   }
   return { ok: true, imported, skipped };
 }
