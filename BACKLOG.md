@@ -68,9 +68,16 @@
 - **クエリビルダーがアドレスバーに見える＝初見が「クリックして入力」を試す（未決・要判断／2026-06-21 提起）**: 初見の人はクエリビルダー帯をブラウザのアドレスバーと誤認し、クリック→テキスト入力を試す。対応の二択（ユーザー提起・**僕の意見＋ユーザー判断待ち**）: **(a)** 「ここには直接入力できません／フィルタは◯◯から」のヒントを出す（軽い・現行のフィルタ追加導線へ誘導）／ **(b)** ブラウザ風に**テキスト入力＋候補サジェストで直接フィルタを投入**できるようにする（誤認を機能に変える＝アドレスバー的オムニ入力。既存 `queryTree`/`addFilter` に乗せる）。bは「検索バーの対象コントロール（詳細検索画面）」「コマンドパレット」「本文の全文検索」と接近＝設計を寄せられるか。次セッションで方針決め。
 - **ビュー/レイアウト切替のモード表示＋スライド（着手途中・2026-06-27／次セッション）**: ①**ビューセグメントのアクティブをアイコン（グリフ）に戻す**＝前回「アクティブはラベルのみ・アイコン非表示・font-size 10.5px・ellipsis」にした index.html `.browse-toggle button.active *` 周辺の CSS を撤回し、全状態アイコン表示（`.view-toggle` 既定）に。②**現在のビュー/レイアウト名を見出しに併記**＝「ビュー · ライブラリ」「レイアウト · カード」（**ユーザー選択済み**）。`sbViewTitle`/`sbLayoutTitle`/`sbPosterLayoutTitle` を `setBrowseMode`／density 切替ハンドラで動的更新（モード名 i18n は `browsePosts/Posters/Collections`・`viewCard/Tile/List` が既存・viewer.js setText 420-428）。③**レイアウトセグメント（`densityToggle`/`posterDensityToggle`）のつまみスライドが効かない**＝`startViewTransition(() => renderPosts())` がつまみ(.vt-thumb)を巻き込んでスライドを飲んでいる疑い（要 CDP 確認。ビュー側の body-class 測定タイミング問題 commit f15ad13 とは別原因）。④これらはパフォーマンス調査と同じ UI 操作系なので、調査のついでに UltraCode で一緒に拾ってもよい。
 
-## パフォーマンス（UI操作・次セッションで UltraCode 調査）
+## パフォーマンス（UI操作）
 
-- **UI操作のパフォーマンス体系調査（未着手）**: ビュー/レイアウト切替・フィルタ・スクロール・カード描画（~9000枚）の重さを多角的に計測しボトルネックを特定・改善する。**出発点（このセッションの知見）**: ①ビュー/レイアウト切替は描画（renderPosts/Posters/Collections）が同期で走り重く、楽観的UI（描画を `setTimeout 0` でペイント後へ逃がす・commit 1c0df4b）で切替の体感は改善済み。②開発中の `reloadIgnoringCache` 反復でレンダラ/GPUリソースが蓄積し激重（アイドル 2fps）化＝再起動でクリア（リスナ累積ではなく蓄積系）。dev限定だが根本（オブザーバ/リスナ/GPUレイヤの累積要因）は未調査。③ビュー切替つまみの測定タイミング（body class 変更でサイドバー幅が変わる前に測っていた）は修正済み（f15ad13）。**調査対象（候補）**: 大規模グリッドのカード描画/スクロール、フィルタ/検索の再描画コスト、backdrop-filter（`#glassRefract`）の合成負荷、ResizeObserver/イベントリスナの登録状況、レイアウトスラッシング、GPU/メモリの蓄積、楽観的UI の他箇所への展開余地。**やり方**: UltraCode（多エージェント）で 計測（CDP の fps/Performance・レイアウト回数）→ボトルネック特定→改善案を並行調査。
+2026-06-27 に UltraCode 多エージェント監査を実施（renderer 描画＋main I/O を7レンズ・発見→敵対的検証→網羅性クリティック）。確定した残課題を効き順に。**実ライブラリは99.6%が無タグ Eagle 移行・投稿者は数十件**なので、投稿者/コレクション系の窓無し描画や多くのメモ化欠如は現スケールでは体感に出ない（将来 SNS 主体化で効く構造負債）。
+
+- **card(masonry) の仮想化（medium・最優先の構造課題）**: スクロール追記で古いカードを DOM から外さず（`moreObserver`→`renderLimit += 150` のみ・viewer.js:3061）、かつ masonry だけ `content-visibility:auto` を `visible` で打ち消す（列パックの offsetHeight 実測のため・index.html:808）。深スクロールで滞留カードのペイント/再パックが線形劣化（tile/list は auto が効くので軽い＝「タイルに切替で軽くなる」体感の根拠）。対策案＝学習済みアスペクトで `contain-intrinsic-size` を与え auto 維持、または古いページの DOM 刈り取り/プレースホルダ化。**masonry のパッキングが offsetHeight 実測依存なので回帰リスク高＝実機プロファイル必須。**
+- **fs.watch デルタの差分描画（medium）**: 閲覧中の新着1件でも表示中カード全体を innerHTML 再構築（loadPosts:2529 の無条件 `_allPostsGeneration++` で card-grow fast-path が必ず外れ、3206 のフル再構築に落ちる）。一覧チラつき＋サムネ再要求（getThumbnail のプール/キャッシュで緩和済みだが再構築自体は残る）。正しい差分挿入はソート位置＋URLグループ統合＋masonry 再パックを要し非自明＝設計必要。main 側 400ms デバウンスで頻度は抑制済み。
+- **main 側 I/O（gaps）**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・main.js:251）＝初回ペイント前に同期ブロック。フィールドのスリム化/チャンク化の余地。②psimg の原寸（?w= 無し）を `fs.readFile` で全バッファ（main.js:366）＝`stream:true` 特権があるのに非ストリーム。大判の連続オープンで GC 圧。
+- **タグ編集の波及**: 単一タグの付け外しでも renderPosts(true) 全再描画（viewer.js:3871）＝フィルタ無関係でも全リスト再評価。更新対象ごとに allPosts.findIndex の O(records×7600) 線形探索（viewer.js:3864/1576・既存 `_postsById` Map:2508 未活用）。
+- **low 群（generation キャッシュ idiom の横展開で消せる衛生案件・現状は体感薄）**: textHaystack の反復 toLowerCase（2550）、buildSuggest のタグ集計未キャッシュ（5616）、getFilteredPosts 前段 filter、date 述語の境界 Date 再生成、snapshotState 二重直列化、lightbox の decode/隣接プリロード欠如（3393）、pf-badge の backdrop-filter（index.html:871）。
+- **dev限定（未調査）**: 開発中の `reloadIgnoringCache` 反復でレンダラ/GPU リソースが蓄積し激重化（アイドル 2fps）＝再起動でクリア。リスナ累積でなく蓄積系。根本要因（オブザーバ/GPU レイヤ）未特定。
 
 ## リリース準備
 - **配布パッケージング**（electron-builder, win/nsis）
