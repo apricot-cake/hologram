@@ -4639,11 +4639,17 @@
     posterReturn = null;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
     document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    // Toggle the body class (shows/hides postsToolbar etc.) BEFORE measuring the thumb:
+    // switching to/from posters changes which toolbars are visible, which changes the
+    // sidebar width (scrollbar appears/disappears) and thus the toggle's button geometry.
+    // Measuring first set the thumb to the OLD width/left, then a ResizeObserver re-measure
+    // made it JUMP — the slide looked broken (user: ライブラリ/コレクション→投稿者). Measure
+    // after the layout change so the thumb slides once to the correct final spot.
+    document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
+    document.body.classList.toggle('browse-collections', mode === 'collections');
     const _t = document.querySelector('#browseToggle .vt-thumb');
     positionViewThumb(document.getElementById('browseToggle'));
     if (_t && !(opts && opts.silent) && !prefersReducedMotion()) { _t.classList.remove('vt-sliding'); void _t.offsetWidth; _t.classList.add('vt-sliding'); }
-    document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
-    document.body.classList.toggle('browse-collections', mode === 'collections');
     closeDetail();   // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
