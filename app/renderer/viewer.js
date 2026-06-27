@@ -25,6 +25,8 @@
     tagSelected: _s('tagSelected'),
     folderSelected: _s('folderSelected'),
     tagSelectedTitle: _s('tagSelectedTitle'),
+    sbViewTitle: _s('sbViewTitle'),
+    sbLayoutTitle: _s('sbLayoutTitle'),
     sbSearchTitle: _s('sbSearchTitle'),
     sbSortTitle: _s('sbSortTitle'),
     tipTagCycle: _s('tipTagCycle'),
@@ -510,6 +512,9 @@
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment labels are
   // set on its two options in the wiring block below (syncSearchToggle reflects state).
+  setText('sbViewTitle', MSG.sbViewTitle);
+  setText('sbLayoutTitle', MSG.sbLayoutTitle);
+  setText('sbPosterLayoutTitle', MSG.sbLayoutTitle);
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
   // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
