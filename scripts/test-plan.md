@@ -72,7 +72,7 @@ python scripts/verify-store.py --recent N
 | A-1o | ドラッグ: アバター/バナー★ | プロフィールのバナー等 | ドロップゾーンが出ない（捏造レコードなし） |
 
 **X 固有の確認**: ページ実データと照合（displayName, text, date, likes, reposts, replies, userId）
-★ = 2026-06-11 監査修正の検証ポイント（docs/acquisition-audit-2026-06-11.md）
+★ = 2026-06-11 取得監査で修正した項目の検証ポイント
 
 ### A-2. Bluesky
 
