@@ -77,6 +77,17 @@
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件・現状は体感薄）**: textHaystack の反復 toLowerCase（2550）、buildSuggest のタグ集計未キャッシュ（5616）、getFilteredPosts 前段 filter、date 述語の境界 Date 再生成、snapshotState 二重直列化、lightbox の decode/隣接プリロード欠如（3393）、pf-badge の backdrop-filter（index.html:871）。
 - **dev限定（未調査）**: 開発中の `reloadIgnoringCache` 反復でレンダラ/GPU リソースが蓄積し激重化（アイドル 2fps）＝再起動でクリア。リスナ累積でなく蓄積系。根本要因（オブザーバ/GPU レイヤ）未特定。
 
+## セキュリティ（監査 2026-06-27）
+
+2026-06-27 に UltraCode 多エージェント・セキュリティ監査を実施（攻撃面6レンズ＝Electron main／renderer XSS／native host／拡張／データ・アーカイブ／秘密・デプロイ → 発見26件 → 独立懐疑エージェントの敵対的検証 → 網羅性クリティック・37エージェント）。**総評＝既に高水準でハードニング済み**（制限的CSP `script-src 'self'`・contextIsolation+sandbox+nodeIntegration:false・SSRFガード・captureId allow-list・JPEGマジックバイト検査・zip-slip 二重ガード）で、確定5件中**実害があるのは H-1 のみ**。22件は「ガードが正しく効いている」裏取りで棄却。確定分を効き順に。
+
+- **【High・最優先】SSRFガードのバイパス: 16進形式の IPv4-mapped IPv6 が私的レンジ検査をすり抜ける**（`native-host/media-download.js:61-83`）: `isPrivateIp` の mapped 検出はドット10進（`(\d{1,3}\.){3}\d{1,3}`）専用だが、`checkMediaUrl` が読む `new URL().hostname` を WHATWG パーサが16進（`::ffff:7f00:1`）へ正規化するため正規表現に不一致＝`::ffff:0:0/96` 全域で私的判定が無効化。`https://[::ffff:169.254.169.254]/...`（クラウドメタデータ）・`[::ffff:127.0.0.1]`（ループバック）・`[::ffff:192.168.x.x]`（RFC1918）が ALLOWED になるのを**自環境で再現確認済み**。敵対SNSページ／任意 Misskey・Mastodon インスタンスのメタdata から、capture・import-posts・`backfill-metadata.js` 経由でブラインドSSRF到達。**修正案**＝family6 の `::ffff:x:x`（16進mapped）を検出して埋め込みv4を復元し `isPrivateIPv4` を適用。`scripts/test-bridge-ssrf.js` に mapped 形式の回帰テストを追加（既存は `[::1]`/`[fe80::1]`/`[fc00::1]` は網羅、mapped 未テスト）。
+- **【Low】ナビゲーションロックダウン未設置**（`app/main.js:1498-1544`）: `will-navigate`／`setWindowOpenHandler`／`web-contents-created` 未設置、かつグローバルな `dragover`/`drop` の preventDefault なし。ローカル `.html` をウィンドウにドロップするとトップフレームがその `file://` へ遷移し、同一 preload を継承して `window.corpus.clearAll()`/`importComplete()` 等の破壊的IPCを実行可能。**修正案**＝`web-contents-created` で遷移拒否＋`setWindowOpenHandler({action:'deny'})`＋グローバル drop 抑止（外部オープンは既存 `open-external` IPC に集約）。将来クリック可能な攻撃者制御 href が混入した際の増幅器化も防ぐ。
+- **【Low】complete-import の zip爆弾／非有界展開**（`app/lib-archive.js:204-230`）: `importCompleteZip` はエントリ毎/合計の展開サイズ・エントリ数に上限なし。悪意ある `corpus-export.zip`（マシン間共有を明示想定）でメインプロセスのメモリ枯渇。**修正案**＝展開前に `uncompressedSize` 合計・エントリ数を上限チェック、大エントリはバイト上限付きでストリーム書き出し。
+- **【Low・脅威モデル次第】SSRFガードがホスト名を解決しない（DNSリバインディング／攻撃者ドメイン→私的IP）**（`native-host/media-download.js:76-88`）: コード内コメント（41-45行）で明記された**意図的な受容リスク**。ブラックリスト外のホスト名は解決せず通過する（ただし content-type 制約でブラインド）。脅威モデル上閉じるなら解決アドレスの public 検証＋接続ピン留め。許容なら現状維持（H-1 修正で最も直接的なIPリテラル経路は塞がる）。
+- **【予防・任意】`.gitignore` に秘密ファイル除外を追加**: 現状コミット済み秘密はなし（署名 `.pem`・config は設計上リポ外 `~/.corpus`）だが、`*.pem`/`*.key`/`.env`/`config.json` をトリップワイヤとして追加し将来の人的ミスを防ぐ。
+- **確認済み・修正不要（再調査しない＝ガードが効いている裏取り）**: zip-slip（`isSafeEntryName`+`isWithin` 二重ガード）／captureId トラバーサル（`SAFE_ID`）／プロトタイプ汚染（`JSON.parse` は own プロパティのみ・脆弱なマージシンクなし）／trash の未エスケープ `<img src>`（CSP で script 不発・表示崩れ止まり）／Referer ヘッダ注入（undici が CRLF を TypeError 拒否）／native message 長さ無制限（Chrome の allowed_origins＋~1MB 上限）／onMessage の sender 未検証（`externally_connectable` なし＝Web から到達不能）／install・restart スクリプト（固定・非汚染パス・argv 配列・`process.execPath`・非昇格）／サイドカーのパスフィールド（`image`/`media[].file`/`avatarFile` は fs/protocol 使用前に常に `path.basename`＋フォルダ内 resolve 検査）／open-external（`/^https?:\/\//i` allowlist）／サプライチェーン（Electron は実行時 npm 依存ゼロ・native host は Node 標準のみ・lockfile ピン留め）。
+
 ## リリース準備
 - **配布パッケージング**（electron-builder, win/nsis）
 - アプリ初回起動時に**拡張インストールのガイド**（ストア公開後）。未インストール/未接続を検知して案内。
