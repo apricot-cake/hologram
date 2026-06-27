@@ -1573,8 +1573,8 @@
   async function applyTagUndo(records) {
     for (const r of records) {
       try { await window.corpus.updateTags(r.image, r.tags); } catch { }
-      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
-      if (idx >= 0) allPosts[idx].tags = r.tags.slice();
+      const rec = _postsById.get(r.captureId);   // O(1) via the delta-cache map (allPosts holds the same record refs)
+      if (rec) rec.tags = r.tags.slice();
     }
     markPostsMutated();
     renderPosts(true);
@@ -3771,10 +3771,9 @@
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try { await window.corpus.deletePost(r.image || r.video); } catch { /* keep going */ }
-      const idx = allPosts.findIndex(p => p.captureId === r.captureId);
-      if (idx >= 0) allPosts.splice(idx, 1);
-      _postsById.delete(r.captureId);   // keep the delta cache in sync with the optimistic removal
+      _postsById.delete(r.captureId);   // optimistic removal from the delta cache
     }
+    allPosts = [..._postsById.values()];   // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
     markPostsMutated();   // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders();   // 削除した captureId をフォルダから即時掃除
@@ -3913,8 +3912,8 @@
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try { await window.corpus.updateTags(r.image || r.video, next); } catch { /* keep going */ }
-      const idx = allPosts.findIndex((p) => p.captureId === r.captureId);
-      if (idx >= 0) allPosts[idx].tags = next.slice();
+      const rec = _postsById.get(r.captureId);   // O(1) lookup; allPosts shares the same record refs
+      if (rec) rec.tags = next.slice();
       undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next });
     }
     if (!undoRecords.length) return;
@@ -4073,8 +4072,8 @@
       if (prev.includes(tag)) continue;
       const newTags = [...prev, tag];
       try { await window.corpus.updateTags(r.image || r.video, newTags); } catch { /* keep going */ }
-      const idx = allPosts.findIndex((p) => p.captureId === r.captureId);
-      if (idx >= 0) allPosts[idx].tags = newTags.slice();
+      const rec = _postsById.get(r.captureId);   // O(1) lookup; allPosts shares the same record refs
+      if (rec) rec.tags = newTags.slice();
       undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags });
     }
     if (!undoRecords.length) return;   // all records already had it
@@ -4473,8 +4472,8 @@
     });
     for (const u of undoRecords) {
       try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
-      const idx = allPosts.findIndex(p => p.captureId === u.captureId);
-      if (idx >= 0) allPosts[idx].tags = u.newTags.slice();
+      const rec = _postsById.get(u.captureId);   // O(1) lookup; allPosts shares the same record refs
+      if (rec) rec.tags = u.newTags.slice();
     }
     pushUndo('tags', undoRecords);
     markPostsMutated();
