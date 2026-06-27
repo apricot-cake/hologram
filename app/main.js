@@ -790,6 +790,23 @@ function resolveInFolder(name) {
   return resolved.startsWith(path.resolve(folder)) ? resolved : null;
 }
 
+// Atomically rewrite a sidecar the watcher tracks: write a sibling .tmp, then
+// rename over the target so a reader only ever sees the complete old or complete
+// new file — never a half-written one. A non-atomic in-place writeFile can be
+// caught mid-write by listPostsDelta -> postIndex.applyChanges (fired by the
+// fs.watch event): JSON.parse throws, the record reads as null, and the prior
+// record's captureId is pushed to `removed`. The renderer then drops it from
+// _postsById and reconcileFolders() PERMANENTLY purges that captureId from
+// collections.json membership and the clip set. The card reappears on the next
+// watch event but its collection/clip membership is gone for good. The .tmp
+// suffix is invisible to the watcher (its regex only matches jpe?g|jfif|png|
+// webp|gif|json). Mirrors lib-index's writeSnapshot.
+async function writeSidecarAtomic(jsonPath, rec) {
+  const tmp = `${jsonPath}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(rec, null, 2), 'utf8');
+  await fs.promises.rename(tmp, jsonPath);
+}
+
 // Recover the captureId base from a filename. The argument may be the primary
 // image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
 // or the video itself. Strip the -poster marker first, then any extension.
@@ -912,12 +929,15 @@ ipcMain.handle('restore-post', async (_e, image) => {
       try { await fs.promises.rename(path.join(trashDir, f), path.join(folder, f)); } catch { }
     }
   }
-  // Remove trashedAt from the restored sidecar.
+  // Remove trashedAt from the restored sidecar. The file is already back in the
+  // watched folder, so rewrite it atomically (tmp+rename) — an in-place write
+  // could be caught mid-write by the watcher and cost this post its collection/
+  // clip membership (see writeSidecarAtomic).
   const jsonPath = path.join(folder, `${base}.json`);
   try {
     const r = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
     delete r.trashedAt;
-    await fs.promises.writeFile(jsonPath, JSON.stringify(r, null, 2), 'utf8');
+    await writeSidecarAtomic(jsonPath, r);
   } catch { }
   return { ok: true };
 });
@@ -961,7 +981,7 @@ ipcMain.handle('update-tags', async (_e, image, tags, patch) => {
       if ('tagReviewed' in patch) rec.tagReviewed = !!patch.tagReviewed;
     }
     rec.updatedAt = new Date().toISOString();        // record was modified in Corpus
-    await fs.promises.writeFile(jsonPath, JSON.stringify(rec, null, 2), 'utf8');
+    await writeSidecarAtomic(jsonPath, rec);          // tmp+rename: never expose a half-written sidecar to the watcher
     return { ok: true };
   } catch {
     return { ok: false };
