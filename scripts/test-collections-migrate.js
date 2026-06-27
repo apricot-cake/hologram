@@ -2,8 +2,8 @@
 
 // Verifies the one-time folders.json → collections.json migration (clean cutover):
 //  - each folder becomes a static collection with its id preserved
-//  - a non-empty workspace becomes one ACTIVE collection (activeId, 'c-' prefixed)
-//  - an empty workspace migrates to activeId = null (no phantom collection)
+//  - the legacy workspace tray is DROPPED (not migrated); clip starts empty []
+//  - activeId is always null (legacy key; the renderer never writes it)
 //  - posterWorkspace rides along
 //  - folders.json is DELETED after migration; collections.json is written
 //  - get-collections is idempotent (2nd call reads collections.json, no re-migrate)
@@ -30,14 +30,12 @@ const evalJs = `(async () => {
   const r1 = await window.corpus.getCollections();
   const r2 = await window.corpus.getCollections();   // idempotency: now reads collections.json
   const all = window.corpusFolders.all();
-  const active = r1.collections.find((c) => c.id === r1.activeId) || null;
   const legacy = await window.corpus.getFolders();    // folders.json deleted → empty
   return {
     collections: r1.collections.map((c) => ({ id: c.id, name: c.name, kind: c.kind, items: c.items.slice().sort() })),
     activeId: r1.activeId,
-    activeItems: active ? active.items.slice().sort() : null,
+    clip: (r1.clip || []).slice().sort(),
     allCount: all.length,
-    wsItems: window.corpusFolders.workspaceItems().slice().sort(),
     posterWorkspace: (r1.posterWorkspace || []).slice().sort(),
     idempotent: JSON.stringify(r1) === JSON.stringify(r2),
     legacyEmpty: (legacy.folders || []).length === 0 && (legacy.workspace || []).length === 0,
@@ -83,33 +81,35 @@ function runCase(captures, foldersJson) {
   const fail = (msg) => { pass = false; console.log('  FAIL: ' + msg); };
 
   // --- Case A: folders + non-empty workspace + posterWorkspace ---
+  // The workspace tray is DROPPED on migration (clip starts empty); only the two
+  // folders survive as static collections. posterWorkspace rides along.
   const a = await runCase(
     [{ id: 'cid0', art: 200, userId: '80000' }, { id: 'cid1', art: 201, userId: '80001' }, { id: 'cid2', art: 202, userId: '80002' }],
     { folders: [{ id: 'f-aaa', name: '資料A', items: ['cid0'] }, { id: 'f-bbb', name: '資料B', items: ['cid1', 'cid2'] }], workspace: ['cid2'], posterWorkspace: ['pixiv:80001'] }
   );
-  console.log('Case A (non-empty workspace):', JSON.stringify(a));
+  console.log('Case A (workspace dropped):', JSON.stringify(a));
   const fA = (id) => a.collections.find((c) => c.id === id);
   if (!fA('f-aaa') || JSON.stringify(fA('f-aaa').items) !== JSON.stringify(['cid0'])) fail('f-aaa not preserved with [cid0]');
   if (!fA('f-bbb') || JSON.stringify(fA('f-bbb').items) !== JSON.stringify(['cid1', 'cid2'])) fail('f-bbb not preserved with [cid1,cid2]');
-  if (!(a.collections || []).length || a.collections.length !== 3) fail('expected 3 collections (2 folders + active)');
-  if (!a.activeId || !String(a.activeId).startsWith('c-')) fail('activeId missing or not c- prefixed');
-  if (JSON.stringify(a.activeItems) !== JSON.stringify(['cid2'])) fail('active collection items != [cid2]');
-  if (a.allCount !== 2) fail('all() should exclude the active collection (expected 2)');
-  if (JSON.stringify(a.wsItems) !== JSON.stringify(['cid2'])) fail('workspaceItems() != [cid2]');
+  if ((a.collections || []).length !== 2) fail('expected 2 collections (workspace dropped, not migrated)');
+  if (a.activeId !== null) fail('activeId should be null (legacy key, never set)');
+  if (JSON.stringify(a.clip) !== JSON.stringify([])) fail('clip should start empty (workspace not migrated)');
+  if (a.allCount !== 2) fail('all() should list both folders (expected 2)');
   if (JSON.stringify(a.posterWorkspace) !== JSON.stringify(['pixiv:80001'])) fail('posterWorkspace not migrated');
   if (!a.idempotent) fail('get-collections not idempotent');
   if (!a.legacyEmpty) fail('getFolders() should be empty after migration');
   if (!a._foldersJsonGone) fail('folders.json should be deleted');
   if (!a._collectionsJsonExists) fail('collections.json should exist');
 
-  // --- Case B: empty workspace → activeId null ---
+  // --- Case B: single folder, no workspace / posterWorkspace → minimal migration ---
   const b = await runCase(
     [{ id: 'cid9', art: 300, userId: '90000' }],
     { folders: [{ id: 'f-x', name: '資料X', items: ['cid9'] }], workspace: [], posterWorkspace: [] }
   );
-  console.log('Case B (empty workspace):', JSON.stringify(b));
-  if ((b.collections || []).length !== 1) fail('B: expected 1 collection (folder only, no active)');
-  if (b.activeId !== null) fail('B: empty workspace should give activeId null');
+  console.log('Case B (folder only):', JSON.stringify(b));
+  if ((b.collections || []).length !== 1) fail('B: expected 1 collection (folder only)');
+  if (b.activeId !== null) fail('B: activeId should be null');
+  if (JSON.stringify(b.clip) !== JSON.stringify([])) fail('B: clip should be empty');
   if (b.allCount !== 1) fail('B: all() should be 1');
   if (!b._foldersJsonGone) fail('B: folders.json should be deleted');
 

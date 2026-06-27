@@ -1,12 +1,12 @@
 'use strict';
 
-// Verifies the post-view folder + workspace features (collections data model):
+// Verifies the post-view folder + clip features (collections data model):
 //  - create a folder via the shared management modal (no auto-default / no ★)
 //  - 📁 button opens a picker; clicking a folder row adds the card; chip counts + filters
-//  - collections.json persists { collections, activeId, posterWorkspace }
-//  - 🔖 workspace button one-click adds to the ACTIVE collection (filled), sidebar
-//    chip counts + filters, クリア empties it
-//  - the active collection is hidden from the folder manager (all() excludes it)
+//  - collections.json persists { collections, activeId, clip, posterWorkspace }
+//  - 📎 clip button one-click flags the card (library-wide ephemeral set), sidebar
+//    chip counts + filters, 空にする clears all flags
+//  - clip is NOT a collection: the folder manager still lists only the real folders
 // Seeds 3 standalone illustration records → 3 cards.
 //
 //   node scripts/test-app-folders.js
@@ -45,12 +45,11 @@ const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  // Folders moved to the sidebar flyout (data-qfrow="folder" → .qf-pop values);
-  // membership/counts come from the CF() API. Management opens from the flyout footer.
+  // Collections (= folders) live in the dedicated collection view (第3モード); the post
+  // sidebar no longer carries a folder flyout. Membership/counts come from the CF() API,
+  // management opens from the modal, and filtering is reached by drilling into a card.
   const folders = () => window.corpusFolders.all();
-  const openFolderFlyout = async () => { document.querySelector('#filterRows [data-qfrow="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(70); };
-  const folderRow = (id) => [...document.querySelectorAll('.qf-pop.show [data-qfval]')].find((r) => r.dataset.qfval === id);
-  const escKey = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  const waitForEl = async (sel, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const el = document.querySelector(sel); if (el) return el; await sleep(40); } return null; };
 
   await waitFor(() => grid.querySelectorAll('.post-card').length >= 3);
   const totalBefore = grid.querySelectorAll('.post-card').length;
@@ -64,8 +63,8 @@ const evalJs = `(async () => {
   const noStar = !document.querySelector('.iv-foldstar');  // default folder removed → no ★ anywhere
   click($('ivFolderClose')); await sleep(20);
 
-  // hover keeps the 🔖/ℹ/🏷 buttons — folder/delete/open/poster moved off the card
-  const hoverPair = !!grid.querySelector('.post-card .ws-btn') && !!grid.querySelector('.post-card .info-btn') &&
+  // hover keeps the 📎/ℹ/🏷 buttons — folder/delete/open/poster moved off the card
+  const hoverPair = !!grid.querySelector('.post-card .clip-btn') && !!grid.querySelector('.post-card .info-btn') &&
     !grid.querySelector('.post-card .fold-btn, .post-card .edit-btn, .post-card .delete-btn, .post-card .open-btn');
 
   // folders are reached via the card context menu: right-click → フォルダに追加 → picker row
@@ -77,49 +76,55 @@ const evalJs = `(async () => {
   click(document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop) .fm-row[data-fid]')); await sleep(50);
   const countText = String((folders()[0] || { items: [] }).items.length);   // the card joined the folder
 
-  // filter by the folder via the sidebar flyout → only the added card
-  await openFolderFlyout();
-  click(folderRow(folders()[0].id)); await sleep(60);
-  escKey(); await sleep(30);   // close the flyout
-  const filteredCount = grid.querySelectorAll('.post-card').length;
+  // filter by the folder: collections moved to the dedicated collection view (第3モード).
+  // Switch there, open the folder card → drills back into the post view with a folder
+  // filter showing only the added card.
+  click(document.querySelector('#browseToggle [data-mode="collections"]')); await sleep(150);
+  await waitFor(() => document.body.classList.contains('browse-collections'));
+  const collCard = await waitForEl('#collectionGrid .collection-card:not(.new)');
+  click(collCard); await sleep(160);
+  const filteredCount = grid.querySelectorAll('.post-card').length;   // only the added card
 
-  // persistence: collections.json { collections, activeId, posterWorkspace }, no defaultId
+  // persistence: collections.json { collections, activeId, clip, posterWorkspace }, no defaultId
   const rb = await window.corpus.getCollections();
   const f0 = rb.collections[0] || {};
-  const persistedFolders = rb.collections.length;          // only the folder yet (no active)
+  const persistedFolders = rb.collections.length;          // only the folder yet
   const persistedItems = Array.isArray(f0.items) ? f0.items.length : -1;
   const noDefaultId = !('defaultId' in rb);
   $('postResetBtn').click(); await sleep(50);
 
-  // === Workspace ===
-  // 🔖 one-click add card 1 → filled, sidebar count 1
-  const ws1 = grid.querySelector('.post-card[data-index="1"] .ws-btn');
-  click(ws1); await sleep(50);
-  const wsIn = ws1.classList.contains('in');
-  const wsCount = $('wsBadge').textContent;   // workspace count badge on the sidebar row
-  // filter to the workspace → only that card
-  click($('wsRow')); await sleep(60);
-  const wsFiltered = grid.querySelectorAll('.post-card').length;
-  const wsPill = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-workspace')].length === 1;
-  // persisted to collections.json as the ACTIVE collection (1 item)
+  // === Clip (library-wide ephemeral flag set — the 📎 tray) ===
+  // 📎 one-click flag card 1 → filled, sidebar count 1
+  const clip1 = grid.querySelector('.post-card[data-index="1"] .clip-btn');
+  click(clip1); await sleep(50);
+  const clipIn = clip1.classList.contains('in');
+  const clipCount = $('clipBadge').textContent;   // clip count badge on the sidebar row
+  // filter to clipped → only that card
+  click($('clipRow')); await sleep(60);
+  const clipFiltered = grid.querySelectorAll('.post-card').length;
+  const clipPill = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-clip')].length === 1;
+  // persisted to collections.json as the clip array (1 id), NOT a collection
   const rb2 = await window.corpus.getCollections();
-  const active2 = rb2.collections.find((c) => c.id === rb2.activeId);
-  const wsPersist = !!active2 && active2.items.length === 1;
-  // the active collection must NOT appear in the folder manager (all() hides it)
+  const clipPersist = Array.isArray(rb2.clip) && rb2.clip.length === 1;
+  // clip is NOT a collection: the folder manager still lists only the real folder
   window.corpusFolders.openManager(); await sleep(40);
   const mgrRows = document.querySelectorAll('#ivFolderList .iv-folder-row').length;
-  const activeHidden = mgrRows === window.corpusFolders.all().length && window.corpusFolders.all().length === 1;
+  const clipNotCollection = mgrRows === window.corpusFolders.all().length && window.corpusFolders.all().length === 1;
   click($('ivFolderClose')); await sleep(20);
-  // 空にする empties the tray (confirmed; stub the dialog here)
+  // 空にする clears all flags (the posts themselves are kept; stub the dialog here)
   $('postResetBtn').click(); await sleep(40);
   window.confirm = () => true;
-  click($('wsClear')); await sleep(60);
+  click($('clipClear')); await sleep(60);
+  // Cleared end-to-end: empty on disk, empty in the live clip set, and the sidebar badge
+  // no longer shows a positive count (its 'on' class is dropped at zero). The badge's raw
+  // text is not asserted — renderPosts() rebuilds the row to its blank template after the
+  // clear, so it settles to '' rather than '0'; both read as "no count" to the user.
   const rb3 = await window.corpus.getCollections();
-  const active3 = rb3.collections.find((c) => c.id === rb3.activeId);
-  const wsCleared = (!active3 || active3.items.length === 0) && $('wsBadge').textContent === '0';
+  const clipCleared = (rb3.clip || []).length === 0 && window.corpusFolders.clipCount() === 0 &&
+    !$('clipBadge').classList.contains('on');
 
   return { totalBefore, modalOpen, chips, noStar, hoverPair, ctxOpen, menuOpen, countText, filteredCount,
-    persistedFolders, persistedItems, noDefaultId, wsIn, wsCount, wsFiltered, wsPill, wsPersist, activeHidden, wsCleared };
+    persistedFolders, persistedItems, noDefaultId, clipIn, clipCount, clipFiltered, clipPill, clipPersist, clipNotCollection, clipCleared };
 })()`;
 
 const env = Object.assign({}, process.env, {
@@ -136,10 +141,10 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'hoverPair', 'ctxOpen', 'menuOpen', 'countText', 'filteredCount',
-    'persistedFolders', 'persistedItems', 'noDefaultId', 'wsIn', 'wsCount', 'wsFiltered', 'wsPill', 'wsPersist', 'activeHidden', 'wsCleared'];
+    'persistedFolders', 'persistedItems', 'noDefaultId', 'clipIn', 'clipCount', 'clipFiltered', 'clipPill', 'clipPersist', 'clipNotCollection', 'clipCleared'];
   const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, hoverPair: true, ctxOpen: true, menuOpen: true, countText: '1',
-    filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, wsIn: true, wsCount: '1',
-    wsFiltered: 1, wsPill: true, wsPersist: true, activeHidden: true, wsCleared: true };
+    filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, clipIn: true, clipCount: '1',
+    clipFiltered: 1, clipPill: true, clipPersist: true, clipNotCollection: true, clipCleared: true };
   const ok = keys.every((k) => r[k] === expect[k]);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'FOLDERS_TEST_PASS' : 'FOLDERS_TEST_FAIL');
