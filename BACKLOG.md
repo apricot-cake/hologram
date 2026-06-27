@@ -72,10 +72,10 @@
 
 2026-06-27 に UltraCode 多エージェント監査を実施（renderer 描画＋main I/O を7レンズ・発見→敵対的検証→網羅性クリティック）。確定した残課題を効き順に。**実ライブラリは99.6%が無タグ Eagle 移行・投稿者は数十件**なので、投稿者/コレクション系の窓無し描画や多くのメモ化欠如は現スケールでは体感に出ない（将来 SNS 主体化で効く構造負債）。
 
-- **card(masonry) の仮想化（medium・最優先の構造課題）**: スクロール追記で古いカードを DOM から外さず（`moreObserver`→`renderLimit += 150` のみ・viewer.js:3061）、かつ masonry だけ `content-visibility:auto` を `visible` で打ち消す（列パックの offsetHeight 実測のため・index.html:808）。深スクロールで滞留カードのペイント/再パックが線形劣化（tile/list は auto が効くので軽い＝「タイルに切替で軽くなる」体感の根拠）。対策案＝学習済みアスペクトで `contain-intrinsic-size` を与え auto 維持、または古いページの DOM 刈り取り/プレースホルダ化。**masonry のパッキングが offsetHeight 実測依存なので回帰リスク高＝実機プロファイル必須。**
 - **main 側 I/O（gaps）**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・main.js:251）＝初回ペイント前に同期ブロック。フィールドのスリム化/チャンク化の余地。②psimg の原寸（?w= 無し）を `fs.readFile` で全バッファ（main.js:366）＝`stream:true` 特権があるのに非ストリーム。大判の連続オープンで GC 圧。
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件・現状は体感薄）**: textHaystack の反復 toLowerCase（2550）、buildSuggest のタグ集計未キャッシュ（5616）、getFilteredPosts 前段 filter、date 述語の境界 Date 再生成、snapshotState 二重直列化、lightbox の decode/隣接プリロード欠如（3393）、pf-badge の backdrop-filter（index.html:871）。
 - **dev限定（未調査）**: 開発中の `reloadIgnoringCache` 反復でレンダラ/GPU リソースが蓄積し激重化（アイドル 2fps）＝再起動でクリア。リスナ累積でなく蓄積系。根本要因（オブザーバ/GPU レイヤ）未特定。
+- ⏸ **保留（再監査しない）**: card(masonry) の仮想化＝深スクロールでカードが溜まり線形劣化（viewer.js:3061 / index.html:808）。リスク>リターンで本実装は見送り（既定ビューの根幹・回帰リスク高／効果は中・体感は要測定）。やるなら「content-visibility:auto を当てて FPS と崩れを測る半日スパイク」から。
 
 ## セキュリティ（監査 2026-06-27）
 
