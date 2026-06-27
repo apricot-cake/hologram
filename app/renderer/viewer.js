@@ -4812,7 +4812,7 @@
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
   let posterTags = {};
-  // Poster browse filters (platform / tag / instance / folder / date範囲 / workspace) live
+  // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() { if (window.corpus.setPosterTags) window.corpus.setPosterTags({ tags: posterTags }).catch(() => { /* best-effort */ }); }
   function posterTagsOf(key) { const t = posterTags[key]; return Array.isArray(t) ? t : []; }
@@ -4849,7 +4849,7 @@
   }
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
-  // tag(作品/キャラ含む) / folder / date(範囲) / workspace. The bar lives in
+  // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
   // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
   function posterPredOf(f) {
     switch (f.type) {
@@ -4867,7 +4867,7 @@
     }
   }
   // Poster pill label: folder name + date dim are poster-specific; the rest (platform /
-  // instance / tag / workspace) reuse the shared filterLabel.
+  // instance / tag) reuse the shared filterLabel.
   function posterFilterLabel(f) {
     if (f.type === 'folder') { const fo = posterFolderById(f.value); return fo ? fo.name : f.value; }
     if (f.type === 'date') {
@@ -4903,7 +4903,7 @@
   // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the
   // 作品/キャラ/タグ/インスタンス rows only when posters actually carry such values
   // (段階的開示), prune selections that no longer have a backing value, then refresh
-  // every row badge + the workspace toggle state. The rows themselves are static HTML
+  // every row badge. The rows themselves are static HTML
   // in #posterFilterRows (stable flyout anchors); this only mutates text/visibility.
   function renderPosterFilterRows() {
     const vocab = posterFilterVocab();
@@ -4944,7 +4944,7 @@
   function filteredPosters() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     let list = namedPosters();
-    // Boolean query tree (platform / instance / tag / folder / date / workspace).
+    // Boolean query tree (platform / instance / tag / folder / date).
     const root = posterQB.getTree();
     if (root.children.length) list = list.filter((u) => posterQB.eval(u));
     // Search is kept OUT of the tree (same作法 as the post side).
@@ -5229,8 +5229,8 @@
       renderPosters();
     }); }
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
-  // flyout (poster-* categories); the date row opens the date popover; the workspace row
-  // is a toggle (no flyout). Selections live in the transient posterXxx state.
+  // flyout (poster-* categories); the date row opens the date popover.
+  // Selections live in the transient posterXxx state.
   document.getElementById('posterFilterRows').addEventListener('click', (e) => {
     const row = e.target.closest('[data-qfrow]');
     if (!row) return;
