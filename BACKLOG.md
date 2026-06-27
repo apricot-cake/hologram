@@ -73,15 +73,8 @@
 2026-06-27 に UltraCode 多エージェント監査を実施（renderer 描画＋main I/O を7レンズ・発見→敵対的検証→網羅性クリティック）。確定した残課題を効き順に。**実ライブラリは99.6%が無タグ Eagle 移行・投稿者は数十件**なので、投稿者/コレクション系の窓無し描画や多くのメモ化欠如は現スケールでは体感に出ない（将来 SNS 主体化で効く構造負債）。
 
 - **card(masonry) の仮想化（medium・最優先の構造課題）**: スクロール追記で古いカードを DOM から外さず（`moreObserver`→`renderLimit += 150` のみ・viewer.js:3061）、かつ masonry だけ `content-visibility:auto` を `visible` で打ち消す（列パックの offsetHeight 実測のため・index.html:808）。深スクロールで滞留カードのペイント/再パックが線形劣化（tile/list は auto が効くので軽い＝「タイルに切替で軽くなる」体感の根拠）。対策案＝学習済みアスペクトで `contain-intrinsic-size` を与え auto 維持、または古いページの DOM 刈り取り/プレースホルダ化。**masonry のパッキングが offsetHeight 実測依存なので回帰リスク高＝実機プロファイル必須。**
-- **fs.watch デルタの差分描画（medium・優先度↓＝サムネのプール＋immutableキャッシュ実装後は主症状ほぼ解消）**: 閲覧中の新着1件でも表示中カード全体を innerHTML 再構築（loadPosts:2529 の無条件 `_allPostsGeneration++` で canReuseGroups:3119/card-grow fast-path:3182 が必ず外れ、3206 のフル再構築に落ちる）。**現況**: getThumbnail のプール＋`immutable` キャッシュ（実装済み）で、再構築で `<img>` を作り直しても src は immutable キャッシュ済み＝protocol 往復も再デコードもほぼ起きず、チラつき/再デコードは大半解消。残るのは純 DOM チャーンの polish のみ。main 側 400ms デバウンスで頻度も抑制済み。
-  - **正攻法の設計（2026-06-27 調査済み）**: renderPosts のフル再構築を「**安定キーでのノード再利用リコンサイル**」に置換（全ビュー共通）。既存 `.post-card` をキーで引き当て再利用すれば `<img>` が破棄されず再デコード/チラつきが消える。masonry は layoutMasonry(3024) が既存 `.post-card` を列へ**移動**するだけなので、再利用ノードを渡せばそのまま列化できる（ノード作り直し不要）。
-  - **安定キー**: groupRecords(2419) の `g.key` は url/manual は安定だが `__soloN` は順序依存で不安定。solo は rep の captureId をキーにする＝`cardKey(g)=String(g.key).startsWith("__solo")?("cid:"+g.rep.captureId):g.key`。
-  - **data-index 結合**: カードは `data-index`（viewGroups 内位置）で参照される（インスペクタ ring 3323 ほか）。再利用ノードは data-index を新位置へ更新が必要。
-  - **内容更新検出（backfill＝avatar/engagement 上書き）**: ノードに content-sig（cardHtml が使う rep フィールドのハッシュ）を持たせ、変化したカードのみ再生成（その1枚だけ img リロード）。
-  - **好材料**: カードのイベントは postGrid への**委譲**（3332 ほか・`e.target.closest`）＝再利用ノードでもリスナ再バインド不要。
-  - **検証マトリクス（実機 CDP）**: 3ビュー × {新着が先頭/末尾・削除・in-place更新・グループ統合} × {浅い/深いスクロール}。img が再ロードしない（flicker 無し）・順序・件数を確認。
 - **main 側 I/O（gaps）**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・main.js:251）＝初回ペイント前に同期ブロック。フィールドのスリム化/チャンク化の余地。②psimg の原寸（?w= 無し）を `fs.readFile` で全バッファ（main.js:366）＝`stream:true` 特権があるのに非ストリーム。大判の連続オープンで GC 圧。
-- **タグ編集の波及**: 単一タグの付け外しでも renderPosts(true) 全再描画（viewer.js:3871）＝フィルタ無関係でも全リスト再評価。更新対象ごとに allPosts.findIndex の O(records×7600) 線形探索（viewer.js:3864/1576・既存 `_postsById` Map:2508 未活用）。
+- **タグ編集の波及**: 更新対象ごとに allPosts.findIndex の O(records×7600) 線形探索（viewer.js:3864/1576・既存 `_postsById` Map:2508 未活用）＝グループ一括/バルク編集で二乗的。なお renderPosts(true) の全再描画コスト自体はノード再利用リコンサイル実装後は緩和済み（変更カードのみ再生成）＝残るは findIndex の計算量。
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件・現状は体感薄）**: textHaystack の反復 toLowerCase（2550）、buildSuggest のタグ集計未キャッシュ（5616）、getFilteredPosts 前段 filter、date 述語の境界 Date 再生成、snapshotState 二重直列化、lightbox の decode/隣接プリロード欠如（3393）、pf-badge の backdrop-filter（index.html:871）。
 - **dev限定（未調査）**: 開発中の `reloadIgnoringCache` 反復でレンダラ/GPU リソースが蓄積し激重化（アイドル 2fps）＝再起動でクリア。リスナ累積でなく蓄積系。根本要因（オブザーバ/GPU レイヤ）未特定。
 

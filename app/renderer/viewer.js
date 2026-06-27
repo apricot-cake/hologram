@@ -3096,6 +3096,16 @@
   }
   window.addEventListener('resize', () => { if (currentView === 'card') scheduleMasonry(); }, { passive: true });
 
+  // Content fingerprint of a card's HTML, used by renderPosts to reuse an existing
+  // .post-card node when only its position changed. Strips the index-derived attrs
+  // (data-index/clip/info/tagedit all carry the slice index) so a pure reorder still
+  // matches; any real content change (image/stats/text/tags/selection) flips it.
+  function cardSig(html) {
+    const s = html.replace(/ data-(index|clip|info|tagedit)="\d+"/g, '');
+    let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
   function renderPosts(keepLimit) {
     if (!keepLimit) renderLimit = RENDER_PAGE;
     // View signature (filter/sort/search/view) — stable across this render, so
@@ -3188,9 +3198,11 @@
           rendered < viewGroups.length && renderLimit > rendered) {
         const cols = [...wrap.querySelectorAll('.mcol')];
         const upto = Math.min(renderLimit, viewGroups.length);
+        const htmls = viewGroups.slice(rendered, upto).map((g, k) => cardHtml(g, rendered + k));
         const frag = document.createElement('div');
-        frag.innerHTML = viewGroups.slice(rendered, upto).map((g, k) => cardHtml(g, rendered + k)).join('');
+        frag.innerHTML = htmls.join('');
         const newCards = [...frag.children];
+        newCards.forEach((c, k) => c.setAttribute('data-sig', cardSig(htmls[k])));   // tag for later reconcile reuse
         const colH = cols.map((c) => c.offsetHeight);   // current column heights
         cols[0].append(...newCards);                     // park to measure at column width
         const gap = 16, hs = newCards.map((c) => c.offsetHeight);
@@ -3206,8 +3218,43 @@
       }
     }
 
-    grid.innerHTML = viewGroups.slice(0, renderLimit).map(cardHtml).join('');
-    _lastRenderGen = _allPostsGeneration;   // mark the generation of this FULL build
+    // Keyed node-reuse reconcile (was a blunt grid.innerHTML= rebuild). Match existing
+    // .post-card nodes by their stable data-key (postIdKey of the group rep) and MOVE
+    // the unchanged ones into the new order instead of recreating them — each card's
+    // <img> survives, so an fs-watch delta (new capture / backfill) or a list/tile
+    // load-more no longer tears down + reloads every visible thumbnail (一覧チラつき).
+    // A card is parsed afresh only when its content changed (data-sig) or it's new.
+    {
+      const slice = viewGroups.slice(0, renderLimit);
+      const prev = new Map();
+      for (const n of grid.querySelectorAll('.post-card')) {
+        const k = n.getAttribute('data-key');
+        if (k !== null && !prev.has(k)) prev.set(k, n);
+      }
+      const parse = document.createElement('div');
+      const out = [];
+      for (let i = 0; i < slice.length; i++) {
+        const html = cardHtml(slice[i], i);
+        const sig = cardSig(html);
+        const key = slice[i].rep ? postIdKey(slice[i].rep) : null;
+        let node = (key != null) ? prev.get(key) : null;
+        if (node && node.getAttribute('data-sig') === sig) {
+          prev.delete(key);                 // reuse: only the position attrs may be stale
+          node.setAttribute('data-index', String(i));
+          const cb = node.querySelector('.clip-btn'); if (cb) cb.setAttribute('data-clip', String(i));
+          const ib = node.querySelector('.info-btn'); if (ib) ib.setAttribute('data-info', String(i));
+          const tb = node.querySelector('.tag-btn'); if (tb) tb.setAttribute('data-tagedit', String(i));
+        } else {
+          parse.innerHTML = html;
+          node = parse.firstElementChild;
+          node.setAttribute('data-sig', sig);
+          if (key != null) prev.delete(key);
+        }
+        out.push(node);
+      }
+      grid.replaceChildren(...out);          // unmatched old nodes drop out here
+    }
+    _lastRenderGen = _allPostsGeneration;   // mark the generation of this build
     _lastViewGroups = viewGroups; _lastStickySize = stickyRecs.size;   // snapshot for load-more group reuse
     function cardHtml(g, i) {
       const p = g.rep;
@@ -3316,7 +3363,9 @@
       });
     });
 
-    // Re-apply the inspected-card ring (innerHTML rebuilds drop the class)
+    // Re-apply the inspected-card ring. Reconcile can keep a stale ring on a reused
+    // node, so clear any existing one first, then mark the current inspected card.
+    grid.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
     if (inspectedKey) {
       const ii = viewGroups.findIndex((g2) => postIdKey(g2.rep) === inspectedKey);
       if (ii >= 0) {
