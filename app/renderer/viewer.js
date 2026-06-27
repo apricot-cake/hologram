@@ -4588,6 +4588,10 @@
   // View toggle
   // Slide the glass thumb to the active button using its measured geometry
   // (inline on the real .vt-thumb element — reliable + transitions).
+  // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
+  // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
+  // collapses rapid clicks to a single render.
+  let _browseRenderT = null, _densityRenderT = null, _posterDensityRenderT = null;
   function positionViewThumb(scope) {
     const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle');
     containers.forEach((vt) => {
@@ -4617,11 +4621,13 @@
       const _thumb = document.querySelector('#densityToggle .vt-thumb');
       if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
       window.corpus.setPref('viewMode', currentView);
-      if (document.startViewTransition && !prefersReducedMotion()) {
-        document.startViewTransition(() => renderPosts());
-      } else {
-        renderPosts();
-      }
+      // Optimistic UI: the thumb slides now; defer the (possibly heavy) layout re-render
+      // past a paint so the toggle feels instant.
+      clearTimeout(_densityRenderT);
+      _densityRenderT = setTimeout(() => {
+        if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
+        else renderPosts();
+      }, 0);
     });
   });
 
@@ -4640,7 +4646,13 @@
     document.body.classList.toggle('browse-collections', mode === 'collections');
     closeDetail();   // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
-    if (mode === 'posters') renderPosters(); else if (mode === 'collections') renderCollections(); else renderPosts();
+    // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
+    // was updated synchronously above; defer the heavy grid render past a paint so the
+    // switch shows INSTANTLY instead of blocking on renderPosts/Posters/Collections.
+    const render = () => { if (browseMode !== mode) return; if (mode === 'posters') renderPosters(); else if (mode === 'collections') renderCollections(); else renderPosts(); };
+    if (opts && opts.silent) { render(); return; }   // initial restore: render synchronously
+    clearTimeout(_browseRenderT);
+    _browseRenderT = setTimeout(render, 0);
   }
   document.querySelectorAll('#browseToggle button').forEach(btn => {
     btn.addEventListener('click', () => { if (btn.dataset.mode !== browseMode) setBrowseMode(btn.dataset.mode); });
@@ -4716,7 +4728,9 @@
       const _thumb = document.querySelector('#posterDensityToggle .vt-thumb');
       if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
       window.corpus.setPref('posterViewMode', posterView);
-      renderPosters();
+      // Optimistic UI: thumb slides now; defer the grid re-render past a paint.
+      clearTimeout(_posterDensityRenderT);
+      _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
     });
   });
   (function setupPosterSizeSlider() {
