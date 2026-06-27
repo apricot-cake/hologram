@@ -580,11 +580,20 @@
        (set in viewer.js). The glass thumb measures the active button. */
     /* Lives at the sidebar top (.browse-bar-section = a .sb-section). */
     .browse-bar-section { margin-bottom: 16px; }
-    .browse-toggle { width: fit-content; max-width: 100%; }
-    .browse-toggle button { flex: 0 0 auto; padding: 0 11px; gap: 7px; height: 30px; white-space: nowrap; }
+    /* Full-width like the other sidebar boxes (search / sort / density toggle): the
+       track spans the gutter and the 3 buttons split it evenly (flex:1 from .view-toggle).
+       Was width:fit-content = narrower than the boxes below it (user: 横幅が揃わない). */
+    .browse-toggle button { gap: 7px; white-space: nowrap; min-width: 0; }
+    /* Active = label only (hide its icon): "ライブラリ" is too long to sit beside the
+       icon in an even third of the full-width track (it ellipsised). Inactive stays
+       icon-only — the selected-is-text idiom (Bluesky/X profile tabs, per the markup). */
+    .browse-toggle button.active .vt-ico { display: none; }
+    .browse-toggle button.active .vt-label { overflow: hidden; text-overflow: ellipsis; }
     .browse-toggle .vt-ico { width: 15px; height: 15px; }
     .browse-toggle .vt-label { display: none; }
-    .browse-toggle button.active .vt-label { display: inline-block; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+    /* 10.5px so the longest label (コレクション = 6 full-width chars) fits an even third
+       of the full-width track without ellipsis (12.5px overflowed at 75px > 64px). */
+    .browse-toggle button.active .vt-label { display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
 
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
