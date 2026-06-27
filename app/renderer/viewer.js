@@ -3482,7 +3482,6 @@
     const res = CF().toggleClip(g.records.map((r) => r.captureId), g.rep.captureId);
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
-    if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
     renderClipRow();
     if (activeFilters.some((f) => f.type === 'clip')) renderPosts(true);
   });

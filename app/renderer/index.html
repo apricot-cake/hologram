@@ -1218,21 +1218,12 @@
       backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%);
     }
     .post-card:hover .clip-btn { opacity: 1; }
-    /* Membership: a small accent dot (GitHub starred / iOS hearted idiom —
-       accent = state). The earlier rejection was the loud SOLID-filled
-       button, not membership display itself; without any cue the hover-red
-       below read as "randomly turning red" (user report). */
-    .clip-btn.in::after {
-      content: ''; position: absolute; top: -1px; right: -1px;
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent-soft);
-      box-shadow: 0 0 0 1.5px var(--surface);
-    }
-    /* Hovering an in-tray one is red so a click reads as "remove" (same
-       hover-red-for-undo rule as folders). */
-    .clip-btn.in:hover { background: var(--danger); }
-    .clip-btn.in:hover::after { display: none; }
-    .clip-btn.added { background: var(--success); }
+    /* Clipped = active: the button fills with the accent (the "on" toggle idiom,
+       like a filled bookmark/like — the fill itself is the state cue, replacing the
+       old membership dot). No red-for-remove: clip is a light, frequent toggle and
+       the red read as too alarming (user 2026-06-27). */
+    .clip-btn.in { background: var(--accent); color: #fff; }
+    .clip-btn.in:hover { background: color-mix(in srgb, var(--accent) 82%, black); }
     .post-grid.list-view .clip-btn { top: 50%; right: 40px; transform: translateY(-50%); }
     /* Flyout menus: the card context menu (full action list) and the folder
        picker it opens share one look. */
@@ -1421,6 +1412,13 @@
     .sb-activebar-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
     .sb-reset { font-size: 10px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
     .sb-reset:hover { border-color: var(--accent); color: var(--accent-text); }
+    /* Save-search = a feature-launch button: borderless chip fill + accent icon/text
+       (DESIGN「フィーチャー起動ボタン」). The accent makes it read as an action you can
+       take; the label says it outright. Was an unstyled button = looked like stray text
+       and gave no hint you could save the search (user 2026-06-27). */
+    .sb-save-search { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 3px 10px; border: none; border-radius: 10px; background: var(--chip-bg); color: var(--accent-text); cursor: pointer; white-space: nowrap; transition: background .12s; }
+    .sb-save-search svg { color: var(--accent); }
+    .sb-save-search:hover { background: var(--chip-bg-hover); }
     /* 値が入っているフィルタ欄の強調（検索・数値・日付） */
     /* 値が入っている欄の強調はパステルに（強い青の二重リングは主張しすぎ） */
     .has-value {
@@ -1727,7 +1725,7 @@
     </div>
     <div class="qb-trail">
       <span class="post-count" id="postCount"></span>
-      <button class="sb-save-search" id="saveSearchBtn" type="button" title="この絞り込みを動的コレクションとして保存" style="display:none"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存</button>
+      <button class="sb-save-search" id="saveSearchBtn" type="button" title="この絞り込みを動的コレクションとして保存" style="display:none"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>検索を保存</button>
       <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
     </div>

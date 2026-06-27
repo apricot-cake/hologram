@@ -163,7 +163,6 @@
 
   --danger:        var(--red-500);
   --danger-bg:     #fdecec;
-  --success:       var(--green-500);
 
   --overlay:       color-mix(in oklch, var(--gray-950) 42%, transparent);
   --scrim-grad:    linear-gradient(transparent 0%, rgba(12,14,18,.02) 30%, rgba(12,14,18,.10) 50%, rgba(12,14,18,.26) 68%, rgba(12,14,18,.50) 84%, rgba(12,14,18,.78) 100%);
@@ -242,10 +241,6 @@
 
   --danger:        #f04040;
   --danger-bg:     color-mix(in oklch, var(--red-500) 16%, var(--surface));
-  /* Darker than the old #43c585: --success is used ONLY as the ".clip-btn.added" fill
-     with a WHITE check on it, and #43c585 carried white at just ~2.2:1 (icon needs
-     3:1). #2e9e63 clears it (~3.4:1) and still reads as a clear success green. */
-  --success:       #2e9e63;
 
   --brand-x:       #f3f5f8;
 
