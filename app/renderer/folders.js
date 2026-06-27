@@ -1,44 +1,42 @@
 // Shared folder store + management modal + toast, used by the post-view
 // (viewer.js). The library data lives in collections.json (keyed by captureId) — the
-// unified container for folders + the active workspace tray; the workspace API below
-// just operates on whichever collection is active. This module owns the data, the
-// management modal (#ivFolderModal), membership toggling, and the toast (#ivToast);
-// the "which folder is filtered" state stays per-view. Subscribers (onChange) are
-// notified after any mutation so each view refreshes its own chips.
+// unified container for folders (collections). Clip is a separate library-wide
+// ephemeral flag set (a captureId Set), persisted alongside the collections. This
+// module owns the data, the management modal (#ivFolderModal), membership toggling,
+// and the toast (#ivToast); the "which folder is filtered" state stays per-view.
+// Subscribers (onChange) are notified after any mutation so each view refreshes its
+// own chips.
 //
 //   window.corpusFolders.{ load, all, byId, has, toggleIn,
-//     inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
+//     isClipped, toggleClip, clearClips, clippedItems, clipCount,
 //     reconcile, openManager, closeManager, isManagerOpen, toast, onChange, isLoaded }
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
 
-  // Folder-list store shared by the library collections (below, withActive) and the
-  // poster folders (viewer.js, via window.corpusFolderStore, no withActive). Owns the
+  // Folder-list store shared by the library collections (below, isCollections) and the
+  // poster folders (viewer.js, via window.corpusFolderStore, no isCollections). Owns the
   // {id,name,items[]} array + id minting + membership toggling. The caller supplies
   // persist() and does its own toast / re-render, since those differ per view. Pure
   // data layer — no DOM.
-  // withActive (library only) generalizes folders into "collections": each carries
-  // kind/created, and one collection can be the ACTIVE one (the 🔖 one-click tray =
-  // the old single workspace). all() hides the active one so the folder UI looks
-  // unchanged; allRaw() returns every collection (what we persist). The poster store
-  // omits withActive, so its surface/behavior is exactly as before.
-  function createFolderStore({ idPrefix, persist, withActive }) {
+  // isCollections (library only) generalizes folders into "collections": each carries
+  // kind/created, and dynamic collections carry a saved-search payload (tree + q). The
+  // poster store omits isCollections, so its surface/behavior is exactly as before.
+  function createFolderStore({ idPrefix, persist, isCollections }) {
     let folders = [];
-    let activeId = null;
     const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     const allRaw = () => folders;
-    const all = () => (withActive ? folders.filter((f) => f.id !== activeId) : folders);
+    const all = () => folders;
     function setAll(list) {
       folders = Array.isArray(list) ? list : [];
-      if (withActive) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: (typeof f.created === 'number' ? f.created : null), items: Array.isArray(f.items) ? f.items : [] }));
+      if (isCollections) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: (typeof f.created === 'number' ? f.created : null), items: Array.isArray(f.items) ? f.items : [] }));
     }
     const byId = (id) => folders.find((f) => f.id === id) || null;
     const has = (id, key) => { const f = byId(id); return !!(f && f.items.includes(key)); };
     function create(name, opts) {
       const nm = (name || '').trim(); if (!nm) return null;
       const f = { id: genId(), name: nm, items: [] };
-      if (withActive) {
+      if (isCollections) {
         f.kind = (opts && opts.kind === 'dynamic') ? 'dynamic' : 'static';
         f.created = Date.now();
         if (f.kind === 'dynamic') setQuery(f, opts);   // saved-search payload (tree + free-text)
@@ -57,23 +55,11 @@
       const f = byId(id); if (!f || f.kind !== 'dynamic') return false;
       setQuery(f, patch); persist(); return true;
     }
-    function remove(id) { if (id === activeId) activeId = null; folders = folders.filter((f) => f.id !== id); persist(); }
+    function remove(id) { folders = folders.filter((f) => f.id !== id); persist(); }
     function rename(id, name) {
       const f = byId(id); const nm = (name || '').trim();
       if (!f || !nm) return false;
       f.name = nm; persist(); return true;
-    }
-    // Active-collection accessors (withActive only). ensureActive lazily mints the
-    // tray collection on the first 🔖 when none exists (empty old workspace migrated
-    // to activeId=null). 'c-' prefix marks it as the workspace-origin collection.
-    const getActiveId = () => activeId;
-    const setActiveId = (id) => { activeId = (typeof id === 'string' && byId(id)) ? id : null; };
-    const getActive = () => byId(activeId);
-    function ensureActive(name) {
-      if (activeId && byId(activeId)) return activeId;
-      const f = { id: 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7), name: (name || '').trim() || 'Workspace', kind: 'static', created: Date.now(), items: [] };
-      folders.push(f); activeId = f.id; persist();
-      return f.id;
     }
     // Toggle one key or a whole group of keys in folder id; anchorKey decides the
     // resulting state (a tile's representative id). Returns 'added' | 'removed' | null.
@@ -109,14 +95,17 @@
     }
     return {
       all, allRaw, setAll, byId, has, create, remove, rename, toggleIn, reconcile, move,
-      ...(withActive ? { getActiveId, setActiveId, getActive, ensureActive, update } : {}),
+      ...(isCollections ? { update } : {}),
     };
   }
   window.corpusFolderStore = createFolderStore;
 
   // Library collections [{ id, name, kind, created, items:[captureId] }] — the unified
-  // container (folders + the active workspace tray). withActive marks one as the 🔖 target.
-  const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), withActive: true });
+  // folders container. isCollections enables kind/created + dynamic saved-search.
+  const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isCollections: true });
+  // Clip = a library-wide ephemeral flag set (captureId Set), separate from collections.
+  // Persisted alongside the collections in collections.json (the `clip` array).
+  let clipSet = new Set();
   // The management modal (#ivFolderModal) is shared: by default it edits the library
   // store, but openManager({store,onChange}) re-points it at the poster folder store
   // (viewer.js pfStore) so both views get the same CRUD + drag-reorder UI. Each store
@@ -150,8 +139,7 @@
   function escapeHtml(s) { return window.corpusUI.escapeHtml(s); }
   function persist() {
     loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    // allRaw() — the active collection MUST be persisted too (all() hides it).
-    if (window.corpus && window.corpus.setCollections) window.corpus.setCollections({ collections: store.allRaw(), activeId: store.getActiveId() }).catch(() => { /* best-effort */ });
+    if (window.corpus && window.corpus.setCollections) window.corpus.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => { /* best-effort */ });
   }
   function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
 
@@ -160,8 +148,10 @@
       // getCollections migrates a legacy folders.json on first read (main.js).
       const r = (window.corpus && window.corpus.getCollections) ? await window.corpus.getCollections() : null;
       store.setAll((r && r.collections) || []);
-      store.setActiveId((r && typeof r.activeId === 'string') ? r.activeId : null);
-    } catch { store.setAll([]); store.setActiveId(null); }
+      // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
+      // just stays as a normal collection. Clip loads from the persisted `clip` array.
+      clipSet = new Set((r && Array.isArray(r.clip)) ? r.clip.map(String) : []);
+    } catch { store.setAll([]); clipSet = new Set(); }
     loaded = true;
   }
   function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
@@ -169,43 +159,45 @@
   const byId = store.byId;
   const has = store.has;
 
-  // --- Workspace = the ACTIVE collection (the 🔖 one-click tray). The old single
-  // ephemeral array is now just whichever collection activeId points at; the API
-  // shape is unchanged so the sidebar tray UI keeps working. ---
-  function inWorkspace(cid) { return store.has(store.getActiveId(), cid); }
-  function workspaceItems() { const a = store.getActive(); return a ? a.items.slice() : []; }
-  function workspaceCount(existing) {
-    const a = store.getActive(); if (!a) return 0;
-    return existing ? a.items.filter((c) => existing.has(c)).length : a.items.length;
+  // --- Clip = a library-wide ephemeral flag set (a captureId Set), separate from
+  // collections. One-click 📎 on a card flags it; the sidebar clip row filters by it;
+  // flags persist until explicitly cleared. ---
+  function isClipped(cid) { return clipSet.has(cid); }
+  function clippedItems() { return [...clipSet]; }
+  function clipCount(existing) {
+    if (!existing) return clipSet.size;
+    let n = 0; for (const c of clipSet) if (existing.has(c)) n++;
+    return n;
   }
-  // Toggle captureIds[] (a whole group) in the active collection; anchor decides
-  // state. Lazily creates the active collection on the first add.
-  function toggleWorkspace(captureIds, anchorCid) {
+  // Toggle captureIds[] (a whole group) in the clip set; anchor decides the resulting
+  // state (a tile's representative id). Returns 'added' | 'removed' | null.
+  function toggleClip(captureIds, anchorCid) {
     const ids = (captureIds || []).filter(Boolean);
     if (!ids.length) return null;
-    const id = store.ensureActive(t('workspaceTitle'));
-    const res = store.toggleIn(id, ids, anchorCid);   // persists
-    if (!res) return null;
-    toast(res === 'removed' ? t('wsRemoved') : t('wsAdded'));
-    notify('workspace');
-    return res;
-  }
-  function clearWorkspace() {
-    const a = store.getActive();
-    if (!a || !a.items.length) return 0;
-    const n = a.items.length;
-    a.items = [];   // empty the tray but keep the collection (and activeId)
+    const anchor = anchorCid != null ? anchorCid : ids[0];
+    const wasIn = clipSet.has(anchor);
+    if (wasIn) ids.forEach((c) => clipSet.delete(c));
+    else ids.forEach((c) => clipSet.add(c));
     persist();
-    toast(t('wsCleared'));
-    notify('workspace');
+    toast(wasIn ? t('clipRemoved') : t('clipAdded'));
+    notify('clip');
+    return wasIn ? 'removed' : 'added';
+  }
+  function clearClips() {
+    if (!clipSet.size) return 0;
+    const n = clipSet.size;
+    clipSet.clear();
+    persist();
+    toast(t('clipCleared'));
+    notify('clip');
     return n;
   }
 
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
-  // store.reconcile cleans every collection — including the active one (it lives in
-  // the same array now), so no separate workspace pass is needed.
+  // store.reconcile cleans every collection; the clip set is swept separately.
   function reconcile(existing) {
-    const changed = store.reconcile(existing);
+    let changed = store.reconcile(existing);
+    for (const c of clipSet) if (!existing.has(c)) { clipSet.delete(c); changed = true; }
     if (changed) { persist(); notify('list'); }
   }
 
@@ -304,20 +296,16 @@
 
   window.corpusFolders = {
     load, all: () => store.all(), byId, has,
-    inWorkspace, toggleWorkspace, clearWorkspace, workspaceItems, workspaceCount,
+    isClipped, toggleClip, clearClips, clippedItems, clipCount,
     reconcile, toggleIn, openManager, closeManager, isManagerOpen,
-    // Collection view (第3モード): expose the store's CRUD + active accessors so the
-    // grid can list every collection (incl. the active/workspace one, marked ★) and
-    // create/rename/delete/activate from cards. Thin wrappers persist + notify so all
-    // views refresh (store.create/remove/rename persist; setActiveId does not).
-    allWithActive: () => store.allRaw(),
-    activeId: () => store.getActiveId(),
+    // Collection view (第3モード): expose the store's CRUD so the grid can list every
+    // collection and create/rename/delete from cards. Thin wrappers persist + notify so
+    // all views refresh (store.create/remove/rename persist).
+    allCollections: () => store.allRaw(),
     createCollection: (name, opts) => { const f = store.create(name, opts); if (f) notify('list'); return f; },
     updateCollection: (id, patch) => { const ok = store.update(id, patch); if (ok) notify('list'); return ok; },
     renameCollection: (id, name) => { const ok = store.rename(id, name); if (ok) notify('list'); return ok; },
     removeCollection: (id) => { store.remove(id); notify('list'); },
-    // Dynamic collections (saved searches) are never the 🔖 tray target (★ is static-only).
-    setActive: (id) => { const c = store.byId(id); if (c && c.kind === 'dynamic') return; store.setActiveId(id); persist(); notify('workspace'); },
     toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
   };
 })();

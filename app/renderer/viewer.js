@@ -32,8 +32,8 @@
     activebarLabel: _s('activebarLabel'),
     engParticle: _s('engParticle'),
     ctxManage: _s('ctxManage'),
-    ctxWsAdd: _s('ctxWsAdd'),
-    ctxWsRemove: _s('ctxWsRemove'),
+    ctxClipAdd: _s('ctxClipAdd'),
+    ctxClipRemove: _s('ctxClipRemove'),
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
     qbAddGroup: _s('qbAddGroup'),
@@ -103,12 +103,12 @@
     imagesCount: _f1('imagesCount'),
     tagsSaved: _s('tagsSaved'),
     tagsSavedN: _f1('tagsSavedN'),
-    tipWorkspace: _s('tipWorkspace'),
+    tipClip: _s('tipClip'),
     tipFolder: _s('tipFolder'),
-    workspaceTitle: _s('workspaceTitle'),
-    wsEmpty: _s('wsEmpty'),
-    wsEmptyTip: _s('wsEmptyTip'),
-    wsEmptyConfirm: _s('wsEmptyConfirm'),
+    clipTitle: _s('clipTitle'),
+    clipEmpty: _s('clipEmpty'),
+    clipEmptyTip: _s('clipEmptyTip'),
+    clipEmptyConfirm: _s('clipEmptyConfirm'),
     groupUngroup: _s('groupUngroup'),
     groupRegroup: _s('groupRegroup'),
     groupUngroupManual: _s('groupUngroupManual'),
@@ -138,7 +138,6 @@
     collNew: _s('collNew'),
     collNewPrompt: _s('collNewPrompt'),
     collOpen: _s('collOpen'),
-    collSetActive: _s('collSetActive'),
     collRename: _s('collRename'),
     collRenamePrompt: _s('collRenamePrompt'),
     collDelete: _s('collDelete'),
@@ -365,8 +364,8 @@
     tabCloseOthers: _s('tabCloseOthers')
   };
 
-  // Shared trash glyph (poster-folder delete + workspace clear). One source so the
-  // icon can't drift between the JS-rendered button and the static #wsClear button.
+  // Shared trash glyph (poster-folder delete + clip clear). One source so the
+  // icon can't drift between the JS-rendered button and the static #clipClear button.
   const ICON_TRASH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
   // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
@@ -402,9 +401,9 @@
   setAttr('settingsBtn', 'title', MSG.tabSettings);
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
-  setText('sbWorkspaceTitle', MSG.workspaceTitle);
-  const wsClearEl = document.getElementById('wsClear');
-  if (wsClearEl) { wsClearEl.innerHTML = ICON_TRASH; wsClearEl.title = MSG.wsEmptyTip; wsClearEl.setAttribute('aria-label', MSG.wsEmpty); }
+  setText('sbClipTitle', MSG.clipTitle);
+  const clipClearEl = document.getElementById('clipClear');
+  if (clipClearEl) { clipClearEl.innerHTML = ICON_TRASH; clipClearEl.title = MSG.clipEmptyTip; clipClearEl.setAttribute('aria-label', MSG.clipEmpty); }
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
@@ -629,7 +628,7 @@
       case 'tag':        return f.value;
       case 'hashtag':    return `#${f.value}`;
       case 'collection': { const fobj = CF() && CF().byId(f.value); return fobj ? fobj.name : f.value; }
-      case 'workspace':  return MSG.workspaceTitle;
+      case 'clip':       return MSG.clipTitle;
       case 'media':      return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
       case 'instance':   return f.value;
       case 'user':       return f.label || f.value;
@@ -668,7 +667,7 @@
     if (byType.date)       byType.date.forEach((f)       => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.kind)       byType.kind.forEach((f)       => add(filterLabel(f), 'kind'));
-    filters.filter((f) => f.type === 'workspace' || f.type === 'collection').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'clip' || f.type === 'collection').forEach((f) => add(filterLabel(f), f.type));
 
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
@@ -688,7 +687,7 @@
     hashtag: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
     folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     instance: '<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="12" width="18" height="8" rx="2"/><line x1="7" y1="8" x2="7.01" y2="8"/><line x1="7" y1="16" x2="7.01" y2="16"/>',
-    workspace: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   };
   const qcGlyph = (type) => {
@@ -1717,7 +1716,7 @@
   // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
   function facetTreeFrom(f, ops) {
     const root = emptyTree();
-    const NO_OP = new Set(['date', 'engagement', 'workspace']);
+    const NO_OP = new Set(['date', 'engagement', 'clip', 'workspace']);
     const byType = new Map();
     for (const x of f) { if (!byType.has(x.type)) byType.set(x.type, []); byType.get(x.type).push(x); }
     for (const [type, list] of byType) {
@@ -1745,7 +1744,8 @@
       case 'tag':     return (p) => (p.tags     || []).includes(f.value);
       case 'hashtag': return (p) => (p.hashtags || []).includes(f.value);
       case 'collection': return (p) => !!(CF() && CF().has(f.value, p.captureId));
-      case 'workspace': return (p) => !!(CF() && CF().inWorkspace(p.captureId));
+      case 'clip': return (p) => !!(CF() && CF().isClipped(p.captureId));
+      case 'workspace': return (p) => !!(CF() && CF().isClipped(p.captureId));   // legacy alias for any old persisted ws leaf (tabs.json)
       case 'date': {
         const field = f.dateField || 'date';
         const from = f.from ? new Date(f.from + 'T00:00:00') : null;
@@ -2702,7 +2702,7 @@
     date:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
     engagement: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
     kind:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
-    workspace:  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+    clip:       '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     folder:     '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
   };
   function genTabId() { return 'tab_' + Math.random().toString(36).slice(2, 10); }
@@ -3269,7 +3269,7 @@
       return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
         <div class="select-check" title="${MSG.tipSelect}"></div>
         <div class="act-pill" aria-hidden="true"></div>
-        <button class="ws-btn${CF() && CF().inWorkspace(p.captureId) ? ' in' : ''}" data-ws="${i}" title="${MSG.tipWorkspace}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="clip-btn${CF() && CF().isClipped(p.captureId) ? ' in' : ''}" data-clip="${i}" title="${MSG.tipClip}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
         <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
         <button class="tag-btn" data-tagedit="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
         ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" data-cap="${escapeAttr(p.captureId || '')}"${aspRatio ? ` style="aspect-ratio:${aspRatio}"` : ''} loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
@@ -3468,23 +3468,23 @@
     else if (e.key === 'ArrowRight') galleryStep(1);
   });
 
-  // Workspace button: one-click add/remove this post to the single ephemeral
-  // tray (no picking). Mutations never replay the entrance animation: re-render
-  // (keepLimit) only when a workspace filter could change the visible set.
+  // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
+  // the entrance animation: re-render (keepLimit) only when a clip filter could change
+  // the visible set.
   document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.ws-btn');
+    const btn = e.target.closest('.clip-btn');
     if (!btn) return;
     e.stopPropagation();
     if (!CF()) return;
-    const g = viewGroups[parseInt(btn.dataset.ws, 10)];
+    const g = viewGroups[parseInt(btn.dataset.clip, 10)];
     if (!g || !g.rep.captureId) return;
-    keepCurrentVisible();   // removal can un-match an active workspace filter
-    const res = CF().toggleWorkspace(g.records.map((r) => r.captureId), g.rep.captureId);
+    keepCurrentVisible();   // removal can un-match an active clip filter
+    const res = CF().toggleClip(g.records.map((r) => r.captureId), g.rep.captureId);
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     if (res === 'added') { btn.classList.add('added'); setTimeout(() => btn.classList.remove('added'), 500); }
-    renderWorkspace();
-    if (activeFilters.some((f) => f.type === 'workspace')) renderPosts(true);
+    renderClipRow();
+    if (activeFilters.some((f) => f.type === 'clip')) renderPosts(true);
   });
 
   // Folder picker flyout (destinations) — opened from the card context menu
@@ -3528,7 +3528,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
 
   // --- Card context menu: the labeled table of contents of per-card actions.
-  // Hover keeps the rapid-fire buttons (🔖 workspace / ℹ info / 🏷 tag);
+  // Hover keeps the rapid-fire buttons (📎 clip / ℹ info / 🏷 tag);
   // everything else (open, folder, poster, delete) lives here.
   const cardMenu = document.createElement('div');
   cardMenu.className = 'fold-menu card-menu';
@@ -3539,7 +3539,7 @@
   const CM_IC = {
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    ws: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+    clip: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
@@ -3548,7 +3548,7 @@
   function showCardMenu(g, x, y) {
     cardMenuGroup = g;
     cardMenuSrcUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
-    const inWs = !!(CF() && CF().inWorkspace(g.rep.captureId));
+    const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
     const row = (act, ic, label, cls) =>
@@ -3556,7 +3556,7 @@
     cardMenu.innerHTML =
       (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
       row('folder', CM_IC.folder, MSG.tipFolder) +
-      (CF() ? row('ws', CM_IC.ws, inWs ? MSG.ctxWsRemove : MSG.ctxWsAdd) : '') +
+      (CF() ? row('clip', CM_IC.clip, inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd) : '') +
       row('info', CM_IC.info, MSG.tipInfo) +
       (canPoster ? row('poster', CM_IC.poster, MSG.ctxViewPoster) : '') +
       (cardMenuSrcUrl ? '<div class="fm-sep"></div>' + row('sauce', CM_IC.sauce, MSG.detailSauce) + row('ascii', CM_IC.sauce, MSG.detailAscii) : '') +
@@ -3586,7 +3586,7 @@
     const act = rowEl.dataset.act;
     if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
     else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
-    else if (act === 'ws') { const b = document.querySelector(`.ws-btn[data-ws="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
+    else if (act === 'clip') { const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
     else if (act === 'info') showDetail(g);
     else if (act === 'poster') jumpToPoster(g.rep);
     else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(cardMenuSrcUrl));
@@ -3600,18 +3600,18 @@
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); this
-  // now only keeps the workspace tray entry in sync. Call sites keep the name.
-  function renderPostFolders() { renderWorkspace(); }
-  // Workspace sidebar entry: the single ephemeral tray. Click toggles a filter
-  // to show only its contents; クリア empties it (items themselves are kept).
-  function renderWorkspace() {
-    const row = document.getElementById('wsRow');
-    const badge = document.getElementById('wsBadge');
-    const clear = document.getElementById('wsClear');
+  // now only keeps the clip row entry in sync. Call sites keep the name.
+  function renderPostFolders() { renderClipRow(); }
+  // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
+  // only clipped posts; 空にする clears all flags (the posts themselves are kept).
+  function renderClipRow() {
+    const row = document.getElementById('clipRow');
+    const badge = document.getElementById('clipBadge');
+    const clear = document.getElementById('clipClear');
     if (!row || !CF()) return;
     const existing = new Set(allPosts.map(p => p.captureId));
-    const n = CF().workspaceCount(existing);
-    const active = activeFilters.some(f => f.type === 'workspace');
+    const n = CF().clipCount(existing);
+    const active = activeFilters.some(f => f.type === 'clip');
     row.classList.toggle('active', active);
     if (badge) { badge.textContent = n; badge.classList.toggle('on', n > 0); }
     if (clear) clear.style.display = n > 0 ? '' : 'none';
@@ -3619,23 +3619,23 @@
   // フォルダ管理の起動口はフライアウト下部の #qfFolderManage（→ CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
 
-  // Workspace: chip toggles a "show only the tray" filter; 空にする empties the
-  // tray itself (confirmed — it reads nothing like removing the filter).
-  (function setupWorkspaceSidebar() {
-    const row = document.getElementById('wsRow');
-    const clear = document.getElementById('wsClear');
+  // Clip row: the row toggles a "show only clipped" filter; 空にする clears all flags
+  // (confirmed — it reads nothing like removing the filter).
+  (function setupClipSidebar() {
+    const row = document.getElementById('clipRow');
+    const clear = document.getElementById('clipClear');
     if (row) row.addEventListener('click', () => {
-      const idx = activeFilters.findIndex(f => f.type === 'workspace');
-      if (idx < 0) addFilter({ type: 'workspace', value: '*' });
+      const idx = activeFilters.findIndex(f => f.type === 'clip');
+      if (idx < 0) addFilter({ type: 'clip', value: '*' });
       else removeFilter(idx);
-      renderWorkspace();
+      renderClipRow();
     });
     if (clear) clear.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!CF()) return;
-      if (!window.confirm(MSG.wsEmptyConfirm)) return;
+      if (!window.confirm(MSG.clipEmptyConfirm)) return;
       keepCurrentVisible();
-      CF().clearWorkspace();
+      CF().clearClips();
       renderPosts(true);
     });
   })();
@@ -5227,7 +5227,7 @@
   }
   function filteredCollections() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
-    let list = (CF() ? CF().allWithActive() : []).slice();
+    let list = (CF() ? CF().allCollections() : []).slice();
     if (q) list = list.filter((c) => (c.name || '').toLowerCase().includes(q));
     if (collectionSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
     else if (collectionSort === 'count') list.sort((a, b) => collectionItemCount(b) - collectionItemCount(a) || (a.name || '').localeCompare(b.name || ''));
@@ -5241,7 +5241,6 @@
   function renderCollections() {
     const grid = document.getElementById('collectionGrid'); if (!grid) return;
     _collRecCache = new Map();   // fresh per pass (sort + card map reuse the same scan)
-    const activeId = CF() ? CF().activeId() : null;
     collectionList = filteredCollections();
     const countEl = document.getElementById('collectionCount');
     if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
@@ -5262,12 +5261,10 @@
       const cells = n
         ? thumbs.map((f) => `<img src="${fileSrc(f, 200)}" alt="" loading="lazy">`).join('')
         : COLL_EMPTY_ICON;
-      const isActive = c.id === activeId;
       const isDyn = c.kind === 'dynamic';
-      // ★ (active, static-only) and ⚡ (dynamic) are mutually exclusive cues before the name.
-      const badge = isActive ? '<span class="col-star">★</span>'
-        : isDyn ? `<span class="col-bolt" title="${escapeAttr(MSG.collDynamicTitle)}">${COLL_BOLT_ICON}</span>` : '';
-      return `<div class="collection-card${isActive ? ' active' : ''}${isDyn ? ' dynamic' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
+      // ⚡ marks a dynamic collection (saved search) before its name — the only cue.
+      const badge = isDyn ? `<span class="col-bolt" title="${escapeAttr(MSG.collDynamicTitle)}">${COLL_BOLT_ICON}</span>` : '';
+      return `<div class="collection-card${isDyn ? ' dynamic' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
         + `<div class="collection-thumbs ${n ? 'n' + n : 'empty'}">${cells}</div>`
         + `<div class="collection-meta">`
         + `<div class="collection-name">${badge}${escapeHtml(c.name)}</div>`
@@ -5320,8 +5317,8 @@
     const card = e.target.closest('.collection-card'); if (!card) return;
     if (card.dataset.cid) openCollection(card.dataset.cid);
   });
-  // Collection card right-click menu: open / set active / rename / delete (mirrors the
-  // poster card menu — fold-menu chrome + clampIntoView). One menu DOM for the view.
+  // Collection card right-click menu: open / rename / delete (mirrors the poster card
+  // menu — fold-menu chrome + clampIntoView). One menu DOM for the view.
   const collMenu = document.createElement('div');
   collMenu.className = 'fold-menu';
   document.body.appendChild(collMenu);
@@ -5329,12 +5326,11 @@
   function hideCollMenu() { collMenu.classList.remove('show'); collMenuCid = null; }
   function showCollMenu(c, x, y) {
     collMenuCid = c.id;
-    const isActive = CF() && CF().activeId() === c.id;
-    // Dynamic: "アクティブにする" (★ = 🔖 tray target) makes no sense for a saved search,
-    // so swap it for "条件を今の絞り込みで更新" (re-save the search from the current filter).
+    // Dynamic collections add "条件を今の絞り込みで更新" (re-save the search from the
+    // current filter); static collections have no extra row.
     const secondRow = c.kind === 'dynamic'
       ? `<div class="fm-row" data-cm-act="updateq"><span class="fm-name">${escapeHtml(MSG.collUpdateQuery)}</span></div>`
-      : `<div class="fm-row" data-cm-act="active"><span class="fm-name">${escapeHtml(MSG.collSetActive)}</span>${isActive ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
+      : '';
     collMenu.innerHTML =
       `<div class="fm-row" data-cm-act="open"><span class="fm-name">${escapeHtml(MSG.collOpen)}</span></div>` +
       secondRow +
@@ -5357,7 +5353,6 @@
     if (!row || !c) return;
     const a = row.dataset.cmAct;
     if (a === 'open') openCollection(c.id);
-    else if (a === 'active') CF().setActive(c.id);   // notify('workspace') → onChange → renderCollections
     else if (a === 'updateq') updateDynamicFromCurrent(c);
     else if (a === 'rename') { const nm = window.prompt(MSG.collRenamePrompt, c.name); if (nm && nm.trim()) CF().renameCollection(c.id, nm); }
     else if (a === 'delete') { if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id); }

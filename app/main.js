@@ -595,11 +595,13 @@ ipcMain.handle('set-folders', (_e, data) => {
 
 // `collections` — the unified container that supersedes folders + workspace
 // (Phase① of the collection feature). <saveFolder>/collections.json:
-//   { collections:[{id,name,kind:'static',created,items:[captureId]}], activeId, posterWorkspace:[posterKey] }
-// `activeId` points at the one-click 🔖 target (the old single workspace). On first
-// read we migrate any existing folders.json into this shape, then DELETE folders.json
-// (clean cutover — no backup, by design). get/set-folders stay for the migration read
-// and for folding a legacy folders.json out of an imported ZIP (lib-archive.js).
+//   { collections:[{id,name,kind:'static',created,items:[captureId]}], clip:[captureId], posterWorkspace:[posterKey] }
+// `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
+// (the old 🔖 one-click target); the renderer no longer writes it, so it settles to
+// null. On first read we migrate any existing folders.json into this shape, then
+// DELETE folders.json (clean cutover — no backup, by design). get/set-folders stay
+// for the migration read and for folding a legacy folders.json out of an imported
+// ZIP (lib-archive.js).
 function normCollections(arr) {
   return Array.isArray(arr) ? arr
     .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
@@ -618,26 +620,19 @@ function normCollections(arr) {
     }) : [];
 }
 // Shape a legacy folders.json into the collections model. Folders become static
-// collections (ids preserved); a non-empty workspace becomes one collection set as
-// active. Returns null when there is nothing to migrate.
+// collections (ids preserved). The legacy workspace tray is dropped (clip starts
+// empty — no migration, by design). Returns null when there is nothing to migrate.
 function migrateFoldersToCollections(folder) {
   let j;
   try { j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8')); } catch { return null; }
   const folders = Array.isArray(j.folders) ? j.folders : [];
-  const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
   const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
   const collections = normCollections(folders.map((f) => ({ id: f.id, name: f.name, kind: 'static', created: null, items: f.items })));
-  let activeId = null;
-  if (workspace.length) {
-    const id = 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
-    collections.push({ id, name: 'ワークスペース', kind: 'static', created: null, items: workspace });
-    activeId = id;
-  }
-  return { collections, activeId, posterWorkspace };
+  return { collections, activeId: null, clip: [], posterWorkspace };
 }
 ipcMain.handle('get-collections', () => {
   const folder = getSaveFolder();
-  const empty = { collections: [], activeId: null, posterWorkspace: [] };
+  const empty = { collections: [], activeId: null, clip: [], posterWorkspace: [] };
   if (!folder) return empty;
   // 1) already migrated → read collections.json
   try {
@@ -645,8 +640,9 @@ ipcMain.handle('get-collections', () => {
     const collections = normCollections(j.collections);
     const ids = new Set(collections.map((c) => c.id));
     const activeId = (typeof j.activeId === 'string' && ids.has(j.activeId)) ? j.activeId : null;
+    const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
     const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    return { collections, activeId, posterWorkspace };
+    return { collections, activeId, clip, posterWorkspace };
   } catch { /* not migrated yet — fall through */ }
   // 2) migrate a legacy folders.json once, write collections.json, delete folders.json
   const migrated = migrateFoldersToCollections(folder);
@@ -662,8 +658,9 @@ ipcMain.handle('set-collections', (_e, data) => {
     const collections = normCollections(data && data.collections);
     const ids = new Set(collections.map((c) => c.id));
     const activeId = (data && typeof data.activeId === 'string' && ids.has(data.activeId)) ? data.activeId : null;
+    const clip = (data && Array.isArray(data.clip)) ? [...new Set(data.clip.map(String))] : [];
     const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
-    fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify({ collections, activeId, posterWorkspace }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(folder, 'collections.json'), JSON.stringify({ collections, activeId, clip, posterWorkspace }, null, 2), 'utf8');
     return { ok: true };
   } catch {
     return { ok: false };

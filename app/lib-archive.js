@@ -59,10 +59,9 @@ function mergeFolders(cur, inc) {
     : (folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null);
   return { folders, defaultId };
 }
-// Collections (the unified folders+workspace container). id-union on items; name/
-// kind/created/tree are LOCAL-wins (cur put first, dup only unions items). activeId
-// stays local if it still points at a live collection (never import someone else's
-// active); posterWorkspace unions.
+// Collections (the unified folders container). id-union on items; name/kind/created/
+// tree are LOCAL-wins (cur put first, dup only unions items). activeId is legacy and
+// stays local if it still points at a live collection; clip + posterWorkspace union.
 function mergeCollections(cur, inc) {
   const byId = new Map();
   const put = (c) => {
@@ -80,8 +79,9 @@ function mergeCollections(cur, inc) {
   const collections = [...byId.values()].map((c) => { const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] }; if (c.tree) o.tree = c.tree; if (c.q) o.q = c.q; return o; });
   const valid = new Set(collections.map((c) => c.id));
   const activeId = (cur && valid.has(cur.activeId)) ? cur.activeId : ((inc && valid.has(inc.activeId)) ? inc.activeId : null);
+  const clip = [...new Set([...((cur && cur.clip) || []), ...((inc && inc.clip) || [])].map(String))];
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
-  return { collections, activeId, posterWorkspace };
+  return { collections, activeId, clip, posterWorkspace };
 }
 // Convert a legacy folders.json into the collections shape (for folding an old
 // export ZIP into a migrated library). Folders → static collections; the incoming

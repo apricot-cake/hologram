@@ -474,28 +474,28 @@
        content-pad (12px) inside it — so headers read as one step out, content
        one step in. No magic per-element numbers. */
     #sidebar .sb-chips { padding-left: 12px; }
-    .ws-row-wrap { position: relative; }
-    /* Workspace count: same plain-number treatment as the filter badges, parked at
+    .clip-row-wrap { position: relative; }
+    /* Clip count: same plain-number treatment as the filter badges, parked at
        the right edge (where the × clear button takes over on hover). */
-    #wsBadge.sb-row-badge {
+    #clipBadge.sb-row-badge {
       display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
       color: var(--text); font-size: 11px; font-weight: 600;
       font-variant-numeric: tabular-nums; transition: opacity .12s;
     }
-    #wsBadge.sb-row-badge.on { display: inline-block; }
-    .ws-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
-    .ws-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
-    .ws-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
-    .ws-clear-btn {
+    #clipBadge.sb-row-badge.on { display: inline-block; }
+    .clip-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
+    .clip-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
+    .clip-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
+    .clip-clear-btn {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
       background: transparent; border: none; padding: 3px; border-radius: 4px;
       cursor: pointer; color: var(--text-muted);
       display: flex; align-items: center;
       opacity: 0; transition: opacity .12s;
     }
-    .ws-row-wrap:hover .ws-clear-btn { opacity: 1; }
-    .ws-row-wrap:hover .sb-row-badge { opacity: 0; }
-    .ws-clear-btn:hover { color: var(--text); }
+    .clip-row-wrap:hover .clip-clear-btn { opacity: 1; }
+    .clip-row-wrap:hover .sb-row-badge { opacity: 0; }
+    .clip-clear-btn:hover { color: var(--text); }
     /* checkbox rows: the BOX aligns with the control edge (same x as the pill
        chips above), like any other control in the column */
     .engagement-select {
@@ -619,7 +619,7 @@
     /* Hover actions float over the avatar (top-right) — dark glass so they read on any
        avatar (card + tile). Mirror the library card: 🏷 tag → 🔖 collection → ℹ info
        (L→R). List overrides them to plain ghost buttons over the row. */
-    .poster-info, .poster-ws, .poster-tag {
+    .poster-info, .poster-tag {
       position: absolute; top: 8px; width: 26px; height: 26px;
       display: flex; align-items: center; justify-content: center;
       border: none; border-radius: 50%; cursor: pointer; padding: 0; opacity: 0;
@@ -627,22 +627,11 @@
       transition: opacity .15s, background .15s, color .15s, transform .15s;
     }
     .poster-info { right: 8px; }
-    .poster-ws { right: 38px; }
-    .poster-tag { right: 68px; }
+    .poster-tag { right: 38px; }
     .poster-card:hover .poster-info, .poster-info:focus-visible,
-    .poster-card:hover .poster-ws, .poster-ws:focus-visible, .poster-ws.in,
     .poster-card:hover .poster-tag, .poster-tag:focus-visible { opacity: 1; }
-    .poster-info:hover, .poster-ws:hover, .poster-tag:hover { background: rgba(0,0,0,.5); transform: scale(1.1); }
-    .poster-info svg, .poster-ws svg, .poster-tag svg { width: 16px; height: 16px; display: block; }
-    /* 🔖 membership: a small accent dot when in the active collection; hover-red = "remove"
-       (mirrors the library .ws-btn idiom — see DESIGN.md「ワークスペース vs フォルダ」). */
-    .poster-ws.in::after {
-      content: ''; position: absolute; top: -1px; right: -1px;
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent-soft); box-shadow: 0 0 0 1.5px var(--surface);
-    }
-    .poster-ws.in:hover { background: var(--danger); }
-    .poster-ws.in:hover::after { display: none; }
+    .poster-info:hover, .poster-tag:hover { background: rgba(0,0,0,.5); transform: scale(1.1); }
+    .poster-info svg, .poster-tag svg { width: 16px; height: 16px; display: block; }
     /* Tile density: same avatar-led square but meta OVERLAID (compact, no card chrome). */
     .poster-grid.tile-view { grid-template-columns: repeat(auto-fill, minmax(var(--ptile-size, 132px), 1fr)); gap: 10px; }
     .poster-grid.tile-view .poster-card { border-radius: 12px; }
@@ -661,11 +650,11 @@
        rule provides the lift. (Earlier the avatar zoomed in-frame instead.) */
     .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); font-size: 15px; }
     .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
-    .poster-grid.list-view .poster-info, .poster-grid.list-view .poster-ws, .poster-grid.list-view .poster-tag { background: transparent; color: var(--text-subtle); }
-    .poster-grid.list-view .poster-info:hover, .poster-grid.list-view .poster-ws:hover, .poster-grid.list-view .poster-tag:hover { background: var(--hover); color: var(--text); }
+    .poster-grid.list-view .poster-info, .poster-grid.list-view .poster-tag { background: transparent; color: var(--text-subtle); }
+    .poster-grid.list-view .poster-info:hover, .poster-grid.list-view .poster-tag:hover { background: var(--hover); color: var(--text); }
     #posterControls .poster-sort-title { margin-top: 0; }
     #posterFilterRows { margin-top: 22px; }
-    /* Workspace is a toggle row (no flyout): active = monotone contrast
+    /* Poster toggle row (no flyout): active = monotone contrast
        (DESIGN: アクティブはグレー面、色は機能的一点だけ). */
     .sb-row.poster-toggle-row.active { background: var(--accent-subtle); color: var(--text-strong); }
     /* --- Collection view (第3モード): cards = name + count + 2×2 thumb + active ★.
@@ -694,7 +683,6 @@
     .collection-thumbs.empty .ct-empty-ic { width: 30%; height: 30%; color: var(--text-muted); opacity: .5; }
     .collection-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 10px; }
     .collection-name { font-weight: 600; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .collection-name .col-star { color: var(--accent); margin-right: 2px; }
     .collection-name .col-bolt { color: var(--accent); margin-right: 3px; display: inline-flex; vertical-align: -1px; }
     .collection-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
     /* Dynamic collection (saved search): a faint accent border + ⚡ before the name +
@@ -750,13 +738,13 @@
     body.browse-posters #postGrid { display: none !important; }
     body:not(.browse-posters) #posterGrid { display: none !important; }
     /* Poster mode hides the post-only chrome (filters/sort/density/active bar +
-       workspace tray) — only the search box stays useful. */
+       clip row) — only the search box stays useful. */
     body.browse-posters #postActiveBar,
     body.browse-posters #filterRows,
     body.browse-posters #tileSizeRow,
     body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
     body.browse-posters #postsToolbar .sb-section:has(#sortSelect),
-    body.browse-posters .sb-section:has(#wsRow) { display: none !important; }
+    body.browse-posters .sb-section:has(#clipRow) { display: none !important; }
     /* The poster query bar mirrors #postActiveBar: only shown while browsing posters. */
     body:not(.browse-posters) #posterActiveBar { display: none !important; }
     /* Collection mode (第3モード): mirror the poster pattern. The grid + its sidebar
@@ -774,7 +762,7 @@
     body.browse-collections #posterViewSection,
     body.browse-collections #postsToolbar .sb-section:has(#densityToggle),
     body.browse-collections #postsToolbar .sb-section:has(#sortSelect),
-    body.browse-collections .sb-section:has(#wsRow) { display: none !important; }
+    body.browse-collections .sb-section:has(#clipRow) { display: none !important; }
 
     /* Tile-size ± (shown only in the tile density) */
     /* Tile size: thin slider, small→large glyphs at the ends */
@@ -955,7 +943,7 @@
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
     .post-grid.selecting .select-check { opacity: 1; }
-    .post-grid.selecting .info-btn, .post-grid.selecting .ws-btn, .post-grid.selecting .tag-btn, .post-grid.selecting .act-pill { display: none; }
+    .post-grid.selecting .info-btn, .post-grid.selecting .clip-btn, .post-grid.selecting .tag-btn, .post-grid.selecting .act-pill { display: none; }
     .post-grid.selecting:not(.tile-view) .card-ntag { opacity: 0; }
     /* every click selects now — plain pointer everywhere (no zoom-in over images,
        no "click to expand" hint on the text) */
@@ -1016,18 +1004,18 @@
        180×0.13=23.4px) rounds width and height differently at fractional
        display scaling and the circles render as slight ellipses */
     .post-grid.tile-view { --act: round(nearest, clamp(18px, calc(var(--tile-size, 180px) * 0.13), 26px), 1px); }
-    .post-grid.tile-view .info-btn, .post-grid.tile-view .ws-btn, .post-grid.tile-view .tag-btn {
+    .post-grid.tile-view .info-btn, .post-grid.tile-view .clip-btn, .post-grid.tile-view .tag-btn {
       width: var(--act); height: var(--act); top: 6px; font-size: calc(var(--act) * 0.55);
     }
     /* Same relative order as card/list (🏷 → 🔖 → ℹ, left to right) */
     .post-grid.tile-view .info-btn { right: 6px; }
-    .post-grid.tile-view .ws-btn { right: calc(6px + var(--act) + 4px); }
+    .post-grid.tile-view .clip-btn { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .tag-btn { right: calc(6px + 2 * (var(--act) + 4px)); }
     .post-grid.tile-view .act-pill { width: var(--act); height: var(--act); top: 6px; right: 6px; }
-    .post-grid.tile-view .post-card:has(.ws-btn:hover) .act-pill { right: calc(6px + var(--act) + 4px); }
+    .post-grid.tile-view .post-card:has(.clip-btn:hover) .act-pill { right: calc(6px + var(--act) + 4px); }
     .post-grid.tile-view .post-card:has(.info-btn:hover) .act-pill { right: 6px; }
     .post-grid.tile-view .post-card:has(.tag-btn:hover) .act-pill { right: calc(6px + 2 * (var(--act) + 4px)); }
-    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .ws-btn svg, .post-grid.tile-view .tag-btn svg { width: 60%; height: 60%; }
+    .post-grid.tile-view .info-btn svg, .post-grid.tile-view .clip-btn svg, .post-grid.tile-view .tag-btn svg { width: 60%; height: 60%; }
     .post-grid.tile-view .post-card:hover { box-shadow: var(--shadow-md); }
     .post-grid.tile-view .card-img { width: 100%; height: 100%; max-height: none; object-fit: cover; }
     .post-grid.tile-view .post-meta { display: none; }
@@ -1214,9 +1202,9 @@
     .post-flags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 0 0 3px; }
     .post-flag { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
     .post-grid.list-view .post-meta .post-flags { order: 1; margin: 0; }
-    /* 🔖 workspace button: like the other hover actions, but its 'in' state IS
-       meaningful (single tray, so a persistent filled bookmark is correct). */
-    .ws-btn {
+    /* 📎 clip button: like the other hover actions, but its 'in' state IS
+       meaningful (a library-wide flag, so a persistent filled state is correct). */
+    .clip-btn {
       position: absolute; top: 8px; right: 40px;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(20,22,26,0.42); color: #fff; border: none;
@@ -1228,15 +1216,15 @@
     /* Hover buttons are glass (they float OVER the thumbnail = transient over
        content). The blur layer is enabled only on the hovered card so 150
        offscreen-invisible buttons don't each cost a backdrop pass. */
-    .post-card:hover .ws-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn {
+    .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn {
       backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%);
     }
-    .post-card:hover .ws-btn { opacity: 1; }
+    .post-card:hover .clip-btn { opacity: 1; }
     /* Membership: a small accent dot (GitHub starred / iOS hearted idiom —
        accent = state). The earlier rejection was the loud SOLID-filled
        button, not membership display itself; without any cue the hover-red
        below read as "randomly turning red" (user report). */
-    .ws-btn.in::after {
+    .clip-btn.in::after {
       content: ''; position: absolute; top: -1px; right: -1px;
       width: 7px; height: 7px; border-radius: 50%;
       background: var(--accent-soft);
@@ -1244,10 +1232,10 @@
     }
     /* Hovering an in-tray one is red so a click reads as "remove" (same
        hover-red-for-undo rule as folders). */
-    .ws-btn.in:hover { background: var(--danger); }
-    .ws-btn.in:hover::after { display: none; }
-    .ws-btn.added { background: var(--success); }
-    .post-grid.list-view .ws-btn { top: 50%; right: 40px; transform: translateY(-50%); }
+    .clip-btn.in:hover { background: var(--danger); }
+    .clip-btn.in:hover::after { display: none; }
+    .clip-btn.added { background: var(--success); }
+    .post-grid.list-view .clip-btn { top: 50%; right: 40px; transform: translateY(-50%); }
     /* Flyout menus: the card context menu (full action list) and the folder
        picker it opens share one look. */
     .fold-menu {
@@ -1346,7 +1334,7 @@
       background: rgba(255,255,255,0.25);
       transition: opacity .12s;
     }
-    .post-card:has(.ws-btn:hover) .act-pill { right: 40px; opacity: 1; }
+    .post-card:has(.clip-btn:hover) .act-pill { right: 40px; opacity: 1; }
     .post-card:has(.info-btn:hover) .act-pill { right: 8px; opacity: 1; }
     .post-card:has(.tag-btn:hover) .act-pill { right: 72px; opacity: 1; }
     .post-grid.list-view .act-pill { top: 50%; transform: translateY(-50%); }
@@ -1374,7 +1362,7 @@
     /* Rhythm: generous space BETWEEN sections, tight spacing inside them
        (title→content 6px, rows 4-8px) — Linear-style grouping. */
     .sb-section { padding: 0; margin-bottom: 22px; }
-    /* Lower column: separate the big groups (filters / tags / workspace /
+    /* Lower column: separate the big groups (filters / tags / clip /
        folders) by generous WHITESPACE rather than divider lines (user: no
        rules). The extra air carries the structure. */
     .sb-scroll > .sb-section { margin-bottom: 26px; }
@@ -1664,7 +1652,7 @@
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
   .sb-row .sb-row-name { flex: 1; }
-  /* Active-filter count (AND workspace count — same part). The old filled grey
+  /* Active-filter count (AND clip count — same part). The old filled grey
      pill read as a clunky notification badge against the flat sidebar (user: ダサい);
      replaced by a PLAIN right-aligned number matching the tag sub-row counts
      (.sb-subrow-count). It marks an ACTIVE category, so it carries a touch more
@@ -1899,15 +1887,15 @@
           <button class="sb-row" type="button" data-qfrow="hashtag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg></span><span class="sb-row-name" id="sbHashtagRowTitle"></span><span class="sb-row-badge" data-badge="hashtag"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
         </div>
 
-        <!-- Workspace: the single ephemeral tray (one-click hammer on cards) -->
+        <!-- Clip: the library-wide ephemeral flag (one-click 📎 on cards) -->
         <div class="sb-section">
-          <div class="ws-row-wrap">
-            <button class="sb-row ws-row" id="wsRow" type="button">
-              <span class="sb-row-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>
-              <span class="sb-row-name" id="sbWorkspaceTitle">ワークスペース</span>
+          <div class="clip-row-wrap">
+            <button class="sb-row clip-row" id="clipRow" type="button">
+              <span class="sb-row-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></span>
+              <span class="sb-row-name" id="sbClipTitle">クリップ</span>
             </button>
-            <span class="sb-row-badge" id="wsBadge"></span>
-            <button class="ws-clear-btn" id="wsClear" type="button" aria-label="空にする" style="display:none;"><!-- trash icon injected by viewer.js (ICON_TRASH) --></button>
+            <span class="sb-row-badge" id="clipBadge"></span>
+            <button class="clip-clear-btn" id="clipClear" type="button" aria-label="空にする" style="display:none;"><!-- trash icon injected by viewer.js (ICON_TRASH) --></button>
           </div>
         </div>
 
@@ -2367,8 +2355,8 @@
       .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
       .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .ws-btn, .info-btn, .tag-btn { background: rgba(0,0,0,0.6); }
-      .post-card:hover .ws-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .clip-btn, .info-btn, .tag-btn { background: rgba(0,0,0,0.6); }
+      .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
   </style>
 
