@@ -310,6 +310,32 @@ function mimeForFile(name) {
 const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
 function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
 
+// nativeImage decode/resize/toJPEG is synchronous and runs on the main process's
+// single JS thread. The tile grid fires many psimg?w= requests at once when first
+// scrolling into uncached cells; left unbounded they execute back-to-back as one
+// long synchronous burst that starves every other IPC/UI message (first-scroll
+// stutter). Funnel the heavy generation through a small pool that yields to the
+// event loop (setImmediate) between jobs so the main thread keeps breathing, and
+// coalesce concurrent identical requests so each tile is decoded at most once.
+const THUMB_POOL = 2;
+let _thumbRunning = 0;
+const _thumbQueue = [];
+const _thumbInflight = new Map();   // cachePath -> Promise<Buffer|null>
+function _pumpThumbs() {
+  while (_thumbRunning < THUMB_POOL && _thumbQueue.length) {
+    const job = _thumbQueue.shift();
+    _thumbRunning++;
+    setImmediate(async () => {
+      try { job.resolve(await job.fn()); }
+      catch { job.resolve(null); }
+      finally { _thumbRunning--; _pumpThumbs(); }
+    });
+  }
+}
+function runThumbJob(fn) {
+  return new Promise((resolve) => { _thumbQueue.push({ fn, resolve }); _pumpThumbs(); });
+}
+
 async function getThumbnail(resolved, name, w) {
   if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
   let st;
@@ -320,7 +346,12 @@ async function getThumbnail(resolved, name, w) {
   const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.\-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try { return await fs.promises.readFile(cachePath); } catch { /* cache miss */ }
-  try {
+  // Coalesce: if this exact tile is already being generated, await that one job
+  // instead of starting a duplicate decode (a full grid rebuild re-requests still-
+  // visible tiles while the first decode is in flight).
+  const pending = _thumbInflight.get(cachePath);
+  if (pending) return pending;
+  const job = runThumbJob(() => {
     let img = nativeImage.createFromPath(resolved);
     if (img.isEmpty()) return null;
     const sz = img.getSize();
@@ -331,7 +362,9 @@ async function getThumbnail(resolved, name, w) {
     fs.promises.mkdir(thumbCacheDir(), { recursive: true })
       .then(() => fs.promises.writeFile(cachePath, buf)).catch(() => { /* cache best-effort */ });
     return buf;
-  } catch { return null; }
+  });
+  _thumbInflight.set(cachePath, job);
+  try { return await job; } finally { _thumbInflight.delete(cachePath); }
 }
 
 function registerImageProtocol() {

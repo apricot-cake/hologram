@@ -1694,7 +1694,7 @@
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
   const cardThumbW = () => Math.min(720, Math.max(240, Math.ceil((cardSize * 1.3 * _dpr) / 60) * 60));
   const listThumbW = () => Math.min(720, Math.max(120, Math.ceil((listThumb * 1.5 * _dpr) / 60) * 60));
-  function applyTileLayout() {
+  function applyTileLayout(syncSlider = true) {
     const grid = document.getElementById('postGrid');
     if (grid) {
       grid.style.setProperty('--tile-size', tileSize + 'px');
@@ -1703,7 +1703,10 @@
     }
     const row = document.getElementById('tileSizeRow');
     if (row) row.style.display = '';   // every density has a size slider now
-    refreshTileSlider();   // hoisted; keeps the track in sync with the view
+    // refreshTileSlider reads getBoundingClientRect; calling it right after the
+    // CSS-var writes above forces a sync reflow. Skip it during a live drag
+    // (syncSlider=false) — the user is already holding the thumb.
+    if (syncSlider) refreshTileSlider();   // hoisted; keeps the track in sync with the view
   }
   let skipDeleteConfirm = false;
   const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
@@ -5413,7 +5416,7 @@
   function setViewSize(px, commit = true) {
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
-    applyTileLayout();
+    applyTileLayout(commit);   // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
     if (!commit) { if (currentView === 'card') scheduleMasonry(); return; }   // drag: re-pack columns live
     window.corpus.setPref(st.pref, st.get());
     renderPosts();   // re-request thumbnails at the new size (re-packs masonry too)
@@ -5465,10 +5468,17 @@
     const nBig = parseInt(tileSlider.min, 10), nSmall = parseInt(tileSlider.max, 10);
     return nBig + nSmall - parseInt(tileSlider.value, 10);
   }
+  let _dragMetrics = null;   // grid geometry cached for the duration of one size drag
   function onSliderMove(commit) {
     if (!viewSizeState().columns) { setViewSize(parseInt(tileSlider.value, 10), commit); return; }
-    const m = tileGridMetrics();
-    if (m) setViewSize(tileSizeFor(sliderCols(), m), commit);
+    // The grid container width and column gap don't change while only --tile-size
+    // does, so measure once at the drag's first input and reuse it. Re-reading
+    // getBoundingClientRect each input would force a reflow against the previous
+    // input's CSS-var write. Cleared on commit (the slider's change event).
+    const m = (!commit && _dragMetrics) || tileGridMetrics();
+    if (!m) return;
+    _dragMetrics = commit ? null : m;
+    setViewSize(tileSizeFor(sliderCols(), m), commit);
   }
   tileSlider.addEventListener('input', () => onSliderMove(false));
   tileSlider.addEventListener('change', () => onSliderMove(true));
