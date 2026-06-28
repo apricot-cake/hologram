@@ -64,8 +64,20 @@ function isPrivateIp(ip) {
   if (fam === 6) {
     const lc = ip.toLowerCase();
     if (lc === '::1' || lc === '::') return true;                       // loopback / unspecified
-    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/);       // ::ffff:a.b.c.d / ::a.b.c.d
+    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/);       // ::ffff:a.b.c.d / ::a.b.c.d (dotted)
     if (mapped) return isPrivateIPv4(mapped[1]);
+    // ::ffff:0:0/96 IPv4-mapped in HEX form. The WHATWG URL parser normalizes a
+    // dotted mapped literal (e.g. ::ffff:127.0.0.1) to hex (::ffff:7f00:1), so
+    // checkMediaUrl never sees the dotted form above — recover the embedded v4
+    // from the low 32 bits and apply the same private-range check. Groups may be
+    // 1-4 hex digits (leading zeros are dropped: 192.168.0.1 -> ::ffff:c0a8:1).
+    const mapped6 = lc.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mapped6) {
+      const hi = parseInt(mapped6[1], 16);
+      const lo = parseInt(mapped6[2], 16);
+      const v4 = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+      return isPrivateIPv4(v4);
+    }
     if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true;                     // fc00::/7 unique-local
     if (/^fe[89ab][0-9a-f]:/.test(lc)) return true;                     // fe80::/10 link-local
     if (lc.startsWith('ff')) return true;                              // ff00::/8 multicast

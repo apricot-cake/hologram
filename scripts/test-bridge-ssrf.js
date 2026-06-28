@@ -3,7 +3,8 @@
 // SSRF / size-cap guard test for native-host/bridge.js#fetchStillImage.
 // Runs in-process with a stubbed global.fetch (no network). Asserts that:
 //   - IP-literal private/reserved targets (loopback, link-local/cloud-metadata,
-//     RFC1918, ULA, IPv6 ::1) are refused BEFORE any fetch is issued,
+//     RFC1918, ULA, IPv6 ::1, and IPv4-mapped IPv6 in both dotted and hex form)
+//     are refused BEFORE any fetch is issued,
 //   - a redirect from a public host to a private one is refused at the next hop
 //     (manual redirect re-validation), and that private hop is never fetched,
 //   - a body exceeding the size cap (no content-length) is aborted mid-stream,
@@ -27,6 +28,11 @@ global.fetch = async (url) => {
     return new Response('', { status: 302, headers: { location: 'https://127.0.0.1/secret.png' } });
   }
   if (u === 'https://cdn.test/ok.png') {
+    return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
+  }
+  // Public IPv4-mapped IPv6 literal: hex form 8.8.8.8 -> ::ffff:808:808. Must be
+  // ALLOWED (regression: the mapped-hex fix must not over-block public targets).
+  if (u === 'https://[::ffff:808:808]/ok.png') {
     return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
   }
   if (u === 'https://cdn.test/huge.png') {
@@ -55,6 +61,15 @@ global.fetch = async (url) => {
     'https://[::1]/x.png',
     'https://[fe80::1]/x.png',
     'https://[fc00::1]/x.png',
+    // IPv4-mapped IPv6, dotted form (as authored by an attacker).
+    'https://[::ffff:127.0.0.1]/x.png',
+    'https://[::ffff:169.254.169.254]/latest/meta-data/',
+    'https://[::ffff:192.168.0.1]/x.png',
+    // IPv4-mapped IPv6, hex form (what the WHATWG URL parser normalizes the above
+    // to — the actual hostname checkMediaUrl/isPrivateIp see).
+    'https://[::ffff:7f00:1]/x.png',          // 127.0.0.1
+    'https://[::ffff:a9fe:a9fe]/x.png',       // 169.254.169.254 (cloud metadata)
+    'https://[::ffff:c0a8:0001]/x.png',       // 192.168.0.1
     'https://localhost/x.png',
     'https://box.local/x.png',
     'https://svc.internal/x.png',
@@ -81,6 +96,11 @@ global.fetch = async (url) => {
   const ok = await fetchStillImage('https://cdn.test/ok.png');
   assert.ok(ok && ok.ext === 'png' && Buffer.isBuffer(ok.buf) && ok.buf.length === PNG.length,
     'public image should download');
+
+  // 5. A public IPv4-mapped IPv6 literal (hex form) is not over-blocked.
+  const okMapped = await fetchStillImage('https://[::ffff:808:808]/ok.png');
+  assert.ok(okMapped && okMapped.ext === 'png' && okMapped.buf.length === PNG.length,
+    'public IPv4-mapped IPv6 literal should download');
 
   console.log('PASS test-bridge-ssrf: private/redirect/over-cap refused, public ok');
 })().catch((e) => { console.error('FAIL test-bridge-ssrf:', e && e.message ? e.message : e); process.exit(1); });
