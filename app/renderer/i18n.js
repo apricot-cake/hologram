@@ -298,6 +298,11 @@
       cleared: 'データを削除しました',
       clearBlocked: '設定ファイルが壊れている可能性があるため、全削除を中止しました。アプリを再起動してからやり直してください。',
 
+      // viewer: about / version
+      aboutTitle: 'このアプリについて',
+      aboutVersion: 'バージョン $1',
+      aboutTagline: '投稿を丸ごと。あなたの SNS ライブラリに。',
+
       // viewer: export / import toasts
       exporting: 'エクスポート中...',
       exported: 'エクスポートしました',
@@ -661,6 +666,11 @@
       confirmCancel: 'Cancel',
       cleared: 'Data deleted',
       clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
+
+      // viewer: about / version
+      aboutTitle: 'About',
+      aboutVersion: 'Version $1',
+      aboutTagline: 'Whole posts, saved. Your own SNS library.',
 
       exporting: 'Exporting...',
       exported: 'Exported',

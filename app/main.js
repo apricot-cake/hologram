@@ -721,6 +721,15 @@ ipcMain.handle('open-external', (_event, url) => {
   }
 });
 
+// Build/version info for the settings "About" panel. app.getVersion() reads the
+// loaded app's package.json (1.1.0), so it is correct in dev and packaged alike.
+ipcMain.handle('app-info', () => ({
+  version: app.getVersion(),
+  electron: process.versions.electron,
+  chromium: process.versions.chrome,
+  node: process.versions.node
+}));
+
 // Open one library image in its own frameless-ish window (middle-click on a
 // card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
 // Chromium's built-in image view (zoom/fit for free).

@@ -12,6 +12,9 @@
     // tabs / search / sort
     tabTags: _s('tabTags'),
     tabSettings: _s('tabSettings'),
+    aboutTitle: _s('aboutTitle'),
+    aboutVersion: _f1('aboutVersion'),
+    aboutTagline: _s('aboutTagline'),
     searchPlaceholder: _s('searchPlaceholder'),
     searchTags: _s('searchTags'),
     sidebarAuthors: _s('sidebarAuthors'),
@@ -495,6 +498,22 @@
   setText('settingsTrashTitle', MSG.trashTitle);
   setText('emptyTrash', MSG.trashEmptyBtn);
   setText('settingsDangerTitle', MSG.dangerTitle);
+  setText('settingsAboutTitle', MSG.aboutTitle);
+  setText('aboutTagline', MSG.aboutTagline);
+  // About panel: mount the live holographic icon and fill version / build info.
+  // Mounting is safe while hidden — the shader self-gates on visibility.
+  (function initAbout() {
+    const canvas = document.getElementById('aboutIcon');
+    if (canvas && window.corpusAboutIcon) window.corpusAboutIcon.mount(canvas);
+    if (window.corpus && window.corpus.getAppInfo) {
+      window.corpus.getAppInfo().then((info) => {
+        if (!info) return;
+        setText('aboutVersion', MSG.aboutVersion(info.version || ''));
+        const meta = document.getElementById('aboutMeta');
+        if (meta) meta.textContent = `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}`;
+      }).catch(() => {});
+    }
+  })();
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
   setText('clearData', MSG.clearData);
