@@ -5738,6 +5738,119 @@
     }
   });
 
+  // --- Backup status rail (always-visible sidebar footer #mirrorStatus) ---
+  // The settings *modal* moved to the React island (Data.jsx); this is only the
+  // at-a-glance rail, which lives outside the modal and so stays in viewer.js.
+  // It reflects the auto-backup config + last result, refreshing on launch, when
+  // settings opens, and on each backup start/finish.
+  (function setupMirrorStatusRail() {
+    const el = document.getElementById('mirrorStatus');
+    if (!el) return;
+    let cfg = null;
+    let mirrorSyncing = false;
+
+    const fmtTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    // Compact, natural relative time for the always-visible rail line (今日/昨日/M/D).
+    const fmtBackupTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+      const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      const yest = new Date(now); yest.setDate(now.getDate() - 1);
+      if (sameDay(d, now)) return `${MSG.timeToday} ${hhmm}`;
+      if (sameDay(d, yest)) return `${MSG.timeYesterday} ${hhmm}`;
+      if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hhmm}`;
+      return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    };
+    // Status glyphs: spinning circular-arrows (syncing), a check (done) and a warning
+    // triangle (error). Paired with an explicit word so the rail says WHAT it is.
+    const MS_ICON_SYNC = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+    const MS_ICON_DONE = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+    const MS_ICON_WARN = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+    // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
+    function pruneSkipTip(r) {
+      if (r.pruneSkipped === 'shrink') {
+        const span = (r.baselineCount && r.fileCount != null)
+          ? `（${r.baselineCount}→${r.fileCount}${MSG.backupItemsUnit}）` : '';
+        return MSG.backupPruneShrink + span;
+      }
+      return MSG.backupPruneEmpty;
+    }
+    function updateMirrorStatus() {
+      // No backup folder configured → nothing in the rail (progressive disclosure).
+      if (!cfg || !cfg.dir) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
+      // Syncing now: spinning glyph + "バックアップ中…".
+      if (mirrorSyncing) {
+        el.innerHTML = MS_ICON_SYNC + `<span class="ms-t">${escapeHtml(MSG.mirrorSyncingShort)}</span>`;
+        el.className = 'mirror-status is-syncing'; el.title = MSG.backupSyncing; return;
+      }
+      const r = cfg.lastResult;
+      if (!r) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
+      // Last run failed: warning glyph + "バックアップ失敗", the error as the hint.
+      if (r.ok === false && r.error) {
+        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorFailed)}</span>`;
+        el.className = 'mirror-status is-error'; el.title = r.error; return;
+      }
+      // Copy ran but the prune was held back (src looked empty/decimated) — warn
+      // loudly so a wrong save-folder can't silently leave the mirror unpruned.
+      if (r.pruneSkipped) {
+        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorGuarded)}</span>`;
+        el.className = 'mirror-status is-error'; el.title = pruneSkipTip(r); return;
+      }
+      // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
+      // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
+      el.className = 'mirror-status is-done';
+      const ts = fmtBackupTime(r.at);
+      el.innerHTML = MS_ICON_DONE + `<span class="ms-body"><span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>${ts ? `<span class="ms-time">${escapeHtml(ts)}</span>` : ''}</span>`;
+      let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
+      if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
+      else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
+      el.title = tip;
+    }
+
+    async function load() {
+      try { cfg = await window.corpus.getBackup(); } catch { cfg = null; }
+      updateMirrorStatus();
+    }
+
+    // A run started: show the spinner. Make sure cfg is loaded first so a backup
+    // configured mid-session still lights the rail (cfg may have been null at boot).
+    if (window.corpus.onBackupStart) {
+      window.corpus.onBackupStart(async () => {
+        mirrorSyncing = true;
+        if (!cfg || !cfg.dir) { try { cfg = await window.corpus.getBackup(); } catch { /* ignore */ } }
+        updateMirrorStatus();
+      });
+    }
+    // A run finished: carry over the fresh result (and pull cfg if it was empty
+    // when the run began) so the rail is correct without a manual refresh.
+    if (window.corpus.onBackupDone) {
+      window.corpus.onBackupDone(async (_e, r) => {
+        mirrorSyncing = false;
+        if (!cfg) { try { cfg = await window.corpus.getBackup(); } catch { /* ignore */ } }
+        if (cfg && r) cfg.lastResult = r;
+        updateMirrorStatus();
+      });
+    }
+
+    // Refresh when the settings modal opens — the React island may have changed
+    // the backup folder. Also exposed as a bridge so the island can refresh on demand.
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', load);
+    window.corpusViewer = Object.assign(window.corpusViewer || {}, { refreshMirrorStatus: load });
+
+    load();
+  })();
+
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (MSG.deleteKeyword)
   // to enable the OK button — a stray click can't wipe everything.
