@@ -5471,7 +5471,13 @@
     const grid = document.getElementById('postGrid');
     if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
   }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { setTileOverlay: applyTileOverlay });
+  // Bridges the React settings island calls into (the controls live there now,
+  // but these effects touch viewer.js-owned state / the post grid).
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
+    setTileOverlay: applyTileOverlay,
+    reloadPosts: () => loadPosts(),
+    setSkipDeleteConfirm: (v) => { skipDeleteConfirm = v; window.corpus.setPref('skipDeleteConfirm', v); },
+  });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
@@ -6099,7 +6105,10 @@
   confirmKeywordEl.addEventListener('input', () => {
     document.getElementById('confirmOk').disabled = confirmKeywordEl.value.trim() !== MSG.deleteKeyword;
   });
-  document.getElementById('clearData').addEventListener('click', () => {
+  // Opening the clear-all confirm (the shared keyword-gated overlay) is exposed so
+  // the React Danger section triggers the exact same destructive flow — no second
+  // implementation of a wipe dialog.
+  function openClearAllConfirm() {
     pendingDeleteGroup = null;
     document.getElementById('confirmMsg').textContent = MSG.confirmClear;
     document.getElementById('confirmSkipLabel').style.display = 'none';
@@ -6107,7 +6116,9 @@
     setConfirmKeywordMode(true);
     document.getElementById('confirmOverlay').classList.add('show');
     confirmKeywordEl.focus();
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { confirmClearAll: openClearAllConfirm });
+  document.getElementById('clearData').addEventListener('click', openClearAllConfirm);
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
     pendingDeleteGroup = null;
