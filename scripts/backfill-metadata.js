@@ -21,6 +21,16 @@ const { configDir } = require('../native-host/paths');
 const { fetchPostMetadata } = require('../extension/metadata');
 const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download');
 
+// Crash-safe sidecar write: tmp + rename, so a reader (or the app's fs.watch in
+// the save folder) only ever sees the complete old or complete new file, never a
+// torn/zero-byte one. The .tmp suffix is invisible to the watcher's image/json
+// regex. Mirrors app/main.js writeSidecarAtomic.
+function writeJsonAtomicSync(filePath, value) {
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
 function saveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
@@ -69,7 +79,7 @@ function listSidecars(folder) {
       const af = await ensureAvatarFile(folder, base, rec.avatar, rec.avatarReferer);
       if (!af) { failed++; console.log('  no avatar:', f, rec.avatar); continue; }
       rec.avatarFile = af;
-      fs.writeFileSync(p, JSON.stringify(rec, null, 2), 'utf8');
+      writeJsonAtomicSync(p, rec);
       filled++;
       console.log('  avatar:', f, '->', af);
     }
@@ -88,31 +98,45 @@ function listSidecars(folder) {
     if (!missing && !all) { skipped++; continue; }
 
     const m = await fetchPostMetadata(rec.url);
-    if (!m.screenName && !m.text && !m.date) { failed++; console.log('  no data:', f, rec.url); continue; }
+    // Success = the re-fetch produced an API-only field. screenName/handle are
+    // derived from the post URL BEFORE the network call (X sets parsed.screenName,
+    // Bluesky sets parsed.handle), so they are NOT evidence the fetch succeeded —
+    // a failed X/Bluesky fetch still carries a screenName. Gate on text/likes/date,
+    // which only an actual API response can fill; otherwise keep the stored record
+    // intact (don't null-destroy text/author/userId/stats/lang). (audit #2)
+    if (m.text == null && m.likes == null && m.date == null) {
+      failed++; console.log('  no data:', f, rec.url); continue;
+    }
 
+    // Non-destructive merge: `m.X ?? rec.X` keeps the existing value when the
+    // re-fetch lacks that field, so a partial fetch never clears stored fields.
     const merged = Object.assign({}, rec, {
       url: m.url || rec.url,
       platform: m.platform || rec.platform,
-      text: m.text,
+      text: m.text ?? rec.text,
       title: m.title ?? rec.title,                 // keep existing (e.g. pixiv work title) if re-fetch lacks it
-      displayName: m.displayName,
-      screenName: m.screenName,
-      userId: m.userId,
+      displayName: m.displayName ?? rec.displayName,
+      screenName: m.screenName ?? rec.screenName,
+      userId: m.userId ?? rec.userId,
       avatar: m.avatar ?? rec.avatar,                 // keep existing avatar if re-fetch lacks it
       followers: m.followers ?? rec.followers,
       authorCreatedAt: m.authorCreatedAt ?? rec.authorCreatedAt,
-      likes: m.likes,
-      reposts: m.reposts,
-      replies: m.replies,
-      bookmarks: m.bookmarks,
-      views: m.views,
+      likes: m.likes ?? rec.likes,
+      reposts: m.reposts ?? rec.reposts,
+      replies: m.replies ?? rec.replies,
+      bookmarks: m.bookmarks ?? rec.bookmarks,
+      views: m.views ?? rec.views,
       date: m.date || rec.date,
-      mediaType: m.mediaType,
-      lang: m.lang,
+      mediaType: m.mediaType ?? rec.mediaType,
+      lang: m.lang ?? rec.lang,
+      // Reply/quote/thread flags are tri-state (null = "not this kind"). We only
+      // reach here on a successful re-fetch (text/likes/date present), so the fresh
+      // flags are authoritative — a stored `true` must NOT shadow a fresh `null`
+      // (e.g. the post is genuinely no longer detected as a reply). Don't `?? rec`.
       isReply: m.isReply,
       isQuote: m.isQuote,
       isThread: m.isThread,
-      quotedUrl: m.quotedUrl
+      quotedUrl: m.quotedUrl ?? rec.quotedUrl
     });
 
     // Fill the avatar image if we have a URL but no local file yet (merged keeps
@@ -123,7 +147,7 @@ function listSidecars(folder) {
       if (af) merged.avatarFile = af;
     }
 
-    fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+    writeJsonAtomicSync(p, merged);
     updated++;
     console.log('  updated:', f, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));
   }
