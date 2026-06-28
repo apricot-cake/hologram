@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Hint } from '../components/Hint.jsx';
 import { Highlight } from '../components/Highlight.jsx';
+import { Switch } from '../components/Switch.jsx';
 import { t } from '../i18n.js';
 import { getPrefs } from '../ipc.js';
 
@@ -17,8 +18,7 @@ export function Danger() {
     }).catch(() => {});
   }, []);
 
-  const onToggle = (e) => {
-    const checked = e.target.checked;
+  const onToggle = (checked) => {
     setConfirmShown(checked);
     if (window.corpusViewer && window.corpusViewer.setSkipDeleteConfirm) {
       window.corpusViewer.setSkipDeleteConfirm(!checked);
@@ -32,10 +32,7 @@ export function Danger() {
   return (
     <>
       <div style={{ marginBottom: '12px' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-          <input type="checkbox" checked={confirmShown} onChange={onToggle} />
-          <span><Highlight text={t('labelResetDeleteConfirm')} /></span>
-        </label>
+        <Switch checked={confirmShown} onChange={onToggle} label={<Highlight text={t('labelResetDeleteConfirm')} />} />
         <Hint text={t('hintResetDeleteConfirm')} />
       </div>
       <button className="btn-danger" onClick={clearAll}>{t('clearData')}</button>

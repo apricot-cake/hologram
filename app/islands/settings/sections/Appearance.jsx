@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SettingRow } from '../components/SettingRow.jsx';
 import { Hint } from '../components/Hint.jsx';
-import { Toggle } from '../components/Toggle.jsx';
+import { Switch } from '../components/Switch.jsx';
 import { t } from '../i18n.js';
 import * as ipc from '../ipc.js';
 
@@ -37,7 +37,7 @@ export function Appearance() {
       </SettingRow>
       <Hint text={t('hintTheme')} />
       <SettingRow label={t('tileOverlay')} style={{ marginTop: '10px' }}>
-        <Toggle checked={tileOverlay} onChange={(v) => { setTileOverlay(v); ipc.setTileOverlay(v); }} />
+        <Switch checked={tileOverlay} onChange={(v) => { setTileOverlay(v); ipc.setTileOverlay(v); }} />
       </SettingRow>
     </>
   );
