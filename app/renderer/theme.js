@@ -85,3 +85,18 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+// Navigation hardening: a file dropped onto the window would otherwise make the
+// top frame navigate to file://…, which inherits this same preload and could
+// invoke destructive IPC (clearAll/importComplete/…). The app has no
+// drop-a-file-to-import affordance — media import goes through the OS file
+// picker (importImages button → dialog) — so blocking the browser's default
+// drop/dragover everywhere is safe. The app's own internal drag-and-drop
+// (folder reordering, query-builder pills) is element-scoped and already calls
+// preventDefault() in its own bubble-phase handlers, so those keep working; this
+// document-level guard only neutralizes drops that no element handled.
+(function () {
+  var stop = function (e) { e.preventDefault(); };
+  window.addEventListener('dragover', stop, false);
+  window.addEventListener('drop', stop, false);
+})();

@@ -450,12 +450,8 @@ ipcMain.handle('list-posts-delta', (_e, haveBaseline, changedNames) => listPosts
 ipcMain.handle('get-tag-groups', () => {
   const folder = getSaveFolder();
   if (!folder) return { groups: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'tag-groups.json'), 'utf8'));
-    return { groups: Array.isArray(j.groups) ? j.groups : [] };
-  } catch {
-    return { groups: [] };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'tag-groups.json'));
+  return { groups: (j && Array.isArray(j.groups)) ? j.groups : [] };
 });
 
 ipcMain.handle('set-tag-groups', (_e, groups) => {
@@ -463,7 +459,7 @@ ipcMain.handle('set-tag-groups', (_e, groups) => {
   if (!folder || !Array.isArray(groups)) return { ok: false };
   try {
     fs.mkdirSync(folder, { recursive: true });
-    writeJsonAtomicSync(path.join(folder, 'tag-groups.json'), { groups });
+    writeOrgJsonSync(path.join(folder, 'tag-groups.json'), { groups });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -479,14 +475,10 @@ ipcMain.handle('set-tag-groups', (_e, groups) => {
 ipcMain.handle('get-tag-types', () => {
   const folder = getSaveFolder();
   if (!folder) return { types: {}, labels: null };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'tag-types.json'), 'utf8'));
-    const types = (j && j.types && typeof j.types === 'object') ? j.types : {};
-    const labels = (j && j.labels && typeof j.labels === 'object') ? j.labels : null;
-    return { types, labels };
-  } catch {
-    return { types: {}, labels: null };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'tag-types.json'));
+  const types = (j && j.types && typeof j.types === 'object') ? j.types : {};
+  const labels = (j && j.labels && typeof j.labels === 'object') ? j.labels : null;
+  return { types, labels };
 });
 
 ipcMain.handle('set-tag-types', (_e, types, labels) => {
@@ -496,7 +488,7 @@ ipcMain.handle('set-tag-types', (_e, types, labels) => {
     fs.mkdirSync(folder, { recursive: true });
     const out = { types };
     if (labels && typeof labels === 'object') out.labels = labels;
-    writeJsonAtomicSync(path.join(folder, 'tag-types.json'), out);
+    writeOrgJsonSync(path.join(folder, 'tag-types.json'), out);
     return { ok: true };
   } catch {
     return { ok: false };
@@ -509,18 +501,14 @@ ipcMain.handle('set-tag-types', (_e, types, labels) => {
 ipcMain.handle('get-ungrouped', () => {
   const folder = getSaveFolder();
   if (!folder) return { keys: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'ungrouped.json'), 'utf8'));
-    return { keys: Array.isArray(j.keys) ? j.keys : [] };
-  } catch {
-    return { keys: [] };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'ungrouped.json'));
+  return { keys: (j && Array.isArray(j.keys)) ? j.keys : [] };
 });
 ipcMain.handle('set-ungrouped', (_e, keys) => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false };
   try {
-    writeJsonAtomicSync(path.join(folder, 'ungrouped.json'),
+    writeOrgJsonSync(path.join(folder, 'ungrouped.json'),
       { keys: Array.isArray(keys) ? keys.map(String) : [] });
     return { ok: true };
   } catch {
@@ -536,18 +524,14 @@ ipcMain.handle('set-ungrouped', (_e, keys) => {
 ipcMain.handle('get-poster-folders', () => {
   const folder = getSaveFolder();
   if (!folder) return { folders: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-folders.json'), 'utf8'));
-    return { folders: Array.isArray(j.folders) ? j.folders : [] };
-  } catch {
-    return { folders: [] };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'poster-folders.json'));
+  return { folders: (j && Array.isArray(j.folders)) ? j.folders : [] };
 });
 ipcMain.handle('set-poster-folders', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
   try {
-    writeJsonAtomicSync(path.join(folder, 'poster-folders.json'), { folders: data.folders });
+    writeOrgJsonSync(path.join(folder, 'poster-folders.json'), { folders: data.folders });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -560,18 +544,14 @@ ipcMain.handle('set-poster-folders', (_e, data) => {
 ipcMain.handle('get-poster-tags', () => {
   const folder = getSaveFolder();
   if (!folder) return { tags: {} };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'poster-tags.json'), 'utf8'));
-    return { tags: (j && typeof j.tags === 'object' && j.tags) ? j.tags : {} };
-  } catch {
-    return { tags: {} };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'poster-tags.json'));
+  return { tags: (j && typeof j.tags === 'object' && j.tags) ? j.tags : {} };
 });
 ipcMain.handle('set-poster-tags', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
   try {
-    writeJsonAtomicSync(path.join(folder, 'poster-tags.json'), { tags: data.tags });
+    writeOrgJsonSync(path.join(folder, 'poster-tags.json'), { tags: data.tags });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -584,19 +564,15 @@ ipcMain.handle('set-poster-tags', (_e, data) => {
 ipcMain.handle('get-manual-groups', () => {
   const folder = getSaveFolder();
   if (!folder) return { groups: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'manual-groups.json'), 'utf8'));
-    return { groups: Array.isArray(j.groups) ? j.groups : [] };
-  } catch {
-    return { groups: [] };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'manual-groups.json'));
+  return { groups: (j && Array.isArray(j.groups)) ? j.groups : [] };
 });
 ipcMain.handle('set-manual-groups', (_e, groups) => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false };
   try {
     const clean = Array.isArray(groups) ? groups.filter((g) => Array.isArray(g) && g.length > 1).map((g) => g.map(String)) : [];
-    writeJsonAtomicSync(path.join(folder, 'manual-groups.json'), { groups: clean });
+    writeOrgJsonSync(path.join(folder, 'manual-groups.json'), { groups: clean });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -610,17 +586,14 @@ ipcMain.handle('set-manual-groups', (_e, groups) => {
 ipcMain.handle('get-folders', () => {
   const folder = getSaveFolder();
   if (!folder) return { folders: [], workspace: [], posterWorkspace: [] };
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
-    const folders = Array.isArray(j.folders) ? j.folders
-      .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
-      .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
-    const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
-    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    return { folders, workspace, posterWorkspace };
-  } catch {
-    return { folders: [], workspace: [], posterWorkspace: [] };
-  }
+  const { value: j } = readOrgJsonSync(path.join(folder, 'folders.json'));
+  if (!j) return { folders: [], workspace: [], posterWorkspace: [] };
+  const folders = Array.isArray(j.folders) ? j.folders
+    .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
+    .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
+  const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
+  const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
+  return { folders, workspace, posterWorkspace };
 });
 ipcMain.handle('set-folders', (_e, data) => {
   const folder = getSaveFolder();
@@ -632,7 +605,7 @@ ipcMain.handle('set-folders', (_e, data) => {
       .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
     const workspace = (data && Array.isArray(data.workspace)) ? [...new Set(data.workspace.map(String))] : [];
     const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
-    writeJsonAtomicSync(path.join(folder, 'folders.json'), { folders, workspace, posterWorkspace });
+    writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, workspace, posterWorkspace });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -681,19 +654,25 @@ ipcMain.handle('get-collections', () => {
   const empty = { collections: [], activeId: null, clip: [], posterWorkspace: [] };
   if (!folder) return empty;
   // 1) already migrated → read collections.json
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(folder, 'collections.json'), 'utf8'));
+  const collectionsPath = path.join(folder, 'collections.json');
+  const { value: j, degraded } = readOrgJsonSync(collectionsPath);
+  if (j) {
     const collections = normCollections(j.collections);
     const ids = new Set(collections.map((c) => c.id));
     const activeId = (typeof j.activeId === 'string' && ids.has(j.activeId)) ? j.activeId : null;
     const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
     const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
     return { collections, activeId, clip, posterWorkspace };
-  } catch { /* not migrated yet — fall through */ }
-  // 2) migrate a legacy folders.json once, write collections.json, delete folders.json
+  }
+  // collections.json present-but-corrupt: return empty so the UI loads, but the
+  // file stays flagged degraded so set-collections won't purge it. Do NOT fall
+  // through to migration — that would overwrite the recoverable file (and could
+  // drop clip membership the migration can't reconstruct from folders.json).
+  if (degraded) return empty;
+  // 2) collections.json absent → migrate a legacy folders.json once, write it, delete folders.json
   const migrated = migrateFoldersToCollections(folder);
   if (!migrated) return empty;
-  try { writeJsonAtomicSync(path.join(folder, 'collections.json'), migrated); } catch { return migrated; }
+  try { writeOrgJsonSync(collectionsPath, migrated); } catch { return migrated; }
   try { fs.unlinkSync(path.join(folder, 'folders.json')); } catch { /* best-effort */ }
   return migrated;
 });
@@ -706,7 +685,7 @@ ipcMain.handle('set-collections', (_e, data) => {
     const activeId = (data && typeof data.activeId === 'string' && ids.has(data.activeId)) ? data.activeId : null;
     const clip = (data && Array.isArray(data.clip)) ? [...new Set(data.clip.map(String))] : [];
     const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
-    writeJsonAtomicSync(path.join(folder, 'collections.json'), { collections, activeId, clip, posterWorkspace });
+    writeOrgJsonSync(path.join(folder, 'collections.json'), { collections, activeId, clip, posterWorkspace });
     return { ok: true };
   } catch {
     return { ok: false };
@@ -720,16 +699,14 @@ ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
 ipcMain.handle('get-tabs', () => {
   const folder = getSaveFolder();
   if (!folder) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(folder, 'tabs.json'), 'utf8'));
-    return (raw && Array.isArray(raw.tabs)) ? raw : null;
-  } catch { return null; }
+  const { value: raw } = readOrgJsonSync(path.join(folder, 'tabs.json'));
+  return (raw && Array.isArray(raw.tabs)) ? raw : null;
 });
 ipcMain.handle('set-tabs', (_e, data) => {
   const folder = getSaveFolder();
   if (!folder) return { ok: false };
   try {
-    writeJsonAtomicSync(path.join(folder, 'tabs.json'), data);
+    writeOrgJsonSync(path.join(folder, 'tabs.json'), data);
     return { ok: true };
   } catch { return { ok: false }; }
 });
@@ -835,6 +812,56 @@ function writeJsonAtomicSync(filePath, value) {
   fs.renameSync(tmp, filePath);
 }
 
+// --- Organization-JSON degraded guard --------------------------------------
+// The atomic writes above stop US from tearing these files, but a file can still
+// be present-but-unparseable from an external edit, a pre-atomic-write torn file,
+// or disk corruption. The get-* handlers can't tell that apart from "file absent"
+// (both JSON.parse-throw paths), so they'd return the empty default; the renderer
+// adopts it and the next set-* persists {} back — permanently purging the layer.
+// Same failure mode (and the same defense) as readConfig()/clear-all: when a read
+// finds a file present-but-corrupt we (1) keep a forensic copy, (2) flag the file
+// degraded, and (3) refuse the next write to it, so the corrupt-but-recoverable
+// file is preserved instead of overwritten with an empty default. A clean read
+// (e.g. after the user restores/removes the bad file and restarts) clears the flag.
+const degradedOrgFiles = new Set();
+
+// Read an org JSON. Returns { value, degraded }:
+//   - absent (ENOENT)        → { value: null, degraded: false }  (legitimately empty)
+//   - present but unparseable → { value: null, degraded: true }  (preserve, don't purge)
+//   - parsed                  → { value: <obj>, degraded: false }
+function readOrgJsonSync(filePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    degradedOrgFiles.delete(filePath);   // truly absent — not corruption
+    return { value: null, degraded: false };
+  }
+  try {
+    const value = JSON.parse(raw);
+    degradedOrgFiles.delete(filePath);   // clean read clears any prior degraded flag
+    return { value, degraded: false };
+  } catch {
+    if (!degradedOrgFiles.has(filePath)) {
+      // Keep one forensic copy the first time we notice this corruption.
+      try { if (raw && raw.length) fs.copyFileSync(filePath, `${filePath}.corrupt-${Date.now()}`); } catch { /* best-effort */ }
+    }
+    degradedOrgFiles.add(filePath);
+    return { value: null, degraded: true };
+  }
+}
+
+// Atomic write that refuses to clobber a file currently flagged degraded. Throws
+// so the caller's existing try/catch returns { ok: false } and the corrupt file
+// is left intact (the in-memory data isn't lost — the renderer keeps it and can
+// retry once the underlying file is fixed and re-read cleanly).
+function writeOrgJsonSync(filePath, value) {
+  if (degradedOrgFiles.has(filePath)) {
+    throw new Error('refusing to overwrite degraded org file: ' + path.basename(filePath));
+  }
+  writeJsonAtomicSync(filePath, value);
+}
+
 // Recover the captureId base from a filename. The argument may be the primary
 // image (<base>.<ext>, any viewable ext), a video poster (<base>-poster.<ext>),
 // or the video itself. Strip the -poster marker first, then any extension.
@@ -902,12 +929,14 @@ ipcMain.handle('delete-post', async (_e, image) => {
       rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
       if (rec.image) targets.add(path.basename(rec.image));
       if (rec.video) targets.add(path.basename(rec.video));
+      if (rec.avatarFile) targets.add(path.basename(rec.avatarFile));
       for (const m of (rec.media || [])) { if (m && m.file) targets.add(path.basename(m.file)); }
     } catch { /* sidecar missing/corrupt — fall back to the disk sweep */ }
   }
   try {
     for (const f of await fs.promises.readdir(folder)) {
-      if (f.startsWith(`${base}-media-`) || f.startsWith(`${base}-poster.`)) targets.add(f);
+      if (f.startsWith(`${base}-media-`) || f.startsWith(`${base}-poster.`) ||
+          f.startsWith(`${base}-avatar.`)) targets.add(f);
     }
   } catch { /* ignore */ }
   const trashDir = getTrashDir();
@@ -1568,6 +1597,39 @@ function savedWindowBounds() {
   return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
 }
 
+// Navigation lockdown for every web-contents the app creates. Without it, a file
+// (e.g. a local .html) dropped onto a window would make the top frame navigate to
+// file://…, which inherits the same preload and could call destructive IPC
+// (clear-all / import-complete / …). We:
+//   - deny will-navigate to anything other than our own renderer (file://…/
+//     renderer/index.html) or the psimg:// image-viewer scheme. The initial
+//     loadFile/loadURL does NOT fire will-navigate, so this never blocks startup.
+//   - deny window.open / target=_blank entirely; external links are funneled
+//     through the open-external IPC (shell.openExternal), which this leaves intact.
+function installNavigationGuards() {
+  const indexFile = path.resolve(__dirname, 'renderer', 'index.html');
+  const isAllowedNavigation = (rawUrl) => {
+    let u;
+    try { u = new URL(rawUrl); } catch { return false; }
+    // The standalone image window lives on the app-controlled psimg:// scheme.
+    if (u.protocol === 'psimg:') return true;
+    // Our own renderer, reached by file path (ignore query/hash differences).
+    if (u.protocol === 'file:') {
+      try { return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile; }
+      catch { return false; }
+    }
+    return false;
+  };
+  app.on('web-contents-created', (_e, contents) => {
+    contents.on('will-navigate', (event, url) => {
+      if (!isAllowedNavigation(url)) event.preventDefault();
+    });
+    // Deny all renderer-initiated new windows/tabs. External navigation is meant
+    // to go through the open-external IPC, not a popup that inherits our preload.
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  });
+}
+
 // --- Window ---
 function createWindow(show = true) {
   // Resolve the theme from config up front so the first paint (and the window's
@@ -1652,6 +1714,7 @@ if (!gotSingleInstanceLock) {
   try { if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true }); } catch { /* ignore */ }
   if (!SMOKE) ensureHostRegistered();
   registerImageProtocol();
+  installNavigationGuards();
   const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
   createWindow(!SMOKE && !startMin);   // start-minimized → create hidden, then show inactive below
   watchSaveFolder();
