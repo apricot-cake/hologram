@@ -10,7 +10,7 @@
 cd app && npm install
 ```
 
-- 手元の実ターミナルから動かすだけなら `npm start` か `restart-app.vbs` でよい。
+- 手元の実ターミナルから動かすだけなら `npm start`、ワンクリック起動は `restart-app.ps1` を右クリック →「PowerShell で実行」でよい。
 - **Claude（MSIX コンテナ内）や CDP 検証を伴う起動は `CorpusLaunch` タスク経由**（下記「コード変更の反映」）。初回／タスク削除後は `restart-app.ps1` を一度実行するとタスクが自己作成される（以後は最小形で再起動可）。
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
@@ -24,7 +24,7 @@ Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -lik
 Start-ScheduledTask -TaskName 'CorpusLaunch'
 ```
 
-ユーザーのワンクリックは `restart-app.vbs`（コンソール無しで `restart-app.ps1` を実行）。`restart-app.ps1` は graceful close ＋ `CorpusLaunch` タスクの自己修復（無ければ作成）＋起動をまとめてある。
+ユーザーのワンクリックは `restart-app.ps1` を右クリック →「PowerShell で実行」（窓は出るが終了時に自動で閉じる）。`restart-app.ps1` は graceful close ＋ `CorpusLaunch` タスクの自己修復（無ければ作成）＋起動をまとめてある。
 
 - **なぜ直接 `Start-Process electron.exe` を使わないか**: Claude のシェルは MSIX パッケージ（`Claude_pzs8sxrjxfjjc`）内で動くため、そこから直接起動した electron はコンテナの子＝HKCU/FS が仮想化され、ネイティブホスト登録が実 Chrome から見えない私的ハイブに入りキャプチャが壊れる。`CorpusLaunch` タスクは Task Scheduler サービス（コンテナ外）が起動する＝**実 HKCU/実 FS で動く**（2026-06-26 にレジストリ probe で実証）。ユーザーが直接起動した場合と同一になる。
 - `CorpusLaunch` タスク定義: `electron.exe "<repo>\app" --remote-debugging-port=9222`（ポートは実機CDP検証用＝下記「検証ルール」）／Interactive（ウィンドウが出る）／Limited（非昇格）／トリガー無し（`Start-ScheduledTask` でのみ起動）。`restart-app.ps1` はアクションのパス/引数が drift したら毎回貼り直す（リポ移動にも追従）。`Start-ScheduledTask` が "task not found" を返したら一度 `restart-app.ps1` を実行して作り直す。
