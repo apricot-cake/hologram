@@ -8,6 +8,14 @@
 //   方式は macOS 風セグメント（#searchModeSeg の #searchModeExact/#searchModeFuzzy）で切替。
 //   両オプション常時表示＝状態 (is-on) と切替手段がひと目で分かる UI もここで検証。
 //
+// Also verifies the date-filter predicate's timezone boundary (postPredOf /
+// localDayRange). The picker value is a LOCAL calendar day, so a post whose UTC
+// instant falls on a different UTC day than its local day must bucket by the
+// LOCAL day (matching what the app shows on the card). We force TZ=Asia/Tokyo
+// (UTC+9) and seed posts straddling JST midnight, then assert the from=to=6/20
+// range includes exactly the two posts that read as 6/20 in local time. A
+// UTC-anchored bound would mis-bucket the two boundary posts (regression guard).
+//
 //   node scripts/test-app-search.js
 
 const { spawn } = require('child_process');
@@ -38,11 +46,34 @@ for (let i = 0; i < texts.length; i++) {
   }, null, 2));
 }
 
+// Date-filter boundary fixtures. TZ is Asia/Tokyo (UTC+9), so the LOCAL day of
+// each `date` instant is what matters. Filter target = local 2026-06-20.
+//   dz0: UTC 6/19 16:00 = JST 6/20 01:00  -> local 6/20  -> IN
+//   dz1: UTC 6/20 14:59 = JST 6/20 23:59  -> local 6/20  -> IN
+//   dz2: UTC 6/20 15:00 = JST 6/21 00:00  -> local 6/21  -> OUT (just after)
+//   dz3: UTC 6/19 14:59 = JST 6/19 23:59  -> local 6/19  -> OUT (just before)
+// A UTC-anchored bound would flip dz0 (->OUT) and dz2 (->IN): the regression.
+const dateFixtures = [
+  { id: 'dz0', date: '2026-06-19T16:00:00Z' },
+  { id: 'dz1', date: '2026-06-20T14:59:00Z' },
+  { id: 'dz2', date: '2026-06-20T15:00:00Z' },
+  { id: 'dz3', date: '2026-06-19T14:59:00Z' },
+];
+for (const dz of dateFixtures) {
+  const id = '1750000000000-' + dz.id;
+  fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
+  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
+    captureId: id, image: id + '.jpg', url: 'https://x.com/u/status/' + dz.id,
+    platform: 'x', text: 'boundary ' + dz.id, displayName: 'D', screenName: 'd',
+    likes: 0, capturedAt: dz.date, date: dz.date, media: [], tags: [], hashtags: []
+  }, null, 2));
+}
+
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  await waitFor(() => cards() >= 3);   // post view loads async
+  await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
   const sb = document.getElementById('searchBox');
   const seg = document.getElementById('searchModeSeg');
   const exactBtn = document.getElementById('searchModeExact');
@@ -63,10 +94,42 @@ const evalJs = `(async () => {
   sb.value = 'こんにとは'; sb.dispatchEvent(new Event('input', { bubbles: true }));
   await wait(220);
   const fuzzyTypo = cards();
-  return { normalKana, fuzzyKana, fuzzyTypo, defaultMode, selValue, exactOnByDefault, fuzzyOn };
+
+  // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
+  // Clear the search term so it does not co-filter the grid, then drive the real
+  // date popover (same path the user takes): set from/to, field, click Apply.
+  sb.value = ''; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  await wait(220);
+  // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
+  // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
+  // AND dz2 (adds it), so the COUNT stays 2 while the SET changes — only the set
+  // distinguishes correct (dz0,dz1) from buggy (dz1,dz2).
+  // NOTE: this string is itself inside a backtick template literal, so the regex
+  // backslash MUST be doubled (\\d) to survive into the evaluated code.
+  const dzSet = () => Array.from(document.querySelectorAll('#postGrid .post-card'))
+    .map((c) => (c.dataset.url || '').split('/').pop())
+    .filter((id) => /^dz\\d$/.test(id)).sort().join(',');
+  const applyDate = async (field, from, to) => {
+    document.getElementById('qfDateFrom').value = from;
+    document.getElementById('qfDateTo').value = to;
+    document.getElementById('qfDateType').dataset.field = field;
+    document.getElementById('qfDateApply').click();
+    // The grid re-renders async (folder refresh + animation); poll until the
+    // visible post count settles to 2 (the boundary matches) before snapshotting.
+    await waitFor(() => cards() === 2);
+    await wait(120);
+    return dzSet();
+  };
+  // from=to=2026-06-20 (local). Expect exactly dz0 + dz1 (both read 6/20 in JST).
+  const dateRange = await applyDate('date', '2026-06-20', '2026-06-20');
+  // capturedAt mirrors date in the fixtures → same field path must yield the same set.
+  const capturedRange = await applyDate('capturedAt', '2026-06-20', '2026-06-20');
+
+  return { normalKana, fuzzyKana, fuzzyTypo, defaultMode, selValue, exactOnByDefault, fuzzyOn, dateRange, capturedRange };
 })()`;
 
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
+// TZ=Asia/Tokyo (UTC+9) so the date-filter section exercises a non-UTC boundary.
+const env = Object.assign({}, process.env, { TZ: 'Asia/Tokyo', APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
@@ -77,8 +140,9 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 &&
     r.defaultMode === 'normal' && r.selValue === 'fuzzy' &&
-    r.exactOnByDefault === true && r.fuzzyOn === true;
-  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} default=${r.defaultMode} mode=${r.selValue} exactOn=${r.exactOnByDefault} fuzzyOn=${r.fuzzyOn}`);
+    r.exactOnByDefault === true && r.fuzzyOn === true &&
+    r.dateRange === 'dz0,dz1' && r.capturedRange === 'dz0,dz1';
+  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} default=${r.defaultMode} mode=${r.selValue} exactOn=${r.exactOnByDefault} fuzzyOn=${r.fuzzyOn} dateRange=${r.dateRange} capturedRange=${r.capturedRange}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

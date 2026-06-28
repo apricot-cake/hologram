@@ -702,6 +702,27 @@
       : '';
   };
 
+  // Turns a "YYYY-MM-DD" date-picker range into absolute epoch bounds for the
+  // date-filter predicates (post + poster). The picker value is a LOCAL calendar
+  // day, and every date the app shows (cards, tooltip, inspector) is rendered in
+  // local time — so the range must be anchored to local midnight, NOT UTC.
+  //   - `new Date('YYYY-MM-DDT00:00:00')` (no trailing 'Z') is parsed as local
+  //     midnight; appending 'Z' would shift the bound by the UTC offset and, in
+  //     non-UTC zones (e.g. JST), silently drop/add posts near midnight whose
+  //     local calendar day differs from their UTC day. Do not add 'Z' here.
+  //   - `to` is the exclusive START of the day after the selected end day, so the
+  //     whole end day is included (to-inclusive via next-day-exclusive). setDate
+  //     past month/DST edges is handled by Date normalization.
+  // `p[field]` (an absolute ISO instant with a 'Z'/offset) is compared as-is;
+  // Date comparison is on epoch millis, so an instant lands in the local day that
+  // contains it — matching what the user sees on the card.
+  function localDayRange(from, to) {
+    return {
+      from: from ? new Date(from + 'T00:00:00') : null,
+      to: to ? (() => { const d = new Date(to + 'T00:00:00'); d.setDate(d.getDate() + 1); return d; })() : null,
+    };
+  }
+
   function formatShortDate(dateStr) {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');
@@ -1756,10 +1777,7 @@
       case 'workspace': return (p) => !!(CF() && CF().isClipped(p.captureId));   // legacy alias for any old persisted ws leaf (tabs.json)
       case 'date': {
         const field = f.dateField || 'date';
-        const from = f.from ? new Date(f.from + 'T00:00:00') : null;
-        let to = null;
-        // Exclusive next-day bound so the whole selected end day is included.
-        if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }
+        const { from, to } = localDayRange(f.from, f.to);   // local-day bounds (see localDayRange)
         return (p) => {
           if (!p[field]) return false;
           const d = new Date(p[field]);
@@ -4859,8 +4877,7 @@
       case 'folder': { const fo = posterFolderById(f.value); const set = new Set(fo ? fo.items : []); return (u) => set.has(u.key); }
       case 'date': {
         const field = f.dateField || 'latest';   // latest | lastCapture | authorCreatedAt
-        const from = f.from ? new Date(f.from + 'T00:00:00') : null;
-        let to = null; if (f.to) { to = new Date(f.to + 'T00:00:00'); to.setDate(to.getDate() + 1); }   // exclusive end
+        const { from, to } = localDayRange(f.from, f.to);   // local-day bounds (see localDayRange)
         return (u) => { const v = u[field]; if (!v) return false; const d = new Date(v); return (!from || d >= from) && (!to || d < to); };
       }
       default: return () => true;
