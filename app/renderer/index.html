@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <title>Corpus</title>
   <link rel="stylesheet" href="design-tokens.css">
+  <link rel="stylesheet" href="islands/settings.css">
   <script src="theme.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2458,27 +2459,9 @@
     }
   </style>
 
-  <!-- Settings overlay: #panelSettings is relocated into here by viewer.js so it
-       floats above either mode (the gear opens it from anywhere). -->
-  <div id="settingsView" class="settings-view" hidden>
-    <div class="settings-view-inner">
-      <div class="settings-view-head">
-        <h1 class="settings-view-title" id="settingsViewTitle">設定</h1>
-        <div class="settings-search-wrap">
-          <svg class="settings-search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" id="settingsSearch" class="settings-search" autocomplete="off">
-        </div>
-        <button id="settingsClose" class="icon-btn" type="button" aria-label="閉じる" title="閉じる">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-        </button>
-      </div>
-      <div class="settings-empty" id="settingsNoMatch" hidden></div>
-      <div class="settings-body" id="settingsBody">
-        <nav class="settings-toc" id="settingsToc"></nav>
-        <!-- #panelSettings is appended into #settingsBody at runtime -->
-      </div>
-    </div>
-  </div>
+  <!-- Settings modal is a React island (app/islands/settings); it renders the
+       whole overlay into this mount point. The gear (#settingsBtn) opens it. -->
+  <div id="settingsRoot"></div>
 
   <script src="../vendor/jszip.min.js"></script>
   <script src="i18n.js"></script>
@@ -2487,6 +2470,7 @@
   <script src="search.js"></script>
   <script src="about-icon.js"></script>
   <script src="viewer.js"></script>
+  <script src="islands/settings.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

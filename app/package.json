@@ -8,11 +8,16 @@
     "start": "electron .",
     "dist": "electron-builder",
     "register-host": "node ../native-host/install.js",
-    "unregister-host": "node ../native-host/install.js uninstall"
+    "unregister-host": "node ../native-host/install.js uninstall",
+    "build:settings": "node islands/build.mjs",
+    "watch:settings": "node islands/build.mjs --watch"
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "build": {
     "appId": "com.corpus.app",

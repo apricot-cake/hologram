@@ -500,20 +500,8 @@
   setText('settingsDangerTitle', MSG.dangerTitle);
   setText('settingsAboutTitle', MSG.aboutTitle);
   setText('aboutTagline', MSG.aboutTagline);
-  // About panel: mount the live holographic icon and fill version / build info.
-  // Mounting is safe while hidden — the shader self-gates on visibility.
-  (function initAbout() {
-    const canvas = document.getElementById('aboutIcon');
-    if (canvas && window.corpusAboutIcon) window.corpusAboutIcon.mount(canvas);
-    if (window.corpus && window.corpus.getAppInfo) {
-      window.corpus.getAppInfo().then((info) => {
-        if (!info) return;
-        setText('aboutVersion', MSG.aboutVersion(info.version || ''));
-        const meta = document.getElementById('aboutMeta');
-        if (meta) meta.textContent = `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}`;
-      }).catch(() => {});
-    }
-  })();
+  // About panel is owned by the React settings island (app/islands/settings) —
+  // it mounts the live holographic icon and fills version / build info there.
   setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
   setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
   setText('clearData', MSG.clearData);
@@ -2220,127 +2208,11 @@
 
   const CF = () => window.corpusFolders;   // shared folder module
 
-  // --- Settings overlay (opened by the brand-bar gear; floats above both modes) ---
-  // Relocate #panelSettings out of #mode-post (which is display:none in image mode)
-  // into the always-available overlay shell so the gear reaches it from anywhere.
-  (function setupSettingsView() {
-    const view = document.getElementById('settingsView');
-    const panel = document.getElementById('panelSettings');
-    const inner = view && view.querySelector('.settings-view-inner');
-    const body = document.getElementById('settingsBody');
-    const toc = document.getElementById('settingsToc');
-    const search = document.getElementById('settingsSearch');
-    const empty = document.getElementById('settingsNoMatch');
-    if (body && panel) body.appendChild(panel);
-
-    // Side TOC from the section headings (one entry per .section). Each section
-    // gets an id so the TOC can select it as a standalone "page".
-    const sections = panel ? [...panel.querySelectorAll('.section')] : [];
-    sections.forEach((sec, i) => { sec.id = sec.id || ('set-sec-' + i); });
-    // Master-detail: the TOC picks ONE section to show as a page; the others are
-    // hidden. activeId is the current page (remembered across opens this session).
-    let activeId = sections[0] ? sections[0].id : null;
-    if (toc && sections.length) {
-      toc.innerHTML = sections.map((sec) => {
-        const h = sec.querySelector('h2');
-        return `<button type="button" class="toc-item" data-target="${sec.id}">${escapeHtml(h ? h.textContent.trim() : sec.id)}</button>`;
-      }).join('');
-      toc.addEventListener('click', (e) => {
-        const it = e.target.closest('.toc-item'); if (!it) return;
-        showPage(it.dataset.target);
-      });
-    }
-    // Section labels are i18n'd at init; refresh the TOC text whenever opening.
-    function syncTocLabels() {
-      if (!toc) return;
-      toc.querySelectorAll('.toc-item').forEach((it) => {
-        const h = document.getElementById(it.dataset.target)?.querySelector('h2');
-        if (h && h.textContent.trim()) it.textContent = h.textContent.trim();
-      });
-    }
-    // Show exactly one section as the active page (clears any search first).
-    function showPage(id) {
-      if (id) activeId = id;
-      if (search) search.value = '';
-      applySearch();
-      inner && inner.scrollTo({ top: 0 });
-    }
-    // Item-level highlight: wrap the matching substring in <mark> inside the shown
-    // sections so the exact setting is pinpointed (esp. in the long データ section),
-    // not just its whole section surfaced. Skips form controls (SELECT/OPTION/INPUT).
-    function clearHighlights() {
-      if (!panel) return;
-      panel.querySelectorAll('mark.set-hl').forEach((m) => {
-        const t = document.createTextNode(m.textContent);
-        const parent = m.parentNode;
-        m.replaceWith(t);
-        parent && parent.normalize();
-      });
-    }
-    function highlightIn(root, q) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-          if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-          const tag = node.parentNode && node.parentNode.nodeName;
-          if (tag === 'SELECT' || tag === 'OPTION' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
-          return node.nodeValue.toLowerCase().includes(q) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-        }
-      });
-      const targets = [];
-      while (walker.nextNode()) targets.push(walker.currentNode);
-      targets.forEach((node) => {
-        const text = node.nodeValue, low = text.toLowerCase();
-        const frag = document.createDocumentFragment();
-        let i = 0, idx;
-        while ((idx = low.indexOf(q, i)) !== -1) {
-          if (idx > i) frag.appendChild(document.createTextNode(text.slice(i, idx)));
-          const mk = document.createElement('mark');
-          mk.className = 'set-hl';
-          mk.textContent = text.slice(idx, idx + q.length);
-          frag.appendChild(mk);
-          i = idx + q.length;
-        }
-        if (i < text.length) frag.appendChild(document.createTextNode(text.slice(i)));
-        node.parentNode.replaceChild(frag, node);
-      });
-    }
-    // No query  → single-page mode: show only the active section.
-    // With query → cross-page search: show every matching section stacked, filter
-    // the TOC, and highlight the matching text within each shown section.
-    function applySearch() {
-      const q = (search ? search.value : '').trim().toLowerCase();
-      clearHighlights();
-      if (!q) {
-        sections.forEach((sec) => { sec.style.display = (sec.id === activeId) ? '' : 'none'; });
-        if (toc) toc.querySelectorAll('.toc-item').forEach((it) => {
-          it.hidden = false;
-          it.classList.toggle('active', it.dataset.target === activeId);
-        });
-        if (empty) empty.hidden = true;
-        return;
-      }
-      let shown = 0;
-      sections.forEach((sec) => {
-        const match = sec.textContent.toLowerCase().includes(q);
-        sec.style.display = match ? '' : 'none';
-        if (match) { shown++; highlightIn(sec, q); }
-        const it = toc && toc.querySelector(`.toc-item[data-target="${sec.id}"]`);
-        if (it) { it.hidden = !match; it.classList.remove('active'); }
-      });
-      if (empty) empty.hidden = shown > 0;
-    }
-    if (search) { search.placeholder = MSG.settingsSearch; search.addEventListener('input', applySearch); }
-    if (empty) empty.textContent = MSG.settingsNoMatch;
-
-    const close = () => { if (view) view.hidden = true; };
-    const open = () => { if (view) { view.hidden = false; syncTocLabels(); showPage(activeId); } };
+  // --- Settings (the React island owns the modal; see app/islands/settings).
+  // The brand-bar gear opens it; Esc / backdrop close are handled in the island.
+  (function wireSettingsGear() {
     const btn = document.getElementById('settingsBtn');
-    const x = document.getElementById('settingsClose');
-    if (btn) btn.addEventListener('click', open);
-    if (x) x.addEventListener('click', close);
-    // モーダル化に伴い、薄暗い背景のクリックでも閉じる
-    if (view) view.addEventListener('click', (e) => { if (e.target === view) close(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view && !view.hidden) close(); });
+    if (btn) btn.addEventListener('click', () => { if (window.corpusSettings) window.corpusSettings.open(); });
   })();
 
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
@@ -2728,7 +2600,7 @@
   function navAllowed() {
     if (browseMode !== 'posts') return false;   // history nav is post-view only (posters/collections excluded)
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return false;
-    if (!document.getElementById('settingsView').hidden) return false;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return false;
     if (!document.getElementById('ivFolderModal').hidden) return false;
     return true;
   }
@@ -4130,7 +4002,7 @@
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (lightbox.classList.contains('show')) return;
-    if (!document.getElementById('settingsView').hidden) return;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
@@ -4633,7 +4505,7 @@
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
-    if (!document.getElementById('settingsView').hidden) return;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (browseMode !== 'posts') return;   // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
@@ -4653,7 +4525,7 @@
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
-    if (!document.getElementById('settingsView').hidden) return;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     e.preventDefault();
     const sb = document.getElementById('searchBox');
@@ -5588,15 +5460,18 @@
     tileResizeT = setTimeout(refreshTileSlider, 150);
   });
 
-  document.getElementById('tileOverlayToggle').addEventListener('change', (e) => {
-    tileOverlay = e.target.checked;
+  // Tile overlay lives in the React settings island now; expose an apply-and-
+  // persist bridge it can call so the post grid updates immediately.
+  function applyTileOverlay(v) {
+    tileOverlay = v;
     window.corpus.setPref('tileOverlay', tileOverlay);
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
     // via CSS), so flip the class directly instead of re-grouping + rebuilding the
     // grid (a full renderPosts reloaded every tile image = flicker).
     const grid = document.getElementById('postGrid');
     if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { setTileOverlay: applyTileOverlay });
 
   // Load saved view mode and skipDeleteConfirm
   const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
