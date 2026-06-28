@@ -247,19 +247,15 @@
        Anchored on the macOS/Windows "About <app>" dialog — big app icon, then name,
        version and a one-line descriptor stacked below it. */
     .about-card { display: flex; flex-direction: column; align-items: center; text-align: center;
-      gap: 12px; padding: 22px 0 10px; }
-    .about-icon { position: relative; width: 116px; height: 116px; border-radius: 24px; overflow: hidden;
-      box-shadow: 0 18px 44px -16px rgba(120,110,210,.45), 0 0 0 1px rgba(255,255,255,.4) inset; }
+      gap: 14px; padding: 24px 0 10px; }
+    /* Deliberately undecorated: no radius, no shadow, no gloss — it should read as a
+       plain flat square image, so the fact that it is quietly animating is a surprise. */
+    .about-icon { width: 176px; height: 176px; }
     .about-icon canvas { display: block; width: 100%; height: 100%; }
-    /* gloss + rim baked over the canvas (mirrors the design's glassy edge) */
-    .about-icon::after { content: ''; position: absolute; inset: 0; pointer-events: none;
-      background: linear-gradient(160deg, rgba(255,255,255,.30) 0%, rgba(255,255,255,.04) 20%, transparent 44%);
-      box-shadow: inset 0 2px 14px rgba(255,255,255,.55), inset 0 -22px 50px rgba(80,60,150,.22); }
     .about-name { font-size: 24px; font-weight: var(--weight-semibold); color: var(--text-strong); letter-spacing: .2px; }
-    .about-version { font-size: var(--text-sm); color: var(--text-muted); margin-top: -6px; }
+    .about-version { font-size: var(--text-sm); color: var(--text-muted); margin-top: -8px; }
     .about-tagline { font-size: var(--text-sm); color: var(--text-muted); max-width: 36em; line-height: 1.55; text-wrap: balance; }
     .about-meta { font-size: 11px; color: var(--text-subtle); font-variant-numeric: tabular-nums; margin-top: 2px; }
-    @media (prefers-reduced-motion: reduce) { .about-icon { /* canvas renders a single static frame in JS */ } }
     /* Settings rows (Settings → 外観) */
     .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
     .side-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -2074,7 +2070,7 @@
     <div class="section" id="settingsAbout">
       <h2 id="settingsAboutTitle">このアプリについて</h2>
       <div class="about-card">
-        <div class="about-icon"><canvas id="aboutIcon" width="232" height="232" aria-hidden="true"></canvas></div>
+        <div class="about-icon"><canvas id="aboutIcon" width="352" height="352" aria-hidden="true"></canvas></div>
         <div class="about-name">Corpus</div>
         <div class="about-version" id="aboutVersion"></div>
         <div class="about-tagline" id="aboutTagline"></div>
