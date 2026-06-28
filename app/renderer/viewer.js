@@ -466,11 +466,6 @@
   setText('settingsLangTitle', MSG.langTitle);
   setText('langAuto', MSG.langAuto);
   setText('hintLang', MSG.hintLang);
-  document.getElementById('langSelect').value = lang;
-  document.getElementById('langSelect').addEventListener('change', async (e) => {
-    await window.corpus.setPref('language', e.target.value);
-    location.reload();
-  });
   setText('settingsShortcutTitle', MSG.shortcutTitle);
   setText('shortcutLink', MSG.shortcutLink);
   setText('hintShortcut', MSG.hintShortcut);
@@ -5480,7 +5475,6 @@
   });
 
   // Load saved view mode and skipDeleteConfirm
-  const resetDeleteConfirmCheckbox = document.getElementById('resetDeleteConfirm');
   window.corpus.getPrefs().then((prefs) => {
     if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
       currentView = prefs.viewMode;
@@ -5500,19 +5494,12 @@
     if (Number.isFinite(prefs.listThumb)) listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
     if (prefs.tileOverlay === false) {
       tileOverlay = false;
-      document.getElementById('tileOverlayToggle').checked = false;
     }
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
-    resetDeleteConfirmCheckbox.checked = !skipDeleteConfirm;
     // Re-render once after applying the saved view mode. Sort is NOT read here anymore
     // — it comes from the tab state (applied by initTabs), so the old prefs/initTabs
     // load race on sortSelect.value is gone.
     renderPosts();
-  });
-
-  resetDeleteConfirmCheckbox.addEventListener('change', () => {
-    skipDeleteConfirm = !resetDeleteConfirmCheckbox.checked;
-    window.corpus.setPref('skipDeleteConfirm', skipDeleteConfirm);
   });
 
   // Search / sort events
@@ -5709,30 +5696,10 @@
     syncSearchToggle();
   }
 
-  // --- Export ZIP ---
-  // モード select で切替: full = 完全エクスポート（library/ 丸ごと＋整理情報、
-  // そのまま再インポート可能）、images = 画像・動画ファイルだけ。
-  document.getElementById('exportZip').addEventListener('click', async () => {
-    showToast(MSG.exporting);
-    const mode = document.getElementById('exportZipMode').value;
-    try {
-      const res = await window.corpus.exportComplete(mode);
-      if (res && res.saved) showToast(MSG.exported);
-      else if (res && res.empty) showToast(MSG.noData);
-      else if (res && res.error) showToast(MSG.exportFailed || MSG.importFailed);
-    } catch {
-      showToast(MSG.exportFailed || MSG.importFailed);
-    }
-  });
-
   // --- Import from ZIP ---
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して
   // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
   // レンダラで読んで importPosts。
-  document.getElementById('importZip').addEventListener('click', () => {
-    document.getElementById('importZipInput').click();
-  });
-
   document.getElementById('importZipInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -5768,19 +5735,6 @@
     } catch {
       showToast(MSG.importFailed);
       e.target.value = '';
-    }
-  });
-
-  // --- Import images（任意の画像ファイルをライブラリへ取り込み）---
-  document.getElementById('importImages').addEventListener('click', async () => {
-    try {
-      const res = await window.corpus.importImages();
-      if (!res || res.canceled) return;
-      await loadPosts();
-      if (res.skipped > 0) showToast(MSG.importSkipped(res.imported, res.skipped));
-      else showToast(MSG.imported(res.imported));
-    } catch {
-      showToast(MSG.importFailed);
     }
   });
 
@@ -6118,7 +6072,6 @@
     confirmKeywordEl.focus();
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { confirmClearAll: openClearAllConfirm });
-  document.getElementById('clearData').addEventListener('click', openClearAllConfirm);
 
   document.getElementById('confirmCancel').addEventListener('click', () => {
     pendingDeleteGroup = null;
