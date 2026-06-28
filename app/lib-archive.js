@@ -24,6 +24,27 @@ const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-t
 
 function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
 
+// --- Zip-bomb / unbounded-expansion guard -------------------------------------
+// A `corpus-export.zip` is shared between machines, so a malicious/corrupt one can
+// declare a tiny compressed payload that expands to gigabytes (zip bomb) and exhaust
+// memory on import (DoS). Cap entry count, total uncompressed bytes, and any single
+// entry's uncompressed size BEFORE extracting, using the sizes declared in the ZIP
+// central directory (cheap to read, no decompression). The per-entry cap is also
+// re-enforced while streaming so a lying central-directory header can't slip past.
+//
+// Sizing vs. a real library (~7,600 captures today, each = screenshot + sidecar +
+// 0..N original media + avatar, so tens of thousands of entries and many GB of
+// original media), with generous headroom for growth — these reject only inputs
+// that are clearly abnormal, never a legitimate complete export.
+const MAX_ZIP_ENTRIES = 200000;                  // ~25k captures × a handful of files each, w/ headroom
+const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024;  // 1 GiB: no single screenshot/sidecar/media is this big
+const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompressed across the whole archive
+class ZipLimitError extends Error {}
+function entryUncompressedSize(entry) {
+  const n = entry && entry._data ? entry._data.uncompressedSize : undefined;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 // --- Zip-Slip guard ------------------------------------------------------------
 // A malicious ZIP can carry entry names with traversal sequences (..) or
 // BACKSLASH separators (a path separator on Windows, NOT caught by a
@@ -200,6 +221,36 @@ async function buildImagesZip(JSZip, srcFolder) {
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
 }
 
+// Stream a single ZIP entry to disk, aborting if its decompressed output exceeds
+// maxBytes. Never buffers the whole entry in memory, so a bomb that under-declares
+// its size in the central directory is still capped at the byte budget (it just
+// pays decompression cost up to the cap, then the partial file is discarded).
+function writeEntryStreamed(entry, tmpPath, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(tmpPath);
+    const src = entry.nodeStream('nodebuffer');
+    let written = 0;
+    let aborted = false;
+    const fail = (err) => {
+      if (aborted) return;
+      aborted = true;
+      try { src.pause(); } catch { /* ignore */ }
+      out.destroy();
+      reject(err);
+    };
+    src.on('data', (chunk) => {
+      if (aborted) return;
+      written += chunk.length;
+      if (written > maxBytes) { fail(new ZipLimitError('entry exceeds per-entry byte cap')); return; }
+      out.write(chunk);
+    });
+    src.on('error', fail);
+    out.on('error', fail);
+    src.on('end', () => { if (!aborted) out.end(); });
+    out.on('finish', () => { if (!aborted) resolve(); });
+  });
+}
+
 // --- Import / restore ----------------------------------------------------------
 async function importCompleteZip(JSZip, destFolder, buffer) {
   try { await fs.promises.mkdir(destFolder, { recursive: true }); } catch { /* ignore */ }
@@ -207,8 +258,19 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   let imported = 0, skipped = 0;
   const orgEntries = {};
   const captures = [];
+  // Zip-bomb pre-checks: tally entry count + declared uncompressed bytes across the
+  // whole archive (not just library/ entries — a bomb can hide anywhere) and reject
+  // up front, before extracting anything.
+  let entryCount = 0;
+  let totalBytes = 0;
   zip.forEach((relPath, entry) => {
     if (entry.dir) return;
+    entryCount += 1;
+    const size = entryUncompressedSize(entry);
+    if (size > MAX_ZIP_ENTRY_BYTES) throw new ZipLimitError('entry "' + relPath + '" declares ' + size + ' bytes (> per-entry cap ' + MAX_ZIP_ENTRY_BYTES + ')');
+    totalBytes += size;
+    if (entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive has > ' + MAX_ZIP_ENTRIES + ' entries');
+    if (totalBytes > MAX_ZIP_TOTAL_BYTES) throw new ZipLimitError('archive declares > ' + MAX_ZIP_TOTAL_BYTES + ' total uncompressed bytes');
     const m = /^library\/(.+)$/.exec(relPath);
     if (!m) return;
     const name = m[1];
@@ -223,7 +285,15 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
       if (!isWithin(destFolder, dest)) { skipped++; continue; }   // defensive Zip-Slip guard
       if (fs.existsSync(dest)) { skipped++; continue; }
       const tmp = dest + '.tmp-import';
-      await fs.promises.writeFile(tmp, await c.entry.async('nodebuffer'));
+      // Streamed write with a per-entry byte cap: caps even an entry whose declared
+      // size lied past the pre-check above. On abort, drop the partial tmp file.
+      try {
+        await writeEntryStreamed(c.entry, tmp, MAX_ZIP_ENTRY_BYTES);
+      } catch (e) {
+        try { await fs.promises.unlink(tmp); } catch { /* ignore */ }
+        if (e instanceof ZipLimitError) { skipped++; continue; }
+        throw e;
+      }
       await fs.promises.rename(tmp, dest);
       imported++;
     } catch { skipped++; }
@@ -258,6 +328,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
 
 module.exports = {
   EXPORT_SKIP, ORG_MERGE,
+  MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed,
   buildCompleteZip, buildImagesZip, importCompleteZip,
   mergeFolders, mergeCollections, foldersToCollections, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups
 };

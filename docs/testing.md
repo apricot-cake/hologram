@@ -22,7 +22,7 @@
 
 ### スモーク／退行・セキュリティ・正しさ
 
-- 実Electron main は `CORPUS_SMOKE` harness で起動。`scripts/test-*.js` 群がカバーする領域＝ブリッジ・原寸メディア・IPC・ハッシュタグ・自動更新・ユーザー/インスタンス・タグ用語帳・クエリビルダー（text 葉化／保存検索）・タブ・コレクション/フォルダ移行・自動バックアップ・Zip-Slip/SSRF・メタ正しさ・index 再利用・テーマトークン/コントラストのパリティ。
+- 実Electron main は `CORPUS_SMOKE` harness で起動。`scripts/test-*.js` 群がカバーする領域＝ブリッジ・原寸メディア・IPC・ハッシュタグ・自動更新・ユーザー/インスタンス・タグ用語帳・クエリビルダー（text 葉化／保存検索）・タブ・コレクション/フォルダ移行・自動バックアップ・Zip-Slip/zip爆弾(展開上限)/SSRF・メタ正しさ・index 再利用・テーマトークン/コントラストのパリティ。
 - **復旧系は 2026-06-23 ライブラリ消失対策の多重防御**＝`test-app-recovery`（冗長ポインタ→config 復元）・`test-backup-guard`（prune 安全弁）・`test-config-recovery`（degraded 時の clear-all 拒否）。安全弁の意図はこの3本を正本とする。
 
 ## キャプチャテスト手順（半自動フロー）
