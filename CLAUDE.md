@@ -24,6 +24,7 @@
 
 - **配置**: 設定・native-host デプロイ・ログ＝`~/.corpus`（`configDir`・上書き `CORPUS_CONFIG_DIR`）／ライブラリ＝config の `saveFolder`（既定 `~/Corpus/library`・変更可）。**いずれも AppData の外**に置く＝MSIX ストレージ仮想化で開発時のコンテナ内外が別フォルダを見て乖離するのを防ぐ（2026-06-23 ライブラリ消失の真因）。
 - **アプリ起動は必ず `CorpusLaunch` タスク経由**（直接 `Start-Process electron.exe` はコンテナ内＝HKCU 仮想化でネイティブホスト登録が実 Chrome から見えずキャプチャが壊れる）。手順・理由・タスク定義は `docs/build.md`。確認は ① 実 Chrome のキャプチャ成否 ② `~/.corpus\bridge.log`／`capture.log`。
+- **レジストリの実体確認は自分で `reg query` せずユーザーに依頼**: Claude Code は Claude Desktop（MSIX 版）から起動されパッケージ ID を継承するため、レジストリ read がパッケージ専用ハイブへリダイレクトされ本物の HKCU を読めない。特に Native Messaging 登録（`HKCU\Software\Google\Chrome\NativeMessagingHosts\`）の状態を自分で `reg query` すると、隔離側の空ハイブを見て「未登録」と誤診し正常な登録を壊れていると誤認する危険がある＝ ユーザーに `reg query` の実行を依頼し、その出力を受け取って判断する。HKCU/HKLM の実体状態を確認したい他のケースも同じ理由で同様にユーザーへ依頼する。
 - **テスト隔離**: `CORPUS_CONFIG_DIR=<tmp>` で configDir をサンドボックス化（Electron スモークは `CORPUS_SMOKE=1`／`CORPUS_SMOKE_EVAL` も）。新規テストもこの規約に従う。
 
 # 守るルール
