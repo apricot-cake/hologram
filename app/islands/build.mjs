@@ -19,8 +19,11 @@ const dev = process.argv.includes('--watch');
 
 /** @type {import('esbuild').BuildOptions} */
 const opts = {
-  entryPoints: [path.join(here, 'settings/index.jsx')],
-  outfile: path.join(here, '../renderer/islands/settings.js'),
+  entryPoints: [
+    { in: path.join(here, 'settings/index.jsx'), out: 'settings' },
+    { in: path.join(here, 'sidebar-tags/index.jsx'), out: 'sidebar-tags' },
+  ],
+  outdir: path.join(here, '../renderer/islands'),
   bundle: true,
   format: 'iife',
   jsx: 'automatic', // react/jsx-runtime — no `import React` needed in components
@@ -36,8 +39,8 @@ const opts = {
 if (dev) {
   const ctx = await esbuild.context(opts);
   await ctx.watch();
-  console.log('[island] watching settings/ … (reload the renderer to see changes)');
+  console.log('[island] watching settings/ + sidebar-tags/ … (reload the renderer to see changes)');
 } else {
   await esbuild.build(opts);
-  console.log('[island] built renderer/islands/settings.{js,css}');
+  console.log('[island] built renderer/islands/{settings,sidebar-tags}.js');
 }

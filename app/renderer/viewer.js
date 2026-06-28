@@ -1535,6 +1535,14 @@
     }, 190);
   }
 
+  // Hand tag-group row DATA to the React sidebar-tags island (it renders the
+  // .sb-subrow buttons). Stash a copy too, so the island can paint even if its
+  // bundle finishes loading after this first runs.
+  function pushTagSubrows(rows) {
+    window.__corpusSbTagRows = rows;
+    if (window.corpusSidebarTags) window.corpusSidebarTags.render(rows);
+  }
+
   function updateSidebarTagGroups() {
     const host = document.getElementById('sbTagGroupSubRows');
     const chev = document.getElementById('sbTagChevron');
@@ -1548,7 +1556,7 @@
     }
     if (!tagGroups.length) {
       if (chev) { chev.innerHTML = CHEV_R; chev.classList.remove('collapsed'); }
-      inner.innerHTML = '';
+      pushTagSubrows([]);
       return;
     }
     if (chev) { chev.innerHTML = CHEV_D; chev.classList.toggle('collapsed', tagGroupsCollapsed); }
@@ -1560,23 +1568,26 @@
     const genTags = [...allTagSet].filter(t => !tagKindOf(t));
     const genSet = new Set(genTags);
     const activeTags = new Set(activeFilters.filter(f => f.type === 'tag').map(f => f.value));
+    // Build plain row DATA; the React sidebar-tags island renders the buttons
+    // (same .sb-subrow markup + data-tag-group, so the delegated #filterRows
+    // click handler still fires). React owns rendering; we keep owning the data.
     const rows = [];
     if (genTags.length) {
-      rows.push(`<button class="sb-subrow" type="button" data-tag-group="__all"><span class="sb-subrow-name">${escapeHtml(MSG.tagAllRow)}</span><span class="sb-subrow-count">${genTags.length}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+      rows.push({ key: '__all', name: MSG.tagAllRow, count: genTags.length, active: false });
     }
     for (const g of tagGroups) {
       const count = (g.tags || []).filter(t => genSet.has(t)).length;
       if (!count) continue;
       const active = (g.tags || []).some(t => activeTags.has(t));
-      rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="${escapeAttr(g.id)}"><span class="sb-subrow-name">${escapeHtml(g.name || '')}</span><span class="sb-subrow-count">${count}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+      rows.push({ key: g.id, name: g.name || '', count, active });
     }
     const grouped = new Set(tagGroups.flatMap(g => g.tags || []));
     const otherCount = genTags.filter(t => !grouped.has(t)).length;
     if (otherCount) {
       const active = [...activeTags].some(t => !grouped.has(t) && !tagKindOf(t));
-      rows.push(`<button class="sb-subrow${active ? ' active' : ''}" type="button" data-tag-group="__other"><span class="sb-subrow-name">${escapeHtml(MSG.tagGroupOther)}</span><span class="sb-subrow-count">${otherCount}</span><span class="sb-subrow-arrow">${CHEV_R}</span></button>`);
+      rows.push({ key: '__other', name: MSG.tagGroupOther, count: otherCount, active });
     }
-    inner.innerHTML = rows.join('');
+    pushTagSubrows(rows);
   }
 
   // --- In-session Edit Undo/Redo ---
