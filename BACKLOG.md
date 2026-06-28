@@ -2,7 +2,7 @@
 
 完了は git が記録するので**完了項目は残さず削除**。実装済み機能・構成・検証手順は CLAUDE.md 他節＋メモリ `corpus-verify-notes` が真実源（重複させない）。
 
-**最優先（次に着手）**: ① セキュリティ H-1（確定SSRF・修正案あり）→ ② 正しさ #2（backfill が再取得失敗で既存メタを null 破壊）→ ③ 注力テーマ＝タグ付けの根本解決（WD14 小スパイク）。詳細は各節。
+**最優先（次に着手）**: 注力テーマ＝タグ付けの根本解決（WD14 小スパイク）。確定セキュリティ／正しさの High（SSRF H-1・backfill null 破壊 #2）は解消済み。詳細は「タグ付け・整理」節。
 
 ## 監査で見つかった残課題（2026-06-27 UltraCode）
 
@@ -10,9 +10,8 @@
 
 ### セキュリティ
 
-ハードニング済み（制限的CSP `script-src 'self'`・contextIsolation+sandbox+nodeIntegration:false・SSRFガード・captureId allow-list・JPEGマジックバイト検査・zip-slip 二重ガード）。確定5件中**実害は H-1 のみ**。
+ハードニング済み（制限的CSP `script-src 'self'`・contextIsolation+sandbox+nodeIntegration:false・SSRFガード・captureId allow-list・JPEGマジックバイト検査・zip-slip 二重ガード）。実害のあった H-1（16進 IPv4-mapped SSRF）は解消済み。残りは Low のみ。
 
-- **【High・最優先】SSRFガードのバイパス: 16進形式の IPv4-mapped IPv6 が私的レンジ検査をすり抜ける**（`native-host/media-download.js:61-83`）: `isPrivateIp` の mapped 検出はドット10進（`(\d{1,3}\.){3}\d{1,3}`）専用だが、`checkMediaUrl` が読む `new URL().hostname` を WHATWG パーサが16進（`::ffff:7f00:1`）へ正規化するため正規表現に不一致＝`::ffff:0:0/96` 全域で私的判定が無効化。`https://[::ffff:169.254.169.254]/...`（クラウドメタデータ）・`[::ffff:127.0.0.1]`（ループバック）・`[::ffff:192.168.x.x]`（RFC1918）が ALLOWED になるのを**自環境で再現確認済み**。敵対SNSページ／任意 Misskey・Mastodon インスタンスのメタデータから capture・import-posts・`backfill-metadata.js` 経由でブラインドSSRF到達。**修正**＝family6 の16進 mapped を検出して埋め込みv4を復元し `isPrivateIPv4` を適用＋`scripts/test-bridge-ssrf.js` に mapped 形式の回帰テスト追加（既存は `[::1]`/`[fe80::1]`/`[fc00::1]` のみ）。
 - **【Low】ナビゲーションロックダウン未設置**（`app/main.js:1498-1544`）: `will-navigate`／`setWindowOpenHandler`／`web-contents-created` 未設置＋グローバル `dragover`/`drop` の preventDefault なし。ローカル `.html` をドロップするとトップフレームが `file://` へ遷移し、同一 preload を継承して `clearAll()`/`importComplete()` 等の破壊的IPCを実行可能。**修正**＝`web-contents-created` で遷移拒否＋`setWindowOpenHandler({action:'deny'})`＋グローバル drop 抑止（外部オープンは既存 `open-external` IPC に集約）。
 - **【Low】complete-import の zip爆弾／非有界展開**（`app/lib-archive.js:204-230`）: `importCompleteZip` がエントリ毎/合計の展開サイズ・エントリ数に上限なし＝悪意ある `corpus-export.zip`（マシン間共有想定）でメモリ枯渇。**修正**＝展開前に `uncompressedSize` 合計・エントリ数を上限チェック、大エントリはバイト上限付きストリーム書き出し。
 - **【Low・脅威モデル次第】SSRFガードがホスト名を解決しない（DNSリバインディング）**（`native-host/media-download.js:76-88`）: コメント（41-45行）で明記の**意図的な受容リスク**。閉じるなら解決アドレスの public 検証＋接続ピン留め。許容なら現状維持（H-1 修正で最も直接的なIPリテラル経路は塞がる）。
@@ -23,7 +22,6 @@
 
 `config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は全て tmp+rename でアトミック化済み（torn-read 系 High は commit 9260c81 で解消）。確定分を効き順に。
 
-- **【High・#2】backfill `--all` が再取得失敗時に既存メタを null 上書き（X/Bluesky・非冪等・不可逆）**（`scripts/backfill-metadata.js:87-126`・`extension/metadata.js:104`(X)/204(Bluesky)）: スキップガードが `!screenName && !text && !date` のみだが、X/Bluesky は fetch 前に URL 由来 `screenName`/`handle` を必ず立てるため通信失敗レコードもガードを通過し、本文/著者名/userId/統計/言語が null 破壊（Misskey/Mastodon/pixiv は失敗時 screenName も null で保護）。**修正**＝成功判定を URL 由来でない API フィールド（text/likes/date の存在）に変える＋`m.X ?? rec.X` 非破壊マージ＋tmp+rename。
 - **【Med-High・#3】バックアップが可変な組織 JSON を「不変資産」扱いで初回以降コピーしない（復元で整理が陳腐化）**（`app/main.js:1292`・`if (destSet.has(f)) continue;`）: 画像/サイドカーは write-once なので存在チェックで正しいが、組織 JSON は編集毎に上書きされる可変ファイル＝初回後永久 skip でバックアップ側が凍結。復元すると以後の全整理編集が消える。**修正**＝write-once でない INTERNAL_FILES を `MUTABLE_INTERNAL` 集合化し、mtime/サイズ比較 or 無条件再コピー（tmp+rename）。`test-app-backup.js` に「組織 JSON 2 回編集→バックアップ→ミラー最新化」追加。
 - **【Med・#4】日付フィルタ述語のタイムゾーン境界ずれ（ローカル深夜 vs UTC 投稿時刻）**（`app/renderer/viewer.js:1757` `case 'date'`）: `from = new Date(f.from+'T00:00:00')` は**ローカル**深夜なのに `d = new Date(p[field])` は UTC 瞬時。JST 等で境界が数時間ずれ深夜近傍の投稿が黙って漏れる/余分に入る（`captured`/`date` 同型・データは無事）。**修正**＝`from`/`to` を UTC 解釈（`'T00:00:00Z'`）か `p[field]` をローカル暦日に正規化、片方に統一し終端日包含の exclusive next-day を維持。`test-app-search.js` に非 UTC 境界テスト追加。
 - **【Low・#5】delete-post が投稿アバター `<base>-avatar.<ext>` を回収せず孤児化**（`app/main.js:863`）: targets が `.json`/VIEWABLE_EXTS/rec.image・media/`-media-`・`-poster.` のみでアバター（`rec.avatarFile`）を拾わず、trash 側の広い `base+'-'` 前方一致と非対称。データ消失でなく孤児累積（可逆）。**修正**＝targets に `path.basename(rec.avatarFile)`＋ディスク走査 `${base}-avatar.` を追加。
