@@ -14,7 +14,7 @@
 ### ユーティリティ
 
 - `inject-dummy.js` — `dummy-` 始まりの条件網羅フィクスチャ（jpg＋サイドカー＋色付きアバター）を既定保存先に生成。常設の検証フィクスチャとして残してよい（下の「行動ルール」参照）
-- `verify-store.py`（サイドカーをAPI照合）／`backfill-metadata.js`（欠損メタを保存URLから再取得・`--all`＝アバターも・`--avatars`＝アバターのみ）／`make-icons.js`（アイコン生成・256px基準）
+- `verify-store.py`（サイドカーをAPI照合）／`backfill-metadata.js`（欠損メタを保存URLから再取得・`--all`＝アバターも・`--avatars`＝アバターのみ）／`make-icons.js`（`assets/icon-master.png` から全アイコンを再生成・手順は docs/build.md）
 
 ### キャプチャ／メタデータ検証
 
