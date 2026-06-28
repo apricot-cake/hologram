@@ -4,6 +4,10 @@
 //  - set-backup rejects an output dir that overlaps the save folder
 //  - run-backup mirrors the library into <dir>/Corpus-mirror/ (individual files)
 //  - a second run is idempotent (immutable assets → nothing new copied)
+//  - a MUTABLE organization JSON (tag-groups.json) re-copies on every edit:
+//    edit twice → the mirror reflects the LATEST contents, not the first backup's
+//    (regression: existence-check skip used to freeze internal JSON forever, so a
+//    restore silently lost all tagging/foldering done after the first backup)
 //  - deleting a post propagates: the file is pruned from the mirror
 //  - the prune-safety guard holds the prune when src collapses (clear-all → empty),
 //    leaving the mirror intact (regression for the 2026-06-23 library-loss incident)
@@ -29,7 +33,10 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const ids = [];
-for (let i = 0; i < 2; i++) {
+// 4 posts: enough that the clear-all collapse (only metadata json survives) drops
+// src well below the prune-guard's 50% shrink ratio even after the tag-groups edit
+// adds a file, so the guard-held assertion stays unambiguous.
+for (let i = 0; i < 4; i++) {
   const id = '170000000000' + i + '-bk' + i;
   ids.push(id);
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
@@ -62,10 +69,30 @@ const evalJs = `(async () => {
   const r2 = await window.corpus.runBackup();
   const run2 = !!(r2 && r2.ok && r2.written === 0 && r2.pruned === 0 && !r2.pruneSkipped);
 
-  // delete one post → next run prunes BOTH its files (jpg+json) from the mirror
+  // mutable organization JSON must NOT freeze at its first backup. Edit tag-groups
+  // twice (different sizes so drift is unambiguous) and back up after each edit;
+  // every edited run must re-copy the file (written >= 1) so the mirror tracks the
+  // latest contents. The on-disk mirror content is checked in the close handler.
+  await window.corpus.setTagGroups([{ id: 'g1', name: 'first', tags: ['a'] }]);
+  const e1 = await window.corpus.runBackup();
+  const edit1 = !!(e1 && e1.ok && e1.written >= 1 && !e1.pruneSkipped);
+  await window.corpus.setTagGroups([
+    { id: 'g1', name: 'second', tags: ['a', 'b'] },
+    { id: 'g2', name: 'extra', tags: ['c'] },
+    { id: 'g3', name: 'more', tags: ['d', 'e'] }
+  ]);
+  const e2 = await window.corpus.runBackup();
+  const edit2 = !!(e2 && e2.ok && e2.written >= 1 && !e2.pruneSkipped);
+  // an UNEDITED follow-up run must be idempotent again (mtime+size preserved → no
+  // re-copy), proving the refresh is drift-gated, not unconditional churn.
+  const e3 = await window.corpus.runBackup();
+  const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
+
+  // delete one post → next run prunes BOTH its files (jpg+json) from the mirror.
+  // Baseline is e3.fileCount (after the tag-groups edits added that file), not r2.
   await window.corpus.deletePost(${JSON.stringify(ids[0] + '.jpg')});
   const r3 = await window.corpus.runBackup();
-  const pruneWorks = !!(r3 && r3.ok && r3.pruned === 2 && r3.fileCount === r2.fileCount - 2 && !r3.pruneSkipped);
+  const pruneWorks = !!(r3 && r3.ok && r3.pruned === 2 && r3.fileCount === e3.fileCount - 2 && !r3.pruneSkipped);
 
   // collapse src (clear-all wipes posts, keeps metadata) → guard MUST hold the
   // prune and leave the mirror untouched. Reason is shrink/empty depending on how
@@ -75,7 +102,7 @@ const evalJs = `(async () => {
   const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
   // mirror should still hold exactly what r3 left (guard prevented any deletion)
-  return { overlapRejected, dirSet, run1, run2, pruneWorks, guardHeld, expectMirror: r3.fileCount };
+  return { overlapRejected, dirSet, run1, run2, edit1, edit2, editIdempotent, pruneWorks, guardHeld, expectMirror: r3.fileCount };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -91,9 +118,21 @@ child.on('close', () => {
   // as r3 did (no files deleted) — proof the prune was truly held back on disk.
   const mirrorAfter = countMirror();
   const mirrorIntact = typeof r.expectMirror === 'number' && mirrorAfter === r.expectMirror;
+  // filesystem-side verification of the mutable-JSON refresh: the mirrored
+  // tag-groups.json must hold the SECOND edit (3 groups, name 'second'), not the
+  // first — proof the backup re-copied the drifted internal file rather than
+  // freezing it at its initial contents.
+  let mutableFresh = false;
+  try {
+    const mj = JSON.parse(fs.readFileSync(path.join(mirror, 'tag-groups.json'), 'utf8'));
+    mutableFresh = Array.isArray(mj.groups) && mj.groups.length === 3 &&
+      mj.groups[0] && mj.groups[0].name === 'second';
+  } catch { /* missing/unreadable → stays false */ }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.pruneWorks && r.guardHeld && mirrorIntact;
-  console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact}`);
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 &&
+    r.edit1 && r.edit2 && r.editIdempotent && mutableFresh &&
+    r.pruneWorks && r.guardHeld && mirrorIntact;
+  console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact}`);
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

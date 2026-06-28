@@ -171,6 +171,21 @@ const INTERNAL_FILES = new Set([
   'poster-folders.json', 'poster-tags.json',
 ]);
 
+// The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
+// (organization layer: tags / groups / folders / collections / clip / poster-* /
+// open tabs). Unlike write-once captures (.jpg + .json sidecar), these mutate, so
+// a backup that only copies "files not yet present at dest" freezes them at their
+// first-ever contents — restoring from that mirror would silently discard every
+// tagging / foldering edit made since the first backup. The backup must re-copy
+// these whenever the source changed (size or mtime). config.json lives in
+// configDir (never in the save folder) and .index.json is a rebuildable snapshot
+// already skipped by the backup, so neither belongs here.
+const MUTABLE_INTERNAL = new Set([
+  'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json',
+  'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json',
+  'poster-folders.json', 'poster-tags.json',
+]);
+
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
 // single capture writes both a .jpg and a .json.
@@ -1283,16 +1298,18 @@ async function runBackup(reason) {
     const dest = backupDest(b.dir);
     await fs.promises.mkdir(dest, { recursive: true });
 
-    // Collect source files, skipping app-internal and transient entries
+    // Collect source files, skipping app-internal and transient entries. Keep each
+    // file's size/mtime so mutable internal files can be re-copied only when changed.
     let srcFiles;
     try { srcFiles = await fs.promises.readdir(src); } catch { srcFiles = []; }
     const srcSet = new Set();
+    const srcStat = new Map();   // name -> { size, mtimeMs }
     for (const f of srcFiles) {
       if (f === '.index.json' || f === TRASH_SUBDIR) continue;
       if (/\.tmp(-\d+)?$/i.test(f)) continue;
       try {
         const st = await fs.promises.stat(path.join(src, f));
-        if (st.isFile()) srcSet.add(f);
+        if (st.isFile()) { srcSet.add(f); srcStat.set(f, { size: st.size, mtimeMs: st.mtimeMs }); }
       } catch { /* skip inaccessible entries */ }
     }
     result.fileCount = srcSet.size;
@@ -1302,12 +1319,36 @@ async function runBackup(reason) {
     try { destFiles = await fs.promises.readdir(dest); } catch { destFiles = []; }
     const destSet = new Set(destFiles.filter(f => !/\.tmp(-\d+)?$/i.test(f)));
 
-    // Copy new files (assets are immutable — existence check only, no mtime compare)
+    // Decide whether a destination copy is stale and must be refreshed. Write-once
+    // captures (.jpg + .json sidecar) never change, so their presence at dest is
+    // proof enough — re-copying would only waste I/O. Mutable internal files
+    // (organization JSON: tags / folders / collections / clip / tabs / poster-*)
+    // are rewritten on every edit, so compare size+mtime and re-copy on drift;
+    // otherwise the mirror freezes at the first backup and a restore loses edits.
+    // mtime is compared at whole-millisecond granularity: stat().mtimeMs carries
+    // sub-ms (ns) precision but utimes() can only set ms, so the preserved dest
+    // mtime never equals the float src value — flooring both avoids re-copying an
+    // unchanged file forever.
+    const needsRefresh = async (f) => {
+      if (!MUTABLE_INTERNAL.has(f)) return false;
+      const s = srcStat.get(f);
+      if (!s) return false;
+      try {
+        const d = await fs.promises.stat(path.join(dest, f));
+        return d.size !== s.size || Math.floor(d.mtimeMs) !== Math.floor(s.mtimeMs);
+      } catch { return true; }   // unreadable dest copy -> re-copy to be safe
+    };
+
+    // Copy files missing at dest, and re-copy mutable internal files that drifted.
+    // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
     for (const f of srcSet) {
-      if (destSet.has(f)) continue;
+      if (destSet.has(f) && !(await needsRefresh(f))) continue;
       const tmp = path.join(dest, f + '.tmp-' + Date.now());
       try {
         await fs.promises.copyFile(path.join(src, f), tmp);
+        // Preserve mtime (floored to ms) so the next run's drift check compares
+        // like with like and an unchanged mutable file is not re-copied.
+        try { const s = srcStat.get(f); if (s) { const t = new Date(Math.floor(s.mtimeMs)); await fs.promises.utimes(tmp, t, t); } } catch { /* best-effort */ }
         await fs.promises.rename(tmp, path.join(dest, f));
         result.written++;
       } catch (e) {
