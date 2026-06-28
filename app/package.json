@@ -24,14 +24,15 @@
       "lib-archive.js",
       "lib-index.js",
       "renderer/**/*",
-      "vendor/**/*"
+      "vendor/**/*",
+      "assets/**/*"
     ],
     "extraResources": [
       { "from": "../native-host", "to": "native-host" }
     ],
     "win": {
       "target": "nsis",
-      "icon": "../extension/icons/icon256.png"
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": true,

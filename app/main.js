@@ -19,6 +19,10 @@ const { pruneDecision, nextBaseline } = require('./backup-guard');
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
 
+// Holographic app icon (iridescent square). Used for the taskbar/window icon at
+// runtime; electron-builder converts the same PNG to .ico for the installed exe.
+const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
+
 // Pin userData to the SAME directory the native host reads its config from, so
 // the bridge (plain Node, spawned by Chrome) and this app always agree.
 // Must run before app is ready.
@@ -735,6 +739,7 @@ ipcMain.handle('open-image-window', (_event, image) => {
   } catch { /* keep defaults (e.g. webp not decodable by nativeImage) */ }
   const w = new BrowserWindow({
     width, height, useContentSize: true, autoHideMenuBar: true, backgroundColor: '#101113',
+    icon: APP_ICON,
     webPreferences: { sandbox: true }
   });
   w.loadURL('psimg://img/' + encodeURIComponent(image));
@@ -1651,6 +1656,7 @@ function createWindow(show = true) {
     show,
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Corpus',
+    icon: APP_ICON,
     paintWhenInitiallyHidden: true,
     titleBarStyle: 'hidden',
     // color MUST match --tabbar-bg (dark #0e0f11 / light #eceef2) so the caption-
@@ -1701,6 +1707,10 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(() => {
+  // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
+  // icon (not electron.exe's) in dev too. electron-builder sets this for the
+  // installed exe; setting it here covers the CorpusLaunch dev run.
+  app.setAppUserModelId('com.corpus.app');
   // Carry config over from the old %APPDATA% location now that configDir moved out
   // of AppData (must run before any config read). 2026-06-25.
   migrateConfigDirFromAppData();
