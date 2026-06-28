@@ -12,9 +12,7 @@
     // tabs / search / sort
     tabTags: _s('tabTags'),
     tabSettings: _s('tabSettings'),
-    aboutTitle: _s('aboutTitle'),
     aboutVersion: _f1('aboutVersion'),
-    aboutTagline: _s('aboutTagline'),
     searchPlaceholder: _s('searchPlaceholder'),
     searchTags: _s('searchTags'),
     sidebarAuthors: _s('sidebarAuthors'),
@@ -46,7 +44,6 @@
     qbTipOp: _s('qbTipOp'),
     qbMenuNeg: _s('qbMenuNeg'),
     qbMenuNegGroup: _s('qbMenuNegGroup'),
-    tileOverlay: _s('tileOverlay'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
     qbHelp2: _s('qbHelp2'),
@@ -60,9 +57,6 @@
     tagGroupOther: _s('tagGroupOther'),
     tagAllRow: _s('tagAllRow'),
     qfFindPh: _s('qfFindPh'),
-    exportModeFull: _s('exportModeFull'),
-    exportModeImages: _s('exportModeImages'),
-    backupSubTitle: _s('backupSubTitle'),
     deleteKeyword: _s('deleteKeyword'),
     confirmKeywordPh: _s('confirmKeywordPh'),
     detailPlatform: _s('detailPlatform'),
@@ -199,31 +193,13 @@
     emptyResetBtn: _s('emptyResetBtn'),
 
     save: _s('save'),       // tag editor save button
-    saved: _s('saved'),     // settings status toast
     // settings > appearance / language / shortcut
-    themeTitle: _s('themeTitle'),
-    themeMode: _s('themeMode'),
-    themeAuto: _s('themeAuto'),
-    themeLight: _s('themeLight'),
-    themeDark: _s('themeDark'),
-    hintTheme: _s('hintTheme'),
-    langTitle: _s('langTitle'),
     settingsSearch: _s('settingsSearch'),
     settingsNoMatch: _s('settingsNoMatch'),
-    langAuto: _s('langAuto'),
-    hintLang: _s('hintLang'),
-    shortcutTitle: _s('shortcutTitle'),
-    shortcutLink: _s('shortcutLink'),
-    hintShortcut: _s('hintShortcut'),
 
     // settings > data / danger
-    dataTitle: _s('dataTitle'),
-    saveFolderSubTitle: _s('saveFolderSubTitle'),
-    saveFolderChange: _s('saveFolderChange'),
-    saveFolderHint: _s('saveFolderHint'),
     saveFolderMoving: _s('saveFolderMoving'),
     saveFolderMoved: _f1('saveFolderMoved'),
-    saveFolderProgressTitle: _s('saveFolderProgressTitle'),
     logCopyStart: _f1('logCopyStart'),
     logCopying: _f1('logCopying'),
     logSwitch: _s('logSwitch'),
@@ -236,15 +212,7 @@
     saveFolderErrNotWritable: _s('saveFolderErrNotWritable'),
     saveFolderErrCopyFailed: _s('saveFolderErrCopyFailed'),
     saveFolderErrGeneric: _s('saveFolderErrGeneric'),
-    exportZip: _s('exportZip'),
     importZip: _s('importZip'),
-    importImages: _s('importImages'),
-    hintZip: _s('hintZip'),
-    hintMedia: _s('hintMedia'),
-    dangerTitle: _s('dangerTitle'),
-    labelResetDeleteConfirm: _s('labelResetDeleteConfirm'),
-    hintResetDeleteConfirm: _s('hintResetDeleteConfirm'),
-    clearData: _s('clearData'),
     confirmClear: _s('confirmClear'),
     confirmOk: _s('confirmOk'),
     confirmCancel: _s('confirmCancel'),
@@ -252,15 +220,7 @@
     clearBlocked: _s('clearBlocked'),
 
     // settings > backup（指定フォルダへの増分エクスポート）
-    hintBackup: _s('hintBackup'),
     backupDirNone: _s('backupDirNone'),
-    backupChoose: _s('backupChoose'),
-    backupClear: _s('backupClear'),
-    backupInterval: _s('backupInterval'),
-    backupIntervalUnit: _s('backupIntervalUnit'),
-    unitDay: _s('unitDay'),
-    unitWeek: _s('unitWeek'),
-    unitMonth: _s('unitMonth'),
     backupOverlap: _s('backupOverlap'),
     backupLastLabel: _s('backupLastLabel'),
     mirrorDone: _s('mirrorDone'),
@@ -275,10 +235,8 @@
     backupSyncing: _s('backupSyncing'),
 
     // settings > trash
-    trashTitle: _s('trashTitle'),
     trashEmpty: _s('trashEmpty'),
     trashCount: _f1('trashCount'),
-    trashEmptyBtn: _s('trashEmptyBtn'),
     trashRestoreBtn: _s('trashRestoreBtn'),
     trashDeleteBtn: _s('trashDeleteBtn'),
 
@@ -402,7 +360,6 @@
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   const setAttr = (id, attr, val) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, val); };
 
-  setText('settingsViewTitle', MSG.tabSettings);
   setAttr('settingsBtn', 'title', MSG.tabSettings);
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
@@ -457,52 +414,10 @@
   setText('posterDateRangeLabel', MSG.posterDateRangeLabel);
   setText('posterDateApply', MSG.qfApply);
   setText('posterDateClear', MSG.posterDateClear);
-  setText('settingsThemeTitle', MSG.themeTitle);
-  setText('settingsThemeLabel', MSG.themeMode);
-  setText('themeOptAuto', MSG.themeAuto);
-  setText('themeOptLight', MSG.themeLight);
-  setText('themeOptDark', MSG.themeDark);
-  setText('hintTheme', MSG.hintTheme);
-  setText('settingsLangTitle', MSG.langTitle);
-  setText('langAuto', MSG.langAuto);
-  setText('hintLang', MSG.hintLang);
-  setText('settingsShortcutTitle', MSG.shortcutTitle);
-  setText('shortcutLink', MSG.shortcutLink);
-  setText('hintShortcut', MSG.hintShortcut);
-  setText('settingsDataTitle', MSG.dataTitle);
-  setText('saveFolderSubTitle', MSG.saveFolderSubTitle);
-  setText('chooseSaveFolder', MSG.saveFolderChange);
-  setText('hintSaveFolder', MSG.saveFolderHint);
-  setText('saveFolderProgressTitle', MSG.saveFolderProgressTitle);
-  setText('exportZip', MSG.exportZip);
-  setText('importZip', MSG.importZip);
-  setText('importImages', MSG.importImages);
-  setText('exportModeFull', MSG.exportModeFull);
-  setText('exportModeImages', MSG.exportModeImages);
-  setText('hintZip', MSG.hintZip);
-  setText('hintMedia', MSG.hintMedia);
-  setText('backupSubTitle', MSG.backupSubTitle);
-  setText('hintBackup', MSG.hintBackup);
-  setText('chooseBackupDir', MSG.backupChoose);
-  setText('clearBackupDir', MSG.backupClear);
-  setText('backupIntervalLabel', MSG.backupInterval);
-  setText('backupIntervalEvery', MSG.backupIntervalUnit);
-  setText('unitDay', MSG.unitDay);
-  setText('unitWeek', MSG.unitWeek);
-  setText('unitMonth', MSG.unitMonth);
-  setText('settingsTrashTitle', MSG.trashTitle);
-  setText('emptyTrash', MSG.trashEmptyBtn);
-  setText('settingsDangerTitle', MSG.dangerTitle);
-  setText('settingsAboutTitle', MSG.aboutTitle);
-  setText('aboutTagline', MSG.aboutTagline);
-  // About panel is owned by the React settings island (app/islands/settings) —
-  // it mounts the live holographic icon and fills version / build info there.
-  setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
-  setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
-  setText('clearData', MSG.clearData);
+  // Settings-modal labels (theme/lang/data/backup/trash/danger/about) now live in
+  // the React island (app/islands/settings); only the shared confirm overlay stays here.
   setText('confirmCancel', MSG.confirmCancel);
   setText('confirmOk', MSG.confirmOk);
-  setText('settingsStatus', MSG.saved);
   setText('confirmSkipText', MSG.confirmSkip);
 
   // Edit overlay i18n
@@ -529,7 +444,6 @@
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
-  setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
@@ -1800,7 +1714,7 @@
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
-        const key = q + ' ' + (f.mode || 'exact');
+        const key = q + '\0' + (f.mode || 'exact');
         if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
           if (f.mode === 'fuzzy' && window.corpusSearch) {
