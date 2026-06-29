@@ -1819,51 +1819,45 @@
       if (resetBtn) resetBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
       // Save-as-dynamic-collection button: shown only when there's something to save.
       if (saveBtn) saveBtn.style.display = (hasQuery || searchVal) ? '' : 'none';
+      // Rebuild qbNodeMap (data-nid → node) in the same pre-order the DOM carries,
+      // so the delegated handlers' nodeById() keeps resolving. The React island only
+      // RENDERS this model; viewer.js keeps the ids, the state, and the events.
       qbNodeMap = new Map();
       let idc = 0;
       const NE = '≠';
-      // Small ✕ glyph for the in-pill delete button (revealed on hover, inside bounds).
-      const delIc = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-      const opWord = (op) => escapeHtml(op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd);
-      // A condition leaf → draggable pill (hover ✕ removes; right-click negate/delete);
-      // a group → its members joined by clickable operator connectors, wrapped in
-      // literal parens (root has no parens and its connectors are .qb-op-root).
-      const renderNode = (node, isRoot) => {
+      const animate = !prefersReducedMotion();
+      const nodeModel = (node) => {
         const id = 'n' + (idc++);
         qbNodeMap.set(id, node);
         if (node.kind === 'cond') {
-          return `<span class="qb-pill sb-active-chip qc-${node.type}${node.neg ? ' neg' : ''}" draggable="true" data-nid="${id}">` +
-            ctx.glyphOf(node.type) + (node.neg ? `<span class="qb-ne">${NE}</span>` : '') +
-            `<span class="qb-pill-label">${escapeHtml(ctx.labelOf(node))}</span>` +
-            `<button type="button" class="qb-del-btn" data-act="del" data-nid="${id}" title="${escapeAttr(MSG.qfDelete)}" aria-label="${escapeAttr(MSG.qfDelete)}" tabindex="-1">${delIc}</button>` +
-            `</span>`;
+          const label = ctx.labelOf(node);
+          // chip-new entrance: flag leaves whose label wasn't on the bar last render
+          // (skip the live-updating editing chip — it would flicker per keystroke).
+          const isNew = animate
+            && !(ctx.isEditingLeaf && ctx.isEditingLeaf(node))
+            && !prevLabels.has((node.neg ? NE : '') + label);
+          return { id, kind: 'cond', typeCls: 'qc-' + node.type, neg: !!node.neg, glyph: ctx.glyphOf(node.type), label, isNew };
         }
-        const opCls = isRoot ? 'qb-op qb-op-root' : 'qb-op';
-        const conn = `<button type="button" class="${opCls}" data-act="op" data-nid="${id}" title="${escapeAttr(MSG.qbTipOp)}"${isRoot ? '' : ' draggable="true"'}>${opWord(node.op)}</button>`;
-        const inner = node.children.map((c) => renderNode(c, false)).join(conn);
-        if (isRoot) return inner;   // root: bare members, no parens / no negation
-        return `<span class="qb-grp${node.neg ? ' neg' : ''}" data-nid="${id}">` +
-          `<span class="qb-paren qb-paren-l" draggable="true">${node.neg ? NE : ''}(</span>` +
-          inner +
-          `<span class="qb-paren qb-paren-r" draggable="true">)</span>` +
-          `</span>`;
+        return { id, kind: 'group', neg: !!node.neg, opWord: (node.op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd),
+                 children: node.children.map((c) => nodeModel(c)) };
       };
-      // Posts render the search term as a real 'text' leaf in the tree (textInTree),
-      // so suppress the legacy echo chip there. Posters still echo their box term.
-      const searchSeg = (searchVal && !ctx.textInTree)
-        ? `<span class="sb-active-chip qc-search" data-special="search">${ctx.glyphOf('search')}${escapeHtml(searchVal)}</span>` +
-          (hasQuery ? `<span class="qc-conn">${escapeHtml(MSG.qcJoinAnd)}</span>` : '')
-        : '';
-      const addBtn = hasQuery
-        ? `<button type="button" class="qb-group-add" data-qb-group-add title="${escapeAttr(MSG.qbAddGroupTip)}">( )</button>`
-        : '';
-      container.innerHTML = searchSeg + renderNode(tree, true) + addBtn;
-      if (!prefersReducedMotion()) {
-        container.querySelectorAll('.qb-pill').forEach(el => {
-          if (ctx.isEditingLeaf && ctx.isEditingLeaf(qbNodeMap.get(el.dataset.nid))) return;   // skip the live-updating editing chip (per-keystroke flicker)
-          if (!prevLabels.has(el.textContent.trim())) el.classList.add('chip-new');
-        });
-      }
+      // Posts fold the search term into the tree as a real 'text' leaf (textInTree),
+      // so suppress the echo chip there. Posters still echo their box term.
+      const model = {
+        searchSeg: (searchVal && !ctx.textInTree) ? { glyph: ctx.glyphOf('search'), text: searchVal } : null,
+        searchJoin: hasQuery,
+        joinAndWord: MSG.qcJoinAnd,
+        root: nodeModel(tree),
+        addBtn: hasQuery,
+        addBtnTitle: MSG.qbAddGroupTip,
+        delTitle: MSG.qfDelete,
+        opTitle: MSG.qbTipOp,
+      };
+      // Stash the latest model per container (script order is viewer.js → islands,
+      // so the bundle may not be loaded yet; index.jsx replays the stash on load).
+      const key = container.id;
+      (window.__corpusQueryChips || (window.__corpusQueryChips = {}))[key] = model;
+      if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
       // No custom <select>s in the bar anymore; prune any detached hosts left over.
       for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
     }
