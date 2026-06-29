@@ -2492,7 +2492,7 @@
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
     if (browseMode !== 'posts') return false;   // history nav is post-view only (posters/collections excluded)
-    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return false;
+    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return false;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return false;
     if (!document.getElementById('ivFolderModal').hidden) return false;
     return true;
@@ -3201,17 +3201,11 @@
     }
   });
 
-  // Image lightbox / gallery (captured screenshot + downloaded originals)
-  const lightbox = document.getElementById('lightbox');
-  const lightboxImg = document.getElementById('lightboxImg');
-  const lightboxVideo = document.getElementById('lightboxVideo');
-  const lbCounter = document.getElementById('lbCounter');
-  const lbPrev = document.getElementById('lbPrev');
-  const lbNext = document.getElementById('lbNext');
-  lbPrev.setAttribute('aria-label', MSG.lbPrev);
-  lbNext.setAttribute('aria-label', MSG.lbNext);
-  let galleryItems = [];
-  let galleryIndex = 0;
+  // Image lightbox / gallery (captured screenshot + downloaded originals). The
+  // overlay UI lives in the React island (window.corpusLightbox); viewer.js only
+  // resolves a post's gallery items below and hands them to open(). Labels are
+  // pushed once so the island can set the nav buttons' aria-labels.
+  window.corpusLightbox.setLabels({ lbPrev: MSG.lbPrev, lbNext: MSG.lbNext });
 
   // Gallery items for a post: the screenshot first, then each original image.
   const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
@@ -3239,50 +3233,6 @@
     return items;
   }
 
-  function stopVideo() {
-    try { lightboxVideo.pause(); lightboxVideo.removeAttribute('src'); lightboxVideo.load(); } catch { /* ignore */ }
-  }
-  function showGallerySlide() {
-    const item = galleryItems[galleryIndex];
-    if (!item) return;
-    if (item.video) {
-      lightboxImg.style.display = 'none'; lightboxImg.src = '';
-      lightboxVideo.style.display = ''; lightboxVideo.src = item.src;
-    } else {
-      stopVideo(); lightboxVideo.style.display = 'none';
-      lightboxImg.style.display = ''; lightboxImg.src = item.src;
-      lightboxImg.alt = item.alt || ''; // DOM property assignment — XSS-safe
-    }
-    lbCounter.textContent = (galleryIndex + 1) + ' / ' + galleryItems.length;
-    lightbox.classList.toggle('multi', galleryItems.length > 1);
-    // Restart the slide-in animation on the visible element so both opening the
-    // gallery and stepping prev/next get the same quick fade (reduced-motion makes
-    // it instant via the global CSS neutralizer). offsetWidth forces a reflow.
-    const visEl = item.video ? lightboxVideo : lightboxImg;
-    visEl.classList.remove('lb-in'); void visEl.offsetWidth; visEl.classList.add('lb-in');
-  }
-
-  function openGallery(items, start) {
-    if (!items.length) return;
-    galleryItems = items;
-    galleryIndex = Math.max(0, Math.min(start || 0, items.length - 1));
-    showGallerySlide();
-    lightbox.classList.add('show');
-  }
-
-  function galleryStep(d) {
-    if (galleryItems.length < 2) return;
-    galleryIndex = (galleryIndex + d + galleryItems.length) % galleryItems.length;
-    showGallerySlide();
-  }
-
-  function closeGallery() {
-    lightbox.classList.remove('show', 'multi');
-    lightboxImg.src = '';
-    stopVideo(); lightboxVideo.style.display = 'none'; lightboxImg.style.display = '';
-    galleryItems = [];
-  }
-
   document.getElementById('postGrid').addEventListener('click', (e) => {
     // Image -> open the gallery (screenshot + originals, whole group).
     // While the inspector is open, a single click swaps its content instead
@@ -3293,14 +3243,14 @@
       const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
       if (!g) return;
       if (!document.getElementById('postDetail').hidden) { showDetail(g); return; }
-      openGallery(buildGroupGalleryItems(g), 0);
+      window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
     }
   });
   document.getElementById('postGrid').addEventListener('dblclick', (e) => {
     const img = e.target.closest('.card-img');
     if (!img || document.getElementById('postDetail').hidden) return;
     const g = viewGroups[parseInt(img.closest('.post-card')?.dataset.index, 10)];
-    if (g) openGallery(buildGroupGalleryItems(g), 0);
+    if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
   });
 
   // Middle-click an image → open it full-size in its own window (Chromium's
@@ -3318,19 +3268,6 @@
   // suppress the middle-click autoscroll on card images
   document.getElementById('postGrid').addEventListener('mousedown', (e) => {
     if (e.button === 1 && e.target.closest('.card-img')) e.preventDefault();
-  });
-
-  lbPrev.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(-1); });
-  lbNext.addEventListener('click', (e) => { e.stopPropagation(); galleryStep(1); });
-  lightbox.addEventListener('click', (e) => {
-    if (e.target.closest('.lb-nav') || e.target.closest('#lightboxVideo')) return; // nav + video controls don't close
-    closeGallery();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (!lightbox.classList.contains('show')) return;
-    if (e.key === 'Escape') closeGallery();
-    else if (e.key === 'ArrowLeft') galleryStep(-1);
-    else if (e.key === 'ArrowRight') galleryStep(1);
   });
 
   // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
@@ -3901,7 +3838,7 @@
     if (document.getElementById('postDetail').hidden) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (lightbox.classList.contains('show')) return;
+    if ((window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
@@ -4404,7 +4341,7 @@
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
+    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (browseMode !== 'posts') return;   // select-all is post-grid only (posters/collections excluded)
@@ -4424,7 +4361,7 @@
     if (!slash && !ctrlK) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || lightbox.classList.contains('show')) return;
+    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     e.preventDefault();
@@ -4949,7 +4886,7 @@
         if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) { togglePosterFolderMember(nf.id, u.key); showPosterDetail(u); } }
       }; }
     box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
-      t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) openGallery(buildGroupGalleryItems(g), 0); };
+      t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0); };
     });
     pdPickQuery = '';
     refreshPosterTags(u.key);

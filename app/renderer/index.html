@@ -2018,14 +2018,9 @@
     </div>
   </div>
 
-  <!-- Image lightbox / gallery -->
-  <div class="lightbox-overlay" id="lightbox">
-    <button class="lb-nav lb-prev" id="lbPrev" type="button">&#8249;</button>
-    <img id="lightboxImg" src="" alt="">
-    <video id="lightboxVideo" controls playsinline preload="metadata" style="display:none"></video>
-    <button class="lb-nav lb-next" id="lbNext" type="button">&#8250;</button>
-    <div class="lb-counter" id="lbCounter"></div>
-  </div>
+  <!-- Image lightbox / gallery — React island (window.corpusLightbox) owns the
+       overlay contents + show/multi classes; viewer.js feeds it gallery items. -->
+  <div class="lightbox-overlay" id="lightbox"></div>
 
   <!-- Edit tags overlay -->
   <div class="confirm-overlay" id="editOverlay">
@@ -2364,6 +2359,10 @@
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
        Loaded BEFORE viewer.js so cardHtml() can call window.corpusPostCard. -->
   <script src="islands/post-card.js"></script>
+  <!-- Image lightbox / gallery: React owns the overlay UI; viewer.js resolves a
+       post's gallery items and calls window.corpusLightbox.open(). Loaded BEFORE
+       viewer.js so its init can push the nav-button labels. -->
+  <script src="islands/lightbox.js"></script>
   <script src="viewer.js"></script>
   <script src="islands/settings.js"></script>
   <!-- Sidebar tag-group subrows: React owns rendering, viewer.js owns data+events. -->

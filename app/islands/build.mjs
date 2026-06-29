@@ -28,6 +28,7 @@ const opts = {
     { in: path.join(here, 'suggest/index.jsx'), out: 'suggest' },
     { in: path.join(here, 'posters/index.jsx'), out: 'posters' },
     { in: path.join(here, 'post-card/index.jsx'), out: 'post-card' },
+    { in: path.join(here, 'lightbox/index.jsx'), out: 'lightbox' },
   ],
   outdir: path.join(here, '../renderer/islands'),
   bundle: true,
@@ -45,8 +46,8 @@ const opts = {
 if (dev) {
   const ctx = await esbuild.context(opts);
   await ctx.watch();
-  console.log('[island] watching settings/ + sidebar-tags/ + query-chips/ + tabs/ + collections/ + suggest/ + posters/ + post-card/ … (reload the renderer to see changes)');
+  console.log('[island] watching settings/ + sidebar-tags/ + query-chips/ + tabs/ + collections/ + suggest/ + posters/ + post-card/ + lightbox/ … (reload the renderer to see changes)');
 } else {
   await esbuild.build(opts);
-  console.log('[island] built renderer/islands/{settings,sidebar-tags,query-chips,tabs,collections,suggest,posters,post-card}.js');
+  console.log('[island] built renderer/islands/{settings,sidebar-tags,query-chips,tabs,collections,suggest,posters,post-card,lightbox}.js');
 }
