@@ -2907,6 +2907,11 @@
   }
 
   function renderPosts(keepLimit) {
+    // The post-card island supplies cardHtml() (window.corpusPostCard). In dev it
+    // loads as a deferred ES module — AFTER viewer.js — so the very first paint can
+    // race ahead of it. Stash this render and replay once the island registers; in
+    // prod the island's IIFE loads BEFORE viewer.js, so this guard never trips.
+    if (!window.corpusPostCard) { window.__corpusOnPostCardReady = () => renderPosts(keepLimit); return; }
     if (!keepLimit) renderLimit = RENDER_PAGE;
     // View signature (filter/sort/search/view) — stable across this render, so
     // compute once and reuse for both the sticky-drop check and the fast-path guard.
@@ -3204,8 +3209,13 @@
   // Image lightbox / gallery (captured screenshot + downloaded originals). The
   // overlay UI lives in the React island (window.corpusLightbox); viewer.js only
   // resolves a post's gallery items below and hands them to open(). Labels are
-  // pushed once so the island can set the nav buttons' aria-labels.
-  window.corpusLightbox.setLabels({ lbPrev: MSG.lbPrev, lbNext: MSG.lbNext });
+  // pushed once so the island can set the nav buttons' aria-labels. In dev the
+  // island is a deferred module that may not have loaded yet — stash for catch-up.
+  {
+    const lbLabels = { lbPrev: MSG.lbPrev, lbNext: MSG.lbNext };
+    if (window.corpusLightbox) window.corpusLightbox.setLabels(lbLabels);
+    else window.__corpusLbLabels = lbLabels;
+  }
 
   // Gallery items for a post: the screenshot first, then each original image.
   const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');

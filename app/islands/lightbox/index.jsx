@@ -61,6 +61,10 @@ function setLabels(l) { LABELS = l || {}; }
 
 window.corpusLightbox = { open, close, isOpen: () => state.open, setLabels };
 
+// In dev this island loads (as a module) after viewer.js, which may have pushed
+// its nav-button labels before we existed — apply the stashed labels now.
+if (window.__corpusLbLabels) setLabels(window.__corpusLbLabels);
+
 // Esc / Arrow keys are document-level, gated on the open state — mirrors the old
 // viewer.js keydown handler this island replaces.
 document.addEventListener('keydown', (e) => {

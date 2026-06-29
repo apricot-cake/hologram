@@ -1611,6 +1611,14 @@ function savedWindowBounds() {
   return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
 }
 
+// Vite dev server base — honored ONLY when CORPUS_DEV_SERVER is set (island HMR /
+// React Fast Refresh while developing). '1' resolves to the strictPort default;
+// any other value is used as the base URL verbatim (trailing slashes trimmed).
+// null in prod, so loadFile + the file:// navigation guard stand unchanged.
+const DEV_SERVER_URL = process.env.CORPUS_DEV_SERVER
+  ? (process.env.CORPUS_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.CORPUS_DEV_SERVER.replace(/\/+$/, ''))
+  : null;
+
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
 // file://…, which inherits the same preload and could call destructive IPC
@@ -1622,11 +1630,16 @@ function savedWindowBounds() {
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
 function installNavigationGuards() {
   const indexFile = path.resolve(__dirname, 'renderer', 'index.html');
+  const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
     let u;
     try { u = new URL(rawUrl); } catch { return false; }
     // The standalone image window lives on the app-controlled psimg:// scheme.
     if (u.protocol === 'psimg:') return true;
+    // Dev only: allow navigations within the Vite dev server — its HMR client does
+    // a full location.reload() on non-Fast-Refreshable edits, which would otherwise
+    // be blocked here. devOrigin is null in prod, so this is a no-op there.
+    if (devOrigin && u.origin === devOrigin) return true;
     // Our own renderer, reached by file path (ignore query/hash differences).
     if (u.protocol === 'file:') {
       try { return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile; }
@@ -1691,7 +1704,15 @@ function createWindow(show = true) {
   }
   // Pass smoke=1 so the renderer disables the offscreen render optimizations
   // (content-visibility / lazy images) that leave the hidden capture window blank.
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
+  if (DEV_SERVER_URL) {
+    // Dev: load the renderer from Vite (HMR + Fast Refresh for the islands). Vite's
+    // root is app/, so index.html is served at /renderer/index.html and the island
+    // <script> tags are rewritten to their .jsx module sources (see vite.config.mjs).
+    const q = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
+    win.loadURL(`${DEV_SERVER_URL}/renderer/index.html?${q}`);
+  } else {
+    win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { theme, ...(smoke ? { smoke: '1' } : {}) } });
+  }
 }
 
 // Side-effect-free launch check: skips host registration, hides the window,
@@ -1731,7 +1752,9 @@ if (!gotSingleInstanceLock) {
   // exists so folder/tag writes don't fail before the first capture. Explicit
   // user-picked folders are left untouched.
   try { if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true }); } catch { /* ignore */ }
-  if (!SMOKE) ensureHostRegistered();
+  // Dev server runs (CORPUS_DEV_SERVER) never capture, so skip host registration —
+  // no HKCU writes and no native-host copy into the shared ~/.corpus.
+  if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
   registerImageProtocol();
   installNavigationGuards();
   const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';

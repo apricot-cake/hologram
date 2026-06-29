@@ -23,3 +23,11 @@ function html(model) {
 }
 
 window.corpusPostCard = { setLabels, html };
+
+// In dev this island is a deferred module loaded AFTER viewer.js, so an early
+// renderPosts() may have stashed itself waiting for us — replay it now.
+if (window.__corpusOnPostCardReady) {
+  const replay = window.__corpusOnPostCardReady;
+  window.__corpusOnPostCardReady = null;
+  replay();
+}
