@@ -3651,6 +3651,7 @@
     document.getElementById('postDetailBox').innerHTML = '';
     inspectedKey = null;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));   // post + poster cards
+    if (browseMode === 'posters') pushPosterModel();   // clear the React poster highlight too
     document.getElementById('postGrid').classList.remove('insp-open');
     refreshTileSlider();   // the grid width grew back — re-derive the track
   }
@@ -4734,10 +4735,6 @@
       b.classList.toggle('on', n > 0);
     });
   }
-  function posterMonogram(u) {
-    const s = (u.displayName || u.screenName || '').trim();
-    return s ? escapeHtml(s[0].toUpperCase()) : '?';
-  }
   // Named posters only — the identity-less ('(unknown)') bucket stays out of the grid.
   function namedPosters() { return buildUsers().filter((u) => u.displayName || u.screenName); }
   function filteredPosters() {
@@ -4793,7 +4790,6 @@
     // doesn't. The track maps to column counts so every step reflows (no dead zones).
     refreshPosterSlider();
     if (posterList.length === 0) {
-      grid.innerHTML = '';   // empty .poster-grid collapses to 0 height
       empty.style.display = 'block';
       const q = document.getElementById('searchBox').value.trim();
       if (buildUsers().length === 0 && !q) {
@@ -4802,29 +4798,36 @@
         empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` +
           `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
       }
+      pushPosterModel();   // React renders an empty grid (no cards)
       return;
     }
     empty.style.display = 'none';
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
-    grid.innerHTML = posterList.map((u, i) => {
-      const pfName = u.platform ? (PF_NAME[u.platform] || u.platform) : '';
-      const avatar = u.avatarFile ? `<img src="${fileSrc(u.avatarFile)}" alt="" loading="lazy">` : posterMonogram(u);
+    pushPosterModel();
+  }
+  // React owns the poster cards; viewer.js keeps posterList, the count badge, the
+  // grid density classes/vars, and #posterGrid's click/contextmenu delegation. The
+  // inspected highlight is model-driven (inspectedKey) so it survives re-renders —
+  // showPosterDetail / closeDetail re-push the model instead of toggling a class.
+  function pushPosterModel() {
+    const cards = posterList.map((u, i) => {
       const hasName = !!u.displayName;
-      const name = hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)');
-      const handleRow = (hasName && u.screenName) ? `<div class="poster-handle">@${escapeHtml(u.screenName)}</div>` : '';
-      const pf = u.platform ? `<span class="pf-tag"><span class="pf-dot ${u.platform}"></span>${escapeHtml(pfName)}</span>` : '';
-      // Hover actions: 🏷 tag → ℹ info (L→R).
-      return `<div class="poster-card" data-index="${i}" tabindex="0">`
-        + `<div class="poster-av">${avatar}</div>`
-        + `<div class="poster-meta">`
-        + `<div class="poster-name">${escapeHtml(name)}</div>`
-        + handleRow
-        + `<div class="poster-foot">${pf}<span class="poster-count">${escapeHtml(MSG.posterPosts(formatCount(u.count)))}</span></div>`
-        + `</div>`
-        + `<button class="poster-tag" data-ptag="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>`
-        + `<button class="poster-info" data-pinfo="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>`
-        + `</div>`;
-    }).join('');
+      const s = (u.displayName || u.screenName || '').trim();
+      return {
+        index: i,
+        inspected: inspectedKey === 'poster:' + u.key,
+        avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
+        monogram: u.avatarFile ? null : (s ? s[0].toUpperCase() : '?'),
+        name: hasName ? u.displayName : (u.screenName ? '@' + u.screenName : '(unknown)'),
+        handle: (hasName && u.screenName) ? u.screenName : null,
+        platform: u.platform || null,
+        pfName: u.platform ? (PF_NAME[u.platform] || u.platform) : null,
+        countLabel: MSG.posterPosts(formatCount(u.count)),
+      };
+    });
+    const model = { cards, tagTitle: MSG.tipTagEdit, infoTitle: MSG.tipInfo };
+    window.__corpusPostersModel = model;
+    if (window.corpusPosters) window.corpusPosters.render(model);
   }
   // Jump from a poster to its posts: posts mode + a single user filter for it.
   // We want ONLY this poster's posts, so drop every post filter carried over from
@@ -4925,9 +4928,8 @@
       `</div>`;
     document.getElementById('postDetail').hidden = false;
     inspectedKey = 'poster:' + u.key;
-    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));
-    const idx = posterList.indexOf(u);
-    if (idx >= 0) { const card = document.querySelector('.poster-card[data-index="' + idx + '"]'); if (card) card.classList.add('inspected'); }
+    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));   // post cards (poster cards are model-driven)
+    pushPosterModel();   // React re-highlights the inspected poster card from inspectedKey
     const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
     const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
     box.querySelectorAll('.iv-folder-chip[data-pffid]').forEach((ch) => {
