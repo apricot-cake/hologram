@@ -5092,12 +5092,11 @@
   function collectionItemCount(coll) { return collectionRecords(coll).length; }
   // Small condition chips under a dynamic card's name (saved tree leaves + the
   // free-text q). Capped; purely informational (the mock's optional 条件チップ).
-  function collCondChips(coll) {
+  function collCondLabels(coll) {
     const chips = [];
     try { for (const leaf of treeLeaves(coll.tree)) { chips.push(filterLabel(leaf)); if (chips.length >= 4) break; } } catch { /* ignore malformed tree */ }
     if (coll.q && coll.q.trim() && chips.length < 4) chips.push('“' + coll.q.trim() + '”');
-    if (!chips.length) return '';
-    return `<div class="collection-cond">${chips.map((s) => `<span class="cc">${escapeHtml(s)}</span>`).join('')}</div>`;
+    return chips;   // React renders the .collection-cond chips from these labels
   }
   function filteredCollections() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
@@ -5113,39 +5112,37 @@
   // ⚡ marks a dynamic collection (saved search) before its name — the only dynamic cue.
   const COLL_BOLT_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
   function renderCollections() {
-    const grid = document.getElementById('collectionGrid'); if (!grid) return;
+    if (!document.getElementById('collectionGrid')) return;
     _collRecCache = new Map();   // fresh per pass (sort + card map reuse the same scan)
     collectionList = filteredCollections();
     const countEl = document.getElementById('collectionCount');
     if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
     syncBrowseBar();
-    const newCard = `<div class="collection-card new" data-cnew="1" tabindex="0"><div class="ct-newinner">＋</div><div class="collection-meta"><div class="collection-name">${escapeHtml(MSG.collNew)}</div></div></div>`;
-    if (!collectionList.length) {
-      const q = document.getElementById('searchBox').value.trim();
-      const body = q
-        ? `<p><strong>${escapeHtml(MSG.emptySearchTitle)}</strong></p><p>${escapeHtml(MSG.emptySearchDesc)}</p>`
-        : `<p><strong>${escapeHtml(MSG.collEmptyTitle)}</strong></p><p>${escapeHtml(MSG.collEmptyDesc)}</p>`;
-      grid.innerHTML = `<div class="empty-state" style="display:block; grid-column:1/-1;">${body}</div>` + newCard;
-      return;
-    }
-    grid.innerHTML = collectionList.map((c, i) => {
-      const recs = collectionRecords(c);   // dynamic ⇒ live matches; static ⇒ existing items
-      const thumbs = collectionThumbsFrom(recs);   // 0..4 files; tiles pack to fill the square by count
-      const n = thumbs.length;
-      const cells = n
-        ? thumbs.map((f) => `<img src="${fileSrc(f, 200)}" alt="" loading="lazy">`).join('')
-        : COLL_EMPTY_ICON;
+    // React owns the grid: build a plain model (cards/thumbs/labels) and push it to
+    // the island. viewer.js keeps the data, the count badge, and #collectionGrid's
+    // click/contextmenu delegation.
+    const q = document.getElementById('searchBox').value.trim();
+    const cards = collectionList.map((c, i) => {
+      const recs = collectionRecords(c);
       const isDyn = c.kind === 'dynamic';
-      // ⚡ marks a dynamic collection (saved search) before its name — the only cue.
-      const badge = isDyn ? `<span class="col-bolt" title="${escapeAttr(MSG.collDynamicTitle)}">${COLL_BOLT_ICON}</span>` : '';
-      return `<div class="collection-card${isDyn ? ' dynamic' : ''}" data-index="${i}" data-cid="${escapeAttr(c.id)}" tabindex="0">`
-        + `<div class="collection-thumbs ${n ? 'n' + n : 'empty'}">${cells}</div>`
-        + `<div class="collection-meta">`
-        + `<div class="collection-name">${badge}${escapeHtml(c.name)}</div>`
-        + (isDyn ? collCondChips(c) : '')
-        + `<div class="collection-count">${escapeHtml(MSG.collItemCount(recs.length))}</div>`
-        + `</div></div>`;
-    }).join('') + newCard;
+      return {
+        id: c.id, index: i, dynamic: isDyn, name: c.name,
+        condChips: isDyn ? collCondLabels(c) : [],
+        countLabel: MSG.collItemCount(recs.length),
+        thumbs: collectionThumbsFrom(recs).map((f) => fileSrc(f, 200)),
+      };
+    });
+    const model = {
+      empty: collectionList.length === 0,
+      emptyBody: collectionList.length === 0
+        ? (q ? { title: MSG.emptySearchTitle, desc: MSG.emptySearchDesc } : { title: MSG.collEmptyTitle, desc: MSG.collEmptyDesc })
+        : null,
+      newLabel: MSG.collNew,
+      dynamicTitle: MSG.collDynamicTitle,
+      cards,
+    };
+    window.__corpusCollectionsModel = model;
+    if (window.corpusCollections) window.corpusCollections.render(model);
   }
   // Drill into a collection. Static: post view + a folder filter (folder leaf evaluates
   // CF().has(cid, captureId)). Dynamic: restore the saved search (tree + free-text) so
