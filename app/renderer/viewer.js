@@ -2982,6 +2982,13 @@
       ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) ||
       activeFilters.some(f => f.type === 'engagement'));
 
+    // i18n labels are identical for every card — push them to the post-card
+    // island once per render (also keeps it in sync after a language change).
+    window.corpusPostCard.setLabels({
+      tipSelect: MSG.tipSelect, tipClip: MSG.tipClip, tipInfo: MSG.tipInfo,
+      tipTagEdit: MSG.tipTagEdit, clickToExpand: MSG.clickToExpand,
+    });
+
     // FAST PATH — pure load-more in card view: append ONLY the new slice into the
     // existing masonry columns so already-visible cards (and their <img>) aren't
     // recreated. The old full innerHTML rebuild reloaded every visible image at the
@@ -3057,57 +3064,55 @@
     _lastRenderGen = _allPostsGeneration;   // mark the generation of this build
     _lastViewGroups = viewGroups; _lastStickySize = stickyRecs.size;   // snapshot for load-more group reuse
     function cardHtml(g, i) {
-      const p = g.rep;
-      // Engagement: nonzero only (zeros are noise \u2014 every client hides them),
-      // outline TEXT glyphs (\u2661 \u21c4 \ud83d\udde8 \u2014 text presentation, not color emoji,
-      // not SVG: user-picked style) + bare count, no unit words.
-      const statsHtml = [
-        p.likes > 0 ? `<span class="st">\u2661 ${formatCount(p.likes)}</span>` : '',
-        p.reposts > 0 ? `<span class="st">\u21c4 ${formatCount(p.reposts)}</span>` : '',
-        p.replies > 0 ? `<span class="st">\ud83d\udde8\ufe0e ${formatCount(p.replies)}</span>` : '',
-        p.bookmarks > 0 ? `<span class="st">\ud83d\udd16\ufe0e ${formatCount(p.bookmarks)}</span>` : ''
-      ].filter(Boolean).join('');
+      return window.corpusPostCard.html(cardModel(g, i));
+    }
 
+    // Resolve ONE group into a plain, fully-formatted card model: image src,
+    // formatted counts/dates, selection, clip, aspect — everything the markup
+    // needs as primitives. The post-card island renders this to the card HTML
+    // string; viewer.js still owns the reconcile, masonry, windowing, and every
+    // #postGrid event delegation around it. Raw text/names are passed unescaped —
+    // the island's JSX escapes them (was manual escapeHtml/escapeAttr here).
+    function cardModel(g, i) {
+      const p = g.rep;
+      // Engagement: nonzero only (zeros are noise). Formatted here; the island
+      // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
+      const stats = {
+        likes: p.likes > 0 ? formatCount(p.likes) : null,
+        reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
+        replies: p.replies > 0 ? formatCount(p.replies) : null,
+        bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+      };
+      // Both dates: post date bare (primary) + capture date with a 📷 mark
+      // (secondary). Deduped when they land on the same day.
       const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
       const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
-      // Both dates on the card: post date bare (primary) + capture date with a
-      // 📷 mark (secondary, muted). Deduped when they land on the same day.
       const postCompact = p.date ? compactDate(p.date) : '';
       const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
-      const footDates = [
-        postCompact ? `<span class="pdate"${dateStr ? ` title="${escapeAttr(dateStr)}"` : ''}>${postCompact}</span>` : '',
-        (capCompact && capCompact !== postCompact) ? `<span class="cdate"${capturedStr ? ` title="${escapeAttr(capturedStr)}"` : ''}><svg class="cdate-ic" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>${capCompact}</span>` : ''
-      ].filter(Boolean).join('');
-      // Platform = a source badge on the thumbnail's bottom-left (Instagram/Pinterest
-      // style). It used to live in the bottom-right WITH the date, which read oddly
-      // (a category label paired with a timestamp); the head of line 1 was rejected
-      // earlier for crowding the author. The thumbnail corner keeps it off the text.
+      const footDates = {
+        post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
+        cap: (capCompact && capCompact !== postCompact) ? { label: capCompact, title: capturedStr || '' } : null,
+      };
       const pfName = p.platform ? (PF_NAME[p.platform] || p.platform) : '';
-      const pfBadge = p.platform ? `<div class="pf-badge" title="${escapeAttr(pfName)}"><span class="pf-dot ${p.platform}"></span><span class="pf-badge-name">${escapeHtml(pfName)}</span></div>` : '';
       const userName = p.displayName || p.screenName || p.title || '';
       const handle = p.screenName ? `@${p.screenName}` : '';
-      // Library images carry the filename as BOTH title and text — showing it
-      // twice (user line + body) is pure noise, so drop the duplicate body.
+      // Library images carry the filename as BOTH title and text — drop the
+      // duplicate body when they match the user line.
       const textRaw = p.text || p.title || '';
-      const textPreview = textRaw === userName ? '' : escapeHtml(textRaw);
+      const text = textRaw === userName ? '' : textRaw;
       const imgFile = densityImage(p, currentView);   // tile: artwork→capture; card/list: capture→artwork
-      // GIFs stay full-size in card/list so they keep animating (the thumbnailer
+      // GIFs stay full-size in card/list so they keep animating (thumbnailer
       // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
       const imgW = currentView === 'tile' ? tileThumbW()
         : /\.gif$/i.test(imgFile || '') ? 0
         : (currentView === 'list' ? listThumbW() : cardThumbW());
-      // Reserve the card image's height BEFORE its lazy image loads (card masonry)
-      // so the column packs correctly the first time = no load-time settle/jitter.
-      // Pixel size from the index (shotW/shotH) covers every post up front; the
-      // learned cache is a fallback for any the index couldn't size yet.
+      // Reserve the card image's height up front (card masonry) so columns pack
+      // right the first time — pixel size from the index, learned cache fallback.
       const aspRatio = currentView !== 'card' ? ''
         : (p.shotW > 0 && p.shotH > 0) ? (p.shotW + '/' + p.shotH)
         : (p.captureId && imgAspect[p.captureId]) ? imgAspect[p.captureId]
         : '';
-      const nImg = g.files.length;                    // ×N badge: total images across the group
-      const likesOv = p.likes != null ? `<span class="ov-likes">♡ ${MSG.likes(p.likes)}</span>` : '';
-
-      // Post-type + media flags (grid view only; hidden in the compact list view).
+      // Post-type + media flags (grid view only; CSS hides them in compact list).
       const flags = [];
       if (p.isThread) flags.push(MSG.qfThread);
       if (p.isReply) flags.push(MSG.qfReply);
@@ -3115,29 +3120,32 @@
       const mediaLabel = p.mediaType === 'image' ? MSG.qfImage
         : p.mediaType === 'video' ? MSG.qfVideo
         : p.mediaType === 'gif' ? MSG.qfGif : '';
-      const flagsHtml = (flags.length || mediaLabel)
-        ? `<div class="post-flags">${flags.map(f => `<span class="post-flag flag-type">${escapeHtml(f)}</span>`).join('')}${mediaLabel ? `<span class="post-flag flag-media">${escapeHtml(mediaLabel)}</span>` : ''}</div>`
-        : '';
-
       const postKey = postIdKey(p);
-      const isSelected = selectedSet.has(postKey);
-      return `<div class="post-card${isSelected ? ' selected' : ''}${p.url ? '' : ' no-url'}" data-url="${escapeAttr(p.url || '')}" data-index="${i}" data-key="${escapeAttr(postKey)}">
-        <div class="select-check" title="${MSG.tipSelect}"></div>
-        <div class="act-pill" aria-hidden="true"></div>
-        <button class="clip-btn${CF() && CF().isClipped(p.captureId) ? ' in' : ''}" data-clip="${i}" title="${MSG.tipClip}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-        <button class="info-btn" data-info="${i}" title="${MSG.tipInfo}" aria-label="${MSG.tipInfo}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-        <button class="tag-btn" data-tagedit="${i}" title="${MSG.tipTagEdit}" aria-label="${MSG.tipTagEdit}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></button>
-        ${(imgFile || p.video) ? `<div class="card-thumb">${imgFile ? `<img class="card-img" src="${fileSrc(imgFile, imgW)}" alt="" data-cap="${escapeAttr(p.captureId || '')}"${aspRatio ? ` style="aspect-ratio:${aspRatio}"` : ''} loading="${SMOKE_CAPTURE ? 'eager' : 'lazy'}" decoding="async">` : '<div class="card-img card-video">▶</div>'}${pfBadge}</div>` : ''}
-        ${nImg > 1 ? `<div class="card-ntag">×${nImg}</div>` : ''}
-        <div class="card-overlay"><span class="ov-author">${escapeHtml(userName)}</span>${likesOv}</div>
-        <div class="post-meta">
-          <div class="user"><span class="uname">${escapeHtml(userName)}</span>${handle ? `<span class="handle">${escapeHtml(handle)}</span>` : ''}</div>
-          ${flagsHtml}
-          ${textPreview ? `<div class="text">${textPreview}<span class="text-hint">${MSG.clickToExpand}</span></div>` : ''}
-          ${(statsHtml || footDates) ? `<div class="post-foot">${statsHtml ? `<div class="stats">${statsHtml}</div>` : ''}<span class="foot-r">${footDates}</span></div>` : ''}
-          ${p.tags?.length ? `<div class="tags-label">${p.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-        </div>
-      </div>`;
+      return {
+        index: i,
+        url: p.url || '',
+        postKey,
+        selected: selectedSet.has(postKey),
+        noUrl: !p.url,
+        clipped: !!(CF() && CF().isClipped(p.captureId)),
+        hasThumb: !!(imgFile || p.video),
+        imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+        captureId: p.captureId || '',
+        aspRatio,
+        eager: !!SMOKE_CAPTURE,
+        platform: p.platform || '',
+        pfName,
+        nImg: g.files.length,
+        userName,
+        likesOv: p.likes != null ? MSG.likes(p.likes) : null,
+        handle,
+        flags,
+        mediaLabel,
+        text,
+        stats,
+        footDates,
+        tags: p.tags || [],
+      };
     }
 
     // Load-more sentinel (shared helper).

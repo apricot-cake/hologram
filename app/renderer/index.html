@@ -2360,6 +2360,10 @@
   <script src="folders.js"></script>
   <script src="search.js"></script>
   <script src="about-icon.js"></script>
+  <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
+       HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
+       Loaded BEFORE viewer.js so cardHtml() can call window.corpusPostCard. -->
+  <script src="islands/post-card.js"></script>
   <script src="viewer.js"></script>
   <script src="islands/settings.js"></script>
   <!-- Sidebar tag-group subrows: React owns rendering, viewer.js owns data+events. -->
