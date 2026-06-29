@@ -5456,6 +5456,7 @@
   // 直下に表示。クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
   const suggestEl = document.createElement('div');
   suggestEl.className = 'search-suggest';
+  suggestEl.id = 'searchSuggest';   // the React suggest island mounts here
   document.body.appendChild(suggestEl);
   let suggestIdx = -1;
   let suggestItems = [];
@@ -5482,9 +5483,10 @@
     suggestItems = buildSuggest(q);
     if (!suggestItems.length) { hideSuggest(); return; }
     if (suggestIdx >= suggestItems.length) suggestIdx = suggestItems.length - 1;
-    suggestEl.innerHTML = suggestItems.map((it, i) =>
-      `<div class="sg-row${i === suggestIdx ? ' sel' : ''}" data-sg="${i}"><span class="sg-ic">${SUG_ICON[it.kind]}</span><span class="sg-name">${escapeHtml(it.label)}</span><span class="sg-n">${it.note}</span></div>`
-    ).join('');
+    // React owns the rows; viewer.js keeps the state, positioning, and events.
+    const model = { items: suggestItems.map((it) => ({ iconEmoji: SUG_ICON[it.kind], label: it.label, note: it.note })), selIdx: suggestIdx };
+    window.__corpusSuggestModel = model;
+    if (window.corpusSuggest) window.corpusSuggest.render(model);
     const r = sb.getBoundingClientRect();
     suggestEl.style.left = r.left + 'px';
     suggestEl.style.top = (r.bottom + 4) + 'px';
