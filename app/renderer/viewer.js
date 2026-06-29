@@ -2402,6 +2402,7 @@
   let restoringState = false;
   let tabs = [];
   let activeTabId = null;
+  let tabEditingId = null;   // id of the tab being inline-renamed (React renders its input)
   let _tabPersistTimer = null;
   // Per-tab view-history for browser-style back/forward. Holds JSON snapshots of
   // snapshotState(); navIdx points at the current entry. Linear: navigating back
@@ -2547,16 +2548,9 @@
   }
   function updateActiveTabTitle() {
     if (!activeTabId) return;
-    const bar = document.getElementById('tabBarInner');
-    if (!bar) return;
     const t = tabs.find((t) => t.id === activeTabId);
-    if (!t || t.title) return;
-    const snap = snapshotState();
-    const info = tabTitleOf(snap, { allCount: allPosts.length });
-    const tabEl = bar.querySelector('[data-tab="' + CSS.escape(activeTabId) + '"]');
-    if (!tabEl) return;
-    const titleEl = tabEl.querySelector('.tab-title');
-    if (titleEl) { titleEl.textContent = info.text; tabEl.title = info.text; }
+    if (!t || t.title) return;   // custom-named tab: nothing derives, skip the re-render
+    renderTabs();   // React diffs the strip; only the active tab's derived title actually changes
   }
   function renderTabTitle(t) {
     if (t.title) return t.title;
@@ -2564,28 +2558,21 @@
     return tabTitleOf(s, { allCount: allPosts.length }).text;
   }
   function renderTabs() {
-    const bar = document.getElementById('tabBarInner');
-    if (!bar) return;
-    let html = '';
-    for (const t of tabs) {
+    if (!document.getElementById('tabBarInner')) return;
+    const pinSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
+    // React owns the strip now: build a plain model (titles/icons/flags) and push
+    // it to the island. viewer.js keeps the tabs array, activeTabId, editing state,
+    // and all #tabBarInner event delegation.
+    const tabModels = tabs.map((t) => {
       const isActive = t.id === activeTabId;
-      const ttl = renderTabTitle(t);
-      const s = (t.id === activeTabId) ? snapshotState() : (t.state || {});
-      const pinSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
+      const s = isActive ? snapshotState() : (t.state || {});
       const icon = t.pinned ? pinSvg : (TAB_ICONS[tabTitleOf(s, { allCount: allPosts.length }).iconType] || TAB_ICONS.all);
-      const closeBtn = (!t.pinned && tabs.length > 1)
-        ? '<button class="tab-close" data-close="' + escapeAttr(t.id) + '" title="' + escapeAttr(MSG.tabClose) + '" aria-label="' + escapeAttr(MSG.tabClose) + '"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>'
-        : '';
-      // NOTE: must be a <div>, not <button> — a button cannot contain the
-      // .tab-close button (the HTML parser auto-closes the outer one, which
-      // sprays the close buttons between the tabs as siblings).
-      html += '<div class="tab-item' + (isActive ? ' active' : '') + (t.pinned ? ' pinned' : '') + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" tabindex="0" data-tab="' + escapeAttr(t.id) + '">'
-        + '<span class="tab-body"><span class="tab-icon" aria-hidden="true">' + icon + '</span>'
-        + '<span class="tab-title">' + escapeHtml(ttl) + '</span></span>'
-        + closeBtn + '</div>';
-    }
-    html += '<button class="tab-new" title="' + escapeAttr(MSG.tabNew) + '" aria-label="' + escapeAttr(MSG.tabNew) + '"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>';
-    bar.innerHTML = html;
+      return { id: t.id, title: renderTabTitle(t), icon, active: isActive, pinned: !!t.pinned, showClose: (!t.pinned && tabs.length > 1) };
+    });
+    const model = { tabs: tabModels, editingId: tabEditingId, closeTitle: MSG.tabClose, newTitle: MSG.tabNew };
+    // Stash for the island bundle (script order is viewer.js → islands); index.jsx replays it.
+    window.__corpusTabsModel = model;
+    if (window.corpusTabs) window.corpusTabs.render(model);
   }
   function switchTab(id) {
     if (id === activeTabId) return;
@@ -2730,26 +2717,38 @@
         }
       });
     }
+    // Inline rename: flag the tab as editing → React renders a .tab-rename-input in
+    // place of its title span (it survives re-renders, unlike the old imperative
+    // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
     function startTabRename(id) {
-      const tabEl = bar.querySelector('[data-tab="' + CSS.escape(id) + '"]');
-      if (!tabEl) return;
-      const t = tabs.find((t) => t.id === id);
-      if (!t) return;
-      const titleEl = tabEl.querySelector('.tab-title');
-      if (!titleEl) return;
-      const input = document.createElement('input');
-      input.className = 'tab-rename-input';
-      input.value = renderTabTitle(t);
-      titleEl.replaceWith(input);
-      input.focus(); input.select();
-      let committed = false;
-      const commit = () => { if (committed) return; committed = true; renameTab(id, input.value); };
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-        else if (ev.key === 'Escape') { committed = true; renderTabs(); }
-      });
-      input.addEventListener('blur', commit);
+      if (!tabs.find((t) => t.id === id)) return;
+      tabEditingId = id;
+      renderTabs();
+      const input = bar.querySelector('.tab-rename-input');
+      if (input) { input.focus(); input.select(); }
     }
+    function commitTabRename() {
+      if (!tabEditingId) return;
+      const input = bar.querySelector('.tab-rename-input');
+      const id = tabEditingId;
+      tabEditingId = null;
+      if (input) renameTab(id, input.value); else renderTabs();   // renameTab re-renders
+    }
+    function cancelTabRename() {
+      if (!tabEditingId) return;
+      tabEditingId = null;
+      renderTabs();   // discard the edit, restore the title
+    }
+    // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
+    // they keep working across React re-renders of the strip.
+    bar.addEventListener('keydown', (e) => {
+      if (!tabEditingId || !e.target.closest('.tab-rename-input')) return;
+      if (e.key === 'Enter') { e.preventDefault(); commitTabRename(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelTabRename(); }
+    });
+    bar.addEventListener('focusout', (e) => {
+      if (tabEditingId && e.target.closest('.tab-rename-input')) commitTabRename();
+    });
     bar.addEventListener('click', (e) => {
       const closeBtn = e.target.closest('[data-close]');
       if (closeBtn) { e.stopPropagation(); closeTab(closeBtn.dataset.close); return; }

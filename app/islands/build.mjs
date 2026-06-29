@@ -23,6 +23,7 @@ const opts = {
     { in: path.join(here, 'settings/index.jsx'), out: 'settings' },
     { in: path.join(here, 'sidebar-tags/index.jsx'), out: 'sidebar-tags' },
     { in: path.join(here, 'query-chips/index.jsx'), out: 'query-chips' },
+    { in: path.join(here, 'tabs/index.jsx'), out: 'tabs' },
   ],
   outdir: path.join(here, '../renderer/islands'),
   bundle: true,
@@ -40,8 +41,8 @@ const opts = {
 if (dev) {
   const ctx = await esbuild.context(opts);
   await ctx.watch();
-  console.log('[island] watching settings/ + sidebar-tags/ + query-chips/ … (reload the renderer to see changes)');
+  console.log('[island] watching settings/ + sidebar-tags/ + query-chips/ + tabs/ … (reload the renderer to see changes)');
 } else {
   await esbuild.build(opts);
-  console.log('[island] built renderer/islands/{settings,sidebar-tags,query-chips}.js');
+  console.log('[island] built renderer/islands/{settings,sidebar-tags,query-chips,tabs}.js');
 }
