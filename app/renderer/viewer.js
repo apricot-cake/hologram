@@ -14,9 +14,7 @@
     tabSettings: _s('tabSettings'),
     aboutVersion: _f1('aboutVersion'),
     searchPlaceholder: _s('searchPlaceholder'),
-    searchTags: _s('searchTags'),
     sidebarAuthors: _s('sidebarAuthors'),
-    searchAuthors: _s('searchAuthors'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
@@ -33,7 +31,6 @@
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
-    engParticle: _s('engParticle'),
     ctxManage: _s('ctxManage'),
     ctxClipAdd: _s('ctxClipAdd'),
     ctxClipRemove: _s('ctxClipRemove'),
@@ -122,7 +119,6 @@
     sortLikesPct: _s('sortLikesPct'),
     filterAll: _s('filterAll'),
     reset: _s('reset'),
-    close: _s('close'),
     tileSizeTip: _s('tileSizeTip'),
     postCount: _f1('postCount'),
 
@@ -369,11 +365,7 @@
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
-  setAttr('settingsClose', 'aria-label', MSG.close);
-  setAttr('settingsClose', 'title', MSG.close);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
-  setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
-  setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
@@ -434,10 +426,6 @@
   setText('sbPosterLayoutTitle', MSG.sbLayoutTitle);
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
-  // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
-  setText('sbEngParticle', MSG.engParticle);
-  const engParticleEl = document.getElementById('sbEngParticle');
-  if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('activebarLabel', MSG.activebarLabel);
   setText('sbWorkRowTitle', MSG.kindWork);
