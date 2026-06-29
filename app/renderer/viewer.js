@@ -1276,21 +1276,11 @@
   // --- Sidebar filter controls ---
 
   // Sidebar i18n
-  setText('sbKindPost', MSG.kindPost);
-  setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
-  setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
   setText('sbMediaTitle', MSG.qfMediaTitle);
   setText('sbDateTitle', MSG.qfDate);
   setText('sbEngTitle', MSG.qfEngagement);
-  setText('sbPost', MSG.qfPost);
-  setText('sbReply', MSG.qfReply);
-  setText('sbQuote', MSG.qfQuote);
-  setText('sbThread', MSG.qfThread);
-  setText('sbImage', MSG.qfImage);
-  setText('sbVideo', MSG.qfVideo);
-  setText('sbGif', MSG.qfGif);
 
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
