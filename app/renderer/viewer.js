@@ -12,13 +12,9 @@
     // tabs / search / sort
     tabTags: _s('tabTags'),
     tabSettings: _s('tabSettings'),
-    aboutTitle: _s('aboutTitle'),
     aboutVersion: _f1('aboutVersion'),
-    aboutTagline: _s('aboutTagline'),
     searchPlaceholder: _s('searchPlaceholder'),
-    searchTags: _s('searchTags'),
     sidebarAuthors: _s('sidebarAuthors'),
-    searchAuthors: _s('searchAuthors'),
     kindPost: _s('kindPost'),
     kindImage: _s('kindImage'),
     confirmDeleteGroup: _f1('confirmDeleteGroup'),
@@ -35,7 +31,6 @@
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
-    engParticle: _s('engParticle'),
     ctxManage: _s('ctxManage'),
     ctxClipAdd: _s('ctxClipAdd'),
     ctxClipRemove: _s('ctxClipRemove'),
@@ -46,7 +41,6 @@
     qbTipOp: _s('qbTipOp'),
     qbMenuNeg: _s('qbMenuNeg'),
     qbMenuNegGroup: _s('qbMenuNegGroup'),
-    tileOverlay: _s('tileOverlay'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
     qbHelp2: _s('qbHelp2'),
@@ -60,9 +54,6 @@
     tagGroupOther: _s('tagGroupOther'),
     tagAllRow: _s('tagAllRow'),
     qfFindPh: _s('qfFindPh'),
-    exportModeFull: _s('exportModeFull'),
-    exportModeImages: _s('exportModeImages'),
-    backupSubTitle: _s('backupSubTitle'),
     deleteKeyword: _s('deleteKeyword'),
     confirmKeywordPh: _s('confirmKeywordPh'),
     detailPlatform: _s('detailPlatform'),
@@ -128,7 +119,6 @@
     sortLikesPct: _s('sortLikesPct'),
     filterAll: _s('filterAll'),
     reset: _s('reset'),
-    close: _s('close'),
     tileSizeTip: _s('tileSizeTip'),
     postCount: _f1('postCount'),
 
@@ -199,31 +189,13 @@
     emptyResetBtn: _s('emptyResetBtn'),
 
     save: _s('save'),       // tag editor save button
-    saved: _s('saved'),     // settings status toast
     // settings > appearance / language / shortcut
-    themeTitle: _s('themeTitle'),
-    themeMode: _s('themeMode'),
-    themeAuto: _s('themeAuto'),
-    themeLight: _s('themeLight'),
-    themeDark: _s('themeDark'),
-    hintTheme: _s('hintTheme'),
-    langTitle: _s('langTitle'),
     settingsSearch: _s('settingsSearch'),
     settingsNoMatch: _s('settingsNoMatch'),
-    langAuto: _s('langAuto'),
-    hintLang: _s('hintLang'),
-    shortcutTitle: _s('shortcutTitle'),
-    shortcutLink: _s('shortcutLink'),
-    hintShortcut: _s('hintShortcut'),
 
     // settings > data / danger
-    dataTitle: _s('dataTitle'),
-    saveFolderSubTitle: _s('saveFolderSubTitle'),
-    saveFolderChange: _s('saveFolderChange'),
-    saveFolderHint: _s('saveFolderHint'),
     saveFolderMoving: _s('saveFolderMoving'),
     saveFolderMoved: _f1('saveFolderMoved'),
-    saveFolderProgressTitle: _s('saveFolderProgressTitle'),
     logCopyStart: _f1('logCopyStart'),
     logCopying: _f1('logCopying'),
     logSwitch: _s('logSwitch'),
@@ -236,15 +208,7 @@
     saveFolderErrNotWritable: _s('saveFolderErrNotWritable'),
     saveFolderErrCopyFailed: _s('saveFolderErrCopyFailed'),
     saveFolderErrGeneric: _s('saveFolderErrGeneric'),
-    exportZip: _s('exportZip'),
     importZip: _s('importZip'),
-    importImages: _s('importImages'),
-    hintZip: _s('hintZip'),
-    hintMedia: _s('hintMedia'),
-    dangerTitle: _s('dangerTitle'),
-    labelResetDeleteConfirm: _s('labelResetDeleteConfirm'),
-    hintResetDeleteConfirm: _s('hintResetDeleteConfirm'),
-    clearData: _s('clearData'),
     confirmClear: _s('confirmClear'),
     confirmOk: _s('confirmOk'),
     confirmCancel: _s('confirmCancel'),
@@ -252,15 +216,7 @@
     clearBlocked: _s('clearBlocked'),
 
     // settings > backup（指定フォルダへの増分エクスポート）
-    hintBackup: _s('hintBackup'),
     backupDirNone: _s('backupDirNone'),
-    backupChoose: _s('backupChoose'),
-    backupClear: _s('backupClear'),
-    backupInterval: _s('backupInterval'),
-    backupIntervalUnit: _s('backupIntervalUnit'),
-    unitDay: _s('unitDay'),
-    unitWeek: _s('unitWeek'),
-    unitMonth: _s('unitMonth'),
     backupOverlap: _s('backupOverlap'),
     backupLastLabel: _s('backupLastLabel'),
     mirrorDone: _s('mirrorDone'),
@@ -275,10 +231,8 @@
     backupSyncing: _s('backupSyncing'),
 
     // settings > trash
-    trashTitle: _s('trashTitle'),
     trashEmpty: _s('trashEmpty'),
     trashCount: _f1('trashCount'),
-    trashEmptyBtn: _s('trashEmptyBtn'),
     trashRestoreBtn: _s('trashRestoreBtn'),
     trashDeleteBtn: _s('trashDeleteBtn'),
 
@@ -402,7 +356,6 @@
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   const setAttr = (id, attr, val) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, val); };
 
-  setText('settingsViewTitle', MSG.tabSettings);
   setAttr('settingsBtn', 'title', MSG.tabSettings);
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
@@ -412,11 +365,7 @@
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
-  setAttr('settingsClose', 'aria-label', MSG.close);
-  setAttr('settingsClose', 'title', MSG.close);
   setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
-  setAttr('sbTagSearch', 'placeholder', MSG.searchTags);
-  setAttr('sbAuthorSearch', 'placeholder', MSG.searchAuthors);
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
@@ -457,52 +406,10 @@
   setText('posterDateRangeLabel', MSG.posterDateRangeLabel);
   setText('posterDateApply', MSG.qfApply);
   setText('posterDateClear', MSG.posterDateClear);
-  setText('settingsThemeTitle', MSG.themeTitle);
-  setText('settingsThemeLabel', MSG.themeMode);
-  setText('themeOptAuto', MSG.themeAuto);
-  setText('themeOptLight', MSG.themeLight);
-  setText('themeOptDark', MSG.themeDark);
-  setText('hintTheme', MSG.hintTheme);
-  setText('settingsLangTitle', MSG.langTitle);
-  setText('langAuto', MSG.langAuto);
-  setText('hintLang', MSG.hintLang);
-  setText('settingsShortcutTitle', MSG.shortcutTitle);
-  setText('shortcutLink', MSG.shortcutLink);
-  setText('hintShortcut', MSG.hintShortcut);
-  setText('settingsDataTitle', MSG.dataTitle);
-  setText('saveFolderSubTitle', MSG.saveFolderSubTitle);
-  setText('chooseSaveFolder', MSG.saveFolderChange);
-  setText('hintSaveFolder', MSG.saveFolderHint);
-  setText('saveFolderProgressTitle', MSG.saveFolderProgressTitle);
-  setText('exportZip', MSG.exportZip);
-  setText('importZip', MSG.importZip);
-  setText('importImages', MSG.importImages);
-  setText('exportModeFull', MSG.exportModeFull);
-  setText('exportModeImages', MSG.exportModeImages);
-  setText('hintZip', MSG.hintZip);
-  setText('hintMedia', MSG.hintMedia);
-  setText('backupSubTitle', MSG.backupSubTitle);
-  setText('hintBackup', MSG.hintBackup);
-  setText('chooseBackupDir', MSG.backupChoose);
-  setText('clearBackupDir', MSG.backupClear);
-  setText('backupIntervalLabel', MSG.backupInterval);
-  setText('backupIntervalEvery', MSG.backupIntervalUnit);
-  setText('unitDay', MSG.unitDay);
-  setText('unitWeek', MSG.unitWeek);
-  setText('unitMonth', MSG.unitMonth);
-  setText('settingsTrashTitle', MSG.trashTitle);
-  setText('emptyTrash', MSG.trashEmptyBtn);
-  setText('settingsDangerTitle', MSG.dangerTitle);
-  setText('settingsAboutTitle', MSG.aboutTitle);
-  setText('aboutTagline', MSG.aboutTagline);
-  // About panel is owned by the React settings island (app/islands/settings) —
-  // it mounts the live holographic icon and fills version / build info there.
-  setText('labelResetDeleteConfirm', MSG.labelResetDeleteConfirm);
-  setText('hintResetDeleteConfirm', MSG.hintResetDeleteConfirm);
-  setText('clearData', MSG.clearData);
+  // Settings-modal labels (theme/lang/data/backup/trash/danger/about) now live in
+  // the React island (app/islands/settings); only the shared confirm overlay stays here.
   setText('confirmCancel', MSG.confirmCancel);
   setText('confirmOk', MSG.confirmOk);
-  setText('settingsStatus', MSG.saved);
   setText('confirmSkipText', MSG.confirmSkip);
 
   // Edit overlay i18n
@@ -519,17 +426,12 @@
   setText('sbPosterLayoutTitle', MSG.sbLayoutTitle);
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
-  // Engagement sentence particle (「…が 0 以上」); en has none → hide the span
-  setText('sbEngParticle', MSG.engParticle);
-  const engParticleEl = document.getElementById('sbEngParticle');
-  if (engParticleEl && !MSG.engParticle) engParticleEl.style.display = 'none';
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('activebarLabel', MSG.activebarLabel);
   setText('sbWorkRowTitle', MSG.kindWork);
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
-  setText('tileOverlayLabel', MSG.tileOverlay);
   document.getElementById('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
@@ -1362,21 +1264,11 @@
   // --- Sidebar filter controls ---
 
   // Sidebar i18n
-  setText('sbKindPost', MSG.kindPost);
-  setText('sbKindImage', MSG.kindImage);
   setText('sbPlatformTitle', MSG.qfPlatform);
-  setText('sbInstanceTitle', MSG.qfInstance);
   setText('sbPostTypeTitle', MSG.qfPostType);
   setText('sbMediaTitle', MSG.qfMediaTitle);
   setText('sbDateTitle', MSG.qfDate);
   setText('sbEngTitle', MSG.qfEngagement);
-  setText('sbPost', MSG.qfPost);
-  setText('sbReply', MSG.qfReply);
-  setText('sbQuote', MSG.qfQuote);
-  setText('sbThread', MSG.qfThread);
-  setText('sbImage', MSG.qfImage);
-  setText('sbVideo', MSG.qfVideo);
-  setText('sbGif', MSG.qfGif);
 
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
@@ -1811,7 +1703,7 @@
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
-        const key = q + ' ' + (f.mode || 'exact');
+        const key = q + '\0' + (f.mode || 'exact');
         if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
           if (f.mode === 'fuzzy' && window.corpusSearch) {
@@ -5749,111 +5641,16 @@
     }
   });
 
-  // --- ライブラリの保存先（変更＝既存ライブラリを新フォルダへ安全に移動） ---
-  (function setupSaveFolder() {
-    const pathEl = document.getElementById('saveFolderPath');
-    const btn = document.getElementById('chooseSaveFolder');
-    if (!pathEl || !btn) return;
-    const box = document.getElementById('saveFolderProgress');
-    const bar = document.getElementById('saveFolderProgressBar');
-    const pctEl = document.getElementById('saveFolderProgressPct');
-    const logEl = document.getElementById('saveFolderProgressLog');
-    let migrating = false;
-    let lastMilestone = 0;
-
-    const errMsg = (code) => {
-      switch (code) {
-        case 'same': return MSG.saveFolderErrSame;
-        case 'nested': return MSG.saveFolderErrNested;
-        case 'config-overlap':
-        case 'backup-overlap': return MSG.saveFolderErrOverlap;
-        case 'collision': return MSG.saveFolderErrCollision;
-        case 'copy-failed': return MSG.saveFolderErrCopyFailed;
-        case 'not-writable': return MSG.saveFolderErrNotWritable;
-        default: return MSG.saveFolderErrGeneric;
-      }
-    };
-
-    const setPercent = (p) => { if (bar) bar.style.width = p + '%'; if (pctEl) pctEl.textContent = p + '%'; };
-    const appendLog = (line) => {
-      if (!logEl) return;
-      const row = document.createElement('div');
-      row.textContent = line;
-      logEl.appendChild(row);
-      logEl.scrollTop = logEl.scrollHeight;
-    };
-    const showBox = () => { if (box) box.hidden = false; };
-    const hideBox = () => { if (box) box.hidden = true; };
-    const resetProgress = () => { if (logEl) logEl.textContent = ''; setPercent(0); lastMilestone = 0; };
-
-    // Live migration progress (shown only while/after a move; hidden by default).
-    if (window.corpus.onSaveFolderProgress) {
-      window.corpus.onSaveFolderProgress((p) => {
-        if (!p) return;
-        showBox();
-        if (p.phase === 'copy') {
-          if (p.done === 0) appendLog(MSG.logCopyStart(p.total));
-          setPercent(p.percent);
-          if (p.percent >= lastMilestone + 20 && p.percent < 100) {
-            lastMilestone = p.percent - (p.percent % 20);
-            appendLog(MSG.logCopying(p.percent));
-          }
-        } else if (p.phase === 'switch') {
-          setPercent(100); appendLog(MSG.logSwitch);
-        } else if (p.phase === 'cleanup') {
-          appendLog(MSG.logCleanup);
-        } else if (p.phase === 'done') {
-          setPercent(100); appendLog(MSG.logMoveDone(p.moved));
-        } else if (p.phase === 'error') {
-          appendLog(errMsg(p.error));
-        }
-      });
-    }
-
-    async function load() {
-      let cfg = null;
-      try { cfg = await window.corpus.getConfig(); } catch { /* ignore */ }
-      pathEl.textContent = (cfg && cfg.saveFolder) || '';
-      if (!migrating) hideBox();   // 普段は非表示（移行中以外）
-    }
-
-    btn.addEventListener('click', async () => {
-      const prev = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = MSG.saveFolderMoving;
-      migrating = true;
-      resetProgress();   // box stays hidden until the first progress event (after a folder is picked)
-      try {
-        const res = await window.corpus.pickSaveFolder();
-        if (!res || res.canceled) { hideBox(); return; }
-        if (res.ok) {
-          pathEl.textContent = res.saveFolder;
-          showToast(MSG.saveFolderMoved(res.moved));
-          await loadPosts();
-        } else {
-          showToast(errMsg(res.error));
-        }
-      } catch {
-        showToast(MSG.saveFolderErrGeneric);
-      } finally {
-        migrating = false;
-        btn.disabled = false;
-        btn.textContent = prev;
-      }
-    });
-
-    load();
-    const settingsBtn = document.getElementById('settingsBtn');
-    if (settingsBtn) settingsBtn.addEventListener('click', load);
-  })();
-
-  // --- バックアップ / 指定フォルダへの増分エクスポート ---
-  (function setupBackup() {
-    const $ = (id) => document.getElementById(id);
-    const pathEl = $('backupDirPath');
-    const statusEl = $('backupStatus');
-    if (!pathEl) return;
+  // --- Backup status rail (always-visible sidebar footer #mirrorStatus) ---
+  // The settings *modal* moved to the React island (Data.jsx); this is only the
+  // at-a-glance rail, which lives outside the modal and so stays in viewer.js.
+  // It reflects the auto-backup config + last result, refreshing on launch, when
+  // settings opens, and on each backup start/finish.
+  (function setupMirrorStatusRail() {
+    const el = document.getElementById('mirrorStatus');
+    if (!el) return;
     let cfg = null;
+    let mirrorSyncing = false;
 
     const fmtTime = (iso) => {
       if (!iso) return '';
@@ -5882,10 +5679,16 @@
     const MS_ICON_SYNC = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
     const MS_ICON_DONE = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
     const MS_ICON_WARN = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
-    let mirrorSyncing = false;
+    // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
+    function pruneSkipTip(r) {
+      if (r.pruneSkipped === 'shrink') {
+        const span = (r.baselineCount && r.fileCount != null)
+          ? `（${r.baselineCount}→${r.fileCount}${MSG.backupItemsUnit}）` : '';
+        return MSG.backupPruneShrink + span;
+      }
+      return MSG.backupPruneEmpty;
+    }
     function updateMirrorStatus() {
-      const el = document.getElementById('mirrorStatus');
-      if (!el) return;
       // No backup folder configured → nothing in the rail (progressive disclosure).
       if (!cfg || !cfg.dir) { el.innerHTML = ''; el.className = 'mirror-status'; el.title = ''; return; }
       // Syncing now: spinning glyph + "バックアップ中…".
@@ -5916,145 +5719,38 @@
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
       el.title = tip;
     }
-    // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
-    function pruneSkipTip(r) {
-      if (r.pruneSkipped === 'shrink') {
-        const span = (r.baselineCount && r.fileCount != null)
-          ? `（${r.baselineCount}→${r.fileCount}${MSG.backupItemsUnit}）` : '';
-        return MSG.backupPruneShrink + span;
-      }
-      return MSG.backupPruneEmpty;
-    }
-    function renderStatus() {
-      if (!cfg || !cfg.dir) { statusEl.textContent = ''; updateMirrorStatus(); return; }
-      const r = cfg.lastResult;
-      if (!r) { statusEl.textContent = ''; updateMirrorStatus(); return; }
-      if (r.ok === false && r.error) {
-        statusEl.textContent = `⚠ ${r.error}`;
-        statusEl.style.color = 'var(--danger)';
-        updateMirrorStatus(); return;
-      }
-      if (r.pruneSkipped) {
-        statusEl.textContent = `⚠ ${pruneSkipTip(r)}`;
-        statusEl.style.color = 'var(--danger)';
-        updateMirrorStatus(); return;
-      }
-      statusEl.style.color = '';
-      let s = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
-      if (r.written) s += `（+${r.written}${MSG.backupItemsUnit}）`;
-      else if (r.fileCount) s += `（${r.fileCount}${MSG.backupItemsUnit}）`;
-      statusEl.textContent = s;
-      updateMirrorStatus();
-    }
-    function render() {
-      if (!cfg) return;
-      pathEl.textContent = cfg.dir || MSG.backupDirNone;
-      $('backupInterval').checked = !!cfg.interval;
-      $('backupIntervalValue').value = cfg.intervalValue || 1;
-      $('backupIntervalUnit').value = cfg.intervalUnit || 'day';
-      renderStatus();
-    }
+
     async function load() {
       try { cfg = await window.corpus.getBackup(); } catch { cfg = null; }
-      render();
-    }
-    async function save(patch) {
-      try {
-        const res = await window.corpus.setBackup(patch);
-        if (res && res.ok === false && res.error === 'overlap') showToast(MSG.backupOverlap);
-        if (res && res.backup) cfg = res.backup;
-      } catch { /* ignore */ }
-      render();
+      updateMirrorStatus();
     }
 
-    $('chooseBackupDir').addEventListener('click', async () => {
-      try {
-        const res = await window.corpus.pickBackupDir();
-        if (res && res.error === 'overlap') { showToast(MSG.backupOverlap); return; }
-        if (res && res.backup) { cfg = res.backup; render(); }
-      } catch { /* ignore */ }
-    });
-    $('clearBackupDir').addEventListener('click', () => save({ dir: null }));
-    $('backupInterval').addEventListener('change', (e) => save({ interval: e.target.checked }));
-    $('backupIntervalValue').addEventListener('change', (e) => {
-      const v = Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1));
-      e.target.value = v; save({ intervalValue: v });
-    });
-    $('backupIntervalUnit').addEventListener('change', (e) => save({ intervalUnit: e.target.value }));
-
+    // A run started: show the spinner. Make sure cfg is loaded first so a backup
+    // configured mid-session still lights the rail (cfg may have been null at boot).
     if (window.corpus.onBackupStart) {
-      window.corpus.onBackupStart(() => { mirrorSyncing = true; updateMirrorStatus(); });
+      window.corpus.onBackupStart(async () => {
+        mirrorSyncing = true;
+        if (!cfg || !cfg.dir) { try { cfg = await window.corpus.getBackup(); } catch { /* ignore */ } }
+        updateMirrorStatus();
+      });
     }
+    // A run finished: carry over the fresh result (and pull cfg if it was empty
+    // when the run began) so the rail is correct without a manual refresh.
     if (window.corpus.onBackupDone) {
-      window.corpus.onBackupDone((_e, r) => { mirrorSyncing = false; if (cfg && r) cfg.lastResult = r; renderStatus(); });
+      window.corpus.onBackupDone(async (_e, r) => {
+        mirrorSyncing = false;
+        if (!cfg) { try { cfg = await window.corpus.getBackup(); } catch { /* ignore */ } }
+        if (cfg && r) cfg.lastResult = r;
+        updateMirrorStatus();
+      });
     }
 
-    load();
-  })();
-
-  // --- ゴミ箱 (soft delete) ---
-  (function setupTrash() {
-    const statusEl = document.getElementById('trashStatus');
-    const listEl = document.getElementById('trashList');
-    const emptyBtn = document.getElementById('emptyTrash');
-    if (!statusEl || !listEl || !emptyBtn) return;
-
-    const fmtDate = (iso) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return '';
-      const p = (n) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
-    };
-
-    async function load() {
-      let records = [];
-      try { records = (await window.corpus.listTrash()) || []; } catch { records = []; }
-      if (!records.length) {
-        statusEl.textContent = MSG.trashEmpty;
-        listEl.innerHTML = '';
-        emptyBtn.disabled = true;
-        return;
-      }
-      statusEl.textContent = MSG.trashCount(records.length);
-      emptyBtn.disabled = false;
-      listEl.innerHTML = records.map((r) => {
-        const title = r.title || r.screenName || r.captureId || '';
-        const platform = r.platform || '';
-        const date = fmtDate(r.trashedAt);
-        const img = r.image ? `<img src="psimg://${r.image}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">` : '<span style="width:36px;height:36px;border-radius:4px;background:var(--surface-3);flex-shrink:0;display:inline-block;"></span>';
-        return `<div class="trash-row" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border-subtle);">
-          ${img}
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(title)}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(platform)} ${date}</div>
-          </div>
-          <button class="btn-outline" style="font-size:11px;padding:3px 8px;flex-shrink:0;" data-restore="${escapeAttr(r.image || r.video || r.captureId)}">${MSG.trashRestoreBtn}</button>
-          <button class="btn-outline" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--danger);" data-perma="${escapeAttr(r.captureId)}">${MSG.trashDeleteBtn}</button>
-        </div>`;
-      }).join('');
-    }
-
-    listEl.addEventListener('click', async (e) => {
-      const restoreBtn = e.target.closest('[data-restore]');
-      const permaBtn = e.target.closest('[data-perma]');
-      if (restoreBtn) {
-        try { await window.corpus.restorePost(restoreBtn.dataset.restore); } catch { }
-        await load();
-      } else if (permaBtn) {
-        try { await window.corpus.deleteFromTrash(permaBtn.dataset.perma); } catch { }
-        await load();
-      }
-    });
-
-    emptyBtn.addEventListener('click', async () => {
-      try { await window.corpus.emptyTrash(); } catch { }
-      await load();
-    });
-
-    // Load when settings opens
+    // Refresh when the settings modal opens — the React island may have changed
+    // the backup folder. Also exposed as a bridge so the island can refresh on demand.
     const settingsBtn = document.getElementById('settingsBtn');
     if (settingsBtn) settingsBtn.addEventListener('click', load);
+    window.corpusViewer = Object.assign(window.corpusViewer || {}, { refreshMirrorStatus: load });
+
     load();
   })();
 

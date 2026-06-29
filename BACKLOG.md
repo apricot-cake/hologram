@@ -72,7 +72,6 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここで。
 - **実機キャプチャの実ブラウザ経由 最終目視確認（残）**: Chrome 無しの end-to-end は検証済み（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャ（Alt+S/ドラッグ）し保存先に `.jpg`+`.json` が落ちるのを目視。リモートでは不可＝実機で。
 - **開発共通ルールを親フォルダの CLAUDE.md に集約**→重複削除（上位集約）。
-- **React 島移行の後始末＝旧 #panelSettings 撤去（保留中・React 版本採用済み）**: 設定モーダルは React 島へ全移行済み（main・全6節）だが、`app/renderer/index.html` の旧 `#panelSettings` マークアップと viewer.js の旧設定ハンドラ群は**非表示で温存**中（動作・見た目に影響なし）。安全に一括撤去するには ①`importZipInput`（空状態の取込ボタン `emptyImportBtn` と共有・817行）の再配置 ②ノーガードな旧ハンドラ（langSelect/tileOverlayToggle/exportZip/importZip/importImages/clearData/resetDeleteConfirm 等＝要素消失で throw）の除去 ③`setupSaveFolder`/`setupBackup`（レール `#mirrorStatus` は残す）/`setupTrash` の整理、が要る。React→vanilla ブリッジ（`window.corpusViewer.*`）と共有確認オーバーレイ（`#confirmOverlay`）は残す。
 - **React 島のビルドを Vite へ移行（分岐点で再評価・パイロット成功が前提）**: 設定モーダルの React パイロットは esbuild の島方式（`app/renderer/islands/settings.js`・CSP `script-src 'self'` の静的読み）。React が核（サイドバー＋グリッド＋クエリ帯＝ステートフルな大面積）へ広がり、**全リロードで失う作業状態の再構築コストが開発ループの支配的コストになった時点**が分岐点。そこで Vite / electron-vite へ移行し HMR / React Fast Refresh（状態保持つき差し替え）を得る。分岐要因は再ビルド速度ではない（esbuild は規模が増えても速い）。移行コストは低い＝`.jsx` ソースは流用、変わるのはビルド/配信ハーネスだけ。移行に伴う改修＝main.js を dev だけ `loadURL`（prod は `loadFile`）・dev 用 CSP 緩和。**パイロットが合否ゲートで「微妙」なら本タスクごと不要**。
 
 ## リリース準備
