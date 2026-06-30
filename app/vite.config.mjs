@@ -6,11 +6,12 @@ import path from 'node:path';
 // app/ — pin root to this config's own dir so it's correct regardless of cwd.
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// DEV-ONLY Vite config for the renderer's React islands (gives HMR + React Fast
+// DEV-SERVE Vite config for the renderer's React islands (gives HMR + React Fast
 // Refresh while developing). This is used ONLY when the app is launched with
-// CORPUS_DEV_SERVER set (see main.js). Production is untouched: it still ships the
-// esbuild IIFE bundles (npm run build:settings) and loads them via loadFile, and
-// `vite build` is intentionally NOT wired up yet (that's a later migration stage).
+// CORPUS_DEV_SERVER set (see main.js). Production loads the Vite lib-mode IIFE
+// bundles (npm run build:islands -> islands/build.mjs) via loadFile from the same
+// renderer/islands/<name>.js paths; this config (the apply:'serve' plugin) never
+// runs for the prod build.
 //
 // root is app/ (this directory), NOT renderer/, because the island SOURCES live
 // in app/islands/ — OUTSIDE renderer/. With root=app/ every existing relative URL

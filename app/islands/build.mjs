@@ -40,7 +40,7 @@ for (const name of ISLANDS) {
       outDir: path.join(appRoot, 'renderer/islands'),
       emptyOutDir: false, // 9 builds share the dir; don't wipe each other / other assets
       target: 'chrome130', // Electron 33 ships Chromium 130
-      minify: 'esbuild',
+      minify: true, // vite 8 (rolldown) uses its built-in oxc minifier; 'esbuild' would require esbuild as a separate dep
       cssCodeSplit: true, // settings imports './styles.css' → emit settings.css
       modulePreload: { polyfill: false }, // no inline polyfill → keep CSP 'self'
       sourcemap: false,
