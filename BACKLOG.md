@@ -55,7 +55,7 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 
 相互依存が強いので実装前に設計を固める（2026-06-20 フィードバック起点）。
 
-- **ビュー/レイアウト切替のモード表示＋スライド（着手途中 2026-06-27）**: ①ビューセグメントのアクティブをアイコン（グリフ）表示に戻す＝前回ラベルのみにした `index.html` `.browse-toggle button.active *` 周辺 CSS を撤回し全状態アイコン表示（`.view-toggle` 既定）に。②現在のビュー/レイアウト名を見出しに併記＝「ビュー · ライブラリ」「レイアウト · カード」。`sbViewTitle`/`sbLayoutTitle`/`sbPosterLayoutTitle` を `setBrowseMode`／density 切替で動的更新（i18n は `browsePosts/Posters/Collections`・`viewCard/Tile/List` 既存）。③レイアウトセグメント（`densityToggle`/`posterDensityToggle`）のつまみスライドが効かない＝`startViewTransition(() => renderPosts())` がつまみ(.vt-thumb)を巻き込む疑い（要 CDP 確認・body-class 測定タイミング commit f15ad13 とは別原因）。
+- **ビュー/レイアウト切替のモード表示＋スライド（残 ①③・2026-06-27）**: ①ビューセグメントのアクティブをアイコン（グリフ）表示に戻す＝前回ラベルのみにした `index.html` `.browse-toggle button.active *` 周辺 CSS を撤回し全状態アイコン表示（`.view-toggle` 既定）に。③レイアウトセグメント（`densityToggle`/`posterDensityToggle`）のつまみスライドが効かない＝`startViewTransition(() => renderPosts())` がつまみ(.vt-thumb)を巻き込む疑い。**注**: トグルは React 所有化済み（`DensityToggle`/`BrowseToggle` が `.vt-thumb` を useLayoutEffect で自前配置・`positionViewThumb` から除外）＝旧原因はおそらく無効化されたので、まず現状を視覚再確認してから判断。（② 見出しへのモード名併記は f95dd6a で実装済＝削除）
 - **クエリビルダーがアドレスバーに見える＝初見が「クリックして入力」を試す（未決・要判断 2026-06-21）**: 二択＝**(a)** 「ここには直接入力できません／フィルタは◯◯から」のヒントで現行の追加導線へ誘導（軽い）／**(b)** ブラウザ風にテキスト入力＋候補サジェストで直接フィルタを投入（誤認を機能に変える・既存 `queryTree`/`addFilter` に乗せる）。b は「詳細検索画面」「コマンドパレット」「本文全文検索」と接近＝設計を寄せられるか。
 - **コマンドパレット**（Cmd+K 的＝フィルタ/操作/タブ移動の検索式ランチャ）。
 - **本文の全文検索の専用UX（残）**: 本文/タイトル/pixivキャプションのマッチは実装済み（クイック検索＝現タブ絞り込み）。**残**＝ライブラリ全体横断の専用全文検索体験（全タブ越え・結果一覧・本文ハイライト/該当箇所ジャンプ）を出すか要設計。コマンドパレットとは別物。
