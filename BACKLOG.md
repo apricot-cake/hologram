@@ -30,7 +30,7 @@
 - **main 側 I/O**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・`main.js:251`）＝初回ペイント前に同期ブロック。フィールドのスリム化/チャンク化の余地。②psimg の原寸（?w= 無し）を `fs.readFile` で全バッファ（`main.js:366`）＝`stream:true` 特権があるのに非ストリーム。大判の連続オープンで GC 圧。
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件・現状は体感薄）**: textHaystack の反復 toLowerCase（2550）、buildSuggest のタグ集計未キャッシュ（5616）、getFilteredPosts 前段 filter、date 述語の境界 Date 再生成、snapshotState 二重直列化、lightbox の decode/隣接プリロード欠如（3393）、pf-badge の backdrop-filter（`index.html:871`）。
 - **dev限定（未調査）**: 開発中の `reloadIgnoringCache` 反復でレンダラ/GPU リソースが蓄積し激重化（アイドル 2fps）＝再起動でクリア。リスナ累積でなく蓄積系・根本要因未特定。
-- **⏸ 保留（再監査しない）**: card(masonry) の仮想化＝深スクロールでカードが溜まり線形劣化（`viewer.js:3061`/`index.html:808`）。リスク>リターンで見送り（既定ビューの根幹・回帰リスク高・効果中）。やるなら「content-visibility:auto を当てて FPS と崩れを測る半日スパイク」から。
+- **card(masonry) の仮想化＝最終形Bの一部として実施（決定・2026-06-30）**: 深スクロールでカードが溜まり線形劣化（`viewer.js:3061`/`index.html:808`）。旧「⏸保留・再監査しない」は撤回＝グリッドは完全 React 所有とし**仮想化ライブラリ（masonic 第1候補／react-virtuoso は撤回＝可変高マサンリーの本領外／TanStack Virtual 保険）**で仮想化（masonry+窓化+スクロール復元）。回帰リスクは高い（既定ビューの根幹）ので最終形Bの後半スライスで慎重に。方針詳細はメモリ `corpus-react-settings-pilot`。
 
 ## タグ付け・整理（注力テーマ）
 
@@ -72,7 +72,7 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここで。
 - **実機キャプチャの実ブラウザ経由 最終目視確認（残）**: Chrome 無しの end-to-end は検証済み（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャ（Alt+S/ドラッグ）し保存先に `.jpg`+`.json` が落ちるのを目視。リモートでは不可＝実機で。
 - **開発共通ルールを親フォルダの CLAUDE.md に集約**→重複削除（上位集約）。
-- **React を核へ拡張し最終形 B（単一 React アプリ）へ（未着手・大タスク）**: 島方式の Vite 化は完了（段階0-2: dev は `loadURL` で HMR/Fast Refresh、prod は Vite lib mode IIFE を `loadFile`、esbuild 廃止）。残るは viewer.js の巨大ロジック（フィルタ/グリッド/イベントの集約点）を React へ移し、島を統合して単一アプリにする最終形。検証表面積が大きいので、全リロードで失う作業状態の再構築コストが開発ループの支配的コストになった分岐点で着手する。詳細はメモリ `corpus-vite-migration`。
+- **最終形 B（単一 React アプリ）＝決定事項・進行中（2026-06-30 ユーザー確定）**: 「分岐点で着手＝保留」だった旧表現は行き違いで撤回。完了の定義・依存方針（react-virtuoso 採用／状態は corpusStore 継続／ルーター無し／UIキットはスパイクで判断）・残りのロードマップは**メモリ `corpus-react-settings-pilot` の「最終地点（決定事項）」が真実源**。現状＝toolbar/コンテキストメニュー/各種チップ・行・タブ・カード（テンプレート）まで島化済み。残り＝詳細パネル・フィルタ系・編集オーバーレイ・検索・グリッド完全React化（仮想化）・viewer.js の store/service/hooks 分解・単一バンドル化。
 
 ## リリース準備
 
