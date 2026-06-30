@@ -6,11 +6,10 @@
   "author": "apricot-cake",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
+    "dist": "npm run build:islands && electron-builder",
     "register-host": "node ../native-host/install.js",
     "unregister-host": "node ../native-host/install.js uninstall",
-    "build:settings": "node islands/build.mjs",
-    "watch:settings": "node islands/build.mjs --watch",
+    "build:islands": "node islands/build.mjs",
     "dev:renderer": "vite"
   },
   "devDependencies": {

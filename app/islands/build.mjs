@@ -1,53 +1,57 @@
-// esbuild bundler for the React "islands" — small, isolated React surfaces that
-// load into the otherwise build-less renderer as a single IIFE under CSP
-// `script-src 'self'`. The rest of the renderer stays build-less; only these
-// islands are compiled. See plan: 設定モーダル React 化パイロット.
+// Vite library-mode bundler for the React "islands" — small, isolated React
+// surfaces that load into the otherwise build-less renderer as a single IIFE
+// under CSP `script-src 'self'`. The rest of the renderer stays build-less; only
+// these islands are compiled. Replaces the former esbuild bundler.
 //
-//   npm run build:settings   → production: minified, NODE_ENV=production, no map
-//   npm run watch:settings   → dev: unminified, NODE_ENV=development, inline map,
-//                              rebuild on save (then reload the renderer)
+//   npm run build:islands   → production: 9 islands → renderer/islands/<name>.js
 //
-// Entry imports its own CSS (`import './styles.css'`), so esbuild emits both
-// renderer/islands/settings.js and renderer/islands/settings.css.
-
-import * as esbuild from 'esbuild';
+// Each island is built in its own single-entry lib build because rollup cannot
+// emit IIFE for multiple entries at once. IIFE (not ESM) is required so the prod
+// `file://` load never hits the module-from-null-origin CORS block.
+//
+// dev uses `vite` (serve) with HMR/Fast Refresh instead of this script.
+//
+// NOTE: configFile:false makes Vite skip its automatic `process.env.NODE_ENV`
+// define, which would leave React's dev branches un-DCE'd (~3x bloat). We define
+// it explicitly so production builds strip them.
+import { build } from 'vite';
+import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const dev = process.argv.includes('--watch');
+const here = path.dirname(fileURLToPath(import.meta.url)); // app/islands
+const appRoot = path.join(here, '..');                     // app
 
-/** @type {import('esbuild').BuildOptions} */
-const opts = {
-  entryPoints: [
-    { in: path.join(here, 'settings/index.jsx'), out: 'settings' },
-    { in: path.join(here, 'sidebar-tags/index.jsx'), out: 'sidebar-tags' },
-    { in: path.join(here, 'query-chips/index.jsx'), out: 'query-chips' },
-    { in: path.join(here, 'tabs/index.jsx'), out: 'tabs' },
-    { in: path.join(here, 'collections/index.jsx'), out: 'collections' },
-    { in: path.join(here, 'suggest/index.jsx'), out: 'suggest' },
-    { in: path.join(here, 'posters/index.jsx'), out: 'posters' },
-    { in: path.join(here, 'post-card/index.jsx'), out: 'post-card' },
-    { in: path.join(here, 'lightbox/index.jsx'), out: 'lightbox' },
-  ],
-  outdir: path.join(here, '../renderer/islands'),
-  bundle: true,
-  format: 'iife',
-  jsx: 'automatic', // react/jsx-runtime — no `import React` needed in components
-  // Electron 33 ships Chromium 130; target it directly (no legacy down-leveling).
-  target: ['chrome130'],
-  // React reads process.env.NODE_ENV; esbuild won't define it for us → ReferenceError.
-  define: { 'process.env.NODE_ENV': JSON.stringify(dev ? 'development' : 'production') },
-  minify: !dev,
-  sourcemap: dev ? 'inline' : false,
-  logLevel: 'info',
-};
+// post-card uses react-dom/server (renderToStaticMarkup); the rest use
+// react-dom/client (createRoot). Both bundle fine in lib IIFE mode.
+const ISLANDS = [
+  'settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections',
+  'suggest', 'posters', 'post-card', 'lightbox',
+];
 
-if (dev) {
-  const ctx = await esbuild.context(opts);
-  await ctx.watch();
-  console.log('[island] watching settings/ + sidebar-tags/ + query-chips/ + tabs/ + collections/ + suggest/ + posters/ + post-card/ + lightbox/ … (reload the renderer to see changes)');
-} else {
-  await esbuild.build(opts);
-  console.log('[island] built renderer/islands/{settings,sidebar-tags,query-chips,tabs,collections,suggest,posters,post-card,lightbox}.js');
+for (const name of ISLANDS) {
+  await build({
+    root: appRoot,
+    configFile: false, // self-contained; vite.config.mjs is dev-serve only
+    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+    plugins: [react()],
+    logLevel: 'warn', // quiet the per-build banner across 9 builds
+    build: {
+      outDir: path.join(appRoot, 'renderer/islands'),
+      emptyOutDir: false, // 9 builds share the dir; don't wipe each other / other assets
+      target: 'chrome130', // Electron 33 ships Chromium 130
+      minify: 'esbuild',
+      cssCodeSplit: true, // settings imports './styles.css' → emit settings.css
+      modulePreload: { polyfill: false }, // no inline polyfill → keep CSP 'self'
+      sourcemap: false,
+      lib: {
+        entry: path.join(here, name, 'index.jsx'),
+        formats: ['iife'],
+        name: '__corpusIsland_' + name.replace(/-/g, '_'), // IIFE needs a name; islands export nothing (side-effect only)
+        fileName: () => name + '.js',
+      },
+    },
+  });
 }
+
+console.log('[islands] built renderer/islands/{' + ISLANDS.join(',') + '}.js via Vite lib IIFE');
