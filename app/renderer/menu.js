@@ -21,8 +21,10 @@
   function close() { if (current) { current = null; notify(); } }
   function pick(item) {
     if (!current || !current.onPick) { close(); return; }
+    const ref = current;
     const next = current.onPick(item);
-    if (Array.isArray(next)) { current = { ...current, items: next }; notify(); }  // stay open, re-render
+    if (current !== ref) return;              // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
+    if (Array.isArray(next)) { current = { ...current, items: next }; notify(); }  // stay open, re-render (toggle rows)
     else close();
   }
   function get() { return current; }                       // stable ref between changes (useSyncExternalStore)

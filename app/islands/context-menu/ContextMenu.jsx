@@ -62,6 +62,7 @@ export function ContextMenuHost() {
         <div key={i}
           className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')}
           onClick={() => window.corpusContextMenu.pick(it)}>
+          {it.icon && <span className="fm-ic" dangerouslySetInnerHTML={{ __html: it.icon }} />}
           <span className="fm-name">{it.label}</span>
           {it.checked && <span className="fm-check"><Check /></span>}
         </div>

@@ -1931,58 +1931,39 @@
       refresh();
     });
 
-    // --- Right-click menu: negate / delete a pill or group. Negation is a low-
-    // frequency operation, so (like the card menu, DESIGN.md) it lives behind a
-    // right-click rather than a hover badge. One menu DOM per builder instance so
-    // qbMenuNode is never ambiguous between the two bars.
-    const qbMenu = document.createElement('div');
-    qbMenu.className = 'fold-menu qb-menu';
-    document.body.appendChild(qbMenu);
-    let qbMenuNode = null;
-    const hideQbMenu = () => { qbMenu.classList.remove('show'); qbMenuNode = null; };
-    const QB_IC = {
-      neg: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
-      del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
-    };
+    // Right-click menu: negate / delete a pill or group. Negation is a low-frequency
+    // operation, so (like the card menu, DESIGN.md) it lives behind a right-click rather
+    // than a hover badge. React-owned glass menu (window.corpusContextMenu); this builder
+    // owns the items + actions. One bridge serves BOTH builder instances (postQB /
+    // posterQB) — no per-instance menu DOM.
     function showQbMenu(node, isGroup, x, y) {
-      qbMenuNode = node;
-      const row = (act, ic, label, cls, on) =>
-        `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span>${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
-      qbMenu.innerHTML =
-        row('neg', QB_IC.neg, isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, '', !!node.neg) +
-        '<div class="fm-sep"></div>' +
-        row('del', QB_IC.del, MSG.qfDelete, 'fm-danger');
-      qbMenu.style.left = x + 'px';
-      qbMenu.style.top = y + 'px';
-      qbMenu.classList.add('show');
-      clampIntoView(qbMenu);
+      const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
+      const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+      const items = [
+        { label: isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, act: 'neg', icon: NEG, checked: !!node.neg },
+        { sep: true },
+        { label: MSG.qfDelete, act: 'del', icon: DEL, danger: true },
+      ];
+      window.corpusContextMenu.open({ items, x, y }, (item) => {
+        if (item.act === 'neg') { node.neg = !node.neg; refresh(); }
+        else if (item.act === 'del') { removeNode(node); }
+      });
     }
     // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
     chips.addEventListener('contextmenu', (e) => {
       const pill = e.target.closest('.qb-pill');
       if (pill) {
         const n = nodeById(pill.dataset.nid);
-        if (n && n.kind === 'cond') { e.preventDefault(); hideQbMenu(); showQbMenu(n, false, e.clientX, e.clientY); }
+        if (n && n.kind === 'cond') { e.preventDefault(); showQbMenu(n, false, e.clientX, e.clientY); }
         return;
       }
       const frameEl = e.target.closest('.qb-paren, .qb-op:not(.qb-op-root)');
       const g = frameEl ? frameEl.closest('.qb-grp:not(.qb-root)') : e.target.closest('.qb-grp:not(.qb-root)');
       if (g) {
         const n = nodeById(g.dataset.nid);
-        if (n && n.kind === 'group') { e.preventDefault(); hideQbMenu(); showQbMenu(n, true, e.clientX, e.clientY); }
+        if (n && n.kind === 'group') { e.preventDefault(); showQbMenu(n, true, e.clientX, e.clientY); }
       }
     });
-    qbMenu.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const rowEl = e.target.closest('.fm-row');
-      const n = qbMenuNode;
-      hideQbMenu();
-      if (!rowEl || !n) return;
-      if (rowEl.dataset.act === 'neg') { n.neg = !n.neg; refresh(); }
-      else if (rowEl.dataset.act === 'del') { removeNode(n); }
-    });
-    document.addEventListener('click', (e) => { if (qbMenu.classList.contains('show') && !qbMenu.contains(e.target)) hideQbMenu(); }, true);
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQbMenu(); });
 
     return {
       getTree: () => tree,
@@ -2610,46 +2591,33 @@
   (function setupTabBar() {
     const bar = document.getElementById('tabBarInner');
     if (!bar) return;
-    let tabMenu = null;
-    let tabMenuTargetId = null;
-    function hideTabMenu() {
-      if (tabMenu) { tabMenu.remove(); tabMenu = null; tabMenuTargetId = null; }
-    }
+    // Tab context menu (right-click a tab): pin / rename / duplicate / close /
+    // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
+    // items + actions.
     function showTabMenu(id, e) {
-      hideTabMenu();
-      tabMenuTargetId = id;
       const t = tabs.find((t) => t.id === id);
       if (!t) return;
-      const menu = document.createElement('div');
-      menu.className = 'fold-menu';
-      menu.innerHTML = [
-        '<div class="fm-row" data-tab-act="pin">' + (t.pinned ? MSG.tabUnpin : MSG.tabPin) + '</div>',
-        '<div class="fm-row" data-tab-act="rename">' + MSG.tabRename + '</div>',
-        '<div class="fm-row" data-tab-act="duplicate">' + MSG.tabDuplicate + '</div>',
-        tabs.length > 1 ? '<div class="fm-row" data-tab-act="close">' + MSG.tabClose + '</div>' : '',
-        tabs.length > 1 ? '<div class="fm-row fm-danger" data-tab-act="close-others">' + MSG.tabCloseOthers + '</div>' : '',
-      ].join('');
-      document.body.appendChild(menu);
-      tabMenu = menu;
-      menu.style.left = e.clientX + 'px';
-      menu.style.top = (e.clientY + 4) + 'px';
-      menu.classList.add('show');
-      clampIntoView(menu);   // same cursor-menu clamp as the other context menus
-      menu.addEventListener('click', (ev) => {
-        const row = ev.target.closest('[data-tab-act]');
-        if (!row) return;
-        const act = row.dataset.tabAct;
-        const tid = tabMenuTargetId;
-        hideTabMenu();
+      const items = [
+        { label: t.pinned ? MSG.tabUnpin : MSG.tabPin, act: 'pin' },
+        { label: MSG.tabRename, act: 'rename' },
+        { label: MSG.tabDuplicate, act: 'duplicate' },
+      ];
+      if (tabs.length > 1) {
+        items.push({ label: MSG.tabClose, act: 'close' });
+        items.push({ label: MSG.tabCloseOthers, act: 'close-others', danger: true });
+      }
+      window.corpusContextMenu.open({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
+        const tid = id;
+        const act = item.act;
         if (act === 'pin') pinTab(tid);
         else if (act === 'rename') startTabRename(tid);
         else if (act === 'duplicate') duplicateTab(tid);
         else if (act === 'close') closeTab(tid);
         else if (act === 'close-others') {
           tabs = tabs.filter((t) => t.id === tid);
-          const t = tabs[0];
+          const tt = tabs[0];
           activeTabId = tid;
-          if (t.state) applyState(t.state); else renderPosts();
+          if (tt.state) applyState(tt.state); else renderPosts();
           renderTabs(); persistTabsDebounced();
         }
       });
@@ -2719,11 +2687,7 @@
       if (!tabBtn || e.target.closest('[data-close]')) return;
       startTabRename(tabBtn.dataset.tab);
     });
-    document.addEventListener('click', (e) => {
-      if (tabMenu && !tabMenu.contains(e.target)) hideTabMenu();
-    });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && tabMenu) { hideTabMenu(); return; }
       if (!e.ctrlKey || e.altKey) return;
       if (e.key === 't') {
         e.preventDefault(); addTab();
@@ -3237,53 +3201,36 @@
 
   // Folder picker flyout (destinations) — opened from the card context menu
   // and the bulk 「フォルダに追加」 button.
-  const foldMenu = document.createElement('div');
-  foldMenu.className = 'fold-menu';
-  document.body.appendChild(foldMenu);
-  let foldMenuGroup = null;
-  function hideFoldMenu() { foldMenu.classList.remove('show'); foldMenuGroup = null; }
-  function showFoldMenu(g, x, y) {
-    if (!CF()) return;
-    foldMenuGroup = g;
-    const list = CF().all();
+  // Folder picker (destinations) — React-owned glass menu (window.corpusContextMenu);
+  // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
+  // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
+  // 「フォルダに追加」 button.
+  function foldMenuItems(g) {
+    const list = CF() ? CF().all() : [];
     const rep = g.rep.captureId;
-    foldMenu.innerHTML = list.map((f) => {
-      const inF = CF().has(f.id, rep);
-      return `<div class="fm-row" data-fid="${escapeAttr(f.id)}">` +
-        `<span class="fm-name">${escapeHtml(f.name)}</span>` +
-        (inF ? `<span class="fm-check">${CHECK_SVG}</span>` : '') +
-        `</div>`;
-    }).join('') + (list.length ? '<div class="fm-sep"></div>' : '') +
-      `<div class="fm-row fm-manage" data-manage="1">${MSG.ctxManage}</div>`;
-    foldMenu.style.left = x + 'px';
-    foldMenu.style.top = y + 'px';
-    foldMenu.classList.add('show');
-    clampIntoView(foldMenu);
+    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) }));
+    if (list.length) items.push({ sep: true });
+    items.push({ label: MSG.ctxManage, act: 'manage', manage: true });
+    return items;
   }
-  foldMenu.addEventListener('click', (e) => {
-    if (!CF()) { hideFoldMenu(); return; }
-    if (e.target.closest('[data-manage]')) { hideFoldMenu(); CF().openManager(); return; }
-    const row = e.target.closest('.fm-row[data-fid]');
-    if (row && foldMenuGroup) {
+  function onFoldMenuPick(g, item) {
+    if (!CF()) return;
+    if (item.act === 'manage') { CF().openManager(); return; }
+    if (item.act === 'fold') {
       keepCurrentVisible();
-      CF().toggleIn(row.dataset.fid, foldMenuGroup.records.map((r2) => r2.captureId), foldMenuGroup.rep.captureId);
+      CF().toggleIn(item.fid, g.records.map((r2) => r2.captureId), g.rep.captureId);
       // re-render only if a collection filter could change the visible set
       if (activeFilters.some((f) => f.type === 'collection')) renderPosts(true);
     }
-    hideFoldMenu();
-  });
-  document.addEventListener('click', (e) => { if (foldMenu.classList.contains('show') && !foldMenu.contains(e.target)) hideFoldMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideFoldMenu(); });
+  }
+  function showFoldMenu(g, x, y) {
+    if (!CF()) return;
+    window.corpusContextMenu.open({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
+  }
 
   // --- Card context menu: the labeled table of contents of per-card actions.
   // Hover keeps the rapid-fire buttons (📎 clip / ℹ info / 🏷 tag);
   // everything else (open, folder, poster, delete) lives here.
-  const cardMenu = document.createElement('div');
-  cardMenu.className = 'fold-menu card-menu';
-  document.body.appendChild(cardMenu);
-  let cardMenuGroup = null;
-  let cardMenuSrcUrl = '';
-  function hideCardMenu() { cardMenu.classList.remove('show'); cardMenuGroup = null; cardMenuSrcUrl = ''; }
   const CM_IC = {
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
@@ -3293,56 +3240,52 @@
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
   };
-  function showCardMenu(g, x, y) {
-    cardMenuGroup = g;
-    cardMenuSrcUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
+  // Card context menu — React-owned glass menu (window.corpusContextMenu); viewer owns
+  // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
+  // spot; the bridge's transition guard keeps that open instead of closing it.
+  function cardMenuItems(g) {
     const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
-    const row = (act, ic, label, cls) =>
-      `<div class="fm-row${cls ? ' ' + cls : ''}" data-act="${act}"><span class="fm-ic">${ic}</span><span class="fm-name">${label}</span></div>`;
-    cardMenu.innerHTML =
-      (g.rep.url ? row('open', CM_IC.open, MSG.tipOpen) : '') +
-      row('folder', CM_IC.folder, MSG.tipFolder) +
-      (CF() ? row('clip', CM_IC.clip, inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd) : '') +
-      row('info', CM_IC.info, MSG.tipInfo) +
-      (canPoster ? row('poster', CM_IC.poster, MSG.ctxViewPoster) : '') +
-      (cardMenuSrcUrl ? '<div class="fm-sep"></div>' + row('sauce', CM_IC.sauce, MSG.detailSauce) + row('ascii', CM_IC.sauce, MSG.detailAscii) : '') +
-      '<div class="fm-sep"></div>' +
-      row('delete', CM_IC.del, MSG.tipDelete, 'fm-danger');
-    cardMenu.style.left = x + 'px';
-    cardMenu.style.top = y + 'px';
-    cardMenu.classList.add('show');
-    clampIntoView(cardMenu);
+    const srcUrl = (g.records.flatMap((r) => Array.isArray(r.media) ? r.media : []).find((m) => m && m.url) || {}).url || '';
+    const items = [];
+    if (g.rep.url) items.push({ label: MSG.tipOpen, act: 'open', icon: CM_IC.open });
+    items.push({ label: MSG.tipFolder, act: 'folder', icon: CM_IC.folder });
+    if (CF()) items.push({ label: inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd, act: 'clip', icon: CM_IC.clip });
+    items.push({ label: MSG.tipInfo, act: 'info', icon: CM_IC.info });
+    if (canPoster) items.push({ label: MSG.ctxViewPoster, act: 'poster', icon: CM_IC.poster });
+    if (srcUrl) {
+      items.push({ sep: true });
+      items.push({ label: MSG.detailSauce, act: 'sauce', icon: CM_IC.sauce });
+      items.push({ label: MSG.detailAscii, act: 'ascii', icon: CM_IC.sauce });
+    }
+    items.push({ sep: true });
+    items.push({ label: MSG.tipDelete, act: 'delete', icon: CM_IC.del, danger: true });
+    return { items, srcUrl };
+  }
+  function onCardMenuPick(g, x, y, srcUrl, item) {
+    const act = item.act;
+    if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
+    else if (act === 'folder') { showFoldMenu(g, x, y); return; }   // opens the folder picker (bridge keeps it open)
+    else if (act === 'clip') { const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
+    else if (act === 'info') showDetail(g);
+    else if (act === 'poster') jumpToPoster(g.rep);
+    else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
+    else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
+    else if (act === 'delete') requestDeleteGroup(g);
+  }
+  function showCardMenu(g, x, y) {
+    const { items, srcUrl } = cardMenuItems(g);
+    window.corpusContextMenu.open({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
   }
   document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
     const card = e.target.closest('.post-card');
     if (!card) return;
     e.preventDefault();
     if (document.getElementById('postGrid').classList.contains('selecting')) return;  // selection bar owns bulk actions
-    hideFoldMenu();
     const g = viewGroups[parseInt(card.dataset.index, 10)];
     if (g) showCardMenu(g, e.clientX, e.clientY);
   });
-  cardMenu.addEventListener('click', (e) => {
-    e.stopPropagation();   // keep the fold-menu we may open below alive past the document hider
-    const rowEl = e.target.closest('.fm-row');
-    const g = cardMenuGroup;
-    const pos = cardMenu.getBoundingClientRect();
-    hideCardMenu();
-    if (!rowEl || !g) return;
-    const act = rowEl.dataset.act;
-    if (act === 'open') { if (g.rep.url) window.corpus.openExternal(g.rep.url); }
-    else if (act === 'folder') showFoldMenu(g, pos.left, pos.top);
-    else if (act === 'clip') { const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`); if (b) b.click(); }
-    else if (act === 'info') showDetail(g);
-    else if (act === 'poster') jumpToPoster(g.rep);
-    else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(cardMenuSrcUrl));
-    else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(cardMenuSrcUrl));
-    else if (act === 'delete') requestDeleteGroup(g);
-  });
-  document.addEventListener('click', (e) => { if (cardMenu.classList.contains('show') && !cardMenu.contains(e.target)) hideCardMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCardMenu(); });
 
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
