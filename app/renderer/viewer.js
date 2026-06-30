@@ -443,65 +443,12 @@
   // stroke + high-contrast monotone color via .fm-check.
   const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17 19 7"/></svg>';
 
-  // --- Custom glass dropdown: a native <select> popup is OS-drawn and can't
-  // be glassed, so we hide the select (keeping it as the value source — all
-  // existing change handlers still fire) and drive a field-styled trigger +
-  // a glass option list that matches the flyout menus. ---
-  const csHosts = [];
-  const csPop = document.createElement('div');
-  // glass-frost (tier B): pulldowns open over the sparse sidebar, so a frosted
-  // mid-opacity material reads as glass without busy content behind it.
-  csPop.className = 'fold-menu cs-pop glass-frost';
-  document.body.appendChild(csPop);
-  let csSel = null, csBtn = null;
-  function hideCsPop() { csPop.classList.remove('show'); csSel = null; csBtn = null; }
-  function csLabel(sel) { const o = sel.options[sel.selectedIndex]; return o ? o.textContent : ''; }
-  function refreshCustomSelects() { for (const s of csHosts) if (s.__csBtn) s.__csBtn.querySelector('.cs-label').textContent = csLabel(s); }
-  function openCsPop(sel, btn) {
-    if (csPop.classList.contains('show') && csSel === sel) { hideCsPop(); return; }
-    csSel = sel; csBtn = btn;
-    csPop.innerHTML = Array.from(sel.options).map((o, i) =>
-      `<div class="fm-row cs-opt${i === sel.selectedIndex ? ' cs-on' : ''}" data-i="${i}"><span class="fm-name">${escapeHtml(o.textContent)}</span>${i === sel.selectedIndex ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('');
-    const r = btn.getBoundingClientRect();
-    csPop.style.left = r.left + 'px';
-    csPop.style.top = (r.bottom + 4) + 'px';
-    csPop.style.minWidth = r.width + 'px';
-    csPop.classList.add('show');
-    const pr = csPop.getBoundingClientRect();
-    if (pr.bottom > innerHeight - 8) csPop.style.top = Math.max(8, r.top - pr.height - 4) + 'px';
-    if (pr.right > innerWidth - 8) csPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-  }
-  csPop.addEventListener('click', (e) => {
-    const opt = e.target.closest('.cs-opt');
-    if (!opt || !csSel) return;
-    const idx = parseInt(opt.dataset.i, 10);
-    if (idx !== csSel.selectedIndex) {
-      csSel.selectedIndex = idx;
-      csSel.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    refreshCustomSelects();
-    hideCsPop();
-  });
-  document.addEventListener('click', (e) => {
-    if (csPop.classList.contains('show') && !csPop.contains(e.target) && !(csBtn && csBtn.contains(e.target))) hideCsPop();
-  }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCsPop(); });
-  function enhanceSelect(sel) {
-    if (!sel || sel.__csBtn) return;
-    sel.classList.add('cs-host');
-    csHosts.push(sel);
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cs-btn';
-    btn.innerHTML = '<span class="cs-label"></span><span class="cs-arrow">' + CHEV_D + '</span>';
-    btn.querySelector('.cs-label').textContent = csLabel(sel);
-    sel.insertAdjacentElement('afterend', btn);
-    sel.__csBtn = btn;
-    btn.addEventListener('click', (e) => { e.stopPropagation(); openCsPop(sel, btn); });
-  }
-  enhanceSelect(sortSelect);
-  enhanceSelect(document.getElementById('posterSortSelect'));
-  enhanceSelect(document.getElementById('collectionSortSelect'));
+  // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
+  // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
+  // the native <select> (.cs-host), renders the glass trigger + popup, and drives the
+  // select on pick so the change handlers below still fire. The active value is mirrored
+  // into window.corpusStore ('sortPost' etc.) so the island reflects programmatic changes
+  // (tab restore pushes 'sortPost'; see applyState / the tab click handler).
 
   // --- Query Field ---
   const ENG_TYPE_LABELS = {
@@ -1850,8 +1797,6 @@
       const key = container.id;
       (window.__corpusQueryChips || (window.__corpusQueryChips = {}))[key] = model;
       if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
-      // No custom <select>s in the bar anymore; prune any detached hosts left over.
-      for (let i = csHosts.length - 1; i >= 0; i--) if (!document.contains(csHosts[i])) csHosts.splice(i, 1);
     }
 
     // Sidebar entry points add a NEW condition at the TOP level of the tree (改訂③:
@@ -2433,7 +2378,7 @@
     document.getElementById('searchBox').value = s.search;
     rebindEditingTextLeaf();   // resume editing the restored term instead of duplicating it
     sortSelect.value = s.sort;
-    refreshCustomSelects();
+    window.corpusStore.set('sortPost', sortSelect.value);   // mirror into the store so the GlassSelect island reflects it
     multiOnly = !!s.multi;
     renderPostFolders();
     renderQueryChips();
@@ -2651,7 +2596,7 @@
         document.getElementById('searchBox').value = at.state.search || '';
         rebindEditingTextLeaf();
         sortSelect.value = at.state.sort || 'date-desc';
-        refreshCustomSelects();
+        window.corpusStore.set('sortPost', sortSelect.value);   // mirror into the store so the GlassSelect island reflects it
         multiOnly = !!at.state.multi;
       }
     } catch (err) {

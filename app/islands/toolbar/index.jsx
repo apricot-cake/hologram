@@ -3,6 +3,7 @@ import { SearchModeSeg } from './SearchModeSeg.jsx';
 import { DensityToggle } from './DensityToggle.jsx';
 import { BrowseToggle } from './BrowseToggle.jsx';
 import { SectionTitle, BROWSE_MAP, VIEW_MAP } from './SectionTitle.jsx';
+import { GlassSelect } from './GlassSelect.jsx';
 import { initI18n } from './i18n.js';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. This is the
@@ -63,6 +64,42 @@ function mountPosterLayoutTitle() {
   );
 }
 
+// Sort selects (post / poster / collection) — one GlassSelect, three mounts. The
+// native <select> stays as viewer's value source (hidden via .cs-host); React renders
+// the glass trigger + popup. The mount span is display:contents so the .cs-btn lays
+// out as if it were a direct child of the .sb-section (full width), exactly like the
+// old afterend-inserted button. Option order/values mirror index.html.
+const SORT_POST = [
+  { value: 'date-desc', key: 'sortDateDesc' },
+  { value: 'date-asc', key: 'sortDateAsc' },
+  { value: 'likes-desc', key: 'sortLikes' },
+  { value: 'reposts-desc', key: 'sortReposts' },
+  { value: 'replies-desc', key: 'sortReplies' },
+  { value: 'captured-desc', key: 'sortCaptured' },
+  { value: 'likes-pct', key: 'sortLikesPct' },
+];
+const SORT_POSTER = [
+  { value: 'count', key: 'posterSortCount' },
+  { value: 'name', key: 'posterSortName' },
+  { value: 'date-desc', key: 'posterSortNewest' },
+  { value: 'date-asc', key: 'posterSortOldest' },
+];
+const SORT_COLLECTION = [
+  { value: 'name', key: 'collSortName' },
+  { value: 'recent', key: 'collSortRecent' },
+  { value: 'count', key: 'collSortCount' },
+];
+
+function mountSort(id, storeKey, options) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  sel.classList.add('cs-host');             // hide the native select; React drives the trigger
+  const mount = document.createElement('span');
+  mount.style.display = 'contents';         // .cs-btn lays out against the .sb-section, not this span
+  sel.insertAdjacentElement('afterend', mount);
+  createRoot(mount).render(<GlassSelect sel={sel} storeKey={storeKey} options={options} />);
+}
+
 function mountAll() {
   mountSearchMode();
   mountDensity();
@@ -71,6 +108,9 @@ function mountAll() {
   mountViewTitle();
   mountLayoutTitle();
   mountPosterLayoutTitle();
+  mountSort('sortSelect', 'sortPost', SORT_POST);
+  mountSort('posterSortSelect', 'sortPoster', SORT_POSTER);
+  mountSort('collectionSortSelect', 'sortCollection', SORT_COLLECTION);
 }
 
 // Resolve i18n before render so t() is synchronous in components. The single

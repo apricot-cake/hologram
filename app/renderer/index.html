@@ -1832,7 +1832,10 @@
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbSortTitle"></div>
-            <select id="sortSelect">
+            <!-- Hidden value source; the toolbar island (GlassSelect) renders the
+                 glass trigger + popup. cs-host hides it from first paint so there's no
+                 native-select flash before the island mounts. -->
+            <select id="sortSelect" class="cs-host">
               <option value="date-desc"></option>
               <option value="date-asc"></option>
               <option value="likes-desc"></option>
@@ -1848,7 +1851,8 @@
         <div class="sb-section" id="posterControls">
           <span class="post-count" id="posterCount" style="display:block; margin-bottom:12px; color:var(--text-muted);"></span>
           <div class="sb-title poster-sort-title" id="sbPosterSortTitle"></div>
-          <select id="posterSortSelect">
+          <!-- Hidden value source; toolbar island GlassSelect renders the glass control. -->
+          <select id="posterSortSelect" class="cs-host">
             <option value="count"></option>
             <option value="name"></option>
             <option value="date-desc"></option>
@@ -1874,7 +1878,8 @@
         <div class="sb-section" id="collectionControls">
           <span class="post-count" id="collectionCount" style="display:block; margin-bottom:12px; color:var(--text-muted);"></span>
           <div class="sb-title" id="sbCollectionSortTitle"></div>
-          <select id="collectionSortSelect">
+          <!-- Hidden value source; toolbar island GlassSelect renders the glass control. -->
+          <select id="collectionSortSelect" class="cs-host">
             <option value="name"></option>
             <option value="recent"></option>
             <option value="count"></option>
