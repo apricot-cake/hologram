@@ -369,9 +369,8 @@
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
-  setText('viewCardLabel', MSG.viewCard);
-  setText('viewTileLabel', MSG.viewTile);
-  setText('viewListLabel', MSG.viewList);
+  // #densityToggle labels are rendered by the toolbar island now; the poster-mode
+  // density toggle stays vanilla, so its labels are still set here.
   setText('posterViewCardLabel', MSG.viewCard);
   setText('posterViewTileLabel', MSG.viewTile);
   setText('posterViewListLabel', MSG.viewList);
@@ -4401,7 +4400,9 @@
   // collapses rapid clicks to a single render.
   let _browseRenderT = null, _densityRenderT = null, _posterDensityRenderT = null;
   function positionViewThumb(scope) {
-    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle');
+    // #densityToggle is React-owned (the toolbar island positions its own thumb), so
+    // the no-scope sweep skips it — never two writers on the same .vt-thumb.
+    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle)');
     containers.forEach((vt) => {
       const btn = vt.querySelector('button.active');
       const thumb = vt.querySelector('.vt-thumb');
@@ -4417,26 +4418,23 @@
   // whenever the control's own box changes.
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => positionViewThumb());
-    document.querySelectorAll('.view-toggle').forEach((vt) => ro.observe(vt));
+    document.querySelectorAll('.view-toggle:not(#densityToggle)').forEach((vt) => ro.observe(vt));
   }
-  document.querySelectorAll('#densityToggle button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#densityToggle button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentView = btn.dataset.view;
-      positionViewThumb();   // slide the glass thumb
-      // Liquid-glass jelly bulge: re-trigger the scale pulse on each slide.
-      const _thumb = document.querySelector('#densityToggle .vt-thumb');
-      if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
-      window.corpus.setPref('viewMode', currentView);
-      // Optimistic UI: the thumb slides now; defer the (possibly heavy) layout re-render
-      // past a paint so the toggle feels instant.
-      clearTimeout(_densityRenderT);
-      _densityRenderT = setTimeout(() => {
-        if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
-        else renderPosts();
-      }, 0);
-    });
+  // #densityToggle is rendered by the toolbar island (window.corpusStore 'view').
+  // React owns the active state + glass thumb; viewer reacts to a view change:
+  // mirror it into currentView, persist it, and re-render the grid (deferred past a
+  // paint with a view transition, like the old optimistic handler). The idempotent
+  // guard skips the no-op set from pref restore below, so the loop stays one-way.
+  window.corpusStore.subscribe('view', () => {
+    const v = window.corpusStore.get('view');
+    if (v === currentView) return;
+    currentView = v;
+    window.corpus.setPref('viewMode', currentView);
+    clearTimeout(_densityRenderT);
+    _densityRenderT = setTimeout(() => {
+      if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
+      else renderPosts();
+    }, 0);
   });
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
@@ -5329,9 +5327,10 @@
   window.corpus.getPrefs().then((prefs) => {
     if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
       currentView = prefs.viewMode;
-      // Scope to #densityToggle: a bare .view-toggle selector would strip .active
-      // from the browse / poster toggles (their buttons carry no data-view).
-      document.querySelectorAll('#densityToggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+      // Push the restored view into the store so the toolbar island renders the right
+      // button active. currentView is already set, so the subscribe above no-ops
+      // (idempotent guard) — no double render, no echo.
+      window.corpusStore.set('view', currentView);
     }
     if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
       posterView = prefs.posterViewMode;

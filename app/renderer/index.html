@@ -1814,11 +1814,9 @@
         <div class="toolbar" id="postsToolbar">
           <div class="sb-section">
             <div class="sb-title" id="sbLayoutTitle"></div>
-            <div class="view-toggle" id="densityToggle"><i class="vt-thumb" aria-hidden="true"></i>
-              <button data-view="card" id="viewCard" class="active"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg><span class="vt-label" id="viewCardLabel"></span></button>
-              <button data-view="tile" id="viewTile"><svg class="vt-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span class="vt-label" id="viewTileLabel"></span></button>
-              <button data-view="list" id="viewList"><svg class="vt-ico" viewBox="0 0 24 24" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span class="vt-label" id="viewListLabel"></span></button>
-            </div>
+            <!-- Filled by the toolbar island (window.corpusStore 'view'). Empty
+                 container = React mount point; #sbLayoutTitle stays viewer-owned. -->
+            <div class="view-toggle" id="densityToggle"></div>
             <div class="tile-size" id="tileSizeRow" style="display:none">
               <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
               <input type="range" id="tileSlider" step="1" title="タイルの大きさ">
@@ -2352,6 +2350,9 @@
   <script src="ui.js"></script>
   <script src="folders.js"></script>
   <script src="search.js"></script>
+  <!-- Shared renderer state store (window.corpusStore): one source of truth shared
+       by viewer.js and the React islands during the migration. Before viewer.js. -->
+  <script src="store.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.

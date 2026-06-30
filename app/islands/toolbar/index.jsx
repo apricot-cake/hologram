@@ -1,22 +1,28 @@
 import { createRoot } from 'react-dom/client';
 import { SearchModeSeg } from './SearchModeSeg.jsx';
+import { DensityToggle } from './DensityToggle.jsx';
 import { initI18n } from './i18n.js';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. This is the
 // first slice of the shell (above the leaf islands): presentational, with state in
 // shared stores (window.corpusSearch for the search mode; window.corpusStore for
-// the view density, added as a second root in a later step). viewer.js keeps the
-// heavy logic. Each control mounts into its EXISTING, now-empty container so the
-// DOM/CSS contract is unchanged and viewer.js's sibling labels (#sbSearchTitle,
-// #searchModeHint) stay put.
+// the view density). viewer.js keeps the heavy logic. Each control mounts into its
+// EXISTING, now-empty container so the DOM/CSS contract is unchanged and viewer.js's
+// sibling labels (#sbSearchTitle, #sbLayoutTitle, #searchModeHint) stay put.
 
 function mountSearchMode() {
   const el = document.getElementById('searchModeSeg');
   if (el) createRoot(el).render(<SearchModeSeg />);
 }
 
+function mountDensity() {
+  const el = document.getElementById('densityToggle');
+  if (el) createRoot(el).render(<DensityToggle el={el} />);
+}
+
 function mountAll() {
   mountSearchMode();
+  mountDensity();
 }
 
 // Resolve i18n before render so t() is synchronous in components. The single
