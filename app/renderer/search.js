@@ -9,8 +9,11 @@
 (function () {
   'use strict';
   let mode = 'normal';                 // 'normal' | 'fuzzy'
-  const listeners = [];
-  const notify = () => { for (const fn of listeners) { try { fn(mode); } catch (_e) { /* ignore */ } } };
+  // Set (not array) so onChange can return an unsubscribe that actually removes the
+  // listener — React islands subscribe via useSyncExternalStore and must detach on
+  // unmount (and to avoid duplicate registrations across HMR reloads in dev).
+  const listeners = new Set();
+  const notify = () => { for (const fn of [...listeners]) { try { fn(mode); } catch (_e) { /* ignore */ } } };
 
   // カタカナ(U+30A1..U+30F6)→ひらがな(U+3041..U+3096)。長音符ー等はそのまま。
   function kataToHira(s) {
@@ -111,7 +114,8 @@
     toggle() { this.setMode(mode === 'fuzzy' ? 'normal' : 'fuzzy'); },
     // pref からの初期反映（永続化しない）。
     applyMode(m) { mode = (m === 'fuzzy') ? 'fuzzy' : 'normal'; notify(); },
-    onChange(fn) { if (typeof fn === 'function') listeners.push(fn); },
+    // Returns an unsubscribe fn (existing callers ignore it — backward compatible).
+    onChange(fn) { if (typeof fn !== 'function') return () => {}; listeners.add(fn); return () => listeners.delete(fn); },
     // 低レベルAPI（テスト・再利用用）。
     normalize,
     isSubsequence,

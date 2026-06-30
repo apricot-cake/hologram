@@ -419,8 +419,9 @@
   document.getElementById('editCancel').textContent = MSG.confirmCancel;
   document.getElementById('editSave').textContent = MSG.save;
 
-  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment labels are
-  // set on its two options in the wiring block below (syncSearchToggle reflects state).
+  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
+  // (labels, thumb, on-state) is rendered by the toolbar island; viewer only keeps
+  // the hint text + aria-label (see the wiring block below).
   setText('sbViewTitle', MSG.sbViewTitle);
   setText('sbLayoutTitle', MSG.sbLayoutTitle);
   setText('sbPosterLayoutTitle', MSG.sbLayoutTitle);
@@ -5513,29 +5514,21 @@
   // 検索方式の切替（ぴったり / おおまか）＝macOS 風セグメント。両方を常に見せ、
   // 状態と切替手段がひと目で分かる（旧・右端の単独チップは「切替」と気づけなかった）。
   // corpusSearch がモードを集約＝メイン検索とフライアウト絞り込みで共有する。
-  const searchModeSeg = document.getElementById('searchModeSeg');
+  // The segment UI is rendered by the toolbar island (#searchModeSeg). viewer keeps
+  // only: (1) the hint text outside the segment (#searchModeHint), (2) the container's
+  // aria-label, and (3) the side effect when the mode changes (follow the editing
+  // leaf / re-render). The island and this listener both subscribe to corpusSearch —
+  // separate concerns (island = rendering, this = viewer-side effects).
+  { const sms = document.getElementById('searchModeSeg'); if (sms) sms.setAttribute('aria-label', MSG.searchModeTitle); }
   const searchModeHint = document.getElementById('searchModeHint');
-  const searchModeExact = document.getElementById('searchModeExact');
-  const searchModeFuzzy = document.getElementById('searchModeFuzzy');
-  if (searchModeExact) searchModeExact.textContent = MSG.searchExact;
-  if (searchModeFuzzy) searchModeFuzzy.textContent = MSG.searchFuzzy;
-  if (searchModeSeg) searchModeSeg.setAttribute('aria-label', MSG.searchModeTitle);
-  function syncSearchToggle() {
-    if (!searchModeSeg || !window.corpusSearch) return;
-    const fuzzy = window.corpusSearch.isFuzzy();
-    searchModeSeg.classList.toggle('is-fuzzy', fuzzy);
-    if (searchModeExact) { searchModeExact.classList.toggle('is-on', !fuzzy); searchModeExact.setAttribute('aria-pressed', String(!fuzzy)); }
-    if (searchModeFuzzy) { searchModeFuzzy.classList.toggle('is-on', fuzzy); searchModeFuzzy.setAttribute('aria-pressed', String(fuzzy)); }
-    if (searchModeHint) searchModeHint.textContent = fuzzy ? MSG.searchHintLoose : MSG.searchHintExact;
+  function syncSearchHint() {
+    if (searchModeHint && window.corpusSearch) {
+      searchModeHint.textContent = window.corpusSearch.isFuzzy() ? MSG.searchHintLoose : MSG.searchHintExact;
+    }
   }
-  if (searchModeSeg && window.corpusSearch) {
-    searchModeSeg.addEventListener('click', (e) => {
-      const opt = e.target.closest('.seg-opt');
-      if (!opt) return;
-      window.corpusSearch.setMode(opt.dataset.mode === 'fuzzy' ? 'fuzzy' : 'normal');
-    });
+  if (window.corpusSearch) {
     window.corpusSearch.onChange(() => {
-      syncSearchToggle();
+      syncSearchHint();
       // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
       // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads f.mode).
       if (browseMode === 'posts' && editingTextNode) {
@@ -5545,7 +5538,7 @@
         renderPosts();
       }
     });
-    syncSearchToggle();
+    syncSearchHint();
   }
 
   // --- Import from ZIP ---

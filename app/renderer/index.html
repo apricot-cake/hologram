@@ -1831,11 +1831,9 @@
               <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
               <input type="text" class="search-box" id="searchBox">
             </div>
-            <div class="seg-control" id="searchModeSeg" role="group">
-              <span class="seg-thumb" aria-hidden="true"></span>
-              <button type="button" class="seg-opt" data-mode="normal" id="searchModeExact"></button>
-              <button type="button" class="seg-opt" data-mode="fuzzy" id="searchModeFuzzy"></button>
-            </div>
+            <!-- Filled by the toolbar island (window.corpusSearch state). Empty
+                 container = React mount point; #searchModeHint stays viewer-owned. -->
+            <div class="seg-control" id="searchModeSeg" role="group"></div>
             <div class="seg-hint" id="searchModeHint"></div>
           </div>
           <div class="sb-section">
@@ -2382,6 +2380,9 @@
   <!-- Poster grid: React owns card rendering, viewer.js owns posterList + count +
        density classes + inspected highlight + click/contextmenu delegation. -->
   <script src="islands/posters.js"></script>
+  <!-- Sidebar toolbar controls (search-mode segment; view-density toggle): React
+       owns rendering, state lives in window.corpusSearch / window.corpusStore. -->
+  <script src="islands/toolbar.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>
