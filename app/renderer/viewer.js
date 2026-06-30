@@ -412,10 +412,10 @@
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
   // (labels, thumb, on-state) is rendered by the toolbar island; viewer only keeps
-  // the hint text + aria-label (see the wiring block below).
-  setText('sbViewTitle', MSG.sbViewTitle);
-  setText('sbLayoutTitle', MSG.sbLayoutTitle);
-  setText('sbPosterLayoutTitle', MSG.sbLayoutTitle);
+  // the hint text + aria-label (see the wiring block below). The view/layout titles
+  // (#sbViewTitle / #sbLayoutTitle / #sbPosterLayoutTitle) are island-owned too now —
+  // they name the current mode/layout from the store (SectionTitle), so viewer no
+  // longer writes them (writing here would race the island after a language reload).
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
   setText('sbFilterTitle', MSG.sbFilterTitle);
@@ -4437,11 +4437,18 @@
     mode = (mode === 'posters' || mode === 'collections') ? mode : 'posts';
     posterReturn = null;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
+    // Mirror into the store so the React islands (BrowseToggle active/thumb, SectionTitle's
+    // "ビュー · …" suffix) reflect the mode even when we got here from an INTERNAL setter
+    // (jumpToPoster / openPosterPosts / openCollection / the filter-reset bounce) rather
+    // than a toggle click. Safe against recursion: the store's set is value-guarded, and
+    // when the click path drove us the value is already equal (no-op); when an internal
+    // setter drove us, browseMode === mode by now so the subscribe handler's guard skips.
+    window.corpusStore.set('browseMode', mode);
     // The active state + glass thumb are React-owned (BrowseToggle island, reacting to the
-    // corpusStore 'browseMode' change that drove us here). We only run the heavy switch
-    // below. Toggling the body class changes which toolbars are visible → the sidebar width
-    // (scrollbar) → the toggle's geometry; the island's ResizeObserver picks that up and
-    // re-slides its own thumb, so there is nothing to measure here.
+    // corpusStore 'browseMode' change). We only run the heavy switch below. Toggling the
+    // body class changes which toolbars are visible → the sidebar width (scrollbar) → the
+    // toggle's geometry; the island's ResizeObserver picks that up and re-slides its own
+    // thumb, so there is nothing to measure here.
     document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
     document.body.classList.toggle('browse-collections', mode === 'collections');
     closeDetail();   // a stale post/poster detail shouldn't survive the switch
