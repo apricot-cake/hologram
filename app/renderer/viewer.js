@@ -369,14 +369,10 @@
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
-  // #densityToggle and #posterDensityToggle labels are rendered by the toolbar island now.
-  setText('browsePostsLabel', MSG.browsePosts);
-  setText('browsePostersLabel', MSG.browsePosters);
-  setText('browseCollectionsLabel', MSG.browseCollections);
+  // #densityToggle, #posterDensityToggle and #browseToggle (incl. its labels and
+  // per-button tooltips) are rendered by the toolbar island now. The browse toggle's
+  // CONTAINER title stays here — the island never mutates its own mount container.
   { const bt = document.getElementById('browseToggle'); if (bt) bt.title = MSG.browseModeTitle; }
-  // Per-button tooltips so the icon-only (inactive) segments still name themselves on hover.
-  { const lbl = { posts: MSG.browsePosts, posters: MSG.browsePosters, collections: MSG.browseCollections };
-    document.querySelectorAll('#browseToggle button').forEach((b) => { if (lbl[b.dataset.mode]) b.title = lbl[b.dataset.mode]; }); }
   setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
   setText('collectionNewLabel', MSG.collNew);
   { const cs = document.getElementById('collectionSortSelect');
@@ -4396,10 +4392,10 @@
   // collapses rapid clicks to a single render.
   let _browseRenderT = null, _densityRenderT = null, _posterDensityRenderT = null;
   function positionViewThumb(scope) {
-    // #densityToggle and #posterDensityToggle are React-owned (the toolbar island
-    // positions their own thumbs), so the no-scope sweep skips them — never two
-    // writers on the same .vt-thumb.
-    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle)');
+    // #densityToggle, #posterDensityToggle and #browseToggle are React-owned (the
+    // toolbar island positions their own thumbs), so the no-scope sweep skips them —
+    // never two writers on the same .vt-thumb.
+    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle):not(#browseToggle)');
     containers.forEach((vt) => {
       const btn = vt.querySelector('button.active');
       const thumb = vt.querySelector('.vt-thumb');
@@ -4415,7 +4411,7 @@
   // whenever the control's own box changes.
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => positionViewThumb());
-    document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle)').forEach((vt) => ro.observe(vt));
+    document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle):not(#browseToggle)').forEach((vt) => ro.observe(vt));
   }
   // #densityToggle is rendered by the toolbar island (window.corpusStore 'view').
   // React owns the active state + glass thumb; viewer reacts to a view change:
@@ -4441,18 +4437,13 @@
     mode = (mode === 'posters' || mode === 'collections') ? mode : 'posts';
     posterReturn = null;   // an explicit mode switch ends any pending poster-return
     browseMode = mode;
-    document.querySelectorAll('#browseToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-    // Toggle the body class (shows/hides postsToolbar etc.) BEFORE measuring the thumb:
-    // switching to/from posters changes which toolbars are visible, which changes the
-    // sidebar width (scrollbar appears/disappears) and thus the toggle's button geometry.
-    // Measuring first set the thumb to the OLD width/left, then a ResizeObserver re-measure
-    // made it JUMP — the slide looked broken (user: ライブラリ/コレクション→投稿者). Measure
-    // after the layout change so the thumb slides once to the correct final spot.
+    // The active state + glass thumb are React-owned (BrowseToggle island, reacting to the
+    // corpusStore 'browseMode' change that drove us here). We only run the heavy switch
+    // below. Toggling the body class changes which toolbars are visible → the sidebar width
+    // (scrollbar) → the toggle's geometry; the island's ResizeObserver picks that up and
+    // re-slides its own thumb, so there is nothing to measure here.
     document.body.classList.toggle('browse-posters', mode === 'posters');   // CSS hides the inactive grid
     document.body.classList.toggle('browse-collections', mode === 'collections');
-    const _t = document.querySelector('#browseToggle .vt-thumb');
-    positionViewThumb(document.getElementById('browseToggle'));
-    if (_t && !(opts && opts.silent) && !prefersReducedMotion()) { _t.classList.remove('vt-sliding'); void _t.offsetWidth; _t.classList.add('vt-sliding'); }
     closeDetail();   // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
@@ -4463,17 +4454,21 @@
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
-  document.querySelectorAll('#browseToggle button').forEach(btn => {
-    btn.addEventListener('click', () => { if (btn.dataset.mode !== browseMode) setBrowseMode(btn.dataset.mode); });
+  // #browseToggle is rendered by the toolbar island (window.corpusStore 'browseMode').
+  // React owns the active state + glass thumb; viewer reacts to a mode change by running
+  // the heavy switch. The idempotent guard skips the no-op set from the pref restore
+  // below, so the loop stays one-way (island → store → viewer, never back).
+  window.corpusStore.subscribe('browseMode', () => {
+    const m = window.corpusStore.get('browseMode');
+    if (m === browseMode) return;
+    setBrowseMode(m);
   });
 
-  // The browse toggle is a permanent sidebar fixture now (both modes — moved out
-  // of the content area). Just keep its glass thumb measured: the poster count /
-  // grid changes can resize the sidebar column (scrollbar appears/disappears).
-  function syncBrowseBar() {
-    const t = document.getElementById('browseToggle');
-    if (t) positionViewThumb(t);
-  }
+  // The browse toggle is React-owned now (BrowseToggle island); it measures its own glass
+  // thumb via a ResizeObserver on its container, so the sidebar-width changes that grid
+  // renders cause are handled there. Kept as a no-op so the existing call sites
+  // (renderPosts / renderPosters / renderCollections) need no change.
+  function syncBrowseBar() {}
 
   // --- Poster grid (投稿者ビュー) ------------------------------------------
   // Cards derived from post author fields (buildUsers — no fetching). Click =
@@ -5834,8 +5829,13 @@
   // buildUsers has data for the poster grid. silent = no history/pref echo.
   try {
     const prefs = await window.corpus.getPrefs();
-    if (prefs && prefs.browseMode === 'posters') setBrowseMode('posters', { silent: true });
-    else if (prefs && prefs.browseMode === 'collections') setBrowseMode('collections', { silent: true });
+    const bm = (prefs && (prefs.browseMode === 'posters' || prefs.browseMode === 'collections')) ? prefs.browseMode : 'posts';
+    // Run the heavy restore synchronously (silent = no history/pref echo, no animation),
+    // THEN push the mode into the store so the island reflects active + thumb. browseMode
+    // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the
+    // same shape as the density toggle's pref restore.)
+    if (bm !== 'posts') setBrowseMode(bm, { silent: true });
+    window.corpusStore.set('browseMode', bm);
   } catch { /* stay in library mode */ }
   // First paint done — restore the active tab's renderLimit + scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));

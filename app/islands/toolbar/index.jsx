@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { SearchModeSeg } from './SearchModeSeg.jsx';
 import { DensityToggle } from './DensityToggle.jsx';
+import { BrowseToggle } from './BrowseToggle.jsx';
 import { initI18n } from './i18n.js';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. This is the
@@ -28,10 +29,18 @@ function mountPosterDensity() {
   );
 }
 
+// Browse-mode segment (ライブラリ / 投稿者 / コレクション) — active state in
+// window.corpusStore 'browseMode'; viewer.js subscribes for the heavy mode switch.
+function mountBrowse() {
+  const el = document.getElementById('browseToggle');
+  if (el) createRoot(el).render(<BrowseToggle el={el} />);
+}
+
 function mountAll() {
   mountSearchMode();
   mountDensity();
   mountPosterDensity();
+  mountBrowse();
 }
 
 // Resolve i18n before render so t() is synchronous in components. The single
