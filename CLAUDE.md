@@ -10,7 +10,7 @@
 2. `native-host/` — Native Messaging ブリッジ。保存先フォルダ（既定 `~/Corpus/library`・変更可）に `<captureId>.jpg`（純 JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）+ メディア/アバター画像を書き出す。
 3. `app/` — Electron デスクトップアプリ。サイドカーを走査して閲覧・検索・整理（タグ/フォルダ/ワークスペース/投稿者ビュー等）。保存先フォルダを `fs.watch` で監視し新規キャプチャを自動反映。
 
-技術スタック: Electron + 素の JS（フレームワーク無し）/ Chrome MV3 / Node でテスト可能なロジック分離。
+技術スタック: Electron + React（app/ レンダラ・Vite／素 JS から段階移行中＝viewer.js 本体はまだ素 JS で React 島を増設中・重量級ランタイム依存なし）/ Chrome MV3 / Node でテスト可能なロジック分離。
 
 # ドキュメント
 
