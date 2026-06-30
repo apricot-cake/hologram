@@ -4865,44 +4865,35 @@
   // Poster context menu (right-click a card): assign to poster folders + quick actions,
   // so folder membership no longer requires opening the inspector. Reuses the shared
   // .fold-menu chrome + clampIntoView; folder rows toggle in place (menu stays open).
-  const posterMenu = document.createElement('div');
-  posterMenu.className = 'fold-menu';
-  document.body.appendChild(posterMenu);
-  let posterMenuKey = null;
-  function hidePosterMenu() { posterMenu.classList.remove('show'); posterMenuKey = null; }
-  function renderPosterMenu(u) {
-    posterMenu.innerHTML =
-      `<div class="fm-row" data-pm-act="posts"><span class="fm-name">${escapeHtml(MSG.posterViewPosts)}</span></div>` +
-      '<div class="fm-sep"></div>' +
-      pfStore.all().map((f) => `<div class="fm-row" data-pm-fid="${escapeAttr(f.id)}"><span class="fm-name">${escapeHtml(f.name)}</span>${posterFolderHas(f.id, u.key) ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`).join('') +
-      `<div class="fm-row fm-manage" data-pm-act="newfolder">${escapeHtml(MSG.posterMenuNewFolder)}</div>`;
+  // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
+  // poster-folders (toggle, stays open). React-owned glass popup via
+  // window.corpusContextMenu; viewer owns the items + actions here.
+  function posterMenuItems(u) {
+    const items = [
+      { label: MSG.posterViewPosts, act: 'posts' },
+      { sep: true },
+    ];
+    for (const f of pfStore.all()) {
+      items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
+    }
+    items.push({ label: MSG.posterMenuNewFolder, act: 'newfolder', manage: true });
+    return items;
+  }
+  function onPosterMenuPick(u, item) {
+    if (item.act === 'posts') { openPosterPosts(u); return; }                  // close
+    if (item.act === 'newfolder') {
+      const name = window.prompt(MSG.posterFolderRenamePrompt, '');
+      if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) togglePosterFolderMember(nf.id, u.key); }
+      return;                                                                   // close
+    }
+    if (item.act === 'folder') {
+      togglePosterFolderMember(item.fid, u.key);
+      return posterMenuItems(u);                                               // keep open to assign more
+    }
   }
   function showPosterMenu(u, x, y) {
-    posterMenuKey = u.key;
-    renderPosterMenu(u);
-    posterMenu.style.left = x + 'px';
-    posterMenu.style.top = y + 'px';
-    posterMenu.classList.add('show');
-    clampIntoView(posterMenu);
+    window.corpusContextMenu.open({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
-  posterMenu.addEventListener('click', (e) => {
-    const u = posterMenuKey ? posterList.find((p) => p.key === posterMenuKey) : null;
-    if (!u) { hidePosterMenu(); return; }
-    const act = e.target.closest('[data-pm-act]');
-    if (act) {
-      const a = act.dataset.pmAct;
-      if (a === 'posts') { hidePosterMenu(); openPosterPosts(u); return; }
-      if (a === 'newfolder') {
-        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
-        if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) togglePosterFolderMember(nf.id, u.key); }
-        hidePosterMenu(); return;
-      }
-    }
-    const fr = e.target.closest('.fm-row[data-pm-fid]');
-    if (fr) { togglePosterFolderMember(fr.dataset.pmFid, u.key); renderPosterMenu(u); }   // keep open to assign more
-  });
-  document.addEventListener('click', (e) => { if (posterMenu.classList.contains('show') && !posterMenu.contains(e.target)) hidePosterMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePosterMenu(); });
   document.getElementById('posterGrid').addEventListener('contextmenu', (e) => {
     const card = e.target.closest('.poster-card');
     if (!card) return;
@@ -5086,43 +5077,33 @@
   });
   // Collection card right-click menu: open / rename / delete (mirrors the poster card
   // menu — fold-menu chrome + clampIntoView). One menu DOM for the view.
-  const collMenu = document.createElement('div');
-  collMenu.className = 'fold-menu';
-  document.body.appendChild(collMenu);
-  let collMenuCid = null;
-  function hideCollMenu() { collMenu.classList.remove('show'); collMenuCid = null; }
-  function showCollMenu(c, x, y) {
-    collMenuCid = c.id;
+  // Collection context menu (right-click a collection card): open / update-query
+  // (dynamic only) / rename / delete. React-owned glass popup via
+  // window.corpusContextMenu; viewer owns the items + actions here.
+  function collMenuItems(c) {
+    const items = [{ label: MSG.collOpen, act: 'open' }];
     // Dynamic collections add "条件を今の絞り込みで更新" (re-save the search from the
     // current filter); static collections have no extra row.
-    const secondRow = c.kind === 'dynamic'
-      ? `<div class="fm-row" data-cm-act="updateq"><span class="fm-name">${escapeHtml(MSG.collUpdateQuery)}</span></div>`
-      : '';
-    collMenu.innerHTML =
-      `<div class="fm-row" data-cm-act="open"><span class="fm-name">${escapeHtml(MSG.collOpen)}</span></div>` +
-      secondRow +
-      `<div class="fm-row" data-cm-act="rename"><span class="fm-name">${escapeHtml(MSG.collRename)}</span></div>` +
-      '<div class="fm-sep"></div>' +
-      `<div class="fm-row fm-danger" data-cm-act="delete"><span class="fm-name">${escapeHtml(MSG.collDelete)}</span></div>`;
-    collMenu.style.left = x + 'px'; collMenu.style.top = y + 'px';
-    collMenu.classList.add('show');
-    clampIntoView(collMenu);
+    if (c.kind === 'dynamic') items.push({ label: MSG.collUpdateQuery, act: 'updateq' });
+    items.push({ label: MSG.collRename, act: 'rename' });
+    items.push({ sep: true });
+    items.push({ label: MSG.collDelete, act: 'delete', danger: true });
+    return items;
+  }
+  function onCollMenuPick(c, item) {
+    const a = item.act;
+    if (a === 'open') openCollection(c.id);
+    else if (a === 'updateq') updateDynamicFromCurrent(c);
+    else if (a === 'rename') { const nm = window.prompt(MSG.collRenamePrompt, c.name); if (nm && nm.trim()) CF().renameCollection(c.id, nm); }
+    else if (a === 'delete') { if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id); }
+  }
+  function showCollMenu(c, x, y) {
+    window.corpusContextMenu.open({ items: collMenuItems(c), x, y }, (item) => onCollMenuPick(c, item));
   }
   document.getElementById('collectionGrid').addEventListener('contextmenu', (e) => {
     const card = e.target.closest('.collection-card:not(.new)'); if (!card) return;
     e.preventDefault();
     const c = CF() && CF().byId(card.dataset.cid); if (c) showCollMenu(c, e.clientX, e.clientY);
-  });
-  collMenu.addEventListener('click', (e) => {
-    const c = collMenuCid && CF() && CF().byId(collMenuCid);
-    const row = e.target.closest('[data-cm-act]');
-    hideCollMenu();
-    if (!row || !c) return;
-    const a = row.dataset.cmAct;
-    if (a === 'open') openCollection(c.id);
-    else if (a === 'updateq') updateDynamicFromCurrent(c);
-    else if (a === 'rename') { const nm = window.prompt(MSG.collRenamePrompt, c.name); if (nm && nm.trim()) CF().renameCollection(c.id, nm); }
-    else if (a === 'delete') { if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id); }
   });
   // Overwrite a dynamic collection's saved condition with the post view's CURRENT
   // filter (tree + free-text) — re-save the search after tweaking it.
@@ -5134,8 +5115,6 @@
     CF().updateCollection(c.id, { tree: cloneTree(tree) });
     CF().toast(MSG.collUpdated);
   }
-  document.addEventListener('click', (e) => { if (collMenu.classList.contains('show') && !collMenu.contains(e.target)) hideCollMenu(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCollMenu(); });
   // Collection sidebar: sort select + new button.
   { const cs = document.getElementById('collectionSortSelect');
     if (cs) cs.addEventListener('change', () => { collectionSort = cs.value; renderCollections(); }); }

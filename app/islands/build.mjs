@@ -26,7 +26,7 @@ const appRoot = path.join(here, '..');                     // app
 // react-dom/client (createRoot). Both bundle fine in lib IIFE mode.
 const ISLANDS = [
   'settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections',
-  'suggest', 'posters', 'post-card', 'lightbox', 'toolbar',
+  'suggest', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu',
 ];
 
 for (const name of ISLANDS) {

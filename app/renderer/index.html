@@ -2354,6 +2354,10 @@
   <!-- Shared renderer state store (window.corpusStore): one source of truth shared
        by viewer.js and the React islands during the migration. Before viewer.js. -->
   <script src="store.js"></script>
+  <!-- Context-menu controller (window.corpusContextMenu): the imperative→declarative
+       bridge for right-click menus. viewer.js calls open(); the context-menu island
+       renders. Before viewer.js. -->
+  <script src="menu.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2385,6 +2389,9 @@
   <!-- Sidebar toolbar controls (search-mode segment; view-density toggle): React
        owns rendering, state lives in window.corpusSearch / window.corpusStore. -->
   <script src="islands/toolbar.js"></script>
+  <!-- Right-click context menus: React owns the glass popup rendering, viewer.js owns
+       the items + actions (via window.corpusContextMenu). -->
+  <script src="islands/context-menu.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>
