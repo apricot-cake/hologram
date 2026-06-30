@@ -20,9 +20,18 @@ function mountDensity() {
   if (el) createRoot(el).render(<DensityToggle el={el} />);
 }
 
+// Poster-grid density — same component, different store key / data attr.
+function mountPosterDensity() {
+  const el = document.getElementById('posterDensityToggle');
+  if (el) createRoot(el).render(
+    <DensityToggle el={el} storeKey="posterView" dataAttr="data-pview" defaultView="card" />
+  );
+}
+
 function mountAll() {
   mountSearchMode();
   mountDensity();
+  mountPosterDensity();
 }
 
 // Resolve i18n before render so t() is synchronous in components. The single

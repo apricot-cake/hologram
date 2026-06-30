@@ -369,11 +369,7 @@
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
-  // #densityToggle labels are rendered by the toolbar island now; the poster-mode
-  // density toggle stays vanilla, so its labels are still set here.
-  setText('posterViewCardLabel', MSG.viewCard);
-  setText('posterViewTileLabel', MSG.viewTile);
-  setText('posterViewListLabel', MSG.viewList);
+  // #densityToggle and #posterDensityToggle labels are rendered by the toolbar island now.
   setText('browsePostsLabel', MSG.browsePosts);
   setText('browsePostersLabel', MSG.browsePosters);
   setText('browseCollectionsLabel', MSG.browseCollections);
@@ -4400,9 +4396,10 @@
   // collapses rapid clicks to a single render.
   let _browseRenderT = null, _densityRenderT = null, _posterDensityRenderT = null;
   function positionViewThumb(scope) {
-    // #densityToggle is React-owned (the toolbar island positions its own thumb), so
-    // the no-scope sweep skips it — never two writers on the same .vt-thumb.
-    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle)');
+    // #densityToggle and #posterDensityToggle are React-owned (the toolbar island
+    // positions their own thumbs), so the no-scope sweep skips them — never two
+    // writers on the same .vt-thumb.
+    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle)');
     containers.forEach((vt) => {
       const btn = vt.querySelector('button.active');
       const thumb = vt.querySelector('.vt-thumb');
@@ -4418,7 +4415,7 @@
   // whenever the control's own box changes.
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => positionViewThumb());
-    document.querySelectorAll('.view-toggle:not(#densityToggle)').forEach((vt) => ro.observe(vt));
+    document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle)').forEach((vt) => ro.observe(vt));
   }
   // #densityToggle is rendered by the toolbar island (window.corpusStore 'view').
   // React owns the active state + glass thumb; viewer reacts to a view change:
@@ -4527,23 +4524,19 @@
     const n = Math.min(nSmall, Math.max(nBig, pColsFor(st.get(), m)));
     sl.value = String(nBig + nSmall - n);                               // inverted: right = larger
   }
-  // Poster grid density toggle (card / tile / list) — mirrors #densityToggle but
-  // writes posterView (separate from currentView) and re-renders the poster grid.
-  // Defined here (after PTILE_*/PCARD_*/posterView) so the slider setup doesn't hit a TDZ.
-  document.querySelectorAll('#posterDensityToggle button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.pview === posterView) return;
-      document.querySelectorAll('#posterDensityToggle button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      posterView = btn.dataset.pview;
-      positionViewThumb(document.getElementById('posterDensityToggle'));
-      const _thumb = document.querySelector('#posterDensityToggle .vt-thumb');
-      if (_thumb && !prefersReducedMotion()) { _thumb.classList.remove('vt-sliding'); void _thumb.offsetWidth; _thumb.classList.add('vt-sliding'); }
-      window.corpus.setPref('posterViewMode', posterView);
-      // Optimistic UI: thumb slides now; defer the grid re-render past a paint.
-      clearTimeout(_posterDensityRenderT);
-      _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
-    });
+  // Poster grid density (card / tile / list) — rendered by the toolbar island
+  // (window.corpusStore 'posterView'). React owns the active state + glass thumb;
+  // viewer reacts to a change: mirror it into posterView, persist it, and re-render
+  // the poster grid (deferred past a paint, like the old optimistic handler).
+  // renderPosters re-applies the layout classes and refreshes the size slider. The
+  // idempotent guard skips the no-op set from pref restore below.
+  window.corpusStore.subscribe('posterView', () => {
+    const v = window.corpusStore.get('posterView');
+    if (v === posterView) return;
+    posterView = v;
+    window.corpus.setPref('posterViewMode', posterView);
+    clearTimeout(_posterDensityRenderT);
+    _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
   });
   (function setupPosterSizeSlider() {
     const sl = document.getElementById('posterTileSlider');
@@ -4739,7 +4732,7 @@
     grid.classList.toggle('list-view', posterView === 'list');
     grid.style.setProperty('--ptile-size', posterTileSize + 'px');
     grid.style.setProperty('--pcard-size', posterCardSize + 'px');
-    positionViewThumb(document.getElementById('posterDensityToggle'));
+    // (The #posterDensityToggle glass thumb is positioned by the toolbar island, not here.)
     // Size slider: card + tile (auto-fill grids) have a size axis; list (full-width stack)
     // doesn't. The track maps to column counts so every step reflows (no dead zones).
     refreshPosterSlider();
@@ -5334,7 +5327,9 @@
     }
     if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
       posterView = prefs.posterViewMode;
-      document.querySelectorAll('#posterDensityToggle button').forEach(b => b.classList.toggle('active', b.dataset.pview === posterView));
+      // Push into the store so the island renders the right button active; posterView
+      // is already set, so the subscribe above no-ops (idempotent guard).
+      window.corpusStore.set('posterView', posterView);
     }
     if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
     if (Number.isFinite(prefs.posterCardSize)) posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));

@@ -1,18 +1,17 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
 import { t } from './i18n.js';
 
-// View-density toggle (card / tile / list) for the post grid. The active view is
-// shared state in window.corpusStore ('view'); viewer.js reads it for layout and
-// re-renders the grid on change. React owns this control's rendering AND its
-// glass-thumb positioning — viewer.js's positionViewThumb explicitly EXCLUDES
-// #densityToggle so there are never two writers on the same .vt-thumb element.
+// View-density toggle (card / tile / list). One component, two mounts: the post grid
+// (storeKey='view', data-view) and the poster grid (storeKey='posterView', data-pview).
+// The active view is shared state in window.corpusStore; viewer.js reads it for layout
+// and re-renders the grid on change. React owns this control's rendering AND its
+// glass-thumb positioning — viewer.js's positionViewThumb explicitly EXCLUDES both
+// #densityToggle and #posterDensityToggle so there are never two writers on one
+// .vt-thumb element.
 //
 // Emits the SAME DOM the old innerHTML did (.vt-thumb + three .view-toggle buttons
-// with data-view) so the .view-toggle CSS is unchanged. Icons only (vt-label is
-// display:none in CSS) but we keep the labels for accessibility.
-
-const subscribe = (cb) => window.corpusStore.subscribe('view', cb);
-const getView = () => window.corpusStore.get('view') || 'card';
+// carrying the original data-* attr) so the .view-toggle CSS is unchanged. Icons only
+// (vt-label is display:none in CSS) but we keep the labels for accessibility.
 
 const reduceMotion = () =>
   !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -46,8 +45,11 @@ const VIEWS = [
   { v: 'list', key: 'viewList' },
 ];
 
-// `el` is the mount container (#densityToggle); React renders its children here.
-export function DensityToggle({ el }) {
+// `el` is the mount container; React renders its children here. storeKey/dataAttr/
+// defaultView parameterize the post-grid vs poster-grid instances (defaults = post grid).
+export function DensityToggle({ el, storeKey = 'view', dataAttr = 'data-view', defaultView = 'card' }) {
+  const subscribe = useCallback((cb) => window.corpusStore.subscribe(storeKey, cb), [storeKey]);
+  const getView = useCallback(() => window.corpusStore.get(storeKey) || defaultView, [storeKey, defaultView]);
   const view = useSyncExternalStore(subscribe, getView);
   const thumbRef = useRef(null);
   const prevView = useRef(view);
@@ -91,9 +93,9 @@ export function DensityToggle({ el }) {
         <button
           key={v}
           type="button"
-          data-view={v}
+          {...{ [dataAttr]: v }}
           className={v === view ? 'active' : undefined}
-          onClick={() => window.corpusStore.set('view', v)}
+          onClick={() => window.corpusStore.set(storeKey, v)}
         >
           <ViewIcon v={v} />
           <span className="vt-label">{t(key)}</span>
