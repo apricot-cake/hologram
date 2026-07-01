@@ -28,8 +28,7 @@ function diffKeys(name, a, b) {
 
 // Substitution slots: renderer uses $1/$2…, the extension format also allows
 // named $PLACEHOLDER$ tokens. Order-insensitive set compare per key.
-const subsOf = (s) =>
-  (String(s).match(/\$[A-Za-z_]+\$|\$\d/g) || []).sort().join(',');
+const subsOf = (s) => (String(s).match(/\$[A-Za-z_]+\$|\$\d/g) || []).sort().join(',');
 
 function diffValues(name, a, b) {
   for (const k of Object.keys(a)) {
@@ -57,6 +56,7 @@ function diffValues(name, a, b) {
     global.window = { corpus: { getPrefs: async () => ({}) } };
     if (!global.navigator) global.navigator = { language: 'ja' };
     // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read the closure-private MESSAGES table (same pattern as test-search-unit)
+    // biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
     (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__corpusMessages = {'));
     if (global.window.corpusI18n && typeof global.window.corpusI18n.catch === 'function') {
       global.window.corpusI18n.catch(() => {}); // don't die on an unrelated init rejection
