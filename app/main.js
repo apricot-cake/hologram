@@ -23,6 +23,7 @@ const ipcPosts = require('./ipc-posts');
 const ipcConfig = require('./ipc-config');
 const ipcWindow = require('./ipc-window');
 const ipcTrash = require('./ipc-trash');
+const ipcBackup = require('./ipc-backup');
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
@@ -979,28 +980,8 @@ function armBackupSchedule() {
   }, BACKUP_HEARTBEAT_MS);
 }
 
-ipcMain.handle('get-backup', () => readBackupConfig());
-ipcMain.handle('set-backup', (_e, patch) => {
-  patch = patch || {};
-  if ('dir' in patch && patch.dir) {
-    const v = validateBackupDir(patch.dir);
-    if (!v.ok) return { ok: false, error: v.error, backup: readBackupConfig() };
-  }
-  const backup = writeBackupConfig(patch);
-  armBackupSchedule();
-  return { ok: true, backup };
-});
-ipcMain.handle('pick-backup-dir', async () => {
-  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
-  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
-  const dir = res.filePaths[0];
-  const v = validateBackupDir(dir);
-  if (!v.ok) return { ok: false, error: v.error };
-  const backup = writeBackupConfig({ dir });
-  armBackupSchedule();
-  return { ok: true, backup };
-});
-ipcMain.handle('run-backup', () => runBackup('manual'));
+// Backup handlers (get-backup / set-backup / pick-backup-dir / run-backup) were
+// extracted to ./ipc-backup.js (registered via ipcBackup.register below).
 
 // Change where the library lives. Picks a folder, MOVES the existing library
 // there (crash-safe: copy → flip config → delete old), then re-points the watcher
@@ -1195,6 +1176,7 @@ function registerExtractedIpc() {
     readConfig, writeConfig, installer,
     APP_ICON,
     getTrashDir, baseOf, VIEWABLE_EXTS, writeSidecarAtomic,
+    readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup,
     getWin: () => win,
   };
   ipcOrganize.register(ctx);
@@ -1202,6 +1184,7 @@ function registerExtractedIpc() {
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
   ipcTrash.register(ctx);
+  ipcBackup.register(ctx);
 }
 registerExtractedIpc();
 
