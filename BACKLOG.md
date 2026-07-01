@@ -72,7 +72,99 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここで。
 - **実機キャプチャの実ブラウザ経由 最終目視確認（残）**: Chrome 無しの end-to-end は検証済み（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャ（Alt+S/ドラッグ）し保存先に `.jpg`+`.json` が落ちるのを目視。リモートでは不可＝実機で。
 - **開発共通ルールを親フォルダの CLAUDE.md に集約**→重複削除（上位集約）。
-- **最終形 B（単一 React アプリ）＝決定事項・進行中（2026-06-30 ユーザー確定）**: 「分岐点で着手＝保留」だった旧表現は行き違いで撤回。完了の定義・依存方針（react-virtuoso 採用／状態は corpusStore 継続／ルーター無し／UIキットはスパイクで判断）・残りのロードマップは**メモリ `corpus-react-settings-pilot` の「最終地点（決定事項）」が真実源**。現状＝toolbar/コンテキストメニュー/各種チップ・行・タブ・カード（テンプレート）まで島化済み。残り＝詳細パネル・フィルタ系・編集オーバーレイ・検索・グリッド完全React化（仮想化）・viewer.js の store/service/hooks 分解・単一バンドル化。
+- **React 化（最終形B）＝進行中**: 残タスクと技術スタックの採否は独立セクション「React 化（最終形B）」「技術スタック候補」に集約（下記）。確立パターン/実装知はメモリ `corpus-react-settings-pilot`/`corpus-vite-migration` が真実源（重複させない）。
+
+## React 化（最終形B＝単一Reactアプリ化・進行中）
+
+**方針・実装知の真実源はメモリ**（`corpus-react-settings-pilot` / `corpus-vite-migration`）＝目的（合否基準）・確立パターン（反転パターン/プレゼンテーショナル島/idempotent guard/初期化順の罠）・各スライスの実装知。ここには**残タスク（やること）だけ**を置く。
+
+- **依存/UI 方針（確定）**: 全面リライトしない・段階移行／依存は先回りせず痛みが出た時に keep/replace 物差しで判断（bespoke＝フィルタ/グルーピング/正規化/日本語あいまい検索は保つ／コモディティ＝位置決め/窓化/a11y は痛んだら委譲）／UI はガラス維持（styled kit 却下）／状態は corpusStore 継続／ルーター無し。
+- **着地済み**: Vite 移行（esbuild 廃止・段階0-2）／島12個（settings/sidebar-tags/query-chips/tabs/collections/suggest/posters/post-card=テンプレート島/toolbar/context-menu/lightbox）＋共有ストア window.corpusStore。
+- **残タスク**:
+  - 詳細/インスペクタパネルの React 化（大物・島未）。
+  - フィルタ系一式: #filterRows/バッジ／値フライアウト `renderQfPop`（find入力＋その場絞り込み＝ハイブリッド境界でこじれ候補）／日付・エンゲージメント ポップオーバー。
+  - 編集オーバーレイ＋タグピッカー。
+  - 検索ボックス＋サジェスト（タブ状態結合＋サジェスト絡みで重い）。
+  - kindMenu（種別メニュー・専用要素で汎用部品に不向き＝専用 React 化 or 命令的据え置き）。
+  - グリッド完全React化＝#postGrid を viewer.js→React 所有へ＋仮想化（`viewer.js:3061`/`index.html:808` の深スクロール線形劣化を解消・下記「技術スタック候補」参照。回帰リスク最大＝後半スライスで慎重に）。
+  - viewer.js（5724行 IIFE）を store/service/hooks へ段階抽出（純ロジック buildGroups/フィルタ/正規化/IPC→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。
+  - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約の解消は最終形B で別途）。
+  - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証（部品単体は検証済）。
+
+## 技術スタック候補（ライブラリ/ツール・2026-07-01 多エージェント調査）
+
+> **位置づけ**: 87候補を Corpus 固有制約（file:///厳格CSP/ファイルベース真実源/ガラス維持/7600枚個人利用）で痛点接地採点した**採否の判断ログ**（"買い物リスト"でなく keep/replace 物差しの具体化）。版数/DL数など鮮度依存の詳細は割愛（腐るため）。**実効レバーはライブラリでなく手動タグ付けUX**＝どのエンジンを入れても無タグ7600枚は無タグのまま（本丸はこのカタログの外＝「タグ付け・整理」節）。
+> **通し方針**: 先に効くのは横断レバー（Biome/IPCラッパー/checkJs/配布整備＝検証表面積を下げる）。グリッド仮想化・検索DB等の重い機能強化は最終形B の地ならし後。
+
+### 優先度順（横断・上位16）
+
+| # | 候補 | カテゴリ | 採否 | 一言（根拠） |
+|---|---|---|---|---|
+| 1 | **Biome**（lint+format） | 品質 | adopt-now | lint/format 完全ゼロ（severity 5）を単一バイナリ・単一設定で一掃。ビルド/CSP/file:// 無関係で導入コスト最小・全カテゴリ最速の即効レバー |
+| 2 | **IPC集中ラッパー（自前）** | IPC | adopt-now | viewer.js の `catch{}` 黙殺（UI が固まる/古い結果）を `corpusIpc.call()` 1経由で根治。依存ゼロ・数十行で全46メソッドに波及・将来の差し込み点 |
+| 3 | **electron-builder + publish/sign** | 配布 | adopt-now | 既に v25.1.8 稼働中・dist 実績あり。乗り換えゼロで配布の穴を埋める唯一の現実解 |
+| 4 | **JSDoc + checkJs**（.ts化なし） | 品質 | when-pain | viewer.js が単一 IIFE ゆえ**構造を壊さず型を載せる唯一の経路**。契約破れ（island⇄viewer/裸ストアキー/i18nキー/IPC）を静的検出。JSDoc 人手が律速 |
+| 5 | **Floating UI**（@floating-ui/dom） | Headless UI | when-pain | 衝突回避が5箇所コピー（drift 自認）を1API化。位置決め専用でガラスCSS無干渉・inline style のみで CSP 無条件適合。Headless UI の勝者 |
+| 6 | **masonic** | グリッド仮想化 | when-pain | 不定高マサンリー専用設計が Eagle 風と1:1。深スクロール線形劣化を構造解消。ただし #postGrid 所有権を React へ移す大改修が前提＝最終形B 後半。3候補の勝者（次点 @virtuoso.dev/masonry） |
+| 7 | **Zod（main限定）** | スキーマ/IPC | when-pain | preload ~50 の契約破れを main 側 require だけ（CSP 対象外）で実行時検出。L3（サイドカーJSON の BOM/形）にも転用。TS 導入の前段 |
+| 8 | **electron-updater + GH Releases** | 自動更新 | adopt-now | BACKLOG 決定済み・public化前提に合致・追加インフラ不要。builder と同一作者で設定齟齬が起きにくい |
+| 9 | **i18nキー網羅スクリプト（自前）** | i18n | adopt-now | ja/en 片側欠落・キー名ズレの無音失敗だけを15〜30行で潰す。i18next 等は 342キー2言語に過剰 |
+| 10 | **lucide-react** | アイコン | evaluate | DESIGN.md:76 指定と自前35SVGが実測一致＝「真似た自前」を本物に。ただし島のみ・本体は最終形B完了時の一括移行が筋 |
+| 11 | **MiniSearch + BudouX** | 検索 | evaluate | 全文線形走査/haystack再構築/ファセット/サジェストを一括。依存ゼロ・WASM不使用で CSP 適合最高。ただし日本語境界に BudouX 必須・体感変化リスク |
+| 12 | **SignPath Foundation** | 署名 | when-pain | 無料OSS・**日本拠点でも申請可**（Azure は日本対象外）。private リポでは申請不可＝public化と順序合わせ・審査が律速 |
+| 13 | **better-sqlite3 + FTS5** | DB | evaluate | SQL で複数痛点を解く潜在力。ただしボトルネックは IPC直列化でDB不在ではない・ネイティブ配布コスト新設に今は見合わない |
+| 14 | **sharp**（libvips） | 画像 | evaluate | サムネ同期ブロッキング（main.js:366 自認）＋webp/avif 非対応を別スレッドで一掃。asarUnpack 新設＝実行時依存ゼロを初めて破る越境 |
+| 15 | **Vitest** | テスト | evaluate | 島ロジック用。ただし最大の痛点 getFilteredPosts 等は viewer.js IIFE で対象外＝service 抽出後に本領 |
+| 16 | **react-aria 自前パレット** | Cmd+K | when-pain | 既存最有力依存を使い回し search.js を通せば日本語あいまい検索の二重実装を回避。最終形B後に1ツリーで（次点 cmdk） |
+
+### ティア早見表
+
+- **adopt-now（今すぐ／現状追認）**: Biome ／ IPC集中ラッパー ／ electron-builder(publish/sign) ／ electron-updater ／ i18nキー網羅スクリプト ／ **「現状維持が最適解」と確認**: 自前 corpusStore(状態)・自前 Date/Intl(日付=計測済み最適)・自前スモーク+puppeteer(テスト)・自前 fs.watch+pick-save-folder修正・自前 HTML5 DnD・自前 .index.json+Map索引(DB)・search.js継続+haystack事前計算・知覚ハッシュ見送り(画像)・自前SVGアイコン本体。
+- **adopt-when-pain（痛みが出たら）**: JSDoc+checkJs ／ Floating UI ／ masonic ／ Zod(main限定) ／ Valibot(main限定) ／ SignPath ／ chokidar v4 ／ @electron/fuses ／ react-aria自前パレット ／ 位置決め共通フック化。
+- **evaluate（条件付き・要PoC）**: lucide-react ／ MiniSearch+BudouX ／ better-sqlite3+FTS5 ／ sharp ／ Vitest ／ Knip(未使用検出) ／ TanStack Query(最終形B後) ／ cmdk ／ Radix UI Primitives ／ Certum ／ Zustand(最終形B後)。
+- **reject（不採用）**: oxlint ／ kbar ／ dnd-kit・pragmatic-dnd・SortableJS ／ Jotai・nanostores・Valtio・XState ／ FlexSearch・Orama ／ kuromoji・lindera-wasm ／ node:sqlite・sql.js・DuckDB ／ imghash ／ @parcel/watcher・graceful-fs ／ dayjs・Luxon・Temporal ／ ArkType・superstruct ／ Motion・react-spring・auto-animate ／ Iconify ／ Paraglide・FormatJS・LinguiJS ／ Playwright視覚回帰・node:test ／ electron-forge・Azure Trusted Signing ／ electron-trpc・Comlink。
+
+### カテゴリ別 勝者/次点（比較根拠）
+
+| カテゴリ | 勝者 | 次点 | 理由 |
+|---|---|---|---|
+| グリッド仮想化 | masonic | @virtuoso.dev/masonry | 不定高マサンリー専用が Eagle 風と1:1。react-virtuoso は可変高が本領外で撤回 |
+| Headless UI | Floating UI | Radix UI Primitives | 位置決め専用でガラス無干渉・CSP無条件適合。Radix は WorkOS移管後の更新鈍化 |
+| コマンドパレット | react-aria自前 | cmdk | search.js を通せて二重fuzzy回避。kbar は Fuse.js間接依存で却下 |
+| 状態管理 | 自前corpusStore維持 | Zustand(最終形B後) | 34行7-8キーに全ライブラリ過剰。型なしキーは checkJs で解く |
+| 検索 | MiniSearch+BudouX | search.js継続+haystack事前計算 | まず次点で今すぐ着手、日本語境界が痛んだら勝者へ |
+| 埋め込みDB | 現状.index.json+Map維持 | better-sqlite3+FTS5 | ボトルネックは IPC直列化。7600件は Map+JSON で実用十分 |
+| 画像 | 現状維持(サムネ据置) | sharp | 知覚ハッシュは段階③で時期尚早。webp/avif の穴が顕在化したら sharp |
+| ファイル監視 | 自前fs.watch維持 | chokidar v4 | 全reconcile が自己修復・2026-06 インシデントは MSIX仮想化が真因 |
+| 日付 | 自前Date/Intl維持 | date-fns | Intlキャッシュ+_dateMs で計測済み最適・痛点に日付が無い |
+| スキーマ検証 | 自前BOM剥ぎヘルパ | Valibot/Zod(main限定) | L3 は BOM剥がし15行で足り厳密型検証の実ケースが無い |
+| アニメ | View Transitions+CSS維持 | （なし） | viewer.js:4316 稼働済み・残る穴は Lightbox reflow(sev2)のみ |
+| アイコン | lucide-react(島)/本体は最終形B後 | 自前SVG維持 | DESIGN.md指定と実測一致。Iconify は CDN前提で file:// 非互換 |
+| i18n | キー網羅スクリプト(自前) | 自前corpusI18n維持 | 342/341パリティ・恒久2言語で FW は設備過剰 |
+| テスト | 自前スモーク+puppeteer維持 | Vitest | 実機=真実の文化と一致。Vitest は viewer.js 抽出後に本領 |
+| 署名 | SignPath Foundation | Certum(有償) | 無料OSS・日本可。Azure は日本対象外で却下 |
+| IPC | IPC集中ラッパー(自前) | Zod(main限定) | catch{}黙殺を数十行で根治。electron-trpc/Comlink は TS前提・非互換 |
+
+### 却下理由（固有制約に正面衝突した代表）
+
+| 候補 | 却下理由 |
+|---|---|
+| kuromoji / lindera-wasm | WASM実行に `wasm-unsafe-eval` 必須＝厳格CSP方針の変更そのもの。日本語検索強化の道は WASM 形態素でなく BudouX 系 |
+| Iconify | CDN/API 動的取得が file://・`script-src 'self'` と根本非互換 |
+| Azure Trusted Signing | 2026-07 時点で Identity Validation 対象国が US/CA/EU/UK のみ＝日本拠点は申請自体が不可能 |
+| @parcel/watcher | 目玉 getEventsSince が解く問題は `_deltaFolder=null` 全reconcile で既に自己修復＝架空の問題 |
+| Motion / react-spring | View Transitions+CSS で核心は実現済み、11島IIFE悪化の代償が痛点(sev2)を上回る |
+| electron-trpc / Comlink | TS前提が TS未導入と噛み合わず、Comlink は公式に Electron 非互換明記 |
+| dnd-kit ほか | 現行~80行が安定稼働、4種木構造判定は導入後も手書きのまま＝複雑さが移動するだけ |
+| Jotai/Valtio/XState | 独立フラグ集合の状態に派生atom/Proxy検知/状態機械の強みが刺さらない |
+
+### 効く順（横断ロードマップでなく"効く順"）
+
+1. **今すぐ（独立・低リスク）**: Biome → IPC集中ラッパーで `catch{}` 一掃 → i18nキー網羅スクリプト。依存/CSP/ビルド無関係で検証表面積を即下げる。
+2. **配布フェーズ**: electron-builder に publish/sign 追記 → electron-updater 配線 → SignPath を public化に合わせ事前申請（審査が律速＝早め）→ @electron/fuses を署名のついでに。
+3. **段階的に型を載せる**: JSDoc+checkJs を preload/store/i18n の .d.ts から。masonic/lucide-react/TanStack Query 等 React 大物導入の前提「契約の見える化」。
+4. **最終形B の地ならし後**: masonic ／ Floating UI ／ lucide-react ／ react-aria自前パレット を島 IIFE 重複を避け1ツリーで。
+5. **痛みが顕在化したら**: MiniSearch+BudouX（タグ増で検索が線形劣化）／ sharp（webp/avif でサムネが無言で欠ける）／ better-sqlite3（数万件に育つ）。
 
 ## リリース準備
 
@@ -96,5 +188,5 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 ### 3. コード署名（やる方針）
 
 - 効果: SmartScreen 初回警告の解消（評判蓄積）、アップデート改ざん耐性、AV誤検知の低減。
-- **候補（OSS・無収益前提）**: **SignPath Foundation**（OSS無料・public リポ＋CI 連携が条件＝第一候補・審査あり）／**Azure Trusted Signing**（約$9.99/月・個人開発者の本人検証対応・electron-builder 統合）／**Certum Open Source**（年€70前後＋初回カード/リーダー費・定番安価OV）。
+- **候補（OSS・無収益前提）**: **SignPath Foundation**（OSS無料・public リポ＋CI 連携が条件＝第一候補・審査あり・日本拠点でも申請可）／~~Azure Trusted Signing~~（**2026-07 時点で Identity Validation 対象国が US/CA/EU/UK のみ＝日本拠点は申請不可**・除外）／**Certum Open Source**（年€70前後＋初回カード/リーダー費・定番安価OV＝SignPath 審査待ちの有償フォールバック）。
 - electron-builder の win.sign / signtool 設定が必要。NSIS の開発者モード要件（winCodeSign symlink）は docs/build.md 記載済み。
