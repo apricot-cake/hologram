@@ -7,7 +7,7 @@
     saving: getMessage('bannerSaving'),
     saved: getMessage('bannerSaved'),
     savedNoMeta: getMessage('bannerSavedNoMeta'),
-    failed: getMessage('bannerFailed')
+    failed: getMessage('bannerFailed'),
   };
 
   const siteConfig = getSiteConfig();
@@ -25,7 +25,7 @@
   let isCleanedUp = false;
   let restoreCaptureState = null;
   let savedScrollPosition = null;
-  let lastCapturedPost = null;   // re-measured at crop time (scroll/layout drift)
+  let lastCapturedPost = null; // re-measured at crop time (scroll/layout drift)
 
   // === UI要素 ===
 
@@ -96,7 +96,7 @@
       testid: el.getAttribute ? el.getAttribute('data-testid') : null,
       role: el.getAttribute ? el.getAttribute('role') : null,
       closestAnchorHref: anchor ? anchor.getAttribute('href') : null,
-      outerHTML: (el.outerHTML || '').slice(0, 400)
+      outerHTML: (el.outerHTML || '').slice(0, 400),
     };
   }
 
@@ -106,9 +106,11 @@
     try {
       chrome.runtime.sendMessage({
         type: 'logCapture',
-        entry: { stage, phase: 'fail', platform: siteConfig.platform, locationHref: location.href, clickedSnap: snapEl(el) }
+        entry: { stage, phase: 'fail', platform: siteConfig.platform, locationHref: location.href, clickedSnap: snapEl(el) },
       });
-    } catch { /* ignore — diagnostics are non-essential */ }
+    } catch {
+      /* ignore — diagnostics are non-essential */
+    }
   }
 
   // === イベントハンドラ ===
@@ -118,10 +120,10 @@
     if (post) {
       const rect = getPostRect(post);
       highlight.style.display = 'block';
-      highlight.style.top = (rect.top + window.scrollY - 4) + 'px';
-      highlight.style.left = (rect.left + window.scrollX - 4) + 'px';
-      highlight.style.width = (rect.width + 8) + 'px';
-      highlight.style.height = (rect.height + 8) + 'px';
+      highlight.style.top = rect.top + window.scrollY - 4 + 'px';
+      highlight.style.left = rect.left + window.scrollX - 4 + 'px';
+      highlight.style.width = rect.width + 8 + 'px';
+      highlight.style.height = rect.height + 8 + 'px';
     } else {
       highlight.style.display = 'none';
     }
@@ -177,7 +179,7 @@
           type: 'captureAndSend',
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
-          platform: siteConfig.platform
+          platform: siteConfig.platform,
         });
       });
     });
@@ -259,7 +261,11 @@
       // an overflowing rect would encode the missing area as black bands.
       let rect = msg.rect;
       if (lastCapturedPost && lastCapturedPost.isConnected) {
-        try { rect = getPostRect(lastCapturedPost); } catch { rect = msg.rect; }
+        try {
+          rect = getPostRect(lastCapturedPost);
+        } catch {
+          rect = msg.rect;
+        }
       }
       const cx = Math.max(0, rect.x);
       const cy = Math.max(0, rect.y);
@@ -274,19 +280,17 @@
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(
-          img,
-          Math.round(cx * dpr), Math.round(cy * dpr), w, h,
-          0, 0, w, h
-        );
+        ctx.drawImage(img, Math.round(cx * dpr), Math.round(cy * dpr), w, h, 0, 0, w, h);
         sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
         restoreScroll();
       };
-      img.onerror = () => { restoreScroll(); sendResponse(null); };
+      img.onerror = () => {
+        restoreScroll();
+        sendResponse(null);
+      };
       img.src = dataUrl;
       return true; // 非同期レスポンス
     }
-
 
     // 結果通知
     if (msg.type === 'notify') {
@@ -297,17 +301,15 @@
         // Show WHY it failed (the background passes the stage error), so a broken
         // save is actionable instead of a bare "failed". A missing native host gets
         // a specific "restart Chrome" hint (the registry is read at startup).
-        banner.textContent = msg.hostMissing ? getMessage('bannerHostMissing')
-          : (msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed);
+        banner.textContent = msg.hostMissing ? getMessage('bannerHostMissing') : msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
       } else {
         banner.textContent = partial ? MSG.savedNoMeta : MSG.saved;
       }
-      banner.style.background = partial ? '#f59e0b' : (msg.success ? '#00ba7c' : '#f4212e');
+      banner.style.background = partial ? '#f59e0b' : msg.success ? '#00ba7c' : '#f4212e';
       // Hold failures (and partials) longer so the reason is readable.
-      setTimeout(cleanup, (partial || !msg.success) ? 2800 : 1500);
+      setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
     }
   }
-
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
@@ -346,12 +348,8 @@ function getSiteConfig() {
         return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
       },
       prepareForCapture(post) {
-        return prepareScopedCaptureState('__snsCaptureXNoHover', [
-          post,
-          post.parentElement,
-          post.closest('[data-testid="cellInnerDiv"]')
-        ]);
-      }
+        return prepareScopedCaptureState('__snsCaptureXNoHover', [post, post.parentElement, post.closest('[data-testid="cellInnerDiv"]')]);
+      },
     };
   }
 
@@ -384,14 +382,8 @@ function getSiteConfig() {
         return getBlueskyPostLink(post)?.url || parseBlueskyPostLink(location.href)?.url || '';
       },
       prepareForCapture(post) {
-        return prepareScopedCaptureState('__snsCaptureBskyNoHover', [
-          post,
-          post.parentElement,
-          post.parentElement?.parentElement,
-          post.closest('[data-testid^="feedItem-by-"]')?.parentElement,
-          post.closest('[data-testid^="postThreadItem-by-"]')?.parentElement
-        ]);
-      }
+        return prepareScopedCaptureState('__snsCaptureBskyNoHover', [post, post.parentElement, post.parentElement?.parentElement, post.closest('[data-testid^="feedItem-by-"]')?.parentElement, post.closest('[data-testid^="postThreadItem-by-"]')?.parentElement]);
+      },
     };
   }
 
@@ -423,11 +415,8 @@ function getSiteConfig() {
         return getMisskeyCaptureRect(post);
       },
       prepareForCapture(post) {
-        return prepareScopedCaptureState('__snsCaptureMisskeyNoHover', [
-          post,
-          getMisskeyPrimaryArticle(post)
-        ]);
-      }
+        return prepareScopedCaptureState('__snsCaptureMisskeyNoHover', [post, getMisskeyPrimaryArticle(post)]);
+      },
     };
   }
 
@@ -452,13 +441,11 @@ function getSiteConfig() {
         return findMastodonPostElement(target);
       },
       getPermalink(post) {
-        return getMastodonStatusLink(post)?.url
-          || parseMastodonStatusLink(location.href)?.url
-          || '';
+        return getMastodonStatusLink(post)?.url || parseMastodonStatusLink(location.href)?.url || '';
       },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCaptureMastodonNoHover', [post, post.parentElement]);
-      }
+      },
     };
   }
 
@@ -483,7 +470,7 @@ function getSiteConfig() {
       },
       prepareForCapture(post) {
         return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
-      }
+      },
     };
   }
 
@@ -521,7 +508,7 @@ function pixivIdFromArtworkLink(link) {
 // Priority: the target's own pximg image (unambiguous) → nearest enclosing
 // /artworks/ link → the nearest <figure>'s main image → the /artworks/ URL bar.
 function resolvePixivTarget(target) {
-  let el = target instanceof Element ? target : target?.parentElement;
+  const el = target instanceof Element ? target : target?.parentElement;
   if (!el) return null;
 
   const img = el.matches('img') ? el : el.closest('img');
@@ -545,7 +532,7 @@ function resolvePixivTarget(target) {
     // otherwise clicking a commenter avatar / tag pill saved THAT element's
     // pixels under the artwork's metadata. (audit 2026-06-11)
     const mainImg = document.querySelector('main figure img, figure img[src*="i.pximg.net"]');
-    return { id: locId, el: fig || (mainImg ? (mainImg.closest('figure') || mainImg) : el) };
+    return { id: locId, el: fig || (mainImg ? mainImg.closest('figure') || mainImg : el) };
   }
   return null;
 }
@@ -570,17 +557,20 @@ function getPixivCaptureRect(post) {
 }
 
 function getXPostLink(post) {
-  const links = post instanceof Element
-    ? Array.from(post.querySelectorAll('a[href*="/status/"]'))
-    : [];
+  const links = post instanceof Element ? Array.from(post.querySelectorAll('a[href*="/status/"]')) : [];
 
   // Prefer the timestamp anchor; failing that, a bare /user/status/<id> anchor
   // — the article's first /status/ link can be a /photo/N or /analytics one.
-  const preferredLink = links.find((link) => link.querySelector('time'))
-    || links.find((link) => {
-      try { return /^\/[^/]+\/status\/\d+\/?$/.test(new URL(link.href, location.origin).pathname); } catch { return false; }
-    })
-    || links[0];
+  const preferredLink =
+    links.find((link) => link.querySelector('time')) ||
+    links.find((link) => {
+      try {
+        return /^\/[^/]+\/status\/\d+\/?$/.test(new URL(link.href, location.origin).pathname);
+      } catch {
+        return false;
+      }
+    }) ||
+    links[0];
   return preferredLink ? parseXPostLink(preferredLink.href) : null;
 }
 
@@ -594,7 +584,7 @@ function parseXPostLink(href) {
         // the raw href is whatever anchor happened to be picked.
         url: `${url.origin}/${match[1]}/status/${match[2]}`,
         screenName: decodeURIComponent(match[1]),
-        postId: decodeURIComponent(match[2])
+        postId: decodeURIComponent(match[2]),
       };
     }
 
@@ -606,7 +596,7 @@ function parseXPostLink(href) {
     return {
       url: `${url.origin}/i/web/status/${match[1]}`,
       screenName: null,
-      postId: decodeURIComponent(match[1])
+      postId: decodeURIComponent(match[1]),
     };
   } catch {
     return null;
@@ -631,19 +621,20 @@ function getBlueskyPostLink(post) {
   // candidates left and the QUOTED post's URL got saved. With them excluded,
   // returning null lets getPermalink fall back to location.href, which on a
   // detail page IS the clicked post. (audit 2026-06-11)
-  const links = post instanceof Element
-    ? Array.from(post.querySelectorAll('a[href]'))
-      .filter((link) => {
-        // Start from the parent: the anchor itself may carry role="link"
-        // (react-native-web) and closest() would match it, excluding everything.
-        const roleLink = link.parentElement && link.parentElement.closest('[role="link"]');
-        if (roleLink && roleLink !== post && post.contains(roleLink)) return false;
-        if (link.closest('[data-testid="postText"]')) return false;
-        return true;
-      })
-      .map((link) => parseBlueskyPostLink(link.href))
-      .filter(Boolean)
-    : [];
+  const links =
+    post instanceof Element
+      ? Array.from(post.querySelectorAll('a[href]'))
+          .filter((link) => {
+            // Start from the parent: the anchor itself may carry role="link"
+            // (react-native-web) and closest() would match it, excluding everything.
+            const roleLink = link.parentElement && link.parentElement.closest('[role="link"]');
+            if (roleLink && roleLink !== post && post.contains(roleLink)) return false;
+            if (link.closest('[data-testid="postText"]')) return false;
+            return true;
+          })
+          .map((link) => parseBlueskyPostLink(link.href))
+          .filter(Boolean)
+      : [];
 
   if (!links.length) {
     return null;
@@ -663,7 +654,7 @@ function parseBlueskyPostLink(href) {
     return {
       url: `${url.origin}/profile/${match[1]}/post/${match[2]}`,
       handle: decodeURIComponent(match[1]),
-      postId: decodeURIComponent(match[2])
+      postId: decodeURIComponent(match[2]),
     };
   } catch {
     return null;
@@ -671,9 +662,7 @@ function parseBlueskyPostLink(href) {
 }
 
 function looksLikeMisskey() {
-  const misskeyAccent = getComputedStyle(document.documentElement)
-    .getPropertyValue('--MI_THEME-accent')
-    .trim();
+  const misskeyAccent = getComputedStyle(document.documentElement).getPropertyValue('--MI_THEME-accent').trim();
 
   if (!misskeyAccent) {
     return false;
@@ -696,10 +685,7 @@ function findMisskeyPostElement(target) {
 }
 
 function isMisskeyNoteElement(element) {
-  return element instanceof HTMLElement
-    && element.matches('div[tabindex="0"]')
-    && Boolean(getMisskeyPrimaryArticle(element))
-    && Boolean(getMisskeyPermalink(element));
+  return element instanceof HTMLElement && element.matches('div[tabindex="0"]') && Boolean(getMisskeyPrimaryArticle(element)) && Boolean(getMisskeyPermalink(element));
 }
 
 function getMisskeyPrimaryArticle(post) {
@@ -726,7 +712,7 @@ function getMisskeyCaptureRect(post) {
     width: rootRect.width,
     height: Math.max(articleRect.bottom - rootRect.top, articleRect.height),
     right: rootRect.right,
-    bottom: Math.max(articleRect.bottom, rootRect.top + articleRect.height)
+    bottom: Math.max(articleRect.bottom, rootRect.top + articleRect.height),
   };
 }
 
@@ -742,9 +728,7 @@ function getMisskeyPermalink(post) {
     return timeLink.url;
   }
 
-  const links = scope instanceof Element
-    ? Array.from(scope.querySelectorAll('a[href]'))
-    : [];
+  const links = scope instanceof Element ? Array.from(scope.querySelectorAll('a[href]')) : [];
 
   for (const link of links) {
     const parsed = parseMisskeyNoteLink(link.href);
@@ -787,7 +771,7 @@ function parseMisskeyNoteLink(href) {
 
     return {
       id: decodeURIComponent(match[1]),
-      url: url.href
+      url: url.href,
     };
   } catch {
     return null;
@@ -797,8 +781,8 @@ function parseMisskeyNoteLink(href) {
 function normalizeRect(rect) {
   const x = rect?.x ?? rect?.left ?? 0;
   const y = rect?.y ?? rect?.top ?? 0;
-  const width = rect?.width ?? ((rect?.right ?? x) - (rect?.left ?? x));
-  const height = rect?.height ?? ((rect?.bottom ?? y) - (rect?.top ?? y));
+  const width = rect?.width ?? (rect?.right ?? x) - (rect?.left ?? x);
+  const height = rect?.height ?? (rect?.bottom ?? y) - (rect?.top ?? y);
 
   return {
     x,
@@ -807,14 +791,13 @@ function normalizeRect(rect) {
     left: rect?.left ?? x,
     width,
     height,
-    right: rect?.right ?? (x + width),
-    bottom: rect?.bottom ?? (y + height)
+    right: rect?.right ?? x + width,
+    bottom: rect?.bottom ?? y + height,
   };
 }
 
 function looksLikeMastodon() {
-  return Boolean(document.querySelector('#mastodon'))
-    || document.querySelector('meta[name="application-name"]')?.getAttribute('content') === 'Mastodon';
+  return Boolean(document.querySelector('#mastodon')) || document.querySelector('meta[name="application-name"]')?.getAttribute('content') === 'Mastodon';
 }
 
 function parseMastodonStatusLink(href) {
@@ -850,9 +833,7 @@ function findMastodonPostElement(target) {
     // Skip status elements nested inside a quote preview (Mastodon 4.4+ quotes
     // render a full StatusContainer inside .status__quote) — keep walking so a
     // click inside the preview selects the QUOTING post, like X/Bluesky/Misskey.
-    if (el.matches?.('.status__wrapper, .status, .detailed-status, article')
-      && !el.closest('.status__quote')
-      && getMastodonStatusLink(el)) {
+    if (el.matches?.('.status__wrapper, .status, .detailed-status, article') && !el.closest('.status__quote') && getMastodonStatusLink(el)) {
       return el;
     }
     el = el.parentElement;

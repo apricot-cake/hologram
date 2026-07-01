@@ -12,9 +12,9 @@
 // between callers. Every function here is best-effort: a failure returns null and
 // is the caller's cue to drop that file — it must never throw the save/import.
 
-const fs = require('fs');
-const path = require('path');
-const net = require('net');
+const fs = require('node:fs');
+const path = require('node:path');
+const net = require('node:net');
 
 // --- Original-media download (best-effort, still images only) ---
 // Supported still-image content types -> file extension. Anything else (video,
@@ -24,12 +24,12 @@ const MEDIA_MIME_EXT = {
   'image/jpg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
-  'image/gif': 'gif'
+  'image/gif': 'gif',
 };
-const MAX_MEDIA = 12;                       // cap attachments per post
-const MAX_MEDIA_BYTES = 25 * 1024 * 1024;   // skip anything larger
-const MEDIA_TIMEOUT_MS = 12000;             // per-image abort
-const MAX_MEDIA_REDIRECTS = 4;              // bound redirect chains
+const MAX_MEDIA = 12; // cap attachments per post
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger
+const MEDIA_TIMEOUT_MS = 12000; // per-image abort
+const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
 
 // --- SSRF guard ----------------------------------------------------------------
 // The media URLs come from the page / a (possibly hostile) Misskey/Mastodon
@@ -49,13 +49,13 @@ function isPrivateIPv4(ip) {
   const o = parts.map(Number);
   if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
   const [a, b] = o;
-  if (a === 0 || a === 10 || a === 127) return true;       // this-network / RFC1918 / loopback
-  if (a === 169 && b === 254) return true;                 // link-local incl. cloud metadata
-  if (a === 172 && b >= 16 && b <= 31) return true;        // RFC1918
-  if (a === 192 && b === 168) return true;                 // RFC1918
-  if (a === 100 && b >= 64 && b <= 127) return true;       // CGNAT (RFC6598)
-  if (a === 192 && b === 0 && o[2] === 0) return true;     // IETF protocol assignments
-  if (a >= 224) return true;                               // multicast + reserved (224-255)
+  if (a === 0 || a === 10 || a === 127) return true; // this-network / RFC1918 / loopback
+  if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (RFC6598)
+  if (a === 192 && b === 0 && o[2] === 0) return true; // IETF protocol assignments
+  if (a >= 224) return true; // multicast + reserved (224-255)
   return false;
 }
 function isPrivateIp(ip) {
@@ -63,8 +63,8 @@ function isPrivateIp(ip) {
   if (fam === 4) return isPrivateIPv4(ip);
   if (fam === 6) {
     const lc = ip.toLowerCase();
-    if (lc === '::1' || lc === '::') return true;                       // loopback / unspecified
-    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/);       // ::ffff:a.b.c.d / ::a.b.c.d (dotted)
+    if (lc === '::1' || lc === '::') return true; // loopback / unspecified
+    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/); // ::ffff:a.b.c.d / ::a.b.c.d (dotted)
     if (mapped) return isPrivateIPv4(mapped[1]);
     // ::ffff:0:0/96 IPv4-mapped in HEX form. The WHATWG URL parser normalizes a
     // dotted mapped literal (e.g. ::ffff:127.0.0.1) to hex (::ffff:7f00:1), so
@@ -73,14 +73,14 @@ function isPrivateIp(ip) {
     // 1-4 hex digits (leading zeros are dropped: 192.168.0.1 -> ::ffff:c0a8:1).
     const mapped6 = lc.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
     if (mapped6) {
-      const hi = parseInt(mapped6[1], 16);
-      const lo = parseInt(mapped6[2], 16);
+      const hi = Number.parseInt(mapped6[1], 16);
+      const lo = Number.parseInt(mapped6[2], 16);
       const v4 = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
       return isPrivateIPv4(v4);
     }
-    if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true;                     // fc00::/7 unique-local
-    if (/^fe[89ab][0-9a-f]:/.test(lc)) return true;                     // fe80::/10 link-local
-    if (lc.startsWith('ff')) return true;                              // ff00::/8 multicast
+    if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true; // fc00::/7 unique-local
+    if (/^fe[89ab][0-9a-f]:/.test(lc)) return true; // fe80::/10 link-local
+    if (lc.startsWith('ff')) return true; // ff00::/8 multicast
     return false;
   }
   return false; // not an IP literal
@@ -89,13 +89,16 @@ function isPrivateIp(ip) {
 // local hostname. Returns the parsed URL on success, or null.
 function checkMediaUrl(urlStr) {
   let u;
-  try { u = new URL(urlStr); } catch { return null; }
+  try {
+    u = new URL(urlStr);
+  } catch {
+    return null;
+  }
   if (u.protocol !== 'https:') return null;
-  const host = u.hostname.replace(/^\[|\]$/g, '');   // strip IPv6 brackets so net.isIP sees the literal
+  const host = u.hostname.replace(/^\[|\]$/g, ''); // strip IPv6 brackets so net.isIP sees the literal
   if (net.isIP(host)) return isPrivateIp(host) ? null : u;
   const lower = host.toLowerCase();
-  if (lower === 'localhost' || lower.endsWith('.localhost') ||
-      lower.endsWith('.local') || lower.endsWith('.internal')) return null;
+  if (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.local') || lower.endsWith('.internal')) return null;
   return u;
 }
 
@@ -112,8 +115,16 @@ async function readCappedBody(res, cap, ctrl) {
       if (done) break;
       total += value.length;
       if (total > cap) {
-        try { ctrl.abort(); } catch { /* ignore */ }
-        try { await reader.cancel(); } catch { /* ignore */ }
+        try {
+          ctrl.abort();
+        } catch {
+          /* ignore */
+        }
+        try {
+          await reader.cancel();
+        } catch {
+          /* ignore */
+        }
         return null;
       }
       chunks.push(Buffer.from(value));
@@ -135,18 +146,20 @@ async function fetchStillImage(url, referer) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), MEDIA_TIMEOUT_MS);
   try {
-    const headers = (typeof referer === 'string' && /^https:\/\//i.test(referer))
-      ? { Referer: referer }
-      : undefined;
+    const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
     let current = url;
     let res = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
-      if (!checkMediaUrl(current)) return null;   // SSRF guard, every hop
+      if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
       res = await fetch(current, { signal: ctrl.signal, redirect: 'manual', headers });
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location');
         if (!loc) return null;
-        try { current = new URL(loc, current).href; } catch { return null; }
+        try {
+          current = new URL(loc, current).href;
+        } catch {
+          return null;
+        }
         continue;
       }
       break;
@@ -180,7 +193,7 @@ async function downloadOneMedia(entry, dir, base, i) {
     alt: entry.alt != null ? String(entry.alt) : null,
     width: Number.isFinite(entry.width) ? entry.width : null,
     height: Number.isFinite(entry.height) ? entry.height : null,
-    file
+    file,
   };
 }
 
@@ -211,12 +224,22 @@ function pixivRefererFor(url) {
   try {
     const h = new URL(url).hostname.toLowerCase();
     if (h === 'pximg.net' || h.endsWith('.pximg.net')) return 'https://www.pixiv.net/';
-  } catch { /* not a parseable URL */ }
+  } catch {
+    /* not a parseable URL */
+  }
   return undefined;
 }
 
 module.exports = {
-  fetchStillImage, downloadOneMedia, downloadMedia, downloadAvatar,
-  pixivRefererFor, checkMediaUrl, isPrivateIp,
-  MEDIA_MIME_EXT, MAX_MEDIA, MAX_MEDIA_BYTES, MEDIA_TIMEOUT_MS
+  fetchStillImage,
+  downloadOneMedia,
+  downloadMedia,
+  downloadAvatar,
+  pixivRefererFor,
+  checkMediaUrl,
+  isPrivateIp,
+  MEDIA_MIME_EXT,
+  MAX_MEDIA,
+  MAX_MEDIA_BYTES,
+  MEDIA_TIMEOUT_MS,
 };

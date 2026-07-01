@@ -7,9 +7,9 @@
 //
 //   node scripts/test-drag.js
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-drag-'));
 process.env.APPDATA = tmp;
@@ -24,8 +24,17 @@ const { handleSaveDragged } = require('../native-host/bridge.js');
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 let sentHeaders = null;
 
-let pass = 0, fail = 0;
-const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++; console.log('FAIL', m); } };
+let pass = 0,
+  fail = 0;
+const ok = (c, m) => {
+  if (c) {
+    pass++;
+    console.log('PASS', m);
+  } else {
+    fail++;
+    console.log('FAIL', m);
+  }
+};
 
 (async () => {
   global.fetch = async (_url, opts) => {
@@ -37,7 +46,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++;
     captureId: '1717500000000-ab01',
     imageUrl: 'https://i.pximg.net/img-original/x/555_p0.png',
     imageReferer: 'https://www.pixiv.net/',
-    metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv', title: 'T', screenName: '77', hashtags: ['a'], tags: [], likes: 5, media: [{ url: 'should-be-overridden' }] }
+    metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv', title: 'T', screenName: '77', hashtags: ['a'], tags: [], likes: 5, media: [{ url: 'should-be-overridden' }] },
   });
   ok(res.ok === true, 'ack ok');
   ok(res.file === '1717500000000-ab01.png', 'primary image is <base>.png (non-JPEG)');
@@ -55,7 +64,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++;
   // failure: unsupported content-type → throw, leave no orphan sidecar/image
   global.fetch = async () => ({ ok: true, headers: new Map([['content-type', 'text/html']]), arrayBuffer: async () => Buffer.from('x') });
   let threw = false;
-  try { await handleSaveDragged({ captureId: '1717500000001-ab02', imageUrl: 'https://x/y', metadata: {} }); } catch { threw = true; }
+  try {
+    await handleSaveDragged({ captureId: '1717500000001-ab02', imageUrl: 'https://x/y', metadata: {} });
+  } catch {
+    threw = true;
+  }
   ok(threw, 'unsupported type throws');
   ok(!fs.existsSync(path.join(saveFolder, '1717500000001-ab02.json')), 'no orphan sidecar on download failure');
 

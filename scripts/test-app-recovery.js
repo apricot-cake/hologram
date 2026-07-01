@@ -8,10 +8,10 @@
 //
 //   node scripts/test-app-recovery.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -30,11 +30,19 @@ function launch(evalJs) {
     const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
     const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
     let out = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.stdout.on('data', (d) => {
+      out += d.toString();
+    });
     child.on('close', () => {
       let r = {};
       const m = out.match(/EVAL_RESULT (.+)/);
-      if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+      if (m) {
+        try {
+          r = JSON.parse(m[1]);
+        } catch {
+          /* ignore */
+        }
+      }
       resolve(r);
     });
   });
@@ -58,9 +66,18 @@ const getCfgEval = `(async () => {
   // launch 2: app must recover saveFolder from the pointer AND repair config.json
   const r2 = await launch(getCfgEval);
   const recovered = r2.saveFolder === saveFolder;
-  let repaired = false, corruptBackup = false;
-  try { repaired = JSON.parse(fs.readFileSync(CONFIG, 'utf8')).saveFolder === saveFolder; } catch { /* still broken */ }
-  try { corruptBackup = fs.readdirSync(configDir).some(n => /^config\.json\.corrupt-/.test(n)); } catch { /* ignore */ }
+  let repaired = false,
+    corruptBackup = false;
+  try {
+    repaired = JSON.parse(fs.readFileSync(CONFIG, 'utf8')).saveFolder === saveFolder;
+  } catch {
+    /* still broken */
+  }
+  try {
+    corruptBackup = fs.readdirSync(configDir).some((n) => /^config\.json\.corrupt-/.test(n));
+  } catch {
+    /* ignore */
+  }
 
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = cfg1Ok && pointerWritten && recovered && repaired && corruptBackup;

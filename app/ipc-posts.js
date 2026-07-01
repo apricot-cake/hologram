@@ -5,7 +5,7 @@
 // (which stay in main.js with the delta bookkeeping); image-data-url reads one file
 // from the save folder as a data: URL. Core helpers arrive via ctx.
 const { ipcMain } = require('electron');
-const fs = require('fs');
+const fs = require('node:fs');
 
 function register(ctx) {
   const { listPosts, listPostsDelta, resolveInFolder, mimeForFile } = ctx;

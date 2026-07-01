@@ -6,10 +6,10 @@
 //
 //   node scripts/test-app-tagtypes.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -30,21 +30,28 @@ const evalJs = `(async () => {
 })()`;
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const evalOk = /EVAL_RESULT "work,character,シリーズ,登場人物"/.test(out);
   let fileOk = false;
   try {
     const j = JSON.parse(fs.readFileSync(path.join(saveFolder, 'tag-types.json'), 'utf8'));
-    fileOk = j.types['ブルアカ'] === 'work' && j.types['アロナ'] === 'character'
-      && j.labels.work === 'シリーズ' && j.labels.character === '登場人物';
-  } catch { /* fileOk stays false */ }
+    fileOk = j.types.ブルアカ === 'work' && j.types.アロナ === 'character' && j.labels.work === 'シリーズ' && j.labels.character === '登場人物';
+  } catch {
+    /* fileOk stays false */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`ipcRoundTrip=${evalOk} fileWritten=${fileOk}`);
   console.log(evalOk && fileOk ? 'TAGTYPES_TEST_PASS' : 'TAGTYPES_TEST_FAIL');

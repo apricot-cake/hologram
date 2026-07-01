@@ -8,10 +8,10 @@
 //
 //   node scripts/test-app-users.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -27,11 +27,26 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 
 function writePost(id, platform, userId, screenName, displayName, when) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
-    captureId: id, image: `${id}.jpg`, url: `https://example.com/${id}`, platform,
-    userId, screenName, displayName, text: id, tags: [],
-    capturedAt: when, date: when
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, `${id}.json`),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: `${id}.jpg`,
+        url: `https://example.com/${id}`,
+        platform,
+        userId,
+        screenName,
+        displayName,
+        text: id,
+        tags: [],
+        capturedAt: when,
+        date: when,
+      },
+      null,
+      2,
+    ),
+  );
 }
 // Alice (x) has 2 posts; Bob (bluesky) and Carol (misskey) have 1 each.
 writePost('a1', 'x', '111', 'alice', 'Alice', '2026-01-04T00:00:00.000Z');
@@ -63,26 +78,42 @@ const evalJs = `(async () => {
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
-try { fs.unlinkSync(shot); } catch {}
+try {
+  fs.unlinkSync(shot);
+} catch {}
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs, CORPUS_SMOKE_SHOT: shot
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
+  CORPUS_SMOKE_SHOT: shot,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r = {};
-  try { r = JSON.parse(m[1]); } catch {}
-  try { fs.unlinkSync(shot); } catch {}
+  try {
+    r = JSON.parse(m[1]);
+  } catch {}
+  try {
+    fs.unlinkSync(shot);
+  } catch {}
   fs.rmSync(tmp, { recursive: true, force: true });
 
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
-  const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+  const check = (label, cond) => {
+    console.log((cond ? 'PASS ' : 'FAIL ') + label);
+    if (!cond) ok = false;
+  };
   check('authors ranked by post count in the flyout (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
   check('the active filter chip shows the user (Alice)', eq(r.chipText, ['Alice']));
   check("posts are filtered to that user's 2 posts", r.cardCount === 2);

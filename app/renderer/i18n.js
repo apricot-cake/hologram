@@ -377,7 +377,7 @@
       tabUnpin: 'ピン解除',
       tabRename: '名前を変更',
       tabDuplicate: '複製',
-      tabCloseOthers: '他のタブを閉じる'
+      tabCloseOthers: '他のタブを閉じる',
     },
 
     en: {
@@ -676,7 +676,6 @@
       importFailed: 'Import failed',
       exportFailed: 'Export failed',
 
-
       viewCard: 'Cards',
       viewTile: 'Tiles',
       viewList: 'List',
@@ -691,7 +690,7 @@
       tagsSaved: 'Tags saved',
       tagsSavedN: 'Tags saved for $1 posts',
       confirmDeletePost: 'Delete this post?',
-      confirmSkip: 'Don\'t ask again',
+      confirmSkip: "Don't ask again",
       deleted: 'Deleted',
 
       clickToExpand: 'Click to expand',
@@ -736,8 +735,8 @@
       tabUnpin: 'Unpin',
       tabRename: 'Rename',
       tabDuplicate: 'Duplicate',
-      tabCloseOthers: 'Close others'
-    }
+      tabCloseOthers: 'Close others',
+    },
   };
 
   window.corpusI18n = (async () => {
@@ -748,9 +747,7 @@
     } catch {
       // prefs unavailable — fall back to auto
     }
-    const resolved = lang === 'auto'
-      ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en')
-      : (lang === 'ja' ? 'ja' : 'en');
+    const resolved = lang === 'auto' ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en') : lang === 'ja' ? 'ja' : 'en';
     const table = MESSAGES[resolved] || MESSAGES.en;
 
     const getMessage = (key, subs) => {

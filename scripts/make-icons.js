@@ -16,8 +16,8 @@
 // so there is no vector master — assets/icon-master.png is the source of truth.
 
 const { app, nativeImage } = require('electron');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const MASTER = path.join(ROOT, 'assets', 'icon-master.png');
@@ -25,13 +25,13 @@ const MASTER = path.join(ROOT, 'assets', 'icon-master.png');
 // Every raster icon the project ships, with its square size. Keep this list complete
 // — it is the manifest of "where the icon lives".
 const TARGETS = [
-  { file: 'app/assets/icon.png', size: 512 },   // Electron window/taskbar + electron-builder source (->.ico)
-  { file: 'assets/icon.png', size: 256 },        // general brand raster / favicon
+  { file: 'app/assets/icon.png', size: 512 }, // Electron window/taskbar + electron-builder source (->.ico)
+  { file: 'assets/icon.png', size: 256 }, // general brand raster / favicon
   { file: 'extension/icons/icon256.png', size: 256 },
   { file: 'extension/icons/icon128.png', size: 128 },
   { file: 'extension/icons/icon48.png', size: 48 },
   { file: 'extension/icons/icon32.png', size: 32 },
-  { file: 'extension/icons/icon16.png', size: 16 }
+  { file: 'extension/icons/icon16.png', size: 16 },
 ];
 
 // README banners: the wordmark + tagline are kept verbatim; only the leading mark
@@ -41,7 +41,11 @@ const TARGETS = [
 const BANNERS = ['banner-light.svg', 'banner-dark.svg', 'banner-en-light.svg', 'banner-en-dark.svg'];
 const BANNER_ICON = { x: 10, y: 14, size: 76, render: 200 }; // placement in the 480x104 viewBox
 
-function fail(msg) { console.error('make-icons: ' + msg); app && app.exit(1); process.exit(1); }
+function fail(msg) {
+  console.error('make-icons: ' + msg);
+  app && app.exit(1);
+  process.exit(1);
+}
 
 function run() {
   if (!fs.existsSync(MASTER)) fail('missing master ' + MASTER + ' — put the square icon there first.');
@@ -65,9 +69,15 @@ function run() {
   const imageTag = `<image x="${x}" y="${y}" width="${size}" height="${size}" href="data:image/png;base64,${b64}"/>`;
   for (const name of BANNERS) {
     const abs = path.join(ROOT, 'assets', name);
-    if (!fs.existsSync(abs)) { console.warn('skip ' + name + ' (missing)'); continue; }
+    if (!fs.existsSync(abs)) {
+      console.warn('skip ' + name + ' (missing)');
+      continue;
+    }
     let svg = fs.readFileSync(abs, 'utf8');
-    if (!/<g\b[\s\S]*?<\/g>/.test(svg)) { console.warn('skip ' + name + ' (no <g> mark to replace)'); continue; }
+    if (!/<g\b[\s\S]*?<\/g>/.test(svg)) {
+      console.warn('skip ' + name + ' (no <g> mark to replace)');
+      continue;
+    }
     svg = svg.replace(/<g\b[\s\S]*?<\/g>/, imageTag);
     fs.writeFileSync(abs, svg);
     console.log('wrote assets/' + name);
@@ -77,4 +87,11 @@ function run() {
 }
 
 app.disableHardwareAcceleration();
-app.whenReady().then(() => { try { run(); } catch (e) { fail(e && e.message || String(e)); } app.quit(); });
+app.whenReady().then(() => {
+  try {
+    run();
+  } catch (e) {
+    fail((e && e.message) || String(e));
+  }
+  app.quit();
+});

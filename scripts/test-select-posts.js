@@ -30,7 +30,9 @@ async function selectX() {
     try {
       const r = await fetchXTweet({ id, screenName: null }, `https://x.com/i/web/status/${id}`);
       return r && r.text ? r : null;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   };
   const jack = await alive('20');
   const obama = await alive('266031293945503744'); // single photo, evergreen
@@ -42,8 +44,7 @@ async function selectX() {
   row('A-1e', 'X TL上の引用', 'https://x.com/home', 'クリック（引用ツイート全体）', '引用した側が保存・quotedUrlが引用元');
   row('A-1i', 'X 動画投稿', null, 'クリック', 'mediaType=video（TL/検索で動画投稿を選ぶ）');
   row('A-1m', 'X ドラッグ（TL/詳細の画像）', obama ? 'https://x.com/BarackObama/status/266031293945503744' : null, '画像をドラッグ', '画像の属する投稿として保存');
-  row('A-1n', 'X ドラッグ（ライトボックス）★修正検証', obama ? 'https://x.com/BarackObama/status/266031293945503744/photo/1' : null,
-    'ライトボックスを開き、右側の返信欄の画像をドラッグ', '返信の投稿として保存される（ライトボックス投稿に化けない）。本体画像のドラッグはライトボックス投稿として保存');
+  row('A-1n', 'X ドラッグ（ライトボックス）★修正検証', obama ? 'https://x.com/BarackObama/status/266031293945503744/photo/1' : null, 'ライトボックスを開き、右側の返信欄の画像をドラッグ', '返信の投稿として保存される（ライトボックス投稿に化けない）。本体画像のドラッグはライトボックス投稿として保存');
   row('A-1o', 'X ドラッグ（アバター/バナー）★修正検証', 'https://x.com/jack', 'プロフィールのバナー/アバターをドラッグ', 'ドロップゾーンが出ない（捏造レコードを作らない）');
 }
 
@@ -54,12 +55,16 @@ async function selectBluesky() {
     try {
       const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=60&filter=posts_with_replies`);
       for (const it of f.feed || []) if (it.post) posts.push(it.post);
-    } catch { /* next actor */ }
+    } catch {
+      /* next actor */
+    }
   }
   try {
     const s = await j('https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=photo&limit=60');
     for (const p of s.posts || []) posts.push(p);
-  } catch { /* search may be unavailable */ }
+  } catch {
+    /* search may be unavailable */
+  }
 
   const urlOf = (p) => {
     const m = (p.uri || '').match(/\/app\.bsky\.feed\.post\/([^/]+)$/);
@@ -72,15 +77,54 @@ async function selectBluesky() {
     if ((e.$type || '').includes('recordWithMedia')) return ((e.media && e.media.images) || []).length;
     return (e.images || []).length;
   };
-  const pick = (fn) => { const p = posts.find((q) => urlOf(q) && fn(q)); return p ? urlOf(p) : null; };
+  const pick = (fn) => {
+    const p = posts.find((q) => urlOf(q) && fn(q));
+    return p ? urlOf(p) : null;
+  };
 
   row('A-2a', 'Bluesky TL', 'https://bsky.app/', 'クリック', 'フィードの投稿が本人のものとして保存');
-  row('A-2b', 'Bluesky 詳細', pick((p) => p.likeCount > 0 && p.replyCount > 0 && !(p.record && p.record.reply) && !embedType(p)), 'クリック', 'DID・エンゲージ一致');
-  row('A-2g', 'Bluesky 複数画像', pick((p) => imgCount(p) > 1), 'クリック', '画像が枚数ぶん原寸DLされる');
-  row('A-2e', 'Bluesky リプライ', pick((p) => p.record && p.record.reply), 'クリック', 'isReply/isThread・replyToId');
-  row('A-2f', 'Bluesky 引用（詳細ページで）★修正検証', pick((p) => embedType(p).includes('embed.record')), 'クリック（引用した側の本体）', '保存されるのは引用した側（引用元に化けない）。quotedUrl=引用元');
-  row('A-2h', 'Bluesky 動画', pick((p) => embedType(p).includes('embed.video')), 'クリック', 'mediaType=video');
-  row('A-2i', 'Bluesky ドラッグ', pick((p) => imgCount(p) >= 1 && p.likeCount > 0), '画像をドラッグ', 'url canonical（/liked-by等が付かない）');
+  row(
+    'A-2b',
+    'Bluesky 詳細',
+    pick((p) => p.likeCount > 0 && p.replyCount > 0 && !(p.record && p.record.reply) && !embedType(p)),
+    'クリック',
+    'DID・エンゲージ一致',
+  );
+  row(
+    'A-2g',
+    'Bluesky 複数画像',
+    pick((p) => imgCount(p) > 1),
+    'クリック',
+    '画像が枚数ぶん原寸DLされる',
+  );
+  row(
+    'A-2e',
+    'Bluesky リプライ',
+    pick((p) => p.record && p.record.reply),
+    'クリック',
+    'isReply/isThread・replyToId',
+  );
+  row(
+    'A-2f',
+    'Bluesky 引用（詳細ページで）★修正検証',
+    pick((p) => embedType(p).includes('embed.record')),
+    'クリック（引用した側の本体）',
+    '保存されるのは引用した側（引用元に化けない）。quotedUrl=引用元',
+  );
+  row(
+    'A-2h',
+    'Bluesky 動画',
+    pick((p) => embedType(p).includes('embed.video')),
+    'クリック',
+    'mediaType=video',
+  );
+  row(
+    'A-2i',
+    'Bluesky ドラッグ',
+    pick((p) => imgCount(p) >= 1 && p.likeCount > 0),
+    '画像をドラッグ',
+    'url canonical（/liked-by等が付かない）',
+  );
 }
 
 // --- Misskey: misskey.io global timeline.
@@ -88,28 +132,74 @@ async function selectMisskey() {
   let notes = [];
   try {
     notes = await j('https://misskey.io/api/notes/global-timeline', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 100 })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 100 }),
     });
-  } catch { /* keep empty */ }
+  } catch {
+    /* keep empty */
+  }
   if (!Array.isArray(notes)) notes = [];
   const urlOf = (n) => `https://misskey.io/notes/${n.id}`;
   const imgs = (n) => (n.files || []).filter((f) => f.type && f.type.startsWith('image/') && f.type !== 'image/gif');
-  const pick = (fn) => { const n = notes.find((q) => q && q.id && fn(q)); return n ? urlOf(n) : null; };
+  const pick = (fn) => {
+    const n = notes.find((q) => q && q.id && fn(q));
+    return n ? urlOf(n) : null;
+  };
 
   row('A-3a', 'Misskey TL', 'https://misskey.io/', 'クリック', 'TLのノートが本人のものとして保存');
-  row('A-3b', 'Misskey 詳細（画像）', pick((n) => imgs(n).length >= 1 && !n.replyId && !n.renoteId), 'クリック', '作者・画像一致');
-  row('A-3g', 'Misskey 複数画像', pick((n) => imgs(n).length > 1), 'クリック', '画像が枚数ぶんDL');
-  row('A-3e', 'Misskey リプライ ★修正検証', pick((n) => n.replyId), 'クリック', '親ノートではなくリプライ本人が保存される');
-  row('A-3f', 'Misskey 引用リノート', pick((n) => n.renoteId && (n.text || (n.files || []).length)), 'クリック', 'isQuote=true（画像のみ引用も）');
-  row('A-3d', 'Misskey 純リノート（TLで）', pick((n) => n.renoteId && !n.text && !(n.files || []).length && !n.cw && !n.poll), 'TLでリノートをクリック', '元ノートとして保存・isQuoteなし');
+  row(
+    'A-3b',
+    'Misskey 詳細（画像）',
+    pick((n) => imgs(n).length >= 1 && !n.replyId && !n.renoteId),
+    'クリック',
+    '作者・画像一致',
+  );
+  row(
+    'A-3g',
+    'Misskey 複数画像',
+    pick((n) => imgs(n).length > 1),
+    'クリック',
+    '画像が枚数ぶんDL',
+  );
+  row(
+    'A-3e',
+    'Misskey リプライ ★修正検証',
+    pick((n) => n.replyId),
+    'クリック',
+    '親ノートではなくリプライ本人が保存される',
+  );
+  row(
+    'A-3f',
+    'Misskey 引用リノート',
+    pick((n) => n.renoteId && (n.text || (n.files || []).length)),
+    'クリック',
+    'isQuote=true（画像のみ引用も）',
+  );
+  row(
+    'A-3d',
+    'Misskey 純リノート（TLで）',
+    pick((n) => n.renoteId && !n.text && !(n.files || []).length && !n.cw && !n.poll),
+    'TLでリノートをクリック',
+    '元ノートとして保存・isQuoteなし',
+  );
 }
 
 // --- Mastodon: mastodon.social public timeline (reblogs excluded by the API
 // — the boost cell stays a human pick on the web UI).
 async function selectMastodon() {
-  let media = []; let all = [];
-  try { media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true'); } catch { /* skip */ }
-  try { all = await j('https://mastodon.social/api/v1/timelines/public?limit=40'); } catch { /* skip */ }
+  let media = [];
+  let all = [];
+  try {
+    media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
+  } catch {
+    /* skip */
+  }
+  try {
+    all = await j('https://mastodon.social/api/v1/timelines/public?limit=40');
+  } catch {
+    /* skip */
+  }
   // public timeline can be auth-gated — fall back to known active accounts
   if (!Array.isArray(media) || !media.length || !Array.isArray(all) || !all.length) {
     for (const acct of ['Gargron', 'Mastodon']) {
@@ -120,22 +210,47 @@ async function selectMastodon() {
         const stm = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
         if (Array.isArray(st)) all = (all || []).concat(st);
         if (Array.isArray(stm)) media = (media || []).concat(stm);
-      } catch { /* next */ }
+      } catch {
+        /* next */
+      }
     }
     // replies need exclude_replies=false on a busy account
     try {
       const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
       const rep = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
       if (Array.isArray(rep)) all = all.concat(rep);
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   const urlOf = (s) => `https://mastodon.social/@${s.account.acct}/${s.id}`;
-  const pick = (arr, fn) => { const s = (arr || []).find((q) => q && q.account && !q.reblog && fn(q)); return s ? urlOf(s) : null; };
+  const pick = (arr, fn) => {
+    const s = (arr || []).find((q) => q && q.account && !q.reblog && fn(q));
+    return s ? urlOf(s) : null;
+  };
 
   row('A-4a', 'Mastodon TL', 'https://mastodon.social/public/local', 'クリック', 'TLの投稿が本人のものとして保存');
-  row('A-4b', 'Mastodon 詳細（画像）', pick(media, (s) => (s.media_attachments || []).some((a) => a.type === 'image')), 'クリック', '作者・画像一致');
-  row('A-4g', 'Mastodon 複数画像', pick(media, (s) => (s.media_attachments || []).filter((a) => a.type === 'image').length > 1), 'クリック', '画像が枚数ぶんDL');
-  row('A-4e', 'Mastodon リプライ', pick(all, (s) => s.in_reply_to_id), 'クリック', 'isReply=true');
+  row(
+    'A-4b',
+    'Mastodon 詳細（画像）',
+    pick(media, (s) => (s.media_attachments || []).some((a) => a.type === 'image')),
+    'クリック',
+    '作者・画像一致',
+  );
+  row(
+    'A-4g',
+    'Mastodon 複数画像',
+    pick(media, (s) => (s.media_attachments || []).filter((a) => a.type === 'image').length > 1),
+    'クリック',
+    '画像が枚数ぶんDL',
+  );
+  row(
+    'A-4e',
+    'Mastodon リプライ',
+    pick(all, (s) => s.in_reply_to_id),
+    'クリック',
+    'isReply=true',
+  );
   row('A-4d', 'Mastodon ブースト（TLで）', 'https://mastodon.social/public/local', 'ブースト表示をクリック', '元投稿として保存（ブースト側に化けない）');
   row('A-4f', 'Mastodon 引用（4.4+）★修正検証', null, '引用プレビュー内をクリック', '引用した側が保存される（要: 引用投稿を目視で発見）');
 }
@@ -146,7 +261,9 @@ async function selectPixiv() {
   try {
     const r = await j('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', { headers: { Referer: 'https://www.pixiv.net/' } });
     items = Array.isArray(r.contents) ? r.contents : [];
-  } catch { /* skip */ }
+  } catch {
+    /* skip */
+  }
   const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';
   const urlOf = (c) => `https://www.pixiv.net/artworks/${c.illust_id}`;
   const single = items.find((c) => ok(c) && Number(c.illust_page_count) === 1);

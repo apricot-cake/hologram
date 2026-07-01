@@ -7,7 +7,9 @@ import { Highlight } from './Highlight.jsx';
 export function Section({ title, hidden, innerRef, children }) {
   return (
     <div className="section" hidden={hidden} ref={innerRef}>
-      <h2><Highlight text={title} /></h2>
+      <h2>
+        <Highlight text={title} />
+      </h2>
       {children}
     </div>
   );

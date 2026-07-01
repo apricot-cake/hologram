@@ -6,8 +6,8 @@
 // static build info (app-info). Core helpers arrive via ctx; the pref key/sort
 // allow-lists live here (used only by these handlers).
 const { ipcMain, app } = require('electron');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
@@ -23,7 +23,7 @@ function register(ctx) {
 
   ipcMain.handle('set-extension-id', (_event, id) => {
     const cfg = readConfig();
-    cfg.extensionId = (typeof id === 'string' ? id.trim() : '');
+    cfg.extensionId = typeof id === 'string' ? id.trim() : '';
     writeConfig(cfg);
     try {
       // Update only the manifest's allowed origin; keep the existing launcher.
@@ -40,14 +40,18 @@ function register(ctx) {
 
   ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
     const win = getWin();
-    try { if (win) win.setTitleBarOverlay(opts); } catch { /* non-Windows or overlay-less build */ }
+    try {
+      if (win) win.setTitleBarOverlay(opts);
+    } catch {
+      /* non-Windows or overlay-less build */
+    }
   });
 
   ipcMain.handle('get-tabs', () => {
     const folder = getSaveFolder();
     if (!folder) return null;
     const { value: raw } = readOrgJsonSync(path.join(folder, 'tabs.json'));
-    return (raw && Array.isArray(raw.tabs)) ? raw : null;
+    return raw && Array.isArray(raw.tabs) ? raw : null;
   });
   ipcMain.handle('set-tabs', (_e, data) => {
     const folder = getSaveFolder();
@@ -55,7 +59,9 @@ function register(ctx) {
     try {
       writeOrgJsonSync(path.join(folder, 'tabs.json'), data);
       return { ok: true };
-    } catch { return { ok: false }; }
+    } catch {
+      return { ok: false };
+    }
   });
 
   // Build/version info for the settings "About" panel. app.getVersion() reads the
@@ -64,26 +70,26 @@ function register(ctx) {
     version: app.getVersion(),
     electron: process.versions.electron,
     chromium: process.versions.chrome,
-    node: process.versions.node
+    node: process.versions.node,
   }));
 
   ipcMain.handle('get-prefs', () => {
     const cfg = readConfig();
     return {
       language: cfg.language || 'auto',
-      viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card',   // display density
+      viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card', // display density
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
       sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
-      imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // tile view: edge px
-      cardSize: (Number.isFinite(cfg.cardSize) ? cfg.cardSize : null),       // card view: min column px
-      listThumb: (Number.isFinite(cfg.listThumb) ? cfg.listThumb : null),    // list view: thumbnail px
-      tileOverlay: cfg.tileOverlay !== false,   // was missing → pref never restored on restart
-      searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal',   // 検索方式: 通常 / あいまい
-      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto',   // システム / ライト / ダーク
-      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts',   // ライブラリ / 投稿者（起動時に復元）
-      posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card',   // 投稿者グリッドの表示密度
-      posterTileSize: (Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null),   // 投稿者タイルの一辺px
-      posterCardSize: (Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null)    // 投稿者カードの最小列幅px
+      imageTileSize: Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null, // tile view: edge px
+      cardSize: Number.isFinite(cfg.cardSize) ? cfg.cardSize : null, // card view: min column px
+      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list view: thumbnail px
+      tileOverlay: cfg.tileOverlay !== false, // was missing → pref never restored on restart
+      searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal', // 検索方式: 通常 / あいまい
+      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システム / ライト / ダーク
+      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元）
+      posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card', // 投稿者グリッドの表示密度
+      posterTileSize: Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null, // 投稿者タイルの一辺px
+      posterCardSize: Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null, // 投稿者カードの最小列幅px
     };
   });
 

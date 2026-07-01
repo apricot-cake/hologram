@@ -17,7 +17,7 @@ function resolveSaveFolder({ configSaveFolder, pointer, pointerExists, defaultDi
     return { folder: configSaveFolder, source: 'config' };
   }
   if (pointer && typeof pointer === 'string' && pointer.trim() && pointerExists) {
-    return { folder: pointer, source: 'pointer' };   // config lost it → recover
+    return { folder: pointer, source: 'pointer' }; // config lost it → recover
   }
   return { folder: defaultDir, source: 'default' };
 }
@@ -32,7 +32,7 @@ function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer 
   if (configCorrupt) return 'corrupt';
   // No explicit folder but a pointer proves one existed → config dropped it.
   if (!hasExplicitSaveFolder && hasPointer) return 'lost';
-  return null;   // fresh install (no folder, no pointer) or a healthy explicit folder
+  return null; // fresh install (no folder, no pointer) or a healthy explicit folder
 }
 
 module.exports = { resolveSaveFolder, clearAllBlockReason };

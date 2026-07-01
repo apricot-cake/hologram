@@ -15,9 +15,12 @@ function mockStatus(statusUrl) {
       return {
         ok: true,
         json: async () => ({
-          url: statusUrl, content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z',
-          account: { acct: 'a', username: 'a', id: '1' }, media_attachments: []
-        })
+          url: statusUrl,
+          content: '<p>hi</p>',
+          created_at: '2026-01-01T00:00:00Z',
+          account: { acct: 'a', username: 'a', id: '1' },
+          media_attachments: [],
+        }),
       };
     }
     return { ok: false, json: async () => ({}) };
@@ -26,7 +29,10 @@ function mockStatus(statusUrl) {
 
 (async () => {
   let ok = true;
-  const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+  const check = (label, cond) => {
+    console.log((cond ? 'PASS ' : 'FAIL ') + label);
+    if (!cond) ok = false;
+  };
 
   const captured = 'https://mastodon.social/@hitstun@feddit.online/113';
   mockStatus('https://feddit.online/c/FloatingIsFun/p/1744781/welcome-to-hell');

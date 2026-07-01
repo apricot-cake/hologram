@@ -15,7 +15,12 @@ const DIAG_PREFIX = 'diaglog_';
 function testNative() {
   return new Promise((resolve) => {
     let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const done = (v) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
     let port;
     try {
       port = chrome.runtime.connectNative('com.corpus.host');
@@ -23,24 +28,54 @@ function testNative() {
       done({ ok: false, where: 'connect-threw', error: String((e && e.message) || e) });
       return;
     }
-    const timer = setTimeout(() => { try { port.disconnect(); } catch { /* */ } done({ ok: false, where: 'timeout' }); }, 5000);
-    port.onMessage.addListener((m) => { clearTimeout(timer); try { port.disconnect(); } catch { /* */ } done({ ok: true, msg: m }); });
-    port.onDisconnect.addListener(() => { clearTimeout(timer); done({ ok: false, where: 'disconnect', error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || null }); });
-    try { port.postMessage({ type: 'ping' }); } catch (e) { clearTimeout(timer); done({ ok: false, where: 'post-threw', error: String((e && e.message) || e) }); }
+    const timer = setTimeout(() => {
+      try {
+        port.disconnect();
+      } catch {
+        /* */
+      }
+      done({ ok: false, where: 'timeout' });
+    }, 5000);
+    port.onMessage.addListener((m) => {
+      clearTimeout(timer);
+      try {
+        port.disconnect();
+      } catch {
+        /* */
+      }
+      done({ ok: true, msg: m });
+    });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timer);
+      done({ ok: false, where: 'disconnect', error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || null });
+    });
+    try {
+      port.postMessage({ type: 'ping' });
+    } catch (e) {
+      clearTimeout(timer);
+      done({ ok: false, where: 'post-threw', error: String((e && e.message) || e) });
+    }
   });
 }
 
 function readStoredLogs() {
-  return new Promise((r) => chrome.storage.local.get(null, (all) => {
-    r(Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX)).sort().map((k) => all[k]));
-  }));
+  return new Promise((r) =>
+    chrome.storage.local.get(null, (all) => {
+      r(
+        Object.keys(all)
+          .filter((k) => k.startsWith(DIAG_PREFIX))
+          .sort()
+          .map((k) => all[k]),
+      );
+    }),
+  );
 }
 
 async function run() {
   const out = { id: chrome.runtime.id, ts: new Date().toISOString() };
   out.storedLogs = await readStoredLogs();
-  out.nativeTest = await testNative();   // launches the host if Chrome can find it
-  window.__corpusDiag = out;             // readable via the page console
+  out.nativeTest = await testNative(); // launches the host if Chrome can find it
+  window.__corpusDiag = out; // readable via the page console
   document.getElementById('out').textContent = JSON.stringify(out, null, 2);
   return out;
 }

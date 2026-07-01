@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('corpus', {
   getConfig: () => ipcRenderer.invoke('get-config'),
-setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
+  setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   listPosts: () => ipcRenderer.invoke('list-posts'),
   // Delta refresh: pass true once a full snapshot is held; main returns either a
   // full { full:true, posts:[] } or an incremental { full:false, added, removed }.
@@ -56,5 +56,5 @@ setExtensionId: (id) => ipcRenderer.invoke('set-extension-id', id),
   emptyTrash: () => ipcRenderer.invoke('empty-trash'),
   deleteFromTrash: (image) => ipcRenderer.invoke('delete-from-trash', image),
   onPostsChanged: (cb) => ipcRenderer.on('posts-changed', (_e, names) => cb(names)),
-  setTitleBarOverlay: (opts) => ipcRenderer.invoke('set-titlebar-overlay', opts)
+  setTitleBarOverlay: (opts) => ipcRenderer.invoke('set-titlebar-overlay', opts),
 });

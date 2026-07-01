@@ -10,6 +10,7 @@ export function Lightbox({ state, labels, onPrev, onNext }) {
   const item = open ? items[index] : null;
   const mediaRef = useRef(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: [item] is the replay trigger (not read inside) — re-run the enter animation whenever the shown item changes
   useLayoutEffect(() => {
     const visEl = mediaRef.current;
     if (!visEl) return;
@@ -26,24 +27,26 @@ export function Lightbox({ state, labels, onPrev, onNext }) {
         className="lb-nav lb-prev"
         type="button"
         aria-label={labels.lbPrev}
-        onClick={(e) => { e.stopPropagation(); onPrev(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPrev();
+        }}
       >
         {'‹'}
       </button>
-      {item.video ? (
-        <video ref={mediaRef} src={item.src} controls playsInline preload="metadata" />
-      ) : (
-        <img ref={mediaRef} src={item.src} alt={item.alt || ''} />
-      )}
+      {item.video ? <video ref={mediaRef} src={item.src} controls playsInline preload="metadata" /> : <img ref={mediaRef} src={item.src} alt={item.alt || ''} />}
       <button
         className="lb-nav lb-next"
         type="button"
         aria-label={labels.lbNext}
-        onClick={(e) => { e.stopPropagation(); onNext(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNext();
+        }}
       >
         {'›'}
       </button>
-      <div className="lb-counter">{(index + 1) + ' / ' + items.length}</div>
+      <div className="lb-counter">{index + 1 + ' / ' + items.length}</div>
     </>
   );
 }

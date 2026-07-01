@@ -1,0 +1,83 @@
+// Biome 設定（lint+format の単一ツール・BACKLOG「技術スタック候補」採用#1）
+//
+// ⚠️ バージョンは 1.9.4 に完全固定: この開発機のアプリ制御ポリシー（Smart App
+// Control 系＝署名/評判ベース）が 2.x の未署名バイナリの実行をブロックする。
+// 1.9.4 は普及済みで評判により実行可。上げる時は biome.exe --version が
+// 通ることを先に確認すること。
+//
+// 方針: Biome を既存コードのスタイルに合わせる（逆ではない）。lineWidth を
+// 大きく取り再折返しチャーンを避ける＝BACKLOG/メモリ内の file:line 参照と
+// git blame を守る。
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "ignoreUnknown": true,
+    "ignore": [
+      // 生成物（ビルド出力＝コミットされているが手書きでない）
+      "app/renderer/islands/**",
+      // ベンダー同梱・ロックファイル
+      "app/vendor/**",
+      "**/package-lock.json",
+      // 使い捨て検証ハーネス（_verify-*.js は追跡されるが lint 対象外）
+      "scripts/_*.js"
+    ]
+  },
+  // import 並べ替えは今はしない（チャーン優先度が低い・必要なら別途）
+  "organizeImports": { "enabled": false },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    // 既存コードは密な長行スタイル（1行 if / 連結式）が主流。幅での強制折返しは
+    // しない＝320 は事実上「折り返さない」の意。
+    "lineWidth": 320
+  },
+  // CSS は対象外: design-tokens.css は「1トークン=1行・light/dark ブロック対」の
+  // 手組み構造で、test-token-parity / test-contrast-parity がこの書式を正規表現で
+  // 解析する（＝整形はテストの前提を壊す）。CSS の大半は index.html 内で元々対象外。
+  "css": {
+    "formatter": { "enabled": false },
+    "linter": { "enabled": false }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
+      "a11y": {
+        // デスクトップ Electron アプリで a11y/キーボード操作は目的に掲げない方針
+        // （メモリ corpus-react-settings-pilot「挙動の堅牢性は目的でない」）。
+        "recommended": false
+      },
+      "style": {
+        "useTemplate": "off", // 文字列連結が主流イディオム（360件）＝置換は無価値なチャーン
+        "useSingleVarDeclarator": "off", // let a, b; スタイルを許容
+        "noParameterAssign": "off" // 引数の正規化再代入（v = coerce(v)）は常用パターン
+      },
+      "complexity": {
+        "useOptionalChain": "off", // a && a.b イディオム（259件）＝viewer.js は React 化で解体予定・今の一括書換はblame汚しだけ
+        "noForEach": "off", // forEach は許容
+        "useArrowFunction": "off" // function 式は hoisting/this 都合で意図的な箇所あり
+      },
+      "suspicious": {
+        "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
+        "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない）
+        "noRedundantUseStrict": "off" // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
+      },
+      "performance": {
+        "noDelete": "off" // delete はサイドカー/JSON のキー除去の正道（性能文脈でない）
+      }
+    }
+  }
+}

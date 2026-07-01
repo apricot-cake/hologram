@@ -20,10 +20,10 @@
 //
 // PASS/FAIL are hard; INFO/WARN never fail the suite.
 
-const { spawn, execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn, execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { configDir, defaultLibraryDir } = require('../native-host/paths');
 const install = require('../native-host/install');
@@ -31,10 +31,7 @@ const install = require('../native-host/install');
 const REPO_BRIDGE = path.join(__dirname, '..', 'native-host', 'bridge.js');
 
 // Minimal valid 1x1 JPEG (shared with test-bridge.js).
-const JPEG_B64 =
-  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
-  'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
-  'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
+const JPEG_B64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 function frame(obj) {
   const body = Buffer.from(JSON.stringify(obj), 'utf8');
@@ -49,7 +46,11 @@ function parseFrames(buf) {
   while (off + 4 <= buf.length) {
     const len = buf.readUInt32LE(off);
     if (off + 4 + len > buf.length) break;
-    try { out.push(JSON.parse(buf.subarray(off + 4, off + 4 + len).toString('utf8'))); } catch { /* skip */ }
+    try {
+      out.push(JSON.parse(buf.subarray(off + 4, off + 4 + len).toString('utf8')));
+    } catch {
+      /* skip */
+    }
     off += 4 + len;
   }
   return out;
@@ -59,7 +60,9 @@ function resolveSaveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) return cfg.saveFolder;
-  } catch { /* fall through to default */ }
+  } catch {
+    /* fall through to default */
+  }
   return defaultLibraryDir();
 }
 
@@ -75,7 +78,9 @@ function sandboxRoundTrip() {
     const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
     const child = spawn(process.execPath, [REPO_BRIDGE], { env, stdio: ['pipe', 'pipe', 'ignore'] });
     let out = Buffer.alloc(0);
-    child.stdout.on('data', (d) => { out = Buffer.concat([out, d]); });
+    child.stdout.on('data', (d) => {
+      out = Buffer.concat([out, d]);
+    });
     child.on('error', (e) => {
       fs.rmSync(tmp, { recursive: true, force: true });
       resolve({ name: 'bridge round-trip (sandbox)', ok: false, detail: `spawn failed: ${e.message}` });
@@ -91,7 +96,7 @@ function sandboxRoundTrip() {
       resolve({
         name: 'bridge round-trip (sandbox)',
         ok,
-        detail: ok ? 'ping+save+sidecar OK' : `pong=${pong} save=${saved} jpg=${jpgOk} json=${jsonOk}`
+        detail: ok ? 'ping+save+sidecar OK' : `pong=${pong} save=${saved} jpg=${jpgOk} json=${jsonOk}`,
       });
     });
     child.stdin.write(frame({ type: 'ping' }));
@@ -106,7 +111,7 @@ function checkConfig() {
   if (!fs.existsSync(p)) return { name: 'config.json', ok: true, soft: true, detail: `none (${p}) — default save folder will be used` };
   try {
     const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
-    const sf = (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) ? cfg.saveFolder : `${defaultLibraryDir()} (default)`;
+    const sf = cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim() ? cfg.saveFolder : `${defaultLibraryDir()} (default)`;
     return { name: 'config.json', ok: true, detail: `parses; saveFolder=${sf}` };
   } catch (e) {
     return { name: 'config.json', ok: false, detail: `parse error: ${e.message} (${p})` };
@@ -174,9 +179,7 @@ function checkDeployedBridge() {
     return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.js` };
   }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
-  return same
-    ? { name: 'deployed bridge', ok: true, detail: 'matches repo' }
-    : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.js. Re-run: node native-host/install.js' };
+  return same ? { name: 'deployed bridge', ok: true, detail: 'matches repo' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.js. Re-run: node native-host/install.js' };
 }
 
 // --- check: the DEPLOYED bridge actually runs (not just matches by content) ---
@@ -194,14 +197,16 @@ function deployedBridgePing() {
     const child = spawn(process.execPath, [deployed], { stdio: ['pipe', 'pipe', 'pipe'] });
     let out = Buffer.alloc(0);
     let err = '';
-    child.stdout.on('data', (d) => { out = Buffer.concat([out, d]); });
-    child.stderr.on('data', (d) => { err += d; });
+    child.stdout.on('data', (d) => {
+      out = Buffer.concat([out, d]);
+    });
+    child.stderr.on('data', (d) => {
+      err += d;
+    });
     child.on('error', (e) => resolve({ name: 'deployed bridge runs', ok: false, detail: `spawn failed: ${e.message}` }));
     child.on('close', () => {
       const pong = parseFrames(out).some((f) => f && f.pong);
-      resolve(pong
-        ? { name: 'deployed bridge runs', ok: true, detail: 'ping→pong from deployed copy' }
-        : { name: 'deployed bridge runs', ok: false, detail: `no pong — deployed host crashed: ${(err.trim().split('\n')[0]) || 'no stderr'}` });
+      resolve(pong ? { name: 'deployed bridge runs', ok: true, detail: 'ping→pong from deployed copy' } : { name: 'deployed bridge runs', ok: false, detail: `no pong — deployed host crashed: ${err.trim().split('\n')[0] || 'no stderr'}` });
     });
     child.stdin.write(frame({ type: 'ping' }));
     child.stdin.end();
@@ -216,20 +221,11 @@ function captureLogInfo() {
 }
 
 (async () => {
-  const results = [
-    await sandboxRoundTrip(),
-    checkConfig(),
-    checkWritable(),
-    checkRegistration(),
-    checkRegistryPointer(),
-    checkDeployedBridge(),
-    await deployedBridgePing(),
-    captureLogInfo()
-  ];
+  const results = [await sandboxRoundTrip(), checkConfig(), checkWritable(), checkRegistration(), checkRegistryPointer(), checkDeployedBridge(), await deployedBridgePing(), captureLogInfo()];
 
   let hardFail = false;
   for (const r of results) {
-    const tag = r.ok ? (r.soft ? 'INFO' : 'PASS') : (r.soft ? 'WARN' : 'FAIL');
+    const tag = r.ok ? (r.soft ? 'INFO' : 'PASS') : r.soft ? 'WARN' : 'FAIL';
     if (!r.ok && !r.soft) hardFail = true;
     console.log(`[${tag}] ${r.name}: ${r.detail}`);
   }

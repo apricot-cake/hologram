@@ -5,7 +5,7 @@
 // pops one library image into its own window via the psimg:// protocol. Electron
 // primitives are re-required here; getSaveFolder + APP_ICON arrive via ctx.
 const { ipcMain, shell, BrowserWindow, nativeImage, screen } = require('electron');
-const path = require('path');
+const path = require('node:path');
 
 function register(ctx) {
   const { getSaveFolder, APP_ICON } = ctx;
@@ -22,7 +22,8 @@ function register(ctx) {
   ipcMain.handle('open-image-window', (_event, image) => {
     if (typeof image !== 'string' || !image || image.includes('..') || image.includes('/') || image.includes('\\')) return;
     // Size the window to the image's aspect ratio (fit within ~85% of the work area).
-    let width = 1100; let height = 850;
+    let width = 1100;
+    let height = 850;
     try {
       const sz = nativeImage.createFromPath(path.join(getSaveFolder(), image)).getSize();
       if (sz.width > 0 && sz.height > 0) {
@@ -31,11 +32,17 @@ function register(ctx) {
         width = Math.max(320, Math.round(sz.width * scale));
         height = Math.max(240, Math.round(sz.height * scale));
       }
-    } catch { /* keep defaults (e.g. webp not decodable by nativeImage) */ }
+    } catch {
+      /* keep defaults (e.g. webp not decodable by nativeImage) */
+    }
     const w = new BrowserWindow({
-      width, height, useContentSize: true, autoHideMenuBar: true, backgroundColor: '#101113',
+      width,
+      height,
+      useContentSize: true,
+      autoHideMenuBar: true,
+      backgroundColor: '#101113',
       icon: APP_ICON,
-      webPreferences: { sandbox: true }
+      webPreferences: { sandbox: true },
     });
     w.loadURL('psimg://img/' + encodeURIComponent(image));
   });

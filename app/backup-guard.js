@@ -20,8 +20,8 @@ function pruneDecision({ srcCount, destCount, baseline }) {
   const src = Number(srcCount) || 0;
   const dest = Number(destCount) || 0;
   const base = Number(baseline) || 0;
-  if (dest === 0) return { skip: false, reason: null };       // empty mirror — prune can't lose anything
-  if (src === 0) return { skip: true, reason: 'empty' };       // src vanished entirely
+  if (dest === 0) return { skip: false, reason: null }; // empty mirror — prune can't lose anything
+  if (src === 0) return { skip: true, reason: 'empty' }; // src vanished entirely
   if (base > 0 && src < base * PRUNE_SHRINK_RATIO) return { skip: true, reason: 'shrink' };
   return { skip: false, reason: null };
 }
@@ -29,7 +29,7 @@ function pruneDecision({ srcCount, destCount, baseline }) {
 // The baseline to persist for the NEXT run: trust this run's count only when we
 // did NOT skip, so one empty/partial blip can't poison the threshold afterward.
 function nextBaseline(skipped, srcCount, baseline) {
-  return skipped ? (Number(baseline) || 0) : (Number(srcCount) || 0);
+  return skipped ? Number(baseline) || 0 : Number(srcCount) || 0;
 }
 
 module.exports = { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO };

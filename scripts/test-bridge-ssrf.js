@@ -12,15 +12,12 @@
 //
 //   node scripts/test-bridge-ssrf.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { fetchStillImage } = require('../native-host/bridge');
 
-const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-  'base64'
-);
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
-const fetched = [];   // every URL actually passed to fetch
+const fetched = []; // every URL actually passed to fetch
 global.fetch = async (url) => {
   const u = String(url);
   fetched.push(u);
@@ -39,10 +36,13 @@ global.fetch = async (url) => {
     let sent = 0;
     const body = new ReadableStream({
       pull(controller) {
-        if (sent >= 40) { controller.close(); return; }   // up to 40 MiB if unchecked
+        if (sent >= 40) {
+          controller.close();
+          return;
+        } // up to 40 MiB if unchecked
         sent++;
         controller.enqueue(new Uint8Array(1024 * 1024));
-      }
+      },
     });
     return new Response(body, { status: 200, headers: { 'content-type': 'image/png' } });
   }
@@ -67,13 +67,13 @@ global.fetch = async (url) => {
     'https://[::ffff:192.168.0.1]/x.png',
     // IPv4-mapped IPv6, hex form (what the WHATWG URL parser normalizes the above
     // to — the actual hostname checkMediaUrl/isPrivateIp see).
-    'https://[::ffff:7f00:1]/x.png',          // 127.0.0.1
-    'https://[::ffff:a9fe:a9fe]/x.png',       // 169.254.169.254 (cloud metadata)
-    'https://[::ffff:c0a8:0001]/x.png',       // 192.168.0.1
+    'https://[::ffff:7f00:1]/x.png', // 127.0.0.1
+    'https://[::ffff:a9fe:a9fe]/x.png', // 169.254.169.254 (cloud metadata)
+    'https://[::ffff:c0a8:0001]/x.png', // 192.168.0.1
     'https://localhost/x.png',
     'https://box.local/x.png',
     'https://svc.internal/x.png',
-    'http://cdn.test/ok.png'   // non-https refused regardless of host
+    'http://cdn.test/ok.png', // non-https refused regardless of host
   ];
   for (const url of blocked) {
     const got = await fetchStillImage(url);
@@ -94,13 +94,14 @@ global.fetch = async (url) => {
 
   // 4. Legitimate public https image still downloads.
   const ok = await fetchStillImage('https://cdn.test/ok.png');
-  assert.ok(ok && ok.ext === 'png' && Buffer.isBuffer(ok.buf) && ok.buf.length === PNG.length,
-    'public image should download');
+  assert.ok(ok && ok.ext === 'png' && Buffer.isBuffer(ok.buf) && ok.buf.length === PNG.length, 'public image should download');
 
   // 5. A public IPv4-mapped IPv6 literal (hex form) is not over-blocked.
   const okMapped = await fetchStillImage('https://[::ffff:808:808]/ok.png');
-  assert.ok(okMapped && okMapped.ext === 'png' && okMapped.buf.length === PNG.length,
-    'public IPv4-mapped IPv6 literal should download');
+  assert.ok(okMapped && okMapped.ext === 'png' && okMapped.buf.length === PNG.length, 'public IPv4-mapped IPv6 literal should download');
 
   console.log('PASS test-bridge-ssrf: private/redirect/over-cap refused, public ok');
-})().catch((e) => { console.error('FAIL test-bridge-ssrf:', e && e.message ? e.message : e); process.exit(1); });
+})().catch((e) => {
+  console.error('FAIL test-bridge-ssrf:', e && e.message ? e.message : e);
+  process.exit(1);
+});

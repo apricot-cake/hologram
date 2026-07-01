@@ -8,9 +8,13 @@
 // that's corpusStore 'searchQuery'.
 (function () {
   'use strict';
-  let handlers = null;   // { getSuggestions(q), onPick(item), onConfirmText() }
+  let handlers = null; // { getSuggestions(q), onPick(item), onConfirmText() }
   window.corpusSearchBox = {
-    init(h) { handlers = h; },      // viewer.js registers its callbacks
-    handlers() { return handlers; } // the island pulls them per interaction
+    init(h) {
+      handlers = h;
+    }, // viewer.js registers its callbacks
+    handlers() {
+      return handlers;
+    }, // the island pulls them per interaction
   };
 })();

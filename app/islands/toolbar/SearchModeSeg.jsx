@@ -21,20 +21,12 @@ export function SearchModeSeg() {
   return (
     <>
       <span className="seg-thumb" aria-hidden="true" style={{ transform: fuzzy ? 'translateX(100%)' : '' }} />
-      <button
-        type="button"
-        className={'seg-opt' + (!fuzzy ? ' is-on' : '')}
-        data-mode="normal"
-        aria-pressed={!fuzzy}
-        onClick={() => window.corpusSearch.setMode('normal')}
-      >{t('searchExact')}</button>
-      <button
-        type="button"
-        className={'seg-opt' + (fuzzy ? ' is-on' : '')}
-        data-mode="fuzzy"
-        aria-pressed={fuzzy}
-        onClick={() => window.corpusSearch.setMode('fuzzy')}
-      >{t('searchFuzzy')}</button>
+      <button type="button" className={'seg-opt' + (!fuzzy ? ' is-on' : '')} data-mode="normal" aria-pressed={!fuzzy} onClick={() => window.corpusSearch.setMode('normal')}>
+        {t('searchExact')}
+      </button>
+      <button type="button" className={'seg-opt' + (fuzzy ? ' is-on' : '')} data-mode="fuzzy" aria-pressed={fuzzy} onClick={() => window.corpusSearch.setMode('fuzzy')}>
+        {t('searchFuzzy')}
+      </button>
     </>
   );
 }

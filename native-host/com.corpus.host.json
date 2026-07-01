@@ -4,7 +4,5 @@
   "description": "Corpus native messaging host",
   "path": "GENERATED_AT_INSTALL_TIME",
   "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://<YOUR_EXTENSION_ID>/"
-  ]
+  "allowed_origins": ["chrome-extension://<YOUR_EXTENSION_ID>/"]
 }

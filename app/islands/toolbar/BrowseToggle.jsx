@@ -14,8 +14,7 @@ import { t } from '../_shared/i18n.js';
 // changes per mode — and keeps a per-button title so the icon-only inactive segments
 // still name themselves on hover.
 
-const reduceMotion = () =>
-  !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 // SVGs transcribed verbatim from the old index.html markup (icon glyphs unchanged).
 function BrowseIcon({ v }) {
@@ -88,23 +87,22 @@ export function BrowseToggle({ el }) {
   // disappears as the grid count changes, without a window resize) or on resize.
   useLayoutEffect(() => {
     let ro;
-    if (window.ResizeObserver && el) { ro = new ResizeObserver(place); ro.observe(el); }
+    if (window.ResizeObserver && el) {
+      ro = new ResizeObserver(place);
+      ro.observe(el);
+    }
     window.addEventListener('resize', place, { passive: true });
-    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', place); };
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', place);
+    };
   }, [el, place]);
 
   return (
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {MODES.map(({ v, key }) => (
-        <button
-          key={v}
-          type="button"
-          data-mode={v}
-          title={t(key)}
-          className={v === mode ? 'active' : undefined}
-          onClick={() => window.corpusStore.set('browseMode', v)}
-        >
+        <button key={v} type="button" data-mode={v} title={t(key)} className={v === mode ? 'active' : undefined} onClick={() => window.corpusStore.set('browseMode', v)}>
           <BrowseIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>

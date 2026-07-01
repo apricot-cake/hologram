@@ -14,10 +14,10 @@
 //
 //   node scripts/test-app-backup.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -40,16 +40,38 @@ for (let i = 0; i < 4; i++) {
   const id = '170000000000' + i + '-bk' + i;
   ids.push(id);
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
-    captureId: id, image: id + '.jpg', url: 'https://x.com/u/status/' + (800 + i),
-    platform: 'x', text: '本文' + i, displayName: '人' + i, screenName: 'u' + i,
-    likes: 1 + i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: [], hashtags: []
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, id + '.json'),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: id + '.jpg',
+        url: 'https://x.com/u/status/' + (800 + i),
+        platform: 'x',
+        text: '本文' + i,
+        displayName: '人' + i,
+        screenName: 'u' + i,
+        likes: 1 + i,
+        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+        media: [],
+        tags: [],
+        hashtags: [],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 const mirror = path.join(outDir, 'Corpus-mirror');
-const countMirror = () => { try { return fs.readdirSync(mirror).filter(n => !/\.tmp(-\d+)?$/i.test(n)).length; } catch { return -1; } };
+const countMirror = () => {
+  try {
+    return fs.readdirSync(mirror).filter((n) => !/\.tmp(-\d+)?$/i.test(n)).length;
+  } catch {
+    return -1;
+  }
+};
 
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -108,12 +130,21 @@ const evalJs = `(async () => {
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
-  if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+  if (m) {
+    try {
+      r = JSON.parse(m[1]);
+    } catch {
+      /* ignore */
+    }
+  }
   // filesystem-side verification: the guarded collapse run left the mirror exactly
   // as r3 did (no files deleted) — proof the prune was truly held back on disk.
   const mirrorAfter = countMirror();
@@ -125,13 +156,12 @@ child.on('close', () => {
   let mutableFresh = false;
   try {
     const mj = JSON.parse(fs.readFileSync(path.join(mirror, 'tag-groups.json'), 'utf8'));
-    mutableFresh = Array.isArray(mj.groups) && mj.groups.length === 3 &&
-      mj.groups[0] && mj.groups[0].name === 'second';
-  } catch { /* missing/unreadable → stays false */ }
+    mutableFresh = Array.isArray(mj.groups) && mj.groups.length === 3 && mj.groups[0] && mj.groups[0].name === 'second';
+  } catch {
+    /* missing/unreadable → stays false */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 &&
-    r.edit1 && r.edit2 && r.editIdempotent && mutableFresh &&
-    r.pruneWorks && r.guardHeld && mirrorIntact;
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact;
   console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact}`);
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);

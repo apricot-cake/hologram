@@ -16,15 +16,12 @@ export function Subrows({ rows }) {
   return (
     <>
       {rows.map((r) => (
-        <button
-          key={r.key}
-          className={'sb-subrow' + (r.active ? ' active' : '')}
-          type="button"
-          data-tag-group={r.key}
-        >
+        <button key={r.key} className={'sb-subrow' + (r.active ? ' active' : '')} type="button" data-tag-group={r.key}>
           <span className="sb-subrow-name">{r.name}</span>
           <span className="sb-subrow-count">{r.count}</span>
-          <span className="sb-subrow-arrow"><ChevR /></span>
+          <span className="sb-subrow-arrow">
+            <ChevR />
+          </span>
         </button>
       ))}
     </>

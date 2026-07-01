@@ -6,9 +6,9 @@
 //
 //   node scripts/test-media.js
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-media-'));
 process.env.APPDATA = tmp;
@@ -22,10 +22,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const { handleSave, downloadMedia, downloadAvatar } = require('../native-host/bridge');
 
 // A valid 1x1 PNG (only the content-type matters to the bridge).
-const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-  'base64'
-);
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
 // Stub fetch: map test URLs to Responses. No real network. lastFetch records the
 // most recent request so a test can assert the bridge forwarded a Referer (pixiv).
@@ -41,35 +38,37 @@ global.fetch = async (url, opts) => {
   return new Response('nope', { status: 500 });
 };
 
-const jpegB64 =
-  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
-  'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
-  'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
+const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 let ok = true;
-const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+const check = (label, cond) => {
+  console.log((cond ? 'PASS ' : 'FAIL ') + label);
+  if (!cond) ok = false;
+};
 
 (async () => {
   // --- downloadMedia: only the two valid images land ---
   const base = '1717500000000-aaaa';
   const list = [
     { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
-    { url: 'https://h/page.html', alt: null },        // wrong content-type -> drop
+    { url: 'https://h/page.html', alt: null }, // wrong content-type -> drop
     { url: 'https://h/photo.jpg', alt: null, width: 2, height: 3 },
-    { url: 'https://h/big.png', alt: null },          // oversized (declared) -> drop
-    { url: 'https://h/missing', alt: null },          // 404 -> drop
-    { url: 'http://h/img.png', alt: null }            // non-https -> drop (no fetch)
+    { url: 'https://h/big.png', alt: null }, // oversized (declared) -> drop
+    { url: 'https://h/missing', alt: null }, // 404 -> drop
+    { url: 'http://h/img.png', alt: null }, // non-https -> drop (no fetch)
   ];
   const saved = await downloadMedia(list, saveFolder, base);
   check('downloadMedia keeps only the 2 valid images', saved.length === 2);
   check('media-0 png written', fs.existsSync(path.join(saveFolder, base + '-media-0.png')));
   check('media-2 jpg written', fs.existsSync(path.join(saveFolder, base + '-media-2.jpg')));
-  check('html/big/404/http wrote no files',
+  check(
+    'html/big/404/http wrote no files',
     !fs.existsSync(path.join(saveFolder, base + '-media-1.html')) &&
-    !fs.existsSync(path.join(saveFolder, base + '-media-1.png')) &&
-    !fs.existsSync(path.join(saveFolder, base + '-media-3.png')) &&
-    !fs.existsSync(path.join(saveFolder, base + '-media-4.png')) &&
-    !fs.existsSync(path.join(saveFolder, base + '-media-5.png')));
+      !fs.existsSync(path.join(saveFolder, base + '-media-1.png')) &&
+      !fs.existsSync(path.join(saveFolder, base + '-media-3.png')) &&
+      !fs.existsSync(path.join(saveFolder, base + '-media-4.png')) &&
+      !fs.existsSync(path.join(saveFolder, base + '-media-5.png')),
+  );
   check('descriptor carries file + alt + dims', saved[0].file === base + '-media-0.png' && saved[0].alt === 'pic' && saved[0].width === 1);
 
   // --- downloadAvatar: valid → <base>-avatar.<ext>; bad/empty → null; Referer forwarded ---
@@ -87,13 +86,15 @@ const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label)
     captureId: '1717500000000-bbbb',
     image: jpegB64,
     metadata: {
-      url: 'https://x.com/u/status/1', platform: 'x', text: 'hi',
+      url: 'https://x.com/u/status/1',
+      platform: 'x',
+      text: 'hi',
       avatar: 'https://h/img.png',
       media: [
         { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
-        { url: 'https://h/missing', alt: null }       // dropped, must not fail the save
-      ]
-    }
+        { url: 'https://h/missing', alt: null }, // dropped, must not fail the save
+      ],
+    },
   });
   check('handleSave ack ok despite 1 failed media', ack.ok === true);
   check('handleSave mediaCount = 1', ack.mediaCount === 1);
@@ -106,4 +107,7 @@ const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label)
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('\n' + (ok ? 'MEDIA_TEST_PASS' : 'MEDIA_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
-})().catch((e) => { console.log('ERR', e.message); process.exit(1); });
+})().catch((e) => {
+  console.log('ERR', e.message);
+  process.exit(1);
+});

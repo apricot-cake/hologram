@@ -15,19 +15,15 @@ import { useState, useRef, useLayoutEffect, useMemo } from 'react';
 // (different) DOM/CSS contracts: the inspector wraps everything in one label+chips+
 // picker block (iv-tag-chips/iv-tag-addrow), the bulk modal has no internal label and
 // uses the plain confirm-dialog classes (edit-current/edit-addrow/edit-picker alone).
-export function TagEditor({
-  idPrefix, className, tags, vocabGroups, coocGroup, srcTags, labels,
-  onAdd, onRemove, onToggle, onContextMenu, autoFocus,
-  showLabel = true, chipsClass = 'iv-tag-chips', addrowClass = 'iv-tag-addrow', pickerClass = 'edit-picker iv-tag-picker',
-}) {
+export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroup, srcTags, labels, onAdd, onRemove, onToggle, onContextMenu, autoFocus, showLabel = true, chipsClass = 'iv-tag-chips', addrowClass = 'iv-tag-addrow', pickerClass = 'edit-picker iv-tag-picker' }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
   const selected = useMemo(() => new Set(tags), [tags]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only focus (new panel open) — matches the old one-shot focus() after showPosterDetail
   useLayoutEffect(() => {
     if (autoFocus && inputRef.current) inputRef.current.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only on mount (new panel open) — matches the old one-shot focus() after showPosterDetail
+  }, []);
 
   const submit = () => {
     const t = query.trim();
@@ -46,34 +42,42 @@ export function TagEditor({
       className={'edit-pick-chip' + (selected.has(t) ? ' on' : '')}
       title={title}
       onClick={() => onToggle(t)}
-      onContextMenu={(e) => { e.preventDefault(); onContextMenu(t, e.clientX, e.clientY); }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(t, e.clientX, e.clientY);
+      }}
     >
       {kind ? <span className={'tag-pal-kind tk-' + kind} /> : null}
       {t}
     </button>
   );
 
-  const filteredCooc = q ? [] : (coocGroup ? coocGroup.items : []);
+  const filteredCooc = q ? [] : coocGroup ? coocGroup.items : [];
   const filteredSrc = (srcTags || []).filter((it) => matches(it.tag));
-  const filteredGroups = (vocabGroups || [])
-    .map((g) => ({ name: g.name, items: g.items.filter((it) => matches(it.tag)) }))
-    .filter((g) => g.items.length);
+  const filteredGroups = (vocabGroups || []).map((g) => ({ name: g.name, items: g.items.filter((it) => matches(it.tag)) })).filter((g) => g.items.length);
   const isEmpty = !filteredCooc.length && !filteredSrc.length && !filteredGroups.length;
 
   return (
     <div id={idPrefix + 'TagEdit'} className={className}>
       {showLabel ? <div className="iv-tag-label">{labels.tagsLabel}</div> : null}
       <div id={idPrefix + 'TagChips'} className={chipsClass}>
-        {tags.length
-          ? tags.map((t) => (
+        {tags.length ? (
+          tags.map((t) => (
             <span
               key={t}
               className="tag-chip"
               onClick={() => onRemove(t)}
-              onContextMenu={(e) => { e.preventDefault(); onContextMenu(t, e.clientX, e.clientY); }}
-            >{t} ×</span>
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onContextMenu(t, e.clientX, e.clientY);
+              }}
+            >
+              {t} ×
+            </span>
           ))
-          : <span className="edit-empty">{labels.noTags}</span>}
+        ) : (
+          <span className="edit-empty">{labels.noTags}</span>
+        )}
       </div>
       <div className={addrowClass}>
         <input
@@ -84,14 +88,22 @@ export function TagEditor({
           autoComplete="off"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              submit();
+            }
+          }}
         />
-        <button type="button" className="btn-outline" id={idPrefix + 'TagAdd'} onClick={submit}>{labels.addBtn}</button>
+        <button type="button" className="btn-outline" id={idPrefix + 'TagAdd'} onClick={submit}>
+          {labels.addBtn}
+        </button>
       </div>
       <div id={idPrefix + 'TagPicker'} className={pickerClass}>
-        {isEmpty
-          ? <span className="edit-empty">{query ? labels.noMatch : labels.noVocab}</span>
-          : <>
+        {isEmpty ? (
+          <span className="edit-empty">{query ? labels.noMatch : labels.noVocab}</span>
+        ) : (
+          <>
             {filteredCooc.length ? (
               <div className="edit-pick-group">
                 <div className="edit-pick-gname">{coocGroup.name}</div>
@@ -110,7 +122,8 @@ export function TagEditor({
                 <div className="edit-pick-chips">{g.items.map((it) => chip(it.tag, it.kind))}</div>
               </div>
             ))}
-          </>}
+          </>
+        )}
       </div>
     </div>
   );

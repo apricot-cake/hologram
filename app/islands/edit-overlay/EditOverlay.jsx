@@ -30,13 +30,12 @@ export function EditOverlay() {
         onContextMenu={m.onTagContextMenu}
       />
       <div className="confirm-actions">
-        <button type="button" className="btn-outline" onClick={m.onCancel}>{m.cancelLabel}</button>
-        <button
-          type="button"
-          className="btn-outline"
-          style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }}
-          onClick={m.onSave}
-        >{m.saveLabel}</button>
+        <button type="button" className="btn-outline" onClick={m.onCancel}>
+          {m.cancelLabel}
+        </button>
+        <button type="button" className="btn-outline" style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }} onClick={m.onSave}>
+          {m.saveLabel}
+        </button>
       </div>
     </>
   );

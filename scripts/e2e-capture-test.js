@@ -19,10 +19,10 @@
 //     executeScript works without an activeTab gesture (other platforms need
 //     a test manifest with broader host_permissions — future step)
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { spawnSync, execFileSync } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { spawnSync, execFileSync } = require('node:child_process');
 const puppeteer = require('puppeteer');
 const { configDir, defaultLibraryDir } = require('../native-host/paths');
 const { fetchXTweet } = require('../extension/metadata');
@@ -39,8 +39,10 @@ function stageExtension() {
   const copyDir = (src, dst) => {
     fs.mkdirSync(dst, { recursive: true });
     for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-      const s = path.join(src, e.name); const d = path.join(dst, e.name);
-      if (e.isDirectory()) copyDir(s, d); else fs.copyFileSync(s, d);
+      const s = path.join(src, e.name);
+      const d = path.join(dst, e.name);
+      if (e.isDirectory()) copyDir(s, d);
+      else fs.copyFileSync(s, d);
     }
   };
   copyDir(SRC_EXT_DIR, dir);
@@ -55,7 +57,9 @@ function saveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
-  } catch { /* default */ }
+  } catch {
+    /* default */
+  }
   return defaultLibraryDir();
 }
 
@@ -80,19 +84,29 @@ async function pickPixiv(cells) {
     const single = items.find((c) => ok(c) && Number(c.illust_page_count) === 1);
     const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
     const url = (c) => `https://www.pixiv.net/artworks/${c.illust_id}`;
-    const W = 'main figure img', I = 'main figure img';
+    const W = 'main figure img',
+      I = 'main figure img';
     if (single) cells.push({ id: 'A-5a', platform: 'pixiv', url: url(single), kind: 'click', waitSel: W, clickSel: I });
     if (multi) cells.push({ id: 'A-5b', platform: 'pixiv', url: url(multi), kind: 'click', waitSel: W, clickSel: I });
     if (multi) cells.push({ id: 'A-5d', platform: 'pixiv', url: url(multi), kind: 'drag', waitSel: W, dragSel: I });
-  } catch (e) { console.log('pixiv 選別スキップ:', e.message); }
+  } catch (e) {
+    console.log('pixiv 選別スキップ:', e.message);
+  }
 }
 
 async function pickX(cells) {
   // No public search API — validate evergreen posts via syndication, then drive
   // the real pages. (x.com may gate logged-out views; cells fail gracefully.)
   try {
-    const alive = async (id) => { try { const r = await fetchXTweet({ id, screenName: null }, `https://x.com/i/web/status/${id}`); return r && r.text; } catch { return false; } };
-    const photo = '266031293945503744';   // @BarackObama, single photo, evergreen
+    const alive = async (id) => {
+      try {
+        const r = await fetchXTweet({ id, screenName: null }, `https://x.com/i/web/status/${id}`);
+        return r && r.text;
+      } catch {
+        return false;
+      }
+    };
+    const photo = '266031293945503744'; // @BarackObama, single photo, evergreen
     const W = 'article[data-testid="tweet"]';
     if (await alive(photo)) {
       const url = `https://x.com/BarackObama/status/${photo}`;
@@ -102,31 +116,42 @@ async function pickX(cells) {
       // the reply post, not the lightbox (main tweet) post. The reply image is an
       // article img that is NOT the first article on the page (the main tweet is
       // first; replies come after). Only add if there are reply-with-image articles.
-      cells.push({ id: 'A-1n', platform: 'x', url: `${url}/photo/1`, kind: 'drag-lightbox-reply',
-        waitSel: W, regression: 'ライトボックス返信ドラッグ→返信として保存' });
+      cells.push({ id: 'A-1n', platform: 'x', url: `${url}/photo/1`, kind: 'drag-lightbox-reply', waitSel: W, regression: 'ライトボックス返信ドラッグ→返信として保存' });
     }
     // ★ regression: dragging the profile header avatar must NOT show drop zone
     // and must NOT save a record (no post ancestor → drag.js bails out).
-    cells.push({ id: 'A-1o', platform: 'x', url: 'https://x.com/jack',
-      kind: 'drag-none',
-      waitSel: 'div[data-testid^="UserAvatar-Container-"]',
-      dragSel: 'div[data-testid^="UserAvatar-Container-"] img',
-      notWithin: 'article[data-testid="tweet"]',
-      regression: 'プロフィールアバターは保存しない' });
-  } catch (e) { console.log('x 選別スキップ:', e.message); }
+    cells.push({ id: 'A-1o', platform: 'x', url: 'https://x.com/jack', kind: 'drag-none', waitSel: 'div[data-testid^="UserAvatar-Container-"]', dragSel: 'div[data-testid^="UserAvatar-Container-"] img', notWithin: 'article[data-testid="tweet"]', regression: 'プロフィールアバターは保存しない' });
+  } catch (e) {
+    console.log('x 選別スキップ:', e.message);
+  }
 }
 
 async function pickBluesky(cells) {
   try {
     const posts = [];
     for (const actor of ['bsky.app', 'pfrazee.com', 'jay.bsky.team', 'danabra.mov']) {
-      try { const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=80&filter=posts_with_replies`); for (const it of f.feed || []) if (it.post) posts.push(it.post); } catch { /* next */ }
+      try {
+        const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=80&filter=posts_with_replies`);
+        for (const it of f.feed || []) if (it.post) posts.push(it.post);
+      } catch {
+        /* next */
+      }
     }
-    const urlOf = (p) => { const m = (p.uri || '').match(/\/app\.bsky\.feed\.post\/([^/]+)$/); return (m && p.author) ? `https://bsky.app/profile/${p.author.handle}/post/${m[1]}` : null; };
-    const imgs = (p) => { const e = p.embed || {}; return (e.$type || '').includes('recordWithMedia') ? ((e.media && e.media.images) || []) : (e.images || []); };
+    const urlOf = (p) => {
+      const m = (p.uri || '').match(/\/app\.bsky\.feed\.post\/([^/]+)$/);
+      return m && p.author ? `https://bsky.app/profile/${p.author.handle}/post/${m[1]}` : null;
+    };
+    const imgs = (p) => {
+      const e = p.embed || {};
+      return (e.$type || '').includes('recordWithMedia') ? (e.media && e.media.images) || [] : e.images || [];
+    };
     const isQuote = (p) => ((p.embed && p.embed.$type) || '').includes('app.bsky.embed.record');
     const isReply = (p) => !!(p.record && p.record.reply);
-    const parentDid = (p) => { const u = p.record && p.record.reply && p.record.reply.parent && p.record.reply.parent.uri; const m = u && u.match(/^at:\/\/(did:[^/]+)\//); return m ? m[1] : null; };
+    const parentDid = (p) => {
+      const u = p.record && p.record.reply && p.record.reply.parent && p.record.reply.parent.uri;
+      const m = u && u.match(/^at:\/\/(did:[^/]+)\//);
+      return m ? m[1] : null;
+    };
     // The thread/quote detail page renders several postThreadItem nodes (parents
     // above, replies below). Target the anchor post by its AUTHOR handle so a
     // reply isn't confused with its parent. (testid = postThreadItem-by-<handle>)
@@ -148,9 +173,10 @@ async function pickBluesky(cells) {
     if (reply) cells.push({ id: 'A-2e', platform: 'bluesky', url: urlOf(reply), kind: 'click', waitSel: sel(reply), clickSel: sel(reply), regression: 'リプライ本人' });
     // ★ regression: dragging the profile header avatar must NOT save anything
     // (bounded ancestor walk → no identity → no drop zone). Profile page.
-    cells.push({ id: 'A-2k', platform: 'bluesky', url: 'https://bsky.app/profile/bsky.app', kind: 'drag-none',
-      waitSel: 'img[src*="/img/avatar"]', dragSel: 'img[src*="/img/avatar"]', notWithin: '[data-testid^="feedItem-by-"]', regression: 'アバターは保存しない' });
-  } catch (e) { console.log('bluesky 選別スキップ:', e.message); }
+    cells.push({ id: 'A-2k', platform: 'bluesky', url: 'https://bsky.app/profile/bsky.app', kind: 'drag-none', waitSel: 'img[src*="/img/avatar"]', dragSel: 'img[src*="/img/avatar"]', notWithin: '[data-testid^="feedItem-by-"]', regression: 'アバターは保存しない' });
+  } catch (e) {
+    console.log('bluesky 選別スキップ:', e.message);
+  }
 }
 
 async function pickMisskey(cells) {
@@ -167,13 +193,19 @@ async function pickMisskey(cells) {
     // ★ regression (audit HIGH): a reply's detail page must save the REPLY,
     // not the parent note rendered as a preview above it.
     if (reply) cells.push({ id: 'A-3e', platform: 'misskey', url: `https://misskey.io/notes/${reply.id}`, kind: 'click', waitSel: W, clickSel: 'div[tabindex="0"]', regression: 'リプライ→親に化けない' });
-  } catch (e) { console.log('misskey 選別スキップ:', e.message); }
+  } catch (e) {
+    console.log('misskey 選別スキップ:', e.message);
+  }
 }
 
 async function pickMastodon(cells) {
   try {
     let media = [];
-    try { media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true'); } catch { /* fallback */ }
+    try {
+      media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
+    } catch {
+      /* fallback */
+    }
     if (!Array.isArray(media) || !media.length) {
       const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
       media = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
@@ -187,8 +219,12 @@ async function pickMastodon(cells) {
       const st = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
       const r = (st || []).find((x) => x && x.in_reply_to_id && x.account);
       if (r) cells.push({ id: 'A-4e', platform: 'mastodon', url: `https://mastodon.social/@${r.account.acct}/${r.id}`, kind: 'click', waitSel: W, clickSel: '.detailed-status', regression: 'リプライ本人' });
-    } catch { /* skip reply cell */ }
-  } catch (e) { console.log('mastodon 選別スキップ:', e.message); }
+    } catch {
+      /* skip reply cell */
+    }
+  } catch (e) {
+    console.log('mastodon 選別スキップ:', e.message);
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -220,7 +256,10 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   //       Chrome must be closed before running — puppeteer needs exclusive profile lock.
   const rawArgs = process.argv.slice(2);
   const only = rawArgs.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
-  const argVal = (name) => { const a = rawArgs.find((a) => a.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : null; };
+  const argVal = (name) => {
+    const a = rawArgs.find((a) => a.startsWith(`--${name}=`));
+    return a ? a.slice(name.length + 3) : null;
+  };
   const userDataDir = argVal('user-data-dir');
   const profileDirArg = argVal('profile-dir') || 'Default';
   const cells = [];
@@ -239,7 +278,10 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
     }
   }
   active.sort((a, b) => a.id.localeCompare(b.id, 'en'));
-  if (!active.length) { console.error('対象セルを選別できず'); process.exit(1); }
+  if (!active.length) {
+    console.error('対象セルを選別できず');
+    process.exit(1);
+  }
   console.log(`対象セル: ${active.map((c) => c.id + '(' + c.kind + ')').join(' ')}`);
 
   const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
@@ -249,27 +291,15 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   const browser = await puppeteer.launch({
     headless: false,
     userDataDir: profile,
-    args: [
-      `--disable-extensions-except=${EXT_DIR}`,
-      `--load-extension=${EXT_DIR}`,
-      '--window-size=1360,960',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--hide-crash-restore-bubble',
-      '--lang=ja',
-      ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : []),
-    ],
-    defaultViewport: null
+    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`, '--window-size=1360,960', '--no-first-run', '--no-default-browser-check', '--hide-crash-restore-bubble', '--lang=ja', ...(userDataDir ? [`--profile-directory=${profileDirArg}`] : [])],
+    defaultViewport: null,
   });
 
   const results = [];
   const created = [];
   try {
     // attach to the extension service worker
-    const swTarget = await browser.waitForTarget(
-      (t) => t.type() === 'service_worker' && t.url().startsWith('chrome-extension://'),
-      { timeout: 20000 }
-    );
+    const swTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().startsWith('chrome-extension://'), { timeout: 20000 });
     const extId = new URL(swTarget.url()).host;
     if (extId === EXPECTED_ID) {
       console.log(`拡張ID: ${extId} (NMホスト許可と一致 ✓)`);
@@ -308,20 +338,29 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         // Negative regression: dragging a non-post image (profile avatar) must
         // NOT pop the drop zone and must NOT save a record.
         if (cell.kind === 'drag-none') {
-          const zoneShown = await page.evaluate(async (sel, notWithin) => {
-            const img = [...document.querySelectorAll(sel)].find((el) => !notWithin || !el.closest(notWithin));
-            if (!img) return 'no-img';
-            img.scrollIntoView({ block: 'center' });
-            img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
-            await new Promise((r) => setTimeout(r, 500));
-            const z = document.getElementById('__corpusDropZone');
-            return !!(z && z.style.display !== 'none');
-          }, cell.dragSel, cell.notWithin);
+          const zoneShown = await page.evaluate(
+            async (sel, notWithin) => {
+              const img = [...document.querySelectorAll(sel)].find((el) => !notWithin || !el.closest(notWithin));
+              if (!img) return 'no-img';
+              img.scrollIntoView({ block: 'center' });
+              img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+              await new Promise((r) => setTimeout(r, 500));
+              const z = document.getElementById('__corpusDropZone');
+              return !!(z && z.style.display !== 'none');
+            },
+            cell.dragSel,
+            cell.notWithin,
+          );
           if (zoneShown === 'no-img') throw new Error('avatar img not found');
           await sleep(2500);
           const leaked = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !before.has(f));
           if (zoneShown) throw new Error('ドロップゾーンが表示された（捏造保存の恐れ）');
-          if (leaked.length) { leaked.forEach((f) => { for (const g of fs.readdirSync(dir)) if (g.startsWith(f.replace(/\.json$/, ''))) fs.unlinkSync(path.join(dir, g)); }); throw new Error('非投稿画像が保存された'); }
+          if (leaked.length) {
+            leaked.forEach((f) => {
+              for (const g of fs.readdirSync(dir)) if (g.startsWith(f.replace(/\.json$/, ''))) fs.unlinkSync(path.join(dir, g));
+            });
+            throw new Error('非投稿画像が保存された');
+          }
           console.log('   ✓ ドロップゾーン非表示・保存なし（期待どおり）');
           results.push({ id: cell.id, ok: true });
           continue;
@@ -360,12 +399,17 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
                 img.scrollIntoView({ block: 'center' });
                 const dt = new DataTransfer();
                 img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-                return new Promise((res) => setTimeout(() => {
-                  const zone = document.getElementById('__corpusDropZone');
-                  if (!zone || zone.style.display === 'none') { res('no-zone'); return; }
-                  zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-                  res('ok');
-                }, 400));
+                return new Promise((res) =>
+                  setTimeout(() => {
+                    const zone = document.getElementById('__corpusDropZone');
+                    if (!zone || zone.style.display === 'none') {
+                      res('no-zone');
+                      return;
+                    }
+                    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                    res('ok');
+                  }, 400),
+                );
               }
             }
             return 'no-reply-img';
@@ -388,9 +432,12 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           if (!act.ok) throw new Error(`activation failed on ${act.url}: ${act.err}`);
           // The content script lives in an ISOLATED world — wait for its banner
           // DOM instead (z-index sentinel 2147483647).
-          await page.waitForFunction(() => {
-            return [...document.querySelectorAll('div')].some((d) => d.style.zIndex === '2147483647');
-          }, { timeout: 8000 });
+          await page.waitForFunction(
+            () => {
+              return [...document.querySelectorAll('div')].some((d) => d.style.zIndex === '2147483647');
+            },
+            { timeout: 8000 },
+          );
           // Trusted click on a stable in-post element; capturePost resolves the
           // post by walking up from the click target. For Misskey the detail
           // page renders several div[tabindex="0"] notes (conversation chain +
@@ -398,13 +445,15 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           let h;
           if (cell.platform === 'misskey') {
             const id = (cell.url.match(/\/notes\/([^/?#]+)/) || [])[1];
-            h = (await page.evaluateHandle((noteId) => {
-              for (const root of document.querySelectorAll('div[tabindex="0"]')) {
-                const link = [...root.querySelectorAll('a[href*="/notes/"]')].find((a) => a.querySelector('time') && a.getAttribute('href').includes('/notes/' + noteId));
-                if (link) return root;
-              }
-              return null;
-            }, id)).asElement();
+            h = (
+              await page.evaluateHandle((noteId) => {
+                for (const root of document.querySelectorAll('div[tabindex="0"]')) {
+                  const link = [...root.querySelectorAll('a[href*="/notes/"]')].find((a) => a.querySelector('time') && a.getAttribute('href').includes('/notes/' + noteId));
+                  if (link) return root;
+                }
+                return null;
+              }, id)
+            ).asElement();
             if (!h) throw new Error('main note element not found for id ' + id);
           } else {
             h = await page.$(cell.clickSel);
@@ -446,11 +495,13 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
         const file = await waitForNewSidecar(dir, before);
         if (!file) {
           // surface the in-page failure message (drop zone / banner text)
-          const hint = await page.evaluate(() => {
-            const z = document.getElementById('__corpusDropZone');
-            const banner = [...document.querySelectorAll('div')].find((d) => d.style.zIndex === '2147483647');
-            return (z && z.style.display !== 'none' ? `zone="${z.textContent}" ` : '') + (banner ? `banner="${banner.textContent}"` : '');
-          }).catch(() => '');
+          const hint = await page
+            .evaluate(() => {
+              const z = document.getElementById('__corpusDropZone');
+              const banner = [...document.querySelectorAll('div')].find((d) => d.style.zIndex === '2147483647');
+              return (z && z.style.display !== 'none' ? `zone="${z.textContent}" ` : '') + (banner ? `banner="${banner.textContent}"` : '');
+            })
+            .catch(() => '');
           throw new Error(`サイドカーが保存されなかった ${hint}`);
         }
         created.push(file.replace(/\.json$/, ''));
@@ -487,7 +538,10 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
     console.log('\nテストレコードを削除…');
     for (const id of created) {
       for (const f of fs.readdirSync(dir)) {
-        if (f.startsWith(id)) { fs.unlinkSync(path.join(dir, f)); console.log('  削除: ' + f); }
+        if (f.startsWith(id)) {
+          fs.unlinkSync(path.join(dir, f));
+          console.log('  削除: ' + f);
+        }
       }
     }
   }

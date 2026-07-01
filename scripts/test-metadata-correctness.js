@@ -10,7 +10,7 @@
 //
 //   node scripts/test-metadata-correctness.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, fetchPostMetadata } = require('../extension/metadata.js');
 
 function mockFetch(routes) {
@@ -25,18 +25,32 @@ function mockFetch(routes) {
 
 (async () => {
   // === X: quoted_tweet without screen_name ===
-  mockFetch([['cdn.syndication.twimg.com', {
-    text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1' },
-    quoted_tweet: { id_str: '999', user: { name: 'NoHandle' } }   // user present, no screen_name
-  }]]);
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: 'hi',
+        mediaDetails: [],
+        user: { name: 'Alice', screen_name: 'alice', id_str: '1' },
+        quoted_tweet: { id_str: '999', user: { name: 'NoHandle' } }, // user present, no screen_name
+      },
+    ],
+  ]);
   let r = await fetchXTweet({ platform: 'x', id: '123', screenName: 'alice' }, 'https://x.com/alice/status/123');
   assert.strictEqual(r.isQuote, true, 'X: quote still flagged');
   assert.strictEqual(r.quotedUrl, null, 'X: no quotedUrl when quoted user has no screen_name (not .../undefined/...)');
 
-  mockFetch([['cdn.syndication.twimg.com', {
-    text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' },
-    quoted_tweet: { id_str: '999', user: { screen_name: 'bob' } }
-  }]]);
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: 'hi',
+        mediaDetails: [],
+        user: { screen_name: 'alice', id_str: '1' },
+        quoted_tweet: { id_str: '999', user: { screen_name: 'bob' } },
+      },
+    ],
+  ]);
   r = await fetchXTweet({ platform: 'x', id: '123', screenName: 'alice' }, 'https://x.com/alice/status/123');
   assert.strictEqual(r.quotedUrl, 'https://x.com/bob/status/999', 'X: quotedUrl built when screen_name present');
 
@@ -45,12 +59,12 @@ function mockFetch(routes) {
   const post = (embedRecord) => ({
     author: { handle: 'alice.bsky.social', did, displayName: 'Alice' },
     record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
-    embed: { $type: 'app.bsky.embed.record#view', record: embedRecord }
+    embed: { $type: 'app.bsky.embed.record#view', record: embedRecord },
   });
 
   mockFetch([
     ['resolveHandle', { did }],
-    ['getPostThread', { thread: { post: post({ uri: `at://${did}/app.bsky.graph.list/xyz` }) } }]
+    ['getPostThread', { thread: { post: post({ uri: `at://${did}/app.bsky.graph.list/xyz` }) } }],
   ]);
   r = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');
   assert.ok(!r.isQuote, 'Bluesky: a list embed is NOT a quote');
@@ -58,7 +72,7 @@ function mockFetch(routes) {
 
   mockFetch([
     ['resolveHandle', { did }],
-    ['getPostThread', { thread: { post: post({ uri: 'at://did:plc:zzz/app.bsky.feed.post/qpost', author: { handle: 'quoted.bsky.social' } }) } }]
+    ['getPostThread', { thread: { post: post({ uri: 'at://did:plc:zzz/app.bsky.feed.post/qpost', author: { handle: 'quoted.bsky.social' } }) } }],
   ]);
   r = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');
   assert.strictEqual(r.isQuote, true, 'Bluesky: a post embed IS a quote');
@@ -73,11 +87,16 @@ function mockFetch(routes) {
 
   // X: avatar from syndication user, _normal upscaled to _400x400. No public
   // follower count / account-creation date → both stay null (graceful hide).
-  mockFetch([['cdn.syndication.twimg.com', {
-    text: 'hi', mediaDetails: [],
-    user: { name: 'Alice', screen_name: 'alice', id_str: '1',
-      profile_image_url_https: 'https://pbs.twimg.com/profile_images/9/abc_normal.jpg' }
-  }]]);
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: 'hi',
+        mediaDetails: [],
+        user: { name: 'Alice', screen_name: 'alice', id_str: '1', profile_image_url_https: 'https://pbs.twimg.com/profile_images/9/abc_normal.jpg' },
+      },
+    ],
+  ]);
   r = await fetchXTweet({ platform: 'x', id: '123', screenName: 'alice' }, 'https://x.com/alice/status/123');
   assert.strictEqual(r.avatar, 'https://pbs.twimg.com/profile_images/9/abc_400x400.jpg', 'X: avatar _normal upscaled to _400x400');
   assert.strictEqual(r.followers, null, 'X: followers stays null (not exposed)');
@@ -87,11 +106,18 @@ function mockFetch(routes) {
   // (which also overrides the avatar with the full-profile one).
   mockFetch([
     ['resolveHandle', { did }],
-    ['getPostThread', { thread: { post: {
-      author: { handle: 'alice.bsky.social', did, displayName: 'Alice', avatar: 'https://cdn.bsky/basic.jpg' },
-      record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' }
-    } } }],
-    ['getProfile', { followersCount: 4242, createdAt: '2023-05-06T07:08:09.000Z', avatar: 'https://cdn.bsky/full.jpg' }]
+    [
+      'getPostThread',
+      {
+        thread: {
+          post: {
+            author: { handle: 'alice.bsky.social', did, displayName: 'Alice', avatar: 'https://cdn.bsky/basic.jpg' },
+            record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
+          },
+        },
+      },
+    ],
+    ['getProfile', { followersCount: 4242, createdAt: '2023-05-06T07:08:09.000Z', avatar: 'https://cdn.bsky/full.jpg' }],
   ]);
   r = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');
   assert.strictEqual(r.avatar, 'https://cdn.bsky/full.jpg', 'Bluesky: avatar from getProfile overrides author view');
@@ -101,10 +127,17 @@ function mockFetch(routes) {
   // Bluesky: getProfile failing (404) keeps the author-view avatar, nulls the rest.
   mockFetch([
     ['resolveHandle', { did }],
-    ['getPostThread', { thread: { post: {
-      author: { handle: 'alice.bsky.social', did, avatar: 'https://cdn.bsky/basic.jpg' },
-      record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' }
-    } } }]
+    [
+      'getPostThread',
+      {
+        thread: {
+          post: {
+            author: { handle: 'alice.bsky.social', did, avatar: 'https://cdn.bsky/basic.jpg' },
+            record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
+          },
+        },
+      },
+    ],
     // no getProfile route → 404
   ]);
   r = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');
@@ -114,7 +147,7 @@ function mockFetch(routes) {
   // Misskey: avatar from note.user, followers + createdAt from users/show.
   mockFetch([
     ['/api/notes/show', { text: 'hi', user: { id: 'u1', username: 'alice', avatarUrl: 'https://mi/lite.png' }, createdAt: '2026-01-01T00:00:00Z' }],
-    ['/api/users/show', { followersCount: 99, createdAt: '2022-02-02T00:00:00.000Z', avatarUrl: 'https://mi/full.png' }]
+    ['/api/users/show', { followersCount: 99, createdAt: '2022-02-02T00:00:00.000Z', avatarUrl: 'https://mi/full.png' }],
   ]);
   r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'abc' }, 'https://misskey.io/notes/abc');
   assert.strictEqual(r.avatar, 'https://mi/full.png', 'Misskey: avatar from users/show');
@@ -122,11 +155,16 @@ function mockFetch(routes) {
   assert.strictEqual(r.authorCreatedAt, '2022-02-02T00:00:00.000Z', 'Misskey: account created date');
 
   // Mastodon: avatar / followers / createdAt all inline on the status account.
-  mockFetch([['/api/v1/statuses/', {
-    content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z',
-    account: { id: '7', acct: 'alice', username: 'alice', display_name: 'Alice',
-      avatar: 'https://m/av.png', followers_count: 1234, created_at: '2021-03-04T05:06:07.000Z' }
-  }]]);
+  mockFetch([
+    [
+      '/api/v1/statuses/',
+      {
+        content: '<p>hi</p>',
+        created_at: '2026-01-01T00:00:00Z',
+        account: { id: '7', acct: 'alice', username: 'alice', display_name: 'Alice', avatar: 'https://m/av.png', followers_count: 1234, created_at: '2021-03-04T05:06:07.000Z' },
+      },
+    ],
+  ]);
   r = await fetchPostMetadata('https://mastodon.social/@alice/123');
   assert.strictEqual(r.avatar, 'https://m/av.png', 'Mastodon: avatar from account');
   assert.strictEqual(r.followers, 1234, 'Mastodon: followers_count from account');
@@ -136,7 +174,7 @@ function mockFetch(routes) {
   // date → both null (graceful hide, like X).
   mockFetch([
     ['/ajax/illust/', { error: false, body: { illustTitle: 'T', userName: 'P', userId: '42', pageCount: 1, urls: { original: 'https://i.pximg/p0.jpg' }, tags: { tags: [] } } }],
-    ['/ajax/user/', { error: false, body: { userId: '42', name: 'P', image: 'https://i.pximg/small.jpg', imageBig: 'https://i.pximg/big.jpg' } }]
+    ['/ajax/user/', { error: false, body: { userId: '42', name: 'P', image: 'https://i.pximg/small.jpg', imageBig: 'https://i.pximg/big.jpg' } }],
   ]);
   r = await fetchPixivIllust({ platform: 'pixiv', id: '555' }, 'https://www.pixiv.net/artworks/555');
   assert.strictEqual(r.avatar, 'https://i.pximg/big.jpg', 'pixiv: avatar imageBig from user ajax');
@@ -144,4 +182,7 @@ function mockFetch(routes) {
   assert.strictEqual(r.authorCreatedAt, null, 'pixiv: account created date null (not exposed)');
 
   console.log('PASS test-metadata-correctness: X undefined-guard, Bluesky quote gating, Misskey permalink, author profile (avatar/followers/createdAt)');
-})().catch((e) => { console.error('FAIL test-metadata-correctness:', e && e.message ? e.message : e); process.exit(1); });
+})().catch((e) => {
+  console.error('FAIL test-metadata-correctness:', e && e.message ? e.message : e);
+  process.exit(1);
+});

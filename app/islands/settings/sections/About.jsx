@@ -16,7 +16,11 @@ export function About() {
     return () => handle.destroy();
   }, []);
 
-  useEffect(() => { Promise.resolve(ipc.getAppInfo()).then(setInfo).catch(() => {}); }, []);
+  useEffect(() => {
+    Promise.resolve(ipc.getAppInfo())
+      .then(setInfo)
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="about-card">
@@ -26,9 +30,7 @@ export function About() {
       <div className="about-name">Corpus</div>
       <div className="about-version">{info ? t('aboutVersion', [info.version || '']) : ''}</div>
       <div className="about-tagline">{t('aboutTagline')}</div>
-      <div className="about-meta">
-        {info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}
-      </div>
+      <div className="about-meta">{info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}</div>
     </div>
   );
 }

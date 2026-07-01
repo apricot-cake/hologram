@@ -8,14 +8,17 @@
 //
 //   node scripts/test-avatar-fill.js
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { pixivRefererFor } = require('../native-host/media-download');
 
 let ok = true;
-const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+const check = (label, cond) => {
+  console.log((cond ? 'PASS ' : 'FAIL ') + label);
+  if (!cond) ok = false;
+};
 
 // --- pixivRefererFor (pure) ---
 check('pixivRefererFor i.pximg.net → pixiv referer', pixivRefererFor('https://i.pximg.net/img/x.jpg') === 'https://www.pixiv.net/');
@@ -44,14 +47,17 @@ fs.writeFileSync(path.join(saveFolder, C + '.json'), JSON.stringify({ captureId:
 
 // Preload that stubs global.fetch before the script runs (no network, no TLS).
 const stub = path.join(tmp, 'stub-fetch.js');
-fs.writeFileSync(stub, [
-  "const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','base64');",
-  'global.fetch = async (url) => {',
-  '  const u = String(url);',
-  "  if (u.endsWith('/photo.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });",
-  "  return new Response('no', { status: 404 });",
-  '};'
-].join('\n'));
+fs.writeFileSync(
+  stub,
+  [
+    "const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','base64');",
+    'global.fetch = async (url) => {',
+    '  const u = String(url);',
+    "  if (u.endsWith('/photo.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });",
+    "  return new Response('no', { status: 404 });",
+    '};',
+  ].join('\n'),
+);
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
 const res = spawnSync(process.execPath, ['-r', stub, path.join(__dirname, 'backfill-metadata.js'), '--avatars'], { env, encoding: 'utf8' });

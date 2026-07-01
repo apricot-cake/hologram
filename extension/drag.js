@@ -11,7 +11,7 @@
   if (window.__corpusDragActive) return; // avoid double-binding on re-injection
   window.__corpusDragActive = true;
 
-  let pending = null;        // {platform, postUrl, imageUrls} captured at dragstart
+  let pending = null; // {platform, postUrl, imageUrls} captured at dragstart
   let overlay = null;
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
@@ -22,7 +22,9 @@
   // table is populated by the time it's read in practice.
   let t = (key) => key;
   if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
-    window.corpusI18n.then((api) => { if (api && api.getMessage) t = api.getMessage; });
+    window.corpusI18n.then((api) => {
+      if (api && api.getMessage) t = api.getMessage;
+    });
   }
 
   const BG_IDLE = 'rgba(29,155,240,0.96)';
@@ -36,19 +38,41 @@
     overlay = document.createElement('div');
     overlay.id = '__corpusDropZone';
     overlay.style.cssText = [
-      'position:fixed', 'right:24px', 'bottom:24px', 'z-index:2147483647',
-      'width:220px', 'min-height:120px', 'box-sizing:border-box', 'display:none',
-      'align-items:center', 'justify-content:center', 'padding:20px',
-      'border-radius:16px', 'border:3px dashed rgba(255,255,255,0.75)',
-      `background:${BG_IDLE}`, 'color:#fff',
+      'position:fixed',
+      'right:24px',
+      'bottom:24px',
+      'z-index:2147483647',
+      'width:220px',
+      'min-height:120px',
+      'box-sizing:border-box',
+      'display:none',
+      'align-items:center',
+      'justify-content:center',
+      'padding:20px',
+      'border-radius:16px',
+      'border:3px dashed rgba(255,255,255,0.75)',
+      `background:${BG_IDLE}`,
+      'color:#fff',
       'font:600 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-      'text-align:center', 'box-shadow:0 8px 28px rgba(0,0,0,0.35)',
-      'pointer-events:auto', 'transition:transform .12s, background .12s'
+      'text-align:center',
+      'box-shadow:0 8px 28px rgba(0,0,0,0.35)',
+      'pointer-events:auto',
+      'transition:transform .12s, background .12s',
     ].join(';');
     overlay.textContent = t('dragDropHint');
-    overlay.addEventListener('dragenter', (e) => { e.preventDefault(); overlay.style.transform = 'scale(1.05)'; overlay.style.background = BG_OVER; });
-    overlay.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
-    overlay.addEventListener('dragleave', () => { overlay.style.transform = ''; overlay.style.background = BG_IDLE; });
+    overlay.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      overlay.style.transform = 'scale(1.05)';
+      overlay.style.background = BG_OVER;
+    });
+    overlay.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+    overlay.addEventListener('dragleave', () => {
+      overlay.style.transform = '';
+      overlay.style.background = BG_IDLE;
+    });
     overlay.addEventListener('drop', onDrop, true);
     document.body.appendChild(overlay);
     return overlay;
@@ -61,31 +85,44 @@
     overlay.style.transform = '';
     overlay.style.display = 'flex';
   }
-  function hideOverlay() { if (overlay) overlay.style.display = 'none'; }
+  function hideOverlay() {
+    if (overlay) overlay.style.display = 'none';
+  }
 
-  document.addEventListener('dragstart', (e) => {
-    if (!chrome.runtime?.id) return;
-    const img = e.target.closest?.('img') || (e.target.tagName === 'IMG' ? e.target : null);
-    if (!img) return;
-    const identity = siteConfig.extractIdentity(img);
-    if (!identity || !identity.link) return;
-    pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform) };
-    showOverlay();
-  }, true);
+  document.addEventListener(
+    'dragstart',
+    (e) => {
+      if (!chrome.runtime?.id) return;
+      const img = e.target.closest?.('img') || (e.target.tagName === 'IMG' ? e.target : null);
+      if (!img) return;
+      const identity = siteConfig.extractIdentity(img);
+      if (!identity || !identity.link) return;
+      pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform) };
+      showOverlay();
+    },
+    true,
+  );
 
   // Drag ended without dropping into the zone (dropped elsewhere or cancelled).
-  document.addEventListener('dragend', () => {
-    if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
-    pending = null;
-    hideOverlay();
-  }, true);
+  document.addEventListener(
+    'dragend',
+    () => {
+      if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
+      pending = null;
+      hideOverlay();
+    },
+    true,
+  );
 
   function onDrop(e) {
     e.preventDefault();
     e.stopPropagation();
     const p = pending;
     pending = null;
-    if (!p) { hideOverlay(); return; }
+    if (!p) {
+      hideOverlay();
+      return;
+    }
     savingViaDrop = true;
     overlay.textContent = t('bannerSaving');
     overlay.style.background = BG_BUSY;
@@ -95,12 +132,19 @@
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       overlay.textContent = partial
         ? t('bannerSavedNoMeta')
-        : (ok ? t('bannerSaved')
-              : (res && res.hostMissing
-                  ? t('bannerHostMissing')   // missing native host → "restart Chrome"
-                  : (t('bannerFailed') + (res && res.error ? `: ${res.error}` : ''))));
-      overlay.style.background = partial ? BG_PARTIAL : (ok ? BG_OVER : BG_FAIL);
-      setTimeout(() => { hideOverlay(); savingViaDrop = false; }, partial ? 2600 : 1400);
+        : ok
+          ? t('bannerSaved')
+          : res && res.hostMissing
+            ? t('bannerHostMissing') // missing native host → "restart Chrome"
+            : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
+      overlay.style.background = partial ? BG_PARTIAL : ok ? BG_OVER : BG_FAIL;
+      setTimeout(
+        () => {
+          hideOverlay();
+          savingViaDrop = false;
+        },
+        partial ? 2600 : 1400,
+      );
     });
   }
 
@@ -125,7 +169,13 @@
   function getHighResImageUrl(img, platform) {
     const src = img.src || '';
     if (platform === 'x' && src.includes('pbs.twimg.com/media/')) {
-      try { const u = new URL(src); u.searchParams.set('name', 'orig'); return u.href; } catch { /* ignore */ }
+      try {
+        const u = new URL(src);
+        u.searchParams.set('name', 'orig');
+        return u.href;
+      } catch {
+        /* ignore */
+      }
     }
     if (platform === 'bluesky' && src.includes('cdn.bsky.app')) return src.replace(/@jpeg$/, '');
     return null;
@@ -151,21 +201,20 @@
         // OUTSIDE any post container — with the lightbox open, every image on
         // the page (replies, recommendations) would otherwise be attributed
         // to the lightbox post. (audit 2026-06-11)
-        const link = img.closest('a[href*="/status/"]')
-          || findAncestorContainerLink(img, 'a[href*="/status/"]', 'article');
+        const link = img.closest('a[href*="/status/"]') || findAncestorContainerLink(img, 'a[href*="/status/"]', 'article');
         const parsedAnchor = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
         const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
         const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
         let screenName, postId;
-        if (parsedAnchor) { [, screenName, postId] = parsedAnchor.match; }
-        else if ((viewer || parsedLoc) && !img.closest('article')) {
+        if (parsedAnchor) {
+          [, screenName, postId] = parsedAnchor.match;
+        } else if ((viewer || parsedLoc) && !img.closest('article')) {
           [, screenName, postId] = viewer || parsedLoc;
-        }
-        else return null;
+        } else return null;
         const sn = decodeURIComponent(screenName);
         const pid = decodeURIComponent(postId);
         return { postId: pid, link: `https://x.com/${sn}/status/${pid}` };
-      }
+      },
     };
   }
 
@@ -174,12 +223,12 @@
     return {
       platform: 'bluesky',
       extractIdentity(img) {
-        const link = img.closest('a[href*="/post/"]')
-          || findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER);
+        const link = img.closest('a[href*="/post/"]') || findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER);
         const parsed = link ? parseUrlPath(link.href, /^\/profile\/([^/]+)\/post\/([^/?#]+)/) : null;
         let handle, postId;
-        if (parsed) { [, handle, postId] = parsed.match; }
-        else {
+        if (parsed) {
+          [, handle, postId] = parsed.match;
+        } else {
           // Anchor-less image outside any post container (e.g. the image
           // viewer) on a post detail page — the URL bar identifies it.
           const loc = location.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/);
@@ -189,7 +238,7 @@
         // Canonical permalink — anchors can carry /liked-by, /reposted-by,
         // /quotes suffixes (engagement-count links on the thread anchor post).
         return { postId: decodeURIComponent(postId), link: `https://bsky.app/profile/${handle}/post/${postId}` };
-      }
+      },
     };
   }
 
@@ -203,17 +252,25 @@
         for (const src of [img.src, img.currentSrc]) {
           if (!src) continue;
           const m = src.match(PXIMG_FILENAME);
-          if (m) { postId = m[1]; break; }
+          if (m) {
+            postId = m[1];
+            break;
+          }
         }
         if (!postId) {
-          const link = img.closest('a[href*="/artworks/"]')
-            || findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure');
-          if (link) { const parsed = parseUrlPath(link.href, ARTWORK_PATH); if (parsed) postId = parsed.match[1]; }
+          const link = img.closest('a[href*="/artworks/"]') || findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure');
+          if (link) {
+            const parsed = parseUrlPath(link.href, ARTWORK_PATH);
+            if (parsed) postId = parsed.match[1];
+          }
         }
-        if (!postId) { const m = location.pathname.match(ARTWORK_PATH); if (m) postId = m[1]; }
+        if (!postId) {
+          const m = location.pathname.match(ARTWORK_PATH);
+          if (m) postId = m[1];
+        }
         if (!postId) return null;
         return { postId: decodeURIComponent(postId), link: `https://www.pixiv.net/artworks/${postId}` };
-      }
+      },
     };
   }
 
@@ -233,14 +290,18 @@
         // the nearest match belongs to some unrelated post — give up instead.
         if (boundarySel && !el.closest(boundarySel)) return null;
         if (candidates.length === 1) return candidates[0];
-        let best = null, bestDist = Infinity;
+        let best = null,
+          bestDist = Number.POSITIVE_INFINITY;
         for (const link of candidates) {
           const d = treeDistance(img, link);
-          if (d < bestDist) { bestDist = d; best = link; }
+          if (d < bestDist) {
+            bestDist = d;
+            best = link;
+          }
         }
         return best;
       }
-      if (boundarySel && el.matches(boundarySel)) return null;   // container exhausted — stop
+      if (boundarySel && el.matches(boundarySel)) return null; // container exhausted — stop
       el = el.parentElement;
     }
     return null;
@@ -255,7 +316,7 @@
       if (indexInA.has(n)) return indexInA.get(n) + depthB;
       depthB++;
     }
-    return Infinity;
+    return Number.POSITIVE_INFINITY;
   }
 
   function parseUrlPath(href, pathRegex) {

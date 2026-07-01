@@ -16,7 +16,9 @@ import { PostCard } from './PostCard.jsx';
 
 let LABELS = {};
 
-function setLabels(l) { LABELS = l || {}; }
+function setLabels(l) {
+  LABELS = l || {};
+}
 
 function html(model) {
   return renderToStaticMarkup(<PostCard m={model} L={LABELS} />);

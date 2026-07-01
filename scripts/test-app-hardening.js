@@ -14,10 +14,10 @@
 //
 //   node scripts/test-app-hardening.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -37,15 +37,29 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const POST = 'dummy-har-0001';
 fs.writeFileSync(path.join(saveFolder, `${POST}.jpg`), jpeg);
 fs.writeFileSync(path.join(saveFolder, `${POST}-avatar.png`), png);
-fs.writeFileSync(path.join(saveFolder, `${POST}.json`), JSON.stringify({
-  captureId: POST, image: `${POST}.jpg`, avatar: 'https://h/a.png', avatarFile: `${POST}-avatar.png`,
-  url: `https://x.com/u/status/${POST}`, platform: 'x', text: 't', tags: [],
-  capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z',
-}, null, 2));
+fs.writeFileSync(
+  path.join(saveFolder, `${POST}.json`),
+  JSON.stringify(
+    {
+      captureId: POST,
+      image: `${POST}.jpg`,
+      avatar: 'https://h/a.png',
+      avatarFile: `${POST}-avatar.png`,
+      url: `https://x.com/u/status/${POST}`,
+      platform: 'x',
+      text: 't',
+      tags: [],
+      capturedAt: '2026-01-01T00:00:00.000Z',
+      date: '2026-01-01T00:00:00.000Z',
+    },
+    null,
+    2,
+  ),
+);
 
 // 件3: two org files that are present-but-corrupt (torn JSON). The handlers should
 // read them as empty (so the UI loads) but refuse to overwrite them.
-const CORRUPT = '{ "collections": [ { "id": "c1", "nam';   // truncated mid-object
+const CORRUPT = '{ "collections": [ { "id": "c1", "nam'; // truncated mid-object
 fs.writeFileSync(path.join(saveFolder, 'collections.json'), CORRUPT);
 fs.writeFileSync(path.join(saveFolder, 'tag-groups.json'), CORRUPT);
 
@@ -84,17 +98,27 @@ const evalJs = `(async () => {
 })()`;
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs,
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r = {};
-  try { r = JSON.parse(m && m[1]); } catch { /* ignore */ }
+  try {
+    r = JSON.parse(m && m[1]);
+  } catch {
+    /* ignore */
+  }
 
   const trashDir = path.join(saveFolder, '.trash');
   // 件1 assertions (disk state): avatar + primary moved into .trash, none left orphaned.
@@ -104,32 +128,44 @@ child.on('close', () => {
   const primaryInTrash = fs.existsSync(path.join(trashDir, `${POST}.jpg`));
 
   // 件3 assertions (disk state): the corrupt org files are PRESERVED byte-for-byte.
-  let collPreserved = false; let tgPreserved = false;
-  try { collPreserved = fs.readFileSync(path.join(saveFolder, 'collections.json'), 'utf8') === CORRUPT; } catch { /* missing = fail */ }
-  try { tgPreserved = fs.readFileSync(path.join(saveFolder, 'tag-groups.json'), 'utf8') === CORRUPT; } catch { /* missing = fail */ }
+  let collPreserved = false;
+  let tgPreserved = false;
+  try {
+    collPreserved = fs.readFileSync(path.join(saveFolder, 'collections.json'), 'utf8') === CORRUPT;
+  } catch {
+    /* missing = fail */
+  }
+  try {
+    tgPreserved = fs.readFileSync(path.join(saveFolder, 'tag-groups.json'), 'utf8') === CORRUPT;
+  } catch {
+    /* missing = fail */
+  }
 
   fs.rmSync(tmp, { recursive: true, force: true });
 
   let ok = true;
-  const check = (label, cond) => { console.log((cond ? 'PASS' : 'FAIL') + '  ' + label); if (!cond) ok = false; };
+  const check = (label, cond) => {
+    console.log((cond ? 'PASS' : 'FAIL') + '  ' + label);
+    if (!cond) ok = false;
+  };
 
   console.log('\n--- main.js hardening regressions ---\n');
   // 件1
   check('件1 アバターが保存先に孤児化していない', !avatarOrphaned);
-  check('件1 アバターが .trash へ回収された',      avatarInTrash);
-  check('件1 主画像が保存先から消えた',            primaryGone);
-  check('件1 主画像が .trash へ回収された',        primaryInTrash);
+  check('件1 アバターが .trash へ回収された', avatarInTrash);
+  check('件1 主画像が保存先から消えた', primaryGone);
+  check('件1 主画像が .trash へ回収された', primaryInTrash);
   // 件2
-  check('件2 window.open が拒否された',            r.openDenied === true);
+  check('件2 window.open が拒否された', r.openDenied === true);
   check('件2 window drop が preventDefault された', r.dropPrevented === true);
   check('件2 window dragover が preventDefault された', r.dragPrevented === true);
   // 件3
   check('件3 壊れた collections.json は空として読まれる', r.collEmpty === true);
-  check('件3 壊れた tag-groups.json は空として読まれる',  r.tgEmpty === true);
-  check('件3 空での collections 上書きが拒否された',      r.setCollRefused === true);
-  check('件3 空での tag-groups 上書きが拒否された',       r.setTgRefused === true);
-  check('件3 壊れた collections.json が温存された',        collPreserved);
-  check('件3 壊れた tag-groups.json が温存された',         tgPreserved);
+  check('件3 壊れた tag-groups.json は空として読まれる', r.tgEmpty === true);
+  check('件3 空での collections 上書きが拒否された', r.setCollRefused === true);
+  check('件3 空での tag-groups 上書きが拒否された', r.setTgRefused === true);
+  check('件3 壊れた collections.json が温存された', collPreserved);
+  check('件3 壊れた tag-groups.json が温存された', tgPreserved);
 
   console.log('\n' + (ok ? 'HARDENING_TEST_PASS' : 'HARDENING_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

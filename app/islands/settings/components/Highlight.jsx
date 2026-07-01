@@ -17,7 +17,11 @@ export function Highlight({ text }) {
   let idx;
   while ((idx = low.indexOf(q, i)) !== -1) {
     if (idx > i) out.push(s.slice(i, idx));
-    out.push(<mark className="set-hl" key={idx}>{s.slice(idx, idx + q.length)}</mark>);
+    out.push(
+      <mark className="set-hl" key={idx}>
+        {s.slice(idx, idx + q.length)}
+      </mark>,
+    );
     i = idx + q.length;
   }
   if (i < s.length) out.push(s.slice(i));

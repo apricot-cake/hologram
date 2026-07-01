@@ -5,11 +5,15 @@
 //
 //   node scripts/test-backup-guard.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO } = require('../app/backup-guard');
 
 let pass = 0;
-function check(name, fn) { fn(); pass++; console.log('  ok  ' + name); }
+function check(name, fn) {
+  fn();
+  pass++;
+  console.log('  ok  ' + name);
+}
 
 // --- pruneDecision -----------------------------------------------------------
 

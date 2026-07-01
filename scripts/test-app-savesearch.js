@@ -11,10 +11,10 @@
 //
 //   node scripts/test-app-savesearch.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -30,12 +30,28 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 for (let i = 0; i < 3; i++) {
   const id = '170000000000' + i + '-ss' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
-    captureId: id, image: id + '.jpg', url: 'https://x.com/u/status/' + (700 + i),
-    platform: 'x', text: '投稿' + i, displayName: '人' + i, screenName: 'u' + i,
-    likes: 10 + i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: [], hashtags: []
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, id + '.json'),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: id + '.jpg',
+        url: 'https://x.com/u/status/' + (700 + i),
+        platform: 'x',
+        text: '投稿' + i,
+        displayName: '人' + i,
+        screenName: 'u' + i,
+        likes: 10 + i,
+        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+        media: [],
+        tags: [],
+        hashtags: [],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 const evalJs = `(async () => {
@@ -93,16 +109,23 @@ const evalJs = `(async () => {
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
-  if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+  if (m) {
+    try {
+      r = JSON.parse(m[1]);
+    } catch {
+      /* ignore */
+    }
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const saveOk = r.leafCards === 1 && r.saved === true && r.hasQ === false &&
-    r.leaves === 'text:投稿1' && r.boxAfterSave === '';
-  const restoreOk = r.tabResetCards === 3 && r.foundSaved === true && r.openMode === false &&
-    r.openChips === 1 && r.openCards === 1 && r.openBox === '';
+  const saveOk = r.leafCards === 1 && r.saved === true && r.hasQ === false && r.leaves === 'text:投稿1' && r.boxAfterSave === '';
+  const restoreOk = r.tabResetCards === 3 && r.foundSaved === true && r.openMode === false && r.openChips === 1 && r.openCards === 1 && r.openBox === '';
   const legacyOk = r.foundLegacy === true && r.legacyChips === 1 && r.legacyCards === 1;
   const ok = saveOk && restoreOk && legacyOk;
   console.log(`save: leafCards=${r.leafCards} saved=${r.saved} hasQ=${r.hasQ} leaves="${r.leaves}" boxAfterSave="${r.boxAfterSave}"`);

@@ -6,12 +6,16 @@ const NATIVE_HOST = 'com.corpus.host';
 const PLATFORM_HOSTS = {
   x: ['x.com', 'twitter.com'],
   bluesky: ['bsky.app'],
-  pixiv: ['www.pixiv.net', 'pixiv.net']
+  pixiv: ['www.pixiv.net', 'pixiv.net'],
   // misskey / mastodon: any https origin (instances are arbitrary hosts)
 };
 
 function getHostname(url) {
-  try { return new URL(url).hostname; } catch { return ''; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
 }
 
 // --- Capture diagnostics ------------------------------------------------------
@@ -52,7 +56,7 @@ async function activateOnTab(tab) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ['i18n.js', 'content.js']
+      files: ['i18n.js', 'content.js'],
     });
   } catch (error) {
     console.error('Failed to inject content script:', error);
@@ -108,7 +112,9 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   let dataUrl;
   try {
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
-  } catch (err) { throw stageError('capture', err?.message || 'captureVisibleTab failed'); }
+  } catch (err) {
+    throw stageError('capture', err?.message || 'captureVisibleTab failed');
+  }
 
   const response = await chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect });
   if (!response?.croppedDataUrl) throw stageError('crop', 'Cropping failed');
@@ -121,19 +127,26 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   let meta;
   try {
     meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
-  } catch (err) { throw stageError('metadata', err?.message || 'metadata fetch threw'); }
+  } catch (err) {
+    throw stageError('metadata', err?.message || 'metadata fetch threw');
+  }
 
   const record = buildRecord(meta, {
-    captureId, capturedAt, postUrl, sendPlatform,
+    captureId,
+    capturedAt,
+    postUrl,
+    sendPlatform,
     // The screenshot is the primary image; media[] (API original URLs) is what the
     // bridge downloads, then overwrites with the saved filenames.
-    extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [] }
+    extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [] },
   });
 
   const metaOk = metaFetched(meta);
   try {
     await sendToBridge(captureId, jpegBase64, record, metaOk);
-  } catch (err) { throw stageError('bridge', err?.message || 'bridge save failed'); }
+  } catch (err) {
+    throw stageError('bridge', err?.message || 'bridge save failed');
+  }
   notify(tab.id, true, { metaOk });
 }
 
@@ -144,41 +157,44 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
 // which image of a multi-image post it was. Single source of truth so a new field
 // can't drift between the two paths.
 function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra }) {
-  return Object.assign({
-    captureId,
-    url: meta.url || postUrl || null,
-    // meta.platform is null only when the URL didn't parse; fall back to the
-    // sender-reported platform (already origin-validated) so the record stays
-    // visible in the viewer's platform filter rather than becoming platform:null.
-    platform: meta.platform || sendPlatform || null,
-    text: meta.text,
-    title: meta.title || null,
-    displayName: meta.displayName,
-    screenName: meta.screenName,
-    userId: meta.userId,
-    avatar: meta.avatar,
-    avatarReferer: meta.avatarReferer,
-    followers: meta.followers,
-    authorCreatedAt: meta.authorCreatedAt,
-    likes: meta.likes,
-    reposts: meta.reposts,
-    replies: meta.replies,
-    bookmarks: meta.bookmarks,
-    views: meta.views,
-    // No silent fallback to capture time: a fabricated "post date" pollutes the
-    // viewer's date sort/filter. The viewer handles null dates.
-    date: meta.date || null,
-    capturedAt,
-    updatedAt: capturedAt,                 // last modified in Corpus (bumped on tag edits etc.)
-    lang: meta.lang,
-    isReply: meta.isReply,
-    isQuote: meta.isQuote,
-    isThread: meta.isThread,
-    quotedUrl: meta.quotedUrl,
-    replyToId: meta.replyToId,
-    hashtags: meta.hashtags || [],
-    tags: meta.tags || []
-  }, extra);
+  return Object.assign(
+    {
+      captureId,
+      url: meta.url || postUrl || null,
+      // meta.platform is null only when the URL didn't parse; fall back to the
+      // sender-reported platform (already origin-validated) so the record stays
+      // visible in the viewer's platform filter rather than becoming platform:null.
+      platform: meta.platform || sendPlatform || null,
+      text: meta.text,
+      title: meta.title || null,
+      displayName: meta.displayName,
+      screenName: meta.screenName,
+      userId: meta.userId,
+      avatar: meta.avatar,
+      avatarReferer: meta.avatarReferer,
+      followers: meta.followers,
+      authorCreatedAt: meta.authorCreatedAt,
+      likes: meta.likes,
+      reposts: meta.reposts,
+      replies: meta.replies,
+      bookmarks: meta.bookmarks,
+      views: meta.views,
+      // No silent fallback to capture time: a fabricated "post date" pollutes the
+      // viewer's date sort/filter. The viewer handles null dates.
+      date: meta.date || null,
+      capturedAt,
+      updatedAt: capturedAt, // last modified in Corpus (bumped on tag edits etc.)
+      lang: meta.lang,
+      isReply: meta.isReply,
+      isQuote: meta.isQuote,
+      isThread: meta.isThread,
+      quotedUrl: meta.quotedUrl,
+      replyToId: meta.replyToId,
+      hashtags: meta.hashtags || [],
+      tags: meta.tags || [],
+    },
+    extra,
+  );
 }
 
 // Send a message to the native messaging host (which writes the sidecar + image
@@ -195,7 +211,11 @@ function bridgeSend(message) {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      try { port?.disconnect(); } catch { /* already disconnected */ }
+      try {
+        port?.disconnect();
+      } catch {
+        /* already disconnected */
+      }
       if (error) reject(error);
       else resolve(result);
     }
@@ -254,17 +274,28 @@ function logCapture(entry) {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      try { port?.disconnect(); } catch { /* already gone */ }
+      try {
+        port?.disconnect();
+      } catch {
+        /* already gone */
+      }
       if (!viaHost) stashLogLocally(full);
       resolve();
     };
     timer = setTimeout(() => done(false), 4000);
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST);
-    } catch { done(false); return; }
+    } catch {
+      done(false);
+      return;
+    }
     port.onMessage.addListener(() => done(true));
     port.onDisconnect.addListener(() => done(false));
-    try { port.postMessage({ type: 'log', entry: full }); } catch { done(false); }
+    try {
+      port.postMessage({ type: 'log', entry: full });
+    } catch {
+      done(false);
+    }
   });
 }
 
@@ -278,11 +309,15 @@ function stashLogLocally(entry) {
       void chrome.runtime.lastError; // ignore quota / other set errors
       chrome.storage.local.get(null, (all) => {
         if (chrome.runtime.lastError) return;
-        const keys = Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX)).sort();
+        const keys = Object.keys(all)
+          .filter((k) => k.startsWith(DIAG_PREFIX))
+          .sort();
         if (keys.length > DIAG_KEEP) chrome.storage.local.remove(keys.slice(0, keys.length - DIAG_KEEP));
       });
     });
-  } catch { /* ignore — diagnostics are non-essential */ }
+  } catch {
+    /* ignore — diagnostics are non-essential */
+  }
 }
 
 // A metadata fetch "succeeded" if the platform API returned any identifying
@@ -294,7 +329,9 @@ function metaFetched(meta) {
 }
 
 function generateCaptureId() {
-  const hex = Math.floor(Math.random() * 0xFFFF).toString(16).padStart(4, '0');
+  const hex = Math.floor(Math.random() * 0xffff)
+    .toString(16)
+    .padStart(4, '0');
   return `${Date.now()}-${hex}`;
 }
 
@@ -304,7 +341,10 @@ function generateCaptureId() {
 // the "illustration record" shape (image = the art, media: []).
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type !== 'imageDragged') return false;
-  if (!sender.tab?.id) { sendResponse({ ok: false, error: 'Missing tab context' }); return false; }
+  if (!sender.tab?.id) {
+    sendResponse({ ok: false, error: 'Missing tab context' });
+    return false;
+  }
   if (!isAllowedSender(sender.tab.url, message.platform)) {
     sendResponse({ ok: false, error: 'Sender origin does not match platform' });
     return false;
@@ -331,7 +371,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'dumpLogs') {
     chrome.storage.local.get(null, (all) => {
-      const entries = Object.keys(all).filter((k) => k.startsWith(DIAG_PREFIX)).sort().map((k) => all[k]);
+      const entries = Object.keys(all)
+        .filter((k) => k.startsWith(DIAG_PREFIX))
+        .sort()
+        .map((k) => all[k]);
       sendResponse({ ok: true, entries });
     });
     return true; // async
@@ -348,27 +391,34 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   let meta;
   try {
     meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
-  } catch (err) { throw stageError('metadata', err?.message || 'metadata fetch threw'); }
+  } catch (err) {
+    throw stageError('metadata', err?.message || 'metadata fetch threw');
+  }
   const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
   if (!primary || !primary.url) throw stageError('image', 'Could not resolve a dragged image URL');
 
   const record = buildRecord(meta, {
-    captureId, capturedAt, postUrl, sendPlatform,
+    captureId,
+    capturedAt,
+    postUrl,
+    sendPlatform,
     extra: {
       mediaType: 'image',
       // Which image of a multi-image post this is (1-based) + the total. Only
       // recorded for multi-image posts; imageIndex is null when undeterminable.
       imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
-      imageIndex: ((meta.media || []).length > 1 && primary.index >= 0) ? primary.index + 1 : null
+      imageIndex: (meta.media || []).length > 1 && primary.index >= 0 ? primary.index + 1 : null,
       // image + media[] are set by the bridge (image = downloaded original, media = [])
-    }
+    },
   });
 
   const metaOk = metaFetched(meta);
   let ack;
   try {
     ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
-  } catch (err) { throw stageError('bridge', err?.message || 'bridge save failed'); }
+  } catch (err) {
+    throw stageError('bridge', err?.message || 'bridge save failed');
+  }
   // Surface metadata-fetch failure to the drop overlay (same partial-success
   // signal as the click-save banner) so a screenshot-less illustration that
   // saved without post info isn't shown as a plain success.
@@ -383,8 +433,14 @@ function pickPrimaryImage(platform, imageUrls, meta) {
   const media = (meta && meta.media) || [];
   if (platform === 'pixiv') {
     let pidx = -1;
-    for (const u of imageUrls) { const m = u && u.match(/\/\d+_p(\d+)[._]/); if (m) { pidx = parseInt(m[1], 10); break; } }
-    const i = (pidx >= 0 && pidx < media.length) ? pidx : (media.length === 1 ? 0 : -1);
+    for (const u of imageUrls) {
+      const m = u && u.match(/\/\d+_p(\d+)[._]/);
+      if (m) {
+        pidx = Number.parseInt(m[1], 10);
+        break;
+      }
+    }
+    const i = pidx >= 0 && pidx < media.length ? pidx : media.length === 1 ? 0 : -1;
     // Only substitute the API original when the dragged page was actually
     // matched — silently saving p0 for an unmatched drag asserted an image the
     // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
@@ -415,14 +471,23 @@ function mediaKey(platform, url) {
 function matchMediaIndex(platform, imageUrls, media) {
   const keys = imageUrls.map((u) => mediaKey(platform, u)).filter(Boolean);
   if (!keys.length) return -1;
-  for (let i = 0; i < media.length; i++) { const k = mediaKey(platform, media[i].url); if (k && keys.includes(k)) return i; }
+  for (let i = 0; i < media.length; i++) {
+    const k = mediaKey(platform, media[i].url);
+    if (k && keys.includes(k)) return i;
+  }
   return -1;
 }
 
 function hiRes(platform, url) {
   if (!url) return url;
   if (platform === 'x' && url.includes('pbs.twimg.com/media/')) {
-    try { const u = new URL(url); u.searchParams.set('name', 'orig'); return u.href; } catch { /* ignore */ }
+    try {
+      const u = new URL(url);
+      u.searchParams.set('name', 'orig');
+      return u.href;
+    } catch {
+      /* ignore */
+    }
   }
   if (platform === 'bluesky' && url.includes('cdn.bsky.app')) return url.replace(/@jpeg$/, '');
   return url;

@@ -9,7 +9,12 @@ export function Language() {
   const [lang, setLang] = useState('auto');
 
   useEffect(() => {
-    ipc.getPrefs().then((p) => { if (p) setLang(p.language || 'auto'); }).catch(() => {});
+    ipc
+      .getPrefs()
+      .then((p) => {
+        if (p) setLang(p.language || 'auto');
+      })
+      .catch(() => {});
   }, []);
 
   return (

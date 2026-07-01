@@ -16,8 +16,8 @@
 //     text-prefix/date) — engagement counts drift and are reported as info
 //   - media count sanity (saved ≤ live, imageIndex within imageCount)
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { fetchPostMetadata } = require('../extension/metadata');
 const { configDir, defaultLibraryDir } = require('../native-host/paths');
 
@@ -25,7 +25,9 @@ function saveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
-  } catch { /* default below */ }
+  } catch {
+    /* default below */
+  }
   return defaultLibraryDir();
 }
 
@@ -34,15 +36,19 @@ const CANON = {
   bluesky: /^https:\/\/bsky\.app\/profile\/[^/]+\/post\/[^/?#]+$/,
   misskey: /^https?:\/\/[^/]+\/notes\/[^/?#]+$/,
   mastodon: /^https?:\/\/[^/]+\/@[^/]+\/\d[\w-]*$/,
-  pixiv: /^https:\/\/www\.pixiv\.net\/artworks\/\d+$/
+  pixiv: /^https:\/\/www\.pixiv\.net\/artworks\/\d+$/,
 };
 
 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
 
 async function verifySidecar(file) {
   let rec;
-  try { rec = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-  if (!rec || !rec.captureId) return null;   // tag-groups.json などの管理ファイル
+  try {
+    rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!rec || !rec.captureId) return null; // tag-groups.json などの管理ファイル
 
   const dir = path.dirname(file);
   const base = path.basename(file, '.json');
@@ -62,7 +68,11 @@ async function verifySidecar(file) {
 
   if (rec.url && rec.platform) {
     let live = null;
-    try { live = await fetchPostMetadata(rec.url); } catch { /* below */ }
+    try {
+      live = await fetchPostMetadata(rec.url);
+    } catch {
+      /* below */
+    }
     if (!live || (!live.screenName && !live.text && !live.date)) {
       info.push('liveメタ取得不可（API照合スキップ）');
     } else {
@@ -71,15 +81,14 @@ async function verifySidecar(file) {
           issues.push(`${k} 不一致: saved=${rec[k]} live=${live[k]}`);
         }
       }
-      const st = norm(rec.text); const lt = norm(live.text);
+      const st = norm(rec.text);
+      const lt = norm(live.text);
       if (st && lt && !(lt.startsWith(st.slice(0, 60)) || st.startsWith(lt.slice(0, 60)))) {
         issues.push(`text 不一致: "${st.slice(0, 30)}…" / "${lt.slice(0, 30)}…"`);
       }
       if (rec.date && live.date && rec.date !== live.date) issues.push(`date 不一致: ${rec.date} vs ${live.date}`);
 
-      const counts = ['likes', 'reposts', 'replies']
-        .filter((k) => rec[k] != null && live[k] != null)
-        .map((k) => `${k} ${rec[k]}→${live[k]}`);
+      const counts = ['likes', 'reposts', 'replies'].filter((k) => rec[k] != null && live[k] != null).map((k) => `${k} ${rec[k]}→${live[k]}`);
       if (counts.length) info.push(counts.join(' '));
 
       const liveN = (live.media || []).length;
@@ -105,7 +114,8 @@ async function verifySidecar(file) {
 }
 
 function sidecars(dir) {
-  return fs.readdirSync(dir)
+  return fs
+    .readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
     .map((f) => path.join(dir, f))
     .map((p) => ({ p, m: fs.statSync(p).mtimeMs }))
@@ -115,16 +125,20 @@ function sidecars(dir) {
 
 (async () => {
   const dir = saveFolder();
-  if (!fs.existsSync(dir)) { console.error('保存先フォルダが見つかりません: ' + dir); process.exit(1); }
+  if (!fs.existsSync(dir)) {
+    console.error('保存先フォルダが見つかりません: ' + dir);
+    process.exit(1);
+  }
 
   const recentIdx = process.argv.indexOf('--recent');
   if (recentIdx >= 0) {
-    const n = parseInt(process.argv[recentIdx + 1], 10) || 1;
-    let okAll = true; let checked = 0;
+    const n = Number.parseInt(process.argv[recentIdx + 1], 10) || 1;
+    let okAll = true;
+    let checked = 0;
     for (const f of sidecars(dir)) {
       if (checked >= n) break;
       const r = await verifySidecar(f);
-      if (r === null) continue;   // management json — doesn't count
+      if (r === null) continue; // management json — doesn't count
       checked++;
       if (!r) okAll = false;
     }
@@ -140,9 +154,12 @@ function sidecars(dir) {
     if (!fname || !fname.endsWith('.json') || seen.has(fname)) return;
     // bridge は画像/メディアDL後にサイドカーを書く — 書き込み完了を少し待つ
     clearTimeout(timers.get(fname));
-    timers.set(fname, setTimeout(() => {
-      seen.add(fname);
-      verifySidecar(path.join(dir, fname)).catch((e) => console.error('verify error:', e.message));
-    }, 1200));
+    timers.set(
+      fname,
+      setTimeout(() => {
+        seen.add(fname);
+        verifySidecar(path.join(dir, fname)).catch((e) => console.error('verify error:', e.message));
+      }, 1200),
+    );
   });
 })();

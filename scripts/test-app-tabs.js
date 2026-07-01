@@ -6,10 +6,10 @@
 //
 //   node scripts/test-app-tabs.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -21,18 +21,27 @@ fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
-const jpeg = Buffer.from(
-  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==',
-  'base64'
-);
+const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
 function writePost(id, text, tags) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
-    captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x',
-    text, tags: tags || [],
-    capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z',
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, `${id}.json`),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: `${id}.jpg`,
+        url: `https://x.com/u/status/${id}`,
+        platform: 'x',
+        text,
+        tags: tags || [],
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        date: '2026-01-01T00:00:00.000Z',
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 writePost('p1', '投稿1', ['alpha']);
@@ -133,21 +142,32 @@ const evalJs = `(async () => {
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
-try { fs.unlinkSync(shot); } catch {}
+try {
+  fs.unlinkSync(shot);
+} catch {}
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs, CORPUS_SMOKE_SHOT: shot,
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
+  CORPUS_SMOKE_SHOT: shot,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const fsTabsOk = fs.existsSync(tabsJsonPath);
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r = {};
-  try { r = JSON.parse(m && m[1]); } catch {}
+  try {
+    r = JSON.parse(m && m[1]);
+  } catch {}
   fs.rmSync(tmp, { recursive: true, force: true });
 
   let ok = true;
@@ -157,24 +177,24 @@ child.on('close', () => {
   };
 
   console.log('\n--- Tab system smoke test ---\n');
-  check('① 初期: 1タブ',                          r.initTabCount === 1);
-  check('① 初期タイトルが "すべて" を含む',           r.initTitle && r.initTitle.includes('すべて'));
+  check('① 初期: 1タブ', r.initTabCount === 1);
+  check('① 初期タイトルが "すべて" を含む', r.initTitle && r.initTitle.includes('すべて'));
   check('② alpha フィルタ後: タイトルが "すべて" でない', r.filteredTitle && !r.filteredTitle.startsWith('すべて'));
-  check('② alpha フィルタ後: 2件に絞り込まれている',   r.filteredCards === 2);
-  check('③ Ctrl+T 後: 2タブ',                     r.tab2Count === 2);
-  check('③ 新タブタイトルが "すべて" を含む',          r.tab2Title && r.tab2Title.includes('すべて'));
-  check('③ 新タブは全件表示 (3件)',                  r.tab2Cards === 3);
-  check('④ タブ1に戻る: フィルタタイトル復元',         r.restoredTitle && !r.restoredTitle.startsWith('すべて'));
-  check('④ タブ1に戻る: 2件に絞り込まれたまま',        r.restoredCards === 2);
-  check('⑤ タブ2に戻る: "すべて" タイトル',           r.tab2RestoredTitle && r.tab2RestoredTitle.includes('すべて'));
-  check('⑤ タブ2に戻る: 3件表示',                   r.tab2RestoredCards === 3);
-  check('⑥ Ctrl+W: 1タブになる',                   r.afterCloseCount === 1);
-  check('⑥ Ctrl+W 後: タブ1 (alpha) がアクティブ',   r.afterCloseTitle && !r.afterCloseTitle.startsWith('すべて'));
-  check('⑥ Ctrl+W 後: 2件表示 (alpha フィルタ)',     r.afterCloseCards === 2);
-  check('⑦ 最後の1タブ Ctrl+W: タブ数は1のまま',      r.lastTabCount === 1);
+  check('② alpha フィルタ後: 2件に絞り込まれている', r.filteredCards === 2);
+  check('③ Ctrl+T 後: 2タブ', r.tab2Count === 2);
+  check('③ 新タブタイトルが "すべて" を含む', r.tab2Title && r.tab2Title.includes('すべて'));
+  check('③ 新タブは全件表示 (3件)', r.tab2Cards === 3);
+  check('④ タブ1に戻る: フィルタタイトル復元', r.restoredTitle && !r.restoredTitle.startsWith('すべて'));
+  check('④ タブ1に戻る: 2件に絞り込まれたまま', r.restoredCards === 2);
+  check('⑤ タブ2に戻る: "すべて" タイトル', r.tab2RestoredTitle && r.tab2RestoredTitle.includes('すべて'));
+  check('⑤ タブ2に戻る: 3件表示', r.tab2RestoredCards === 3);
+  check('⑥ Ctrl+W: 1タブになる', r.afterCloseCount === 1);
+  check('⑥ Ctrl+W 後: タブ1 (alpha) がアクティブ', r.afterCloseTitle && !r.afterCloseTitle.startsWith('すべて'));
+  check('⑥ Ctrl+W 後: 2件表示 (alpha フィルタ)', r.afterCloseCards === 2);
+  check('⑦ 最後の1タブ Ctrl+W: タブ数は1のまま', r.lastTabCount === 1);
   check('⑦ 最後の1タブ Ctrl+W: タイトルが "すべて" にリセット', r.lastTabTitle && r.lastTabTitle.includes('すべて'));
-  check('⑦ 最後の1タブ Ctrl+W: 3件 (フィルタ解除)',   r.lastTabCards === 3);
-  check('⑧ tabs.json 永続 (IPC 確認)',              r.ipcOk || fsTabsOk);
+  check('⑦ 最後の1タブ Ctrl+W: 3件 (フィルタ解除)', r.lastTabCards === 3);
+  check('⑧ tabs.json 永続 (IPC 確認)', r.ipcOk || fsTabsOk);
 
   console.log('\n' + (ok ? 'TABS_TEST_PASS' : 'TABS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

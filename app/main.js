@@ -1,14 +1,12 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } = require('electron');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // native-host/ lives outside app/. In dev it's a sibling dir; when packaged it
 // is bundled as an extraResource under resources/native-host.
-const nativeHostDir = app.isPackaged
-  ? path.join(process.resourcesPath, 'native-host')
-  : path.join(__dirname, '..', 'native-host');
+const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture).
@@ -43,9 +41,7 @@ const CONFIG_PATH = path.join(configDir(), 'config.json');
 // Custom scheme to serve images from the (arbitrary) save folder. Lets the
 // renderer lazy-load images by filename without disabling webSecurity or
 // loading every image into JS memory.
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'psimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
-]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'psimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 let win = null;
 
@@ -59,7 +55,7 @@ function readConfig() {
     raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   } catch {
     configLastCorrupt = false;
-    return {};   // no config yet (fresh install) — absence is not corruption
+    return {}; // no config yet (fresh install) — absence is not corruption
   }
   try {
     const cfg = JSON.parse(raw);
@@ -71,7 +67,11 @@ function readConfig() {
     // a truncated config that reads as {} and is then re-written loses
     // saveFolder/extensionId/backup at once. Keep a copy for recovery/forensics.
     configLastCorrupt = true;
-    try { if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`); } catch { /* best-effort */ }
+    try {
+      if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`);
+    } catch {
+      /* best-effort */
+    }
     return {};
   }
 }
@@ -87,14 +87,26 @@ function writeSavePointer(folder) {
     fs.mkdirSync(configDir(), { recursive: true });
     const tmp = SAVE_POINTER_PATH() + '.tmp';
     fs.writeFileSync(tmp, folder, 'utf8');
-    fs.renameSync(tmp, SAVE_POINTER_PATH());   // atomic, independent of config.json
-  } catch { /* best-effort redundancy */ }
+    fs.renameSync(tmp, SAVE_POINTER_PATH()); // atomic, independent of config.json
+  } catch {
+    /* best-effort redundancy */
+  }
 }
 function readSavePointer() {
-  try { const p = fs.readFileSync(SAVE_POINTER_PATH(), 'utf8').trim(); return p || null; }
-  catch { return null; }
+  try {
+    const p = fs.readFileSync(SAVE_POINTER_PATH(), 'utf8').trim();
+    return p || null;
+  } catch {
+    return null;
+  }
 }
-function dirExists(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+function dirExists(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 // Atomic write: a forced kill or crash mid-write must NEVER leave a truncated
 // config.json. Write to a tmp file, fsync, then rename over the target — readers
@@ -127,8 +139,10 @@ function getSaveFolder() {
   if (typeof folder === 'string' && folder.trim()) return folder;
   const ptr = readSavePointer();
   return resolveSaveFolder({
-    configSaveFolder: folder, pointer: ptr,
-    pointerExists: ptr ? dirExists(ptr) : false, defaultDir: defaultLibraryDir()
+    configSaveFolder: folder,
+    pointer: ptr,
+    pointerExists: ptr ? dirExists(ptr) : false,
+    defaultDir: defaultLibraryDir(),
   }).folder;
 }
 
@@ -144,7 +158,11 @@ function initSaveFolderRedundancy() {
   }
   const ptr = readSavePointer();
   if (ptr && dirExists(ptr)) {
-    try { writeConfig(Object.assign({}, cfg, { saveFolder: ptr })); } catch { /* best-effort recovery */ }
+    try {
+      writeConfig(Object.assign({}, cfg, { saveFolder: ptr }));
+    } catch {
+      /* best-effort recovery */
+    }
   }
 }
 
@@ -161,9 +179,9 @@ function migrateConfigDirFromAppData() {
   const oldDir = path.join(oldBase, 'Corpus');
   const newDir = configDir();
   try {
-    if (path.resolve(oldDir) === path.resolve(newDir)) return;     // override points back at old (e.g. tests)
-    if (fs.existsSync(path.join(newDir, 'config.json'))) return;   // already migrated / fresh on new
-    if (!fs.existsSync(path.join(oldDir, 'config.json'))) return;  // nothing to carry over
+    if (path.resolve(oldDir) === path.resolve(newDir)) return; // override points back at old (e.g. tests)
+    if (fs.existsSync(path.join(newDir, 'config.json'))) return; // already migrated / fresh on new
+    if (!fs.existsSync(path.join(oldDir, 'config.json'))) return; // nothing to carry over
     fs.mkdirSync(newDir, { recursive: true });
     fs.copyFileSync(path.join(oldDir, 'config.json'), path.join(newDir, 'config.json'));
     const oldPtr = path.join(oldDir, 'saveFolder.path');
@@ -179,11 +197,7 @@ function migrateConfigDirFromAppData() {
 // persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
 // IGNORE them — otherwise each write self-triggers a full library reload
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
-const INTERNAL_FILES = new Set([
-  'config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json',
-  'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json',
-  'poster-folders.json', 'poster-tags.json',
-]);
+const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
 // (organization layer: tags / groups / folders / collections / clip / poster-* /
@@ -194,22 +208,22 @@ const INTERNAL_FILES = new Set([
 // these whenever the source changed (size or mtime). config.json lives in
 // configDir (never in the save folder) and .index.json is a rebuildable snapshot
 // already skipped by the backup, so neither belongs here.
-const MUTABLE_INTERNAL = new Set([
-  'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json',
-  'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json',
-  'poster-folders.json', 'poster-tags.json',
-]);
+const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
 // single capture writes both a .jpg and a .json.
 let folderWatcher = null;
 let watchDebounce = null;
-let watchChanged = new Set();   // changed sidecar (.json) basenames within the debounce window
-let watchUnknown = false;       // a watch event lacked a filename -> can't target, force a full reconcile
+let watchChanged = new Set(); // changed sidecar (.json) basenames within the debounce window
+let watchUnknown = false; // a watch event lacked a filename -> can't target, force a full reconcile
 function watchSaveFolder() {
   if (folderWatcher) {
-    try { folderWatcher.close(); } catch { /* already closed */ }
+    try {
+      folderWatcher.close();
+    } catch {
+      /* already closed */
+    }
     folderWatcher = null;
   }
   const folder = getSaveFolder();
@@ -217,7 +231,7 @@ function watchSaveFolder() {
   try {
     folderWatcher = fs.watch(folder, (_event, filename) => {
       if (!filename) {
-        watchUnknown = true;   // platform didn't tell us which file -> renderer will full-reconcile
+        watchUnknown = true; // platform didn't tell us which file -> renderer will full-reconcile
       } else {
         const base = path.basename(filename);
         if (!/\.(jpe?g|jfif|png|webp|gif|json)$/i.test(base)) return;
@@ -254,7 +268,11 @@ function scheduleSnapshot(folder) {
   // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
   // not self-trigger the folder watcher. Atomic (tmp + rename) inside writeSnapshot.
   clearTimeout(snapshotTimer);
-  snapshotTimer = setTimeout(() => { postIndex.writeSnapshot(folder).catch(() => { /* re-scan next cold start */ }); }, 1500);
+  snapshotTimer = setTimeout(() => {
+    postIndex.writeSnapshot(folder).catch(() => {
+      /* re-scan next cold start */
+    });
+  }, 1500);
 }
 async function listPosts() {
   const folder = getSaveFolder();
@@ -276,10 +294,14 @@ async function listPosts() {
 //   []             -> files changed but no sidecar among them: nothing to ship
 //   [names…]       -> re-stat ONLY these sidecars (the O(changed) fast path)
 let _deltaFolder = null;
-let _lastSent = new Map();   // captureId -> mtimeMs last delivered to the renderer
+let _lastSent = new Map(); // captureId -> mtimeMs last delivered to the renderer
 async function listPostsDelta(haveBaseline, changedNames) {
   const folder = getSaveFolder();
-  if (!folder) { _deltaFolder = null; _lastSent = new Map(); return { saveFolder: null, full: true, posts: [] }; }
+  if (!folder) {
+    _deltaFolder = null;
+    _lastSent = new Map();
+    return { saveFolder: null, full: true, posts: [] };
+  }
 
   // Full (re)sync or hint-less refresh: scan the whole folder (the reliable path).
   if (!haveBaseline || _deltaFolder !== folder || changedNames == null) {
@@ -290,7 +312,7 @@ async function listPostsDelta(haveBaseline, changedNames) {
       _lastSent = new Map(stamps);
       return { saveFolder: folder, full: true, posts };
     }
-    const { added, removed } = computeDelta(_lastSent, posts, stamps);   // hint-less delta vs baseline
+    const { added, removed } = computeDelta(_lastSent, posts, stamps); // hint-less delta vs baseline
     _lastSent = new Map(stamps);
     return { saveFolder: folder, full: false, added, removed };
   }
@@ -299,7 +321,10 @@ async function listPostsDelta(haveBaseline, changedNames) {
   if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
   const r = await postIndex.applyChanges(folder, changedNames);
   const added = [];
-  for (const t of r.added) { _lastSent.set(t.id, t.mtimeMs); added.push(t.record); }
+  for (const t of r.added) {
+    _lastSent.set(t.id, t.mtimeMs);
+    added.push(t.record);
+  }
   for (const id of r.removed) _lastSent.delete(id);
   if (r.added.length || r.removed.length) scheduleSnapshot(folder);
   return { saveFolder: folder, full: false, added, removed: r.removed };
@@ -322,9 +347,18 @@ function ensureHostRegistered() {
 // --- Image protocol ---
 // Screenshots are JPEG; downloaded original media may be png/webp/gif.
 const EXT_MIME = {
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jfif': 'image/jpeg', '.png': 'image/png',
-  '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif', '.svg': 'image/svg+xml',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.m4v': 'video/x-m4v'
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.jfif': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
 };
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
@@ -337,7 +371,9 @@ function mimeForFile(name) {
 // (keyed by name + mtime + width, so re-migration invalidates it). The
 // full-resolution original is still served when no ?w= is given (lightbox/viewer).
 const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
-function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
+function thumbCacheDir() {
+  return path.join(configDir(), 'thumb-cache');
+}
 
 // nativeImage decode/resize/toJPEG is synchronous and runs on the main process's
 // single JS thread. The tile grid fires many psimg?w= requests at once when first
@@ -349,32 +385,48 @@ function thumbCacheDir() { return path.join(configDir(), 'thumb-cache'); }
 const THUMB_POOL = 2;
 let _thumbRunning = 0;
 const _thumbQueue = [];
-const _thumbInflight = new Map();   // cachePath -> Promise<Buffer|null>
+const _thumbInflight = new Map(); // cachePath -> Promise<Buffer|null>
 function _pumpThumbs() {
   while (_thumbRunning < THUMB_POOL && _thumbQueue.length) {
     const job = _thumbQueue.shift();
     _thumbRunning++;
     setImmediate(async () => {
-      try { job.resolve(await job.fn()); }
-      catch { job.resolve(null); }
-      finally { _thumbRunning--; _pumpThumbs(); }
+      try {
+        job.resolve(await job.fn());
+      } catch {
+        job.resolve(null);
+      } finally {
+        _thumbRunning--;
+        _pumpThumbs();
+      }
     });
   }
 }
 function runThumbJob(fn) {
-  return new Promise((resolve) => { _thumbQueue.push({ fn, resolve }); _pumpThumbs(); });
+  return new Promise((resolve) => {
+    _thumbQueue.push({ fn, resolve });
+    _pumpThumbs();
+  });
 }
 
 async function getThumbnail(resolved, name, w) {
   if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
   let st;
-  try { st = await fs.promises.stat(resolved); } catch { return null; }
+  try {
+    st = await fs.promises.stat(resolved);
+  } catch {
+    return null;
+  }
   // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
   // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
   // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
   const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q3.jpg`.replace(/[^\w.\-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
-  try { return await fs.promises.readFile(cachePath); } catch { /* cache miss */ }
+  try {
+    return await fs.promises.readFile(cachePath);
+  } catch {
+    /* cache miss */
+  }
   // Coalesce: if this exact tile is already being generated, await that one job
   // instead of starting a duplicate decode (a full grid rebuild re-requests still-
   // visible tiles while the first decode is in flight).
@@ -385,15 +437,23 @@ async function getThumbnail(resolved, name, w) {
     if (img.isEmpty()) return null;
     const sz = img.getSize();
     if (Math.min(sz.width, sz.height) > w) {
-      img = (sz.width >= sz.height) ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
+      img = sz.width >= sz.height ? img.resize({ height: w, quality: 'good' }) : img.resize({ width: w, quality: 'good' });
     }
     const buf = img.toJPEG(90);
-    fs.promises.mkdir(thumbCacheDir(), { recursive: true })
-      .then(() => fs.promises.writeFile(cachePath, buf)).catch(() => { /* cache best-effort */ });
+    fs.promises
+      .mkdir(thumbCacheDir(), { recursive: true })
+      .then(() => fs.promises.writeFile(cachePath, buf))
+      .catch(() => {
+        /* cache best-effort */
+      });
     return buf;
   });
   _thumbInflight.set(cachePath, job);
-  try { return await job; } finally { _thumbInflight.delete(cachePath); }
+  try {
+    return await job;
+  } finally {
+    _thumbInflight.delete(cachePath);
+  }
 }
 
 function registerImageProtocol() {
@@ -415,7 +475,7 @@ function registerImageProtocol() {
         return new Response('Forbidden', { status: 403 });
       }
 
-      const w = parseInt(url.searchParams.get('w') || '', 10);
+      const w = Number.parseInt(url.searchParams.get('w') || '', 10);
       if (Number.isFinite(w) && w >= 64 && w <= 720) {
         const thumb = await getThumbnail(resolved, name, w);
         // Cache-key includes mtime+width, and capture filenames are content-stable
@@ -510,17 +570,21 @@ function readOrgJsonSync(filePath) {
   try {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch {
-    degradedOrgFiles.delete(filePath);   // truly absent — not corruption
+    degradedOrgFiles.delete(filePath); // truly absent — not corruption
     return { value: null, degraded: false };
   }
   try {
     const value = JSON.parse(raw);
-    degradedOrgFiles.delete(filePath);   // clean read clears any prior degraded flag
+    degradedOrgFiles.delete(filePath); // clean read clears any prior degraded flag
     return { value, degraded: false };
   } catch {
     if (!degradedOrgFiles.has(filePath)) {
       // Keep one forensic copy the first time we notice this corruption.
-      try { if (raw && raw.length) fs.copyFileSync(filePath, `${filePath}.corrupt-${Date.now()}`); } catch { /* best-effort */ }
+      try {
+        if (raw && raw.length) fs.copyFileSync(filePath, `${filePath}.corrupt-${Date.now()}`);
+      } catch {
+        /* best-effort */
+      }
     }
     degradedOrgFiles.add(filePath);
     return { value: null, degraded: true };
@@ -543,7 +607,10 @@ function writeOrgJsonSync(filePath, value) {
 // or the video itself. Strip the -poster marker first, then any extension.
 const VIEWABLE_EXTS = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'svg', 'mp4', 'webm', 'mov', 'm4v'];
 function baseOf(name) {
-  return path.basename(name || '').replace(/-poster\.[a-z0-9]+$/i, '').replace(/\.[a-z0-9]+$/i, '');
+  return path
+    .basename(name || '')
+    .replace(/-poster\.[a-z0-9]+$/i, '')
+    .replace(/\.[a-z0-9]+$/i, '');
 }
 
 // --- Trash (soft delete) ---
@@ -558,7 +625,11 @@ async function purgeOldTrash() {
   const trashDir = getTrashDir();
   if (!trashDir) return;
   let names;
-  try { names = await fs.promises.readdir(trashDir); } catch { return; }
+  try {
+    names = await fs.promises.readdir(trashDir);
+  } catch {
+    return;
+  }
   const cutoff = Date.now() - TRASH_DAYS * 86400000;
   const toPurge = new Set();
   for (const f of names) {
@@ -567,13 +638,17 @@ async function purgeOldTrash() {
     try {
       const rec = JSON.parse(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
       if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
-    } catch { /* corrupt sidecar — skip */ }
+    } catch {
+      /* corrupt sidecar — skip */
+    }
   }
   if (!toPurge.size) return;
   for (const f of names) {
     for (const id of toPurge) {
       if (f.startsWith(id + '.') || f.startsWith(id + '-')) {
-        try { await fs.promises.unlink(path.join(trashDir, f)); } catch { }
+        try {
+          await fs.promises.unlink(path.join(trashDir, f));
+        } catch {}
         break;
       }
     }
@@ -595,17 +670,19 @@ async function purgeOldTrash() {
 // 削除は宛先からも伝播（最新ミラー）。ZIP は手動エクスポート専用に残す。
 // 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
 const BACKUP_SUBDIR = 'Corpus-mirror';
-function backupDest(dir) { return path.join(dir, BACKUP_SUBDIR); }
+function backupDest(dir) {
+  return path.join(dir, BACKUP_SUBDIR);
+}
 // (LIBRARY_SUBDIR — the named subfolder for a relocated library — moved to
 // ./ipc-transfer.js with the pick-save-folder handler that owns it.)
 
 const BACKUP_DEFAULTS = {
-  dir: null,              // 出力先（保存先フォルダの内外と重複しないこと）
-  interval: false,        // 一定間隔
-  intervalValue: 1,       // 間隔の数
-  intervalUnit: 'day',    // 'day' | 'week' | 'month'
+  dir: null, // 出力先（保存先フォルダの内外と重複しないこと）
+  interval: false, // 一定間隔
+  intervalValue: 1, // 間隔の数
+  intervalUnit: 'day', // 'day' | 'week' | 'month'
   lastRunAt: null,
-  lastResult: null
+  lastResult: null,
 };
 function readBackupConfig() {
   const b = readConfig().backup || {};
@@ -618,7 +695,8 @@ function writeBackupConfig(patch) {
   return cfg.backup;
 }
 function pathIsInside(child, parent) {
-  const c = path.resolve(child), p = path.resolve(parent);
+  const c = path.resolve(child),
+    p = path.resolve(parent);
   return c === p || c.startsWith(p + path.sep);
 }
 // 出力先が保存先と入れ子/同一だと、出力→watch→再エクスポートのループや破壊が起きる。
@@ -646,7 +724,9 @@ function validateSaveFolder(dir) {
     const probe = path.join(dir, `.corpus-write-probe-${Date.now()}`);
     fs.writeFileSync(probe, '');
     fs.unlinkSync(probe);
-  } catch { return { ok: false, error: 'not-writable' }; }
+  } catch {
+    return { ok: false, error: 'not-writable' };
+  }
   return { ok: true };
 }
 
@@ -659,7 +739,11 @@ function validateSaveFolder(dir) {
 // user's files there); rolls back partial copies on failure (src untouched).
 async function copyLibraryInto(src, dest, onProgress) {
   let entries;
-  try { entries = await fs.promises.readdir(src); } catch { entries = []; }
+  try {
+    entries = await fs.promises.readdir(src);
+  } catch {
+    entries = [];
+  }
   entries = entries.filter((f) => !/\.tmp(-\d+)?$/i.test(f));
   await fs.promises.mkdir(dest, { recursive: true });
   for (const f of entries) {
@@ -675,7 +759,13 @@ async function copyLibraryInto(src, dest, onProgress) {
       if (onProgress) onProgress(copied.length, total);
     }
   } catch (e) {
-    for (const c of copied) { try { await fs.promises.rm(path.join(dest, c), { recursive: true, force: true }); } catch { /* best-effort */ } }
+    for (const c of copied) {
+      try {
+        await fs.promises.rm(path.join(dest, c), { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
     return { ok: false, error: 'copy-failed', detail: e && e.message };
   }
   return { ok: true, entries };
@@ -689,7 +779,7 @@ async function runBackup(reason) {
   if (!validateBackupDir(b.dir).ok) return { ok: false, error: 'overlap' };
   if (backupRunning) return { ok: false, error: 'busy' };
   backupRunning = true;
-  if (win && !win.isDestroyed()) win.webContents.send('backup-start');   // sidebar sync icon → syncing
+  if (win && !win.isDestroyed()) win.webContents.send('backup-start'); // sidebar sync icon → syncing
   // written = new files copied; pruned = files deleted (propagated deletions)
   const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
   try {
@@ -699,23 +789,36 @@ async function runBackup(reason) {
     // Collect source files, skipping app-internal and transient entries. Keep each
     // file's size/mtime so mutable internal files can be re-copied only when changed.
     let srcFiles;
-    try { srcFiles = await fs.promises.readdir(src); } catch { srcFiles = []; }
+    try {
+      srcFiles = await fs.promises.readdir(src);
+    } catch {
+      srcFiles = [];
+    }
     const srcSet = new Set();
-    const srcStat = new Map();   // name -> { size, mtimeMs }
+    const srcStat = new Map(); // name -> { size, mtimeMs }
     for (const f of srcFiles) {
       if (f === '.index.json' || f === TRASH_SUBDIR) continue;
       if (/\.tmp(-\d+)?$/i.test(f)) continue;
       try {
         const st = await fs.promises.stat(path.join(src, f));
-        if (st.isFile()) { srcSet.add(f); srcStat.set(f, { size: st.size, mtimeMs: st.mtimeMs }); }
-      } catch { /* skip inaccessible entries */ }
+        if (st.isFile()) {
+          srcSet.add(f);
+          srcStat.set(f, { size: st.size, mtimeMs: st.mtimeMs });
+        }
+      } catch {
+        /* skip inaccessible entries */
+      }
     }
     result.fileCount = srcSet.size;
 
     // Collect destination files
     let destFiles;
-    try { destFiles = await fs.promises.readdir(dest); } catch { destFiles = []; }
-    const destSet = new Set(destFiles.filter(f => !/\.tmp(-\d+)?$/i.test(f)));
+    try {
+      destFiles = await fs.promises.readdir(dest);
+    } catch {
+      destFiles = [];
+    }
+    const destSet = new Set(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
 
     // Decide whether a destination copy is stale and must be refreshed. Write-once
     // captures (.jpg + .json sidecar) never change, so their presence at dest is
@@ -734,7 +837,9 @@ async function runBackup(reason) {
       try {
         const d = await fs.promises.stat(path.join(dest, f));
         return d.size !== s.size || Math.floor(d.mtimeMs) !== Math.floor(s.mtimeMs);
-      } catch { return true; }   // unreadable dest copy -> re-copy to be safe
+      } catch {
+        return true;
+      } // unreadable dest copy -> re-copy to be safe
     };
 
     // Copy files missing at dest, and re-copy mutable internal files that drifted.
@@ -746,11 +851,21 @@ async function runBackup(reason) {
         await fs.promises.copyFile(path.join(src, f), tmp);
         // Preserve mtime (floored to ms) so the next run's drift check compares
         // like with like and an unchanged mutable file is not re-copied.
-        try { const s = srcStat.get(f); if (s) { const t = new Date(Math.floor(s.mtimeMs)); await fs.promises.utimes(tmp, t, t); } } catch { /* best-effort */ }
+        try {
+          const s = srcStat.get(f);
+          if (s) {
+            const t = new Date(Math.floor(s.mtimeMs));
+            await fs.promises.utimes(tmp, t, t);
+          }
+        } catch {
+          /* best-effort */
+        }
         await fs.promises.rename(tmp, path.join(dest, f));
         result.written++;
       } catch (e) {
-        try { await fs.promises.unlink(tmp); } catch { }
+        try {
+          await fs.promises.unlink(tmp);
+        } catch {}
         // Surface the first copy error but keep going for the rest
         if (!result.firstError) result.firstError = e.message;
       }
@@ -769,22 +884,38 @@ async function runBackup(reason) {
     } else {
       for (const f of destSet) {
         if (!srcSet.has(f)) {
-          try { await fs.promises.unlink(path.join(dest, f)); result.pruned++; } catch { }
+          try {
+            await fs.promises.unlink(path.join(dest, f));
+            result.pruned++;
+          } catch {}
         }
       }
     }
     result.lastGoodCount = nextBaseline(decision.skip, srcSet.size, baseline);
   } catch (err) {
-    result.ok = false; result.error = err.message;
+    result.ok = false;
+    result.error = err.message;
   } finally {
     backupRunning = false;
   }
   const at = new Date().toISOString();
-  const summary = { fileCount: result.fileCount, written: result.written, pruned: result.pruned,
-    reason: result.reason, ok: result.ok, error: result.error || result.firstError || null, at: at,
-    pruneSkipped: result.pruneSkipped || null, baselineCount: result.baselineCount || 0,
-    lastGoodCount: typeof result.lastGoodCount === 'number' ? result.lastGoodCount : 0 };
-  try { writeBackupConfig({ lastRunAt: at, lastResult: summary }); } catch { /* ignore */ }
+  const summary = {
+    fileCount: result.fileCount,
+    written: result.written,
+    pruned: result.pruned,
+    reason: result.reason,
+    ok: result.ok,
+    error: result.error || result.firstError || null,
+    at: at,
+    pruneSkipped: result.pruneSkipped || null,
+    baselineCount: result.baselineCount || 0,
+    lastGoodCount: typeof result.lastGoodCount === 'number' ? result.lastGoodCount : 0,
+  };
+  try {
+    writeBackupConfig({ lastRunAt: at, lastResult: summary });
+  } catch {
+    /* ignore */
+  }
   if (win && !win.isDestroyed()) win.webContents.send('backup-done', Object.assign({}, result, { at: at }));
   return result;
 }
@@ -800,14 +931,17 @@ function backupIntervalMs(b) {
   return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
 }
 function armBackupSchedule() {
-  if (backupIntervalTimer) { clearInterval(backupIntervalTimer); backupIntervalTimer = null; }
+  if (backupIntervalTimer) {
+    clearInterval(backupIntervalTimer);
+    backupIntervalTimer = null;
+  }
   const b = readBackupConfig();
   if (!b.dir || !b.interval) return;
   backupIntervalTimer = setInterval(() => {
     const cur = readBackupConfig();
     if (!cur.dir || !cur.interval) return;
     const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
-    if ((Date.now() - last) >= backupIntervalMs(cur)) runBackup('interval');
+    if (Date.now() - last >= backupIntervalMs(cur)) runBackup('interval');
   }, BACKUP_HEARTBEAT_MS);
 }
 
@@ -834,7 +968,9 @@ function saveWindowBoundsNow() {
     const cfg = readConfig();
     cfg.windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: win.isMaximized() };
     writeConfig(cfg);
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 }
 function savedWindowBounds() {
   const b = readConfig().windowBounds;
@@ -849,7 +985,9 @@ function savedWindowBounds() {
     if (!onScreen || !Number.isFinite(b.x) || !Number.isFinite(b.y)) {
       return { width: b.width, height: b.height, isMaximized: !!b.isMaximized };
     }
-  } catch { /* screen module unavailable before ready — fall through to use as-is */ }
+  } catch {
+    /* screen module unavailable before ready — fall through to use as-is */
+  }
   return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
 }
 
@@ -857,9 +995,7 @@ function savedWindowBounds() {
 // React Fast Refresh while developing). '1' resolves to the strictPort default;
 // any other value is used as the base URL verbatim (trailing slashes trimmed).
 // null in prod, so loadFile + the file:// navigation guard stand unchanged.
-const DEV_SERVER_URL = process.env.CORPUS_DEV_SERVER
-  ? (process.env.CORPUS_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.CORPUS_DEV_SERVER.replace(/\/+$/, ''))
-  : null;
+const DEV_SERVER_URL = process.env.CORPUS_DEV_SERVER ? (process.env.CORPUS_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.CORPUS_DEV_SERVER.replace(/\/+$/, '')) : null;
 
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
@@ -875,7 +1011,11 @@ function installNavigationGuards() {
   const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
     let u;
-    try { u = new URL(rawUrl); } catch { return false; }
+    try {
+      u = new URL(rawUrl);
+    } catch {
+      return false;
+    }
     // The standalone image window lives on the app-controlled psimg:// scheme.
     if (u.protocol === 'psimg:') return true;
     // Dev only: allow navigations within the Vite dev server — its HMR client does
@@ -884,8 +1024,11 @@ function installNavigationGuards() {
     if (devOrigin && u.origin === devOrigin) return true;
     // Our own renderer, reached by file path (ignore query/hash differences).
     if (u.protocol === 'file:') {
-      try { return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile; }
-      catch { return false; }
+      try {
+        return path.resolve(decodeURIComponent(u.pathname).replace(/^\//, '')) === indexFile;
+      } catch {
+        return false;
+      }
     }
     return false;
   };
@@ -909,18 +1052,42 @@ function installNavigationGuards() {
 // exposed via accessors, never by value, so the closures read the live binding.
 function registerExtractedIpc() {
   const ctx = {
-    getSaveFolder, readOrgJsonSync, writeOrgJsonSync,
-    listPosts, listPostsDelta, resolveInFolder, mimeForFile,
-    readConfig, writeConfig, installer,
+    getSaveFolder,
+    readOrgJsonSync,
+    writeOrgJsonSync,
+    listPosts,
+    listPostsDelta,
+    resolveInFolder,
+    mimeForFile,
+    readConfig,
+    writeConfig,
+    installer,
     APP_ICON,
-    getTrashDir, baseOf, VIEWABLE_EXTS, writeSidecarAtomic,
-    readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup,
-    readSavePointer, clearAllBlockReason, fetchStillImage, pixivRefererFor,
-    validateSaveFolder, copyLibraryInto, watchSaveFolder,
+    getTrashDir,
+    baseOf,
+    VIEWABLE_EXTS,
+    writeSidecarAtomic,
+    readBackupConfig,
+    writeBackupConfig,
+    validateBackupDir,
+    armBackupSchedule,
+    runBackup,
+    readSavePointer,
+    clearAllBlockReason,
+    fetchStillImage,
+    pixivRefererFor,
+    validateSaveFolder,
+    copyLibraryInto,
+    watchSaveFolder,
     getWin: () => win,
     getConfigLastCorrupt: () => configLastCorrupt,
-    resetDelta: () => { _deltaFolder = null; _lastSent = new Map(); },
-    send: (channel, ...args) => { if (win && !win.isDestroyed()) win.webContents.send(channel, ...args); },
+    resetDelta: () => {
+      _deltaFolder = null;
+      _lastSent = new Map();
+    },
+    send: (channel, ...args) => {
+      if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
+    },
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
@@ -964,8 +1131,8 @@ function createWindow(show = true) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false
-    }
+      backgroundThrottling: false,
+    },
   });
   win.removeMenu();
   if (!smoke) {
@@ -1012,98 +1179,113 @@ if (!gotSingleInstanceLock) {
   }
 
   app.whenReady().then(() => {
-  // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
-  // icon (not electron.exe's) in dev too. electron-builder sets this for the
-  // installed exe; setting it here covers the CorpusLaunch dev run.
-  app.setAppUserModelId('com.corpus.app');
-  // Carry config over from the old %APPDATA% location now that configDir moved out
-  // of AppData (must run before any config read). 2026-06-25.
-  migrateConfigDirFromAppData();
-  // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
-  // (watcher, listPosts, native host) sees a config repaired from the pointer rather
-  // than the empty default when config was truncated. (2026-06-23 incident.)
-  initSaveFolderRedundancy();
-  // Fresh install (no explicit save folder): make sure the default library dir
-  // exists so folder/tag writes don't fail before the first capture. Explicit
-  // user-picked folders are left untouched.
-  try { if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true }); } catch { /* ignore */ }
-  // Dev server runs (CORPUS_DEV_SERVER) never capture, so skip host registration —
-  // no HKCU writes and no native-host copy into the shared ~/.corpus.
-  if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
-  registerImageProtocol();
-  installNavigationGuards();
-  const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
-  createWindow(!SMOKE && !startMin);   // start-minimized → create hidden, then show inactive below
-  watchSaveFolder();
-  // Dev-only: hot-reload the renderer when its source (js/html/css) changes, so
-  // iterating on UI/CSS needs no manual reload — and no terminal-spawning reload
-  // command from outside. Packaged builds never watch.
-  if (!SMOKE && !app.isPackaged) {
+    // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
+    // icon (not electron.exe's) in dev too. electron-builder sets this for the
+    // installed exe; setting it here covers the CorpusLaunch dev run.
+    app.setAppUserModelId('com.corpus.app');
+    // Carry config over from the old %APPDATA% location now that configDir moved out
+    // of AppData (must run before any config read). 2026-06-25.
+    migrateConfigDirFromAppData();
+    // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
+    // (watcher, listPosts, native host) sees a config repaired from the pointer rather
+    // than the empty default when config was truncated. (2026-06-23 incident.)
+    initSaveFolderRedundancy();
+    // Fresh install (no explicit save folder): make sure the default library dir
+    // exists so folder/tag writes don't fail before the first capture. Explicit
+    // user-picked folders are left untouched.
     try {
-      let _rendererReloadT = null;
-      fs.watch(path.join(__dirname, 'renderer'), { recursive: true }, (_e, fn) => {
-        if (!fn || !/\.(js|html|css)$/i.test(String(fn))) return;
-        clearTimeout(_rendererReloadT);
-        _rendererReloadT = setTimeout(() => {
-          if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
-        }, 180);
-      });
-    } catch { /* dev watcher is best-effort */ }
-  }
-  if (!SMOKE) {
-    armBackupSchedule();                                  // interval スケジュールを起動
-    // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
-    const bk = readBackupConfig();
-    if (bk.dir && bk.interval) {
-      const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
-      if (!last || (Date.now() - last) >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
+      if (!readConfig().saveFolder) fs.mkdirSync(defaultLibraryDir(), { recursive: true });
+    } catch {
+      /* ignore */
     }
-    setTimeout(() => purgeOldTrash(), 6000);   // expire old trash entries on startup
-  }
-
-  if (SMOKE) {
-    const shot = process.env.CORPUS_SMOKE_SHOT;
-    win.webContents.on('console-message', (_e, level, message) => {
-      console.log(`[renderer:${level}] ${message}`);
-    });
-    let done = false;
-    const quit = (tag) => { if (done) return; done = true; console.log(tag); app.quit(); };
-    win.webContents.once('did-finish-load', () => setTimeout(async () => {
-      if (process.env.CORPUS_SMOKE_EVAL) {
-        try {
-          const r = await win.webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
-          console.log('EVAL_RESULT', JSON.stringify(r));
-        } catch (e) { console.log('EVAL_ERR', e.message); }
+    // Dev server runs (CORPUS_DEV_SERVER) never capture, so skip host registration —
+    // no HKCU writes and no native-host copy into the shared ~/.corpus.
+    if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
+    registerImageProtocol();
+    installNavigationGuards();
+    const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
+    createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
+    watchSaveFolder();
+    // Dev-only: hot-reload the renderer when its source (js/html/css) changes, so
+    // iterating on UI/CSS needs no manual reload — and no terminal-spawning reload
+    // command from outside. Packaged builds never watch.
+    if (!SMOKE && !app.isPackaged) {
+      try {
+        let _rendererReloadT = null;
+        fs.watch(path.join(__dirname, 'renderer'), { recursive: true }, (_e, fn) => {
+          if (!fn || !/\.(js|html|css)$/i.test(String(fn))) return;
+          clearTimeout(_rendererReloadT);
+          _rendererReloadT = setTimeout(() => {
+            if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
+          }, 180);
+        });
+      } catch {
+        /* dev watcher is best-effort */
       }
-      if (shot) {
-        try {
-          const img = await win.webContents.capturePage();
-          fs.writeFileSync(shot, img.toPNG());
-        } catch (err) {
-          console.error('capture failed:', err);
-        }
+    }
+    if (!SMOKE) {
+      armBackupSchedule(); // interval スケジュールを起動
+      // 起動時の取り戻し: 前回から間隔以上空いていれば1回だけ実行（閉じている間に逃した分）。
+      const bk = readBackupConfig();
+      if (bk.dir && bk.interval) {
+        const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
+        if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
       }
-      quit('SMOKE_OK');
-    }, 1300));
-    setTimeout(() => quit('SMOKE_TIMEOUT'), 9000);
-    return;
-  }
+      setTimeout(() => purgeOldTrash(), 6000); // expire old trash entries on startup
+    }
 
-  // Start minimized when launched on the user's behalf, WITHOUT stealing focus or
-  // flashing the taskbar button: show inactive (no focus → no FlashWindowEx), then
-  // minimize and explicitly clear any pending attention flash. (A normal launch
-  // opens a focused window.)
-  if (startMin && win) {
-    win.once('ready-to-show', () => {
-      win.showInactive();
-      win.minimize();
-      win.flashFrame(false);
+    if (SMOKE) {
+      const shot = process.env.CORPUS_SMOKE_SHOT;
+      win.webContents.on('console-message', (_e, level, message) => {
+        console.log(`[renderer:${level}] ${message}`);
+      });
+      let done = false;
+      const quit = (tag) => {
+        if (done) return;
+        done = true;
+        console.log(tag);
+        app.quit();
+      };
+      win.webContents.once('did-finish-load', () =>
+        setTimeout(async () => {
+          if (process.env.CORPUS_SMOKE_EVAL) {
+            try {
+              const r = await win.webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
+              console.log('EVAL_RESULT', JSON.stringify(r));
+            } catch (e) {
+              console.log('EVAL_ERR', e.message);
+            }
+          }
+          if (shot) {
+            try {
+              const img = await win.webContents.capturePage();
+              fs.writeFileSync(shot, img.toPNG());
+            } catch (err) {
+              console.error('capture failed:', err);
+            }
+          }
+          quit('SMOKE_OK');
+        }, 1300),
+      );
+      setTimeout(() => quit('SMOKE_TIMEOUT'), 9000);
+      return;
+    }
+
+    // Start minimized when launched on the user's behalf, WITHOUT stealing focus or
+    // flashing the taskbar button: show inactive (no focus → no FlashWindowEx), then
+    // minimize and explicitly clear any pending attention flash. (A normal launch
+    // opens a focused window.)
+    if (startMin && win) {
+      win.once('ready-to-show', () => {
+        win.showInactive();
+        win.minimize();
+        win.flashFrame(false);
+      });
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
   });
 }
 

@@ -14,6 +14,8 @@
     try {
       const prefs = window.corpus.getPrefs ? await window.corpus.getPrefs() : null;
       if (prefs && window.corpusSearch) window.corpusSearch.applyMode(prefs.searchMode);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   })();
 })();

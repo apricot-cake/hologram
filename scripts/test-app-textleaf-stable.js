@@ -14,10 +14,10 @@
 //
 //   node scripts/test-app-textleaf-stable.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -34,12 +34,28 @@ const texts = ['ネコかわいい', 'こんにちは世界', 'いぬのおさ�
 for (let i = 0; i < texts.length; i++) {
   const id = '170000000000' + i + '-stb' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
-    captureId: id, image: id + '.jpg', url: 'https://x.com/u/status/' + (300 + i),
-    platform: 'x', text: texts[i], displayName: '人' + i, screenName: 'u' + i,
-    likes: 10 + i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: [], hashtags: []
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, id + '.json'),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: id + '.jpg',
+        url: 'https://x.com/u/status/' + (300 + i),
+        platform: 'x',
+        text: texts[i],
+        displayName: '人' + i,
+        screenName: 'u' + i,
+        likes: 10 + i,
+        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+        media: [],
+        tags: [],
+        hashtags: [],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 const evalJs = `(async () => {
@@ -95,15 +111,22 @@ const evalJs = `(async () => {
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
-  if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+  if (m) {
+    try {
+      r = JSON.parse(m[1]);
+    } catch {
+      /* ignore */
+    }
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const partA = r.aChips === 1 && r.aCards === 1 && r.newChips === 0 && r.newCards === 3 &&
-    r.backChips === 1 && r.backCards === 1 && r.backBox === 'いぬ' &&
-    r.editChips === 1 && r.editCards === 1 && r.resetChips === 0 && r.resetCards === 3;
+  const partA = r.aChips === 1 && r.aCards === 1 && r.newChips === 0 && r.newCards === 3 && r.backChips === 1 && r.backCards === 1 && r.backBox === 'いぬ' && r.editChips === 1 && r.editCards === 1 && r.resetChips === 0 && r.resetCards === 3;
   const partB = r.confChips === 1 && r.confExactCards === 0 && r.afterFuzzyCards === 0 && r.savedLeafMode === 'exact';
   const ok = partA && partB;
   console.log(`A: aChips=${r.aChips} aCards=${r.aCards} newChips=${r.newChips} newCards=${r.newCards} backChips=${r.backChips} backCards=${r.backCards} backBox="${r.backBox}" editChips=${r.editChips} editCards=${r.editCards} resetChips=${r.resetChips} resetCards=${r.resetCards}`);

@@ -28,9 +28,7 @@ function mountDensity() {
 // Poster-grid density — same component, different store key / data attr.
 function mountPosterDensity() {
   const el = document.getElementById('posterDensityToggle');
-  if (el) createRoot(el).render(
-    <DensityToggle el={el} storeKey="posterView" dataAttr="data-pview" defaultView="card" />
-  );
+  if (el) createRoot(el).render(<DensityToggle el={el} storeKey="posterView" dataAttr="data-pview" defaultView="card" />);
 }
 
 // Browse-mode segment (ライブラリ / 投稿者 / コレクション) — active state in
@@ -45,23 +43,17 @@ function mountBrowse() {
 // dropped — see SectionTitle.jsx and the note above.
 function mountViewTitle() {
   const el = document.getElementById('sbViewTitle');
-  if (el) createRoot(el).render(
-    <SectionTitle baseKey="sbViewTitle" storeKey="browseMode" map={BROWSE_MAP} defaultVal="posts" />
-  );
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbViewTitle" storeKey="browseMode" map={BROWSE_MAP} defaultVal="posts" />);
 }
 
 function mountLayoutTitle() {
   const el = document.getElementById('sbLayoutTitle');
-  if (el) createRoot(el).render(
-    <SectionTitle baseKey="sbLayoutTitle" storeKey="view" map={VIEW_MAP} defaultVal="card" />
-  );
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" storeKey="view" map={VIEW_MAP} defaultVal="card" />);
 }
 
 function mountPosterLayoutTitle() {
   const el = document.getElementById('sbPosterLayoutTitle');
-  if (el) createRoot(el).render(
-    <SectionTitle baseKey="sbLayoutTitle" storeKey="posterView" map={VIEW_MAP} defaultVal="card" />
-  );
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" storeKey="posterView" map={VIEW_MAP} defaultVal="card" />);
 }
 
 // Sort selects (post / poster / collection) — one GlassSelect, three mounts. The
@@ -93,9 +85,9 @@ const SORT_COLLECTION = [
 function mountSort(id, storeKey, options) {
   const sel = document.getElementById(id);
   if (!sel) return;
-  sel.classList.add('cs-host');             // hide the native select; React drives the trigger
+  sel.classList.add('cs-host'); // hide the native select; React drives the trigger
   const mount = document.createElement('span');
-  mount.style.display = 'contents';         // .cs-btn lays out against the .sb-section, not this span
+  mount.style.display = 'contents'; // .cs-btn lays out against the .sb-section, not this span
   sel.insertAdjacentElement('afterend', mount);
   createRoot(mount).render(<GlassSelect sel={sel} storeKey={storeKey} options={options} />);
 }

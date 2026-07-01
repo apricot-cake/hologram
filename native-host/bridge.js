@@ -12,9 +12,9 @@
 // captures cannot corrupt a shared file. The desktop app is the sole owner of
 // deletes/edits/index. The bridge works even when the app is not running.
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 
 const { configDir, defaultLibraryDir } = require('./paths');
 // Best-effort remote-image download (original media + avatars) lives in a shared
@@ -33,11 +33,10 @@ const { resolveSaveFolder } = require('./config-recovery');
 // must never throw (a logging error must not break a capture).
 function logLine(msg) {
   try {
-    fs.appendFileSync(
-      path.join(configDir(), 'bridge.log'),
-      `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`
-    );
-  } catch { /* ignore — logging is non-essential */ }
+    fs.appendFileSync(path.join(configDir(), 'bridge.log'), `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`);
+  } catch {
+    /* ignore — logging is non-essential */
+  }
 }
 
 // --- Structured capture diagnostics log ---------------------------------------
@@ -54,9 +53,13 @@ function appendLog(entry) {
     const file = path.join(configDir(), 'capture.log');
     try {
       if (fs.statSync(file).size > CAPTURE_LOG_MAX) fs.renameSync(file, `${file}.1`);
-    } catch { /* no file yet — nothing to rotate */ }
+    } catch {
+      /* no file yet — nothing to rotate */
+    }
     fs.appendFileSync(file, JSON.stringify(Object.assign({ ts: new Date().toISOString() }, entry)) + '\n');
-  } catch { /* ignore — logging is non-essential */ }
+  } catch {
+    /* ignore — logging is non-essential */
+  }
 }
 
 // One capture.log line for a bridge-side save result (the final stage). The
@@ -74,7 +77,7 @@ function logSaveOutcome(type, msg, res, err) {
     // pass-through so a partial save (image saved, post info missing) is visible.
     metaOk: msg ? msg.metaOk : undefined,
     mediaCount: res ? res.mediaCount : undefined,
-    error: err ? err.message : undefined
+    error: err ? err.message : undefined,
   });
 }
 
@@ -105,10 +108,17 @@ function readSaveFolder() {
   }
   let pointerExists = false;
   if (pointer) {
-    try { pointerExists = fs.statSync(pointer).isDirectory(); } catch { pointerExists = false; }
+    try {
+      pointerExists = fs.statSync(pointer).isDirectory();
+    } catch {
+      pointerExists = false;
+    }
   }
   return resolveSaveFolder({
-    configSaveFolder, pointer, pointerExists, defaultDir: defaultLibraryDir()
+    configSaveFolder,
+    pointer,
+    pointerExists,
+    defaultDir: defaultLibraryDir(),
   }).folder;
 }
 
@@ -129,19 +139,17 @@ function sendMessage(obj) {
 const SAFE_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
 function sanitizeCaptureId(id) {
-  return (typeof id === 'string' && SAFE_ID.test(id)) ? id : null;
+  return typeof id === 'string' && SAFE_ID.test(id) ? id : null;
 }
 
 function uniqueBase(dir, captureId) {
-  if (!fs.existsSync(path.join(dir, `${captureId}.jpg`)) &&
-      !fs.existsSync(path.join(dir, `${captureId}.json`))) {
+  if (!fs.existsSync(path.join(dir, `${captureId}.jpg`)) && !fs.existsSync(path.join(dir, `${captureId}.json`))) {
     return captureId;
   }
   let n = 1;
   // Extremely unlikely (captureId already carries a timestamp + random), but
   // guarantee uniqueness rather than overwrite.
-  while (fs.existsSync(path.join(dir, `${captureId}-${n}.jpg`)) ||
-         fs.existsSync(path.join(dir, `${captureId}-${n}.json`))) {
+  while (fs.existsSync(path.join(dir, `${captureId}-${n}.jpg`)) || fs.existsSync(path.join(dir, `${captureId}-${n}.json`))) {
     n += 1;
   }
   return `${captureId}-${n}`;
@@ -165,7 +173,7 @@ async function handleSave(msg) {
   // throw is caught upstream and returned as { ok:false, error }, leaving no
   // orphaned files (the sidecar .json is written only after the image).
   const img = Buffer.from(msg.image, 'base64');
-  if (img.length < 3 || img[0] !== 0xFF || img[1] !== 0xD8 || img[2] !== 0xFF) {
+  if (img.length < 3 || img[0] !== 0xff || img[1] !== 0xd8 || img[2] !== 0xff) {
     throw new Error('Invalid image data (not a JPEG)');
   }
   fs.writeFileSync(jpgPath, img);
@@ -194,7 +202,7 @@ async function handleSave(msg) {
     captureId: base,
     image: `${base}.jpg`,
     media: savedMedia,
-    avatarFile
+    avatarFile,
   });
   fs.writeFileSync(jsonPath, JSON.stringify(record, null, 2), 'utf8');
 
@@ -240,52 +248,64 @@ async function handleSaveDragged(msg) {
 // Only act as a real native-messaging host when executed directly. When this
 // module is require()'d (by a test), skip the reader and expose internals.
 if (require.main === module) {
-logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
-let buffer = Buffer.alloc(0);
+  logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
+  let buffer = Buffer.alloc(0);
 
-process.stdin.on('data', (chunk) => {
-  buffer = Buffer.concat([buffer, chunk]);
-  while (buffer.length >= 4) {
-    const len = buffer.readUInt32LE(0);
-    if (buffer.length < 4 + len) break;
-    const body = buffer.subarray(4, 4 + len);
-    buffer = buffer.subarray(4 + len);
+  process.stdin.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    while (buffer.length >= 4) {
+      const len = buffer.readUInt32LE(0);
+      if (buffer.length < 4 + len) break;
+      const body = buffer.subarray(4, 4 + len);
+      buffer = buffer.subarray(4 + len);
 
-    let msg;
-    try {
-      msg = JSON.parse(body.toString('utf8'));
-    } catch {
-      logLine('recv: invalid JSON');
-      sendMessage({ ok: false, error: 'Invalid JSON message' });
-      continue;
-    }
-
-    logLine(`recv type=${msg && msg.type}`);
-    try {
-      if (msg.type === 'save') {
-        // async (downloads original media) — ack is sent once it settles. The
-        // process drains naturally so the pending fetch keeps it alive.
-        handleSave(msg)
-          .then((res) => { logSaveOutcome('save', msg, res, null); sendMessage(res); })
-          .catch((err) => { logSaveOutcome('save', msg, null, err); sendMessage({ ok: false, error: err.message }); });
-      } else if (msg.type === 'saveDragged') {
-        handleSaveDragged(msg)
-          .then((res) => { logSaveOutcome('saveDragged', msg, res, null); sendMessage(res); })
-          .catch((err) => { logSaveOutcome('saveDragged', msg, null, err); sendMessage({ ok: false, error: err.message }); });
-      } else if (msg.type === 'log') {
-        // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
-        appendLog(msg.entry || {});
-        sendMessage({ ok: true });
-      } else if (msg.type === 'ping') {
-        sendMessage({ ok: true, pong: true });
-      } else {
-        sendMessage({ ok: false, error: `Unknown message type: ${msg.type}` });
+      let msg;
+      try {
+        msg = JSON.parse(body.toString('utf8'));
+      } catch {
+        logLine('recv: invalid JSON');
+        sendMessage({ ok: false, error: 'Invalid JSON message' });
+        continue;
       }
-    } catch (err) {
-      sendMessage({ ok: false, error: err.message });
+
+      logLine(`recv type=${msg && msg.type}`);
+      try {
+        if (msg.type === 'save') {
+          // async (downloads original media) — ack is sent once it settles. The
+          // process drains naturally so the pending fetch keeps it alive.
+          handleSave(msg)
+            .then((res) => {
+              logSaveOutcome('save', msg, res, null);
+              sendMessage(res);
+            })
+            .catch((err) => {
+              logSaveOutcome('save', msg, null, err);
+              sendMessage({ ok: false, error: err.message });
+            });
+        } else if (msg.type === 'saveDragged') {
+          handleSaveDragged(msg)
+            .then((res) => {
+              logSaveOutcome('saveDragged', msg, res, null);
+              sendMessage(res);
+            })
+            .catch((err) => {
+              logSaveOutcome('saveDragged', msg, null, err);
+              sendMessage({ ok: false, error: err.message });
+            });
+        } else if (msg.type === 'log') {
+          // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
+          appendLog(msg.entry || {});
+          sendMessage({ ok: true });
+        } else if (msg.type === 'ping') {
+          sendMessage({ ok: true, pong: true });
+        } else {
+          sendMessage({ ok: false, error: `Unknown message type: ${msg.type}` });
+        }
+      } catch (err) {
+        sendMessage({ ok: false, error: err.message });
+      }
     }
-  }
-});
+  });
 }
 
 // When Chrome closes the port, stdin ends. We let the event loop drain

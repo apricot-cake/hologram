@@ -18,16 +18,14 @@ import { t } from '../_shared/i18n.js';
 // races viewer's option-text setup and survives a language reload by re-mounting.
 
 const ChevDown = () => (
-  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor"
-    strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M1.5 3.5l4 4 4-4" />
   </svg>
 );
 
 // Geometric check (matches viewer.js CHECK_SVG used in the flyout menus).
 const Check = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <polyline points="5 12.5 10 17 19 7" />
   </svg>
 );
@@ -47,26 +45,30 @@ export function GlassSelect({ sel, storeKey, options }) {
   const btnRef = useRef(null);
   const popRef = useRef(null);
 
-  const choose = useCallback((next) => {
-    // Drive the native select so viewer's existing change handlers fire, then mirror
-    // into the store so the trigger label updates immediately (idempotent set => no echo).
-    if (sel.value !== next) {
-      sel.value = next;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    window.corpusStore.set(storeKey, next);
-    setOpen(false);
-  }, [sel, storeKey]);
+  const choose = useCallback(
+    (next) => {
+      // Drive the native select so viewer's existing change handlers fire, then mirror
+      // into the store so the trigger label updates immediately (idempotent set => no echo).
+      if (sel.value !== next) {
+        sel.value = next;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      window.corpusStore.set(storeKey, next);
+      setOpen(false);
+    },
+    [sel, storeKey],
+  );
 
   // Position the popup under the trigger; flip up / clamp into the viewport
   // (mirrors viewer.js openCsPop).
   useLayoutEffect(() => {
     if (!open) return;
-    const btn = btnRef.current, pop = popRef.current;
+    const btn = btnRef.current,
+      pop = popRef.current;
     if (!btn || !pop) return;
     const r = btn.getBoundingClientRect();
     pop.style.left = r.left + 'px';
-    pop.style.top = (r.bottom + 4) + 'px';
+    pop.style.top = r.bottom + 4 + 'px';
     pop.style.minWidth = r.width + 'px';
     const pr = pop.getBoundingClientRect();
     if (pr.bottom > innerHeight - 8) pop.style.top = Math.max(8, r.top - pr.height - 4) + 'px';
@@ -81,7 +83,9 @@ export function GlassSelect({ sel, storeKey, options }) {
       if (btnRef.current && btnRef.current.contains(e.target)) return;
       setOpen(false);
     };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('click', onDocClick, true);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -92,26 +96,39 @@ export function GlassSelect({ sel, storeKey, options }) {
 
   return (
     <>
-      <button type="button" className="cs-btn" ref={btnRef}
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
+      <button
+        type="button"
+        className="cs-btn"
+        ref={btnRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+      >
         <span className="cs-label">{t(current.key)}</span>
-        <span className="cs-arrow"><ChevDown /></span>
+        <span className="cs-arrow">
+          <ChevDown />
+        </span>
       </button>
-      {open && createPortal(
-        <div className="fold-menu cs-pop glass-frost show" ref={popRef}>
-          {options.map((o) => {
-            const on = o.value === current.value;
-            return (
-              <div key={o.value} className={'fm-row cs-opt' + (on ? ' cs-on' : '')}
-                onClick={() => choose(o.value)}>
-                <span className="fm-name">{t(o.key)}</span>
-                {on && <span className="fm-check"><Check /></span>}
-              </div>
-            );
-          })}
-        </div>,
-        document.body
-      )}
+      {open &&
+        createPortal(
+          <div className="fold-menu cs-pop glass-frost show" ref={popRef}>
+            {options.map((o) => {
+              const on = o.value === current.value;
+              return (
+                <div key={o.value} className={'fm-row cs-opt' + (on ? ' cs-on' : '')} onClick={() => choose(o.value)}>
+                  <span className="fm-name">{t(o.key)}</span>
+                  {on && (
+                    <span className="fm-check">
+                      <Check />
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

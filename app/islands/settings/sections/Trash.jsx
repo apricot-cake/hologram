@@ -8,7 +8,7 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const fmtDate = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
+  if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
 };
 
@@ -18,20 +18,39 @@ export function Trash() {
   const [records, setRecords] = useState([]);
 
   const load = async () => {
-    try { setRecords((await corpus().listTrash()) || []); } catch { setRecords([]); }
+    try {
+      setRecords((await corpus().listTrash()) || []);
+    } catch {
+      setRecords([]);
+    }
   };
-  useEffect(() => { load(); }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-once initial load (load is re-created per render but behaviorally stable)
+  useEffect(() => {
+    load();
+  }, []);
 
   const restore = async (r) => {
-    try { await corpus().restorePost(r.image || r.video || r.captureId); } catch { /* ignore */ }
+    try {
+      await corpus().restorePost(r.image || r.video || r.captureId);
+    } catch {
+      /* ignore */
+    }
     await load();
   };
   const perma = async (r) => {
-    try { await corpus().deleteFromTrash(r.captureId); } catch { /* ignore */ }
+    try {
+      await corpus().deleteFromTrash(r.captureId);
+    } catch {
+      /* ignore */
+    }
     await load();
   };
   const emptyAll = async () => {
-    try { await corpus().emptyTrash(); } catch { /* ignore */ }
+    try {
+      await corpus().emptyTrash();
+    } catch {
+      /* ignore */
+    }
     await load();
   };
 
@@ -48,25 +67,25 @@ export function Trash() {
           const platform = r.platform || '';
           const date = fmtDate(r.trashedAt);
           return (
-            <div
-              key={r.captureId || r.image || r.video}
-              className="trash-row"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)' }}
-            >
-              {r.image
-                ? <img src={'psimg://' + r.image} style={thumbStyle} loading="lazy" alt="" />
-                : <span style={{ ...thumbStyle, background: 'var(--surface-3)', display: 'inline-block' }} />}
+            <div key={r.captureId || r.image || r.video} className="trash-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)' }}>
+              {r.image ? <img src={'psimg://' + r.image} style={thumbStyle} loading="lazy" alt="" /> : <span style={{ ...thumbStyle, background: 'var(--surface-3)', display: 'inline-block' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: '12px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{`${platform} ${date}`}</div>
               </div>
-              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0 }} onClick={() => restore(r)}>{t('trashRestoreBtn')}</button>
-              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0, color: 'var(--danger)' }} onClick={() => perma(r)}>{t('trashDeleteBtn')}</button>
+              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0 }} onClick={() => restore(r)}>
+                {t('trashRestoreBtn')}
+              </button>
+              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0, color: 'var(--danger)' }} onClick={() => perma(r)}>
+                {t('trashDeleteBtn')}
+              </button>
             </div>
           );
         })}
       </div>
-      <button className="btn-outline" onClick={emptyAll} disabled={!records.length}>{t('trashEmptyBtn')}</button>
+      <button className="btn-outline" onClick={emptyAll} disabled={!records.length}>
+        {t('trashEmptyBtn')}
+      </button>
     </>
   );
 }

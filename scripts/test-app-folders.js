@@ -11,10 +11,10 @@
 //
 //   node scripts/test-app-folders.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -31,12 +31,29 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 for (let i = 0; i < 3; i++) {
   const id = '170000000000' + i + '-f0' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
-    captureId: id, image: id + '.jpg', url: 'https://www.pixiv.net/artworks/' + (200 + i),
-    platform: 'pixiv', title: '作品' + i, displayName: '絵師' + i, screenName: '80000' + i,
-    likes: 1000 + i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: [], hashtags: [], source: 'eagle-migration'
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, id + '.json'),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: id + '.jpg',
+        url: 'https://www.pixiv.net/artworks/' + (200 + i),
+        platform: 'pixiv',
+        title: '作品' + i,
+        displayName: '絵師' + i,
+        screenName: '80000' + i,
+        likes: 1000 + i,
+        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+        media: [],
+        tags: [],
+        hashtags: [],
+        source: 'eagle-migration',
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 const evalJs = `(async () => {
@@ -128,23 +145,52 @@ const evalJs = `(async () => {
 })()`;
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
-  if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+  if (m) {
+    try {
+      r = JSON.parse(m[1]);
+    } catch {
+      /* ignore */
+    }
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'hoverPair', 'ctxOpen', 'menuOpen', 'countText', 'filteredCount',
-    'persistedFolders', 'persistedItems', 'noDefaultId', 'clipIn', 'clipCount', 'clipFiltered', 'clipPill', 'clipPersist', 'clipNotCollection', 'clipCleared'];
-  const expect = { totalBefore: 3, modalOpen: true, chips: 1, noStar: true, hoverPair: true, ctxOpen: true, menuOpen: true, countText: '1',
-    filteredCount: 1, persistedFolders: 1, persistedItems: 1, noDefaultId: true, clipIn: true, clipCount: '1',
-    clipFiltered: 1, clipPill: true, clipPersist: true, clipNotCollection: true, clipCleared: true };
+  const keys = ['totalBefore', 'modalOpen', 'chips', 'noStar', 'hoverPair', 'ctxOpen', 'menuOpen', 'countText', 'filteredCount', 'persistedFolders', 'persistedItems', 'noDefaultId', 'clipIn', 'clipCount', 'clipFiltered', 'clipPill', 'clipPersist', 'clipNotCollection', 'clipCleared'];
+  const expect = {
+    totalBefore: 3,
+    modalOpen: true,
+    chips: 1,
+    noStar: true,
+    hoverPair: true,
+    ctxOpen: true,
+    menuOpen: true,
+    countText: '1',
+    filteredCount: 1,
+    persistedFolders: 1,
+    persistedItems: 1,
+    noDefaultId: true,
+    clipIn: true,
+    clipCount: '1',
+    clipFiltered: 1,
+    clipPill: true,
+    clipPersist: true,
+    clipNotCollection: true,
+    clipCleared: true,
+  };
   const ok = keys.every((k) => r[k] === expect[k]);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'FOLDERS_TEST_PASS' : 'FOLDERS_TEST_FAIL');

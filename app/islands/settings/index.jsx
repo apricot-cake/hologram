@@ -17,7 +17,10 @@ function makeStore() {
       open = next;
       subs.forEach((cb) => cb());
     },
-    subscribe: (cb) => { subs.add(cb); return () => subs.delete(cb); },
+    subscribe: (cb) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
   };
 }
 

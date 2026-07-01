@@ -12,10 +12,10 @@
 //
 //   node scripts/test-app-facetcounts.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -29,21 +29,38 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const seeds = [
-  { plat: 'x',       url: 'https://x.com/u0/status/800',          tags: ['猫'], isReply: true },
-  { plat: 'x',       url: 'https://x.com/u1/status/801',          tags: ['犬'] },
-  { plat: 'x',       url: 'https://x.com/u2/status/802',          tags: ['猫'] },
+  { plat: 'x', url: 'https://x.com/u0/status/800', tags: ['猫'], isReply: true },
+  { plat: 'x', url: 'https://x.com/u1/status/801', tags: ['犬'] },
+  { plat: 'x', url: 'https://x.com/u2/status/802', tags: ['猫'] },
   { plat: 'bluesky', url: 'https://bsky.app/profile/u3/post/803', tags: ['猫'] },
-  { plat: 'misskey', url: 'https://misskey.io/notes/804',         tags: [] },
+  { plat: 'misskey', url: 'https://misskey.io/notes/804', tags: [] },
 ];
 seeds.forEach((s, i) => {
   const id = '170000000000' + i + '-fc' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
-  fs.writeFileSync(path.join(saveFolder, id + '.json'), JSON.stringify({
-    captureId: id, image: id + '.jpg', url: s.url, platform: s.plat,
-    text: '本文' + i, displayName: '人' + i, screenName: 'u' + i, isReply: !!s.isReply,
-    likes: 10 + i, capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
-    date: '2026-04-0' + (i + 1) + 'T10:00:00Z', media: [], tags: s.tags, hashtags: []
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, id + '.json'),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: id + '.jpg',
+        url: s.url,
+        platform: s.plat,
+        text: '本文' + i,
+        displayName: '人' + i,
+        screenName: 'u' + i,
+        isReply: !!s.isReply,
+        likes: 10 + i,
+        capturedAt: '2026-04-0' + (i + 1) + 'T12:00:00Z',
+        date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
+        media: [],
+        tags: s.tags,
+        hashtags: [],
+      },
+      null,
+      2,
+    ),
+  );
 });
 
 const evalJs = `(async () => {
@@ -87,14 +104,22 @@ const evalJs = `(async () => {
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 child.on('close', () => {
   let r = {};
   const m = out.match(/EVAL_RESULT (.+)/);
-  if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
+  if (m) {
+    try {
+      r = JSON.parse(m[1]);
+    } catch {
+      /* ignore */
+    }
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfMisskey_all === '1' &&
-    r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfMisskey_cat === '0' && r.pfMisskey_off === false;
+  const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfMisskey_all === '1' && r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfMisskey_cat === '0' && r.pfMisskey_off === false;
   const facetDim = r.tagCat === '3' && r.tagDog === '0' && r.tagDogOff === true;
   const poster = r.posterPfX === '3' && r.posterPfBsky === '1' && r.posterPfMisskey === '1';
   const ok = fixed && facetDim && poster;

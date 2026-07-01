@@ -13,16 +13,16 @@
 // Kept Electron-free (fs injected, defaults to node's) so it unit-tests in plain
 // node, mirroring lib-archive.js.
 
-const path = require('path');
+const path = require('node:path');
 const { imageSize } = require('./lib-imgsize.js');
 
 const INDEX_FILE = '.index.json';
-const BATCH = 64;   // stat/read this many sidecars concurrently, then yield
+const BATCH = 64; // stat/read this many sidecars concurrently, then yield
 
 const SS_EXT = /\.jpe?g$/i;
 const IMG_EXT = /\.(jpe?g|png|gif|webp)$/i;
-const HEADER_BYTES = 65536;       // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
-const HEADER_BYTES_2 = 262144;    // retry window for big-EXIF JPEGs (eagle migrations)
+const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
+const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrations)
 
 function isPostRecord(rec) {
   // Keep records with an image, a (poster-less) video, or downloaded media —
@@ -52,30 +52,38 @@ function cardImageChangedFromV1(rec) {
 // posts (config/tabs/folders/…/.index.json). fs: injectable for tests.
 function createPostIndex(opts) {
   const o = opts || {};
-  const fs = o.fs || require('fs');
+  const fs = o.fs || require('node:fs');
   const internal = o.internalFiles || new Set();
 
   let curFolder = null;
-  let map = new Map();          // filename -> { mtimeMs, record|null }  (null = known non-post)
+  let map = new Map(); // filename -> { mtimeMs, record|null }  (null = known non-post)
   let snapshotLoaded = false;
 
   // Read just the image header (no decode) and return { width, height } or null.
   async function readImageDims(folder, file) {
-    if (!fs.promises || typeof fs.promises.open !== 'function') return null;   // test fs has no open()
+    if (!fs.promises || typeof fs.promises.open !== 'function') return null; // test fs has no open()
     let fh = null;
     try {
       fh = await fs.promises.open(path.join(folder, file), 'r');
       const buf = Buffer.alloc(HEADER_BYTES);
       const { bytesRead } = await fh.read(buf, 0, HEADER_BYTES, 0);
       let dim = imageSize(buf.subarray(0, bytesRead));
-      if (!dim && bytesRead === HEADER_BYTES) {            // SOF past the first window (big EXIF) — read more
+      if (!dim && bytesRead === HEADER_BYTES) {
+        // SOF past the first window (big EXIF) — read more
         const buf2 = Buffer.alloc(HEADER_BYTES_2);
         const r2 = await fh.read(buf2, 0, HEADER_BYTES_2, 0);
         dim = imageSize(buf2.subarray(0, r2.bytesRead));
       }
       return dim;
-    } catch { return null; }
-    finally { if (fh) { try { await fh.close(); } catch {} } }
+    } catch {
+      return null;
+    } finally {
+      if (fh) {
+        try {
+          await fh.close();
+        } catch {}
+      }
+    }
   }
 
   // Record the card image's pixel size on the record (shotW/shotH) so the
@@ -88,16 +96,25 @@ function createPostIndex(opts) {
     if (!rec || rec.shotW != null) return false;
     if (!fs.promises || typeof fs.promises.open !== 'function') return false;
     const file = cardImageFile(rec);
-    const dim = (file && IMG_EXT.test(file)) ? await readImageDims(folder, file) : null;
-    if (dim && dim.width > 0 && dim.height > 0) { rec.shotW = dim.width; rec.shotH = dim.height; }
-    else { rec.shotW = 0; rec.shotH = 0; }
+    const dim = file && IMG_EXT.test(file) ? await readImageDims(folder, file) : null;
+    if (dim && dim.width > 0 && dim.height > 0) {
+      rec.shotW = dim.width;
+      rec.shotH = dim.height;
+    } else {
+      rec.shotW = 0;
+      rec.shotH = 0;
+    }
     return true;
   }
 
   async function loadSnapshot(folder) {
-    if (curFolder !== folder) { map = new Map(); curFolder = folder; snapshotLoaded = false; }
+    if (curFolder !== folder) {
+      map = new Map();
+      curFolder = folder;
+      snapshotLoaded = false;
+    }
     if (snapshotLoaded) return;
-    snapshotLoaded = true;      // mark first so a missing/corrupt snapshot isn't retried each call
+    snapshotLoaded = true; // mark first so a missing/corrupt snapshot isn't retried each call
     try {
       const raw = await fs.promises.readFile(path.join(folder, INDEX_FILE), 'utf8');
       const idx = JSON.parse(raw);
@@ -110,11 +127,16 @@ function createPostIndex(opts) {
           const e = idx.entries[name];
           if (!e || typeof e.mtimeMs !== 'number') continue;
           const record = e.record || null;
-          if (migrate && record && record.shotW != null && cardImageChangedFromV1(record)) { record.shotW = null; record.shotH = null; }
+          if (migrate && record && record.shotW != null && cardImageChangedFromV1(record)) {
+            record.shotW = null;
+            record.shotH = null;
+          }
           map.set(name, { mtimeMs: e.mtimeMs, record });
         }
       }
-    } catch { /* no/invalid snapshot — cold scan will populate it */ }
+    } catch {
+      /* no/invalid snapshot — cold scan will populate it */
+    }
   }
 
   // Scan the folder, reusing cached records whose mtime is unchanged. Returns
@@ -122,7 +144,11 @@ function createPostIndex(opts) {
   // (the caller persists the snapshot when so).
   async function list(folder) {
     let files;
-    try { files = await fs.promises.readdir(folder); } catch { return { posts: [], changed: false }; }
+    try {
+      files = await fs.promises.readdir(folder);
+    } catch {
+      return { posts: [], changed: false };
+    }
     await loadSnapshot(folder);
 
     const sidecars = files.filter((f) => f.toLowerCase().endsWith('.json') && !internal.has(f));
@@ -131,36 +157,50 @@ function createPostIndex(opts) {
 
     for (let i = 0; i < sidecars.length; i += BATCH) {
       const slice = sidecars.slice(i, i + BATCH);
-      await Promise.all(slice.map(async (f) => {
-        let st;
-        try { st = await fs.promises.stat(path.join(folder, f)); }
-        catch { if (map.delete(f)) changed = true; return; }
-        const cached = map.get(f);
-        if (cached && cached.mtimeMs === st.mtimeMs) {          // unchanged -> reuse parsed record
-          // One-time backfill: size posts whose snapshot predates shotW/shotH.
-          if (cached.record && cached.record.shotW == null && await augmentDims(folder, cached.record)) changed = true;
-          return;
-        }
-        changed = true;
-        try {
-          const rec = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
-          const record = isPostRecord(rec) ? rec : null;
-          if (record) await augmentDims(folder, record);
-          map.set(f, { mtimeMs: st.mtimeMs, record });
-        } catch {
-          map.set(f, { mtimeMs: st.mtimeMs, record: null });   // corrupt/partial -> remember as non-post
-        }
-      }));
+      await Promise.all(
+        slice.map(async (f) => {
+          let st;
+          try {
+            st = await fs.promises.stat(path.join(folder, f));
+          } catch {
+            if (map.delete(f)) changed = true;
+            return;
+          }
+          const cached = map.get(f);
+          if (cached && cached.mtimeMs === st.mtimeMs) {
+            // unchanged -> reuse parsed record
+            // One-time backfill: size posts whose snapshot predates shotW/shotH.
+            if (cached.record && cached.record.shotW == null && (await augmentDims(folder, cached.record))) changed = true;
+            return;
+          }
+          changed = true;
+          try {
+            const rec = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
+            const record = isPostRecord(rec) ? rec : null;
+            if (record) await augmentDims(folder, record);
+            map.set(f, { mtimeMs: st.mtimeMs, record });
+          } catch {
+            map.set(f, { mtimeMs: st.mtimeMs, record: null }); // corrupt/partial -> remember as non-post
+          }
+        }),
+      );
     }
 
     // Prune entries for sidecars that disappeared (deletes).
-    for (const k of [...map.keys()]) if (!present.has(k)) { map.delete(k); changed = true; }
+    for (const k of [...map.keys()])
+      if (!present.has(k)) {
+        map.delete(k);
+        changed = true;
+      }
 
     const posts = [];
-    const stamps = new Map();   // captureId -> mtimeMs, for the main process's delta IPC
+    const stamps = new Map(); // captureId -> mtimeMs, for the main process's delta IPC
     for (const f of sidecars) {
       const e = map.get(f);
-      if (e && e.record) { posts.push(e.record); stamps.set(e.record.captureId, e.mtimeMs); }
+      if (e && e.record) {
+        posts.push(e.record);
+        stamps.set(e.record.captureId, e.mtimeMs);
+      }
     }
     posts.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
     return { posts, changed, stamps };
@@ -181,15 +221,27 @@ function createPostIndex(opts) {
       if (typeof f !== 'string' || internal.has(f) || !f.toLowerCase().endsWith('.json')) continue;
       const full = path.join(folder, f);
       let st = null;
-      try { st = await fs.promises.stat(full); } catch { st = null; }
+      try {
+        st = await fs.promises.stat(full);
+      } catch {
+        st = null;
+      }
       const prev = map.get(f);
-      if (!st) {                                   // deleted
-        if (prev) { if (prev.record) removed.push(prev.record.captureId); map.delete(f); }
+      if (!st) {
+        // deleted
+        if (prev) {
+          if (prev.record) removed.push(prev.record.captureId);
+          map.delete(f);
+        }
         continue;
       }
-      if (prev && prev.mtimeMs === st.mtimeMs) continue;   // spurious event, nothing moved
+      if (prev && prev.mtimeMs === st.mtimeMs) continue; // spurious event, nothing moved
       let rec = null;
-      try { rec = JSON.parse(await fs.promises.readFile(full, 'utf8')); } catch { rec = null; }
+      try {
+        rec = JSON.parse(await fs.promises.readFile(full, 'utf8'));
+      } catch {
+        rec = null;
+      }
       const record = isPostRecord(rec) ? rec : null;
       if (record) await augmentDims(folder, record);
       // Previous post vanished (became a non-post, or — defensively — its id moved).
@@ -222,7 +274,9 @@ function createPostIndex(opts) {
 // unit-tests directly (the main process owns the lastSent state).
 function computeDelta(lastSent, posts, stamps) {
   const added = [];
-  for (const p of posts) { if (lastSent.get(p.captureId) !== stamps.get(p.captureId)) added.push(p); }
+  for (const p of posts) {
+    if (lastSent.get(p.captureId) !== stamps.get(p.captureId)) added.push(p);
+  }
   const removed = [];
   for (const id of lastSent.keys()) if (!stamps.has(id)) removed.push(id);
   return { added, removed };

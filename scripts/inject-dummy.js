@@ -10,9 +10,9 @@
 // With no folder argument it writes to the configured save folder.
 
 const { app, BrowserWindow } = require('electron');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { configDir, defaultLibraryDir } = require('../native-host/paths');
 
 function resolveFolder() {
@@ -21,8 +21,10 @@ function resolveFolder() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
-  } catch { /* no config */ }
-  return defaultLibraryDir();   // SAME default the app uses (was ~/Corpus, which the app never watches)
+  } catch {
+    /* no config */
+  }
+  return defaultLibraryDir(); // SAME default the app uses (was ~/Corpus, which the app never watches)
 }
 
 const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon: '#6364ff' };
@@ -30,7 +32,22 @@ const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon:
 // type: post | reply | quote | thread ; media: image | video | gif | none
 const POSTS = [
   // --- X ---
-  { platform: 'x', type: 'post', media: 'image', lang: 'ja', displayName: 'てすと太郎', screenName: 'testuser1', userId: '111', likes: 1234567, reposts: 89000, replies: 4200, bookmarks: 56000, views: 9800000, tags: ['開発'], text: 'TypeScriptの型パズル、解けた時の快感がすごい。再帰型テンプレートリテラル最高 #typescript #プログラミング' },
+  {
+    platform: 'x',
+    type: 'post',
+    media: 'image',
+    lang: 'ja',
+    displayName: 'てすと太郎',
+    screenName: 'testuser1',
+    userId: '111',
+    likes: 1234567,
+    reposts: 89000,
+    replies: 4200,
+    bookmarks: 56000,
+    views: 9800000,
+    tags: ['開発'],
+    text: 'TypeScriptの型パズル、解けた時の快感がすごい。再帰型テンプレートリテラル最高 #typescript #プログラミング',
+  },
   { platform: 'x', type: 'reply', media: 'none', lang: 'en', displayName: 'Dev Jane', screenName: 'devjane', userId: '112', likes: 3, reposts: 0, replies: 1, bookmarks: 0, views: 210, tags: [], text: 'Good morning! Replying with coffee and code.' },
   { platform: 'x', type: 'quote', media: 'none', lang: 'ja', displayName: 'サンプル花子', screenName: 'hanako', userId: '113', likes: 48, reposts: 12, replies: 3, bookmarks: 5, views: 8900, tags: [], quotedUrl: 'https://x.com/someone/status/999', text: 'これは面白い視点。引用元も見てほしい #ガジェット' },
   { platform: 'x', type: 'thread', media: 'video', lang: 'ja', displayName: 'キャンパー', screenName: 'camper', userId: '114', likes: 320, reposts: 40, replies: 8, bookmarks: 22, views: 41000, tags: ['アウトドア'], text: 'スレッドの続き。今回のキャンプ動画です #キャンプ' },
@@ -67,7 +84,7 @@ const POSTS = [
 
   // --- Mastodon ---
   { platform: 'mastodon', host: 'mastodon.social', type: 'post', media: 'image', lang: 'en', displayName: 'Mastodon User', screenName: 'mastodonuser', userId: 'm001', likes: 412, reposts: 88, replies: 14, tags: ['fediverse'], text: 'loving the open social web #mastodon #fediverse' },
-  { platform: 'mastodon', host: 'mstdn.jp', type: 'reply', media: 'none', lang: 'ja', displayName: 'ますとどん太郎', screenName: 'mstdntaro', userId: 'm002', likes: 23, reposts: 2, replies: 5, tags: [], text: 'mstdn.jp から返信テスト #マストドン' }
+  { platform: 'mastodon', host: 'mstdn.jp', type: 'reply', media: 'none', lang: 'ja', displayName: 'ますとどん太郎', screenName: 'mstdntaro', userId: 'm002', likes: 23, reposts: 2, replies: 5, tags: [], text: 'mstdn.jp から返信テスト #マストドン' },
 ];
 
 function postUrl(p, i) {
@@ -97,10 +114,10 @@ app.whenReady().then(async () => {
 
     const dataUrl = await win.webContents.executeJavaScript(
       `(()=>{const c=document.getElementById('c'),x=c.getContext('2d');` +
-      `x.fillStyle=${JSON.stringify(color)};x.fillRect(0,0,320,200);` +
-      `x.fillStyle='#ffffff';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(${JSON.stringify(label)},160,96);` +
-      `x.font='15px sans-serif';x.globalAlpha=0.85;x.fillText(${JSON.stringify(sub)},160,128);` +
-      `return c.toDataURL('image/jpeg',0.72);})()`
+        `x.fillStyle=${JSON.stringify(color)};x.fillRect(0,0,320,200);` +
+        `x.fillStyle='#ffffff';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(${JSON.stringify(label)},160,96);` +
+        `x.font='15px sans-serif';x.globalAlpha=0.85;x.fillText(${JSON.stringify(sub)},160,128);` +
+        `return c.toDataURL('image/jpeg',0.72);})()`,
     );
 
     // Dummy avatar: a colored circle + the poster's initial on white. Distinguishable
@@ -110,10 +127,10 @@ app.whenReady().then(async () => {
     const initial = (p.displayName || p.screenName || '?').trim().charAt(0) || '?';
     const avDataUrl = await win.webContents.executeJavaScript(
       `(()=>{const c=document.getElementById('c'),x=c.getContext('2d');` +
-      `x.fillStyle='#ffffff';x.fillRect(0,0,320,200);` +
-      `x.fillStyle=${JSON.stringify(color)};x.beginPath();x.arc(160,100,92,0,Math.PI*2);x.fill();` +
-      `x.fillStyle='#ffffff';x.textAlign='center';x.textBaseline='middle';x.font='bold 96px sans-serif';x.fillText(${JSON.stringify(initial)},160,106);` +
-      `return c.toDataURL('image/jpeg',0.82);})()`
+        `x.fillStyle='#ffffff';x.fillRect(0,0,320,200);` +
+        `x.fillStyle=${JSON.stringify(color)};x.beginPath();x.arc(160,100,92,0,Math.PI*2);x.fill();` +
+        `x.fillStyle='#ffffff';x.textAlign='center';x.textBaseline='middle';x.font='bold 96px sans-serif';x.fillText(${JSON.stringify(initial)},160,106);` +
+        `return c.toDataURL('image/jpeg',0.82);})()`,
     );
 
     const date = new Date(base - i * 3 * 86400000).toISOString();
@@ -141,7 +158,7 @@ app.whenReady().then(async () => {
       isThread: p.type === 'thread' || null,
       quotedUrl: p.quotedUrl || null,
       avatarFile: `${id}-avatar.jpg`,
-      tags: p.tags || []
+      tags: p.tags || [],
     };
     fs.writeFileSync(path.join(folder, `${id}.jpg`), Buffer.from(dataUrl.split(',')[1], 'base64'));
     fs.writeFileSync(path.join(folder, `${id}-avatar.jpg`), Buffer.from(avDataUrl.split(',')[1], 'base64'));

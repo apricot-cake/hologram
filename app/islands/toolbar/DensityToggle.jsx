@@ -13,12 +13,15 @@ import { t } from '../_shared/i18n.js';
 // carrying the original data-* attr) so the .view-toggle CSS is unchanged. Icons only
 // (vt-label is display:none in CSS) but we keep the labels for accessibility.
 
-const reduceMotion = () =>
-  !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 function ViewIcon({ v }) {
   if (v === 'card') {
-    return <svg className="vt-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" /></svg>;
+    return (
+      <svg className="vt-ico" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      </svg>
+    );
   }
   if (v === 'tile') {
     return (
@@ -81,22 +84,22 @@ export function DensityToggle({ el, storeKey = 'view', dataAttr = 'data-view', d
   // disappears without a window resize) or the window resizes.
   useLayoutEffect(() => {
     let ro;
-    if (window.ResizeObserver && el) { ro = new ResizeObserver(place); ro.observe(el); }
+    if (window.ResizeObserver && el) {
+      ro = new ResizeObserver(place);
+      ro.observe(el);
+    }
     window.addEventListener('resize', place, { passive: true });
-    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', place); };
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', place);
+    };
   }, [el, place]);
 
   return (
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {VIEWS.map(({ v, key }) => (
-        <button
-          key={v}
-          type="button"
-          {...{ [dataAttr]: v }}
-          className={v === view ? 'active' : undefined}
-          onClick={() => window.corpusStore.set(storeKey, v)}
-        >
+        <button key={v} type="button" {...{ [dataAttr]: v }} className={v === view ? 'active' : undefined} onClick={() => window.corpusStore.set(storeKey, v)}>
           <ViewIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>

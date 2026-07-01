@@ -13,8 +13,11 @@ import { SearchBox } from './SearchBox.jsx';
   if (!host) return;
   createRoot(host).render(
     <>
-      <svg className="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></svg>
+      <svg className="search-ico" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="16.5" y1="16.5" x2="21" y2="21" />
+      </svg>
       <SearchBox placeholder={t('searchPlaceholder')} />
-    </>
+    </>,
   );
 })();

@@ -31,22 +31,27 @@ function InfoIcon() {
 function PosterCard({ c, tagTitle, infoTitle }) {
   return (
     <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} tabIndex={0}>
-      <div className="poster-av">
-        {c.avatarSrc ? <img src={c.avatarSrc} alt="" loading="lazy" /> : c.monogram}
-      </div>
+      <div className="poster-av">{c.avatarSrc ? <img src={c.avatarSrc} alt="" loading="lazy" /> : c.monogram}</div>
       <div className="poster-meta">
         <div className="poster-name">{c.name}</div>
         {c.handle && <div className="poster-handle">@{c.handle}</div>}
         <div className="poster-foot">
           {c.platform && (
-            <span className="pf-tag"><span className={'pf-dot ' + c.platform} />{c.pfName}</span>
+            <span className="pf-tag">
+              <span className={'pf-dot ' + c.platform} />
+              {c.pfName}
+            </span>
           )}
           <span className="poster-count">{c.countLabel}</span>
         </div>
       </div>
       {/* Hover actions: 🏷 tag → ℹ info (L→R). */}
-      <button className="poster-tag" data-ptag={c.index} title={tagTitle} aria-label={tagTitle}><TagIcon /></button>
-      <button className="poster-info" data-pinfo={c.index} title={infoTitle} aria-label={infoTitle}><InfoIcon /></button>
+      <button className="poster-tag" data-ptag={c.index} title={tagTitle} aria-label={tagTitle}>
+        <TagIcon />
+      </button>
+      <button className="poster-info" data-pinfo={c.index} title={infoTitle} aria-label={infoTitle}>
+        <InfoIcon />
+      </button>
     </div>
   );
 }

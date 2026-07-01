@@ -15,7 +15,11 @@
 function parsePostUrl(url) {
   if (!url) return null;
   let u;
-  try { u = new URL(url); } catch { return null; }
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
   const host = u.hostname;
   let m;
   if (host === 'bsky.app' && (m = u.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) {
@@ -24,9 +28,7 @@ function parsePostUrl(url) {
   // Subdomains (pro.x.com, mobile.twitter.com …) serve the same web UI and are
   // accepted by content.js's host match — accept them here too, otherwise the
   // capture saves with platform-only metadata. (audit 2026-06-11)
-  if ((host === 'x.com' || host === 'twitter.com' ||
-       host.endsWith('.x.com') || host.endsWith('.twitter.com')) &&
-      (m = u.pathname.match(/\/status\/(\d+)/))) {
+  if ((host === 'x.com' || host === 'twitter.com' || host.endsWith('.x.com') || host.endsWith('.twitter.com')) && (m = u.pathname.match(/\/status\/(\d+)/))) {
     return { platform: 'x', id: m[1], screenName: (u.pathname.match(/^\/([^/]+)\/status/) || [])[1] || null };
   }
   // Mastodon web URL: /@user/<numericId> (id starts with a digit; excludes
@@ -46,22 +48,41 @@ function parsePostUrl(url) {
 
 function emptyRecord(url, platform) {
   return {
-    url: url || null, platform: platform || null, text: null, title: null,
-    displayName: null, screenName: null, userId: null,
+    url: url || null,
+    platform: platform || null,
+    text: null,
+    title: null,
+    displayName: null,
+    screenName: null,
+    userId: null,
     // Author profile. avatar: all platforms (X via syndication user). followers /
     // authorCreatedAt: only the platforms that expose them on a public API
     // (Bluesky / Misskey / Mastodon). X and pixiv don't expose either → stay null
     // (graceful hide, the viewer omits absent fields). avatarReferer: only pixiv
     // needs one (i.pximg.net is Referer-gated) — the bridge honors it on download.
-    avatar: null, avatarReferer: null, followers: null, authorCreatedAt: null,
-    likes: null, reposts: null, replies: null, bookmarks: null, views: null,
-    date: null, mediaType: null, media: [], lang: null,
-    isReply: null, isQuote: null, isThread: null, quotedUrl: null,
+    avatar: null,
+    avatarReferer: null,
+    followers: null,
+    authorCreatedAt: null,
+    likes: null,
+    reposts: null,
+    replies: null,
+    bookmarks: null,
+    views: null,
+    date: null,
+    mediaType: null,
+    media: [],
+    lang: null,
+    isReply: null,
+    isQuote: null,
+    isThread: null,
+    quotedUrl: null,
     // Reply parent's platform-local post id (tweet id / rkey / note id / status
     // id). Lets the viewer group a self-reply with its parent when both are in
     // the library.
     replyToId: null,
-    hashtags: [], tags: []
+    hashtags: [],
+    tags: [],
   };
 }
 
@@ -95,7 +116,7 @@ function xMedia(details) {
       url: m.media_url_https + (m.media_url_https.includes('?') ? '' : '?name=orig'),
       alt: m.ext_alt_text || null,
       width: (m.original_info && m.original_info.width) || null,
-      height: (m.original_info && m.original_info.height) || null
+      height: (m.original_info && m.original_info.height) || null,
     }));
 }
 
@@ -161,7 +182,7 @@ async function resolveBlueskyDid(handle) {
     const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (!res.ok) return null;
     const data = await res.json();
-    return (data.did && /^did:[a-z]+:.+/.test(data.did)) ? data.did : null;
+    return data.did && /^did:[a-z]+:.+/.test(data.did) ? data.did : null;
   } catch {
     return null;
   }
@@ -195,7 +216,7 @@ function bskyMedia(post) {
       url: im.fullsize,
       alt: im.alt || null,
       width: (im.aspectRatio && im.aspectRatio.width) || null,
-      height: (im.aspectRatio && im.aspectRatio.height) || null
+      height: (im.aspectRatio && im.aspectRatio.height) || null,
     }));
 }
 
@@ -223,7 +244,7 @@ async function fetchBlueskyPost(parsed, url) {
       rec.displayName = post.author.displayName || null;
       rec.screenName = post.author.handle || rec.screenName;
       rec.userId = post.author.did || rec.userId;
-      rec.avatar = post.author.avatar || null;   // ProfileViewBasic carries the avatar
+      rec.avatar = post.author.avatar || null; // ProfileViewBasic carries the avatar
     }
     // Followers + account-creation date: the post's author view is a
     // ProfileViewBasic without them — fetch the full profile by DID. Failure
@@ -238,7 +259,9 @@ async function fetchBlueskyPost(parsed, url) {
           rec.followers = prof.followersCount ?? null;
           rec.authorCreatedAt = toIso(prof.createdAt);
         }
-      } catch { /* keep avatar from the author view */ }
+      } catch {
+        /* keep avatar from the author view */
+      }
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.mediaType = bskyMediaType(post);
@@ -250,7 +273,10 @@ async function fetchBlueskyPost(parsed, url) {
       const m = parentUri && parentUri.match(/^at:\/\/(did:[^/]+)\//);
       const pm = parentUri && parentUri.match(/\/app\.bsky\.feed\.post\/([^/?#]+)/);
       rec.replyToId = pm ? pm[1] : null;
-      if (m && post.author && m[1] === post.author.did) { rec.isThread = true; rec.isReply = null; }
+      if (m && post.author && m[1] === post.author.did) {
+        rec.isThread = true;
+        rec.isReply = null;
+      }
     }
     const embType = (post.embed && post.embed.$type) || (record.embed && record.embed.$type) || '';
     if (embType.includes('app.bsky.embed.record')) {
@@ -259,14 +285,12 @@ async function fetchBlueskyPost(parsed, url) {
       // Only a quoted POST is a quote. embed.record also wraps lists, feeds and
       // starter packs (their uri is app.bsky.graph.* / app.bsky.feed.generator),
       // which must NOT mark the post as a quote. Gate on the feed.post uri.
-      const qm = (typeof quri === 'string')
-        ? quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/) : null;
+      const qm = typeof quri === 'string' ? quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/) : null;
       if (qm) {
         rec.isQuote = true;
         // recordWithMedia nests the quoted ViewRecord one level deeper
         // (embed.record.record) — read the handle from whichever level has it.
-        const qhandle = (rec2.author && rec2.author.handle) ||
-          (rec2.record && rec2.record.author && rec2.record.author.handle);
+        const qhandle = (rec2.author && rec2.author.handle) || (rec2.record && rec2.record.author && rec2.record.author.handle);
         rec.quotedUrl = `https://bsky.app/profile/${qhandle || qm[1]}/post/${qm[2]}`;
       }
     }
@@ -295,7 +319,7 @@ function misskeyMedia(files) {
       url: f.url,
       alt: f.comment || null,
       width: (f.properties && f.properties.width) || null,
-      height: (f.properties && f.properties.height) || null
+      height: (f.properties && f.properties.height) || null,
     }));
 }
 
@@ -308,7 +332,7 @@ async function fetchMisskeyNote(parsed, url) {
     const res = await fetch(`https://${parsed.host}/api/notes/show`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ noteId: parsed.noteId })
+      body: JSON.stringify({ noteId: parsed.noteId }),
     });
     if (!res.ok) return rec;
     const note = await res.json();
@@ -319,11 +343,9 @@ async function fetchMisskeyNote(parsed, url) {
       // Federated remote authors carry their home server in user.host — keep it
       // (user@host, like Mastodon's acct) so same-named users on different
       // instances don't collapse into one identity.
-      rec.screenName = note.user.username
-        ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username)
-        : null;
+      rec.screenName = note.user.username ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username) : null;
       rec.userId = note.user.id || null;
-      rec.avatar = note.user.avatarUrl || null;   // UserLite carries the avatar URL
+      rec.avatar = note.user.avatarUrl || null; // UserLite carries the avatar URL
     }
     // Followers + account-creation date: the UserLite on a note lacks them —
     // fetch the full user by id from the same instance (already pinned by the
@@ -334,7 +356,7 @@ async function fetchMisskeyNote(parsed, url) {
         const ures = await fetch(`https://${parsed.host}/api/users/show`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: note.user.id })
+          body: JSON.stringify({ userId: note.user.id }),
         });
         if (ures.ok) {
           const u = await ures.json();
@@ -342,7 +364,9 @@ async function fetchMisskeyNote(parsed, url) {
           rec.followers = u.followersCount ?? null;
           rec.authorCreatedAt = toIso(u.createdAt);
         }
-      } catch { /* keep avatar from note.user */ }
+      } catch {
+        /* keep avatar from note.user */
+      }
     }
     if (note.reactions) {
       const total = Object.values(note.reactions).reduce((s, n) => s + n, 0);
@@ -356,14 +380,15 @@ async function fetchMisskeyNote(parsed, url) {
     if (note.replyId) {
       rec.isReply = true;
       rec.replyToId = note.replyId;
-      if (note.reply && note.reply.userId && note.reply.userId === note.userId) { rec.isThread = true; rec.isReply = null; }
+      if (note.reply && note.reply.userId && note.reply.userId === note.userId) {
+        rec.isThread = true;
+        rec.isReply = null;
+      }
     }
     // A renote counts as a QUOTE when it adds anything of its own — text, CW,
     // files or a poll (misskey-js isPureRenote semantics). Text-only checks
     // missed image-only quotes. (audit 2026-06-11)
-    if (note.renoteId && (note.text || note.cw ||
-        (Array.isArray(note.files) && note.files.length) ||
-        (Array.isArray(note.fileIds) && note.fileIds.length) || note.poll)) {
+    if (note.renoteId && (note.text || note.cw || (Array.isArray(note.files) && note.files.length) || (Array.isArray(note.fileIds) && note.fileIds.length) || note.poll)) {
       rec.isQuote = true;
       // Prefer the quoted note's own canonical URL — a federated remote note
       // exposes url/uri; a note local to this instance has neither, so fall back
@@ -386,8 +411,13 @@ function htmlToText(html) {
     .replace(/<\/p>\s*<p>/gi, '\n\n')
     .replace(/<\/?p>/gi, '')
     .replace(/<[^>]+>/g, '');
-  s = s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ')
+  s = s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&');
   return s.trim() || null;
 }
@@ -409,7 +439,7 @@ function mastodonMedia(atts) {
       url: a.url,
       alt: a.description || null,
       width: (a.meta && a.meta.original && a.meta.original.width) || null,
-      height: (a.meta && a.meta.original && a.meta.original.height) || null
+      height: (a.meta && a.meta.original && a.meta.original.height) || null,
     }));
 }
 
@@ -417,7 +447,11 @@ function mastodonMedia(atts) {
 // in from non-Mastodon software (Lemmy/PieFed/Mbin/...) report a canonical s.url
 // in that software's own scheme, which doesn't open as a status (404/forbidden).
 function isMastodonStatusUrl(u) {
-  try { return /^\/@[^/]+\/\d+\/?$/.test(new URL(u).pathname); } catch { return false; }
+  try {
+    return /^\/@[^/]+\/\d+\/?$/.test(new URL(u).pathname);
+  } catch {
+    return false;
+  }
 }
 
 async function fetchMastodonStatus(parsed, url) {
@@ -429,7 +463,7 @@ async function fetchMastodonStatus(parsed, url) {
     // Keep the canonical permalink only when it's a real Mastodon status URL;
     // otherwise fall back to the instance URL we captured (always opens in the
     // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
-    rec.url = (s.url && isMastodonStatusUrl(s.url)) ? s.url : url;
+    rec.url = s.url && isMastodonStatusUrl(s.url) ? s.url : url;
     rec.text = htmlToText(s.content);
     rec.date = toIso(s.created_at);
     if (s.account) {
@@ -462,8 +496,7 @@ async function fetchMastodonStatus(parsed, url) {
     const q = s.quote;
     if (q && (q.url || q.uri || q.quoted_status || q.quoted_status_id)) {
       rec.isQuote = true;
-      rec.quotedUrl = q.url || q.uri ||
-        (q.quoted_status && (q.quoted_status.url || q.quoted_status.uri)) || null;
+      rec.quotedUrl = q.url || q.uri || (q.quoted_status && (q.quoted_status.url || q.quoted_status.uri)) || null;
     }
   } catch {
     // keep partial
@@ -486,9 +519,9 @@ function pixivMedia(il) {
     out.push({
       url,
       alt: null,
-      width: i === 0 ? (il.width || null) : null,
-      height: i === 0 ? (il.height || null) : null,
-      referer: 'https://www.pixiv.net/'
+      width: i === 0 ? il.width || null : null,
+      height: i === 0 ? il.height || null : null,
+      referer: 'https://www.pixiv.net/',
     });
   }
   return out;
@@ -508,7 +541,7 @@ async function fetchPixivIllust(parsed, url) {
     // Caption (HTML) → text, so caption words are searchable in the viewer.
     rec.text = htmlToText(il.illustComment || il.description || '');
     rec.displayName = il.userName || null;
-    rec.screenName = il.userId || null;   // pixiv has no @handle; userId is the stable id
+    rec.screenName = il.userId || null; // pixiv has no @handle; userId is the stable id
     rec.userId = il.userId || null;
     rec.likes = il.likeCount ?? null;
     rec.bookmarks = il.bookmarkCount ?? null;
@@ -516,7 +549,7 @@ async function fetchPixivIllust(parsed, url) {
     rec.replies = il.commentCount ?? null;
     rec.date = toIso(il.createDate || il.uploadDate);
     rec.hashtags = (il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t.tag).filter(Boolean);
-    rec.mediaType = 'image';   // ugoira (animation) originals are zip — not handled here
+    rec.mediaType = 'image'; // ugoira (animation) originals are zip — not handled here
     rec.media = pixivMedia(il);
     // Multi-page works can MIX file formats per page (p0=.jpg, p2=.png …), so
     // the _p0→_pN substitution above can 404. Prefer the per-page originals
@@ -533,12 +566,14 @@ async function fetchPixivIllust(parsed, url) {
                 alt: null,
                 width: p.width || null,
                 height: p.height || null,
-                referer: 'https://www.pixiv.net/'
+                referer: 'https://www.pixiv.net/',
               }))
               .filter((m) => m.url);
           }
         }
-      } catch { /* keep the substituted fallback */ }
+      } catch {
+        /* keep the substituted fallback */
+      }
     }
     // Author avatar: the illust payload carries no avatar — fetch the user record.
     // pixiv's public ajax exposes neither follower count nor account-creation
@@ -554,7 +589,9 @@ async function fetchPixivIllust(parsed, url) {
             if (rec.avatar) rec.avatarReferer = 'https://www.pixiv.net/';
           }
         }
-      } catch { /* no avatar */ }
+      } catch {
+        /* no avatar */
+      }
     }
   } catch {
     // network/parse failure — keep what we have (URL only)
@@ -573,8 +610,7 @@ async function fetchPostMetadata(url, opts) {
   // this rejects nothing legitimate. X / Bluesky / pixiv use fixed API hosts and
   // are unaffected (their parse only matches the known hosts).
   const expectedHost = opts && opts.expectedHost;
-  if (expectedHost && (parsed.platform === 'misskey' || parsed.platform === 'mastodon') &&
-      parsed.host !== expectedHost) {
+  if (expectedHost && (parsed.platform === 'misskey' || parsed.platform === 'mastodon') && parsed.host !== expectedHost) {
     return emptyRecord(url, parsed.platform);
   }
   if (parsed.platform === 'x') return fetchXTweet(parsed, url);
@@ -587,7 +623,17 @@ async function fetchPostMetadata(url, opts) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    parsePostUrl, fetchPostMetadata, fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, xToken,
-    xMedia, bskyMedia, misskeyMedia, mastodonMedia, pixivMedia
+    parsePostUrl,
+    fetchPostMetadata,
+    fetchXTweet,
+    fetchBlueskyPost,
+    fetchMisskeyNote,
+    fetchPixivIllust,
+    xToken,
+    xMedia,
+    bskyMedia,
+    misskeyMedia,
+    mastodonMedia,
+    pixivMedia,
   };
 }

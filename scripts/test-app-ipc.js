@@ -5,10 +5,10 @@
 //
 //   node scripts/test-app-ipc.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -24,10 +24,23 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 
 function writePost(id, tags) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
-    captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x',
-    text: 't', tags, capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z'
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, `${id}.json`),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: `${id}.jpg`,
+        url: `https://x.com/u/status/${id}`,
+        platform: 'x',
+        text: 't',
+        tags,
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        date: '2026-01-01T00:00:00.000Z',
+      },
+      null,
+      2,
+    ),
+  );
 }
 writePost('dummy-0001', []);
 writePost('dummy-0002', []);
@@ -40,18 +53,23 @@ const evalJs = `(async () => {
 })()`;
 
 const env = Object.assign({}, process.env, {
-  APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs
+  APPDATA: tmp,
+  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
+  CORPUS_SMOKE: '1',
+  CORPUS_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const rec1 = JSON.parse(fs.readFileSync(path.join(saveFolder, 'dummy-0001.json'), 'utf8'));
   const tagOk = JSON.stringify(rec1.tags) === JSON.stringify(['tagX']);
-  const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) &&
-                !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
+  const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && !fs.existsSync(path.join(saveFolder, 'dummy-0002.json'));
   const countOk = /EVAL_RESULT 1\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`updateTags=${tagOk} delete=${delOk} listCount=${countOk}`);

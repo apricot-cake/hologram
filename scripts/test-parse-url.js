@@ -7,7 +7,7 @@
 //
 //   node scripts/test-parse-url.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { parsePostUrl } = require('../extension/metadata.js');
 
 const cases = [
@@ -44,7 +44,7 @@ const cases = [
   ['https://x.com/alice', null],
   ['not a url', null],
   ['', null],
-  [null, null]
+  [null, null],
 ];
 
 let pass = 0;

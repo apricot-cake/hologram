@@ -29,55 +29,79 @@
     const all = () => folders;
     function setAll(list) {
       folders = Array.isArray(list) ? list : [];
-      if (isCollections) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: (typeof f.created === 'number' ? f.created : null), items: Array.isArray(f.items) ? f.items : [] }));
+      if (isCollections) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
     }
     const byId = (id) => folders.find((f) => f.id === id) || null;
-    const has = (id, key) => { const f = byId(id); return !!(f && f.items.includes(key)); };
+    const has = (id, key) => {
+      const f = byId(id);
+      return !!(f && f.items.includes(key));
+    };
     function create(name, opts) {
-      const nm = (name || '').trim(); if (!nm) return null;
+      const nm = (name || '').trim();
+      if (!nm) return null;
       const f = { id: genId(), name: nm, items: [] };
       if (isCollections) {
-        f.kind = (opts && opts.kind === 'dynamic') ? 'dynamic' : 'static';
+        f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
         f.created = Date.now();
-        if (f.kind === 'dynamic') setQuery(f, opts);   // saved-search payload (tree + free-text)
+        if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (tree + free-text)
       }
-      folders.push(f); persist();
+      folders.push(f);
+      persist();
       return f;
     }
     // Copy a saved-search condition (boolean tree + free-text q) onto a dynamic
     // collection; clears either when absent. Static collections never carry these.
     function setQuery(f, src) {
-      if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree)); else delete f.tree;
-      if (src && typeof src.q === 'string' && src.q) f.q = src.q; else delete f.q;
+      if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree));
+      else delete f.tree;
+      if (src && typeof src.q === 'string' && src.q) f.q = src.q;
+      else delete f.q;
     }
     // Update a dynamic collection's saved condition in place (= re-save the search).
     function update(id, patch) {
-      const f = byId(id); if (!f || f.kind !== 'dynamic') return false;
-      setQuery(f, patch); persist(); return true;
+      const f = byId(id);
+      if (!f || f.kind !== 'dynamic') return false;
+      setQuery(f, patch);
+      persist();
+      return true;
     }
-    function remove(id) { folders = folders.filter((f) => f.id !== id); persist(); }
+    function remove(id) {
+      folders = folders.filter((f) => f.id !== id);
+      persist();
+    }
     function rename(id, name) {
-      const f = byId(id); const nm = (name || '').trim();
+      const f = byId(id);
+      const nm = (name || '').trim();
       if (!f || !nm) return false;
-      f.name = nm; persist(); return true;
+      f.name = nm;
+      persist();
+      return true;
     }
     // Toggle one key or a whole group of keys in folder id; anchorKey decides the
     // resulting state (a tile's representative id). Returns 'added' | 'removed' | null.
     function toggleIn(id, keys, anchorKey) {
-      const f = byId(id); if (!f) return null;
+      const f = byId(id);
+      if (!f) return null;
       const ids = (Array.isArray(keys) ? keys : [keys]).filter((k) => k != null);
       if (!ids.length) return null;
       const anchor = anchorKey != null ? anchorKey : ids[0];
       const wasIn = f.items.includes(anchor);
       if (wasIn) f.items = f.items.filter((c) => !ids.includes(c));
-      else ids.forEach((c) => { if (!f.items.includes(c)) f.items.push(c); });
+      else
+        ids.forEach((c) => {
+          if (!f.items.includes(c)) f.items.push(c);
+        });
       persist();
       return wasIn ? 'removed' : 'added';
     }
     // Drop keys no longer present (deleted items). Returns true if anything changed.
     function reconcile(existing) {
       let changed = false;
-      folders.forEach((f) => { const n = f.items.length; f.items = f.items.filter((c) => existing.has(c)); if (f.items.length !== n) changed = true; });
+      folders.forEach((f) => {
+        const n = f.items.length;
+        f.items = f.items.filter((c) => existing.has(c));
+        if (f.items.length !== n) changed = true;
+      });
       return changed;
     }
     // Reorder: place draggedId before/after targetId (drag-and-drop). Returns true
@@ -94,7 +118,17 @@
       return true;
     }
     return {
-      all, allRaw, setAll, byId, has, create, remove, rename, toggleIn, reconcile, move,
+      all,
+      allRaw,
+      setAll,
+      byId,
+      has,
+      create,
+      remove,
+      rename,
+      toggleIn,
+      reconcile,
+      move,
       ...(isCollections ? { update } : {}),
     };
   }
@@ -125,36 +159,62 @@
   let t = (key, subs2) => key;
   if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
     window.corpusI18n.then((api) => {
-      if (api && api.getMessage) { t = api.getMessage; applyStaticI18n(); }
+      if (api && api.getMessage) {
+        t = api.getMessage;
+        applyStaticI18n();
+      }
     });
   }
   function applyStaticI18n() {
-    const modal = $('ivFolderModal'); if (!modal) return;
-    const title = modal.querySelector('.iv-insp-title'); if (title) title.textContent = t('foldManageTitle');
-    const inp = $('ivFolderNewName'); if (inp) inp.placeholder = t('foldNewPlaceholder');
-    const createBtn = $('ivFolderCreate'); if (createBtn) createBtn.textContent = t('foldCreate');
-    if (isManagerOpen()) renderModal();   // refresh empty-state / row labels if already shown
+    const modal = $('ivFolderModal');
+    if (!modal) return;
+    const title = modal.querySelector('.iv-insp-title');
+    if (title) title.textContent = t('foldManageTitle');
+    const inp = $('ivFolderNewName');
+    if (inp) inp.placeholder = t('foldNewPlaceholder');
+    const createBtn = $('ivFolderCreate');
+    if (createBtn) createBtn.textContent = t('foldCreate');
+    if (isManagerOpen()) renderModal(); // refresh empty-state / row labels if already shown
   }
 
-  function escapeHtml(s) { return window.corpusUI.escapeHtml(s); }
-  function persist() {
-    loadPromise = null;   // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    if (window.corpus && window.corpus.setCollections) window.corpus.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => { /* best-effort */ });
+  function escapeHtml(s) {
+    return window.corpusUI.escapeHtml(s);
   }
-  function notify(kind) { subs.forEach((cb) => { try { cb(kind); } catch { /* ignore */ } }); }
+  function persist() {
+    loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
+    if (window.corpus && window.corpus.setCollections)
+      window.corpus.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
+        /* best-effort */
+      });
+  }
+  function notify(kind) {
+    subs.forEach((cb) => {
+      try {
+        cb(kind);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
 
   async function doLoad() {
     try {
       // getCollections migrates a legacy folders.json on first read (main.js).
-      const r = (window.corpus && window.corpus.getCollections) ? await window.corpus.getCollections() : null;
+      const r = window.corpus && window.corpus.getCollections ? await window.corpus.getCollections() : null;
       store.setAll((r && r.collections) || []);
       // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
       // just stays as a normal collection. Clip loads from the persisted `clip` array.
-      clipSet = new Set((r && Array.isArray(r.clip)) ? r.clip.map(String) : []);
-    } catch { store.setAll([]); clipSet = new Set(); }
+      clipSet = new Set(r && Array.isArray(r.clip) ? r.clip.map(String) : []);
+    } catch {
+      store.setAll([]);
+      clipSet = new Set();
+    }
     loaded = true;
   }
-  function load() { if (!loadPromise) loadPromise = doLoad(); return loadPromise; }
+  function load() {
+    if (!loadPromise) loadPromise = doLoad();
+    return loadPromise;
+  }
 
   const byId = store.byId;
   const has = store.has;
@@ -162,11 +222,16 @@
   // --- Clip = a library-wide ephemeral flag set (a captureId Set), separate from
   // collections. One-click 📎 on a card flags it; the sidebar clip row filters by it;
   // flags persist until explicitly cleared. ---
-  function isClipped(cid) { return clipSet.has(cid); }
-  function clippedItems() { return [...clipSet]; }
+  function isClipped(cid) {
+    return clipSet.has(cid);
+  }
+  function clippedItems() {
+    return [...clipSet];
+  }
   function clipCount(existing) {
     if (!existing) return clipSet.size;
-    let n = 0; for (const c of clipSet) if (existing.has(c)) n++;
+    let n = 0;
+    for (const c of clipSet) if (existing.has(c)) n++;
     return n;
   }
   // Toggle captureIds[] (a whole group) in the clip set; anchor decides the resulting
@@ -197,14 +262,22 @@
   // store.reconcile cleans every collection; the clip set is swept separately.
   function reconcile(existing) {
     let changed = store.reconcile(existing);
-    for (const c of clipSet) if (!existing.has(c)) { clipSet.delete(c); changed = true; }
-    if (changed) { persist(); notify('list'); }
+    for (const c of clipSet)
+      if (!existing.has(c)) {
+        clipSet.delete(c);
+        changed = true;
+      }
+    if (changed) {
+      persist();
+      notify('list');
+    }
   }
 
   // Toggle membership of captureIds[] in folder fid. anchorCid decides the
   // current state (the tile's representative id). Returns 'added' | 'removed' | null.
   function toggleIn(fid, captureIds, anchorCid) {
-    const f = byId(fid); if (!f) return null;   // capture the name before toggling for the toast
+    const f = byId(fid);
+    if (!f) return null; // capture the name before toggling for the toast
     const res = store.toggleIn(fid, captureIds, anchorCid);
     if (!res) return null;
     toast(res === 'removed' ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]));
@@ -213,65 +286,110 @@
   }
 
   // --- toast (shared, top-level #ivToast) ---
-  function toast(msg) { return window.corpusUI.notify(msg); }
+  function toast(msg) {
+    return window.corpusUI.notify(msg);
+  }
 
   // --- management modal ---
-  function isManagerOpen() { const m = $('ivFolderModal'); return !!(m && !m.hidden); }
+  function isManagerOpen() {
+    const m = $('ivFolderModal');
+    return !!(m && !m.hidden);
+  }
   function openManager(opts) {
     mgrStore = (opts && opts.store) || store;
     mgrAfter = (opts && opts.onChange) || (() => notify('list'));
     renderModal();
-    const m = $('ivFolderModal'); if (m) m.hidden = false;
-    setTimeout(() => { try { $('ivFolderNewName').focus(); } catch { /* ignore */ } }, 0);
+    const m = $('ivFolderModal');
+    if (m) m.hidden = false;
+    setTimeout(() => {
+      try {
+        $('ivFolderNewName').focus();
+      } catch {
+        /* ignore */
+      }
+    }, 0);
   }
-  function closeManager() { const m = $('ivFolderModal'); if (m) m.hidden = true; mgrStore = store; mgrAfter = () => notify('list'); }
+  function closeManager() {
+    const m = $('ivFolderModal');
+    if (m) m.hidden = true;
+    mgrStore = store;
+    mgrAfter = () => notify('list');
+  }
   function renderModal() {
-    const host = $('ivFolderList'); if (!host) return;
+    const host = $('ivFolderList');
+    if (!host) return;
     const list = mgrStore.all();
-    host.innerHTML = list.length ? list.map((f) => {
-      return `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}" draggable="true">` +
-        `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
-        `<span class="iv-fold-n">${f.items.length}</span>` +
-        `<button class="iv-fold-btn" data-fact="rename" title="${escapeHtml(t('foldRename'))}">✎</button>` +
-        `<button class="iv-fold-btn" data-fact="delete" title="${escapeHtml(t('foldDelete'))}">🗑</button>` +
-        `</div>`;
-    }).join('') : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
+    host.innerHTML = list.length
+      ? list
+          .map((f) => {
+            return (
+              `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}" draggable="true">` +
+              `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
+              `<span class="iv-fold-n">${f.items.length}</span>` +
+              `<button class="iv-fold-btn" data-fact="rename" title="${escapeHtml(t('foldRename'))}">✎</button>` +
+              `<button class="iv-fold-btn" data-fact="delete" title="${escapeHtml(t('foldDelete'))}">🗑</button>` +
+              '</div>'
+            );
+          })
+          .join('')
+      : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
   }
   function create() {
-    const inp = $('ivFolderNewName'); if (!inp) return;
-    if (!mgrStore.create(inp.value)) return;   // store mints the id + persists
+    const inp = $('ivFolderNewName');
+    if (!inp) return;
+    if (!mgrStore.create(inp.value)) return; // store mints the id + persists
     inp.value = '';
-    renderModal(); mgrAfter();
+    renderModal();
+    mgrAfter();
   }
 
   function bind() {
-    const modal = $('ivFolderModal'); if (!modal) return;
+    const modal = $('ivFolderModal');
+    if (!modal) return;
     $('ivFolderClose').addEventListener('click', closeManager);
-    modal.addEventListener('click', (e) => { if (e.target === modal) closeManager(); });
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeManager();
+    });
     $('ivFolderCreate').addEventListener('click', create);
-    $('ivFolderNewName').addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
+    $('ivFolderNewName').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') create();
+    });
     $('ivFolderList').addEventListener('click', (e) => {
-      const row = e.target.closest('.iv-folder-row'); if (!row) return;
-      const act = e.target.closest('[data-fact]'); if (!act) return;
-      const fid = row.dataset.fid; const f = mgrStore.byId(fid); if (!f) return;
-      if (act.dataset.fact === 'rename') { mgrStore.rename(fid, window.prompt(t('foldRenamePrompt'), f.name)); }
-      else if (act.dataset.fact === 'delete') {
+      const row = e.target.closest('.iv-folder-row');
+      if (!row) return;
+      const act = e.target.closest('[data-fact]');
+      if (!act) return;
+      const fid = row.dataset.fid;
+      const f = mgrStore.byId(fid);
+      if (!f) return;
+      if (act.dataset.fact === 'rename') {
+        mgrStore.rename(fid, window.prompt(t('foldRenamePrompt'), f.name));
+      } else if (act.dataset.fact === 'delete') {
         if (!window.confirm(t('foldDeleteConfirm', [f.name]))) return;
         mgrStore.remove(fid);
       }
-      renderModal(); mgrAfter();   // mgrStore.rename/remove persist on success
+      renderModal();
+      mgrAfter(); // mgrStore.rename/remove persist on success
     });
     // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
     // notify so the sidebar chips re-render in the new order.
     const flist = $('ivFolderList');
     let dragId = null;
     const clearMarks = () => flist.querySelectorAll('.iv-drop-before, .iv-drop-after').forEach((el) => el.classList.remove('iv-drop-before', 'iv-drop-after'));
-    const dropBefore = (row, clientY) => { const r = row.getBoundingClientRect(); return clientY < r.top + r.height / 2; };
+    const dropBefore = (row, clientY) => {
+      const r = row.getBoundingClientRect();
+      return clientY < r.top + r.height / 2;
+    };
     flist.addEventListener('dragstart', (e) => {
-      const row = e.target.closest('.iv-folder-row'); if (!row) return;
+      const row = e.target.closest('.iv-folder-row');
+      if (!row) return;
       dragId = row.dataset.fid;
       e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', dragId); } catch { /* some engines disallow */ }
+      try {
+        e.dataTransfer.setData('text/plain', dragId);
+      } catch {
+        /* some engines disallow */
+      }
       row.classList.add('iv-dragging');
     });
     flist.addEventListener('dragover', (e) => {
@@ -286,26 +404,61 @@
       if (!dragId) return;
       e.preventDefault();
       const row = e.target.closest('.iv-folder-row');
-      if (row && row.dataset.fid !== dragId && mgrStore.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) { renderModal(); mgrAfter(); }
+      if (row && row.dataset.fid !== dragId && mgrStore.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) {
+        renderModal();
+        mgrAfter();
+      }
       dragId = null;
     });
-    flist.addEventListener('dragend', () => { dragId = null; clearMarks(); flist.querySelectorAll('.iv-dragging').forEach((el) => el.classList.remove('iv-dragging')); });
+    flist.addEventListener('dragend', () => {
+      dragId = null;
+      clearMarks();
+      flist.querySelectorAll('.iv-dragging').forEach((el) => el.classList.remove('iv-dragging'));
+    });
   }
 
   bind();
 
   window.corpusFolders = {
-    load, all: () => store.all(), byId, has,
-    isClipped, toggleClip, clearClips, clippedItems, clipCount,
-    reconcile, toggleIn, openManager, closeManager, isManagerOpen,
+    load,
+    all: () => store.all(),
+    byId,
+    has,
+    isClipped,
+    toggleClip,
+    clearClips,
+    clippedItems,
+    clipCount,
+    reconcile,
+    toggleIn,
+    openManager,
+    closeManager,
+    isManagerOpen,
     // Collection view (第3モード): expose the store's CRUD so the grid can list every
     // collection and create/rename/delete from cards. Thin wrappers persist + notify so
     // all views refresh (store.create/remove/rename persist).
     allCollections: () => store.allRaw(),
-    createCollection: (name, opts) => { const f = store.create(name, opts); if (f) notify('list'); return f; },
-    updateCollection: (id, patch) => { const ok = store.update(id, patch); if (ok) notify('list'); return ok; },
-    renameCollection: (id, name) => { const ok = store.rename(id, name); if (ok) notify('list'); return ok; },
-    removeCollection: (id) => { store.remove(id); notify('list'); },
-    toast, onChange: (cb) => subs.push(cb), isLoaded: () => loaded
+    createCollection: (name, opts) => {
+      const f = store.create(name, opts);
+      if (f) notify('list');
+      return f;
+    },
+    updateCollection: (id, patch) => {
+      const ok = store.update(id, patch);
+      if (ok) notify('list');
+      return ok;
+    },
+    renameCollection: (id, name) => {
+      const ok = store.rename(id, name);
+      if (ok) notify('list');
+      return ok;
+    },
+    removeCollection: (id) => {
+      store.remove(id);
+      notify('list');
+    },
+    toast,
+    onChange: (cb) => subs.push(cb),
+    isLoaded: () => loaded,
   };
 })();

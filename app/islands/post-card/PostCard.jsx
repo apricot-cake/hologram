@@ -16,9 +16,9 @@
 // ── glyphs / icons (ported 1:1 from the old cardHtml) ──────────────────────────
 // Engagement stat glyphs: outline TEXT presentation (not color emoji, not SVG).
 const STAT_GLYPH = {
-  likes: '\u2661',                 // heart
-  reposts: '\u21c4',               // repost
-  replies: '\ud83d\udde8\ufe0e',   // reply (text presentation)
+  likes: '\u2661', // heart
+  reposts: '\u21c4', // repost
+  replies: '\ud83d\udde8\ufe0e', // reply (text presentation)
   bookmarks: '\ud83d\udd16\ufe0e', // bookmark (text presentation)
 };
 const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks'];
@@ -76,20 +76,21 @@ export function PostCard({ m, L }) {
   const hasStats = stats.length > 0;
   const hasFoot = !!(fd.post || fd.cap);
   return (
-    <div className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '')}
-         data-url={m.url} data-index={m.index} data-key={m.postKey}>
-      <div className="select-check" title={L.tipSelect}></div>
-      <div className="act-pill" aria-hidden="true"></div>
-      <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}><ClipIcon /></button>
-      <button className="info-btn" data-info={m.index} title={L.tipInfo} aria-label={L.tipInfo}><InfoIcon /></button>
-      <button className="tag-btn" data-tagedit={m.index} title={L.tipTagEdit} aria-label={L.tipTagEdit}><TagIcon /></button>
+    <div className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '')} data-url={m.url} data-index={m.index} data-key={m.postKey}>
+      <div className="select-check" title={L.tipSelect} />
+      <div className="act-pill" aria-hidden="true" />
+      <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}>
+        <ClipIcon />
+      </button>
+      <button className="info-btn" data-info={m.index} title={L.tipInfo} aria-label={L.tipInfo}>
+        <InfoIcon />
+      </button>
+      <button className="tag-btn" data-tagedit={m.index} title={L.tipTagEdit} aria-label={L.tipTagEdit}>
+        <TagIcon />
+      </button>
       {m.hasThumb && (
         <div className="card-thumb">
-          {m.imgSrc
-            ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId}
-                   style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined}
-                   loading={m.eager ? 'eager' : 'lazy'} decoding="async" />
-            : <div className="card-img card-video">{'▶'}</div>}
+          {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" /> : <div className="card-img card-video">{'▶'}</div>}
           {m.platform && <PfBadge platform={m.platform} name={m.pfName} />}
         </div>
       )}
@@ -105,29 +106,53 @@ export function PostCard({ m, L }) {
         </div>
         {(m.flags.length > 0 || m.mediaLabel) && (
           <div className="post-flags">
-            {m.flags.map((f, k) => <span className="post-flag flag-type" key={k}>{f}</span>)}
+            {m.flags.map((f, k) => (
+              <span className="post-flag flag-type" key={k}>
+                {f}
+              </span>
+            ))}
             {m.mediaLabel && <span className="post-flag flag-media">{m.mediaLabel}</span>}
           </div>
         )}
         {m.text && (
-          <div className="text">{m.text}<span className="text-hint">{L.clickToExpand}</span></div>
+          <div className="text">
+            {m.text}
+            <span className="text-hint">{L.clickToExpand}</span>
+          </div>
         )}
         {(hasStats || hasFoot) && (
           <div className="post-foot">
             {hasStats && (
               <div className="stats">
-                {stats.map((k) => <span className="st" key={k}>{STAT_GLYPH[k] + ' ' + m.stats[k]}</span>)}
+                {stats.map((k) => (
+                  <span className="st" key={k}>
+                    {STAT_GLYPH[k] + ' ' + m.stats[k]}
+                  </span>
+                ))}
               </div>
             )}
             <span className="foot-r">
-              {fd.post && <span className="pdate" title={fd.post.title || undefined}>{fd.post.label}</span>}
-              {fd.cap && <span className="cdate" title={fd.cap.title || undefined}><CdateIcon />{fd.cap.label}</span>}
+              {fd.post && (
+                <span className="pdate" title={fd.post.title || undefined}>
+                  {fd.post.label}
+                </span>
+              )}
+              {fd.cap && (
+                <span className="cdate" title={fd.cap.title || undefined}>
+                  <CdateIcon />
+                  {fd.cap.label}
+                </span>
+              )}
             </span>
           </div>
         )}
         {m.tags.length > 0 && (
           <div className="tags-label">
-            {m.tags.map((t, k) => <span className="tag-chip" key={k}>{t}</span>)}
+            {m.tags.map((t, k) => (
+              <span className="tag-chip" key={k}>
+                {t}
+              </span>
+            ))}
           </div>
         )}
       </div>

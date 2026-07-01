@@ -5,19 +5,25 @@
 //
 //   node scripts/test-search-unit.js
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const code = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'search.js'), 'utf8');
 global.window = {};
 // 間接 eval でグローバルスコープ実行（search.js は window.corpusSearch を生やす）。
-(0, eval)(code); // eslint-disable-line no-eval
+// biome-ignore lint/security/noGlobalEval: intentional indirect eval to load a plain window-IIFE script into the Node test scope
+// biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
+(0, eval)(code);
 const S = global.window.corpusSearch;
 
 let failed = 0;
 function assert(name, cond) {
-  if (cond) { console.log('ok  ', name); }
-  else { console.log('FAIL', name); failed++; }
+  if (cond) {
+    console.log('ok  ', name);
+  } else {
+    console.log('FAIL', name);
+    failed++;
+  }
 }
 
 // --- B: 表記ゆれ正規化 ---

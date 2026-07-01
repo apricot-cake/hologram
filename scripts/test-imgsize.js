@@ -6,16 +6,33 @@
 //
 //   node scripts/test-imgsize.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { imageSize } = require('../app/lib-imgsize.js');
 
 // JPEG: SOI + SOF0 (precision, height, width, ...).
 function jpeg(w, h) {
   return Buffer.from([
-    0xff, 0xd8,                                   // SOI
-    0xff, 0xc0, 0x00, 0x11, 0x08,                 // SOF0, len 17, precision 8
-    (h >> 8) & 0xff, h & 0xff, (w >> 8) & 0xff, w & 0xff,
-    0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01
+    0xff,
+    0xd8, // SOI
+    0xff,
+    0xc0,
+    0x00,
+    0x11,
+    0x08, // SOF0, len 17, precision 8
+    (h >> 8) & 0xff,
+    h & 0xff,
+    (w >> 8) & 0xff,
+    w & 0xff,
+    0x03,
+    0x01,
+    0x22,
+    0x00,
+    0x02,
+    0x11,
+    0x01,
+    0x03,
+    0x11,
+    0x01,
   ]);
 }
 // JPEG with an APP0 (JFIF) segment before the SOF, like a real encoder emits.
@@ -26,21 +43,30 @@ function jpegWithApp0(w, h) {
 function png(w, h) {
   const b = Buffer.alloc(24);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
-  b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'ascii');
-  b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'ascii');
+  b.writeUInt32BE(w, 16);
+  b.writeUInt32BE(h, 20);
   return b;
 }
 function gif(w, h) {
   const b = Buffer.alloc(13);
   b.write('GIF89a', 0, 'ascii');
-  b.writeUInt16LE(w, 6); b.writeUInt16LE(h, 8);
+  b.writeUInt16LE(w, 6);
+  b.writeUInt16LE(h, 8);
   return b;
 }
 function webpVP8X(w, h) {
   const b = Buffer.alloc(30);
-  b.write('RIFF', 0, 'ascii'); b.write('WEBP', 8, 'ascii'); b.write('VP8X', 12, 'ascii');
-  b[24] = (w - 1) & 0xff; b[25] = ((w - 1) >> 8) & 0xff; b[26] = ((w - 1) >> 16) & 0xff;
-  b[27] = (h - 1) & 0xff; b[28] = ((h - 1) >> 8) & 0xff; b[29] = ((h - 1) >> 16) & 0xff;
+  b.write('RIFF', 0, 'ascii');
+  b.write('WEBP', 8, 'ascii');
+  b.write('VP8X', 12, 'ascii');
+  b[24] = (w - 1) & 0xff;
+  b[25] = ((w - 1) >> 8) & 0xff;
+  b[26] = ((w - 1) >> 16) & 0xff;
+  b[27] = (h - 1) & 0xff;
+  b[28] = ((h - 1) >> 8) & 0xff;
+  b[29] = ((h - 1) >> 16) & 0xff;
   return b;
 }
 

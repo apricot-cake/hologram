@@ -12,7 +12,9 @@ let root = null;
 let LABELS = {};
 let state = { items: [], index: 0, open: false };
 
-function node() { return document.getElementById('lightbox'); }
+function node() {
+  return document.getElementById('lightbox');
+}
 
 function ensureRoot() {
   if (root) return root;
@@ -57,7 +59,9 @@ function close() {
   paint();
 }
 
-function setLabels(l) { LABELS = l || {}; }
+function setLabels(l) {
+  LABELS = l || {};
+}
 
 window.corpusLightbox = { open, close, isOpen: () => state.open, setLabels };
 

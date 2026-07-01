@@ -8,15 +8,14 @@
 //
 //   node scripts/test-index.js
 
-const assert = require('assert');
-const realFs = require('fs');
-const os = require('os');
-const path = require('path');
+const assert = require('node:assert');
+const realFs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createPostIndex, computeDelta } = require('../app/lib-index.js');
 
 const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index-'));
-const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json',
-  'tag-groups.json', 'ungrouped.json', 'manual-groups.json']);
+const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json']);
 
 let sidecarReads = 0;
 const countingFs = {
@@ -29,8 +28,8 @@ const countingFs = {
       return realFs.promises.readFile(p, ...a);
     },
     writeFile: (...a) => realFs.promises.writeFile(...a),
-    rename: (...a) => realFs.promises.rename(...a)
-  }
+    rename: (...a) => realFs.promises.rename(...a),
+  },
 };
 const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), JSON.stringify(rec));
 
@@ -38,15 +37,19 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   writeSidecar('a.json', { captureId: 'a', image: 'a.jpg', capturedAt: '2026-01-01T00:00:00Z' });
   writeSidecar('b.json', { captureId: 'b', image: 'b.jpg', capturedAt: '2026-01-03T00:00:00Z' });
   writeSidecar('c.json', { captureId: 'c', image: 'c.jpg', capturedAt: '2026-01-02T00:00:00Z' });
-  writeSidecar('notapost.json', { foo: 1 });                       // no image/video/media -> excluded
-  writeSidecar('config.json', { saveFolder: dir });               // internal -> excluded
+  writeSidecar('notapost.json', { foo: 1 }); // no image/video/media -> excluded
+  writeSidecar('config.json', { saveFolder: dir }); // internal -> excluded
 
   const idx = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
 
   // First scan: 3 posts, sorted by capturedAt desc, everything read once.
   sidecarReads = 0;
   let r = await idx.list(dir);
-  assert.deepStrictEqual(r.posts.map((p) => p.captureId), ['b', 'c', 'a'], 'posts sorted desc by capturedAt');
+  assert.deepStrictEqual(
+    r.posts.map((p) => p.captureId),
+    ['b', 'c', 'a'],
+    'posts sorted desc by capturedAt',
+  );
   assert.strictEqual(r.changed, true, 'first scan reports changed');
   assert.strictEqual(sidecarReads, 4, 'first scan reads all 4 sidecars (a,b,c,notapost)');
 
@@ -69,7 +72,11 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   realFs.rmSync(path.join(dir, 'a.json'));
   sidecarReads = 0;
   r = await idx.list(dir);
-  assert.deepStrictEqual(r.posts.map((p) => p.captureId), ['d', 'b', 'c'], 'deleted post pruned');
+  assert.deepStrictEqual(
+    r.posts.map((p) => p.captureId),
+    ['d', 'b', 'c'],
+    'deleted post pruned',
+  );
   assert.strictEqual(r.changed, true, 'delete reports changed');
   assert.strictEqual(sidecarReads, 0, 'delete reads nothing');
 
@@ -80,7 +87,11 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   const idx2 = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
   sidecarReads = 0;
   r = await idx2.list(dir);
-  assert.deepStrictEqual(r.posts.map((p) => p.captureId), ['d', 'b', 'c'], 'cold instance returns same posts');
+  assert.deepStrictEqual(
+    r.posts.map((p) => p.captureId),
+    ['d', 'b', 'c'],
+    'cold instance returns same posts',
+  );
   assert.strictEqual(r.changed, false, 'cold instance with matching mtimes reports no change');
   assert.strictEqual(sidecarReads, 0, 'cold instance restores from snapshot, reads no sidecar');
 
@@ -108,7 +119,11 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   w2('y.json', { captureId: 'y', image: 'y.jpg', capturedAt: '2026-02-02T00:00:00Z' });
   const idxB = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
   let rb = await idxB.list(dir2);
-  assert.deepStrictEqual(rb.posts.map((p) => p.captureId), ['y', 'x'], 'baseline built');
+  assert.deepStrictEqual(
+    rb.posts.map((p) => p.captureId),
+    ['y', 'x'],
+    'baseline built',
+  );
 
   // y edited (force a new mtime), z added, x deleted — then hint only those three.
   w2('y.json', { captureId: 'y', image: 'y.jpg', capturedAt: '2026-02-02T00:00:00Z', tags: ['edited'] });
@@ -126,11 +141,21 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   // A subsequent full list() agrees with the targeted state (no drift, no re-read).
   sidecarReads = 0;
   rb = await idxB.list(dir2);
-  assert.deepStrictEqual(rb.posts.map((p) => p.captureId), ['z', 'y'], 'full scan matches targeted state');
+  assert.deepStrictEqual(
+    rb.posts.map((p) => p.captureId),
+    ['z', 'y'],
+    'full scan matches targeted state',
+  );
   assert.strictEqual(rb.changed, false, 'targeted update left the map consistent');
   assert.strictEqual(sidecarReads, 0, 'consistent map = no re-read on the following full scan');
   realFs.rmSync(dir2, { recursive: true, force: true });
 
   realFs.rmSync(dir, { recursive: true, force: true });
   console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, and targeted applyChanges verified');
-})().catch((e) => { try { realFs.rmSync(dir, { recursive: true, force: true }); } catch {} console.error('FAIL test-index:', e && e.message ? e.message : e); process.exit(1); });
+})().catch((e) => {
+  try {
+    realFs.rmSync(dir, { recursive: true, force: true });
+  } catch {}
+  console.error('FAIL test-index:', e && e.message ? e.message : e);
+  process.exit(1);
+});

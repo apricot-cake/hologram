@@ -29,17 +29,23 @@ function Card({ c, dynamicTitle }) {
   const n = c.thumbs.length;
   return (
     <div className={'collection-card' + (c.dynamic ? ' dynamic' : '')} data-index={c.index} data-cid={c.id} tabIndex={0}>
-      <div className={'collection-thumbs ' + (n ? 'n' + n : 'empty')}>
-        {n ? c.thumbs.map((src, i) => <img key={i} src={src} alt="" loading="lazy" />) : <EmptyIcon />}
-      </div>
+      <div className={'collection-thumbs ' + (n ? 'n' + n : 'empty')}>{n ? c.thumbs.map((src, i) => <img key={i} src={src} alt="" loading="lazy" />) : <EmptyIcon />}</div>
       <div className="collection-meta">
         <div className="collection-name">
-          {c.dynamic && <span className="col-bolt" title={dynamicTitle}><BoltIcon /></span>}
+          {c.dynamic && (
+            <span className="col-bolt" title={dynamicTitle}>
+              <BoltIcon />
+            </span>
+          )}
           {c.name}
         </div>
         {c.dynamic && c.condChips.length > 0 && (
           <div className="collection-cond">
-            {c.condChips.map((s, i) => <span key={i} className="cc">{s}</span>)}
+            {c.condChips.map((s, i) => (
+              <span key={i} className="cc">
+                {s}
+              </span>
+            ))}
           </div>
         )}
         <div className="collection-count">{c.countLabel}</div>
@@ -53,7 +59,9 @@ function NewCard({ label }) {
   return (
     <div className="collection-card new" data-cnew="1" tabIndex={0}>
       <div className="ct-newinner">＋</div>
-      <div className="collection-meta"><div className="collection-name">{label}</div></div>
+      <div className="collection-meta">
+        <div className="collection-name">{label}</div>
+      </div>
     </div>
   );
 }
@@ -65,7 +73,9 @@ export function Collections({ model }) {
     return (
       <>
         <div className="empty-state" style={{ display: 'block', gridColumn: '1 / -1' }}>
-          <p><strong>{b.title}</strong></p>
+          <p>
+            <strong>{b.title}</strong>
+          </p>
           <p>{b.desc}</p>
         </div>
         <NewCard label={model.newLabel} />
@@ -74,7 +84,9 @@ export function Collections({ model }) {
   }
   return (
     <>
-      {model.cards.map((c) => <Card key={c.id} c={c} dynamicTitle={model.dynamicTitle} />)}
+      {model.cards.map((c) => (
+        <Card key={c.id} c={c} dynamicTitle={model.dynamicTitle} />
+      ))}
       <NewCard label={model.newLabel} />
     </>
   );

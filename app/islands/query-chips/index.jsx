@@ -12,7 +12,7 @@ import { Chips } from './Chips.jsx';
 //
 // Both bars share this one bundle, keyed by container id (one React root each).
 
-const roots = new Map();   // container id → React root
+const roots = new Map(); // container id → React root
 
 function rootFor(id) {
   let r = roots.get(id);

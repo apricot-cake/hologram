@@ -3,7 +3,12 @@ import { TagEditor } from '../_shared/TagEditor.jsx';
 
 function Row({ k, v }) {
   if (v == null || v === '') return null;
-  return <div className="iv-insp-row"><span className="iv-insp-k">{k}</span><span className="iv-insp-v">{v}</span></div>;
+  return (
+    <div className="iv-insp-row">
+      <span className="iv-insp-k">{k}</span>
+      <span className="iv-insp-v">{v}</span>
+    </div>
+  );
 }
 
 // Post detail — mirrors the old showDetail() innerHTML build. m carries every field
@@ -11,11 +16,13 @@ function Row({ k, v }) {
 function PostInspector({ m }) {
   return (
     <>
-      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>&times;</button>
+      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>
+        &times;
+      </button>
       {m.heading ? <div className="iv-insp-title">{m.heading}</div> : null}
       {m.thumbSrc ? <img className="iv-insp-thumb" src={m.thumbSrc} alt="" /> : null}
       <Row k={m.labels.platform} v={m.platformLabel} />
-      {(m.authorName || m.avatarSrc) ? (
+      {m.authorName || m.avatarSrc ? (
         <div className="iv-insp-row">
           <span className="iv-insp-k">{m.labels.author}</span>
           <span className="iv-insp-v iv-insp-author">
@@ -42,19 +49,7 @@ function PostInspector({ m }) {
       <Row k={m.labels.updated} v={m.updatedLabel} />
       <Row k={m.labels.images} v={m.imagesLabel} />
       <Row k={m.labels.imageOf} v={m.imageOfLabel} />
-      <TagEditor
-        idPrefix="iv"
-        className="iv-tag-edit"
-        tags={m.tags}
-        vocabGroups={m.vocabGroups}
-        coocGroup={m.coocGroup}
-        srcTags={m.srcTagsForPicker}
-        labels={m.tagLabels}
-        onAdd={m.onTagAdd}
-        onRemove={m.onTagRemove}
-        onToggle={m.onTagToggle}
-        onContextMenu={m.onTagContextMenu}
-      />
+      <TagEditor idPrefix="iv" className="iv-tag-edit" tags={m.tags} vocabGroups={m.vocabGroups} coocGroup={m.coocGroup} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onToggle={m.onTagToggle} onContextMenu={m.onTagContextMenu} />
       <div id="ivTagView" className="iv-tag-view">
         {m.srcTagsView.length ? (
           <div className="iv-insp-row">
@@ -62,13 +57,9 @@ function PostInspector({ m }) {
             <span className="iv-insp-v">
               <div className="iv-insp-tags">
                 {m.srcTagsView.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className="iv-insp-tag iv-insp-tag-src"
-                    title={m.labels.tipAdoptTag}
-                    onClick={() => m.onAdoptSourceTag(t)}
-                  >{t}</button>
+                  <button key={t} type="button" className="iv-insp-tag iv-insp-tag-src" title={m.labels.tipAdoptTag} onClick={() => m.onAdoptSourceTag(t)}>
+                    {t}
+                  </button>
                 ))}
               </div>
             </span>
@@ -76,10 +67,26 @@ function PostInspector({ m }) {
         ) : null}
       </div>
       <div className="iv-insp-actions">
-        {m.onOpenExternal ? <a className="iv-insp-open" onClick={m.onOpenExternal}>{m.labels.open} &#8599;</a> : null}
-        {m.onSauce ? <a className="iv-insp-open" onClick={m.onSauce}>{m.labels.sauce} &#8599;</a> : null}
-        {m.onAscii ? <a className="iv-insp-open" onClick={m.onAscii}>{m.labels.ascii} &#8599;</a> : null}
-        {m.groupBtn ? <a className="iv-insp-open" onClick={m.groupBtn.onClick}>{m.groupBtn.icon} {m.groupBtn.label}</a> : null}
+        {m.onOpenExternal ? (
+          <a className="iv-insp-open" onClick={m.onOpenExternal}>
+            {m.labels.open} &#8599;
+          </a>
+        ) : null}
+        {m.onSauce ? (
+          <a className="iv-insp-open" onClick={m.onSauce}>
+            {m.labels.sauce} &#8599;
+          </a>
+        ) : null}
+        {m.onAscii ? (
+          <a className="iv-insp-open" onClick={m.onAscii}>
+            {m.labels.ascii} &#8599;
+          </a>
+        ) : null}
+        {m.groupBtn ? (
+          <a className="iv-insp-open" onClick={m.groupBtn.onClick}>
+            {m.groupBtn.icon} {m.groupBtn.label}
+          </a>
+        ) : null}
       </div>
     </>
   );
@@ -89,7 +96,9 @@ function PostInspector({ m }) {
 function PosterInspector({ m }) {
   return (
     <>
-      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>&times;</button>
+      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>
+        &times;
+      </button>
       <div className="iv-poster-head">
         {m.avatarSrc ? <img className="iv-insp-avatar" src={m.avatarSrc} alt="" /> : null}
         <span className="iv-poster-name">{m.name}</span>
@@ -111,14 +120,13 @@ function PosterInspector({ m }) {
         <span className="iv-insp-v">
           <div className="iv-poster-folder-chips">
             {m.folders.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className={'iv-folder-chip' + (f.on ? ' on' : '')}
-                onClick={() => m.onFolderToggle(f.id)}
-              >{f.name}</button>
+              <button key={f.id} type="button" className={'iv-folder-chip' + (f.on ? ' on' : '')} onClick={() => m.onFolderToggle(f.id)}>
+                {f.name}
+              </button>
             ))}
-            <button type="button" className="iv-folder-chip iv-folder-add" title={m.labels.newFolderPlaceholder} onClick={m.onFolderCreate}>+</button>
+            <button type="button" className="iv-folder-chip iv-folder-add" title={m.labels.newFolderPlaceholder} onClick={m.onFolderCreate}>
+              +
+            </button>
           </div>
         </span>
       </div>
@@ -137,7 +145,9 @@ function PosterInspector({ m }) {
         autoFocus={m.autoFocusTag}
       />
       <div className="iv-insp-actions">
-        <a className="iv-insp-open" onClick={m.onPosterPosts}>{m.labels.posterViewPosts} &#8594;</a>
+        <a className="iv-insp-open" onClick={m.onPosterPosts}>
+          {m.labels.posterViewPosts} &#8594;
+        </a>
       </div>
     </>
   );

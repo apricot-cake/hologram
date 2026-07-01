@@ -13,13 +13,16 @@
 //
 //   node scripts/test-backfill-metadata.js
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 let ok = true;
-const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+const check = (label, cond) => {
+  console.log((cond ? 'PASS ' : 'FAIL ') + label);
+  if (!cond) ok = false;
+};
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-backfill-'));
 const configDir = path.join(tmp, 'Corpus');
@@ -30,11 +33,23 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 // Stored record stub with full metadata that must NOT be destroyed on a failed
 // re-fetch. Reuses the same author/text for the "preserve" assertions.
-const storedX = (id, screenName, extra) => Object.assign({
-  captureId: id, url: `https://x.com/${screenName}/status/${id}`, platform: 'x',
-  text: 'stored body text', displayName: 'Stored Name', screenName,
-  userId: '999', likes: 42, replies: 3, date: '2024-01-01T00:00:00.000Z', lang: 'ja'
-}, extra || {});
+const storedX = (id, screenName, extra) =>
+  Object.assign(
+    {
+      captureId: id,
+      url: `https://x.com/${screenName}/status/${id}`,
+      platform: 'x',
+      text: 'stored body text',
+      displayName: 'Stored Name',
+      screenName,
+      userId: '999',
+      likes: 42,
+      replies: 3,
+      date: '2024-01-01T00:00:00.000Z',
+      lang: 'ja',
+    },
+    extra || {},
+  );
 
 // F: X, fetch will fail. S: X, fetch will succeed. P: X, fetch returns no likes.
 const F = '100-fail';
@@ -47,45 +62,62 @@ fs.writeFileSync(path.join(saveFolder, P + '.json'), JSON.stringify(storedX('300
 // BF: Bluesky, getPostThread will fail (handle resolves but thread 404s) — the
 // stored record must survive (handle is URL-derived, not proof of a good fetch).
 const BF = '400-bskyfail';
-fs.writeFileSync(path.join(saveFolder, BF + '.json'), JSON.stringify({
-  captureId: BF, url: 'https://bsky.app/profile/failhandle.bsky.social/post/abc123', platform: 'bluesky',
-  text: 'bsky stored text', displayName: 'Bsky Stored', screenName: 'failhandle.bsky.social',
-  userId: 'did:plc:stored', likes: 7, reposts: 2, replies: 1, date: '2024-02-02T00:00:00.000Z', lang: 'en'
-}));
+fs.writeFileSync(
+  path.join(saveFolder, BF + '.json'),
+  JSON.stringify({
+    captureId: BF,
+    url: 'https://bsky.app/profile/failhandle.bsky.social/post/abc123',
+    platform: 'bluesky',
+    text: 'bsky stored text',
+    displayName: 'Bsky Stored',
+    screenName: 'failhandle.bsky.social',
+    userId: 'did:plc:stored',
+    likes: 7,
+    reposts: 2,
+    replies: 1,
+    date: '2024-02-02T00:00:00.000Z',
+    lang: 'en',
+  }),
+);
 
 // fetch stub: route by URL. id=200 → success JSON; id=300 → success JSON without
 // favorite_count (partial); any other syndication id → 404 (failure). Bluesky:
 // resolveHandle succeeds, getPostThread 404s (failure path).
 const stub = path.join(tmp, 'stub-fetch.js');
-fs.writeFileSync(stub, [
-  'global.fetch = async (url) => {',
-  '  const u = String(url);',
-  '  if (u.includes("cdn.syndication.twimg.com")) {',
-  '    if (u.includes("id=200")) {',
-  '      const j = { text: "fresh tweet body", user: { name: "Fresh Name", screen_name: "okuser", id_str: "555" }, favorite_count: 99, conversation_count: 5, created_at: "2025-05-05T00:00:00.000Z", lang: "en" };',
-  '      return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });',
-  '    }',
-  '    if (u.includes("id=300")) {',
-  '      const j = { text: "partial body", user: { name: "Partial Name", screen_name: "partialuser", id_str: "777" }, created_at: "2025-06-06T00:00:00.000Z", lang: "en" };',  // no favorite_count
-  '      return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });',
-  '    }',
-  '    return new Response("nope", { status: 404 });',  // id=100 → failure
-  '  }',
-  '  if (u.includes("com.atproto.identity.resolveHandle")) {',
-  '    return new Response(JSON.stringify({ did: "did:plc:resolved" }), { status: 200, headers: { "content-type": "application/json" } });',
-  '  }',
-  '  if (u.includes("app.bsky.feed.getPostThread")) {',
-  '    return new Response("down", { status: 404 });',  // BF → failure
-  '  }',
-  '  return new Response("no", { status: 404 });',
-  '}'
-].join('\n'));
+fs.writeFileSync(
+  stub,
+  [
+    'global.fetch = async (url) => {',
+    '  const u = String(url);',
+    '  if (u.includes("cdn.syndication.twimg.com")) {',
+    '    if (u.includes("id=200")) {',
+    '      const j = { text: "fresh tweet body", user: { name: "Fresh Name", screen_name: "okuser", id_str: "555" }, favorite_count: 99, conversation_count: 5, created_at: "2025-05-05T00:00:00.000Z", lang: "en" };',
+    '      return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });',
+    '    }',
+    '    if (u.includes("id=300")) {',
+    '      const j = { text: "partial body", user: { name: "Partial Name", screen_name: "partialuser", id_str: "777" }, created_at: "2025-06-06T00:00:00.000Z", lang: "en" };', // no favorite_count
+    '      return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });',
+    '    }',
+    '    return new Response("nope", { status: 404 });', // id=100 → failure
+    '  }',
+    '  if (u.includes("com.atproto.identity.resolveHandle")) {',
+    '    return new Response(JSON.stringify({ did: "did:plc:resolved" }), { status: 200, headers: { "content-type": "application/json" } });',
+    '  }',
+    '  if (u.includes("app.bsky.feed.getPostThread")) {',
+    '    return new Response("down", { status: 404 });', // BF → failure
+    '  }',
+    '  return new Response("no", { status: 404 });',
+    '}',
+  ].join('\n'),
+);
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: configDir });
 const res = spawnSync(process.execPath, ['-r', stub, path.join(__dirname, 'backfill-metadata.js'), '--all'], { env, encoding: 'utf8' });
 
 check('script exited 0', res.status === 0);
-if (res.status !== 0) { console.log(res.stdout, res.stderr); }
+if (res.status !== 0) {
+  console.log(res.stdout, res.stderr);
+}
 
 const read = (id) => JSON.parse(fs.readFileSync(path.join(saveFolder, id + '.json'), 'utf8'));
 

@@ -6,10 +6,10 @@
 //
 //   node scripts/test-app-watch.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -24,10 +24,19 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 function writePost(id) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
-    captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x',
-    text: 't', tags: [], capturedAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01T00:00:00.000Z'
-  }));
+  fs.writeFileSync(
+    path.join(saveFolder, `${id}.json`),
+    JSON.stringify({
+      captureId: id,
+      image: `${id}.jpg`,
+      url: `https://x.com/u/status/${id}`,
+      platform: 'x',
+      text: 't',
+      tags: [],
+      capturedAt: '2026-01-01T00:00:00.000Z',
+      date: '2026-01-01T00:00:00.000Z',
+    }),
+  );
 }
 writePost('a1');
 
@@ -45,7 +54,9 @@ const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: pa
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+});
 
 // Write the second post a bit after launch, once the watcher is active and the
 // initial render has happened.

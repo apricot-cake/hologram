@@ -13,9 +13,11 @@ export function Danger() {
   const [confirmShown, setConfirmShown] = useState(true);
 
   useEffect(() => {
-    Promise.resolve(getPrefs()).then((p) => {
-      if (p) setConfirmShown(!p.skipDeleteConfirm);
-    }).catch(() => {});
+    Promise.resolve(getPrefs())
+      .then((p) => {
+        if (p) setConfirmShown(!p.skipDeleteConfirm);
+      })
+      .catch(() => {});
   }, []);
 
   const onToggle = (checked) => {
@@ -35,7 +37,9 @@ export function Danger() {
         <Switch checked={confirmShown} onChange={onToggle} label={<Highlight text={t('labelResetDeleteConfirm')} />} />
         <Hint text={t('hintResetDeleteConfirm')} />
       </div>
-      <button className="btn-danger" onClick={clearAll}>{t('clearData')}</button>
+      <button className="btn-danger" onClick={clearAll}>
+        {t('clearData')}
+      </button>
     </>
   );
 }

@@ -6,11 +6,15 @@
 //
 //   node scripts/test-config-recovery.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { resolveSaveFolder, clearAllBlockReason } = require('../native-host/config-recovery');
 
 let pass = 0;
-function check(name, fn) { fn(); pass++; console.log('  ok  ' + name); }
+function check(name, fn) {
+  fn();
+  pass++;
+  console.log('  ok  ' + name);
+}
 
 const DEFAULT = 'C:/default/lib';
 

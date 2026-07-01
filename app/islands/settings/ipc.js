@@ -13,7 +13,9 @@ export const getAppInfo = () => (bridge().getAppInfo ? bridge().getAppInfo() : P
 // in sync. The React select intentionally has no id, so theme.js never grabs it.
 export const theme = {
   get: () => (window.corpusTheme ? window.corpusTheme.get() : 'auto'),
-  set: (v) => { if (window.corpusTheme) window.corpusTheme.set(v); },
+  set: (v) => {
+    if (window.corpusTheme) window.corpusTheme.set(v);
+  },
 };
 
 // Tile overlay also drives the (vanilla) post grid, so flipping it must reach

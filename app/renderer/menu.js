@@ -10,25 +10,49 @@
 // re-renders (toggle rows — e.g. assign-to-folder), otherwise the menu closes.
 (function () {
   'use strict';
-  let current = null;            // { items, x, y, onPick } | null
+  let current = null; // { items, x, y, onPick } | null
   const subs = new Set();
-  const notify = () => { for (const cb of [...subs]) { try { cb(); } catch (_e) { /* ignore */ } } };
+  const notify = () => {
+    for (const cb of [...subs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+  };
 
   function open(model, onPick) {
     current = { items: (model && model.items) || [], x: (model && model.x) || 0, y: (model && model.y) || 0, onPick: onPick || null };
     notify();
   }
-  function close() { if (current) { current = null; notify(); } }
+  function close() {
+    if (current) {
+      current = null;
+      notify();
+    }
+  }
   function pick(item) {
-    if (!current || !current.onPick) { close(); return; }
+    if (!current || !current.onPick) {
+      close();
+      return;
+    }
     const ref = current;
     const next = current.onPick(item);
-    if (current !== ref) return;              // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
-    if (Array.isArray(next)) { current = { ...current, items: next }; notify(); }  // stay open, re-render (toggle rows)
+    if (current !== ref) return; // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
+    if (Array.isArray(next)) {
+      current = { ...current, items: next };
+      notify();
+    } // stay open, re-render (toggle rows)
     else close();
   }
-  function get() { return current; }                       // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) { subs.add(cb); return () => subs.delete(cb); }
+  function get() {
+    return current;
+  } // stable ref between changes (useSyncExternalStore)
+  function subscribe(cb) {
+    subs.add(cb);
+    return () => subs.delete(cb);
+  }
 
   window.corpusContextMenu = { open, close, pick, get, subscribe };
 })();

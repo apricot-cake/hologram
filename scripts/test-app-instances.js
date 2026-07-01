@@ -7,10 +7,10 @@
 //
 //   node scripts/test-app-instances.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
@@ -26,10 +26,25 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 
 function writePost(id, platform, url, when) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  fs.writeFileSync(path.join(saveFolder, `${id}.json`), JSON.stringify({
-    captureId: id, image: `${id}.jpg`, url, platform,
-    text: id, screenName: 'u', displayName: 'U', tags: [], capturedAt: when, date: when
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(saveFolder, `${id}.json`),
+    JSON.stringify(
+      {
+        captureId: id,
+        image: `${id}.jpg`,
+        url,
+        platform,
+        text: id,
+        screenName: 'u',
+        displayName: 'U',
+        tags: [],
+        capturedAt: when,
+        date: when,
+      },
+      null,
+      2,
+    ),
+  );
 }
 // Mastodon on two servers (2 + 1), Misskey on two instances (1 + 1).
 writePost('m1', 'mastodon', 'https://mastodon.social/@u/111', '2026-01-05T00:00:00Z');
@@ -69,17 +84,27 @@ const evalJs = `(async () => {
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
-child.stdout.on('data', (d) => { out += d.toString(); process.stdout.write(d); });
+child.stdout.on('data', (d) => {
+  out += d.toString();
+  process.stdout.write(d);
+});
 
 child.on('close', () => {
   const m = out.match(/EVAL_RESULT (\{.*\})/);
   let r = {};
-  try { r = JSON.parse(m[1]); } catch { /* ignore */ }
+  try {
+    r = JSON.parse(m[1]);
+  } catch {
+    /* ignore */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let ok = true;
-  const check = (label, cond) => { console.log((cond ? 'PASS ' : 'FAIL ') + label); if (!cond) ok = false; };
+  const check = (label, cond) => {
+    console.log((cond ? 'PASS ' : 'FAIL ') + label);
+    if (!cond) ok = false;
+  };
   check('platform flyout nests every host as indented sub-rows', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
   check('picking mastodon.social filters to 2 (platform badge on, flyout stays)', r.socialCount === 2 && r.badgeOn === true && r.stillOpen === true);
   check('picking it again clears the filter (5 posts, badge off)', r.cleared === 5 && r.badgeOff === true);

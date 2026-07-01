@@ -19,13 +19,38 @@
   let current = null;
   let seq = 0;
   const subs = new Set();
-  const notify = () => { for (const cb of [...subs]) { try { cb(); } catch (_e) { /* ignore */ } } };
+  const notify = () => {
+    for (const cb of [...subs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+  };
 
-  function open(model) { current = { ...model, openId: ++seq }; notify(); }
-  function refresh(partial) { if (!current) return; current = { ...current, ...partial }; notify(); }
-  function close() { if (current) { current = null; notify(); } }
-  function get() { return current; }                       // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) { subs.add(cb); return () => subs.delete(cb); }
+  function open(model) {
+    current = { ...model, openId: ++seq };
+    notify();
+  }
+  function refresh(partial) {
+    if (!current) return;
+    current = { ...current, ...partial };
+    notify();
+  }
+  function close() {
+    if (current) {
+      current = null;
+      notify();
+    }
+  }
+  function get() {
+    return current;
+  } // stable ref between changes (useSyncExternalStore)
+  function subscribe(cb) {
+    subs.add(cb);
+    return () => subs.delete(cb);
+  }
 
   window.corpusInspector = { open, refresh, close, get, subscribe };
 })();

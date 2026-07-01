@@ -19,22 +19,22 @@ export function SearchBox({ placeholder }) {
   // Focus recomputes suggestions for an unchanged value (viewer may have booted /
   // the library may have changed since the last keystroke) — bump to bust the memo.
   const [focusTick, bumpFocus] = useReducer((x) => x + 1, 0);
-  const pickingRef = useRef(false);   // swallow react-aria's own input commit during a pick
+  const pickingRef = useRef(false); // swallow react-aria's own input commit during a pick
 
   // Suggestions are derived synchronously from the value (buildSuggest is a fast
   // pure scan; the HEAVY typing side effect — re-filtering the grid — stays
   // debounced in viewer.js). Deriving instead of setState keeps the popover in
   // lockstep: any path that empties the value closes it (empty collection).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusTick is a deliberate extra dep — focusing recomputes suggestions for an unchanged value
   const items = useMemo(() => {
     const h = handlers();
     const q = value.trim();
     if (!q || !h) return [];
     return h.getSuggestions(q).map((it) => ({ ...it, id: it.kind + ':' + it.value }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, focusTick]);
 
   const onInputChange = (v) => {
-    if (pickingRef.current) return;   // the selection commit echoes the item's text — the pick already cleared the value
+    if (pickingRef.current) return; // the selection commit echoes the item's text — the pick already cleared the value
     window.corpusStore.set('searchQuery', v);
   };
 
@@ -43,9 +43,11 @@ export function SearchBox({ placeholder }) {
     const it = items.find((i) => i.id === key);
     if (!it) return;
     pickingRef.current = true;
-    setTimeout(() => { pickingRef.current = false; }, 0);
+    setTimeout(() => {
+      pickingRef.current = false;
+    }, 0);
     const h = handlers();
-    if (h) h.onPick({ kind: it.kind, value: it.value, label: it.label });   // viewer: drop the editing text leaf + addFilter (clears the value too)
+    if (h) h.onPick({ kind: it.kind, value: it.value, label: it.label }); // viewer: drop the editing text leaf + addFilter (clears the value too)
   };
 
   const onKeyDown = (e) => {
@@ -64,25 +66,8 @@ export function SearchBox({ placeholder }) {
   // would never open with allowsEmptyCollection=false. Allow empty opens and hide
   // the empty panel in CSS instead (.search-suggest:not(:has(.sg-row))).
   return (
-    <ComboBox
-      className="search-cb"
-      aria-label={placeholder}
-      menuTrigger="focus"
-      allowsCustomValue
-      allowsEmptyCollection
-      items={items}
-      inputValue={value}
-      onInputChange={onInputChange}
-      selectedKey={null}
-      onSelectionChange={onSelectionChange}
-    >
-      <Input
-        id="searchBox"
-        className={'search-box' + (value.trim() ? ' has-value' : '')}
-        placeholder={placeholder}
-        onFocus={bumpFocus}
-        onKeyDown={onKeyDown}
-      />
+    <ComboBox className="search-cb" aria-label={placeholder} menuTrigger="focus" allowsCustomValue allowsEmptyCollection items={items} inputValue={value} onInputChange={onInputChange} selectedKey={null} onSelectionChange={onSelectionChange}>
+      <Input id="searchBox" className={'search-box' + (value.trim() ? ' has-value' : '')} placeholder={placeholder} onFocus={bumpFocus} onKeyDown={onKeyDown} />
       <Popover className="search-suggest" offset={4} placement="bottom start">
         <ListBox shouldFocusWrap>
           {(it) => (

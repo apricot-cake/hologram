@@ -9,21 +9,40 @@
 (function () {
   'use strict';
   const state = Object.create(null);
-  const keySubs = new Map();   // key -> Set<cb>
+  const keySubs = new Map(); // key -> Set<cb>
   const allSubs = new Set();
 
-  function get(key) { return state[key]; }
+  function get(key) {
+    return state[key];
+  }
 
   function set(key, val) {
-    if (state[key] === val) return;   // idempotent: same value => no notify (the loop guard)
+    if (state[key] === val) return; // idempotent: same value => no notify (the loop guard)
     state[key] = val;
     const s = keySubs.get(key);
-    if (s) for (const cb of [...s]) { try { cb(); } catch (_e) { /* ignore */ } }
-    for (const cb of [...allSubs]) { try { cb(); } catch (_e) { /* ignore */ } }
+    if (s)
+      for (const cb of [...s]) {
+        try {
+          cb();
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    for (const cb of [...allSubs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
   }
 
   function subscribe(key, cb) {
-    if (typeof key === 'function') { cb = key; allSubs.add(cb); return () => allSubs.delete(cb); }
+    if (typeof key === 'function') {
+      cb = key;
+      allSubs.add(cb);
+      return () => allSubs.delete(cb);
+    }
     let s = keySubs.get(key);
     if (!s) keySubs.set(key, (s = new Set()));
     s.add(cb);

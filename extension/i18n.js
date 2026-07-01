@@ -29,7 +29,7 @@
       bannerHostMissing: 'Corpus の保存先に接続できません。Chrome を再起動してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
-      dragDropHint: 'ここにドロップで Corpus に保存'
+      dragDropHint: 'ここにドロップで Corpus に保存',
     },
 
     en: {
@@ -44,15 +44,15 @@
       bannerHostMissing: "Can't reach Corpus's saver. Please restart Chrome.",
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
-      dragDropHint: 'Drop here to save to Corpus'
-    }
+      dragDropHint: 'Drop here to save to Corpus',
+    },
   };
 
   window.corpusI18n = (async () => {
     // The banner follows the browser locale. The extension no longer stores a
     // language preference (the viewer moved to the desktop app, which keeps its
     // own setting in config.json that a content script cannot read).
-    const resolved = (navigator.language && navigator.language.toLowerCase().startsWith('ja')) ? 'ja' : 'en';
+    const resolved = navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
     const table = MESSAGES[resolved] || MESSAGES.en;
 
     const getMessage = (key, subs) => {

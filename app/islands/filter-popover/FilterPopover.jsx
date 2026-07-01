@@ -15,11 +15,12 @@ import { createPortal } from 'react-dom';
 // mirrors viewer.js placeFlyout() with no maxHeight cap (these are compact forms, not
 // the scrolling value list qf-pop caps itself to).
 function usePlaceFlyout(popRef, anchorRect) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: popRef is a stable ref — anchorRect is the only reposition trigger
   useLayoutEffect(() => {
     if (!anchorRect) return;
     const pop = popRef.current;
     if (!pop) return;
-    pop.style.left = (anchorRect.right + 8) + 'px';
+    pop.style.left = anchorRect.right + 8 + 'px';
     pop.style.top = anchorRect.top + 'px';
     const pr = pop.getBoundingClientRect();
     if (pr.right > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
@@ -31,10 +32,13 @@ function RemoveApplyRow({ model, commit, applyStyle, onApply }) {
   return (
     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
       {model.editing && (
-        <button type="button" className="btn-outline qf-popover-delete" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
-          onClick={() => commit(model.onRemove)}>{model.labels.removeLabel}</button>
+        <button type="button" className="btn-outline qf-popover-delete" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => commit(model.onRemove)}>
+          {model.labels.removeLabel}
+        </button>
       )}
-      <button type="button" className="btn-outline" style={applyStyle} onClick={() => commit(onApply)}>{model.labels.applyLabel}</button>
+      <button type="button" className="btn-outline" style={applyStyle} onClick={() => commit(onApply)}>
+        {model.labels.applyLabel}
+      </button>
     </div>
   );
 }
@@ -46,8 +50,7 @@ function DateForm({ model, commit }) {
   return (
     <>
       <div style={{ marginBottom: 8 }}>
-        <button type="button" className={'chip' + (dateField === 'capturedAt' ? ' active' : '')}
-          onClick={() => setDateField(dateField === 'date' ? 'capturedAt' : 'date')}>
+        <button type="button" className={'chip' + (dateField === 'capturedAt' ? ' active' : '')} onClick={() => setDateField(dateField === 'date' ? 'capturedAt' : 'date')}>
           {dateField === 'capturedAt' ? model.labels.typeCaptured : model.labels.typeDate}
         </button>
       </div>
@@ -56,8 +59,7 @@ function DateForm({ model, commit }) {
         <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>〜</span>
         <input type="date" className="date-input" value={to} onChange={(e) => setTo(e.target.value)} />
       </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }}
-        onApply={() => model.onApply({ dateField, from, to })} />
+      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }} onApply={() => model.onApply({ dateField, from, to })} />
     </>
   );
 }
@@ -70,17 +72,20 @@ function EngForm({ model, commit }) {
     <>
       <div style={{ marginBottom: 8 }}>
         <select className="engagement-select" style={{ width: '100%' }} value={engType} onChange={(e) => setEngType(e.target.value)}>
-          {model.typeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {model.typeOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-        <input type="number" className="engagement-input" min="0" placeholder="0" style={{ flex: 1 }}
-          value={min} onChange={(e) => setMin(e.target.value)} />
-        <button type="button" className={'chip' + (op === 'lte' ? ' active' : '')} style={{ minWidth: 40, textAlign: 'center' }}
-          onClick={() => setOp(op === 'gte' ? 'lte' : 'gte')}>{op === 'lte' ? model.labels.opLte : model.labels.opGte}</button>
+        <input type="number" className="engagement-input" min="0" placeholder="0" style={{ flex: 1 }} value={min} onChange={(e) => setMin(e.target.value)} />
+        <button type="button" className={'chip' + (op === 'lte' ? ' active' : '')} style={{ minWidth: 40, textAlign: 'center' }} onClick={() => setOp(op === 'gte' ? 'lte' : 'gte')}>
+          {op === 'lte' ? model.labels.opLte : model.labels.opGte}
+        </button>
       </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }}
-        onApply={() => model.onApply({ engType, min: parseInt(min, 10), op })} />
+      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }} onApply={() => model.onApply({ engType, min: Number.parseInt(min, 10), op })} />
     </>
   );
 }
@@ -94,7 +99,11 @@ function PosterDateForm({ model, commit }) {
       <div className="pd-field">
         <span className="pd-label">{model.labels.dimLabel}</span>
         <select className="engagement-select" style={{ width: '100%' }} value={dateField} onChange={(e) => setDateField(e.target.value)}>
-          {model.dimOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {model.dimOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
       </div>
       <div className="pd-field">
@@ -105,8 +114,7 @@ function PosterDateForm({ model, commit }) {
           <input type="date" className="date-input" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }}
-        onApply={() => model.onApply({ dateField, from, to })} />
+      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }} onApply={() => model.onApply({ dateField, from, to })} />
     </>
   );
 }
@@ -129,7 +137,9 @@ export function FilterPopoverHost() {
       if (e.target.closest('.sb-row') || e.target.closest('[data-tag-group]')) return;
       window.corpusFilterPopover.close();
     };
-    const onKey = (e) => { if (e.key === 'Escape') window.corpusFilterPopover.close(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') window.corpusFilterPopover.close();
+    };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -139,12 +149,15 @@ export function FilterPopoverHost() {
   }, [model]);
 
   if (!model) return null;
-  const commit = (fn) => { window.corpusFilterPopover.close(); if (fn) fn(); };
+  const commit = (fn) => {
+    window.corpusFilterPopover.close();
+    if (fn) fn();
+  };
   const Form = FORMS[model.kind];
   return createPortal(
     <div className="qf-popover" ref={popRef} key={model.openId}>
       <Form model={model} commit={commit} />
     </div>,
-    document.body
+    document.body,
   );
 }

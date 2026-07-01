@@ -4,8 +4,12 @@ import { Highlight } from '../components/Highlight.jsx';
 import { t } from '../../_shared/i18n.js';
 
 const corpus = () => window.corpus || {};
-const notify = (m) => { if (window.corpusUI && window.corpusUI.notify) window.corpusUI.notify(m); };
-const reloadPosts = () => { if (window.corpusViewer && window.corpusViewer.reloadPosts) window.corpusViewer.reloadPosts(); };
+const notify = (m) => {
+  if (window.corpusUI && window.corpusUI.notify) window.corpusUI.notify(m);
+};
+const reloadPosts = () => {
+  if (window.corpusViewer && window.corpusViewer.reloadPosts) window.corpusViewer.reloadPosts();
+};
 
 // The preload's on* bridges attach a new ipcRenderer listener on every call with
 // no remover, and this component remounts on each modal open. So register the
@@ -24,14 +28,21 @@ function wireIpcOnce() {
 // Migration error code → message key, faithful to viewer.js setupSaveFolder.errMsg.
 const saveFolderErr = (code) => {
   switch (code) {
-    case 'same': return t('saveFolderErrSame');
-    case 'nested': return t('saveFolderErrNested');
+    case 'same':
+      return t('saveFolderErrSame');
+    case 'nested':
+      return t('saveFolderErrNested');
     case 'config-overlap':
-    case 'backup-overlap': return t('saveFolderErrOverlap');
-    case 'collision': return t('saveFolderErrCollision');
-    case 'copy-failed': return t('saveFolderErrCopyFailed');
-    case 'not-writable': return t('saveFolderErrNotWritable');
-    default: return t('saveFolderErrGeneric');
+    case 'backup-overlap':
+      return t('saveFolderErrOverlap');
+    case 'collision':
+      return t('saveFolderErrCollision');
+    case 'copy-failed':
+      return t('saveFolderErrCopyFailed');
+    case 'not-writable':
+      return t('saveFolderErrNotWritable');
+    default:
+      return t('saveFolderErrGeneric');
   }
 };
 
@@ -39,7 +50,7 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const fmtTime = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
+  if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 };
 
@@ -86,11 +97,13 @@ export function Data() {
             log.push(t('logCopying', [p.percent]));
           }
         } else if (p.phase === 'switch') {
-          pct = 100; log.push(t('logSwitch'));
+          pct = 100;
+          log.push(t('logSwitch'));
         } else if (p.phase === 'cleanup') {
           log.push(t('logCleanup'));
         } else if (p.phase === 'done') {
-          pct = 100; log.push(t('logMoveDone', [p.moved]));
+          pct = 100;
+          log.push(t('logMoveDone', [p.moved]));
         } else if (p.phase === 'error') {
           log.push(saveFolderErr(p.error));
         }
@@ -107,7 +120,10 @@ export function Data() {
     setProgress(null); // box appears on the first progress event (after a folder is picked)
     try {
       const res = await corpus().pickSaveFolder();
-      if (!res || res.canceled) { setProgress(null); return; }
+      if (!res || res.canceled) {
+        setProgress(null);
+        return;
+      }
       if (res.ok) {
         setSaveFolder(res.saveFolder);
         notify(t('saveFolderMoved', [res.moved]));
@@ -150,16 +166,23 @@ export function Data() {
         const res = await corpus().importComplete(buf);
         reloadPosts();
         input.value = '';
-        if (!res || !res.ok) { notify(t('importFailed')); return; }
+        if (!res || !res.ok) {
+          notify(t('importFailed'));
+          return;
+        }
         if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));
         else notify(t('imported', [res.imported]));
         return;
       }
       const metaEntry = zip.file('metadata.json');
-      if (!metaEntry) { notify(t('importFailed')); input.value = ''; return; }
+      if (!metaEntry) {
+        notify(t('importFailed'));
+        input.value = '';
+        return;
+      }
       const meta = JSON.parse(await metaEntry.async('string'));
       const posts = [];
-      for (const m of (Array.isArray(meta) ? meta : [])) {
+      for (const m of Array.isArray(meta) ? meta : []) {
         const f = m.imageFile && zip.file(m.imageFile);
         if (!f) continue;
         const b64 = await f.async('base64');
@@ -206,14 +229,21 @@ export function Data() {
       const res = await corpus().setBackup(patch);
       if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));
       if (res && res.backup) setBackup(res.backup);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
   const chooseBackupDir = async () => {
     try {
       const res = await corpus().pickBackupDir();
-      if (res && res.error === 'overlap') { notify(t('backupOverlap')); return; }
+      if (res && res.error === 'overlap') {
+        notify(t('backupOverlap'));
+        return;
+      }
       if (res && res.backup) setBackup(res.backup);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   // Status line, simplified from viewer.js renderStatus (the rail keeps the icons).
@@ -231,19 +261,31 @@ export function Data() {
     let s = `${t('backupLastLabel')} ${fmtTime(r.at)}`;
     if (r.written) s += `（+${r.written}${t('backupItemsUnit')}）`;
     else if (r.fileCount) s += `（${r.fileCount}${t('backupItemsUnit')}）`;
-    return <div className="hint" style={{ marginTop: '6px' }}>{s}</div>;
+    return (
+      <div className="hint" style={{ marginTop: '6px' }}>
+        {s}
+      </div>
+    );
   };
 
   const codeStyle = {
-    flex: 1, minWidth: '200px', fontSize: '12px', color: 'var(--text)',
-    background: 'var(--surface-2)', padding: '6px 10px', borderRadius: '6px', wordBreak: 'break-all',
+    flex: 1,
+    minWidth: '200px',
+    fontSize: '12px',
+    color: 'var(--text)',
+    background: 'var(--surface-2)',
+    padding: '6px 10px',
+    borderRadius: '6px',
+    wordBreak: 'break-all',
   };
 
   return (
     <>
       {/* 保存先フォルダ */}
       <div className="data-section">
-        <div style={{ fontSize: '13px', fontWeight: 600 }}><Highlight text={t('saveFolderSubTitle')} /></div>
+        <div style={{ fontSize: '13px', fontWeight: 600 }}>
+          <Highlight text={t('saveFolderSubTitle')} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '8px 0' }}>
           <code style={codeStyle}>{saveFolder}</code>
           <button className="btn-outline" onClick={chooseSaveFolder} disabled={migrating}>
@@ -264,7 +306,9 @@ export function Data() {
             <span style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', minWidth: '42px', textAlign: 'right', color: 'var(--text-muted)' }}>{progress.pct}%</span>
           </div>
           <div style={{ fontSize: '11px', fontFamily: 'ui-monospace,SFMono-Regular,Menlo,monospace', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: '6px', padding: '8px 10px', maxHeight: '140px', overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
-            {progress.log.map((line, i) => <div key={i}>{line}</div>)}
+            {progress.log.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
           </div>
         </div>
       )}
@@ -274,17 +318,17 @@ export function Data() {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           {/* mode select + export button are one joined control */}
           <span style={{ display: 'inline-flex', alignItems: 'stretch' }}>
-            <select
-              value={exportMode}
-              onChange={(e) => setExportMode(e.target.value)}
-              style={{ width: 'auto', fontSize: '12px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}
-            >
+            <select value={exportMode} onChange={(e) => setExportMode(e.target.value)} style={{ width: 'auto', fontSize: '12px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}>
               <option value="full">{t('exportModeFull')}</option>
               <option value="images">{t('exportModeImages')}</option>
             </select>
-            <button className="btn-outline" onClick={exportZip} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>{t('exportZip')}</button>
+            <button className="btn-outline" onClick={exportZip} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+              {t('exportZip')}
+            </button>
           </span>
-          <button className="btn-outline" onClick={() => zipInputRef.current && zipInputRef.current.click()} style={{ marginLeft: '10px' }}>{t('importZip')}</button>
+          <button className="btn-outline" onClick={() => zipInputRef.current && zipInputRef.current.click()} style={{ marginLeft: '10px' }}>
+            {t('importZip')}
+          </button>
         </div>
         <Hint text={t('hintZip')} />
         <input type="file" ref={zipInputRef} hidden accept=".zip" onChange={onZipPicked} />
@@ -292,41 +336,40 @@ export function Data() {
 
       {/* Import media */}
       <div className="data-section" style={{ marginTop: '14px' }}>
-        <button className="btn-outline" onClick={importMedia}>{t('importImages')}</button>
+        <button className="btn-outline" onClick={importMedia}>
+          {t('importImages')}
+        </button>
         <Hint text={t('hintMedia')} />
       </div>
 
       {/* 自動バックアップ */}
       <div className="data-section" style={{ marginTop: '14px' }}>
-        <div style={{ fontSize: '13px', fontWeight: 600 }}><Highlight text={t('backupSubTitle')} /></div>
+        <div style={{ fontSize: '13px', fontWeight: 600 }}>
+          <Highlight text={t('backupSubTitle')} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '8px 0' }}>
           <code style={codeStyle}>{(backup && backup.dir) || t('backupDirNone')}</code>
-          <button className="btn-outline" onClick={chooseBackupDir}>{t('backupChoose')}</button>
-          <button className="btn-outline" onClick={() => saveBackup({ dir: null })}>{t('backupClear')}</button>
+          <button className="btn-outline" onClick={chooseBackupDir}>
+            {t('backupChoose')}
+          </button>
+          <button className="btn-outline" onClick={() => saveBackup({ dir: null })}>
+            {t('backupClear')}
+          </button>
         </div>
         <label className="radio-line">
-          <input
-            type="checkbox"
-            checked={!!(backup && backup.interval)}
-            onChange={(e) => saveBackup({ interval: e.target.checked })}
-          />{' '}
-          <span>{t('backupInterval')}</span>{' '}
+          <input type="checkbox" checked={!!(backup && backup.interval)} onChange={(e) => saveBackup({ interval: e.target.checked })} /> <span>{t('backupInterval')}</span>{' '}
           <input
             type="number"
             min="1"
             max="999"
             value={(backup && backup.intervalValue) || 1}
             onChange={(e) => {
-              const v = Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1));
+              const v = Math.max(1, Math.min(999, Number.parseInt(e.target.value, 10) || 1));
               saveBackup({ intervalValue: v });
             }}
             style={{ width: '56px', fontSize: '12px', padding: '2px 4px' }}
           />{' '}
-          <select
-            value={(backup && backup.intervalUnit) || 'day'}
-            onChange={(e) => saveBackup({ intervalUnit: e.target.value })}
-            style={{ fontSize: '12px', padding: '2px 4px' }}
-          >
+          <select value={(backup && backup.intervalUnit) || 'day'} onChange={(e) => saveBackup({ intervalUnit: e.target.value })} style={{ fontSize: '12px', padding: '2px 4px' }}>
             <option value="day">{t('unitDay')}</option>
             <option value="week">{t('unitWeek')}</option>
             <option value="month">{t('unitMonth')}</option>

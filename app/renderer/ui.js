@@ -22,9 +22,7 @@
   // a result accidentally used in an attribute stays safe (viewer's old div-based
   // escape left those unescaped). Display is unchanged for normal text content.
   function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
 
   window.corpusUI = { notify, escapeHtml };

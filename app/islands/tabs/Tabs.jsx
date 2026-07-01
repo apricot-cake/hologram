@@ -33,10 +33,9 @@ function Tab({ t, editing, closeTitle }) {
       <span className="tab-body">
         {/* icon SVG comes from viewer.js (pin glyph or TAB_ICONS[iconType]); the
             .tab-icon span is the existing wrapper, so insert the SVG straight in. */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — app-defined constants, never user content */}
         <span className="tab-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: t.icon }} />
-        {editing
-          ? <input className="tab-rename-input" defaultValue={t.title} />
-          : <span className="tab-title">{t.title}</span>}
+        {editing ? <input className="tab-rename-input" defaultValue={t.title} /> : <span className="tab-title">{t.title}</span>}
       </span>
       {t.showClose && (
         <button className="tab-close" data-close={t.id} title={closeTitle} aria-label={closeTitle}>

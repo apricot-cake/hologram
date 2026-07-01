@@ -9,7 +9,7 @@
 //
 //   node scripts/test-metadata-origin.js
 
-const assert = require('assert');
+const assert = require('node:assert');
 const { fetchPostMetadata } = require('../extension/metadata.js');
 
 const calls = [];
@@ -17,7 +17,9 @@ global.fetch = async (url) => {
   calls.push(String(url));
   return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
 };
-const reset = () => { calls.length = 0; };
+const reset = () => {
+  calls.length = 0;
+};
 
 (async () => {
   // 1. Misskey, mismatched host + expectedHost -> blocked, never fetched.
@@ -29,7 +31,10 @@ const reset = () => { calls.length = 0; };
   // 2. Misskey, matching host -> fetched.
   reset();
   r = await fetchPostMetadata('https://misskey.io/notes/abc', { expectedHost: 'misskey.io' });
-  assert.ok(calls.some((u) => u.includes('misskey.io/api/notes/show')), 'matched misskey host is fetched');
+  assert.ok(
+    calls.some((u) => u.includes('misskey.io/api/notes/show')),
+    'matched misskey host is fetched',
+  );
 
   // 3. Misskey, no expectedHost -> unconstrained (backward compatible).
   reset();
@@ -45,7 +50,10 @@ const reset = () => { calls.length = 0; };
   // 5. Mastodon, matching host -> fetched.
   reset();
   r = await fetchPostMetadata('https://mastodon.social/@u/12345', { expectedHost: 'mastodon.social' });
-  assert.ok(calls.some((u) => u.includes('mastodon.social/api/v1/statuses/')), 'matched mastodon host is fetched');
+  assert.ok(
+    calls.some((u) => u.includes('mastodon.social/api/v1/statuses/')),
+    'matched mastodon host is fetched',
+  );
 
   // 6. X has a FIXED API host -> a mismatched expectedHost must not gate it.
   reset();
@@ -53,4 +61,7 @@ const reset = () => { calls.length = 0; };
   assert.ok(calls.length > 0, 'X must not be gated by expectedHost (fixed API host)');
 
   console.log('PASS test-metadata-origin: cross-host misskey/mastodon refused, matched + fixed-host fetched');
-})().catch((e) => { console.error('FAIL test-metadata-origin:', e && e.message ? e.message : e); process.exit(1); });
+})().catch((e) => {
+  console.error('FAIL test-metadata-origin:', e && e.message ? e.message : e);
+  process.exit(1);
+});

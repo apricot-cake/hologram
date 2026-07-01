@@ -6,10 +6,10 @@
 //
 //   node scripts/test-bridge.js
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-test-'));
 // Isolate configDir to the sandbox via CORPUS_CONFIG_DIR (set in env below).
@@ -19,17 +19,14 @@ const saveFolder = path.join(tmp, 'saves');
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
 // Minimal valid 1x1 JPEG.
-const jpegB64 =
-  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' +
-  'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
-  'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
+const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 const captureId = '1717500000000-abcd';
 const payload = {
   type: 'save',
   captureId,
   image: jpegB64,
-  metadata: { url: 'https://x.com/u/status/1', platform: 'x', text: 'hi', tags: ['t'] }
+  metadata: { url: 'https://x.com/u/status/1', platform: 'x', text: 'hi', tags: ['t'] },
 };
 
 const msg = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -39,11 +36,13 @@ header.writeUInt32LE(msg.length, 0);
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
 const child = spawn(process.execPath, [path.join(__dirname, '..', 'native-host', 'bridge.js')], {
   env,
-  stdio: ['pipe', 'pipe', 'inherit']
+  stdio: ['pipe', 'pipe', 'inherit'],
 });
 
 let out = Buffer.alloc(0);
-child.stdout.on('data', (d) => { out = Buffer.concat([out, d]); });
+child.stdout.on('data', (d) => {
+  out = Buffer.concat([out, d]);
+});
 
 child.on('close', () => {
   let resp = null;
@@ -64,9 +63,7 @@ child.on('close', () => {
   console.log('jpg/json   :', okJpg, okJson);
   console.log('record     :', rec && { captureId: rec.captureId, image: rec.image, url: rec.url, tags: rec.tags });
 
-  const pass = !!resp && resp.ok && okJpg && okJson &&
-    rec.captureId === captureId && rec.image === `${captureId}.jpg` &&
-    rec.url === 'https://x.com/u/status/1';
+  const pass = !!resp && resp.ok && okJpg && okJson && rec.captureId === captureId && rec.image === `${captureId}.jpg` && rec.url === 'https://x.com/u/status/1';
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(pass ? 'BRIDGE_TEST_PASS' : 'BRIDGE_TEST_FAIL');

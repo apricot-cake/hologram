@@ -19,6 +19,7 @@ function DelIc() {
 // transparent — the old DOM had the <svg> as a direct child, and the glyph CSS
 // (`.sb-active-chip .qc-ic`) is a descendant rule, so this matches either way.
 function Glyph({ html }) {
+  // biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — qcGlyph strings are app-defined constants from viewer.js, never user content
   return <span style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -47,17 +48,9 @@ function Group({ n, isRoot, shared }) {
   n.children.forEach((c, i) => {
     if (i > 0) {
       items.push(
-        <button
-          key={'op' + i}
-          type="button"
-          className={isRoot ? 'qb-op qb-op-root' : 'qb-op'}
-          data-act="op"
-          data-nid={n.id}
-          title={shared.opTitle}
-          draggable={isRoot ? undefined : true}
-        >
+        <button key={'op' + i} type="button" className={isRoot ? 'qb-op qb-op-root' : 'qb-op'} data-act="op" data-nid={n.id} title={shared.opTitle} draggable={isRoot ? undefined : true}>
           {n.opWord}
-        </button>
+        </button>,
       );
     }
     items.push(<Node key={'n' + i} n={c} shared={shared} />);
@@ -65,17 +58,19 @@ function Group({ n, isRoot, shared }) {
   if (isRoot) return <>{items}</>;
   return (
     <span className={'qb-grp' + (n.neg ? ' neg' : '')} data-nid={n.id}>
-      <span className="qb-paren qb-paren-l" draggable>{(n.neg ? '≠' : '') + '('}</span>
+      <span className="qb-paren qb-paren-l" draggable>
+        {(n.neg ? '≠' : '') + '('}
+      </span>
       {items}
-      <span className="qb-paren qb-paren-r" draggable>)</span>
+      <span className="qb-paren qb-paren-r" draggable>
+        )
+      </span>
     </span>
   );
 }
 
 function Node({ n, shared }) {
-  return n.kind === 'cond'
-    ? <Pill n={n} delTitle={shared.delTitle} />
-    : <Group n={n} isRoot={false} shared={shared} />;
+  return n.kind === 'cond' ? <Pill n={n} delTitle={shared.delTitle} /> : <Group n={n} isRoot={false} shared={shared} />;
 }
 
 // The whole bar's chips: optional search echo segment (posters only — posts fold

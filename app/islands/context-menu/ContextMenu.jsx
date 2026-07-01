@@ -14,8 +14,7 @@ import { createPortal } from 'react-dom';
 
 // Geometric check, matching viewer.js CHECK_SVG (used for toggle/assignment rows).
 const Check = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <polyline points="5 12.5 10 17 19 7" />
   </svg>
 );
@@ -30,7 +29,8 @@ export function ContextMenuHost() {
     if (!menu) return;
     const pop = popRef.current;
     if (!pop) return;
-    let left = menu.x, top = menu.y;
+    let left = menu.x,
+      top = menu.y;
     pop.style.left = left + 'px';
     pop.style.top = top + 'px';
     const r = pop.getBoundingClientRect();
@@ -43,8 +43,13 @@ export function ContextMenuHost() {
   // Dismiss on outside-click (capture) / Escape, like the old per-menu listeners.
   useEffect(() => {
     if (!menu) return;
-    const onDoc = (e) => { if (popRef.current && popRef.current.contains(e.target)) return; window.corpusContextMenu.close(); };
-    const onKey = (e) => { if (e.key === 'Escape') window.corpusContextMenu.close(); };
+    const onDoc = (e) => {
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      window.corpusContextMenu.close();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') window.corpusContextMenu.close();
+    };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -56,18 +61,23 @@ export function ContextMenuHost() {
   if (!menu) return null;
   return createPortal(
     <div className="fold-menu show" ref={popRef}>
-      {menu.items.map((it, i) => it.sep ? (
-        <div key={i} className="fm-sep" />
-      ) : (
-        <div key={i}
-          className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')}
-          onClick={() => window.corpusContextMenu.pick(it)}>
-          {it.icon && <span className="fm-ic" dangerouslySetInnerHTML={{ __html: it.icon }} />}
-          <span className="fm-name">{it.label}</span>
-          {it.checked && <span className="fm-check"><Check /></span>}
-        </div>
-      ))}
+      {menu.items.map((it, i) =>
+        it.sep ? (
+          <div key={i} className="fm-sep" />
+        ) : (
+          <div key={i} className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')} onClick={() => window.corpusContextMenu.pick(it)}>
+            {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from viewer.js, never user content */}
+            {it.icon && <span className="fm-ic" dangerouslySetInnerHTML={{ __html: it.icon }} />}
+            <span className="fm-name">{it.label}</span>
+            {it.checked && (
+              <span className="fm-check">
+                <Check />
+              </span>
+            )}
+          </div>
+        ),
+      )}
     </div>,
-    document.body
+    document.body,
   );
 }

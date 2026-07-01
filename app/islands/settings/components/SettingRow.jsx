@@ -5,7 +5,9 @@ import { Highlight } from './Highlight.jsx';
 export function SettingRow({ label, children, style }) {
   return (
     <div className="setting-row" style={style}>
-      <span><Highlight text={label} /></span>
+      <span>
+        <Highlight text={label} />
+      </span>
       {children}
     </div>
   );

@@ -10,10 +10,10 @@
 //                     (launcher runs the bridge with the Electron binary in
 //                      ELECTRON_RUN_AS_NODE mode, so no system Node is needed)
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execFileSync } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 
 const { configDir } = require('./paths');
 
@@ -68,6 +68,7 @@ function manifestPath() {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: \x00-\x7F is the deliberate full-ASCII range check
 const isAscii = (s) => /^[\x00-\x7F]*$/.test(s);
 
 // cmd.exe reads a .bat in the console's OEM code page, so a launcher that
@@ -78,21 +79,23 @@ const isAscii = (s) => /^[\x00-\x7F]*$/.test(s);
 function asciiExeRef(exe) {
   if (isAscii(exe)) return exe;
   const exeDir = path.dirname(exe);
-  const link = path.join(configDir(), 'runtime');   // configDir is ASCII
+  const link = path.join(configDir(), 'runtime'); // configDir is ASCII
   try {
     let good = false;
     if (fs.existsSync(link)) {
       try {
         const st = fs.lstatSync(link);
         if (st.isSymbolicLink()) good = path.resolve(fs.readlinkSync(link)) === path.resolve(exeDir);
-      } catch { good = false; }
+      } catch {
+        good = false;
+      }
       if (!good) fs.rmSync(link, { recursive: true, force: true });
     }
     if (!good) fs.symlinkSync(exeDir, link, 'junction');
     // %~dp0 = the .bat's own (ASCII) dir, with a trailing backslash.
     return `%~dp0runtime\\${path.basename(exe)}`;
   } catch {
-    return exe;   // junction unavailable — fall back to the raw path
+    return exe; // junction unavailable — fall back to the raw path
   }
 }
 
@@ -126,14 +129,16 @@ function writeManifest(launcher, extensionId) {
     try {
       const prev = JSON.parse(fs.readFileSync(manifestPath(), 'utf8'));
       if (Array.isArray(prev.allowed_origins) && prev.allowed_origins.length) allowedOrigins = prev.allowed_origins;
-    } catch { /* no prior manifest — leave empty */ }
+    } catch {
+      /* no prior manifest — leave empty */
+    }
   }
   const manifest = {
     name: HOST_NAME,
     description: 'Corpus native messaging host',
     path: launcher,
     type: 'stdio',
-    allowed_origins: allowedOrigins
+    allowed_origins: allowedOrigins,
   };
   const p = manifestPath();
   fs.writeFileSync(p, JSON.stringify(manifest, null, 2), 'utf8');
@@ -148,41 +153,35 @@ function persistExtensionId(id) {
   try {
     const p = path.join(configDir(), 'config.json');
     let cfg = {};
-    try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {}; } catch { /* fresh config */ }
+    try {
+      cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
+    } catch {
+      /* fresh config */
+    }
     if (cfg.extensionId !== id) {
       cfg.extensionId = id;
       fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
     }
-  } catch { /* best-effort — never block registration */ }
+  } catch {
+    /* best-effort — never block registration */
+  }
 }
 
 // Browsers that read native messaging host manifests.
 function windowsRegistryKeys() {
-  return [
-    `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`
-  ];
+  return [`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
 }
 
 function unixManifestDirs() {
   const home = os.homedir();
   if (process.platform === 'darwin') {
-    return [
-      path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts')
-    ];
+    return [path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts')];
   }
-  return [
-    path.join(home, '.config/google-chrome/NativeMessagingHosts'),
-    path.join(home, '.config/microsoft-edge/NativeMessagingHosts'),
-    path.join(home, '.config/chromium/NativeMessagingHosts')
-  ];
+  return [path.join(home, '.config/google-chrome/NativeMessagingHosts'), path.join(home, '.config/microsoft-edge/NativeMessagingHosts'), path.join(home, '.config/chromium/NativeMessagingHosts')];
 }
 
 function install({ exe = process.execPath, runAsNode = false, extensionId } = {}) {
-  if (extensionId) persistExtensionId(extensionId);   // explicit id (CLI/app) → make it durable
+  if (extensionId) persistExtensionId(extensionId); // explicit id (CLI/app) → make it durable
   const id = extensionId || readExtensionId();
   const bridgePath = deployBridge();
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
@@ -246,14 +245,7 @@ function uninstall() {
   // uninstall. Clearing the stale manifest also matters because app/main.js
   // gates registration on existsSync(manifestPath()); a leftover manifest would
   // make a later launch skip re-registering with stale allowed_origins.
-  const leftovers = [
-    path.join(configDir(), 'bridge.js'),
-    path.join(configDir(), 'paths.js'),
-    path.join(configDir(), 'media-download.js'),
-    path.join(configDir(), 'config-recovery.js'),
-    launcherPath(),
-    manifestPath()
-  ];
+  const leftovers = [path.join(configDir(), 'bridge.js'), path.join(configDir(), 'paths.js'), path.join(configDir(), 'media-download.js'), path.join(configDir(), 'config-recovery.js'), launcherPath(), manifestPath()];
   for (const f of leftovers) {
     try {
       fs.unlinkSync(f);

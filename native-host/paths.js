@@ -20,8 +20,8 @@
 // home dir is the SAME real path for every process. Tests isolate by pointing
 // CORPUS_CONFIG_DIR at a sandbox dir.
 
-const path = require('path');
-const os = require('os');
+const path = require('node:path');
+const os = require('node:os');
 
 const APP_NAME = 'Corpus';
 

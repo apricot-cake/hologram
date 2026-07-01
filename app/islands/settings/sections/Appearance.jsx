@@ -15,11 +15,14 @@ export function Appearance() {
   // Reconcile with persisted prefs once they resolve — theme.js may still be
   // syncing config from IPC when the island first mounts.
   useEffect(() => {
-    ipc.getPrefs().then((p) => {
-      if (!p) return;
-      if (p.theme) setTheme(cleanPref(p.theme));
-      setTileOverlay(p.tileOverlay !== false);
-    }).catch(() => {});
+    ipc
+      .getPrefs()
+      .then((p) => {
+        if (!p) return;
+        if (p.theme) setTheme(cleanPref(p.theme));
+        setTileOverlay(p.tileOverlay !== false);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -28,7 +31,10 @@ export function Appearance() {
         <select
           value={theme}
           style={{ width: 'auto', minWidth: '140px' }}
-          onChange={(e) => { setTheme(e.target.value); ipc.theme.set(e.target.value); }}
+          onChange={(e) => {
+            setTheme(e.target.value);
+            ipc.theme.set(e.target.value);
+          }}
         >
           <option value="auto">{t('themeAuto')}</option>
           <option value="light">{t('themeLight')}</option>
@@ -37,7 +43,13 @@ export function Appearance() {
       </SettingRow>
       <Hint text={t('hintTheme')} />
       <SettingRow label={t('tileOverlay')} style={{ marginTop: '10px' }}>
-        <Switch checked={tileOverlay} onChange={(v) => { setTileOverlay(v); ipc.setTileOverlay(v); }} />
+        <Switch
+          checked={tileOverlay}
+          onChange={(v) => {
+            setTileOverlay(v);
+            ipc.setTileOverlay(v);
+          }}
+        />
       </SettingRow>
     </>
   );

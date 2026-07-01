@@ -4,6 +4,12 @@
   "version": "0.0.0",
   "description": "dev tooling deps (e2e capture tests)",
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "puppeteer": "^25.1.0"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
   }
 }

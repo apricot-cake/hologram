@@ -8,8 +8,8 @@
 // stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
 // (readOrgJsonSync/writeOrgJsonSync refuse to clobber a present-but-corrupt file).
 const { ipcMain } = require('electron');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
@@ -20,7 +20,7 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { groups: [] };
     const { value: j } = readOrgJsonSync(path.join(folder, 'tag-groups.json'));
-    return { groups: (j && Array.isArray(j.groups)) ? j.groups : [] };
+    return { groups: j && Array.isArray(j.groups) ? j.groups : [] };
   });
 
   ipcMain.handle('set-tag-groups', (_e, groups) => {
@@ -45,8 +45,8 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { types: {}, labels: null };
     const { value: j } = readOrgJsonSync(path.join(folder, 'tag-types.json'));
-    const types = (j && j.types && typeof j.types === 'object') ? j.types : {};
-    const labels = (j && j.labels && typeof j.labels === 'object') ? j.labels : null;
+    const types = j && j.types && typeof j.types === 'object' ? j.types : {};
+    const labels = j && j.labels && typeof j.labels === 'object' ? j.labels : null;
     return { types, labels };
   });
 
@@ -71,14 +71,13 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { keys: [] };
     const { value: j } = readOrgJsonSync(path.join(folder, 'ungrouped.json'));
-    return { keys: (j && Array.isArray(j.keys)) ? j.keys : [] };
+    return { keys: j && Array.isArray(j.keys) ? j.keys : [] };
   });
   ipcMain.handle('set-ungrouped', (_e, keys) => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      writeOrgJsonSync(path.join(folder, 'ungrouped.json'),
-        { keys: Array.isArray(keys) ? keys.map(String) : [] });
+      writeOrgJsonSync(path.join(folder, 'ungrouped.json'), { keys: Array.isArray(keys) ? keys.map(String) : [] });
       return { ok: true };
     } catch {
       return { ok: false };
@@ -94,7 +93,7 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { folders: [] };
     const { value: j } = readOrgJsonSync(path.join(folder, 'poster-folders.json'));
-    return { folders: (j && Array.isArray(j.folders)) ? j.folders : [] };
+    return { folders: j && Array.isArray(j.folders) ? j.folders : [] };
   });
   ipcMain.handle('set-poster-folders', (_e, data) => {
     const folder = getSaveFolder();
@@ -114,7 +113,7 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { tags: {} };
     const { value: j } = readOrgJsonSync(path.join(folder, 'poster-tags.json'));
-    return { tags: (j && typeof j.tags === 'object' && j.tags) ? j.tags : {} };
+    return { tags: j && typeof j.tags === 'object' && j.tags ? j.tags : {} };
   });
   ipcMain.handle('set-poster-tags', (_e, data) => {
     const folder = getSaveFolder();
@@ -134,7 +133,7 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { groups: [] };
     const { value: j } = readOrgJsonSync(path.join(folder, 'manual-groups.json'));
-    return { groups: (j && Array.isArray(j.groups)) ? j.groups : [] };
+    return { groups: j && Array.isArray(j.groups) ? j.groups : [] };
   });
   ipcMain.handle('set-manual-groups', (_e, groups) => {
     const folder = getSaveFolder();
@@ -157,9 +156,7 @@ function register(ctx) {
     if (!folder) return { folders: [], workspace: [], posterWorkspace: [] };
     const { value: j } = readOrgJsonSync(path.join(folder, 'folders.json'));
     if (!j) return { folders: [], workspace: [], posterWorkspace: [] };
-    const folders = Array.isArray(j.folders) ? j.folders
-      .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
-      .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
+    const folders = Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string').map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
     const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
     const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
     return { folders, workspace, posterWorkspace };
@@ -168,12 +165,10 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      const src = (data && Array.isArray(data.folders)) ? data.folders : [];
-      const folders = src
-        .filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
-        .map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
-      const workspace = (data && Array.isArray(data.workspace)) ? [...new Set(data.workspace.map(String))] : [];
-      const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
+      const src = data && Array.isArray(data.folders) ? data.folders : [];
+      const folders = src.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string').map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
+      const workspace = data && Array.isArray(data.workspace) ? [...new Set(data.workspace.map(String))] : [];
+      const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
       writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, workspace, posterWorkspace });
       return { ok: true };
     } catch {
@@ -191,28 +186,35 @@ function register(ctx) {
   // for the migration read and for folding a legacy folders.json out of an imported
   // ZIP (lib-archive.js).
   function normCollections(arr) {
-    return Array.isArray(arr) ? arr
-      .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
-      .map((c) => {
-        const out = {
-          id: c.id, name: c.name,
-          kind: c.kind === 'dynamic' ? 'dynamic' : 'static',
-          created: typeof c.created === 'number' ? c.created : null,
-          items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
-        };
-        if (c.kind === 'dynamic') {
-          if (c.tree && typeof c.tree === 'object') out.tree = c.tree;   // saved query tree
-          if (typeof c.q === 'string' && c.q) out.q = c.q;              // saved free-text search
-        }
-        return out;
-      }) : [];
+    return Array.isArray(arr)
+      ? arr
+          .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
+          .map((c) => {
+            const out = {
+              id: c.id,
+              name: c.name,
+              kind: c.kind === 'dynamic' ? 'dynamic' : 'static',
+              created: typeof c.created === 'number' ? c.created : null,
+              items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
+            };
+            if (c.kind === 'dynamic') {
+              if (c.tree && typeof c.tree === 'object') out.tree = c.tree; // saved query tree
+              if (typeof c.q === 'string' && c.q) out.q = c.q; // saved free-text search
+            }
+            return out;
+          })
+      : [];
   }
   // Shape a legacy folders.json into the collections model. Folders become static
   // collections (ids preserved). The legacy workspace tray is dropped (clip starts
   // empty — no migration, by design). Returns null when there is nothing to migrate.
   function migrateFoldersToCollections(folder) {
     let j;
-    try { j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8')); } catch { return null; }
+    try {
+      j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
+    } catch {
+      return null;
+    }
     const folders = Array.isArray(j.folders) ? j.folders : [];
     const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
     const collections = normCollections(folders.map((f) => ({ id: f.id, name: f.name, kind: 'static', created: null, items: f.items })));
@@ -228,7 +230,7 @@ function register(ctx) {
     if (j) {
       const collections = normCollections(j.collections);
       const ids = new Set(collections.map((c) => c.id));
-      const activeId = (typeof j.activeId === 'string' && ids.has(j.activeId)) ? j.activeId : null;
+      const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
       const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
       const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
       return { collections, activeId, clip, posterWorkspace };
@@ -241,8 +243,16 @@ function register(ctx) {
     // 2) collections.json absent → migrate a legacy folders.json once, write it, delete folders.json
     const migrated = migrateFoldersToCollections(folder);
     if (!migrated) return empty;
-    try { writeOrgJsonSync(collectionsPath, migrated); } catch { return migrated; }
-    try { fs.unlinkSync(path.join(folder, 'folders.json')); } catch { /* best-effort */ }
+    try {
+      writeOrgJsonSync(collectionsPath, migrated);
+    } catch {
+      return migrated;
+    }
+    try {
+      fs.unlinkSync(path.join(folder, 'folders.json'));
+    } catch {
+      /* best-effort */
+    }
     return migrated;
   });
   ipcMain.handle('set-collections', (_e, data) => {
@@ -251,9 +261,9 @@ function register(ctx) {
     try {
       const collections = normCollections(data && data.collections);
       const ids = new Set(collections.map((c) => c.id));
-      const activeId = (data && typeof data.activeId === 'string' && ids.has(data.activeId)) ? data.activeId : null;
-      const clip = (data && Array.isArray(data.clip)) ? [...new Set(data.clip.map(String))] : [];
-      const posterWorkspace = (data && Array.isArray(data.posterWorkspace)) ? [...new Set(data.posterWorkspace.map(String))] : [];
+      const activeId = data && typeof data.activeId === 'string' && ids.has(data.activeId) ? data.activeId : null;
+      const clip = data && Array.isArray(data.clip) ? [...new Set(data.clip.map(String))] : [];
+      const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
       writeOrgJsonSync(path.join(folder, 'collections.json'), { collections, activeId, clip, posterWorkspace });
       return { ok: true };
     } catch {

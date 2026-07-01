@@ -16,13 +16,15 @@
 // (idempotent / non-clobbering) and the organization JSONs are MERGED (union) so
 // importing into a non-empty library never wipes current folders/tags.
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
-function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name); }
+function isVolatile(name) {
+  return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
+}
 
 // --- Zip-bomb / unbounded-expansion guard -------------------------------------
 // A `corpus-export.zip` is shared between machines, so a malicious/corrupt one can
@@ -36,8 +38,8 @@ function isVolatile(name) { return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(na
 // 0..N original media + avatar, so tens of thousands of entries and many GB of
 // original media), with generous headroom for growth — these reject only inputs
 // that are clearly abnormal, never a legitimate complete export.
-const MAX_ZIP_ENTRIES = 200000;                  // ~25k captures × a handful of files each, w/ headroom
-const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024;  // 1 GiB: no single screenshot/sidecar/media is this big
+const MAX_ZIP_ENTRIES = 200000; // ~25k captures × a handful of files each, w/ headroom
+const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024; // 1 GiB: no single screenshot/sidecar/media is this big
 const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompressed across the whole archive
 class ZipLimitError extends Error {}
 function entryUncompressedSize(entry) {
@@ -69,15 +71,14 @@ function isWithin(parentDir, target) {
 // --- Organization merges (union) ---------------------------------------------
 function mergeFolders(cur, inc) {
   const byId = new Map();
-  for (const f of (cur.folders || [])) if (f && typeof f.id === 'string') byId.set(f.id, { id: f.id, name: String(f.name || f.id), items: new Set((f.items || []).map(String)) });
-  for (const f of (inc.folders || [])) {
+  for (const f of cur.folders || []) if (f && typeof f.id === 'string') byId.set(f.id, { id: f.id, name: String(f.name || f.id), items: new Set((f.items || []).map(String)) });
+  for (const f of inc.folders || []) {
     if (!f || typeof f.id !== 'string') continue;
-    if (byId.has(f.id)) for (const it of (f.items || [])) byId.get(f.id).items.add(String(it));
+    if (byId.has(f.id)) for (const it of f.items || []) byId.get(f.id).items.add(String(it));
     else byId.set(f.id, { id: f.id, name: String(f.name || f.id), items: new Set((f.items || []).map(String)) });
   }
   const folders = [...byId.values()].map((f) => ({ id: f.id, name: f.name, items: [...f.items] }));
-  const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId
-    : (folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null);
+  const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId : folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null;
   return { folders, defaultId };
 }
 // Collections (the unified folders container). id-union on items; name/kind/created/
@@ -87,19 +88,29 @@ function mergeCollections(cur, inc) {
   const byId = new Map();
   const put = (c) => {
     if (!c || typeof c.id !== 'string') return;
-    if (byId.has(c.id)) { const e = byId.get(c.id); for (const it of (c.items || [])) e.items.add(String(it)); return; }
-    const e = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: (typeof c.created === 'number' ? c.created : null), items: new Set((c.items || []).map(String)) };
-    if (c.kind === 'dynamic') {   // saved-search payload rides along (LOCAL-wins, like name/kind)
+    if (byId.has(c.id)) {
+      const e = byId.get(c.id);
+      for (const it of c.items || []) e.items.add(String(it));
+      return;
+    }
+    const e = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, items: new Set((c.items || []).map(String)) };
+    if (c.kind === 'dynamic') {
+      // saved-search payload rides along (LOCAL-wins, like name/kind)
       if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
       if (typeof c.q === 'string' && c.q) e.q = c.q;
     }
     byId.set(c.id, e);
   };
-  for (const c of ((cur && cur.collections) || [])) put(c);
-  for (const c of ((inc && inc.collections) || [])) put(c);
-  const collections = [...byId.values()].map((c) => { const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] }; if (c.tree) o.tree = c.tree; if (c.q) o.q = c.q; return o; });
+  for (const c of (cur && cur.collections) || []) put(c);
+  for (const c of (inc && inc.collections) || []) put(c);
+  const collections = [...byId.values()].map((c) => {
+    const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
+    if (c.tree) o.tree = c.tree;
+    if (c.q) o.q = c.q;
+    return o;
+  });
   const valid = new Set(collections.map((c) => c.id));
-  const activeId = (cur && valid.has(cur.activeId)) ? cur.activeId : ((inc && valid.has(inc.activeId)) ? inc.activeId : null);
+  const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   const clip = [...new Set([...((cur && cur.clip) || []), ...((inc && inc.clip) || [])].map(String))];
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
   return { collections, activeId, clip, posterWorkspace };
@@ -109,19 +120,24 @@ function mergeCollections(cur, inc) {
 // workspace is dropped (don't import a foreign active tray); posterWorkspace rides along.
 function foldersToCollections(legacy) {
   const folders = Array.isArray(legacy && legacy.folders) ? legacy.folders : [];
-  const collections = folders.filter((f) => f && typeof f.id === 'string').map((f) => ({
-    id: f.id, name: String(f.name || f.id), kind: 'static', created: null,
-    items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [],
-  }));
+  const collections = folders
+    .filter((f) => f && typeof f.id === 'string')
+    .map((f) => ({
+      id: f.id,
+      name: String(f.name || f.id),
+      kind: 'static',
+      created: null,
+      items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [],
+    }));
   const posterWorkspace = Array.isArray(legacy && legacy.posterWorkspace) ? [...new Set(legacy.posterWorkspace.map(String))] : [];
   return { collections, activeId: null, posterWorkspace };
 }
 function mergeTagGroups(cur, inc) {
   const byId = new Map();
-  for (const g of (cur.groups || [])) if (g && typeof g.id === 'string') byId.set(g.id, { id: g.id, name: String(g.name || g.id), tags: new Set((g.tags || []).map(String)) });
-  for (const g of (inc.groups || [])) {
+  for (const g of cur.groups || []) if (g && typeof g.id === 'string') byId.set(g.id, { id: g.id, name: String(g.name || g.id), tags: new Set((g.tags || []).map(String)) });
+  for (const g of inc.groups || []) {
     if (!g || typeof g.id !== 'string') continue;
-    if (byId.has(g.id)) for (const t of (g.tags || [])) byId.get(g.id).tags.add(String(t));
+    if (byId.has(g.id)) for (const t of g.tags || []) byId.get(g.id).tags.add(String(t));
     else byId.set(g.id, { id: g.id, name: String(g.name || g.id), tags: new Set((g.tags || []).map(String)) });
   }
   return { groups: [...byId.values()].map((g) => ({ id: g.id, name: g.name, tags: [...g.tags] })) };
@@ -141,13 +157,15 @@ function mergeTagTypes(cur, inc) {
   return out;
 }
 function mergeManualGroups(cur, inc) {
-  const seen = new Set(); const out = [];
+  const seen = new Set();
+  const out = [];
   for (const g of [...(cur.groups || []), ...(inc.groups || [])]) {
     if (!Array.isArray(g) || g.length < 2) continue;
     const arr = g.map(String);
     const key = [...arr].sort().join(' ');
     if (seen.has(key)) continue;
-    seen.add(key); out.push(arr);
+    seen.add(key);
+    out.push(arr);
   }
   return { groups: out };
 }
@@ -162,21 +180,22 @@ function mergePosterTags(cur, inc) {
       for (const t of list) set.add(String(t));
     }
   };
-  add(cur); add(inc);
+  add(cur);
+  add(inc);
   const tags = {};
   for (const [k, set] of Object.entries(out)) tags[k] = [...set];
   return { tags };
 }
 const MERGERS = {
-  'folders.json': mergeFolders,          // legacy ZIPs — folded into collections.json on import
+  'folders.json': mergeFolders, // legacy ZIPs — folded into collections.json on import
   'collections.json': mergeCollections,
   'tag-groups.json': mergeTagGroups,
   'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
-  'poster-favorites.json': mergeUngrouped,   // same { keys } shape → union merge
-  'poster-folders.json': mergeFolders,       // same { folders } shape → id-union merge
-  'poster-tags.json': mergePosterTags        // { tags:{posterKey:[…]} } → per-key union
+  'poster-favorites.json': mergeUngrouped, // same { keys } shape → union merge
+  'poster-folders.json': mergeFolders, // same { folders } shape → id-union merge
+  'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → per-key union
 };
 
 // --- Build ---------------------------------------------------------------------
@@ -184,7 +203,11 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
   const zip = new JSZip();
   const lib = zip.folder('library');
   let names = [];
-  try { names = await fs.promises.readdir(srcFolder); } catch { names = []; }
+  try {
+    names = await fs.promises.readdir(srcFolder);
+  } catch {
+    names = [];
+  }
   let fileCount = 0;
   for (const name of names) {
     if (EXPORT_SKIP.has(name) || isVolatile(name)) continue;
@@ -193,11 +216,24 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
       if (!st.isFile()) continue;
       lib.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
       fileCount++;
-    } catch { /* skip unreadable */ }
+    } catch {
+      /* skip unreadable */
+    }
   }
-  zip.file('corpus-export.json', JSON.stringify({
-    app: 'Corpus', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount
-  }, null, 2));
+  zip.file(
+    'corpus-export.json',
+    JSON.stringify(
+      {
+        app: 'Corpus',
+        kind: 'complete',
+        version: 1,
+        exportedAt: nowIso || new Date().toISOString(),
+        fileCount,
+      },
+      null,
+      2,
+    ),
+  );
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
 }
 
@@ -207,7 +243,11 @@ const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
 async function buildImagesZip(JSZip, srcFolder) {
   const zip = new JSZip();
   let names = [];
-  try { names = await fs.promises.readdir(srcFolder); } catch { names = []; }
+  try {
+    names = await fs.promises.readdir(srcFolder);
+  } catch {
+    names = [];
+  }
   let fileCount = 0;
   for (const name of names) {
     if (EXPORT_SKIP.has(name) || isVolatile(name) || !IMAGE_EXT.test(name)) continue;
@@ -216,7 +256,9 @@ async function buildImagesZip(JSZip, srcFolder) {
       if (!st.isFile()) continue;
       zip.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
       fileCount++;
-    } catch { /* skip unreadable */ }
+    } catch {
+      /* skip unreadable */
+    }
   }
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
 }
@@ -234,28 +276,44 @@ function writeEntryStreamed(entry, tmpPath, maxBytes) {
     const fail = (err) => {
       if (aborted) return;
       aborted = true;
-      try { src.pause(); } catch { /* ignore */ }
+      try {
+        src.pause();
+      } catch {
+        /* ignore */
+      }
       out.destroy();
       reject(err);
     };
     src.on('data', (chunk) => {
       if (aborted) return;
       written += chunk.length;
-      if (written > maxBytes) { fail(new ZipLimitError('entry exceeds per-entry byte cap')); return; }
+      if (written > maxBytes) {
+        fail(new ZipLimitError('entry exceeds per-entry byte cap'));
+        return;
+      }
       out.write(chunk);
     });
     src.on('error', fail);
     out.on('error', fail);
-    src.on('end', () => { if (!aborted) out.end(); });
-    out.on('finish', () => { if (!aborted) resolve(); });
+    src.on('end', () => {
+      if (!aborted) out.end();
+    });
+    out.on('finish', () => {
+      if (!aborted) resolve();
+    });
   });
 }
 
 // --- Import / restore ----------------------------------------------------------
 async function importCompleteZip(JSZip, destFolder, buffer) {
-  try { await fs.promises.mkdir(destFolder, { recursive: true }); } catch { /* ignore */ }
+  try {
+    await fs.promises.mkdir(destFolder, { recursive: true });
+  } catch {
+    /* ignore */
+  }
   const zip = await JSZip.loadAsync(buffer);
-  let imported = 0, skipped = 0;
+  let imported = 0,
+    skipped = 0;
   const orgEntries = {};
   const captures = [];
   // Zip-bomb pre-checks: tally entry count + declared uncompressed bytes across the
@@ -274,7 +332,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     const m = /^library\/(.+)$/.exec(relPath);
     if (!m) return;
     const name = m[1];
-    if (!isSafeEntryName(name)) return;   // Zip-Slip: reject separators / traversal / absolute
+    if (!isSafeEntryName(name)) return; // Zip-Slip: reject separators / traversal / absolute
     if (EXPORT_SKIP.has(name)) return;
     if (MERGERS[name]) orgEntries[name] = entry;
     else captures.push({ name, entry });
@@ -282,23 +340,44 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   for (const c of captures) {
     const dest = path.join(destFolder, c.name);
     try {
-      if (!isWithin(destFolder, dest)) { skipped++; continue; }   // defensive Zip-Slip guard
-      if (fs.existsSync(dest)) { skipped++; continue; }
+      if (!isWithin(destFolder, dest)) {
+        skipped++;
+        continue;
+      } // defensive Zip-Slip guard
+      if (fs.existsSync(dest)) {
+        skipped++;
+        continue;
+      }
       const tmp = dest + '.tmp-import';
       // Streamed write with a per-entry byte cap: caps even an entry whose declared
       // size lied past the pre-check above. On abort, drop the partial tmp file.
       try {
         await writeEntryStreamed(c.entry, tmp, MAX_ZIP_ENTRY_BYTES);
       } catch (e) {
-        try { await fs.promises.unlink(tmp); } catch { /* ignore */ }
-        if (e instanceof ZipLimitError) { skipped++; continue; }
+        try {
+          await fs.promises.unlink(tmp);
+        } catch {
+          /* ignore */
+        }
+        if (e instanceof ZipLimitError) {
+          skipped++;
+          continue;
+        }
         throw e;
       }
       await fs.promises.rename(tmp, dest);
       imported++;
-    } catch { skipped++; }
+    } catch {
+      skipped++;
+    }
   }
-  const readCur = (file) => { try { return JSON.parse(fs.readFileSync(path.join(destFolder, file), 'utf8')); } catch { return {}; } };
+  const readCur = (file) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(destFolder, file), 'utf8'));
+    } catch {
+      return {};
+    }
+  };
   // Atomic tmp+rename for the merged organization JSON: a crash mid-merge must not
   // leave a torn/zero-byte collections.json (etc.) that the app then reads as empty
   // and persists over — losing the live organization layer. Mirrors the capture
@@ -312,23 +391,48 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   for (const name of ORG_MERGE) {
     if (!orgEntries[name]) continue;
     let inc = {};
-    try { inc = JSON.parse(await orgEntries[name].async('string')); } catch { inc = {}; }
+    try {
+      inc = JSON.parse(await orgEntries[name].async('string'));
+    } catch {
+      inc = {};
+    }
     if (name === 'folders.json') {
       // Legacy export: fold its folders into collections.json (don't resurrect the
       // retired folders.json on a migrated library).
       const merged = mergeCollections(readCur('collections.json'), foldersToCollections(inc));
-      try { await writeOrgAtomic('collections.json', merged); } catch { /* ignore */ }
+      try {
+        await writeOrgAtomic('collections.json', merged);
+      } catch {
+        /* ignore */
+      }
       continue;
     }
     const merged = MERGERS[name](readCur(name), inc);
-    try { await writeOrgAtomic(name, merged); } catch { /* ignore */ }
+    try {
+      await writeOrgAtomic(name, merged);
+    } catch {
+      /* ignore */
+    }
   }
   return { ok: true, imported, skipped };
 }
 
 module.exports = {
-  EXPORT_SKIP, ORG_MERGE,
-  MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed,
-  buildCompleteZip, buildImagesZip, importCompleteZip,
-  mergeFolders, mergeCollections, foldersToCollections, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups
+  EXPORT_SKIP,
+  ORG_MERGE,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  writeEntryStreamed,
+  buildCompleteZip,
+  buildImagesZip,
+  importCompleteZip,
+  mergeFolders,
+  mergeCollections,
+  foldersToCollections,
+  mergeTagGroups,
+  mergeTagTypes,
+  mergeUngrouped,
+  mergeManualGroups,
 };

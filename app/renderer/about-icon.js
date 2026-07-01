@@ -77,29 +77,41 @@
     '  float crest = smoothstep(0.55, 0.98, f + 0.5);',
     '  col += vec3(1.0,0.98,1.0) * pow(crest, 3.0) * 0.4;',
     '  gl_FragColor = vec4(col, 1.0);',
-    '}'
+    '}',
   ].join('\n');
 
   function mount(canvas) {
     if (!canvas) return { destroy() {} };
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let gl = null, prog = null, uniforms = null;
-    let raf = 0, start = 0, running = false, visible = false, sized = false, dead = false;
+    let gl = null,
+      prog = null,
+      uniforms = null;
+    let raf = 0,
+      start = 0,
+      running = false,
+      visible = false,
+      sized = false,
+      dead = false;
 
     function compile(type, src) {
       const s = gl.createShader(type);
-      gl.shaderSource(s, src); gl.compileShader(s);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
       return s;
     }
 
     function initGL() {
       gl = canvas.getContext('webgl', { premultipliedAlpha: false, antialias: true });
-      if (!gl || gl.isContextLost()) { gl = null; return false; }
+      if (!gl || gl.isContextLost()) {
+        gl = null;
+        return false;
+      }
       prog = gl.createProgram();
       gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
       gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
-      gl.linkProgram(prog); gl.useProgram(prog);
+      gl.linkProgram(prog);
+      gl.useProgram(prog);
       const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -113,7 +125,7 @@
         sat: gl.getUniformLocation(prog, 'u_sat'),
         pastel: gl.getUniformLocation(prog, 'u_pastel'),
         grain: gl.getUniformLocation(prog, 'u_grain'),
-        disp: gl.getUniformLocation(prog, 'u_disp')
+        disp: gl.getUniformLocation(prog, 'u_disp'),
       };
       gl.useProgram(prog);
       gl.uniform1f(uniforms.hue, P.hue);
@@ -131,7 +143,10 @@
       const css = canvas.clientWidth || canvas.offsetWidth || 0;
       if (!css) return; // still hidden / zero-size — wait for a visible tick
       const px = Math.max(1, Math.round(css * dpr));
-      if (canvas.width !== px || canvas.height !== px) { canvas.width = px; canvas.height = px; }
+      if (canvas.width !== px || canvas.height !== px) {
+        canvas.width = px;
+        canvas.height = px;
+      }
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.uniform2f(uniforms.res, canvas.width, canvas.height);
       sized = true;
@@ -139,7 +154,10 @@
 
     function drawAt(tSeconds) {
       if (!gl || gl.isContextLost()) return;
-      if (!sized) { resize(); if (!sized) return; }
+      if (!sized) {
+        resize();
+        if (!sized) return;
+      }
       gl.uniform1f(uniforms.time, tSeconds);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
@@ -154,27 +172,38 @@
     function play() {
       if (running || dead || reduce) return;
       if (!gl && !initGL()) return;
-      running = true; start = 0;
+      running = true;
+      start = 0;
       raf = requestAnimationFrame(frame);
     }
     function pause() {
       running = false;
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
     }
 
     // Render gate: only run while actually on screen. display:none / overlay closed
     // → ratio 0 → pause. Reduced motion → draw one static frame on first reveal.
-    const io = new IntersectionObserver((entries) => {
-      const e = entries[entries.length - 1];
-      visible = e.isIntersecting && e.intersectionRatio > 0;
-      if (visible) {
-        if (reduce) {
-          if (!gl && !initGL()) return;
-          resize();
-          drawAt(STATIC_T);
-        } else { play(); }
-      } else { pause(); }
-    }, { threshold: 0.01 });
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[entries.length - 1];
+        visible = e.isIntersecting && e.intersectionRatio > 0;
+        if (visible) {
+          if (reduce) {
+            if (!gl && !initGL()) return;
+            resize();
+            drawAt(STATIC_T);
+          } else {
+            play();
+          }
+        } else {
+          pause();
+        }
+      },
+      { threshold: 0.01 },
+    );
     io.observe(canvas);
 
     // Pause when the whole window is hidden (minimize): backgroundThrottling is off
@@ -185,25 +214,54 @@
     };
     document.addEventListener('visibilitychange', onVis);
 
-    const ro = ('ResizeObserver' in window) ? new ResizeObserver(() => { sized = false; if (reduce && gl && visible) { resize(); drawAt(STATIC_T); } }) : null;
+    const ro =
+      'ResizeObserver' in window
+        ? new ResizeObserver(() => {
+            sized = false;
+            if (reduce && gl && visible) {
+              resize();
+              drawAt(STATIC_T);
+            }
+          })
+        : null;
     if (ro) ro.observe(canvas);
 
-    const onLost = (ev) => { ev.preventDefault(); pause(); gl = null; sized = false; };
-    const onRestored = () => { if (initGL() && visible) { reduce ? (resize(), drawAt(STATIC_T)) : play(); } };
+    const onLost = (ev) => {
+      ev.preventDefault();
+      pause();
+      gl = null;
+      sized = false;
+    };
+    const onRestored = () => {
+      if (initGL() && visible) {
+        if (reduce) {
+          resize();
+          drawAt(STATIC_T);
+        } else play();
+      }
+    };
     canvas.addEventListener('webglcontextlost', onLost, false);
     canvas.addEventListener('webglcontextrestored', onRestored, false);
 
     return {
       destroy() {
-        dead = true; pause();
-        try { io.disconnect(); } catch (_) {}
-        try { ro && ro.disconnect(); } catch (_) {}
+        dead = true;
+        pause();
+        try {
+          io.disconnect();
+        } catch (_) {}
+        try {
+          ro && ro.disconnect();
+        } catch (_) {}
         document.removeEventListener('visibilitychange', onVis);
         canvas.removeEventListener('webglcontextlost', onLost);
         canvas.removeEventListener('webglcontextrestored', onRestored);
-        if (gl) { const e = gl.getExtension('WEBGL_lose_context'); if (e) e.loseContext(); }
+        if (gl) {
+          const e = gl.getExtension('WEBGL_lose_context');
+          if (e) e.loseContext();
+        }
         gl = null;
-      }
+      },
     };
   }
 
