@@ -2312,6 +2312,10 @@
        declarative bridge for the date/engagement/poster-date-range flyout forms.
        viewer.js calls open(); the filter-popover island renders. Before viewer.js. -->
   <script src="filter-popover.js"></script>
+  <!-- Value-flyout controller (window.corpusQfPop): the imperative→declarative bridge
+       for the sidebar filter value flyout (qf-pop). viewer.js calls open(); the qf-pop
+       island renders. Before viewer.js. -->
+  <script src="qf-pop.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2353,6 +2357,10 @@
        (fields + apply/remove), viewer.js owns the field values + apply/remove actions
        (via window.corpusFilterPopover). -->
   <script src="islands/filter-popover.js"></script>
+  <!-- Sidebar filter value flyout (qf-pop): React owns the list/find/segment/footer
+       rendering, viewer.js owns the facet logic (qfValues) + pick routing (via
+       window.corpusQfPop). -->
+  <script src="islands/qf-pop.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

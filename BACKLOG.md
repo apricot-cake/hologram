@@ -84,10 +84,9 @@ booru 型イラストアーカイブ（メモリ `library-composition`＝99.6% E
 **方針・実装知の真実源はメモリ**（`corpus-react-settings-pilot`/`corpus-vite-migration`）＝目的（合否基準）・確立パターン（反転パターン/プレゼンテーショナル島/idempotent guard/初期化順の罠）・各スライスの実装知。ここには**残タスクだけ**を置く。
 
 - **依存/UI 方針（確定）**: 全面リライトしない・段階移行／依存は痛みが出た時に keep/replace で判断（bespoke＝フィルタ/グルーピング/正規化/日本語あいまい検索は保つ・コモディティ＝位置決め/窓化/a11y は痛んだら委譲）／UI はガラス維持（styled kit 却下）／状態は corpusStore 継続／ルーター無し。
-- **着地済み**: Vite 移行（esbuild 廃止・段階0-2）／島13個（settings/sidebar-tags/query-chips/tabs/collections/suggest/posters/post-card=テンプレート島/toolbar/context-menu/kind-menu/lightbox）＋共有ストア window.corpusStore。
+- **着地済み**: Vite 移行（esbuild 廃止・段階0-2）／島15個（settings/sidebar-tags/query-chips/tabs/collections/suggest/posters/post-card=テンプレート島/toolbar/context-menu/kind-menu/filter-popover/qf-pop/lightbox）＋共有ストア window.corpusStore。フィルタ系（値フライアウト qfPop＋日付/エンゲージ/ポスター日付範囲ポップオーバー）は完了。#filterRows のバッジ（`renderFilterBadges`）は純粋な派生テキスト＋クラス切替でドリフトリスクが無く、React化の対象外と判断（現状維持）。
 - **残タスク**:
   - 詳細/インスペクタパネルの React 化（大物・島未）。
-  - フィルタ系一式: #filterRows/バッジ／値フライアウト `renderQfPop`（find入力＋その場絞り込み＝ハイブリッド境界でこじれ候補）／日付・エンゲージ ポップオーバー。
   - 編集オーバーレイ＋タグピッカー。
   - 検索ボックス＋サジェスト（タブ状態結合で重い）。
   - グリッド完全React化＝#postGrid を viewer.js→React 所有＋仮想化（`viewer.js:3061`/`index.html:808` の線形劣化解消・下記「技術スタック候補」。回帰リスク最大＝後半スライスで慎重に）。

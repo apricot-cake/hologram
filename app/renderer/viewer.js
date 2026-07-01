@@ -335,22 +335,6 @@
     if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
     if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
   }
-  // Open an anchored flyout to the RIGHT of anchorRect (tops aligned), then clamp into
-  // the viewport. opts.maxHeight caps the height to the space below the final top so a
-  // long scrolling list never overruns the screen (its inner scroller takes over). The
-  // caller makes el visible first (.show / display:block) so it can be measured. Shared
-  // by the sidebar filter flyout and the date / engagement popovers.
-  function placeFlyout(el, anchorRect, opts = {}) {
-    el.style.maxHeight = '';   // reset before measuring (a prior open may have capped it)
-    el.style.right = 'auto';
-    el.style.left = (anchorRect.right + 8) + 'px';
-    el.style.top = anchorRect.top + 'px';
-    const pr = el.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    let top = anchorRect.top;
-    if (pr.bottom > innerHeight - 8) { top = Math.max(8, innerHeight - pr.height - 8); el.style.top = top + 'px'; }
-    if (opts.maxHeight) el.style.maxHeight = (innerHeight - top - 8) + 'px';
-  }
 
   // --- Apply i18n to static elements ---
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -435,9 +419,6 @@
   // --- Disclosure chevrons (thin SVG; right = flyout indicator, down = collapsible) ---
   const CHEV_R = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg>';
   const CHEV_D = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg>';
-  // Geometric check (replaces the ✓ glyph, which read as thin/cursive). Thick
-  // stroke + high-contrast monotone color via .fm-check.
-  const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 12.5 10 17 19 7"/></svg>';
 
   // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
   // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
@@ -637,17 +618,25 @@
     else if (btn.id === 'emptyImportBtn') document.getElementById('importZipInput').click();
   });
 
-  // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く ----
-  const qfPop = document.createElement('div');
-  qfPop.className = 'fold-menu qf-pop';
-  document.body.appendChild(qfPop);
+  // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
+  // Rendering lives in the qf-pop React island (window.corpusQfPop); this only builds
+  // the row model (qfValues — bespoke facet logic, unchanged) and routes picks. The
+  // find-input's "no re-render, just toggle row visibility" trick from the old
+  // implementation is no longer needed: the island keeps its own local filter state,
+  // so typing never touches this bridge (only a pick or a fresh open does). ----
   let qfCat = null;
   let qfAnchor = null;     // 同じ行をもう一度押したら閉じる（トグル）
   let qfTagGroup = null;   // タグサブ行クリック時にセット（グループ絞り込み）
-  function hideQfPop() {
-    document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
-    qfPop.classList.remove('show'); qfCat = null; qfAnchor = null; qfTagGroup = null;
-  }
+  function hideQfPop() { window.corpusQfPop.close(); }
+  // The island may close itself (outside-click / Escape) without going through
+  // hideQfPop() — subscribe once so the anchor highlight + bookkeeping always stay in
+  // sync with whoever closed it.
+  window.corpusQfPop.subscribe(() => {
+    if (!window.corpusQfPop.get()) {
+      document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
+      qfCat = null; qfAnchor = null; qfTagGroup = null;
+    }
+  });
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
   // so the flyout mirrors the posts you're actually looking at. keyFn(p) returns one
@@ -818,185 +807,103 @@
       default: return [];
     }
   }
+  // Push the current category's row model to the qf-pop bridge. Called on every open
+  // AND after every pick (the bridge bumps openId each call, which keys the island's
+  // root and remounts its find-input local state — matching the old rebuild-on-every-
+  // change behavior, incl. the reset+refocus of the find box after a pick).
   function renderQfPop() {
     if (!qfCat) return;
-    const items = qfValues(qfCat);
-    const rowOf = (it) => {
-      if (it.ghead != null) return `<div class="qf-ghead">${escapeHtml(it.ghead)}</div>`;
-      // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the
-      // shared category dot so the poster-tag flyout isn't flattened (作品=紫/キャラ=緑).
-      const kindDot = it.kind ? `<span class="tk-dot tk-${it.kind}" title="${escapeAttr(kindLabel(it.kind))}"></span>` : '';
-      // Facet count: matches in the current results. On a facetDim list (tags / user /
-      // hashtag / instance) a 0 is greyed (`off`) yet still pickable; fixed short lists
-      // (platform / postType / media) show the badge but keep their order, no greying.
-      const cnt = (it.count != null) ? `<span class="fm-count">${it.count}</span>` : '';
-      const off = (it.facetDim && it.count === 0) ? ' off' : '';
-      return `<div class="fm-row${it.sub ? ' fm-sub' : ''}${off}" data-qfval="${escapeAttr(it.v)}"${it.type ? ` data-qftype="${it.type}"` : ''}${it.sn ? ` data-sn="${escapeAttr(it.sn)}"` : ''}>${kindDot}<span class="fm-name">${escapeHtml(it.l)}</span>${cnt}${it.on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
-    };
-    // On a FLAT facetDim list, drop one divider where present (count>0) gives way to
-    // absent (count=0) — the natural border between "the results have these" and
-    // "they don't". Grouped tag lists rely on their group headings, and fixed lists
-    // (no facetDim) keep their order, so neither gets a divider.
-    const hasGhead = items.some(it => it.ghead != null);
-    let listHtml = '';
-    let sawPresent = false, dividerDone = false;
-    for (const it of items) {
-      if (!hasGhead && !dividerDone && it.facetDim && it.count === 0 && sawPresent) { listHtml += '<div class="qf-div"></div>'; dividerDone = true; }
-      if (it.facetDim && it.count > 0) sawPresent = true;
-      listHtml += rowOf(it);
-    }
-    // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける
-    // Find box only for genuinely long, open-ended lists (tags/authors). The
-    // platform list is short + fixed (5 PFs + their instances), so no find box.
-    const valueCount = items.filter(it => it.ghead == null).length;
-    const find = (!['platform', 'poster-platform'].includes(qfCat) && (qfTagGroup || valueCount > 8))
-      ? `<div class="qf-find-wrap"><input type="text" class="qf-find" id="qfFind" placeholder="${MSG.qfFindPh}" autocomplete="off"></div>`
-        + `<div class="seg-control seg-control--qf" id="qfModeSeg" role="group" aria-label="${escapeAttr(MSG.searchModeTitle)}">`
-        + `<span class="seg-thumb" aria-hidden="true"></span>`
-        + `<button type="button" class="seg-opt" data-mode="normal" id="qfModeExact" title="${escapeAttr(MSG.searchHintExact)}">${escapeHtml(MSG.searchExact)}</button>`
-        + `<button type="button" class="seg-opt" data-mode="fuzzy" id="qfModeFuzzy" title="${escapeAttr(MSG.searchHintLoose)}">${escapeHtml(MSG.searchFuzzy)}</button></div>`
-      : '';
-    // No heading row: the user already clicked the category row, so repeating
-    // its name as a (hover-highlighted, seemingly-clickable) row was noise.
-    const footer = (qfCat === 'poster-folder' && CF())
-      ? `<div class="qf-footer"><button class="qf-footer-link" type="button" id="qfFolderManage">${escapeHtml(MSG.ctxManage)}</button></div>`
-      : '';
-    qfPop.innerHTML =
-      find +
-      `<div class="qf-vals">` + (listHtml || `<div class="qf-zone-empty" style="padding:6px 8px;">—</div>`) + `</div>` +
-      footer;
-    const fi = document.getElementById('qfFind');
-    if (fi) setTimeout(() => fi.focus(), 0);
-    syncQfMode();   // label the in-bar 通常/あいまい toggle
-  }
-  // 値リストの絞り込み（再描画せず行の表示/非表示だけ切替＝入力フォーカス維持）。
-  // 検索方式（通常=部分一致 / あいまい=corpusSearch）はメイン検索と共有。
-  function applyQfFind() {
-    const fi = document.getElementById('qfFind');
-    if (!fi) return;
-    const raw = fi.value.trim().toLowerCase();
-    const atMode = raw.startsWith('@');
-    const q = atMode ? raw.slice(1) : raw;
-    const matcher = (q && window.corpusSearch && window.corpusSearch.isFuzzy()) ? window.corpusSearch.compile(q) : null;
-    const hit = (hay) => { const s = String(hay || ''); return matcher ? matcher(s) : s.toLowerCase().includes(q); };
-    qfPop.querySelectorAll('.qf-vals .fm-row').forEach((row) => {
-      const match = !q || (atMode ? hit(row.dataset.sn || '') : hit(row.textContent));
-      row.style.display = match ? '' : 'none';
+    const cat = qfCat;   // capture: hideQfPop() (called from onManage) clears qfCat
+    const rawItems = qfValues(cat);
+    // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the shared
+    // category dot, so resolve its (possibly custom) label here — the island only draws.
+    const items = rawItems.map((it) => it.kind ? { ...it, dotTitle: kindLabel(it.kind) } : it);
+    // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける。Find box only for
+    // genuinely long, open-ended lists (tags/authors). The platform list is short +
+    // fixed (5 PFs + their instances), so no find box.
+    const valueCount = items.filter((it) => it.ghead == null).length;
+    const showFind = !['platform', 'poster-platform'].includes(cat) && (qfTagGroup || valueCount > 8);
+    // No heading row: the user already clicked the category row, so repeating its name
+    // as a (hover-highlighted, seemingly-clickable) row was noise.
+    const showManage = cat === 'poster-folder' && !!CF();
+    window.corpusQfPop.open({
+      anchorRect: qfAnchor.getBoundingClientRect(),
+      items,
+      showFind,
+      findPlaceholder: MSG.qfFindPh,
+      searchModeTitle: MSG.searchModeTitle,
+      exactLabel: MSG.searchExact, fuzzyLabel: MSG.searchFuzzy,
+      exactHint: MSG.searchHintExact, fuzzyHint: MSG.searchHintLoose,
+      footerLabel: showManage ? MSG.ctxManage : null,
+      onManage: showManage ? () => {
+        hideQfPop();
+        // Reuse the shared modal for whichever folder store this flyout is about.
+        CF().openManager({ store: pfStore, onChange: () => { renderPosterFilterRows(); renderPosters(); } });
+      } : null,
+      onPick: (it) => onQfPick(cat, it),
     });
-    qfPop.querySelectorAll('.qf-vals .qf-ghead').forEach((h) => { h.style.display = q ? 'none' : ''; });
-    qfPop.querySelectorAll('.qf-vals .qf-div').forEach((d) => { d.style.display = q ? 'none' : ''; });
   }
-  // フライアウト内のセグメント切替に現在のモードを反映（メイン検索と同じ表示）。
-  function syncQfMode() {
-    const seg = document.getElementById('qfModeSeg');
-    if (!seg || !window.corpusSearch) return;
-    const fz = window.corpusSearch.isFuzzy();
-    seg.classList.toggle('is-fuzzy', fz);
-    const ex = document.getElementById('qfModeExact');
-    const fb = document.getElementById('qfModeFuzzy');
-    if (ex) { ex.classList.toggle('is-on', !fz); ex.setAttribute('aria-pressed', String(!fz)); }
-    if (fb) { fb.classList.toggle('is-on', fz); fb.setAttribute('aria-pressed', String(fz)); }
+  // Route a value pick to the right business action, then refresh (the flyout stays
+  // open so several values can be picked in a row).
+  function onQfPick(cat, it) {
+    const v = it.v;
+    // 複数画像 (media flyout): toggles the group-level multiOnly, not a filter.
+    if (cat === 'media' && v === '__multi') {
+      multiOnly = !multiOnly;
+      renderQfPop();
+      renderFilterBadges();
+      renderPosts();
+      return;
+    }
+    // Poster flyouts toggle a top-level leaf in the poster query tree (addFilter /
+    // removeByLeaf both refresh rows + bar + grid). 作品/キャラ/タグ all map to one tag
+    // leaf type (種別 only scopes which the row offers).
+    if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
+      if (posterQB.qHasValue('tag', v)) posterQB.removeByLeaf('tag', v); else posterQB.addFilter({ type: 'tag', value: v });
+      renderQfPop();
+      return;
+    }
+    if (cat === 'poster-platform') {
+      if (posterQB.qHasValue('platform', v)) posterQB.removeByLeaf('platform', v); else posterQB.addFilter({ type: 'platform', value: v });
+      renderQfPop();
+      return;
+    }
+    if (cat === 'poster-instance') {
+      if (posterQB.qHasValue('instance', v)) posterQB.removeByLeaf('instance', v); else posterQB.addFilter({ type: 'instance', value: v });
+      renderQfPop();
+      return;
+    }
+    if (cat === 'poster-folder') {
+      // folder is single-valued (singleValueTypes): addFilter replaces any existing folder leaf.
+      if (posterQB.qHasValue('folder', v)) posterQB.removeByLeaf('folder', v); else posterQB.addFilter({ type: 'folder', value: v });
+      renderQfPop();
+      return;
+    }
+    const vtype = it.type || cat;   // sub-rows (instances) override the type
+    const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
+    if (i >= 0) {
+      removeFilter(i);
+    } else if (vtype === 'tag' || vtype === 'hashtag') {
+      addFilter({ type: vtype, value: v });
+    } else if (vtype === 'user') {
+      const u = buildUsers().find(x => x.key === v);
+      addFilter({ type: 'user', value: v, label: u ? (u.displayName || u.screenName) : v });
+    } else {
+      addFilter({ type: vtype, value: v });
+    }
+    updateSidebarState();
+    renderQfPop();
   }
-  // Keep the in-flyout segment in sync when the mode is changed elsewhere
-  // (e.g. the main #searchModeSeg). syncQfMode no-ops while the flyout is closed
-  // because #qfModeSeg is absent from the DOM (its `if (!seg) return` guard). Registered
-  // once here — same scope as the qfPop listeners below (runs on setup, not per render).
-  if (window.corpusSearch) window.corpusSearch.onChange(syncQfMode);
-  qfPop.addEventListener('input', (e) => { if (e.target.classList.contains('qf-find')) applyQfFind(); });
   // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl, tagGroupId) {
-    if (qfPop.classList.contains('show') && qfAnchor === anchorEl) { hideQfPop(); return; }
+    if (window.corpusQfPop.get() && qfAnchor === anchorEl) { hideQfPop(); return; }
     document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach(r => r.classList.remove('qf-open'));
     anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
     qfTagGroup = tagGroupId || null;
     renderQfPop();
-    qfPop.classList.add('show');
-    // Right-anchored flyout; maxHeight caps a long value list so its inner .qf-vals
-    // scrolls instead of overrunning the viewport bottom (shared placeFlyout).
-    placeFlyout(qfPop, anchorEl.getBoundingClientRect(), { maxHeight: true });
   }
-  qfPop.addEventListener('click', (e) => {
-    if (e.target.closest('#qfFolderManage')) {
-      if (CF()) {
-        // Reuse the shared modal for whichever folder store this flyout is about.
-        if (qfCat === 'poster-folder') CF().openManager({ store: pfStore, onChange: () => { renderPosterFilterRows(); renderPosters(); } });
-        else CF().openManager();
-      }
-      hideQfPop(); return;
-    }
-    // セグメント切替（ぴったり/おおまか・メイン検索と共有のモード→絞り込み再適用）
-    const segOpt = e.target.closest('#qfModeSeg .seg-opt');
-    if (segOpt) {
-      if (window.corpusSearch) window.corpusSearch.setMode(segOpt.dataset.mode === 'fuzzy' ? 'fuzzy' : 'normal');
-      syncQfMode();
-      applyQfFind();
-      const fi = document.getElementById('qfFind'); if (fi) fi.focus();
-      return;
-    }
-    const val = e.target.closest('[data-qfval]');
-    if (val && qfCat) {
-      const v = val.dataset.qfval;
-      // 複数画像 (media flyout): toggles the group-level multiOnly, not a filter.
-      if (qfCat === 'media' && v === '__multi') {
-        multiOnly = !multiOnly;
-        renderQfPop();
-        renderFilterBadges();
-        renderPosts();
-        return;
-      }
-      // Poster flyouts toggle a top-level leaf in the poster query tree (addFilter /
-      // removeByLeaf both refresh rows + bar + grid); the flyout stays open for picks.
-      // 作品/キャラ/タグ all map to one tag leaf type (種別 only scopes which the row offers).
-      if (qfCat === 'poster-tag' || qfCat === 'poster-work' || qfCat === 'poster-character') {
-        if (posterQB.qHasValue('tag', v)) posterQB.removeByLeaf('tag', v); else posterQB.addFilter({ type: 'tag', value: v });
-        renderQfPop();
-        return;
-      }
-      if (qfCat === 'poster-platform') {
-        if (posterQB.qHasValue('platform', v)) posterQB.removeByLeaf('platform', v); else posterQB.addFilter({ type: 'platform', value: v });
-        renderQfPop();
-        return;
-      }
-      if (qfCat === 'poster-instance') {
-        if (posterQB.qHasValue('instance', v)) posterQB.removeByLeaf('instance', v); else posterQB.addFilter({ type: 'instance', value: v });
-        renderQfPop();
-        return;
-      }
-      if (qfCat === 'poster-folder') {
-        // folder is single-valued (singleValueTypes): addFilter replaces any existing folder leaf.
-        if (posterQB.qHasValue('folder', v)) posterQB.removeByLeaf('folder', v); else posterQB.addFilter({ type: 'folder', value: v });
-        renderQfPop();
-        return;
-      }
-      const vtype = val.dataset.qftype || qfCat;   // sub-rows (instances) override the type
-      const i = activeFilters.findIndex(f => f.type === vtype && f.value === v);
-      if (i >= 0) {
-        removeFilter(i);
-      } else if (vtype === 'tag' || vtype === 'hashtag') {
-        addFilter({ type: vtype, value: v });
-      } else if (vtype === 'user') {
-        const u = buildUsers().find(x => x.key === v);
-        addFilter({ type: 'user', value: v, label: u ? (u.displayName || u.screenName) : v });
-      } else {
-        addFilter({ type: vtype, value: v });
-      }
-      updateSidebarState();
-      renderQfPop();   // stays open so several values can be picked in a row
-    }
-  });
-  document.addEventListener('click', (e) => {
-    // a row click re-renders the popover, detaching e.target — that's an INSIDE
-    // click even though contains() can no longer see it
-    if (!document.contains(e.target)) return;
-    if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
-        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]') &&
-        !e.target.closest('[data-poster-tag-add]')) hideQfPop();
-    // date/eng/poster-date popovers are the filter-popover React island now — it owns
-    // its own outside-click/Escape dismissal (see app/islands/filter-popover).
-  });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
   // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
   const qbHelpPop = document.createElement('div');
@@ -3230,7 +3137,7 @@
     if (badge) { badge.textContent = n; badge.classList.toggle('on', n > 0); }
     if (clear) clear.style.display = n > 0 ? '' : 'none';
   }
-  // フォルダ管理の起動口はフライアウト下部の #qfFolderManage（→ CF().openManager()）に統一。
+  // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
 
   // Clip row: the row toggles a "show only clipped" filter; 空にする clears all flags
