@@ -2036,62 +2036,8 @@
     </div>
   </div>
 
-  <!-- Date edit popover -->
-  <div class="qf-popover" id="qfDatePopover" style="display:none;">
-    <div style="margin-bottom:8px;">
-      <button class="chip" id="qfDateType"></button>
-    </div>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
-      <input type="date" class="date-input" id="qfDateFrom">
-      <span style="font-size:12px;color:var(--text-subtle);">〜</span>
-      <input type="date" class="date-input" id="qfDateTo">
-    </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;">
-      <button class="btn-outline qf-popover-delete" id="qfDateDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
-      <button class="btn-outline" id="qfDateApply" style="background:var(--indigo-600);color:#fff;border-color:var(--indigo-600);"></button>
-    </div>
-  </div>
-
-  <!-- Engagement edit popover -->
-  <div class="qf-popover" id="qfEngPopover" style="display:none;">
-    <div style="margin-bottom:8px;">
-      <select class="engagement-select" id="qfEngType" style="width:100%;"></select>
-    </div>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
-      <input type="number" class="engagement-input" id="qfEngMin" min="0" placeholder="0" style="flex:1;">
-      <button class="chip" id="qfEngOp" style="min-width:40px;text-align:center;"></button>
-    </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;">
-      <button class="btn-outline qf-popover-delete" id="qfEngDelete" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
-      <button class="btn-outline" id="qfEngApply" style="background:var(--indigo-600);color:#fff;border-color:var(--indigo-600);"></button>
-    </div>
-  </div>
-
-  <!-- Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
-       Separate from #qfDatePopover so the post-side handlers (addFilter/queryTree)
-       stay untouched; this writes the transient posterDate state. -->
-  <div class="qf-popover" id="posterDatePopover" style="display:none;">
-    <div class="pd-field">
-      <span class="pd-label" id="posterDateDimLabel"></span>
-      <select class="engagement-select" id="posterDateDim" style="width:100%;">
-        <option value="latest"></option>
-        <option value="lastCapture"></option>
-        <option value="authorCreatedAt"></option>
-      </select>
-    </div>
-    <div class="pd-field">
-      <span class="pd-label" id="posterDateRangeLabel"></span>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <input type="date" class="date-input" id="posterDateFrom">
-        <span style="font-size:12px;color:var(--text-subtle);">〜</span>
-        <input type="date" class="date-input" id="posterDateTo">
-      </div>
-    </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;">
-      <button class="btn-outline qf-popover-delete" id="posterDateClear" style="color:var(--danger);border-color:var(--danger);display:none;"></button>
-      <button class="btn-outline" id="posterDateApply" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
-    </div>
-  </div>
+  <!-- Date / engagement / poster-date-range popovers are the filter-popover React
+       island now (window.corpusFilterPopover) — no static markup here. -->
 
   <!-- Styles that began life in the (now-removed) image-view but are reused by the
        unified post-view: ℹ detail popup, AND/OR tag toggle, folder chips +
@@ -2362,6 +2308,10 @@
        for the 種別 (work/character/general) tag-kind menu. viewer.js calls open();
        the kind-menu island renders. Before viewer.js. -->
   <script src="kind-menu.js"></script>
+  <!-- Filter-popover controller (window.corpusFilterPopover): the imperative→
+       declarative bridge for the date/engagement/poster-date-range flyout forms.
+       viewer.js calls open(); the filter-popover island renders. Before viewer.js. -->
+  <script src="filter-popover.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2399,6 +2349,10 @@
   <!-- 種別 (tag-kind) menu: React owns the glass popup rendering (header + pick/rename
        rows), viewer.js owns the row model + pick/rename actions (kind-menu.js bridge). -->
   <script src="islands/kind-menu.js"></script>
+  <!-- Date / engagement / poster-date-range popovers: React owns the form rendering
+       (fields + apply/remove), viewer.js owns the field values + apply/remove actions
+       (via window.corpusFilterPopover). -->
+  <script src="islands/filter-popover.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

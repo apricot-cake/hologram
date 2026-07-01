@@ -391,12 +391,8 @@
     if (ps) { ps.options[0].textContent = MSG.posterSortCount; ps.options[1].textContent = MSG.posterSortName;
       if (ps.options[2]) ps.options[2].textContent = MSG.posterSortNewest;
       if (ps.options[3]) ps.options[3].textContent = MSG.posterSortOldest; } }
-  { const pd = document.getElementById('posterDateDim');
-    if (pd) { pd.options[0].textContent = MSG.posterDateLastPost; pd.options[1].textContent = MSG.posterDateLastCapture; pd.options[2].textContent = MSG.posterDateCreated; } }
-  setText('posterDateDimLabel', MSG.posterDateDimLabel);
-  setText('posterDateRangeLabel', MSG.posterDateRangeLabel);
-  setText('posterDateApply', MSG.qfApply);
-  setText('posterDateClear', MSG.posterDateClear);
+  // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
+  // posterDateClear are the filter-popover React island now — no static labels here.
   // Settings-modal labels (theme/lang/data/backup/trash/danger/about) now live in
   // the React island (app/islands/settings); only the shared confirm overlay stays here.
   setText('confirmCancel', MSG.confirmCancel);
@@ -997,16 +993,10 @@
     if (qfPop.classList.contains('show') && !qfPop.contains(e.target) &&
         !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]') &&
         !e.target.closest('[data-poster-tag-add]')) hideQfPop();
-    // date/eng popovers (no backdrop now): close on outside click, but NOT on a
-    // filter-row click — those switch to the new row (handled by the row handler).
-    const dp = document.getElementById('qfDatePopover');
-    const ep = document.getElementById('qfEngPopover');
-    const pd = document.getElementById('posterDatePopover');
-    if ((dp.style.display === 'block' || ep.style.display === 'block' || (pd && pd.style.display === 'block')) &&
-        !dp.contains(e.target) && !ep.contains(e.target) && !(pd && pd.contains(e.target)) &&
-        !e.target.closest('.sb-row') && !e.target.closest('[data-tag-group]')) closeAllMenus();
+    // date/eng/poster-date popovers are the filter-popover React island now — it owns
+    // its own outside-click/Escape dismissal (see app/islands/filter-popover).
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideQfPop(); closeAllMenus(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQfPop(); });
 
   // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
   const qbHelpPop = document.createElement('div');
@@ -1040,12 +1030,12 @@
   // （クリックが backdrop に吸われて closeAllMenus するだけ＝ユーザー報告のバグ）。
   // backdrop は撤去し、下の document クリックハンドラ + 行ハンドラで開閉する。
   function closeAllMenus() {
-    document.getElementById('qfDatePopover').style.display = 'none';
-    document.getElementById('qfEngPopover').style.display = 'none';
-    const pd = document.getElementById('posterDatePopover'); if (pd) pd.style.display = 'none';
+    window.corpusFilterPopover.close();
   }
 
-  // Date popover. editingDateNode = the date cond being edited (null = new).
+  // Date popover. editingDateNode = the date cond being edited (null = new). Rendering
+  // is the filter-popover React island now (window.corpusFilterPopover) — this only
+  // builds the field model + owns the apply/remove actions.
   let editingDateNode = null;
   // The single 'text' leaf bound to the search box (post mode only). While typing,
   // the box mirrors its value/mode into this node — a real tree leaf. Enter hands it
@@ -1057,55 +1047,22 @@
     closeAllMenus();   // close the other popover if open (no backdrop anymore)
     editingDateNode = node || null;
     const existing = editingDateNode;
-    const popover = document.getElementById('qfDatePopover');
     const anchor = document.querySelector('#filterRows [data-qfrow="date"]');
-    const rect = anchor.getBoundingClientRect();
-
-    document.getElementById('qfDateFrom').value = existing?.from || '';
-    document.getElementById('qfDateTo').value = existing?.to || '';
-    const dateType = existing?.dateField || 'date';
-    const dateTypeBtn = document.getElementById('qfDateType');
-    dateTypeBtn.textContent = dateType === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
-    dateTypeBtn.dataset.field = dateType;
-    dateTypeBtn.classList.toggle('active', dateType === 'capturedAt');
-
-    document.getElementById('qfDateDelete').style.display = editingDateNode ? '' : 'none';
-    document.getElementById('qfDateDelete').textContent = MSG.qfDelete;
-    document.getElementById('qfDateApply').textContent = MSG.qfApply;
-
-    // Open to the RIGHT of the row (same as the category flyouts) — opening
-    // straight down covered the rows below and made switching awkward.
-    popover.style.display = 'block';
-    placeFlyout(popover, rect);
+    const r = anchor.getBoundingClientRect();
+    window.corpusFilterPopover.open({
+      kind: 'date',
+      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+      editing: !!editingDateNode,
+      fields: { dateField: existing?.dateField || 'date', from: existing?.from || '', to: existing?.to || '' },
+      labels: { typeDate: MSG.qfDatePost, typeCaptured: MSG.qfDateCaptured, removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply },
+      onApply({ dateField, from, to }) {
+        if (!from && !to) return;
+        if (editingDateNode) { Object.assign(editingDateNode, { dateField, from, to }); afterQueryChange(); }   // edit in place (keeps its position / group in the tree)
+        else addFilter({ type: 'date', dateField, from, to });   // replaces any existing date
+      },
+      onRemove() { if (editingDateNode) removeNode(editingDateNode); },
+    });
   }
-
-  document.getElementById('qfDateType').addEventListener('click', function() {
-    const current = this.dataset.field;
-    const next = current === 'date' ? 'capturedAt' : 'date';
-    this.dataset.field = next;
-    this.textContent = next === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
-    this.classList.toggle('active', next === 'capturedAt');
-  });
-
-  document.getElementById('qfDateApply').addEventListener('click', () => {
-    const from = document.getElementById('qfDateFrom').value;
-    const to = document.getElementById('qfDateTo').value;
-    const dateField = document.getElementById('qfDateType').dataset.field;
-    if (!from && !to) { closeAllMenus(); return; }
-    if (editingDateNode) {
-      // Edit in place (keeps its position / group in the tree).
-      Object.assign(editingDateNode, { dateField, from, to });
-      afterQueryChange();
-    } else {
-      addFilter({ type: 'date', dateField, from, to });   // replaces any existing date
-    }
-    closeAllMenus();
-  });
-
-  document.getElementById('qfDateDelete').addEventListener('click', () => {
-    if (editingDateNode) removeNode(editingDateNode);
-    closeAllMenus();
-  });
 
   // Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
   // Separate from the post date popover — writes the transient posterDate state.
@@ -1115,30 +1072,29 @@
     closeAllMenus();
     const editNode = (arg && arg.kind === 'cond') ? arg : null;
     editingPosterDateNode = editNode;
-    const popover = document.getElementById('posterDatePopover');
     const anchor = document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
     if (!anchor) return;
     const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
-    document.getElementById('posterDateDim').value = (existing && existing.dateField) || 'latest';
-    document.getElementById('posterDateFrom').value = (existing && existing.from) || '';
-    document.getElementById('posterDateTo').value = (existing && existing.to) || '';
-    document.getElementById('posterDateClear').style.display = existing ? '' : 'none';
-    popover.style.display = 'block';
-    placeFlyout(popover, anchor.getBoundingClientRect());
+    const r = anchor.getBoundingClientRect();
+    window.corpusFilterPopover.open({
+      kind: 'posterDate',
+      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+      editing: !!existing,
+      fields: { dateField: (existing && existing.dateField) || 'latest', from: (existing && existing.from) || '', to: (existing && existing.to) || '' },
+      labels: { dimLabel: MSG.posterDateDimLabel, rangeLabel: MSG.posterDateRangeLabel, removeLabel: MSG.posterDateClear, applyLabel: MSG.qfApply },
+      dimOptions: [
+        { value: 'latest', label: MSG.posterDateLastPost },
+        { value: 'lastCapture', label: MSG.posterDateLastCapture },
+        { value: 'authorCreatedAt', label: MSG.posterDateCreated },
+      ],
+      onApply({ dateField, from, to }) {
+        if (!from && !to) return;
+        if (editingPosterDateNode) { Object.assign(editingPosterDateNode, { dateField, from, to }); posterQB.refresh(); }
+        else posterQB.addFilter({ type: 'date', dateField, from, to });   // date is single-valued (replaces)
+      },
+      onRemove() { posterQB.removeByType('date'); },
+    });
   }
-  document.getElementById('posterDateApply').addEventListener('click', () => {
-    const dateField = document.getElementById('posterDateDim').value || 'latest';
-    const from = document.getElementById('posterDateFrom').value || '';
-    const to = document.getElementById('posterDateTo').value || '';
-    if (!from && !to) { closeAllMenus(); return; }
-    if (editingPosterDateNode) { Object.assign(editingPosterDateNode, { dateField, from, to }); posterQB.refresh(); }
-    else posterQB.addFilter({ type: 'date', dateField, from, to });   // date is single-valued (replaces)
-    closeAllMenus();
-  });
-  document.getElementById('posterDateClear').addEventListener('click', () => {
-    posterQB.removeByType('date');
-    closeAllMenus();
-  });
 
   // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
   let editingEngNode = null;
@@ -1147,58 +1103,26 @@
     closeAllMenus();   // close the other popover if open (no backdrop anymore)
     editingEngNode = node || null;
     const existing = editingEngNode;
-    const popover = document.getElementById('qfEngPopover');
     const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]');
-    const rect = anchor.getBoundingClientRect();
-
-    const select = document.getElementById('qfEngType');
-    select.innerHTML = Object.entries(ENG_TYPE_LABELS).map(([k, v]) =>
-      `<option value="${k}">${escapeHtml(v)}</option>`
-    ).join('');
-    select.value = existing?.engType || 'likes';
-    document.getElementById('qfEngMin').value = existing?.min || '';
-    const opBtn = document.getElementById('qfEngOp');
-    const op = existing?.op || 'gte';
-    opBtn.textContent = op === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
-    opBtn.dataset.op = op;
-    opBtn.classList.toggle('active', op === 'lte');
-
-    document.getElementById('qfEngDelete').style.display = editingEngNode ? '' : 'none';
-    document.getElementById('qfEngDelete').textContent = MSG.qfDelete;
-    document.getElementById('qfEngApply').textContent = MSG.qfApply;
-
-    popover.style.display = 'block';
-    placeFlyout(popover, rect);
+    const r = anchor.getBoundingClientRect();
+    window.corpusFilterPopover.open({
+      kind: 'eng',
+      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+      editing: !!editingEngNode,
+      fields: { engType: existing?.engType || 'likes', min: existing?.min || '', op: existing?.op || 'gte' },
+      labels: { removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply, opGte: MSG.qfEngGte, opLte: MSG.qfEngLte },
+      typeOptions: Object.entries(ENG_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+      onApply({ engType, min, op }) {
+        if (!min || min <= 0) return;
+        if (editingEngNode) { Object.assign(editingEngNode, { engType, min, op }); afterQueryChange(); }   // edit in place (keeps its position / group in the tree)
+        else {
+          removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType);   // no gte+lte on one type
+          addFilter({ type: 'engagement', engType, min, op });
+        }
+      },
+      onRemove() { if (editingEngNode) removeNode(editingEngNode); },
+    });
   }
-
-  document.getElementById('qfEngOp').addEventListener('click', function() {
-    const next = this.dataset.op === 'gte' ? 'lte' : 'gte';
-    this.dataset.op = next;
-    this.textContent = next === 'lte' ? MSG.qfEngLte : MSG.qfEngGte;
-    this.classList.toggle('active', next === 'lte');
-  });
-
-  document.getElementById('qfEngApply').addEventListener('click', () => {
-    const engType = document.getElementById('qfEngType').value;
-    const min = parseInt(document.getElementById('qfEngMin').value, 10);
-    const op = document.getElementById('qfEngOp').dataset.op || 'gte';
-    if (!min || min <= 0) { closeAllMenus(); return; }
-    if (editingEngNode) {
-      // Edit in place (keeps its position / group in the tree).
-      Object.assign(editingEngNode, { engType, min, op });
-      afterQueryChange();
-    } else {
-      // Remove any existing condition for the same engType (no gte+lte on one type).
-      removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType);
-      addFilter({ type: 'engagement', engType, min, op });
-    }
-    closeAllMenus();
-  });
-
-  document.getElementById('qfEngDelete').addEventListener('click', () => {
-    if (editingEngNode) removeNode(editingEngNode);
-    closeAllMenus();
-  });
 
   // --- Sidebar filter controls ---
 
@@ -1217,11 +1141,10 @@
     const row = e.target.closest('[data-qfrow]');
     if (!sub && !row) return;
     const cat = sub ? 'tag' : row.dataset.qfrow;
-    const dp = document.getElementById('qfDatePopover');
-    const ep = document.getElementById('qfEngPopover');
+    const openKind = window.corpusFilterPopover.get()?.kind;
     // Re-clicking the row whose popover is already open = toggle it closed.
-    if (cat === 'date' && dp.style.display === 'block') { closeAllMenus(); return; }
-    if (cat === 'engagement' && ep.style.display === 'block') { closeAllMenus(); return; }
+    if (cat === 'date' && openKind === 'date') { closeAllMenus(); return; }
+    if (cat === 'engagement' && openKind === 'eng') { closeAllMenus(); return; }
     closeAllMenus();   // switching rows closes any open date/eng popover first
     if (sub) { const gid = sub.dataset.tagGroup; showQfPopAt('tag', sub, gid === '__all' ? null : gid); return; }
     if (cat === 'tag' && tagGroups.length) { hideQfPop(); toggleTagGroupsCollapsed(); return; }
@@ -3701,9 +3624,7 @@
     if (!document.getElementById('ivFolderModal').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
-    const dp = document.getElementById('qfDatePopover');
-    const ep = document.getElementById('qfEngPopover');
-    if ((dp && dp.style.display === 'block') || (ep && ep.style.display === 'block')) return;
+    if (window.corpusFilterPopover.get()) return;
     closeDetail();
   }, true);
   // Slide-over mode (narrow window): the panel covers the grid, so it acts
@@ -4832,8 +4753,7 @@
     const row = e.target.closest('[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
-    const dp = document.getElementById('qfDatePopover');
-    if (cat === 'poster-date' && dp.style.display === 'block') { closeAllMenus(); return; }   // re-click closes
+    if (cat === 'poster-date' && window.corpusFilterPopover.get()?.kind === 'posterDate') { closeAllMenus(); return; }   // re-click closes
     closeAllMenus();   // switching rows closes any open date popover first
     if (cat === 'poster-date') { hideQfPop(); openPosterDatePopover(row); return; }
     showQfPopAt(cat, row);

@@ -27,6 +27,7 @@ const appRoot = path.join(here, '..');                     // app
 const ISLANDS = [
   'settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections',
   'suggest', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu',
+  'filter-popover',
 ];
 
 for (const name of ISLANDS) {
