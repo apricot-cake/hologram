@@ -12,8 +12,8 @@
 //
 // Run: node scripts/test-token-parity.js   (exit 1 on mismatch)
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const CSS = path.join(__dirname, '..', 'app', 'renderer', 'design-tokens.css');
 
@@ -23,22 +23,36 @@ const CSS = path.join(__dirname, '..', 'app', 'renderer', 'design-tokens.css');
 //    tracking/font/easing/duration
 //  - --ring (composes the per-theme --focus-ring dynamically) + legacy aliases
 //    (--fg/--muted/… resolve to per-theme semantics via var(), so they flip too)
-const SHARED_PREFIX = [
-  '--gray-', '--blue-', '--indigo-', '--red-', '--green-', '--amber-', '--brand-',
-  '--space-', '--radius-', '--control-', '--weight-', '--leading-', '--tracking-',
-  '--font-', '--ease-', '--dur-',
-];
+const SHARED_PREFIX = ['--gray-', '--blue-', '--indigo-', '--red-', '--green-', '--amber-', '--sky-', '--brand-', '--space-', '--radius-', '--control-', '--weight-', '--leading-', '--tracking-', '--font-', '--ease-', '--dur-'];
 const SHARED_EXACT = new Set([
-  '--text-2xs', '--text-xs', '--text-sm', '--text-base', '--text-md',
-  '--text-lg', '--text-xl', '--text-2xl', '--text-3xl', '--text-4xl',
-  '--tabbar-h', '--ring',
-  '--fg', '--fg-strong', '--muted', '--muted2', '--border-soft',
+  '--text-2xs',
+  '--text-xs',
+  '--text-sm',
+  '--text-base',
+  '--text-md',
+  '--text-lg',
+  '--text-xl',
+  '--text-2xl',
+  '--text-3xl',
+  '--text-4xl',
+  '--tabbar-h',
+  // Non-color layout constants (same in both themes, like --tabbar-h):
+  '--scrollbar-w',
+  '--activebar-h',
+  '--sidebar-float',
+  '--ring',
+  '--fg',
+  '--fg-strong',
+  '--muted',
+  '--muted2',
+  '--border-soft',
   // Glass tint that themes itself: --glass-bg-bar/-panel are color-mix(var(--bg)/
   // var(--surface) …) so they flip via the per-theme base. (--glass-bg AND
   // --glass-filter are now per-theme — light is more transparent / more saturated
   // than dark — so both are defined in BOTH blocks and are NOT shared.
   // --glass-edge/rim/hi/sheen/drop*/relief-bg also differ per theme.)
-  '--glass-bg-bar', '--glass-bg-panel',
+  '--glass-bg-bar',
+  '--glass-bg-panel',
 ]);
 const isShared = (n) => SHARED_EXACT.has(n) || SHARED_PREFIX.some((p) => n.startsWith(p));
 
@@ -53,7 +67,7 @@ function collect() {
   let m;
   while ((m = blockRe.exec(css))) {
     const sel = m[1];
-    const names = (m[2].match(/--[a-z0-9-]+(?=\s*:)/gi) || []);
+    const names = m[2].match(/--[a-z0-9-]+(?=\s*:)/gi) || [];
     if (/:root/.test(sel)) names.forEach((n) => light.add(n));
     if (/\[data-theme="dark"\]/.test(sel)) names.forEach((n) => dark.add(n));
   }
