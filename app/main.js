@@ -21,6 +21,7 @@ const { pruneDecision, nextBaseline } = require('./backup-guard');
 const ipcOrganize = require('./ipc-organize');
 const ipcPosts = require('./ipc-posts');
 const ipcConfig = require('./ipc-config');
+const ipcWindow = require('./ipc-window');
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
@@ -441,35 +442,8 @@ function registerImageProtocol() {
 // folders / collections / poster-folders / poster-tags) were extracted to
 // ./ipc-organize.js (registered via registerOrganize(ipcCtx) below).
 
-ipcMain.handle('open-external', (_event, url) => {
-  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-    shell.openExternal(url);
-  }
-});
-
-// Open one library image in its own frameless-ish window (middle-click on a
-// card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
-// Chromium's built-in image view (zoom/fit for free).
-ipcMain.handle('open-image-window', (_event, image) => {
-  if (typeof image !== 'string' || !image || image.includes('..') || image.includes('/') || image.includes('\\')) return;
-  // Size the window to the image's aspect ratio (fit within ~85% of the work area).
-  let width = 1100; let height = 850;
-  try {
-    const sz = nativeImage.createFromPath(path.join(getSaveFolder(), image)).getSize();
-    if (sz.width > 0 && sz.height > 0) {
-      const wa = screen.getPrimaryDisplay().workAreaSize;
-      const scale = Math.min(1, (wa.width * 0.85) / sz.width, (wa.height * 0.85) / sz.height);
-      width = Math.max(320, Math.round(sz.width * scale));
-      height = Math.max(240, Math.round(sz.height * scale));
-    }
-  } catch { /* keep defaults (e.g. webp not decodable by nativeImage) */ }
-  const w = new BrowserWindow({
-    width, height, useContentSize: true, autoHideMenuBar: true, backgroundColor: '#101113',
-    icon: APP_ICON,
-    webPreferences: { sandbox: true }
-  });
-  w.loadURL('psimg://img/' + encodeURIComponent(image));
-});
+// Window / shell handlers (open-external / open-image-window) were extracted to
+// ./ipc-window.js (registered via ipcWindow.register below).
 
 // --- File helpers (all confined to the save folder) ---
 function resolveInFolder(name) {
@@ -1344,11 +1318,13 @@ function registerExtractedIpc() {
     getSaveFolder, readOrgJsonSync, writeOrgJsonSync,
     listPosts, listPostsDelta, resolveInFolder, mimeForFile,
     readConfig, writeConfig, installer,
+    APP_ICON,
     getWin: () => win,
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
   ipcConfig.register(ctx);
+  ipcWindow.register(ctx);
 }
 registerExtractedIpc();
 
