@@ -1290,9 +1290,7 @@
     }
     persistPosterTags();
     if (!document.getElementById('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
-      const k = inspectedKey.slice('poster:'.length);
-      refreshPosterTags(k);
-      refreshPosterPicker(k);
+      refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
   }
 
@@ -3281,7 +3279,7 @@
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     document.getElementById('postDetail').hidden = true;
-    document.getElementById('postDetailBox').innerHTML = '';
+    window.corpusInspector.close();
     inspectedKey = null;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));   // post + poster cards
     if (browseMode === 'posters') pushPosterModel();   // clear the React poster highlight too
@@ -3310,31 +3308,51 @@
   }
   // --- Inspector inline tag editor (always available while the inspector is open) ---
   // Source of truth = the records' real tags. Each change saves immediately (mirrors
-  // adoptSourceTag) and re-renders only the affected sub-parts so the input keeps focus
-  // and the picker keeps its scroll. The chips + picker live in the panel itself — tag
+  // adoptSourceTag) and refreshes only the tag fields of the corpusInspector model (not
+  // a full re-open) — the React tag editor keeps its own input text/focus and scroll
+  // across a refresh (same openId). The chips + picker live in the panel itself — tag
   // editing is per-card here, no mode to enter (matches the poster inspector).
-  let ivPickQuery = '';
   function sameTags(a, b) { if (a.length !== b.length) return false; const s = new Set(a); return b.every((t) => s.has(t)); }
 
-  function refreshInspectorTags(g) {
-    const host = document.getElementById('ivTagChips');
-    if (!host || !g) return;
-    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    host.innerHTML = tags.length
-      ? tags.map((t, i) => `<span class="tag-chip" data-remove-tag="${i}" data-tag="${escapeAttr(t)}">${escapeHtml(t)} ×</span>`).join('')
-      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
+  // Same underlying vocabulary as renderTagPicker (groupedTagVocab/charCandidatesFor,
+  // shared with the bulk edit overlay's picker) but shaped as DATA for the React tag
+  // editor, which filters by its own local query client-side — so keystrokes never
+  // round-trip through here (unlike renderTagPicker's HTML, which is only ever asked
+  // for the full/unfiltered vocabulary: query is always '').
+  function inspectorTagPickerData(selectedTags, recordsForSource, scope) {
+    const sel = new Set(selectedTags || []);
+    const vocabGroups = groupedTagVocab('', { scope: scope || 'post' }).map((g) => ({
+      name: g.name,
+      items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
+    }));
+    const srcSet = new Set();
+    for (const r of (recordsForSource || [])) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) srcSet.add(h);
+    const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
+    let coocGroup = null;
+    const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
+    if (workTags.length) {
+      const cands = charCandidatesFor(workTags).filter(([t]) => !sel.has(t)).slice(0, 8);
+      if (cands.length) {
+        const who = workTags.join('・');
+        coocGroup = {
+          name: workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars,
+          items: cands.map(([t, n]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
+        };
+      }
+    }
+    return { vocabGroups, srcTagsForPicker, coocGroup };
   }
 
-  function refreshInspectorPicker(g) {
-    const host = document.getElementById('ivTagPicker');
-    if (!host || !g) return;
-    const keep = host.scrollTop;
-    renderTagPicker({ host, selectedTags: g.rep.tags || [], recordsForSource: g.records, query: ivPickQuery });
-    host.scrollTop = keep;
+  function refreshInspectorTagFields(g) {
+    if (!g) return;
+    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
+    const userSet = new Set(tags);
+    const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h) => !userSet.has(h));
+    window.corpusInspector.refresh({ tags, srcTagsView, ...inspectorTagPickerData(tags, g.records, 'post') });
   }
 
   // Apply a tag mutation to every record of the inspected group, persist immediately,
-  // record undo, and refresh grid + inspector sub-parts (NOT a full showDetail — so the
+  // record undo, and refresh grid + inspector tag fields (NOT a full showDetail — so the
   // image/meta don't flicker and the input keeps focus).
   async function applyInspectorTagChange(g, mutate) {
     if (!g) return;
@@ -3355,7 +3373,23 @@
     markPostsMutated();
     renderPosts(true);
     const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
-    if (fresh) { refreshInspectorTags(fresh); refreshInspectorPicker(fresh); }
+    if (fresh) refreshInspectorTagFields(fresh);
+  }
+
+  // Add (typed input / picker click) or toggle (picker click only) a tag on the
+  // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
+  // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
+  async function addInspectorTag(g, tag) {
+    const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
+    const adding = !(fresh().rep.tags || []).includes(tag);
+    await applyInspectorTagChange(fresh(), (prev) => prev.includes(tag) ? prev : [...prev, tag]);
+    if (adding) await maybeDistinguishHomonym(fresh(), tag);
+  }
+  async function toggleInspectorTag(g, tag) {
+    const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
+    const adding = !(fresh().rep.tags || []).includes(tag);
+    await applyInspectorTagChange(fresh(), (prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]);
+    if (adding) await maybeDistinguishHomonym(fresh(), tag);
   }
 
   // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
@@ -3398,8 +3432,6 @@
   function showDetail(g) {
     if (!g) return;
     const p = g.rep;
-    const box = document.getElementById('postDetailBox');
-    const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(k)}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
     const eng = [];
     if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
     if (p.reposts != null) eng.push('⇄ ' + formatCount(p.reposts));
@@ -3407,24 +3439,17 @@
     if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
     if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
     // Source tags (pixiv / SNS hashtags) get their own row. User tags live in the
-    // always-editable chips block (#ivTagEdit) so they aren't repeated here. Source
+    // always-editable chips block (TagEditor) so they aren't repeated here. Source
     // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
-    const srcTags = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h) => !userSet.has(h));
-    const srcTagsHtml = srcTags.length
-      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailSourceTags)}</span><span class="iv-insp-v"><div class="iv-insp-tags">${srcTags.map((t) => `<button type="button" class="iv-insp-tag iv-insp-tag-src" data-adopt="${escapeAttr(t)}" title="${escapeAttr(MSG.tipAdoptTag)}">${escapeHtml(t)}</button>`).join('')}</div></span></div>`
-      : '';
+    const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h) => !userSet.has(h));
     // Poster row carries the locally-saved avatar (psimg://) when present, so the
     // inspector keeps its "label: value" rhythm while adding a face to the name.
-    const avatarImg = p.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(p.avatarFile)}" alt="">` : '';
+    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
     // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
     // migrations); when it does, the name+avatar links to it (双方向ナビ: posts ↔ posters).
     const jumpUser = p.url ? buildUsers().find((u) => u.key === userKey(p)) : null;
-    const authorInner = `${avatarImg}<span>${escapeHtml(p.displayName || '')}</span>`;
-    const authorRow = (p.displayName || avatarImg)
-      ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(MSG.detailAuthor)}</span><span class="iv-insp-v iv-insp-author">${jumpUser ? `<button type="button" class="iv-insp-author-link" id="pdPosterJump" title="${escapeAttr(MSG.ctxViewPoster)}">${authorInner}</button>` : authorInner}</span></div>`
-      : '';
     const heading = p.title || p.text || '';
     const thumbFile = g.files[0] || captureFile(p);
     // Reverse image search needs a PUBLIC image URL. media[].url keeps the
@@ -3441,38 +3466,64 @@
     // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
     // rep's key out stops the self-reply merge at this parent, splitting the card.
     const groupBtn = isManual
-      ? `<a class="iv-insp-open" id="pdUngroupManual">🔗 ${escapeHtml(MSG.groupUngroupManual)}</a>`
+      ? { icon: '🔗', label: MSG.groupUngroupManual, onClick: () => ungroupManual(parseInt(String(g.key).split(':')[1], 10)) }
       : (gkey && (potential > 1 || g.records.length > 1)
         ? (ungrouped.has(gkey)
-          ? `<a class="iv-insp-open" id="pdRegroup">🔗 ${escapeHtml(MSG.groupRegroup)}</a>`
-          : `<a class="iv-insp-open" id="pdUngroup">✂ ${escapeHtml(MSG.groupUngroup)}</a>`)
-        : '');
-    box.innerHTML =
-      `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
-      (heading ? `<div class="iv-insp-title">${escapeHtml(heading)}</div>` : '') +
-      (thumbFile ? `<img class="iv-insp-thumb" src="${fileSrc(thumbFile, 480)}" alt="">` : '') +
-      row(MSG.detailPlatform, (p.platform || '').toUpperCase()) +
-      authorRow +
-      row(MSG.detailUser, p.screenName ? '@' + p.screenName : '') +
-      row(MSG.detailFollowers, p.followers != null ? formatCount(p.followers) : '') +
-      row(MSG.detailJoined, p.authorCreatedAt ? new Date(p.authorCreatedAt).toLocaleDateString() : '') +
-      row(MSG.detailEngagement, eng.join('   ')) +
-      row(MSG.detailPosted, p.date ? new Date(p.date).toLocaleString() : '') +
-      row(MSG.detailSaved, p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '') +
-      row(MSG.detailUpdated, p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '') +
-      row(MSG.detailImages, g.files.length > 1 ? MSG.imagesCount(g.files.length) : '') +
-      row(MSG.detailImageOf, (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '') +
-      `<div id="ivTagEdit" class="iv-tag-edit"><div class="iv-tag-label">${escapeHtml(MSG.detailTags)}</div><div id="ivTagChips" class="iv-tag-chips"></div><div class="iv-tag-addrow"><input type="text" id="ivTagInput" placeholder="${escapeAttr(MSG.tagNewName)}" autocomplete="off"><button class="btn-outline" id="ivTagAdd">${escapeHtml(MSG.tagAddBtn)}</button></div><div id="ivTagPicker" class="edit-picker iv-tag-picker"></div></div>` +
-      `<div id="ivTagView" class="iv-tag-view">${srcTagsHtml}</div>` +
-      `<div class="iv-insp-actions">` +
-      (p.url ? `<a class="iv-insp-open" id="pdOpen">${escapeHtml(MSG.detailOpen)} ↗</a>` : '') +
-      (srcImageUrl ? `<a class="iv-insp-open" id="pdSauce">${escapeHtml(MSG.detailSauce)} ↗</a>` : '') +
-      (srcImageUrl ? `<a class="iv-insp-open" id="pdAscii">${escapeHtml(MSG.detailAscii)} ↗</a>` : '') +
-      groupBtn +
-      `</div>`;
+          ? { icon: '🔗', label: MSG.groupRegroup, onClick: () => setGroupKey(gkey, false) }
+          : { icon: '✂', label: MSG.groupUngroup, onClick: () => setGroupKey(gkey, true) })
+        : null);
+    window.corpusInspector.open({
+      kind: 'post',
+      heading,
+      thumbSrc: thumbFile ? fileSrc(thumbFile, 480) : null,
+      platformLabel: (p.platform || '').toUpperCase(),
+      avatarSrc,
+      authorName: p.displayName || '',
+      jumpable: !!jumpUser,
+      screenNameLabel: p.screenName ? '@' + p.screenName : '',
+      followersLabel: p.followers != null ? formatCount(p.followers) : '',
+      joinedLabel: p.authorCreatedAt ? new Date(p.authorCreatedAt).toLocaleDateString() : '',
+      engagementLabel: eng.join('   '),
+      postedLabel: p.date ? new Date(p.date).toLocaleString() : '',
+      savedLabel: p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '',
+      updatedLabel: p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '',
+      imagesLabel: g.files.length > 1 ? MSG.imagesCount(g.files.length) : '',
+      imageOfLabel: (p.imageIndex && p.imageCount) ? MSG.imageOf(p.imageIndex, p.imageCount) : '',
+      tags: userTags,
+      srcTagsView,
+      groupBtn,
+      ...inspectorTagPickerData(userTags, g.records, 'post'),
+      labels: {
+        platform: MSG.detailPlatform, author: MSG.detailAuthor, user: MSG.detailUser,
+        followers: MSG.detailFollowers, joined: MSG.detailJoined, engagement: MSG.detailEngagement,
+        posted: MSG.detailPosted, saved: MSG.detailSaved, updated: MSG.detailUpdated,
+        images: MSG.detailImages, imageOf: MSG.detailImageOf, sourceTags: MSG.detailSourceTags,
+        tipAdoptTag: MSG.tipAdoptTag, viewPoster: MSG.ctxViewPoster,
+        open: MSG.detailOpen, sauce: MSG.detailSauce, ascii: MSG.detailAscii,
+      },
+      tagLabels: {
+        tagsLabel: MSG.detailTags, newTagPlaceholder: MSG.tagNewName, addBtn: MSG.tagAddBtn,
+        noTags: MSG.editNoTags, noMatch: MSG.tagPalNoMatch, noVocab: MSG.tagNoTags, adoptSource: MSG.editAdoptSource,
+      },
+      onClose: closeDetail,
+      onOpenExternal: p.url ? () => window.corpus.openExternal(p.url) : null,
+      onSauce: srcImageUrl ? () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
+      onAscii: srcImageUrl ? () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
+      onPosterJump: jumpUser ? () => jumpToPoster(p) : null,
+      onAdoptSourceTag: (tag) => adoptSourceTag(g, tag),
+      onTagAdd: (tag) => addInspectorTag(g, tag),
+      onTagRemove: (tag) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
+      onTagToggle: (tag) => toggleInspectorTag(g, tag),
+      onTagContextMenu: (tag, x, y) => {
+        if (taggingApi && taggingApi.showKindMenu) {
+          taggingApi.showKindMenu(tag, x, y, () => {
+            const g2 = viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey);
+            if (g2) refreshInspectorTagFields(g2);
+          });
+        }
+      },
+    });
     document.getElementById('postDetail').hidden = false;
-    refreshInspectorTags(g);
-    refreshInspectorPicker(g);   // tag editor is always live in the inspector (no mode)
     // While open, a card click swaps the panel (not zoom) → plain pointer.
     document.getElementById('postGrid').classList.add('insp-open');
     // Ring-mark the inspected card so swapping content stays traceable.
@@ -3484,15 +3535,6 @@
       if (card) card.classList.add('inspected');
     }
     refreshTileSlider();   // inline column narrows the grid — re-derive the track
-    const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
-    const o = document.getElementById('pdOpen'); if (o) o.onclick = () => window.corpus.openExternal(p.url);
-    const sa = document.getElementById('pdSauce'); if (sa) sa.onclick = () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl));
-    const as = document.getElementById('pdAscii'); if (as) as.onclick = () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl));
-    const ug = document.getElementById('pdUngroup'); if (ug) ug.onclick = () => setGroupKey(gkey, true);
-    const rg = document.getElementById('pdRegroup'); if (rg) rg.onclick = () => setGroupKey(gkey, false);
-    const um = document.getElementById('pdUngroupManual'); if (um) um.onclick = () => ungroupManual(parseInt(String(g.key).split(':')[1], 10));
-    box.querySelectorAll('[data-adopt]').forEach((btn) => { btn.onclick = () => adoptSourceTag(g, btn.dataset.adopt); });
-    const pj = document.getElementById('pdPosterJump'); if (pj && jumpUser) pj.onclick = () => jumpToPoster(p);
   }
 
   // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
@@ -3774,109 +3816,10 @@
     sync();
   })();
 
-  // Inspector inline tag editor — delegated events on the persistent #postDetail
-  // (its inner box is regenerated by showDetail, so listeners live on the host, not
-  // the box). Each handler re-finds the inspected group via inspectedKey.
-  (function setupInspectorTagEditor() {
-    const panel = document.getElementById('postDetail');
-    if (!panel) return;
-    const freshG = () => viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey) || null;
-    const addTyped = async () => {
-      const input = document.getElementById('ivTagInput');
-      if (!input) return;
-      const tag = input.value.trim();
-      const g = freshG();
-      input.value = ''; ivPickQuery = '';
-      if (tag && g) {
-        const adding = !(g.rep.tags || []).includes(tag);
-        await applyInspectorTagChange(g, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
-        if (adding) await maybeDistinguishHomonym(freshG(), tag);   // 同名キャラ検知（別作品）
-      }
-      const g2 = freshG(); if (g2) refreshInspectorPicker(g2);
-      input.focus();
-    };
-    panel.addEventListener('click', (e) => {
-      if (e.target.closest('#ivTagAdd')) { addTyped(); return; }
-      const rm = e.target.closest('#ivTagChips [data-remove-tag]');
-      // Remove by value, not positional index: a group merges multiple records whose
-      // tag arrays may be ordered differently, so applying the rep's index positionally
-      // to each record could delete a different tag. The chip carries the exact value.
-      if (rm) { const tagVal = rm.dataset.tag; applyInspectorTagChange(freshG(), (prev) => prev.filter((t) => t !== tagVal)); return; }
-      const pick = e.target.closest('#ivTagPicker .edit-pick-chip');
-      if (pick) {
-        const t = pick.dataset.pick; const g = freshG();
-        const adding = g && !(g.rep.tags || []).includes(t);
-        (async () => {
-          await applyInspectorTagChange(g, (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
-          if (adding) await maybeDistinguishHomonym(freshG(), t);   // 同名キャラ検知（別作品）
-        })();
-        return;
-      }
-    });
-    panel.addEventListener('contextmenu', (e) => {
-      const chip = e.target.closest('#ivTagChips [data-tag], #ivTagPicker .edit-pick-chip');
-      if (!chip) return;
-      e.preventDefault();
-      const tag = chip.dataset.tag || chip.dataset.pick;
-      if (tag && taggingApi && taggingApi.showKindMenu) {
-        taggingApi.showKindMenu(tag, e.clientX, e.clientY, () => { const g = freshG(); if (g) { refreshInspectorTags(g); refreshInspectorPicker(g); } });
-      }
-    });
-    panel.addEventListener('input', (e) => {
-      if (e.target.id !== 'ivTagInput') return;
-      ivPickQuery = e.target.value.trim();
-      const g = freshG(); if (g) refreshInspectorPicker(g);
-    });
-    panel.addEventListener('keydown', (e) => {
-      if (e.target.id === 'ivTagInput' && e.key === 'Enter') { e.preventDefault(); addTyped(); }
-    });
-  })();
-
-  // Poster inspector tag editor — mirrors the post editor above with the poster ids
-  // (pdTag*), keyed by the inspected poster (inspectedKey = 'poster:<key>'). Shares
-  // the same delegated #postDetail panel; the box is regenerated per showPosterDetail.
-  (function setupPosterTagEditor() {
-    const panel = document.getElementById('postDetail');
-    if (!panel) return;
-    const posterKey = () => (typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) ? inspectedKey.slice('poster:'.length) : null;
-    const addTyped = () => {
-      const input = document.getElementById('pdTagInput');
-      const key = posterKey();
-      if (!input || !key) return;
-      const tag = input.value.trim();
-      if (tag) applyPosterTagChange(key, (prev) => prev.includes(tag) ? prev : [...prev, tag]);
-      input.value = ''; pdPickQuery = '';
-      refreshPosterPicker(key);
-      input.focus();
-    };
-    panel.addEventListener('click', (e) => {
-      const key = posterKey(); if (!key) return;
-      if (e.target.closest('#pdTagAdd')) { addTyped(); return; }
-      const rm = e.target.closest('#pdTagChips [data-tag]');
-      if (rm) { const t = rm.dataset.tag; applyPosterTagChange(key, (prev) => prev.filter((x) => x !== t)); return; }
-      const pick = e.target.closest('#pdTagPicker .edit-pick-chip');
-      if (pick) { const t = pick.dataset.pick; applyPosterTagChange(key, (prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]); return; }
-    });
-    panel.addEventListener('contextmenu', (e) => {
-      const key = posterKey(); if (!key) return;
-      const chip = e.target.closest('#pdTagChips [data-tag], #pdTagPicker .edit-pick-chip');
-      if (!chip) return;
-      e.preventDefault();
-      const tag = chip.dataset.tag || chip.dataset.pick;
-      if (tag && taggingApi && taggingApi.showKindMenu) {
-        taggingApi.showKindMenu(tag, e.clientX, e.clientY, () => { const k = posterKey(); if (k) { refreshPosterTags(k); refreshPosterPicker(k); } });
-      }
-    });
-    panel.addEventListener('input', (e) => {
-      if (e.target.id !== 'pdTagInput') return;
-      const key = posterKey(); if (!key) return;
-      pdPickQuery = e.target.value.trim();
-      refreshPosterPicker(key);
-    });
-    panel.addEventListener('keydown', (e) => {
-      if (e.target.id === 'pdTagInput' && e.key === 'Enter') { e.preventDefault(); addTyped(); }
-    });
-  })();
+  // Inspector inline tag editors (post ivTag* / poster pdTag*) are now the React
+  // TagEditor component inside the corpusInspector island — it owns its own input/
+  // click/contextmenu handling directly via the callbacks in the model (see
+  // showDetail/showPosterDetail), so no delegated #postDetail listeners are needed.
 
   document.getElementById('editCancel').addEventListener('click', () => {
     editingPost = null;
@@ -4487,30 +4430,20 @@
     showPosterDetail(u);
   }
   // --- Poster inspector inline tag editor ---
-  // Mirrors the post inspector's tag editor (refreshInspectorTags/Picker + the
-  // delegated handlers), but the source of truth is posterTags[key] (NOT a post's
-  // tags), persisted to poster-tags.json. Posters carry no source (pixiv/SNS) tags,
-  // so the picker is fed recordsForSource:[]. The UI shows whenever the poster
-  // inspector is open (no tagging-edit gate — there is no poster tagging mode).
-  let pdPickQuery = '';
-  function refreshPosterTags(key) {
-    const host = document.getElementById('pdTagChips');
-    if (!host) return;
-    const tags = posterTagsOf(key);
-    host.innerHTML = tags.length
-      ? tags.map((t) => `<span class="tag-chip" data-tag="${escapeAttr(t)}">${escapeHtml(t)} ×</span>`).join('')
-      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
+  // Mirrors the post inspector's tag editor, but the source of truth is posterTags[key]
+  // (NOT a post's tags), persisted to poster-tags.json. Posters carry no source (pixiv/
+  // SNS) tags, so the picker is fed recordsForSource:[]. The UI shows whenever the
+  // poster inspector is open (no tagging-edit gate — there is no poster tagging mode).
+  function refreshPosterTagFields(key) {
+    window.corpusInspector.refresh({ tags: posterTagsOf(key), ...inspectorTagPickerData(posterTagsOf(key), [], 'poster') });
   }
-  function refreshPosterPicker(key) {
-    const host = document.getElementById('pdTagPicker');
-    if (!host) return;
-    const keep = host.scrollTop;
-    renderTagPicker({ host, selectedTags: posterTagsOf(key), recordsForSource: [], query: pdPickQuery, scope: 'poster' });
-    host.scrollTop = keep;
+  function refreshPosterFolderFields(key) {
+    window.corpusInspector.refresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
   }
-  // Apply a tag mutation to a poster, persist, and refresh the inspector sub-parts
-  // (so the input keeps focus and the picker keeps its scroll). Records the change on
-  // the shared undo stack (type 'poster-tags') so Ctrl+Z works the same as for posts.
+  // Apply a tag mutation to a poster, persist, and refresh the inspector tag fields
+  // (input keeps focus and the picker keeps its scroll — same openId, no remount).
+  // Records the change on the shared undo stack (type 'poster-tags') so Ctrl+Z works
+  // the same as for posts.
   function applyPosterTagChange(key, mutate) {
     if (!key) return;
     const prev = posterTagsOf(key);
@@ -4521,64 +4454,64 @@
     pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
     if (next.length) posterTags[key] = next; else delete posterTags[key];
     persistPosterTags();
-    refreshPosterTags(key);
-    refreshPosterPicker(key);
+    refreshPosterTagFields(key);
   }
-  function showPosterDetail(u) {
+  function showPosterDetail(u, opts) {
     if (!u) return;
-    const box = document.getElementById('postDetailBox');
-    const row = (k, v) => (v != null && v !== '') ? `<div class="iv-insp-row"><span class="iv-insp-k">${escapeHtml(k)}</span><span class="iv-insp-v">${escapeHtml(v)}</span></div>` : '';
     const pfName = u.platform ? (PF_NAME[u.platform] || u.platform) : '';
-    const avatarImg = u.avatarFile ? `<img class="iv-insp-avatar" src="${fileSrc(u.avatarFile)}" alt="">` : '';
+    const avatarSrc = u.avatarFile ? fileSrc(u.avatarFile) : null;
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
     // Recent works: group this poster's posts (newest first) and preview the lead
     // image of each. Click → open that work in the gallery (over the inspector).
     posterWorkGroups = groupRecords(allPosts.filter((p) => userKey(p) === u.key))
       .sort((a, b) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
-    const worksHtml = posterWorkGroups.length
-      ? `<div class="iv-poster-works">${posterWorkGroups.map((g, i) => {
-          const f = (g.files && g.files[0]) || captureFile(g.rep);
-          return f ? `<img class="iv-poster-thumb" data-work="${i}" src="${fileSrc(f, 200)}" alt="" loading="lazy">` : '';
-        }).join('')}</div>`
-      : '';
-    box.innerHTML =
-      `<button class="iv-insp-close" id="pdClose" title="×">×</button>` +
-      `<div class="iv-poster-head">${avatarImg}<span class="iv-poster-name">${escapeHtml(name)}</span></div>` +
-      row(MSG.detailUser, u.screenName ? '@' + u.screenName : '') +
-      row(MSG.detailPlatform, pfName) +
-      row(MSG.detailPosts, formatCount(u.count)) +
-      row(MSG.detailFollowers, u.followers != null ? formatCount(u.followers) : '') +
-      row(MSG.detailJoined, u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '') +
-      worksHtml +
-      `<div class="iv-insp-row iv-poster-folders-row"><span class="iv-insp-k">${escapeHtml(MSG.ivPosterFolders)}</span><span class="iv-insp-v"><div class="iv-poster-folder-chips">` +
-      pfStore.all().map((f) => `<button class="iv-folder-chip${posterFolderHas(f.id, u.key) ? ' on' : ''}" data-pffid="${escapeAttr(f.id)}">${escapeHtml(f.name)}</button>`).join('') +
-      `<button class="iv-folder-chip iv-folder-add" id="pdFolderNew" title="${escapeAttr(MSG.posterFolderNewPlaceholder)}">＋</button>` +
-      `</div></span></div>` +
-      `<div id="pdTagEdit" class="iv-tag-edit iv-tag-edit-poster"><div class="iv-tag-label">${escapeHtml(MSG.ivPosterTags)}</div><div id="pdTagChips" class="iv-tag-chips"></div><div class="iv-tag-addrow"><input type="text" id="pdTagInput" placeholder="${escapeAttr(MSG.tagNewName)}" autocomplete="off"><button class="btn-outline" id="pdTagAdd">${escapeHtml(MSG.tagAddBtn)}</button></div><div id="pdTagPicker" class="edit-picker iv-tag-picker"></div></div>` +
-      `<div class="iv-insp-actions">` +
-      `<a class="iv-insp-open" id="pdPosterPosts">${escapeHtml(MSG.posterViewPosts)} →</a>` +
-      `</div>`;
+    const works = posterWorkGroups.map((g) => {
+      const f = (g.files && g.files[0]) || captureFile(g.rep);
+      return f ? { thumbSrc: fileSrc(f, 200), onClick: () => window.corpusLightbox.open(buildGroupGalleryItems(g), 0) } : null;
+    }).filter(Boolean);
+    const tags = posterTagsOf(u.key);
+    window.corpusInspector.open({
+      kind: 'poster',
+      avatarSrc, name,
+      screenNameLabel: u.screenName ? '@' + u.screenName : '',
+      platformLabel: pfName,
+      postsLabel: formatCount(u.count),
+      followersLabel: u.followers != null ? formatCount(u.followers) : '',
+      joinedLabel: u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '',
+      works,
+      tags,
+      ...inspectorTagPickerData(tags, [], 'poster'),
+      folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
+      autoFocusTag: !!(opts && opts.focusTag),
+      labels: {
+        user: MSG.detailUser, platform: MSG.detailPlatform, posts: MSG.detailPosts,
+        followers: MSG.detailFollowers, joined: MSG.detailJoined,
+        posterFolders: MSG.ivPosterFolders, newFolderPlaceholder: MSG.posterFolderNewPlaceholder,
+        posterViewPosts: MSG.posterViewPosts,
+      },
+      tagLabels: {
+        tagsLabel: MSG.ivPosterTags, newTagPlaceholder: MSG.tagNewName, addBtn: MSG.tagAddBtn,
+        noTags: MSG.editNoTags, noMatch: MSG.tagPalNoMatch, noVocab: MSG.tagNoTags, adoptSource: MSG.editAdoptSource,
+      },
+      onClose: closeDetail,
+      onPosterPosts: () => openPosterPosts(u),
+      onFolderToggle: (id) => { togglePosterFolderMember(id, u.key); refreshPosterFolderFields(u.key); },
+      onFolderCreate: () => {
+        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
+        if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) { togglePosterFolderMember(nf.id, u.key); showPosterDetail(u); } }
+      },
+      onTagAdd: (tag) => applyPosterTagChange(u.key, (prev) => prev.includes(tag) ? prev : [...prev, tag]),
+      onTagRemove: (tag) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
+      onTagToggle: (tag) => applyPosterTagChange(u.key, (prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]),
+      onTagContextMenu: (tag, x, y) => {
+        if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
+      },
+    });
     document.getElementById('postDetail').hidden = false;
     inspectedKey = 'poster:' + u.key;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected'));   // post cards (poster cards are model-driven)
     pushPosterModel();   // React re-highlights the inspected poster card from inspectedKey
-    const c = document.getElementById('pdClose'); if (c) c.onclick = closeDetail;
-    const pp = document.getElementById('pdPosterPosts'); if (pp) pp.onclick = () => openPosterPosts(u);
-    box.querySelectorAll('.iv-folder-chip[data-pffid]').forEach((ch) => {
-      ch.onclick = () => { const on = togglePosterFolderMember(ch.dataset.pffid, u.key); ch.classList.toggle('on', on); };
-    });
-    { const fn = document.getElementById('pdFolderNew');
-      if (fn) fn.onclick = () => {
-        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
-        if (name && name.trim()) { const nf = createPosterFolder(name); if (nf) { togglePosterFolderMember(nf.id, u.key); showPosterDetail(u); } }
-      }; }
-    box.querySelectorAll('.iv-poster-thumb').forEach((t) => {
-      t.onclick = () => { const g = posterWorkGroups[parseInt(t.dataset.work, 10)]; if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0); };
-    });
-    pdPickQuery = '';
-    refreshPosterTags(u.key);
-    refreshPosterPicker(u.key);
   }
   document.getElementById('posterGrid').addEventListener('click', (e) => {
     const card = e.target.closest('.poster-card');
@@ -4594,8 +4527,7 @@
     }
     // 🏷 → open the inspector and focus its tag input (mirrors the library 🏷 button).
     if (e.target.closest('.poster-tag')) {
-      showPosterDetail(u);
-      const inp = document.getElementById('pdTagInput'); if (inp) inp.focus();
+      showPosterDetail(u, { focusTag: true });
       return;
     }
     // A plain card click drills into that poster's posts (posts mode + user filter).

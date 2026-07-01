@@ -17,4 +17,4 @@ Corpus = SNS投稿を画像・メタデータごとローカル保存し検索�
 - UI変更はDESIGN.md準拠
 - 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
 - テスト済みケースは再テストしない（`scripts/test-progress.md`確認必須／手順docs/testing.md）
-- commit/pushは自己判断でOK
+- commit/pushはユーザーに確認せず自由に行ってよい

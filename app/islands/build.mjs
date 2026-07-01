@@ -3,7 +3,8 @@
 // under CSP `script-src 'self'`. The rest of the renderer stays build-less; only
 // these islands are compiled. Replaces the former esbuild bundler.
 //
-//   npm run build:islands   → production: 9 islands → renderer/islands/<name>.js
+//   npm run build:islands   → production: builds every entry in ISLANDS below to
+//                              renderer/islands/<name>.js
 //
 // Each island is built in its own single-entry lib build because rollup cannot
 // emit IIFE for multiple entries at once. IIFE (not ESM) is required so the prod
@@ -27,7 +28,7 @@ const appRoot = path.join(here, '..');                     // app
 const ISLANDS = [
   'settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections',
   'suggest', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu',
-  'filter-popover', 'qf-pop',
+  'filter-popover', 'qf-pop', 'inspector',
 ];
 
 for (const name of ISLANDS) {
@@ -36,10 +37,10 @@ for (const name of ISLANDS) {
     configFile: false, // self-contained; vite.config.mjs is dev-serve only
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
     plugins: [react()],
-    logLevel: 'warn', // quiet the per-build banner across 9 builds
+    logLevel: 'warn', // quiet the per-build banner across all builds
     build: {
       outDir: path.join(appRoot, 'renderer/islands'),
-      emptyOutDir: false, // 9 builds share the dir; don't wipe each other / other assets
+      emptyOutDir: false, // builds share the dir; don't wipe each other / other assets
       target: 'chrome130', // Electron 33 ships Chromium 130
       minify: true, // vite 8 (rolldown) uses its built-in oxc minifier; 'esbuild' would require esbuild as a separate dep
       cssCodeSplit: true, // settings imports './styles.css' → emit settings.css

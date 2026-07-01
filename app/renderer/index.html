@@ -2316,6 +2316,10 @@
        for the sidebar filter value flyout (qf-pop). viewer.js calls open(); the qf-pop
        island renders. Before viewer.js. -->
   <script src="qf-pop.js"></script>
+  <!-- Inspector controller (window.corpusInspector): the imperative→declarative bridge
+       for the persistent right-column post/poster detail panel + its inline tag editor.
+       viewer.js calls open()/refresh(); the inspector island renders. Before viewer.js. -->
+  <script src="inspector.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2361,6 +2365,11 @@
        rendering, viewer.js owns the facet logic (qfValues) + pick routing (via
        window.corpusQfPop). -->
   <script src="islands/qf-pop.js"></script>
+  <!-- Post/poster inspector panel: React owns the detail body + inline tag editor
+       rendering, viewer.js owns the panel's hidden/insp-open chrome + all business
+       logic (persistence, undo, homonym detection, poster folders) via
+       window.corpusInspector. -->
+  <script src="islands/inspector.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>
