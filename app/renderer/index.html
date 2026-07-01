@@ -2019,21 +2019,12 @@
        overlay contents + show/multi classes; viewer.js feeds it gallery items. -->
   <div class="lightbox-overlay" id="lightbox"></div>
 
-  <!-- Edit tags overlay -->
+  <!-- Edit tags overlay: bulk "add tags to selection" — React island (window.
+       corpusEditOverlay) owns the label/chips/add-row/picker/cancel/save rendering;
+       viewer.js owns the backdrop show/hide + all business logic (selection,
+       persistence, undo). -->
   <div class="confirm-overlay" id="editOverlay">
-    <div class="confirm-box edit-box">
-      <label class="edit-label" id="editTagsLabel"></label>
-      <div id="editTagsList" class="edit-current"></div>
-      <div class="edit-addrow">
-        <input type="text" id="editTagInput">
-        <button class="btn-outline" id="editTagAdd"></button>
-      </div>
-      <div id="editPicker" class="edit-picker"></div>
-      <div class="confirm-actions">
-        <button class="btn-outline" id="editCancel"></button>
-        <button class="btn-outline" id="editSave" style="background:var(--accent);color:#fff;border-color:var(--accent);"></button>
-      </div>
-    </div>
+    <div class="confirm-box edit-box" id="editOverlayBox"></div>
   </div>
 
   <!-- Date / engagement / poster-date-range popovers are the filter-popover React
@@ -2320,6 +2311,10 @@
        for the persistent right-column post/poster detail panel + its inline tag editor.
        viewer.js calls open()/refresh(); the inspector island renders. Before viewer.js. -->
   <script src="inspector.js"></script>
+  <!-- Edit-overlay controller (window.corpusEditOverlay): the imperative→declarative
+       bridge for the bulk "add tags to selection" modal. viewer.js calls open()/
+       refresh(); the edit-overlay island renders. Before viewer.js. -->
+  <script src="edit-overlay.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2370,6 +2365,10 @@
        logic (persistence, undo, homonym detection, poster folders) via
        window.corpusInspector. -->
   <script src="islands/inspector.js"></script>
+  <!-- Bulk "add tags to selection" modal: React owns the label/chips/add-row/picker/
+       cancel/save rendering, viewer.js owns the backdrop show/hide + selection/
+       persistence/undo via window.corpusEditOverlay. -->
+  <script src="islands/edit-overlay.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

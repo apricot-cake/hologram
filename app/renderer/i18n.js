@@ -342,11 +342,6 @@
       postedOn: '$1 に投稿',
       captured: '$1 にキャプチャ',
 
-      // viewer: edit overlay
-      tagsLabel: 'タグ',
-      addTag: '追加',
-      tagPlaceholder: 'タグを入力',
-
       // viewer: query/sidebar filters
       qfPlatform: 'プラットフォーム',
       qfPlatformNone: 'プラットフォームなし',
@@ -706,10 +701,6 @@
       tipDelete: 'Delete',
       postedOn: 'Posted $1',
       captured: 'Captured $1',
-
-      tagsLabel: 'Tags',
-      addTag: 'Add',
-      tagPlaceholder: 'Enter tag',
 
       qfPlatform: 'Platform',
       qfPlatformNone: 'No platform',

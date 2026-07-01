@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { TagEditor } from './TagEditor.jsx';
+import { TagEditor } from '../_shared/TagEditor.jsx';
 
 function Row({ k, v }) {
   if (v == null || v === '') return null;

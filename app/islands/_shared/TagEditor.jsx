@@ -1,16 +1,24 @@
 import { useState, useRef, useLayoutEffect, useMemo } from 'react';
 
-// Shared inline tag editor — used by both the post inspector (ivTag*) and the poster
-// inspector (pdTag*). Mirrors the old refreshInspectorTags/refreshInspectorPicker +
-// setupInspectorTagEditor(/PosterTagEditor) delegated handlers, but the picker filter
-// query is now LOCAL React state instead of a round trip through viewer.js: vocabGroups/
-// coocGroup/srcTags arrive unfiltered (full universe) and this component filters them by
-// substring match client-side (matching the old simple `.includes(q)` filter — no fuzzy
-// search), so keystrokes never touch the bridge. The add/filter input doubles as both
-// "type a new tag" and "filter the picker", exactly like the old #ivTagInput/#pdTagInput.
+// Shared inline tag editor — used by the post/poster inspector (ivTag*/pdTag*, the
+// always-live per-card editor) AND the bulk "add tags to selection" modal (edit*, a
+// staging list committed on Save). Mirrors the old refreshInspectorTags/
+// refreshInspectorPicker/renderEditTags/renderEditPicker + their delegated handlers,
+// but the picker filter query is now LOCAL React state instead of a round trip
+// through viewer.js: vocabGroups/coocGroup/srcTags arrive unfiltered (full universe)
+// and this component filters them by substring match client-side (matching the old
+// simple `.includes(q)` filter — no fuzzy search), so keystrokes never touch the
+// bridge. The add/filter input doubles as both "type a new tag" and "filter the
+// picker", exactly like the old #ivTagInput/#pdTagInput/#editTagInput.
+//
+// chipsClass/addrowClass/pickerClass/showLabel let the two callers match their own
+// (different) DOM/CSS contracts: the inspector wraps everything in one label+chips+
+// picker block (iv-tag-chips/iv-tag-addrow), the bulk modal has no internal label and
+// uses the plain confirm-dialog classes (edit-current/edit-addrow/edit-picker alone).
 export function TagEditor({
   idPrefix, className, tags, vocabGroups, coocGroup, srcTags, labels,
   onAdd, onRemove, onToggle, onContextMenu, autoFocus,
+  showLabel = true, chipsClass = 'iv-tag-chips', addrowClass = 'iv-tag-addrow', pickerClass = 'edit-picker iv-tag-picker',
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
@@ -54,8 +62,8 @@ export function TagEditor({
 
   return (
     <div id={idPrefix + 'TagEdit'} className={className}>
-      <div className="iv-tag-label">{labels.tagsLabel}</div>
-      <div id={idPrefix + 'TagChips'} className="iv-tag-chips">
+      {showLabel ? <div className="iv-tag-label">{labels.tagsLabel}</div> : null}
+      <div id={idPrefix + 'TagChips'} className={chipsClass}>
         {tags.length
           ? tags.map((t) => (
             <span
@@ -67,7 +75,7 @@ export function TagEditor({
           ))
           : <span className="edit-empty">{labels.noTags}</span>}
       </div>
-      <div className="iv-tag-addrow">
+      <div className={addrowClass}>
         <input
           ref={inputRef}
           type="text"
@@ -80,7 +88,7 @@ export function TagEditor({
         />
         <button type="button" className="btn-outline" id={idPrefix + 'TagAdd'} onClick={submit}>{labels.addBtn}</button>
       </div>
-      <div id={idPrefix + 'TagPicker'} className="edit-picker iv-tag-picker">
+      <div id={idPrefix + 'TagPicker'} className={pickerClass}>
         {isEmpty
           ? <span className="edit-empty">{query ? labels.noMatch : labels.noVocab}</span>
           : <>

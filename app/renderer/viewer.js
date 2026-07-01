@@ -275,11 +275,6 @@
     // stats formatters (pure formatting, no translation)
     likes: (n) => n != null ? `${formatCount(n)}` : '',
 
-    // edit overlay
-    tagsLabel: _s('tagsLabel'),
-    addTag: _s('addTag'),
-    tagPlaceholder: _s('tagPlaceholder'),
-
     // query/sidebar filters
     qfPlatform: _s('qfPlatform'),
     qfPlatformNone: _s('qfPlatformNone'),
@@ -383,12 +378,8 @@
   setText('confirmOk', MSG.confirmOk);
   setText('confirmSkipText', MSG.confirmSkip);
 
-  // Edit overlay i18n
-  setText('editTagsLabel', MSG.tagsLabel);
-  document.getElementById('editTagInput').placeholder = MSG.tagPlaceholder;
-  document.getElementById('editTagAdd').textContent = MSG.addTag;
-  document.getElementById('editCancel').textContent = MSG.confirmCancel;
-  document.getElementById('editSave').textContent = MSG.save;
+  // Edit overlay labels are now passed directly in the corpusEditOverlay model (see
+  // tagSelectedBtn below) — no static DOM to set text on anymore.
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
   // (labels, thumb, on-state) is rendered by the toolbar island; viewer only keeps
@@ -3616,17 +3607,16 @@
     showDetail(g);
   });
 
-  // --- Edit overlay logic ---
-  // Editing a grouped card edits ALL its records (a group is one post in the UI).
-  let editingPost = null;
+  // --- Edit overlay logic (bulk "add tags to selection") ---
+  // editTags is a STAGING list (nothing persists until Save — see tagSelectedBtn/
+  // onSave below); editingRecords holds the selected posts' real records to write to.
   let editingRecords = [];
   let editTags = [];
-  let editAdditive = false;   // true = bulk "タグを追加": merge into each record's tags
-  let editPickQuery = '';     // edit picker search filter
+  let editAdditive = false;   // true = merge into each record's existing tags (always true — no replace UI exists)
 
   // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
   // ungrouped tags that exist on posts), each section filtered by `query`. Shared
-  // by the stamp palette and the card-edit picker.
+  // by the inspector's TagEditor and the bulk edit modal (via inspectorTagPickerData).
   function groupedTagVocab(query, opts) {
     const scope = (opts && opts.scope) || 'post';
     const q = (query || '').toLowerCase();
@@ -3666,13 +3656,6 @@
     return out;
   }
 
-  function renderEditTags() {
-    const container = document.getElementById('editTagsList');
-    container.innerHTML = editTags.length
-      ? editTags.map((t, i) => `<span class="tag-chip" style="cursor:pointer;" data-remove-tag="${i}">${escapeHtml(t)} \u00d7</span>`).join('')
-      : `<span class="edit-empty">${escapeHtml(MSG.editNoTags)}</span>`;
-  }
-
   // Tag co-occurrence: 作品 → characters that have shared a post with any of these
   // 作品 tags, most-frequent first. Deterministic + explainable (the count IS the
   // confidence). 種別 already fixes the two hard guesses (which tags relate, which is
@@ -3690,110 +3673,19 @@
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
-  // Recognition-over-recall: every existing tag, grouped, click to toggle. Shared by
-  // the bulk-edit modal AND the inspector inline editor — the caller passes the host
-  // element, the current selection, the records to read source (pixiv/SNS) tags from,
-  // and the search query. Clicks are handled by each host's own delegated listener.
-  function renderTagPicker({ host, selectedTags, recordsForSource, query, scope }) {
-    if (!host) return;
-    const q = (query || '').toLowerCase();
-    const groups = groupedTagVocab(query || '', { scope: scope || 'post' });
-    const srcSet = new Set();
-    for (const r of (recordsForSource || [])) for (const h of (Array.isArray(r.hashtags) ? r.hashtags : [])) {
-      if (!q || h.toLowerCase().includes(q)) srcSet.add(h);
-    }
-    const srcTags = [...srcSet];
-    if (!groups.length && !srcTags.length) {
-      host.innerHTML = `<span class="edit-empty">${escapeHtml(query ? MSG.tagPalNoMatch : MSG.tagNoTags)}</span>`;
-      return;
-    }
-    const sel = selectedTags instanceof Set ? selectedTags : new Set(selectedTags || []);
-    // 種別ドット（用語帳）: a 作品/キャラ tag wears a small category dot here too, so the
-    // bulk modal / inspector picker reads the same as the sidebar rows + stamp palette.
-    const chip = (t) => { const k = tagKindOf(t); const dot = k ? `<span class="tag-pal-kind tk-${k}"></span>` : ''; return `<button class="edit-pick-chip${sel.has(t) ? ' on' : ''}" data-pick="${escapeAttr(t)}">${dot}${escapeHtml(t)}</button>`; };
-    let html = '';
-    // 共起候補（作品→キャラ）: when a 作品 tag is set and the user isn't searching,
-    // surface co-occurring characters. Suggestions only — full vocab still follows.
-    if (!q) {
-      const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
-      if (workTags.length) {
-        const cands = charCandidatesFor(workTags).filter(([t]) => !sel.has(t)).slice(0, 8);
-        if (cands.length) {
-          const gname = workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars;
-          const who = workTags.join('・');
-          html += `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(gname)}</div><div class="edit-pick-chips">` +
-            cands.map(([t, n]) => `<button class="edit-pick-chip" data-pick="${escapeAttr(t)}" title="${escapeAttr(MSG.editCoocWhy(who, n))}">${escapeHtml(t)}</button>`).join('') +
-            `</div></div>`;
-        }
-      }
-    }
-    if (srcTags.length) {
-      html += `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(MSG.editAdoptSource)}</div><div class="edit-pick-chips">` +
-        srcTags.map(chip).join('') + `</div></div>`;
-    }
-    html += groups.map((g) =>
-      `<div class="edit-pick-group"><div class="edit-pick-gname">${escapeHtml(g.name)}</div><div class="edit-pick-chips">` +
-      g.tags.map(chip).join('') +
-      `</div></div>`
-    ).join('');
-    host.innerHTML = html;
+  // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
+  // staging-list mutation. Not persisted yet — Save (see tagSelectedBtn below) is the
+  // only thing that writes editTags out to editingRecords.
+  function refreshEditOverlayFields() {
+    window.corpusEditOverlay.refresh({ tags: editTags, ...inspectorTagPickerData(editTags, editingRecords, 'post') });
   }
 
-  // Modal (bulk) picker: thin wrapper over the shared renderer.
-  function renderEditPicker() {
-    renderTagPicker({ host: document.getElementById('editPicker'), selectedTags: editTags, recordsForSource: editingRecords, query: editPickQuery });
+  function closeEditOverlay() {
+    editingRecords = [];
+    editAdditive = false;
+    document.getElementById('editOverlay').classList.remove('show');
+    window.corpusEditOverlay.close();
   }
-
-  document.getElementById('editTagsList').addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-remove-tag]');
-    if (!chip) return;
-    editTags.splice(parseInt(chip.dataset.removeTag, 10), 1);
-    renderEditTags();
-    renderEditPicker();
-  });
-
-  // Toggle an existing tag on/off for this card straight from the picker.
-  document.getElementById('editPicker').addEventListener('click', (e) => {
-    const chip = e.target.closest('.edit-pick-chip');
-    if (!chip) return;
-    const t = chip.dataset.pick;
-    const i = editTags.indexOf(t);
-    if (i >= 0) editTags.splice(i, 1); else editTags.push(t);
-    renderEditTags();
-    renderEditPicker();
-  });
-
-  // Right-click a picker chip → set its 種別 (shares the stamp palette's kind menu via
-  // taggingApi). Same quiet 段階的開示 entry as the palette, now reachable while editing
-  // a card — assign 作品/キャラ in the same flow you're tagging in.
-  document.getElementById('editPicker').addEventListener('contextmenu', (e) => {
-    const chip = e.target.closest('.edit-pick-chip');
-    if (!chip) return;
-    e.preventDefault();
-    if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(chip.dataset.pick, e.clientX, e.clientY, renderEditPicker);
-  });
-
-  document.getElementById('editTagAdd').addEventListener('click', () => {
-    const input = document.getElementById('editTagInput');
-    const tag = input.value.trim();
-    if (tag && !editTags.includes(tag)) editTags.push(tag);
-    input.value = ''; editPickQuery = '';
-    renderEditTags();
-    renderEditPicker();
-    input.focus();
-  });
-
-  // Typing filters the picker; Enter commits the typed text as a (possibly new) tag.
-  document.getElementById('editTagInput').addEventListener('input', (e) => {
-    editPickQuery = e.target.value.trim();
-    renderEditPicker();
-  });
-  document.getElementById('editTagInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      document.getElementById('editTagAdd').click();
-    }
-  });
 
   // Modal chrome: lock background scroll + darken the native titlebar while any
   // full-screen overlay is up (the scrim can't cover the OS window controls or the
@@ -3821,47 +3713,10 @@
   // click/contextmenu handling directly via the callbacks in the model (see
   // showDetail/showPosterDetail), so no delegated #postDetail listeners are needed.
 
-  document.getElementById('editCancel').addEventListener('click', () => {
-    editingPost = null;
-    editAdditive = false;
-    document.getElementById('editOverlay').classList.remove('show');
-  });
-
+  // Background click (outside the box) cancels, same as editCancel/onCancel below.
   document.getElementById('editOverlay').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) {
-      editingPost = null;
-      editAdditive = false;
-      e.currentTarget.classList.remove('show');
-    }
+    if (e.target === e.currentTarget) closeEditOverlay();
   });
-
-  document.getElementById('editSave').addEventListener('click', async () => {
-    if (!editingPost) return;
-    keepCurrentVisible();   // removing a tag can un-match an active tag filter
-    const tags = [...editTags];
-
-    // Capture before-state for undo, then persist.
-    const undoRecords = editingRecords.map(r => {
-      const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
-      return { captureId: r.captureId, image: r.image || r.video, prevTags: (r.tags || []).slice(), newTags };
-    });
-    for (const u of undoRecords) {
-      try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
-      const rec = _postsById.get(u.captureId);   // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = u.newTags.slice();
-    }
-    pushUndo('tags', undoRecords);
-    markPostsMutated();
-    renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
-
-    const n = editingRecords.length;
-    editingPost = null;
-    editingRecords = [];
-    editAdditive = false;
-    document.getElementById('editOverlay').classList.remove('show');
-    showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
-  });
-
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
   const selectionBar = document.getElementById('selectionBar');
@@ -3892,13 +3747,48 @@
   tagSelectedBtn.addEventListener('click', () => {
     const records = selectedRecords();
     if (!records.length) return;
-    editingPost = records[0];
     editingRecords = records;
     editTags = [];
     editAdditive = true;
-    document.getElementById('editTagsLabel').textContent = MSG.tagSelectedTitle;
-    document.getElementById('editTagInput').value = '';
-    renderEditTags();
+    window.corpusEditOverlay.open({
+      titleLabel: MSG.tagSelectedTitle,
+      tags: editTags,
+      ...inspectorTagPickerData(editTags, editingRecords, 'post'),
+      tagLabels: {
+        tagsLabel: MSG.detailTags, newTagPlaceholder: MSG.tagNewName, addBtn: MSG.tagAddBtn,
+        noTags: MSG.editNoTags, noMatch: MSG.tagPalNoMatch, noVocab: MSG.tagNoTags, adoptSource: MSG.editAdoptSource,
+      },
+      cancelLabel: MSG.confirmCancel,
+      saveLabel: MSG.save,
+      onCancel: closeEditOverlay,
+      onTagAdd: (tag) => { if (!editTags.includes(tag)) editTags.push(tag); refreshEditOverlayFields(); },
+      onTagRemove: (tag) => { const i = editTags.indexOf(tag); if (i >= 0) editTags.splice(i, 1); refreshEditOverlayFields(); },
+      onTagToggle: (tag) => { const i = editTags.indexOf(tag); if (i >= 0) editTags.splice(i, 1); else editTags.push(tag); refreshEditOverlayFields(); },
+      onTagContextMenu: (tag, x, y) => {
+        if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, refreshEditOverlayFields);
+      },
+      onSave: async () => {
+        if (!editingRecords.length) { closeEditOverlay(); return; }
+        keepCurrentVisible();   // removing a tag can un-match an active tag filter
+        const tags = [...editTags];
+        // Capture before-state for undo, then persist.
+        const undoRecords = editingRecords.map((r) => {
+          const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
+          return { captureId: r.captureId, image: r.image || r.video, prevTags: (r.tags || []).slice(), newTags };
+        });
+        for (const u of undoRecords) {
+          try { await window.corpus.updateTags(u.image, u.newTags); } catch { /* keep going */ }
+          const rec = _postsById.get(u.captureId);   // O(1) lookup; allPosts shares the same record refs
+          if (rec) rec.tags = u.newTags.slice();
+        }
+        pushUndo('tags', undoRecords);
+        markPostsMutated();
+        renderPosts(true);   // keepLimit: selection (if any) stays put, no anim replay
+        const n = editingRecords.length;
+        closeEditOverlay();
+        showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
+      },
+    });
     document.getElementById('editOverlay').classList.add('show');
   });
 
