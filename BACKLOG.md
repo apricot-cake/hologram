@@ -109,9 +109,8 @@
 **方針・実装知の真実源はメモリ**（`corpus-react-settings-pilot`/`corpus-vite-migration`）＝目的（合否基準）・確立パターン（反転パターン/プレゼンテーショナル島/idempotent guard/初期化順の罠）・各スライスの実装知。ここには**残タスクだけ**を置く。
 
 - **依存/UI 方針（確定）**: 全面リライトしない・段階移行／依存は痛みが出た時に keep/replace で判断（bespoke＝フィルタ/グルーピング/正規化/日本語あいまい検索は保つ・コモディティ＝位置決め/窓化/a11y は痛んだら委譲）／UI はガラス維持（styled kit 却下）／状態は corpusStore 継続／ルーター無し。
-- **着地済み**: Vite 移行（esbuild 廃止・段階0-2）／島16個（settings/sidebar-tags/query-chips/tabs/collections/suggest/posters/post-card=テンプレート島/toolbar/context-menu/kind-menu/filter-popover/qf-pop/lightbox/inspector/edit-overlay）＋共有ストア window.corpusStore。フィルタ系（値フライアウト qfPop＋日付/エンゲージ/ポスター日付範囲ポップオーバー）は完了。**詳細/インスペクタパネル（post/poster）と一括タグ追加モーダルも完了＝インライン タグ編集/タグピッカーを共通 `_shared/TagEditor.jsx` へ一本化**（React化=目的1の実例）。Reactランタイムは全島から外部化し共有 vendor-react.js に一本化済み（c3269d4）。#filterRows のバッジ（`renderFilterBadges`）は純粋な派生テキスト＋クラス切替でドリフトリスクが無く、React化の対象外と判断（現状維持）。
+- **着地済み**: Vite 移行（esbuild 廃止・段階0-2）／島16個（settings/sidebar-tags/query-chips/tabs/collections/searchbox=react-aria ComboBox/posters/post-card=テンプレート島/toolbar/context-menu/kind-menu/filter-popover/qf-pop/lightbox/inspector/edit-overlay）＋共有ストア window.corpusStore。フィルタ系（値フライアウト qfPop＋日付/エンゲージ/ポスター日付範囲ポップオーバー）は完了。**詳細/インスペクタパネル（post/poster）と一括タグ追加モーダルも完了＝インライン タグ編集/タグピッカーを共通 `_shared/TagEditor.jsx` へ一本化**（React化=目的1の実例）。Reactランタイムは全島から外部化し共有 vendor-react.js に一本化済み（c3269d4）。**検索ボックス＋サジェストも完了（スライスm・f0b206c）＝react-aria-components 導入・searchbox 島が input DOM を所有・値源は corpusStore searchQuery・旧 suggest 島は吸収削除**（実装知はメモリ `corpus-react-settings-pilot`）。#filterRows のバッジ（`renderFilterBadges`）は純粋な派生テキスト＋クラス切替でドリフトリスクが無く、React化の対象外と判断（現状維持）。
 - **残タスク**:
-  - 検索ボックス＋サジェスト（タブ状態結合で重い）。
   - グリッド完全React化＝#postGrid を viewer.js→React 所有＋仮想化（`viewer.js:3061`/`index.html:808` の線形劣化解消・下記「技術スタック候補」。回帰リスク最大＝後半スライスで慎重に）。
   - viewer.js（5724行 IIFE）を store/service/hooks へ段階抽出（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。※c3269d4 で React ランタイムを全島から外部化し共有 vendor-react.js に一本化＝バンドル畳みの地ならしに着手済み。
@@ -127,7 +126,6 @@
   - **JSON 裸 parse の BOM 剥ぎ**＝上「正しさ」節 **L3 の実装縮小版**（`parseJsonLoose` 一行差しに留める・reader 二系統統合は誇張で見送り）。
   - **theme.js の死んだ DOM 配線を除去**（`app/renderer/theme.js`・2026-07-01 UltraCode検出）: `apply()`(38-39行) と `init()`(72-76行) が削除済み `#themeSelect` を掴む到達不能コード（リポ全体で他に存在しない要素id）。React 版 Appearance.jsx は `window.corpusTheme` 駆動で DOM id 非依存＝React化で自然消滅しない移行取り残し。`init()` の `getPrefs()` 照合(77-82)は生きた IPC 同期経路なので残す。除去後は外観 select 切替でテーマ即反映を実機1点確認。
   - **content.js の日本語コードコメントを英語化**（`extension/content.js` 22箇所＋`extension/i18n.js:27-28`・2026-07-01 UltraCode検出）: `feedback-comment-language`規約（コード内コメントは英語）への唯一の実質違反。同ディレクトリの他4ファイルは全て英語。UI文字列リテラル（banner等）は日本語のまま据え置く。機械的翻訳で解消可。
-  - **settings/toolbar の i18n.js（24行完全同一）を共有化**（`app/islands/toolbar/i18n.js`・2026-07-01 UltraCode検出）: `app/islands/_shared/i18n.js` へ1本化し両島の import 先を差し替え。他島は明示的に i18n を持たない設計のため被害は小さく、3島目が i18n を使うまで when-pain でも実害なし。
   - **corpusSearch の購読APIを subscribe に統一**（`app/renderer/search.js`・2026-07-01 UltraCode検出）: store.js は `subscribe` を購読契約の基準とするが corpusSearch だけ `onChange`。`subscribe` エイリアスを追加し `QfPop.jsx`/`viewer.js` の呼び出しを寄せる（`onChange` は既存 vanilla 呼び出し互換で残置）。挙動不変の命名統一。
   - **コールバック搬送ブリッジの重複解消は「単一root/単一バンドル化」に合流**（`app/renderer/qf-pop.js`/`filter-popover.js`・2026-07-01 UltraCode検出）: 2本が完全一致の subscribe/notify 定型を重複実装（kind-menu/menu.jsは挙動差ありのため対象外）。島がまだ流動中のため単独前倒しはせず、上「React化」節の島 IIFE 畳み工程で `makeCallbackBridge({name,useOpenId})` に統合する。
 - **見送り（誇張/振る舞い変更が判明・再提案しない）**: generationキャッシュ横展開（束ねた buildUsers は修正済＝real 薄・残りは150msデバウンス背後の O(N) 衛生案件）／getSaveFolder メモ化（毎回ライブ config 読みは消失事故対策の pointer 復旧防御そのもの＝ハード化点を壊す・実益µs級）／IPC集中ラッパーの「全46握り潰し」根治（誤り＝set*/persist系のみ・下技術スタック#2参照）／テストのアサーション様式3系統混在・DIAG_PREFIX重複定義・`'use strict'`不揃い・空catchバインディング名不統一（いずれも実害なし・Biome導入(#1)の初回スイープで機械的に一掃されるため個別着手は二重手間＝再提案しない）。
@@ -156,7 +154,7 @@
 | 13 | **better-sqlite3 + FTS5** | DB | evaluate | SQL で複数痛点を解く潜在力。ただしボトルネックは IPC直列化・ネイティブ配布コスト見合わず |
 | 14 | **sharp**（libvips） | 画像 | evaluate | サムネ同期ブロッキング＋webp/avif 非対応を別スレッドで一掃。asarUnpack＝実行時依存ゼロを破る越境 |
 | 15 | **Vitest** | テスト | evaluate | 島ロジック用。最大痛点 getFilteredPosts 等は IIFE で対象外＝service 抽出後に本領 |
-| 16 | **react-aria 自前パレット** | Cmd+K | when-pain | 既存最有力依存で search.js を通せば日本語あいまい検索の二重実装を回避。最終形B後に1ツリーで |
+| 16 | **react-aria 自前パレット** | Cmd+K | when-pain | react-aria-components はスライスm（検索ボックス）で導入済＝パレットは追加依存ゼロ。search.js を通せば日本語あいまい検索の二重実装も回避。最終形B後に1ツリーで |
 
 ### ティア早見表
 
