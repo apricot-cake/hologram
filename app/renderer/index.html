@@ -2358,6 +2358,10 @@
        bridge for right-click menus. viewer.js calls open(); the context-menu island
        renders. Before viewer.js. -->
   <script src="menu.js"></script>
+  <!-- Kind-menu controller (window.corpusKindMenu): the imperative→declarative bridge
+       for the 種別 (work/character/general) tag-kind menu. viewer.js calls open();
+       the kind-menu island renders. Before viewer.js. -->
+  <script src="kind-menu.js"></script>
   <script src="about-icon.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
@@ -2392,6 +2396,9 @@
   <!-- Right-click context menus: React owns the glass popup rendering, viewer.js owns
        the items + actions (via window.corpusContextMenu). -->
   <script src="islands/context-menu.js"></script>
+  <!-- 種別 (tag-kind) menu: React owns the glass popup rendering (header + pick/rename
+       rows), viewer.js owns the row model + pick/rename actions (kind-menu.js bridge). -->
+  <script src="islands/kind-menu.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

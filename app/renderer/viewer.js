@@ -1550,7 +1550,7 @@
   const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
   let inspectedKey = null;      // postIdKey of the group shown in the inspector (ring marker)
   let viewGroups = [];          // current render result: [{ key, records, rep, files }]
-  let taggingApi = null;        // shared 種別 (kind) menu API; set by setupKindMenu() below
+  let taggingApi = null;        // shared 種別 (kind) menu API; set by showKindMenu() below
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
   // card/list serve a thumbnail too now (they used to load the full original —
@@ -3418,67 +3418,35 @@
 
   // === Shared 種別 (kind) menu: right-click a tag chip (edit picker / inspector /
   // poster) to classify it 作品/キャラ/一般. A tag's 種別 is the TAG's own attribute
-  // (no post is touched), surfaced as a quiet 段階的開示 entry inside tag editing. ===
-  (function setupKindMenu() {
-    const kindMenu = document.createElement('div');
-    kindMenu.className = 'fold-menu kind-menu';
-    document.body.appendChild(kindMenu);
-    const PENCIL_SVG = _ic('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>');
-    let kindMenuTag = null;
-    let kindMenuOnChanged = null;   // re-render after a kind change (edit picker / inspector / poster)
-    function hideKindMenu() { kindMenu.classList.remove('show'); kindMenuTag = null; }
-    function showKindMenu(tag, x, y, onChanged) {
-      kindMenuTag = tag;
-      kindMenuOnChanged = onChanged || null;
-      const cur = tagKindOf(tag);
-      const row = (k, label) => {
-        const dot = k ? `<span class="tk-dot tk-${k}"></span>` : '';
-        const on = (k || null) === cur;
-        // The work/character pair carries a quiet ✎ to rename the 種別 globally
-        // (段階的開示: only here, in the tag-management kind menu).
-        const rename = (k === 'work' || k === 'character')
-          ? `<button type="button" class="fm-rename" data-rename="${k}" title="${escapeAttr(MSG.tagKindRename)}">${PENCIL_SVG}</button>` : '';
-        return `<div class="fm-row" data-kind="${k || '__none'}"><span class="fm-ic">${dot}</span>` +
-          `<span class="fm-name">${escapeHtml(label)}</span>${rename}${on ? `<span class="fm-check">${CHECK_SVG}</span>` : ''}</div>`;
-      };
-      kindMenu.innerHTML =
-        `<div class="fm-head">${escapeHtml(MSG.tagKindHeader)}</div>` +
-        row('work', kindLabel('work')) +
-        row('character', kindLabel('character')) +
-        '<div class="fm-sep"></div>' +
-        row('', MSG.kindGeneral);
-      kindMenu.style.left = x + 'px';
-      kindMenu.style.top = y + 'px';
-      kindMenu.classList.add('show');
-      clampIntoView(kindMenu);
-    }
-    kindMenu.addEventListener('click', async (e) => {
-      e.stopPropagation();   // survive the capture-phase document hider below
-      const renameEl = e.target.closest('[data-rename]');
-      if (renameEl) {
-        const k = renameEl.dataset.rename;
-        const onChanged = kindMenuOnChanged;   // hideKindMenu keeps it, but capture for clarity
-        hideKindMenu();
-        const next = window.prompt(MSG.tagKindRenamePrompt, kindLabel(k));
-        if (next === null) return;             // cancelled (empty string = reset to default)
-        await setKindLabel(k, next);
+  // (no post is touched), surfaced as a quiet 段階的開示 entry inside tag editing.
+  // Rendering lives in the kind-menu React island (dedicated component — a row's
+  // pick target and its rename button are two independent click targets, which the
+  // generic ContextMenu item shape has no room for); this only builds the row model
+  // and runs the pick/rename actions via the corpusKindMenu bridge (kind-menu.js). ===
+  function showKindMenu(tag, x, y, onChanged) {
+    const cur = tagKindOf(tag);
+    // The work/character pair carries a quiet ✎ to rename the 種別 globally
+    // (段階的開示: only here, in the tag-management kind menu).
+    const row = (k, label) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
+    window.corpusKindMenu.open({
+      x, y, header: MSG.tagKindHeader, renameTitle: MSG.tagKindRename,
+      rows: [row('work', kindLabel('work')), row('character', kindLabel('character')), { sep: true }, row('', MSG.kindGeneral)],
+      async onPick(kind) {
+        if ((tagKindOf(tag) || '') === kind) return;   // already that kind — no write
+        await setTagKind(tag, kind);
+        if (onChanged) onChanged();
+        showToast(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
+      },
+      async onRename(kind) {
+        const next = window.prompt(MSG.tagKindRenamePrompt, kindLabel(kind));
+        if (next === null) return;   // cancelled (empty string = reset to default)
+        await setKindLabel(kind, next);
         if (onChanged) onChanged();
         showToast(MSG.tagKindRenamed);
-        return;
-      }
-      const rowEl = e.target.closest('.fm-row'); const tag = kindMenuTag;
-      hideKindMenu();
-      if (!rowEl || !tag) return;
-      const kind = rowEl.dataset.kind === '__none' ? '' : rowEl.dataset.kind;
-      if ((tagKindOf(tag) || '') === kind) return;   // already that kind — no write
-      await setTagKind(tag, kind);
-      if (kindMenuOnChanged) kindMenuOnChanged();
-      showToast(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
+      },
     });
-    document.addEventListener('click', (e) => { if (kindMenu.classList.contains('show') && !kindMenu.contains(e.target)) hideKindMenu(); }, true);
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideKindMenu(); });
-    taggingApi = { showKindMenu };
-  })();
+  }
+  taggingApi = { showKindMenu };
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
