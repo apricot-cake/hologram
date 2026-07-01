@@ -31,6 +31,41 @@ const ISLANDS = [
   'filter-popover', 'qf-pop', 'inspector', 'edit-overlay',
 ];
 
+// React is externalized out of every island and shared via one prebuilt runtime
+// (vendor-react.js, loaded first in index.html). These specifiers map to the
+// globals that vendor-react/index.js assigns on `window` — the two lists MUST
+// stay in sync. Without this, each island re-inlines its own ~186KB React copy.
+const REACT_EXTERNALS = ['react', 'react-dom', 'react-dom/client', 'react-dom/server', 'react/jsx-runtime'];
+const REACT_GLOBALS = {
+  'react': 'React',
+  'react-dom': 'ReactDOM',
+  'react-dom/client': 'ReactDOMClient',
+  'react-dom/server': 'ReactDOMServer',
+  'react/jsx-runtime': 'ReactJsxRuntime',
+};
+
+// Build the shared runtime FIRST (react + react-dom bundled in, nothing
+// external) so it exists before the islands that expect its globals at load.
+await build({
+  root: appRoot,
+  configFile: false,
+  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+  logLevel: 'warn',
+  build: {
+    outDir: path.join(appRoot, 'renderer/islands'),
+    emptyOutDir: false,
+    target: 'chrome130',
+    minify: true,
+    sourcemap: false,
+    lib: {
+      entry: path.join(here, 'vendor-react', 'index.js'),
+      formats: ['iife'],
+      name: '__corpusReactRuntime', // side-effect only (assigns window.*); no exports read
+      fileName: () => 'vendor-react.js',
+    },
+  },
+});
+
 for (const name of ISLANDS) {
   await build({
     root: appRoot,
@@ -52,8 +87,12 @@ for (const name of ISLANDS) {
         name: '__corpusIsland_' + name.replace(/-/g, '_'), // IIFE needs a name; islands export nothing (side-effect only)
         fileName: () => name + '.js',
       },
+      rollupOptions: {
+        external: REACT_EXTERNALS, // don't inline React; reach it via window globals
+        output: { globals: REACT_GLOBALS },
+      },
     },
   });
 }
 
-console.log('[islands] built renderer/islands/{' + ISLANDS.join(',') + '}.js via Vite lib IIFE');
+console.log('[islands] built renderer/islands/{vendor-react,' + ISLANDS.join(',') + '}.js via Vite lib IIFE');

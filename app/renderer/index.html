@@ -2316,6 +2316,11 @@
        refresh(); the edit-overlay island renders. Before viewer.js. -->
   <script src="edit-overlay.js"></script>
   <script src="about-icon.js"></script>
+  <!-- Shared React runtime (react + react-dom) for every island below. Bundled
+       once by islands/build.mjs and loaded FIRST so islands (built with React
+       externalized) reach window.React/ReactDOM/… instead of each inlining its
+       own ~186KB copy. Must precede the first island script (post-card). -->
+  <script src="islands/vendor-react.js"></script>
   <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
        HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
        Loaded BEFORE viewer.js so cardHtml() can call window.corpusPostCard. -->

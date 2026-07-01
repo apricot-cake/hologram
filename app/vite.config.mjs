@@ -40,6 +40,12 @@ function corpusDevHtml() {
     name: 'corpus-dev-html',
     apply: 'serve',
     transformIndexHtml(html) {
+      // The prebuilt shared React runtime is prod-only: dev serves each island's
+      // .jsx as an ES module that imports React straight from node_modules, and
+      // vendor-react has a .js entry (no .jsx) the island rewrite below could not
+      // resolve anyway. Strip its <script> before the island rewrite so the
+      // ISLAND_SCRIPT regex below doesn't turn it into a dead /index.jsx module.
+      html = html.replace(/[ \t]*<script src="islands\/vendor-react\.js"><\/script>\r?\n?/, '');
       html = html.replace(
         ISLAND_SCRIPT,
         (_m, name) => `<script type="module" src="/islands/${name}/index.jsx"></script>`,
