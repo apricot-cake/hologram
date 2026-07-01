@@ -1,6 +1,6 @@
 import { useSyncExternalStore, useCallback, useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // Glass dropdown for the sidebar sort selects (post / poster / collection). Replaces
 // viewer.js's hand-rolled enhanceSelect machinery (custom button + body-level glass

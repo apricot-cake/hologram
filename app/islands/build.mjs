@@ -27,7 +27,7 @@ const appRoot = path.join(here, '..');                     // app
 // react-dom/client (createRoot). Both bundle fine in lib IIFE mode.
 const ISLANDS = [
   'settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections',
-  'suggest', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu',
+  'searchbox', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu',
   'filter-popover', 'qf-pop', 'inspector', 'edit-overlay',
 ];
 
@@ -66,11 +66,22 @@ await build({
   },
 });
 
+// The CJS 'use-sync-external-store' shim (react-aria / react-stately transitive
+// dep) keeps a literal require("react") in lib-IIFE output — externals are
+// global-mapped only for ESM imports — and throws at load. React 18+ has the
+// hook natively; point both import specifiers at a 1-line ESM re-export.
+const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.js');
+const RESOLVE_ALIAS = {
+  'use-sync-external-store/shim/index.js': USE_SYNC_SHIM,
+  'use-sync-external-store/shim': USE_SYNC_SHIM,
+};
+
 for (const name of ISLANDS) {
   await build({
     root: appRoot,
     configFile: false, // self-contained; vite.config.mjs is dev-serve only
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+    resolve: { alias: RESOLVE_ALIAS },
     plugins: [react()],
     logLevel: 'warn', // quiet the per-build banner across all builds
     build: {

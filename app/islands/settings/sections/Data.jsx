@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Hint } from '../components/Hint.jsx';
 import { Highlight } from '../components/Highlight.jsx';
-import { t } from '../i18n.js';
+import { t } from '../../_shared/i18n.js';
 
 const corpus = () => window.corpus || {};
 const notify = (m) => { if (window.corpusUI && window.corpusUI.notify) window.corpusUI.notify(m); };

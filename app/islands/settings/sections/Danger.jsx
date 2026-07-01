@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Hint } from '../components/Hint.jsx';
 import { Highlight } from '../components/Highlight.jsx';
 import { Switch } from '../components/Switch.jsx';
-import { t } from '../i18n.js';
+import { t } from '../../_shared/i18n.js';
 import { getPrefs } from '../ipc.js';
 
 // 危険な操作: re-enable the delete confirmation + wipe the whole library.

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Hint } from '../components/Hint.jsx';
-import { t } from '../i18n.js';
+import { t } from '../../_shared/i18n.js';
 import * as ipc from '../ipc.js';
 
 // 言語: viewer display language. Changing it persists then reloads the renderer

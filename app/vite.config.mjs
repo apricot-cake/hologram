@@ -62,5 +62,13 @@ function corpusDevHtml() {
 export default defineConfig({
   root: here,
   server: { port: 5173, strictPort: true },
+  resolve: {
+    alias: {
+      // Same alias as islands/build.mjs: the CJS use-sync-external-store shim is
+      // replaced with a 1-line ESM re-export (React 18+ has the hook natively).
+      'use-sync-external-store/shim/index.js': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.js'),
+      'use-sync-external-store/shim': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.js'),
+    },
+  },
   plugins: [react(), corpusDevHtml()],
 });

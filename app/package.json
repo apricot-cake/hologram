@@ -17,6 +17,7 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "react": "^19.1.0",
+    "react-aria-components": "^1.19.0",
     "react-dom": "^19.1.0",
     "vite": "^8.1.0"
   },

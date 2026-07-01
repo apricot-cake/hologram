@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } fr
 import { SearchContext } from './search-context.js';
 import { Section } from './components/Section.jsx';
 import { SECTIONS } from './sections/registry.js';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // The whole settings modal: scrim overlay + sticky head (title / search / close)
 // + side TOC + body. Master-detail: with no query the TOC picks ONE section to

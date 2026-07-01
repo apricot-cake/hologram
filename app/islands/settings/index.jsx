@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App.jsx';
-import { initI18n } from './i18n.js';
+import { initI18n } from '../_shared/i18n.js';
 import './styles.css';
 
 // Tiny external open/closed store so non-React code (the brand-bar gear in

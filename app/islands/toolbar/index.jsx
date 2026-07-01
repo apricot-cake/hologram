@@ -4,7 +4,7 @@ import { DensityToggle } from './DensityToggle.jsx';
 import { BrowseToggle } from './BrowseToggle.jsx';
 import { SectionTitle, BROWSE_MAP, VIEW_MAP } from './SectionTitle.jsx';
 import { GlassSelect } from './GlassSelect.jsx';
-import { initI18n } from './i18n.js';
+import { initI18n } from '../_shared/i18n.js';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. This is the
 // first slice of the shell (above the leaf islands): presentational, with state in

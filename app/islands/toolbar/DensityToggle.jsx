@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // View-density toggle (card / tile / list). One component, two mounts: the post grid
 // (storeKey='view', data-view) and the poster grid (storeKey='posterView', data-pview).

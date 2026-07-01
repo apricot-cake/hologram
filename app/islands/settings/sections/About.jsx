@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { t } from '../i18n.js';
+import { t } from '../../_shared/i18n.js';
 import * as ipc from '../ipc.js';
 
 // このアプリについて: the live holographic icon over name / version / build meta.

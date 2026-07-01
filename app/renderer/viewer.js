@@ -344,7 +344,6 @@
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'title', MSG.tileSizeTip);
   setText('postResetBtn', MSG.reset);
-  setAttr('searchBox', 'placeholder', MSG.searchPlaceholder);
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
@@ -1056,8 +1055,7 @@
 
   // Update sidebar state (chip actives, row badges, tag area, active bar)
   function updateSidebarState() {
-    const sb = document.getElementById('searchBox');
-    if (sb) sb.classList.toggle('has-value', !!searchQuery().trim());
+    // (#searchBox's has-value accent is owned by the searchbox island)
     renderFilterBadges();
     updateSidebarTags();
     renderQueryChips();   // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
@@ -3884,7 +3882,8 @@
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!document.getElementById('ivFolderModal').hidden) return;
     e.preventDefault();
-    const sb = document.getElementById('searchBox');
+    const sb = document.getElementById('searchBox');   // the searchbox island's Input (id preserved)
+    if (!sb) return;   // island not mounted yet (sub-second boot window)
     sb.focus();
     sb.select();
   });
@@ -4833,27 +4832,31 @@
     renderPosts();
   });
 
-  // --- Search value source (stage 1 of the searchbox React slice) -------------
-  // corpusStore 'searchQuery' mirrors #searchBox at ALL times: every programmatic
-  // write goes through setSearchBoxValue and the input listener below mirrors
-  // typing before any debounce. Readers use searchQuery() so the store is the
-  // single value source — the next stage hands the input DOM itself to the React
-  // ComboBox island and only this store contract survives.
+  // --- Search value source -----------------------------------------------------
+  // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
+  // as a controlled react-aria ComboBox input. Typing: island → store → the
+  // subscriber below runs the debounced heavy side effects. Programmatic writes
+  // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →
+  // store → island re-renders the input. _searchEcho tells the two apart — every
+  // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
+  // the typing pipeline would double-render and churn the editing text leaf.
   function searchQuery() { return String(window.corpusStore.get('searchQuery') || ''); }
+  let _searchEcho = '';
   function setSearchBoxValue(v) {
-    const sb = document.getElementById('searchBox');
-    if (sb) { sb.value = v; v = sb.value; }   // read back so store === DOM exactly
-    window.corpusStore.set('searchQuery', v);
+    _searchEcho = String(v ?? '');
+    window.corpusStore.set('searchQuery', _searchEcho);
   }
 
   // Search / sort events
-  // NOTE: not addEventListener('input', renderPosts) — the Event object would
-  // arrive as a truthy keepLimit and skip the history push / fresh-render path.
+  // Typing arrives via the store (the searchbox island pushes every keystroke).
   // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
-  // stutters; coalesce to the pause after typing.
+  // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
+  // no args — a truthy arg would be taken as keepLimit and skip the history push.
   let _searchRenderTimer = null;
-  document.getElementById('searchBox').addEventListener('input', () => {
-    window.corpusStore.set('searchQuery', document.getElementById('searchBox').value);   // mirror BEFORE the debounce so readers never lag the DOM
+  window.corpusStore.subscribe('searchQuery', () => {
+    const v = searchQuery();
+    if (v === _searchEcho) return;   // setSearchBoxValue echo — its caller re-renders itself
+    _searchEcho = v;
     clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(() => {
       if (browseMode === 'posters') { renderPosters(); return; }
@@ -4901,16 +4904,12 @@
   }
 
   // --- リアルタイム検索サジェスト -------------------------------------------
-  // タイプのたびに、本文検索と並行してタグ/作者/フォルダの候補を検索ボックス
-  // 直下に表示。クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
-  const suggestEl = document.createElement('div');
-  suggestEl.className = 'search-suggest';
-  suggestEl.id = 'searchSuggest';   // the React suggest island mounts here
-  document.body.appendChild(suggestEl);
-  let suggestIdx = -1;
-  let suggestItems = [];
-  const SUG_ICON = { tag: '\u{1F3F7}', user: '\u{1F464}', folder: '\u{1F4C1}' };
-  function hideSuggest() { suggestEl.style.display = 'none'; suggestIdx = -1; suggestItems = []; }
+  // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
+  // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
+  // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
+  // rendering, keyboard nav, open/close, positioning. viewer.js keeps the DATA
+  // side — buildSuggest (bespoke facet scan) and what a pick DOES (applySuggest) —
+  // wired through the corpusSearchBox bridge registered below.
   function buildSuggest(q) {
     const norm = (s) => String(s || '').toLowerCase();
     const fuzzyOn = window.corpusSearch && window.corpusSearch.isFuzzy();
@@ -4925,30 +4924,12 @@
       .forEach((u) => items.push({ kind: 'user', value: u.key, label: u.displayName || u.screenName || '(unknown)', note: u.count }));
     return items;
   }
-  function renderSuggest() {
-    const sb = document.getElementById('searchBox');
-    const q = searchQuery().trim();
-    if (!q) { hideSuggest(); return; }
-    suggestItems = buildSuggest(q);
-    if (!suggestItems.length) { hideSuggest(); return; }
-    if (suggestIdx >= suggestItems.length) suggestIdx = suggestItems.length - 1;
-    // React owns the rows; viewer.js keeps the state, positioning, and events.
-    const model = { items: suggestItems.map((it) => ({ iconEmoji: SUG_ICON[it.kind], label: it.label, note: it.note })), selIdx: suggestIdx };
-    window.__corpusSuggestModel = model;
-    if (window.corpusSuggest) window.corpusSuggest.render(model);
-    const r = sb.getBoundingClientRect();
-    suggestEl.style.left = r.left + 'px';
-    suggestEl.style.top = (r.bottom + 4) + 'px';
-    suggestEl.style.minWidth = r.width + 'px';
-    suggestEl.style.display = 'block';
-  }
   function applySuggest(it) {
     if (!it) return;
     setSearchBoxValue('');   // the typed text was for FINDING the filter — don't keep it as a body search
     // The user picked a concrete filter instead of a free-text term — drop the
     // in-progress text leaf the box was building.
     if (editingTextNode) { const n = editingTextNode; editingTextNode = null; postQB.removeNode(n); }
-    hideSuggest();
     if (it.kind === 'tag') {
       addFilter({ type: 'tag', value: it.value });
     } else if (it.kind === 'user') {
@@ -4956,45 +4937,14 @@
     }
     updateSidebarState();
   }
-  suggestEl.addEventListener('mousedown', (e) => {   // mousedown は blur より先に届く
-    const row = e.target.closest('.sg-row');
-    if (!row) return;
-    e.preventDefault();
-    applySuggest(suggestItems[parseInt(row.dataset.sg, 10)]);
+  // Register the island's data callbacks. onConfirmText replicates the old bare-
+  // Enter behavior: only posts mode confirms a text leaf (posters/collections
+  // filter live off the box value, Enter is a no-op there).
+  window.corpusSearchBox.init({
+    getSuggestions: (q) => buildSuggest(q),
+    onPick: applySuggest,
+    onConfirmText: () => { if (browseMode === 'posts' && searchQuery().trim()) confirmEditingTextLeaf(); },
   });
-  {
-    const sb = document.getElementById('searchBox');
-    // Reset the highlighted row immediately (cheap), but debounce the suggest
-    // recompute (scans tags/authors/folders) to match the search debounce.
-    let _suggestTimer = null;
-    sb.addEventListener('input', () => {
-      suggestIdx = -1;
-      clearTimeout(_suggestTimer);
-      _suggestTimer = setTimeout(renderSuggest, 150);
-    });
-    sb.addEventListener('focus', renderSuggest);
-    sb.addEventListener('blur', () => setTimeout(hideSuggest, 150));
-    sb.addEventListener('keydown', (e) => {
-      const suggestOpen = suggestEl.style.display !== 'none';
-      // Enter: pick the highlighted suggestion if one is active, else confirm the text leaf.
-      if (e.key === 'Enter') {
-        if (suggestOpen && suggestIdx >= 0) { e.preventDefault(); applySuggest(suggestItems[suggestIdx]); return; }
-        if (browseMode === 'posts' && searchQuery().trim()) { e.preventDefault(); confirmEditingTextLeaf(); return; }
-        return;
-      }
-      if (!suggestOpen) return;
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const d = e.key === 'ArrowDown' ? 1 : -1;
-        suggestIdx = (suggestIdx + d + suggestItems.length) % suggestItems.length;
-        renderSuggest();
-      } else if (e.key === 'Escape') {
-        hideSuggest();
-      }
-    });
-    const scroller = document.querySelector('#controls-posts .sb-scroll');
-    if (scroller) scroller.addEventListener('scroll', hideSuggest, { passive: true });
-  }
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
     // separate global pref — that double-storage raced on load. renderPosts captures it.

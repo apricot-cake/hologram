@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { SettingRow } from '../components/SettingRow.jsx';
 import { Hint } from '../components/Hint.jsx';
 import { Switch } from '../components/Switch.jsx';
-import { t } from '../i18n.js';
+import { t } from '../../_shared/i18n.js';
 import * as ipc from '../ipc.js';
 
 const cleanPref = (p) => (p === 'light' || p === 'dark' ? p : 'auto');

@@ -1,7 +1,9 @@
 // Bridge to the renderer's existing i18n. `window.corpusI18n` (from i18n.js)
-// resolves to { lang, resolved, getMessage }. The island reuses the SAME message
+// resolves to { lang, resolved, getMessage }. Islands reuse the SAME message
 // keys as the rest of the app — no duplicated strings. Call initI18n() once before
 // rendering so t() is synchronous inside components.
+// Shared by settings / toolbar / searchbox (was duplicated per-island until the
+// third consumer arrived — BACKLOG「i18n.js 共有化」).
 
 let api = null;
 

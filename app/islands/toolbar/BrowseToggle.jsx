@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // Browse-mode segmented control (ライブラリ / 投稿者 / コレクション). The active mode is
 // shared state in window.corpusStore ('browseMode'); viewer.js subscribes and runs the

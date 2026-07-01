@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // Search-mode segmented control (exact / fuzzy). State lives in window.corpusSearch
 // (shared with the filter flyout), so React only REFLECTS it: we subscribe via

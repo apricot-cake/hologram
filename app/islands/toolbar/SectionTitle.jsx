@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useCallback } from 'react';
-import { t } from './i18n.js';
+import { t } from '../_shared/i18n.js';
 
 // Sidebar section title that names the current mode/layout — e.g. "ビュー · ライブラリ",
 // "レイアウト · カード". Replaces viewer.js's static setText for #sbViewTitle /
