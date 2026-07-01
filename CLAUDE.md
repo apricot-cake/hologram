@@ -12,6 +12,7 @@ Corpus = SNS投稿を画像・メタデータごとローカル保存し検索�
 
 # ルール
 - UI変更はDESIGN.md準拠
+- lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
 - 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
 - テスト済みケースは再テストしない（`scripts/test-progress.md`確認必須／手順docs/testing.md）
 - commit/pushはユーザーに確認せず自由に行ってよい

@@ -97,7 +97,8 @@
 
 ## 実機検証・開発インフラ
 
-- **純ユニット群の npm test アグリゲータ（2026-07-01 UltraCode検出）**: CI 全体不採用は妥当だが、ネットワーク・Electron 不要の純ユニット系（test-index/test-search-unit/test-token-parity/test-contrast-parity/test-bridge-ssrf/test-archive-zipslip/test-archive-zipbomb/test-parse-url 等）は自動束ねのコストが極小。`npm test` で順次実行し1つでも fail で非0終了するスクリプトを用意し、既存 Windows サインイン時タスクか pre-commit フックで叩く。GitHub Actions は public 化フェーズまで保留可。
+- **純ユニット群の npm test アグリゲータ（2026-07-01 UltraCode検出）**: CI 全体不採用は妥当だが、ネットワーク・Electron 不要の純ユニット系（test-index/test-search-unit/test-token-parity/test-contrast-parity/test-i18n-parity/test-bridge-ssrf/test-archive-zipslip/test-archive-zipbomb/test-parse-url 等）は自動束ねのコストが極小。`npm test` で順次実行し1つでも fail で非0終了するスクリプトを用意し、既存 Windows サインイン時タスクか pre-commit フックで叩く。GitHub Actions は public 化フェーズまで保留可。**2026-07-02 の Biome 導入時に parity 2件が無音で赤だったのを実証＝本項の価値の実例**（下の accent 判断が済んだら束ねる）。
+- **contrast-parity の accent 白文字 AA 未達（要デザイン判断・2026-07-02 検出）**: `--accent-fg on --accent` が light 3.32 / dark 2.72 と AA 床 4.5 未達（sky リブランド以降の実状態＝テスト修理で顕在化）。選択肢＝①床をアイコン/大文字ティア 3.0 に再調整＋dark の accent を sky-500→sky-600 に一段（両テーマ 3.32 でクリア・見た目の変化は僅少）②AA 4.5 完全遵守まで暗く（light は sky-800 級＝かなり濃くなる）③現状容認で床 2.5（テストの意味は薄まる）。判断待ちの間 contrast-parity は意図的に赤。
 - **⚠️ Electron を EOL(33系)→サポート内(41/42) へ更新（2026-07-01 検出）**: 現固定 `app/package.json` `^33.2.0`。33系は **2025-04-29 EOL**＝内蔵 Chromium が約20か月分パッチ未適用（サポートは 41/42）。直近の Electron 層 CVE（[CVE-2026-34781](https://www.miggo.io/vulnerability-database/cve/CVE-2026-34781) clipboard DoS／[CVE-2026-34774](https://www.sentinelone.com/vulnerability-database/cve-2026-34774/) offscreen UAF）は未使用機能で直接影響なしだが、**実リスクの本体は Chromium 側未修正 CVE**＝任意画像バイトを renderer(psimg)/main(nativeImage) で復号するため画像デコーダ系 RCE が悪意画像経由で悪用され得る（即時性は低い）。**Chromium 本体が上がる重い更新**＝更新後は実機検証必須（キャプチャ/表示/サムネ生成/ウィンドウ挙動を目視）。急がないが放置しない。[Electron EOL 一覧](https://endoflife.date/electron)。
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここ。
 - **実機キャプチャの実ブラウザ経由 最終目視（残）**: Chrome 無しの end-to-end は検証済（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャし `.jpg`+`.json` が落ちるのを目視（リモート不可）。
@@ -124,7 +125,6 @@
   - **clear-all の内部JSON誤全消去 footgun**（`main.js`）: 除外リストが or 鎖ハードコードで `import-posts` 側と分裂＝内部JSONを1つ足すと clear-all が誤全消去しうる予防案件。`INTERNAL_FILES.has()` 一本化が現行チェーンと集合一致を実確認済＝S・検証は「clear-all 1回で組織JSON残存」1点。
   - **lib-archive の collectFiles 抽出＋2関数 unionById**（`lib-archive.js`）: build*Zip 走査2箇所を collectFiles に括る／mergeFolders・mergeTagGroups を union-by-id 化（下 L4 と同系）。純関数・既存 test で固まる・S。※mergeCollections は構造別物で畳まない・zip-slip ガード同居で慎重に。
   - **JSON 裸 parse の BOM 剥ぎ**＝上「正しさ」節 **L3 の実装縮小版**（`parseJsonLoose` 一行差しに留める・reader 二系統統合は誇張で見送り）。
-  - **theme.js の死んだ DOM 配線を除去**（`app/renderer/theme.js`・2026-07-01 UltraCode検出）: `apply()`(38-39行) と `init()`(72-76行) が削除済み `#themeSelect` を掴む到達不能コード（リポ全体で他に存在しない要素id）。React 版 Appearance.jsx は `window.corpusTheme` 駆動で DOM id 非依存＝React化で自然消滅しない移行取り残し。`init()` の `getPrefs()` 照合(77-82)は生きた IPC 同期経路なので残す。除去後は外観 select 切替でテーマ即反映を実機1点確認。
   - **content.js の日本語コードコメントを英語化**（`extension/content.js` 22箇所＋`extension/i18n.js:27-28`・2026-07-01 UltraCode検出）: `feedback-comment-language`規約（コード内コメントは英語）への唯一の実質違反。同ディレクトリの他4ファイルは全て英語。UI文字列リテラル（banner等）は日本語のまま据え置く。機械的翻訳で解消可。
   - **corpusSearch の購読APIを subscribe に統一**（`app/renderer/search.js`・2026-07-01 UltraCode検出）: store.js は `subscribe` を購読契約の基準とするが corpusSearch だけ `onChange`。`subscribe` エイリアスを追加し `QfPop.jsx`/`viewer.js` の呼び出しを寄せる（`onChange` は既存 vanilla 呼び出し互換で残置）。挙動不変の命名統一。
   - **コールバック搬送ブリッジの重複解消は「単一root/単一バンドル化」に合流**（`app/renderer/qf-pop.js`/`filter-popover.js`・2026-07-01 UltraCode検出）: 2本が完全一致の subscribe/notify 定型を重複実装（kind-menu/menu.jsは挙動差ありのため対象外）。島がまだ流動中のため単独前倒しはせず、上「React化」節の島 IIFE 畳み工程で `makeCallbackBridge({name,useOpenId})` に統合する。
@@ -136,13 +136,13 @@
 
 ### 導入済み
 - **react-aria-components**（スライスm・検索ボックス／実装知と罠はメモリ `corpus-react-settings-pilot`）: 以後の難所ポップオーバー/コマンドパレットは**追加依存ゼロ**で使い回す。先回り置換はしない＝既存の動く手書き（ContextMenu/GlassSelect 等）は温存。
+- **Biome 1.9.4**（2026-07-02・lint+format）: `npm run lint`／設定と 1.9.4 完全固定の理由（本機のアプリ制御ポリシーが 2.x 未署名バイナリをブロック）は biome.jsonc 冒頭。導入スイープで parity テスト2件の無音の赤を発見（下「実機検証」節）。
+- **i18nキー網羅スクリプト**（2026-07-02・`scripts/test-i18n-parity.js`）: renderer MESSAGES＋拡張 _locales の キー/値形状/置換スロットのパリティ番人（現状 338/338・4/4 で整合）。
 
 ### 採用する（着手順）
-1. **Biome**（lint+format）: 今すぐ・独立・低リスク。lint/format ゼロを単一バイナリで一掃、CSP/build 無関係。初回スイープが上「コード地ならし」見送りの様式不揃い系（アサーション3系統/DIAG_PREFIX重複/'use strict'不揃い/空catch名）も機械的に一掃する。
-2. **i18nキー網羅スクリプト**（自前15〜30行）: 今すぐ。片側欠落/キーズレの無音失敗を潰す（i18next は 342キー2言語に過剰＝自前で足りる）。
-3. **JSDoc + checkJs**（.ts化なし）: preload/store/i18n の .d.ts から段階導入。グリッド等の React 大物前に「契約の見える化」。JSDoc 人手が律速。
-4. **masonic**: グリッド仮想化スライス（上「React化」残タスク）の一部として。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
-5. **配布3点セット**: electron-builder publish/sign → electron-updater → SignPath 事前申請（審査が律速）＋@electron/fuses を署名のついで。時期・手順は下「リリース準備」節が真実源＝ここに重複させない。
+1. **JSDoc + checkJs**（.ts化なし）: preload/store/i18n の .d.ts から段階導入。グリッド等の React 大物前に「契約の見える化」。JSDoc 人手が律速。
+2. **masonic**: グリッド仮想化スライス（上「React化」残タスク）の一部として。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
+3. **配布3点セット**: electron-builder publish/sign → electron-updater → SignPath 事前申請（審査が律速）＋@electron/fuses を署名のついで。時期・手順は下「リリース準備」節が真実源＝ここに重複させない。
 
 ### 痛みが出たら（発火条件つき・先回り導入しない）
 - **MiniSearch + BudouX** ← 検索の線形劣化が体感に出たら。まず search.js＋haystack 事前計算で粘る（日本語境界に BudouX 必須・WASM 不使用で CSP 適合）。
