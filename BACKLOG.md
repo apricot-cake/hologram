@@ -69,6 +69,7 @@ booru 型イラストアーカイブ（実測はメモリ `library-composition`�
 
 ## 実機検証・開発インフラ
 
+- **⚠️ Electron を EOL(33系) からサポート内(41/42) へ更新（2026-07-01 月次セキュリティ点検で検出）**: 現固定は `app/package.json` の `^33.2.0`。33系は **2025-04-29 に EOL**＝セキュリティバックポート対象外で、内蔵 Chromium が約20か月分パッチ未適用（現行最新は 42・サポートは 41/42）。直近の Electron 層 CVE（[CVE-2026-34781](https://www.miggo.io/vulnerability-database/cve/CVE-2026-34781) clipboard DoS／[CVE-2026-34774](https://www.sentinelone.com/vulnerability-database/cve-2026-34774/) offscreen UAF）は Corpus が該当機能未使用で直接影響なしだが、**実リスクの本体は Chromium 側の未修正 CVE**＝SNS/インスタンスから取得した任意画像バイトをレンダラ(psimg)/メイン(nativeImage)で復号・表示するため画像デコーダ系 RCE がライブラリの悪意画像経由で悪用され得る（実在するが即時性は低い）。**⚠️ Chromium 本体が上がる重い更新**で、更新後は実機検証必須＝キャプチャ(Alt+S/ドラッグ)・投稿/画像表示・サムネイル生成(psimg?w=)・ウィンドウ挙動(titleBarOverlay/分離設定)を一通り目視。急がないが放置しないカテゴリ。[Electron EOL 一覧](https://endoflife.date/electron)。
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここで。
 - **実機キャプチャの実ブラウザ経由 最終目視確認（残）**: Chrome 無しの end-to-end は検証済み（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャ（Alt+S/ドラッグ）し保存先に `.jpg`+`.json` が落ちるのを目視。リモートでは不可＝実機で。
 - **開発共通ルールを親フォルダの CLAUDE.md に集約**→重複削除（上位集約）。
