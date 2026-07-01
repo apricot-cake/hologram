@@ -19,6 +19,7 @@ const { pruneDecision, nextBaseline } = require('./backup-guard');
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
 const ipcOrganize = require('./ipc-organize');
+const ipcPosts = require('./ipc-posts');
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
@@ -450,8 +451,8 @@ ipcMain.handle('set-extension-id', (_event, id) => {
   return { extensionId: cfg.extensionId };
 });
 
-ipcMain.handle('list-posts', () => listPosts());
-ipcMain.handle('list-posts-delta', (_e, haveBaseline, changedNames) => listPostsDelta(!!haveBaseline, changedNames));
+// Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
+// ./ipc-posts.js (registered via ipcPosts.register below).
 
 // Organization-layer handlers (tag-groups / tag-types / ungrouped / manual-groups /
 // folders / collections / poster-folders / poster-tags) were extracted to
@@ -678,17 +679,6 @@ async function purgeOldTrash() {
     }
   }
 }
-
-ipcMain.handle('image-data-url', async (_e, image) => {
-  const p = resolveInFolder(image);
-  if (!p) return null;
-  try {
-    const buf = await fs.promises.readFile(p);
-    return 'data:' + mimeForFile(image) + ';base64,' + buf.toString('base64');
-  } catch {
-    return null;
-  }
-});
 
 ipcMain.handle('delete-post', async (_e, image) => {
   const folder = getSaveFolder();
@@ -1429,8 +1419,10 @@ function installNavigationGuards() {
 function registerExtractedIpc() {
   const ctx = {
     getSaveFolder, readOrgJsonSync, writeOrgJsonSync,
+    listPosts, listPostsDelta, resolveInFolder, mimeForFile,
   };
   ipcOrganize.register(ctx);
+  ipcPosts.register(ctx);
 }
 registerExtractedIpc();
 
