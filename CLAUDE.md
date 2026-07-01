@@ -1,36 +1,18 @@
 # プロジェクト概要
 
-**Corpus** = SNS で見かけた投稿を画像とメタデータごと丸ごとローカル保存し、あとから整理・検索できる「自分だけの SNS ライブラリ」。すべて手元の PC に保存し、サーバーへは何も送らない。
-
-対応プラットフォーム: X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
-
-**3 つの構成要素**（データは一方向に流れる）:
-
-1. `extension/` — Chrome 拡張（MV3）。`Alt+S` で投稿をクリック保存、または画像ドラッグ保存。投稿 URL から各 SNS の API でメタデータを取得・正規化。
-2. `native-host/` — Native Messaging ブリッジ。保存先フォルダ（既定 `~/Corpus/library`・変更可）に `<captureId>.jpg`（純 JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）+ メディア/アバター画像を書き出す。
-3. `app/` — Electron デスクトップアプリ。サイドカーを走査して閲覧・検索・整理（タグ/フォルダ/ワークスペース/投稿者ビュー等）。保存先フォルダを `fs.watch` で監視し新規キャプチャを自動反映。
-
-技術スタック: Electron + React（app/ レンダラ・Vite／素 JS から段階移行中＝viewer.js 本体はまだ素 JS で React 島を増設中・重量級ランタイム依存なし）/ Chrome MV3 / Node でテスト可能なロジック分離。
+Corpus = SNS投稿を画像・メタデータごとローカル保存し検索・整理できる「自分だけのSNSライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし）。
 
 # ドキュメント
-
-- 詳細な構成・実装メモ: [docs/architecture.md](docs/architecture.md)
-- ビルド/配布・実機検証の手順: [docs/build.md](docs/build.md)
-- スクリプト/テストのカタログと手順: [docs/testing.md](docs/testing.md)
-- ユーザー向け機能説明: [README.md](README.md)
-- 残タスク: [BACKLOG.md](BACKLOG.md)
+詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=BACKLOG.md
 
 # ストレージと実行環境（重要）
-
-- **配置**: 設定・native-host デプロイ・ログ＝`~/.corpus`（`configDir`・上書き `CORPUS_CONFIG_DIR`）／ライブラリ＝config の `saveFolder`（既定 `~/Corpus/library`・変更可）。**いずれも AppData の外**に置く＝MSIX ストレージ仮想化で開発時のコンテナ内外が別フォルダを見て乖離するのを防ぐ（2026-06-23 ライブラリ消失の真因）。
-- **アプリ起動は必ず `CorpusLaunch` タスク経由**（直接 `Start-Process electron.exe` はコンテナ内＝HKCU 仮想化でネイティブホスト登録が実 Chrome から見えずキャプチャが壊れる）。手順・理由・タスク定義は `docs/build.md`。確認は ① 実 Chrome のキャプチャ成否 ② `~/.corpus\bridge.log`／`capture.log`。
-- **レジストリの実体確認は自分で `reg query` せずユーザーに依頼**: Claude Code は Claude Desktop（MSIX 版）から起動されパッケージ ID を継承するため、レジストリ read がパッケージ専用ハイブへリダイレクトされ本物の HKCU を読めない。特に Native Messaging 登録（`HKCU\Software\Google\Chrome\NativeMessagingHosts\`）の状態を自分で `reg query` すると、隔離側の空ハイブを見て「未登録」と誤診し正常な登録を壊れていると誤認する危険がある＝ ユーザーに `reg query` の実行を依頼し、その出力を受け取って判断する。HKCU/HKLM の実体状態を確認したい他のケースも同じ理由で同様にユーザーへ依頼する。
-- **テスト隔離**: `CORPUS_CONFIG_DIR=<tmp>` で configDir をサンドボックス化（Electron スモークは `CORPUS_SMOKE=1`／`CORPUS_SMOKE_EVAL` も）。新規テストもこの規約に従う。
+- 配置は`~/.corpus`(config/ログ)と`saveFolder`(既定`~/Corpus/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
+- アプリ起動は必ず`CorpusLaunch`タスク経由（直接起動はHKCU仮想化でNative Messaging登録が実Chromeから見えず破損／詳細docs/build.md）
+- **レジストリ確認（`reg query`等）は自分で実行せずユーザーに依頼**＝Claude Code自身がMSIX経由でパッケージ専用ハイブにリダイレクトされ誤診するため
+- テストは`CORPUS_CONFIG_DIR=<tmp>`でサンドボックス化（Electronスモークは`CORPUS_SMOKE=1`）
 
 # 守るルール
-
-- UI 変更時は [DESIGN.md](DESIGN.md) に従う
-- 変更の反映: renderer は自動で反映（操作・確認とも不要＝リロードしますかと聞かない）／native-host は `~/.corpus` へコピーで反映（再起動不要）／main プロセスの変更だけ再起動が要る。詳しい手順は `docs/build.md`。
-- テスト済みケースを再テストしない（`scripts/test-progress.md` を必ず確認）。手順は `docs/testing.md`。
-- コミットは自己判断でこまめに（意味のある単位で）行ってよい。
-- push も自己判断で行ってよい（聞かない）。作業が一段落したら、またはセッションを終える区切りで行う。
+- UI変更はDESIGN.md準拠
+- 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
+- テスト済みケースは再テストしない（`scripts/test-progress.md`確認必須／手順docs/testing.md）
+- commit/pushは自己判断でOK
