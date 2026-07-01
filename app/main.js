@@ -20,6 +20,7 @@ const { pruneDecision, nextBaseline } = require('./backup-guard');
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
 const ipcOrganize = require('./ipc-organize');
 const ipcPosts = require('./ipc-posts');
+const ipcConfig = require('./ipc-config');
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
@@ -429,27 +430,9 @@ function registerImageProtocol() {
 }
 
 // --- IPC ---
-ipcMain.handle('get-config', () => {
-  const cfg = readConfig();
-  return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null };
-});
-
-ipcMain.handle('set-extension-id', (_event, id) => {
-  const cfg = readConfig();
-  cfg.extensionId = (typeof id === 'string' ? id.trim() : '');
-  writeConfig(cfg);
-  try {
-    // Update only the manifest's allowed origin; keep the existing launcher.
-    if (fs.existsSync(installer.manifestPath())) {
-      installer.updateAllowedOrigin(cfg.extensionId);
-    } else {
-      installer.install({ exe: process.execPath, runAsNode: true, extensionId: cfg.extensionId });
-    }
-  } catch (err) {
-    console.error('Failed to update native host origin:', err);
-  }
-  return { extensionId: cfg.extensionId };
-});
+// Config / prefs / tabs handlers (get-config / set-extension-id / get-prefs / set-pref /
+// app-info / get-tabs / set-tabs / set-titlebar-overlay) were extracted to
+// ./ipc-config.js (registered via ipcConfig.register below).
 
 // Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
 // ./ipc-posts.js (registered via ipcPosts.register below).
@@ -458,39 +441,11 @@ ipcMain.handle('set-extension-id', (_event, id) => {
 // folders / collections / poster-folders / poster-tags) were extracted to
 // ./ipc-organize.js (registered via registerOrganize(ipcCtx) below).
 
-ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
-  try { if (win) win.setTitleBarOverlay(opts); } catch { /* non-Windows or overlay-less build */ }
-});
-
-ipcMain.handle('get-tabs', () => {
-  const folder = getSaveFolder();
-  if (!folder) return null;
-  const { value: raw } = readOrgJsonSync(path.join(folder, 'tabs.json'));
-  return (raw && Array.isArray(raw.tabs)) ? raw : null;
-});
-ipcMain.handle('set-tabs', (_e, data) => {
-  const folder = getSaveFolder();
-  if (!folder) return { ok: false };
-  try {
-    writeOrgJsonSync(path.join(folder, 'tabs.json'), data);
-    return { ok: true };
-  } catch { return { ok: false }; }
-});
-
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);
   }
 });
-
-// Build/version info for the settings "About" panel. app.getVersion() reads the
-// loaded app's package.json (1.1.0), so it is correct in dev and packaged alike.
-ipcMain.handle('app-info', () => ({
-  version: app.getVersion(),
-  electron: process.versions.electron,
-  chromium: process.versions.chrome,
-  node: process.versions.node
-}));
 
 // Open one library image in its own frameless-ish window (middle-click on a
 // card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
@@ -514,38 +469,6 @@ ipcMain.handle('open-image-window', (_event, image) => {
     webPreferences: { sandbox: true }
   });
   w.loadURL('psimg://img/' + encodeURIComponent(image));
-});
-
-// --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
-const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
-
-ipcMain.handle('get-prefs', () => {
-  const cfg = readConfig();
-  return {
-    language: cfg.language || 'auto',
-    viewMode: ['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card',   // display density
-    skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-    sortBy: VALID_SORTS.includes(cfg.sortBy) ? cfg.sortBy : 'date-desc',
-    imageTileSize: (Number.isFinite(cfg.imageTileSize) ? cfg.imageTileSize : null),   // tile view: edge px
-    cardSize: (Number.isFinite(cfg.cardSize) ? cfg.cardSize : null),       // card view: min column px
-    listThumb: (Number.isFinite(cfg.listThumb) ? cfg.listThumb : null),    // list view: thumbnail px
-    tileOverlay: cfg.tileOverlay !== false,   // was missing → pref never restored on restart
-    searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal',   // 検索方式: 通常 / あいまい
-    theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto',   // システム / ライト / ダーク
-    browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts',   // ライブラリ / 投稿者（起動時に復元）
-    posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card',   // 投稿者グリッドの表示密度
-    posterTileSize: (Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null),   // 投稿者タイルの一辺px
-    posterCardSize: (Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null)    // 投稿者カードの最小列幅px
-  };
-});
-
-ipcMain.handle('set-pref', (_e, key, value) => {
-  if (!PREF_KEYS.includes(key)) return { ok: false };
-  const cfg = readConfig();
-  cfg[key] = value;
-  writeConfig(cfg);
-  return { ok: true };
 });
 
 // --- File helpers (all confined to the save folder) ---
@@ -1420,9 +1343,12 @@ function registerExtractedIpc() {
   const ctx = {
     getSaveFolder, readOrgJsonSync, writeOrgJsonSync,
     listPosts, listPostsDelta, resolveInFolder, mimeForFile,
+    readConfig, writeConfig, installer,
+    getWin: () => win,
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
+  ipcConfig.register(ctx);
 }
 registerExtractedIpc();
 
