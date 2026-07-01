@@ -22,7 +22,7 @@
 - **有力・要追加調査**:
   - **L1【Med-High】** saveFolder 移動中のキャプチャが旧フォルダに取り残される（`main.js:1389` copyLibraryInto の snapshot→flip→cleanup 並行窓・bridge 非ロック）。対策＝移動中フラグで bridge 保留 or flip 前に src 再 readdir で差分追いコピー、cleanup は「dest 存在確認できたものだけ src 削除」。
   - **L2【Med】** import-posts の重複検出が `url` のみ＝URL なし（99.6% の Eagle 移行）が再インポートで二重化（`main.js:996`・`.trash` 非走査・BOM 非耐性）。対策＝captureId/画像ハッシュ/eagleName にフォールバック。
-  - **L3【Med】** サイドカー/組織 JSON 読みが BOM 非耐性（`lib-index.js:146`・各 get-*・`lib-archive.js`）＝投稿が静かに欠落・最悪 record:null→reconcile が collections/clip 恒久 purge。対策＝全 JSON 読みを共通ヘルパに集約し先頭 U+FEFF を剥ぐ。
+  - **L3【Med】** サイドカー/組織 JSON 読みが BOM 非耐性（`lib-index.js:146`・各 get-*・`lib-archive.js`）＝投稿が静かに欠落・最悪 record:null→reconcile が collections/clip 恒久 purge。対策＝各裸 parse に BOM剥ぎ一行差し（`parseJsonLoose`）。※共通ヘルパへの reader 二系統統合は degraded 追跡セマンティクスが別物で誇張＝見送り（2026-07-01調査・下「コード地ならし」節）。
   - **L4【Low】** import の `mergeManualGroups`（`lib-archive.js:122`）が集合 dedup のみでメンバー交差を解消せず「1 captureId 1 グループ」不変条件を破る（可逆）。対策＝union-find。
 - **次に調べる（未裏取り）**: ①`lib-index.js:139,190` の mtimeMs 単一信号で「変更なし」誤判定＝タグ付けが tags/userKind/tagReviewed を単一 update-tags で原子書きか要確認。②self-reply グルーピングの alias 解決が深さ10打ち切り（`viewer.js:2458`）＝11超でグループ分裂。③saveFolder 移動後に renderer 組織ストア再読込しない（`viewer.js:5945`）。④delete-post の disk-sweep 前方一致（`main.js:881`）が `-N` 接尾辞 base を境界で分離できるか（境界テスト無）。⑤デバウンス persist の最終フラッシュが `before-quit` で保証されるか。
 - **棄却（再調査しない）**: update-tags/restore-post の torn-read（`writeSidecarAtomic`＋9260c81・直書き0件＝行番号 stale）／clear-all の delta 非リセット（added は現スキャン由来・stale は no-op・captureId 再利用なし）／facetCounts への sticky 混入（同 getFilteredPosts 由来で一様・~400ms clear）／buildUsers 先勝ちで表示名古い（表示のみ・userKey 安定・再起動で自己修復）／saveFolder 死パスで空表示（ENOENT→no-op・データ無傷）／import で folders.json 孤児化（起動時 `CF().load()` が import 前に移行＝到達不能）／trash の captureId 前方一致衝突（`Date.now()+rand16` で極小）。
@@ -94,6 +94,16 @@ booru 型イラストアーカイブ（メモリ `library-composition`＝99.6% E
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 
+## コード地ならし（純リファクタ・2026-07-01 多エージェント調査でトリアージ）
+
+> **位置づけ**: 振る舞い不変の内部改善のみ。**移行期に安全なのは衝突ゾーン外の小物だけ**＝大物（viewer.js 巨大関数分割・オーバーレイ集約）は上の React 化残タスクがリライトで自然消滅させる領域＝別立てにしない。実効レバー（手動タグUX）には効かない純地ならし＝優先度は高くない。検証で複数候補に誇張が判明＝核だけに縮小済み。
+
+- **今やれる（衝突ゾーン外・単独可・挙動不変）**:
+  - **clear-all の内部JSON誤全消去 footgun**（`main.js`）: 除外リストが or 鎖ハードコードで `import-posts` 側と分裂＝内部JSONを1つ足すと clear-all が誤全消去しうる予防案件。`INTERNAL_FILES.has()` 一本化が現行チェーンと集合一致を実確認済＝S・検証は「clear-all 1回で組織JSON残存」1点。
+  - **lib-archive の collectFiles 抽出＋2関数 unionById**（`lib-archive.js`）: build*Zip 走査2箇所を collectFiles に括る／mergeFolders・mergeTagGroups を union-by-id 化（下 L4 と同系）。純関数・既存 test で固まる・S。※mergeCollections は構造別物で畳まない・zip-slip ガード同居で慎重に。
+  - **JSON 裸 parse の BOM 剥ぎ**＝上「正しさ」節 **L3 の実装縮小版**（`parseJsonLoose` 一行差しに留める・reader 二系統統合は誇張で見送り）。
+- **見送り（誇張/振る舞い変更が判明・再提案しない）**: generationキャッシュ横展開（束ねた buildUsers は修正済＝real 薄・残りは150msデバウンス背後の O(N) 衛生案件）／getSaveFolder メモ化（毎回ライブ config 読みは消失事故対策の pointer 復旧防御そのもの＝ハード化点を壊す・実益µs級）／IPC集中ラッパーの「全46握り潰し」根治（誤り＝set*/persist系のみ・下技術スタック#2参照）。
+
 ## 技術スタック候補（2026-07-01 多エージェント調査）
 
 > **位置づけ**: 87候補を Corpus 固有制約（file:///厳格CSP/ファイルベース真実源/ガラス維持/7600枚個人利用）で採点した**採否の判断ログ**。版数/DL数など鮮度依存は割愛。**実効レバーはライブラリでなく手動タグ付けUX**＝どのエンジンでも無タグ7600枚は無タグのまま（本丸は「タグ付け・整理」節）。
@@ -104,7 +114,7 @@ booru 型イラストアーカイブ（メモリ `library-composition`＝99.6% E
 | # | 候補 | カテゴリ | 採否 | 根拠 |
 |---|---|---|---|---|
 | 1 | **Biome**（lint+format） | 品質 | adopt-now | lint/format ゼロを単一バイナリで一掃。CSP/build 無関係・全カテゴリ最速の即効レバー |
-| 2 | **IPC集中ラッパー（自前）** | IPC | adopt-now | `catch{}` 黙殺を `corpusIpc.call()` 1経由で根治。依存ゼロ・数十行で全46メソッド波及 |
+| 2 | **IPC集中ラッパー（自前）** | IPC | 最終形B後 | `catch{}` 黙殺を1経由で集約。~~全46波及~~＝実際は set*/persist系のみ・失敗のログ化/既定値化は**振る舞い変更**で純リファクタでない・viewer.js 外すと集中の実益消失＝新Reactストア層の一部として設計（2026-07-01訂正） |
 | 3 | **electron-builder + publish/sign** | 配布 | adopt-now | v25.1.8 稼働中・dist 実績。乗り換えゼロで配布の穴を埋める唯一の現実解 |
 | 4 | **JSDoc + checkJs**（.ts化なし） | 品質 | when-pain | 単一 IIFE ゆえ構造を壊さず型を載せる唯一の経路。契約破れを静的検出。JSDoc 人手が律速 |
 | 5 | **Floating UI** | Headless UI | when-pain | 衝突回避5箇所コピーを1API化。位置決め専用でガラス無干渉・inline style で CSP 適合 |
@@ -122,8 +132,8 @@ booru 型イラストアーカイブ（メモリ `library-composition`＝99.6% E
 
 ### ティア早見表
 
-- **adopt-now**: Biome／IPC集中ラッパー／electron-builder(publish/sign)／electron-updater／i18nキー網羅スクリプト／**「現状維持が最適解」と確認**: 自前 corpusStore・自前 Date/Intl・自前スモーク+puppeteer・自前 fs.watch・自前 HTML5 DnD・自前 .index.json+Map・search.js継続・知覚ハッシュ見送り・自前SVGアイコン本体。
-- **adopt-when-pain**: JSDoc+checkJs／Floating UI／masonic／Zod(main)／Valibot(main)／SignPath／chokidar v4／@electron/fuses／react-aria自前パレット／位置決め共通フック化。
+- **adopt-now**: Biome／electron-builder(publish/sign)／electron-updater／i18nキー網羅スクリプト／**「現状維持が最適解」と確認**: 自前 corpusStore・自前 Date/Intl・自前スモーク+puppeteer・自前 fs.watch・自前 HTML5 DnD・自前 .index.json+Map・search.js継続・知覚ハッシュ見送り・自前SVGアイコン本体。
+- **adopt-when-pain**: JSDoc+checkJs／Floating UI／masonic／Zod(main)／Valibot(main)／SignPath／chokidar v4／@electron/fuses／react-aria自前パレット／位置決め共通フック化／IPC集中ラッパー(最終形B後・新Reactストア層で)。
 - **evaluate（要PoC）**: lucide-react／MiniSearch+BudouX／better-sqlite3+FTS5／sharp／Vitest／Knip／TanStack Query(最終形B後)／cmdk／Radix UI／Certum／Zustand(最終形B後)。
 - **reject**: oxlint／kbar／dnd-kit・pragmatic-dnd・SortableJS／Jotai・nanostores・Valtio・XState／FlexSearch・Orama／kuromoji・lindera-wasm／node:sqlite・sql.js・DuckDB／imghash／@parcel/watcher・graceful-fs／dayjs・Luxon・Temporal／ArkType・superstruct／Motion・react-spring・auto-animate／Iconify／Paraglide・FormatJS・LinguiJS／Playwright視覚回帰・node:test／electron-forge・Azure Trusted Signing／electron-trpc・Comlink。
 
@@ -159,11 +169,11 @@ booru 型イラストアーカイブ（メモリ `library-composition`＝99.6% E
 | i18n | キー網羅スクリプト | 自前corpusI18n | 342/341パリティ・恒久2言語で FW は過剰 |
 | テスト | 自前スモーク+puppeteer | Vitest | 実機=真実の文化と一致。Vitest は viewer.js 抽出後に本領 |
 | 署名 | SignPath Foundation | Certum(有償) | 無料OSS・日本可。Azure は日本対象外で却下 |
-| IPC | IPC集中ラッパー(自前) | Zod(main) | catch{}黙殺を数十行で根治。electron-trpc/Comlink は TS前提 |
+| IPC | IPC集中ラッパー(自前・最終形B後) | Zod(main) | catch{}集約だが set*/persist系のみ＆ログ化/既定値化は振る舞い変更＝新Reactストア層で。electron-trpc/Comlink は TS前提 |
 
 ### 効く順
 
-1. **今すぐ（独立・低リスク）**: Biome→IPC集中ラッパーで `catch{}` 一掃→i18nキー網羅スクリプト。
+1. **今すぐ（独立・低リスク）**: Biome→i18nキー網羅スクリプト。（IPC集中ラッパーは「今すぐ」から降格＝最終形B後・技術スタック#2訂正参照）
 2. **配布フェーズ**: electron-builder に publish/sign→electron-updater 配線→SignPath を public化に合わせ事前申請（審査が律速）→@electron/fuses を署名のついでに。
 3. **段階的に型**: JSDoc+checkJs を preload/store/i18n の .d.ts から。React 大物導入の前提「契約の見える化」。
 4. **最終形B 地ならし後**: masonic／Floating UI／lucide-react／react-aria自前パレット を1ツリーで。
