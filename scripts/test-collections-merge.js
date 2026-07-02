@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const { importCompleteZip, mergeCollections, foldersToCollections } = require('../app/lib-archive.js');
+const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGroups, mergeFolders, mergeTagGroups } = require('../app/lib-archive.js');
 
 (async () => {
   // --- mergeCollections (pure) ---
@@ -143,6 +143,76 @@ const { importCompleteZip, mergeCollections, foldersToCollections } = require('.
     assert.deepStrictEqual(col.posterWorkspace, ['pp'], 'posterWorkspace union');
     fs.rmSync(root, { recursive: true, force: true });
     console.log('PASS import: collections.json merge');
+  }
+
+  // --- mergeManualGroups (pure): union-find over members (BACKLOG L4) ---
+  // Invariant = ONE group per captureId, so intersecting groups must collapse:
+  // plain dedup would keep [A,B] and [B,C] both, leaving B in two groups.
+  {
+    const m = mergeManualGroups(
+      {
+        groups: [
+          ['a', 'b'],
+          ['x', 'y'],
+        ],
+      },
+      {
+        groups: [
+          ['b', 'c'],
+          ['p', 'q'],
+        ],
+      },
+    );
+    const sorted = m.groups.map((g) => g.slice().sort().join(','));
+    assert.ok(sorted.includes('a,b,c'), 'intersecting groups collapse transitively, got ' + JSON.stringify(m.groups));
+    assert.ok(sorted.includes('x,y') && sorted.includes('p,q'), 'disjoint groups survive untouched');
+    assert.strictEqual(m.groups.length, 3, 'no duplicate/leftover groups');
+    // Chain through a third group: [a,b]+[c,d] locally, [b,c] incoming bridges all four.
+    const chain = mergeManualGroups(
+      {
+        groups: [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+      },
+      { groups: [['b', 'c']] },
+    );
+    assert.strictEqual(chain.groups.length, 1, 'bridge group unifies the chain');
+    assert.deepStrictEqual(chain.groups[0].slice().sort(), ['a', 'b', 'c', 'd'], 'chained union complete');
+    // Identical groups still dedup; degenerate [A,A] never yields a singleton.
+    const dup = mergeManualGroups(
+      { groups: [['a', 'b']] },
+      {
+        groups: [
+          ['b', 'a'],
+          ['z', 'z'],
+        ],
+      },
+    );
+    assert.strictEqual(dup.groups.length, 1, 'same set (any order) dedups; [z,z] singleton dropped');
+    console.log('PASS mergeManualGroups union-find');
+  }
+
+  // --- unionById-backed mergers keep their contract (refactor guard) ---
+  {
+    const f = mergeFolders(
+      { folders: [{ id: 'f1', name: 'Local', items: ['a'] }], defaultId: 'f1' },
+      {
+        folders: [
+          { id: 'f1', name: 'Remote', items: ['b'] },
+          { id: 'f2', name: 'N', items: [] },
+        ],
+        defaultId: 'f2',
+      },
+    );
+    const f1 = f.folders.find((x) => x.id === 'f1');
+    assert.strictEqual(f1.name, 'Local', 'folder name local-wins');
+    assert.deepStrictEqual(f1.items.slice().sort(), ['a', 'b'], 'folder items union');
+    assert.strictEqual(f.defaultId, 'f1', 'defaultId local-wins while alive');
+    const g = mergeTagGroups({ groups: [{ id: 'g1', name: 'L', tags: ['t1'] }] }, { groups: [{ id: 'g1', name: 'R', tags: ['t2'] }] });
+    assert.deepStrictEqual(g.groups[0].tags.slice().sort(), ['t1', 't2'], 'tag-group tags union');
+    assert.strictEqual(g.groups[0].name, 'L', 'tag-group name local-wins');
+    console.log('PASS unionById mergers');
   }
 
   console.log('MERGE_TEST_PASS');

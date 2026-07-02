@@ -70,15 +70,22 @@ function isWithin(parentDir, target) {
 }
 
 // --- Organization merges (union) ---------------------------------------------
-function mergeFolders(cur, inc) {
+// Shared id-union for the {id, name, <members>} list shape (folders' items,
+// tag-groups' tags): first occurrence wins the name (cur is passed before inc =
+// local wins), duplicate ids set-union their members.
+function unionById(curList, incList, memberKey) {
   const byId = new Map();
-  for (const f of cur.folders || []) if (f && typeof f.id === 'string') byId.set(f.id, { id: f.id, name: String(f.name || f.id), items: new Set((f.items || []).map(String)) });
-  for (const f of inc.folders || []) {
-    if (!f || typeof f.id !== 'string') continue;
-    if (byId.has(f.id)) for (const it of f.items || []) byId.get(f.id).items.add(String(it));
-    else byId.set(f.id, { id: f.id, name: String(f.name || f.id), items: new Set((f.items || []).map(String)) });
+  for (const e of [...(curList || []), ...(incList || [])]) {
+    if (!e || typeof e.id !== 'string') continue;
+    const members = (e[memberKey] || []).map(String);
+    const prev = byId.get(e.id);
+    if (prev) for (const m of members) prev[memberKey].add(m);
+    else byId.set(e.id, { id: e.id, name: String(e.name || e.id), [memberKey]: new Set(members) });
   }
-  const folders = [...byId.values()].map((f) => ({ id: f.id, name: f.name, items: [...f.items] }));
+  return [...byId.values()].map((e) => ({ id: e.id, name: e.name, [memberKey]: [...e[memberKey]] }));
+}
+function mergeFolders(cur, inc) {
+  const folders = unionById(cur.folders, inc.folders, 'items');
   const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId : folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null;
   return { folders, defaultId };
 }
@@ -134,14 +141,7 @@ function foldersToCollections(legacy) {
   return { collections, activeId: null, posterWorkspace };
 }
 function mergeTagGroups(cur, inc) {
-  const byId = new Map();
-  for (const g of cur.groups || []) if (g && typeof g.id === 'string') byId.set(g.id, { id: g.id, name: String(g.name || g.id), tags: new Set((g.tags || []).map(String)) });
-  for (const g of inc.groups || []) {
-    if (!g || typeof g.id !== 'string') continue;
-    if (byId.has(g.id)) for (const t of g.tags || []) byId.get(g.id).tags.add(String(t));
-    else byId.set(g.id, { id: g.id, name: String(g.name || g.id), tags: new Set((g.tags || []).map(String)) });
-  }
-  return { groups: [...byId.values()].map((g) => ({ id: g.id, name: g.name, tags: [...g.tags] })) };
+  return { groups: unionById(cur.groups, inc.groups, 'tags') };
 }
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
@@ -157,18 +157,44 @@ function mergeTagTypes(cur, inc) {
   if (Object.keys(labels).length) out.labels = labels;
   return out;
 }
+// Manual reply-groups: bare arrays of captureIds with a ONE-group-per-captureId
+// invariant. Merging is therefore not set-dedup: [A,B] (cur) + [B,C] (inc) must
+// collapse into [A,B,C] — keeping both would leave B in two groups and make the
+// downstream member→group lookup pick one arbitrarily. Union-find over members;
+// output preserves first-seen member/group order (cur first = stable for locals).
 function mergeManualGroups(cur, inc) {
-  const seen = new Set();
-  const out = [];
+  const parent = new Map();
+  const find = (x) => {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)));
+      x = parent.get(x);
+    }
+    return x;
+  };
+  const order = [];
   for (const g of [...(cur.groups || []), ...(inc.groups || [])]) {
     if (!Array.isArray(g) || g.length < 2) continue;
     const arr = g.map(String);
-    const key = [...arr].sort().join(' ');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(arr);
+    for (const id of arr) {
+      if (!parent.has(id)) {
+        parent.set(id, id);
+        order.push(id);
+      }
+    }
+    for (let i = 1; i < arr.length; i++) {
+      const ra = find(arr[0]);
+      const rb = find(arr[i]);
+      if (ra !== rb) parent.set(ra, rb);
+    }
   }
-  return { groups: out };
+  const byRoot = new Map();
+  for (const id of order) {
+    const r = find(id);
+    if (!byRoot.has(r)) byRoot.set(r, []);
+    byRoot.get(r).push(id);
+  }
+  // <2 can only arise from a degenerate input group like [A,A]; drop it.
+  return { groups: [...byRoot.values()].filter((g) => g.length >= 2) };
 }
 // Per-poster tags: { tags: { posterKey: [tag, …] } }. Union the tag lists per
 // posterKey so importing never drops a poster's existing tags.
@@ -200,21 +226,35 @@ const MERGERS = {
 };
 
 // --- Build ---------------------------------------------------------------------
-async function buildCompleteZip(JSZip, srcFolder, nowIso) {
-  const zip = new JSZip();
-  const lib = zip.folder('library');
+// Enumerate the exportable files in a save folder: skip internal/volatile entries
+// and non-files, plus an optional name filter. Shared by both ZIP builders.
+async function collectFiles(srcFolder, nameFilter) {
   let names = [];
   try {
     names = await fs.promises.readdir(srcFolder);
   } catch {
     names = [];
   }
-  let fileCount = 0;
+  const out = [];
   for (const name of names) {
     if (EXPORT_SKIP.has(name) || isVolatile(name)) continue;
+    if (nameFilter && !nameFilter(name)) continue;
     try {
       const st = await fs.promises.stat(path.join(srcFolder, name));
-      if (!st.isFile()) continue;
+      if (st.isFile()) out.push(name);
+    } catch {
+      /* skip unreadable */
+    }
+  }
+  return out;
+}
+
+async function buildCompleteZip(JSZip, srcFolder, nowIso) {
+  const zip = new JSZip();
+  const lib = zip.folder('library');
+  let fileCount = 0;
+  for (const name of await collectFiles(srcFolder)) {
+    try {
       lib.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
       fileCount++;
     } catch {
@@ -243,18 +283,9 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
 async function buildImagesZip(JSZip, srcFolder) {
   const zip = new JSZip();
-  let names = [];
-  try {
-    names = await fs.promises.readdir(srcFolder);
-  } catch {
-    names = [];
-  }
   let fileCount = 0;
-  for (const name of names) {
-    if (EXPORT_SKIP.has(name) || isVolatile(name) || !IMAGE_EXT.test(name)) continue;
+  for (const name of await collectFiles(srcFolder, (n) => IMAGE_EXT.test(n))) {
     try {
-      const st = await fs.promises.stat(path.join(srcFolder, name));
-      if (!st.isFile()) continue;
       zip.file(name, await fs.promises.readFile(path.join(srcFolder, name)));
       fileCount++;
     } catch {
