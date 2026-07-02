@@ -98,7 +98,7 @@ BACKLOG に置くのは**「これから（残タスク）」と「やらない�
 - **依存/UI 方針（確定）**: 全面リライトしない・段階移行／依存は痛みが出た時に keep/replace で判断（bespoke＝フィルタ/グルーピング/正規化/日本語あいまい検索は保つ・コモディティ＝位置決め/窓化/a11y は痛んだら委譲）／UI はガラス維持（styled kit 却下・※Tailwind+shadcn 移行候補との整合は「技術スタック候補＞方針転換候補」参照）／状態は corpusStore 継続／ルーター無し。
 - **現在地（残タスクの前提・一行）**: 島16個＋共有ストア window.corpusStore・全グリッド仮想化（masonic・list/tile/card＋poster/collection）・検索/フィルタ/インスペクタ/タグ編集（`_shared/TagEditor`）まで React 所有済み。React ランタイムは共有 vendor-react.js に一本化済み（c3269d4）。
 - **残タスク**:
-  - viewer.js（~5700行 IIFE）の store/service/hooks への段階抽出を継続（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。抽出済み＝query.js／records.js（重複保存警告の P0 postKeyOf 共有化を兼ねる）／facets.js（各 純ユニット付き・npm test 配線済み）。次のスライスは実装時に痛点から選ぶ（候補メモ: buildUsers/buildSuggest 等の集計系・タブ永続化）。
+  - viewer.js（~5700行 IIFE）の store/service/hooks への段階抽出を継続（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。抽出済み＝query.js／records.js（重複保存警告の P0 postKeyOf 共有化を兼ねる）／facets.js／cooc.js（各 純ユニット付き・npm test 配線済み）。次のスライスは実装時に痛点から選ぶ（候補メモ: buildUsers/buildSuggest 等の集計系・タブ永続化）。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。masonic が島3つに各自バンドルされる重複と、qf-pop/filter-popover のブリッジ定型重複（下「コード地ならし」）もここで回収。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 - **対象外と判断済み（再提案しない）**: #filterRows のバッジ（`renderFilterBadges`）＝純粋な派生テキスト＋クラス切替でドリフトリスクが無く現状維持。
