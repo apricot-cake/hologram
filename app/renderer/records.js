@@ -115,9 +115,16 @@
         if (String(parent.key).indexOf('__solo') === 0) continue; // parent opted out / unkeyed
         alias.set(e.key, parent.key);
       }
+      // Follow the alias chain to its root. Depth is unbounded on purpose: each
+      // self-reply aliases to its IMMEDIATE parent's key, so chain length equals
+      // thread length and a fixed cap would split long threads into several
+      // cards. The seen-set guards pathological cycles (dup keys/corrupt data).
       const resolveKey = (k) => {
-        let n = 0;
-        while (alias.has(k) && n++ < 10) k = alias.get(k);
+        const seen = new Set();
+        while (alias.has(k) && !seen.has(k)) {
+          seen.add(k);
+          k = alias.get(k);
+        }
         return k;
       };
       const map = new Map();

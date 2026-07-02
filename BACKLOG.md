@@ -17,10 +17,9 @@
 
 ### 正しさ／データ整合性
 
-`config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は tmp+rename でアトミック化済み（torn-read High は 9260c81 で解消）。確定分 #1〜#5・有力 L1〜L4 対応済み（2026-07-02 完了）。残＝下の「次に調べる」のみ。
+`config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は tmp+rename でアトミック化済み（torn-read High は 9260c81 で解消）。確定分 #1〜#5・有力 L1〜L4 対応済み（2026-07-02 完了）。**「次に調べる」①〜⑤も裏取り完了（2026-07-02）**＝実在2件（セルフリプ alias の深さ10打ち切り→サイクルガード付き無制限解決＋純ユニット2件／タブ永続の quit 時フラッシュ欠如→pagehide フラッシュ・実機PASS）を修正、残る調査項目なし。
 
-- **次に調べる（未裏取り）**: ①`lib-index.js:139,190` の mtimeMs 単一信号で「変更なし」誤判定＝タグ付けが tags/userKind/tagReviewed を単一 update-tags で原子書きか要確認。②self-reply グルーピングの alias 解決が深さ10打ち切り（`viewer.js:2458`）＝11超でグループ分裂。③saveFolder 移動後に renderer 組織ストア再読込しない（`viewer.js:5945`）。④delete-post の disk-sweep 前方一致（`main.js:881`）が `-N` 接尾辞 base を境界で分離できるか（境界テスト無）。⑤デバウンス persist の最終フラッシュが `before-quit` で保証されるか。
-- **棄却（再調査しない）**: update-tags/restore-post の torn-read（`writeSidecarAtomic`＋9260c81・直書き0件＝行番号 stale）／clear-all の delta 非リセット（added は現スキャン由来・stale は no-op・captureId 再利用なし）／facetCounts への sticky 混入（同 getFilteredPosts 由来で一様・~400ms clear）／buildUsers 先勝ちで表示名古い（表示のみ・userKey 安定・再起動で自己修復）／saveFolder 死パスで空表示（ENOENT→no-op・データ無傷）／import で folders.json 孤児化（起動時 `CF().load()` が import 前に移行＝到達不能）／trash の captureId 前方一致衝突（`Date.now()+rand16` で極小）。
+- **棄却（再調査しない）**: mtimeMs 単一信号の「変更なし」誤判定（update-tags が tags/userKind/tagReviewed を単一 `writeSidecarAtomic` で原子書き＝同一ファイルのサブms二重書きに実書き手なし）／saveFolder 移動後の組織ストア未再読込（`copyLibraryInto` は dest 衝突で即中断＋検証不一致は force 再コピー＝移動後 dest は常に src の完全コピー→renderer メモリと乖離し得ない・posts は resetDelta+reloadPosts 済）／delete-post disk-sweep の境界分離（前方一致は `-media-`/`-poster.`/`-avatar.` と区切り文字込み＝境界安全・eagle 移行含む全ソースが captureId 命名を実ライブラリで確認／trash 側 `base+'-'` は下記 captureId 衝突棄却に包含）／update-tags/restore-post の torn-read（`writeSidecarAtomic`＋9260c81・直書き0件＝行番号 stale）／clear-all の delta 非リセット（added は現スキャン由来・stale は no-op・captureId 再利用なし）／facetCounts への sticky 混入（同 getFilteredPosts 由来で一様・~400ms clear）／buildUsers 先勝ちで表示名古い（表示のみ・userKey 安定・再起動で自己修復）／saveFolder 死パスで空表示（ENOENT→no-op・データ無傷）／import で folders.json 孤児化（起動時 `CF().load()` が import 前に移行＝到達不能）／trash の captureId 前方一致衝突（`Date.now()+rand16` で極小）。
 
 ### パフォーマンス（UI操作）
 

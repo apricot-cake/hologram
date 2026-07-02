@@ -2249,21 +2249,23 @@
   function genTabId() {
     return 'tab_' + Math.random().toString(36).slice(2, 10);
   }
+  function persistTabsNow() {
+    clearTimeout(_tabPersistTimer);
+    if (!window.corpus.setTabs) return;
+    const at = tabs.find((t) => t.id === activeTabId);
+    if (at) {
+      at.state = snapshotState();
+      at._scrollTop = contentScrollTop();
+    }
+    // scrollTop rides along so the view restores across RESTART, not just tab
+    // switches (main.js writes the payload verbatim — no whitelist). The old
+    // renderLimit field is gone with the windowed path: the virtualized grid
+    // restores any depth from scrollTop alone (stale saved fields are ignored).
+    window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop })) });
+  }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
-    _tabPersistTimer = setTimeout(() => {
-      if (!window.corpus.setTabs) return;
-      const at = tabs.find((t) => t.id === activeTabId);
-      if (at) {
-        at.state = snapshotState();
-        at._scrollTop = contentScrollTop();
-      }
-      // scrollTop rides along so the view restores across RESTART, not just tab
-      // switches (main.js writes the payload verbatim — no whitelist). The old
-      // renderLimit field is gone with the windowed path: the virtualized grid
-      // restores any depth from scrollTop alone (stale saved fields are ignored).
-      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop })) });
-    }, 800);
+    _tabPersistTimer = setTimeout(persistTabsNow, 800);
   }
   function saveActiveTabState() {
     const t = tabs.find((t) => t.id === activeTabId);
@@ -5710,4 +5712,11 @@
       },
       { passive: true },
     );
+  // Flush the debounced tab state as the window goes away: the 800ms persist
+  // debounce (plus the 400ms scroll pre-debounce above) would otherwise drop
+  // any change made within ~1.2s of quitting. Registered HERE — after the tabs
+  // restore above — so an early close can't overwrite tabs.json with defaults.
+  // set-tabs writes synchronously in main, so the payload only has to reach the
+  // IPC queue before renderer teardown.
+  window.addEventListener('pagehide', persistTabsNow);
 })();

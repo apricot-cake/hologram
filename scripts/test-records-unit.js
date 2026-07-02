@@ -102,6 +102,36 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
   const merged = gs.find((g) => g.records.length === 2);
   assert('セルフリプは親グループへ合流', merged && merged.records.some((r) => r.captureId === 'p1') && merged.records.some((r) => r.captureId === 'p2'));
   assert('他人のリプは合流しない', gs.length === 2);
+
+  // Long self-reply chain: each post aliases to its IMMEDIATE parent's key, so
+  // alias depth equals thread length. The old fixed depth-10 cap split threads
+  // longer than ~11 posts into several cards (audit follow-up ②).
+  {
+    const chain = [];
+    for (let i = 0; i < 15; i++) {
+      chain.push(
+        mk({
+          captureId: 'c' + String(i).padStart(2, '0'),
+          url: 'https://x.com/u/status/' + (200 + i),
+          userId: 'u9',
+          replyToId: i === 0 ? undefined : String(200 + i - 1),
+          image: 'c' + i + '.jpg',
+          text: '',
+        }),
+      );
+    }
+    gs = groupRecords(chain);
+    assert('長いセルフリプ連鎖（15件）も1グループ', gs.length === 1 && gs[0].records.length === 15);
+  }
+
+  // Mutual replies (impossible on real SNS = corrupt data) form an alias cycle;
+  // the seen-set guard must terminate instead of looping forever.
+  {
+    const ra = mk({ captureId: 'r1', url: 'https://x.com/u/status/301', userId: 'u9', replyToId: '302', image: 'ra.jpg', text: '' });
+    const rb = mk({ captureId: 'r2', url: 'https://x.com/u/status/302', userId: 'u9', replyToId: '301', image: 'rb.jpg', text: '' });
+    gs = groupRecords([ra, rb]);
+    assert('相互リプの環でも停止する（自己解決で2グループ）', gs.length === 2);
+  }
 }
 
 // --- percentileFn: プラットフォーム内 likes パーセンタイル ---
