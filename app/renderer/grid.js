@@ -40,6 +40,13 @@
     current = { ...current, paint: ++seq };
     notify();
   }
+  // Merge a partial model update into the current one (live size-slider drags:
+  // viewer patches columnWidth per input instead of a full renderPosts).
+  function patch(partial) {
+    if (!current) return;
+    current = { ...current, ...partial, paint: ++seq };
+    notify();
+  }
   const isActive = () => current !== null;
   function get() {
     return current;
@@ -49,5 +56,5 @@
     return () => subs.delete(cb);
   }
 
-  window.corpusGrid = { render, repaint, isActive, get, subscribe };
+  window.corpusGrid = { render, repaint, patch, isActive, get, subscribe };
 })();

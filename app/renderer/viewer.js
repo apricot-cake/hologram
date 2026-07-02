@@ -3358,18 +3358,22 @@
     };
     window.corpusPostCard.setLabels(cardLabels);
 
-    // VIRTUALIZED PATH — list view is owned by the grid island (masonic windowing
-    // via window.corpusGrid). viewer.js keeps the data pipeline (viewGroups above),
-    // the container's classes/CSS vars, and every delegated #postGrid handler; the
-    // island owns cell rendering + the scroll window. All the legacy machinery
-    // below (renderLimit/sentinel, keyed reconcile, JS masonry) is card/tile-only
-    // and simply never runs here — it dies with those views' own inversion slices.
-    if (currentView === 'list' && window.corpusGrid) {
+    // VIRTUALIZED PATH — list + tile views are owned by the grid island (masonic
+    // windowing via window.corpusGrid). viewer.js keeps the data pipeline
+    // (viewGroups above), the container's classes/CSS vars, and every delegated
+    // #postGrid handler; the island owns cell rendering + the scroll window. The
+    // legacy machinery below (renderLimit/sentinel, keyed reconcile, JS masonry)
+    // is card-only now — it dies wholesale with the card inversion slice.
+    if ((currentView === 'list' || currentView === 'tile') && window.corpusGrid) {
+      // The container-level layout (flex column / CSS grid) is dead in the
+      // virtualized path — masonic positions cells absolutely inside the host.
+      // The .list-view/.tile-view classes stay purely for descendant styling.
+      grid.style.display = 'block';
       if (moreObserver) {
         moreObserver.disconnect();
         moreObserver = null;
       }
-      // Clear leftover legacy card/tile nodes on the way in. The island renders
+      // Clear leftover legacy card nodes on the way in. The island renders
       // into its own #postGridReact host, so this cannot touch React-managed DOM.
       for (const n of [...grid.children]) if (n.id !== 'postGridReact') n.remove();
       if (viewGroups !== _gridItemsArr) {
@@ -3377,7 +3381,7 @@
         _gridItemsKey++; // rebuilt array → island resets its positioner + re-syncs scroll
       }
       window.corpusGrid.render({
-        view: 'list',
+        view: currentView,
         items: viewGroups,
         itemsKey: _gridItemsKey,
         // inspected rides on the model ONLY here (live cells re-derive it after a
@@ -3390,8 +3394,14 @@
         },
         keyOf: (g) => postIdKey(g.rep),
         labels: cardLabels,
-        rowGutter: 4, // .post-grid.list-view gap
-        itemHeightEstimate: Math.round(listThumb * 1.25), // ≈ row height cap (img max-height)
+        // list: one full-width column, gap 4 (.post-grid.list-view). tile: squares
+        // packed by minimum width tileSize, gap 8 (.post-grid.tile-view) — masonic
+        // stretches columns to fill, same math as the old CSS auto-fill minmax.
+        columnCount: currentView === 'list' ? 1 : undefined,
+        columnWidth: currentView === 'tile' ? tileSize : undefined,
+        square: currentView === 'tile', // aspect-ratio:1 cells → island uses the real column width as its height estimate
+        rowGutter: currentView === 'list' ? 4 : 8,
+        itemHeightEstimate: currentView === 'list' ? Math.round(listThumb * 1.25) : tileSize,
       });
       // With windowing, cells keep MOUNTING while the user scrolls — drop the
       // entrance class once the initial animation has played, or every late
@@ -5672,7 +5682,9 @@
     st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
     if (!commit) {
-      if (currentView === 'card') scheduleMasonry();
+      if (gridIslandActive() && currentView === 'tile')
+        window.corpusGrid.patch({ columnWidth: tileSize }); // live re-flow while dragging (masonic recreates its positioner on columnWidth change)
+      else if (currentView === 'card') scheduleMasonry();
       return;
     } // drag: re-pack columns live
     window.corpus.setPref(st.pref, st.get());

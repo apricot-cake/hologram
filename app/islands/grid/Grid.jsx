@@ -91,7 +91,13 @@ export function GridHost({ model }) {
   const positioner = usePositioner(
     {
       width: dims.width || 1, // pre-measure first frame; corrected before paint
-      columnCount: model.view === 'list' ? 1 : undefined,
+      // list: one full-width column. tile: columnWidth is masonic's MINIMUM —
+      // real columns stretch to fill, exactly like the old CSS auto-fill
+      // minmax(var(--tile-size),1fr). A columnWidth change (size slider drag →
+      // bridge patch) recreates the positioner internally, so live re-flow
+      // needs no extra wiring here.
+      columnCount: model.columnCount,
+      columnWidth: model.columnWidth,
       rowGutter: model.rowGutter,
       columnGutter: model.rowGutter,
     },
@@ -104,7 +110,10 @@ export function GridHost({ model }) {
     resizeObserver,
     items: model.items,
     itemKey: (data, i) => (data && data.rep ? model.keyOf(data) : i),
-    itemHeightEstimate: model.itemHeightEstimate || 120,
+    // square cells (tile) are exactly one column wide-and-high — using the real
+    // computed column width makes the height estimate exact (accurate container
+    // height = precise deep-scroll restore).
+    itemHeightEstimate: model.square ? positioner.columnWidth : model.itemHeightEstimate || 120,
     overscanBy: 2,
     height: dims.height || scroller.clientHeight,
     scrollTop: Math.max(0, scrollY - offsetRef.current),
