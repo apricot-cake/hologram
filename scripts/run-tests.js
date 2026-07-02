@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const TESTS = ['test-index', 'test-search-unit', 'test-query-unit', 'test-records-unit', 'test-migrate-unit', 'test-collections-merge', 'test-token-parity', 'test-contrast-parity', 'test-i18n-parity', 'test-parse-url', 'test-bridge-ssrf', 'test-archive-zipslip', 'test-archive-zipbomb'];
+const TESTS = ['test-index', 'test-search-unit', 'test-query-unit', 'test-records-unit', 'test-facets-unit', 'test-migrate-unit', 'test-collections-merge', 'test-token-parity', 'test-contrast-parity', 'test-i18n-parity', 'test-parse-url', 'test-bridge-ssrf', 'test-archive-zipslip', 'test-archive-zipbomb'];
 
 // Sandbox convention (CLAUDE.md): never let a test see the real ~/.corpus.
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-tests-'));
