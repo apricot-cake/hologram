@@ -36,12 +36,13 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
 
 // --- stampPost: ソート用タイムスタンプ＋グループキーの前計算 ---
 {
-  const p = R.stampPost({ url: 'https://x.com/u/status/7', date: '2026-04-01T10:00:00Z', capturedAt: '2026-04-02T10:00:00Z' });
+  const p = R.stampPost({ url: 'https://x.com/u/status/7', date: '2026-04-01T10:00:00Z', capturedAt: '2026-04-02T10:00:00Z', quotedUrl: 'https://x.com/v/status/8' });
   assert('stampPost _dateMs', p._dateMs === +new Date('2026-04-01T10:00:00Z'));
   assert('stampPost _capturedMs', p._capturedMs === +new Date('2026-04-02T10:00:00Z'));
   assert('stampPost _postKey', p._postKey === 'x:7');
+  assert('stampPost _quotedKey', p._quotedKey === 'x:8');
   const q = R.stampPost({});
-  assert('stampPost 欠損は 0 / null', q._dateMs === 0 && q._capturedMs === 0 && q._postKey === null);
+  assert('stampPost 欠損は 0 / null', q._dateMs === 0 && q._capturedMs === 0 && q._postKey === null && q._quotedKey === null);
 }
 
 // --- record 形状ヘルパ ---

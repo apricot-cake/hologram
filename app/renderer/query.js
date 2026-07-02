@@ -80,8 +80,9 @@
   // Stable per-author key: prefer the platform user id, fall back to the handle.
   const userKey = (p) => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
   // Every text-ish field a free-text query can match against.
+  // (p.description = Eagle-migration annotation — real prose, so it belongs here.)
   function textHaystackOf(p) {
-    return [p.text, p.title, p.eagleName, p.screenName, p.displayName]
+    return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description]
       .concat(p.tags || [])
       .concat(p.hashtags || [])
       .map((x) => (x == null ? '' : String(x)));
@@ -143,12 +144,21 @@
           const key = q + '\0' + (f.mode || 'exact');
           if (f._compiledKey !== key || !f._compiled) {
             f._compiledKey = key;
+            // URL probe: url/quotedUrl are matched only for URL-shaped queries
+            // (contains '.' or '/') and always as plain substrings — never fuzzy,
+            // because subsequence-matching short latin terms against long URLs
+            // hits almost everything. A full pasted URL additionally matches by
+            // normalized post key (deps.postKeyOf) so x.com⇄twitter.com and
+            // tracking-param variants of a saved post still hit.
+            const lq = q.toLowerCase();
+            const urlish = /[./]/.test(q);
+            const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
+            const urlHit = !urlish ? null : (p) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
             const m = f.mode === 'fuzzy' && deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
             if (m) {
-              f._compiled = (p) => m(textHaystackOf(p).join(' '));
+              f._compiled = (p) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
             } else {
-              const lq = q.toLowerCase();
-              f._compiled = (p) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq));
+              f._compiled = (p) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
             }
           }
           return f._compiled;

@@ -180,6 +180,7 @@
     p._dateMs = p.date ? +new Date(p.date) : 0;
     p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
     p._postKey = postKeyOf(p.url); // url-derived group key; groupRecords would re-parse it 3x/record otherwise
+    p._quotedKey = postKeyOf(p.quotedUrl); // quoted-post key — the text-search URL probe matches it per keystroke
     return p;
   }
 

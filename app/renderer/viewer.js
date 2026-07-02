@@ -1430,6 +1430,7 @@
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
     fuzzyCompile: (q) => (window.corpusSearch ? window.corpusSearch.compile(q) : null),
+    postKeyOf: window.corpusRecords.postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
   // The shared inline drag-builder. One instance per view. Encapsulates the tree

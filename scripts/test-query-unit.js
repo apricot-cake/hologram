@@ -111,6 +111,25 @@ assert('text: _compiled はノードにメモ化される(再 compile なし)', 
 tFuzzy._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ落ちた状態を再現
 assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tFuzzy)(post({ text: 'ネコ' })) && fuzzyCalls.length === 2);
 
+// --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・fuzzy 不適用）---
+const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.js'));
+const predOfU = Q.makePostPredOf({
+  isInCollection: () => false,
+  isClipped: () => false,
+  // exact では絶対に当たらない fuzzy スタブ＝URL ヒットが OR 経路である証明に使う
+  fuzzyCompile: () => (s) => s.includes('ネコ'),
+  postKeyOf: R.postKeyOf,
+});
+const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
+assert('text(url): フル URL 貼り付けが部分一致で当たる', predOfU({ type: 'text', value: 'https://x.com/foo/status/123', mode: 'exact' })(xPost));
+assert('text(url): twitter.com 貼り付けが x.com 保存分に postKey で当たる', predOfU({ type: 'text', value: 'https://twitter.com/foo/status/123', mode: 'exact' })(xPost));
+assert('text(url): ドメイン断片（misskey.io）も URL に当たる', predOfU({ type: 'text', value: 'misskey.io', mode: 'exact' })(R.stampPost(post())));
+const quoter = R.stampPost(post({ quotedUrl: 'https://x.com/bar/status/999' }));
+assert('text(url): 引用元 URL の貼り付けが引用した投稿に当たる', predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999', mode: 'exact' })(quoter));
+assert('text(url): 非URL形の語（notes）は URL だけの一致では当たらない', !predOfU({ type: 'text', value: 'notes', mode: 'exact' })(R.stampPost(post())));
+assert('text(url): fuzzy モードでも URL 貼り付けは exact 経路で当たる', predOfU({ type: 'text', value: 'https://misskey.io/notes/abc', mode: 'fuzzy' })(R.stampPost(post())));
+assert('text: description（Eagle 注釈）にも当たる', predOfU({ type: 'text', value: '注釈テキスト', mode: 'exact' })(post({ description: 'ここに注釈テキストがある' })));
+
 // --- evalNode: AND/OR/否定/入れ子 ---
 const leaf = (type, value, neg) => ({ kind: 'cond', type, value, neg: !!neg });
 const group = (op, children, neg) => ({ kind: 'group', op, neg: !!neg, children });
