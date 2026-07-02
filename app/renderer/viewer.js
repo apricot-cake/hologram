@@ -2970,6 +2970,7 @@
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
   };
   // Card context menu — React-owned glass menu (window.corpusContextMenu); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
@@ -2985,11 +2986,14 @@
     if (CF()) items.push({ label: inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd, act: 'clip', icon: CM_IC.clip });
     items.push({ label: MSG.tipInfo, act: 'info', icon: CM_IC.info });
     if (canPoster) items.push({ label: MSG.ctxViewPoster, act: 'poster', icon: CM_IC.poster });
+    // The file the card is showing right now (capture or artwork per density).
+    const cardFile = densityImage(g.rep, currentView) || g.rep.image || '';
+    if (srcUrl || cardFile) items.push({ sep: true });
     if (srcUrl) {
-      items.push({ sep: true });
       items.push({ label: MSG.detailSauce, act: 'sauce', icon: CM_IC.sauce });
       items.push({ label: MSG.detailAscii, act: 'ascii', icon: CM_IC.sauce });
     }
+    if (cardFile) items.push({ label: MSG.ctxShowInFolder, act: 'reveal', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: MSG.tipDelete, act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
@@ -3009,7 +3013,10 @@
     else if (act === 'poster') jumpToPoster(g.rep);
     else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
     else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
-    else if (act === 'delete') requestDeleteGroup(g);
+    else if (act === 'reveal') {
+      const file = densityImage(g.rep, currentView) || g.rep.image;
+      if (file && window.corpus.showInFolder) window.corpus.showInFolder(file);
+    } else if (act === 'delete') requestDeleteGroup(g);
   }
   function showCardMenu(g, x, y) {
     const { items, srcUrl } = cardMenuItems(g);

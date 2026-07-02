@@ -16,6 +16,13 @@ function register(ctx) {
     }
   });
 
+  // Reveal one library file in the OS file manager (card context menu). Same
+  // filename discipline as open-image-window below: bare basename only.
+  ipcMain.handle('show-in-folder', (_event, file) => {
+    if (typeof file !== 'string' || !file || file.includes('..') || file.includes('/') || file.includes('\\')) return;
+    shell.showItemInFolder(path.join(getSaveFolder(), file));
+  });
+
   // Open one library image in its own frameless-ish window (middle-click on a
   // card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
   // Chromium's built-in image view (zoom/fit for free).

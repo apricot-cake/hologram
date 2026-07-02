@@ -99,6 +99,7 @@ declare global {
     setTabs(data: unknown): Promise<any>;
     openExternal(url: string): Promise<any>;
     openImageWindow(image: string): Promise<any>;
+    showInFolder(file: string): Promise<any>;
     getAppInfo(): Promise<any>;
     getPrefs(): Promise<any>;
     setPref(key: string, value: unknown): Promise<any>;

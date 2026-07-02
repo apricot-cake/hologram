@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('corpus', {
   setTabs: (data) => ipcRenderer.invoke('set-tabs', data),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openImageWindow: (image) => ipcRenderer.invoke('open-image-window', image),
+  showInFolder: (file) => ipcRenderer.invoke('show-in-folder', file),
   getAppInfo: () => ipcRenderer.invoke('app-info'),
   getPrefs: () => ipcRenderer.invoke('get-prefs'),
   setPref: (key, value) => ipcRenderer.invoke('set-pref', key, value),
