@@ -96,7 +96,6 @@ BACKLOG に置くのは**「これから（残タスク）」と「やらない�
 - **残タスク**:
   - viewer.js（~5700行 IIFE）の store/service/hooks への段階抽出を継続（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。抽出済み＝query.js／records.js（重複保存警告の P0 postKeyOf 共有化を兼ねる）／facets.js／cooc.js／users.js（buildUsers/buildSuggest 集計系・2026-07-03）（各 純ユニット付き・npm test 配線済み）。次のスライスは実装時に痛点から選ぶ（候補メモ: タブ永続化）。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。masonic が島3つに各自バンドルされる重複と、qf-pop/filter-popover のブリッジ定型重複（下「コード地ならし」）もここで回収。
-  - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 - **対象外と判断済み（再提案しない）**: #filterRows のバッジ（`renderFilterBadges`）＝純粋な派生テキスト＋クラス切替でドリフトリスクが無く現状維持。
 
 ## コード地ならし（純リファクタ・2026-07-01 多エージェント調査でトリアージ）
