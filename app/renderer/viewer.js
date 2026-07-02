@@ -5632,7 +5632,7 @@
     }
   }
   if (window.corpusSearch) {
-    window.corpusSearch.onChange(() => {
+    window.corpusSearch.subscribe(() => {
       syncSearchHint();
       // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
       // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads f.mode).

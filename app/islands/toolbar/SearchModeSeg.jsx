@@ -3,8 +3,8 @@ import { t } from '../_shared/i18n.js';
 
 // Search-mode segmented control (exact / fuzzy). State lives in window.corpusSearch
 // (shared with the filter flyout), so React only REFLECTS it: we subscribe via
-// useSyncExternalStore (the onChange unsubscribe runs on unmount / HMR) and write
-// back with setMode on click. viewer.js keeps its own corpusSearch.onChange side
+// useSyncExternalStore (the subscribe unsubscribe runs on unmount / HMR) and write
+// back with setMode on click. viewer.js keeps its own corpusSearch.subscribe side
 // effect (re-render posts / follow the editing leaf).
 //
 // We emit the SAME DOM the old innerHTML did (.seg-thumb + two .seg-opt), so the
@@ -13,7 +13,7 @@ import { t } from '../_shared/i18n.js';
 // the thumb — we apply that as an inline transform on .seg-thumb instead, so we
 // never reach out to mutate the root container's own className.
 
-const subscribe = (cb) => window.corpusSearch.onChange(cb);
+const subscribe = (cb) => window.corpusSearch.subscribe(cb);
 const getMode = () => window.corpusSearch.getMode();
 
 export function SearchModeSeg() {

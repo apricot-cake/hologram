@@ -77,7 +77,7 @@ function QfBody({ model }) {
     }, 0);
     return () => clearTimeout(t);
   }, [model.showFind]);
-  const fuzzy = useSyncExternalStore(window.corpusSearch.onChange, window.corpusSearch.isFuzzy);
+  const fuzzy = useSyncExternalStore(window.corpusSearch.subscribe, window.corpusSearch.isFuzzy);
 
   const rows = useMemo(() => buildRows(model.items), [model.items]);
   const hasAnyRows = useMemo(() => rows.some((r) => r.type === 'row'), [rows]);

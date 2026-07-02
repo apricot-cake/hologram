@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   let mode = 'normal'; // 'normal' | 'fuzzy'
-  // Set (not array) so onChange can return an unsubscribe that actually removes the
+  // Set (not array) so subscribe can return an unsubscribe that actually removes the
   // listener — React islands subscribe via useSyncExternalStore and must detach on
   // unmount (and to avoid duplicate registrations across HMR reloads in dev).
   const listeners = new Set();
@@ -122,6 +122,12 @@
     };
   }
 
+  function subscribe(fn) {
+    if (typeof fn !== 'function') return () => {};
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
+
   window.corpusSearch = {
     getMode() {
       return mode;
@@ -150,11 +156,13 @@
       notify();
     },
     // Returns an unsubscribe fn (existing callers ignore it — backward compatible).
-    onChange(fn) {
-      if (typeof fn !== 'function') return () => {};
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
+    // `subscribe` is the canonical name (same contract as corpusStore, so React
+    // islands can pass it straight to useSyncExternalStore); `onChange` stays as
+    // a compatibility alias for older vanilla call sites. Both are the same
+    // standalone function (not a `this`-forwarding method), so a detached
+    // reference like `useSyncExternalStore(corpusSearch.subscribe, …)` is safe.
+    subscribe,
+    onChange: subscribe,
     // 低レベルAPI（テスト・再利用用）。
     normalize,
     isSubsequence,
