@@ -73,7 +73,11 @@ const evalJs = `(async () => {
   };
   await waitFor(() => cards() >= 4);
   const sb = document.getElementById('searchBox');
-  const setVal = (v) => { sb.value = v; sb.dispatchEvent(new Event('input', { bubbles: true })); };
+  // React controlled input (searchbox island): write via the prototype setter + 'input'
+  const setVal = (v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
+    sb.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   const enter = () => sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   const r = {};
   setVal('猫'); await wait(240);

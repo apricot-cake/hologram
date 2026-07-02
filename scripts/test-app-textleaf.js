@@ -64,8 +64,13 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
   const sb = document.getElementById('searchBox');
-  const fuzzyBtn = document.getElementById('searchModeFuzzy');
-  const setVal = (v) => { sb.value = v; sb.dispatchEvent(new Event('input', { bubbles: true })); };
+  // toolbar island: the fuzzy button is .seg-opt[data-mode] (old #searchModeFuzzy id gone)
+  const fuzzyBtn = document.querySelector('#searchModeSeg .seg-opt[data-mode="fuzzy"]');
+  // React controlled input (searchbox island): write via the prototype setter + 'input'
+  const setVal = (v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
+    sb.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   const r = {};
   // A+B: exact「ねこ」→ one real qc-text leaf chip, no legacy 付箋, katakana body 非一致 → 0
   setVal('ねこ');

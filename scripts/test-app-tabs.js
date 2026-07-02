@@ -75,11 +75,13 @@ const evalJs = `(async () => {
   const initTabCount  = tabCount();
   const initTitle     = activeTitle();
 
-  // ② Add alpha filter via tag flyout
+  // ② Add alpha filter via tag flyout (the qf-pop React island has no data-qfval —
+  //    find the row by its .fm-name label)
   const tagRow = document.querySelector('[data-qfrow="tag"]');
   if (tagRow) tagRow.click();
-  await sleep(100);
-  const alphaItem = document.querySelector('.qf-pop [data-qfval="alpha"]');
+  await waitFor(() => !!document.querySelector('.qf-pop .fm-row'));
+  const alphaItem = [...document.querySelectorAll('.qf-pop .fm-row')]
+    .find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === 'alpha'; });
   if (alphaItem) alphaItem.click();
   await sleep(250);
   document.body.click(); await sleep(60);

@@ -68,25 +68,28 @@ const evalJs = `(async () => {
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   const openRow = (cat) => document.querySelector('[data-qfrow="' + cat + '"]').click();
-  const rowEl = (qfval) => document.querySelector('.qf-vals .fm-row[data-qfval="' + qfval + '"]');
-  const cntOf = (qfval) => { const r = rowEl(qfval); return r ? ((r.querySelector('.fm-count') || {}).textContent || null) : null; };
-  const offOf = (qfval) => { const r = rowEl(qfval); return r ? r.classList.contains('off') : null; };
+  // qf-pop is a React island: rows carry no data-qfval — match by the .fm-name label
+  // (PF_NAME display names for platforms, the raw tag text for tags)
+  const rowEl = (name) => [...document.querySelectorAll('.qf-vals .fm-row')]
+    .find((el) => { const n = el.querySelector('.fm-name'); return n && n.textContent === name; });
+  const cntOf = (name) => { const r = rowEl(name); return r ? ((r.querySelector('.fm-count') || {}).textContent || null) : null; };
+  const offOf = (name) => { const r = rowEl(name); return r ? r.classList.contains('off') : null; };
   await waitFor(() => cards() >= 5);
   const r = {};
   // all-platform counts (fixed list — order preserved, badges present)
   openRow('platform'); await wait(220);
-  r.pfX_all = cntOf('x');           // 3
-  r.pfBsky_all = cntOf('bluesky');  // 1
-  r.pfMisskey_all = cntOf('misskey'); // 1
+  r.pfX_all = cntOf('X');           // 3
+  r.pfBsky_all = cntOf('Bluesky');  // 1
+  r.pfMisskey_all = cntOf('Misskey'); // 1
   // apply tag=猫 via its flyout
   openRow('tag'); await wait(220);
   rowEl('猫').click(); await wait(220);
   r.afterCatCards = cards();        // 3 (p0,p2,p3)
   // reopen platform — counts now reflect the 猫 query
   openRow('platform'); await wait(220);
-  r.pfX_cat = cntOf('x');           // 2
-  r.pfMisskey_cat = cntOf('misskey'); // 0
-  r.pfMisskey_off = offOf('misskey'); // false (fixed list: badge but no greying)
+  r.pfX_cat = cntOf('X');           // 2
+  r.pfMisskey_cat = cntOf('Misskey'); // 0
+  r.pfMisskey_off = offOf('Misskey'); // false (fixed list: badge but no greying)
   // reopen tag — 犬 is now absent (0) and greyed on a facetDim list
   openRow('tag'); await wait(220);
   r.tagCat = cntOf('猫');           // 3
@@ -95,9 +98,9 @@ const evalJs = `(async () => {
   // --- poster view: counts come from filteredPosters() (population = posters) ---
   document.querySelector('#browseToggle [data-mode="posters"]').click(); await wait(280);
   document.querySelector('#posterFilterRows [data-qfrow="poster-platform"]').click(); await wait(220);
-  r.posterPfX = cntOf('x');           // 3 posters (u0,u1,u2)
-  r.posterPfBsky = cntOf('bluesky');  // 1 (u3)
-  r.posterPfMisskey = cntOf('misskey'); // 1 (u4)
+  r.posterPfX = cntOf('X');           // 3 posters (u0,u1,u2)
+  r.posterPfBsky = cntOf('Bluesky');  // 1 (u3)
+  r.posterPfMisskey = cntOf('Misskey'); // 1 (u4)
   return r;
 })()`;
 

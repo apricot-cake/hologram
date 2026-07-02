@@ -60,20 +60,26 @@ const evalJs = `(async () => {
   await waitFor(() => cards() >= 5);
 
   // プラットフォーム行 → Misskey/Mastodon の直下にインスタンスがサブ行で並ぶ
-  document.querySelector('#filterRows [data-qfrow="platform"]').click(); await sleep(60);
-  const pop = document.querySelector('.qf-pop');
-  const hosts = [...pop.querySelectorAll('[data-qftype="instance"]')].map(r => r.dataset.qfval).sort();
-  const subIndented = !!pop.querySelector('.fm-sub[data-qfval="misskey.io"]');
+  // The qf-pop is a React island: instance sub-rows are .fm-row.fm-sub labeled by
+  // host (no data-qftype/data-qfval), and every pick REMOUNTS the popup — so always
+  // re-query from document instead of keeping the pop / row elements.
+  const subRows = () => [...document.querySelectorAll('.qf-pop .fm-row.fm-sub')];
+  const rowByName = (name) => [...document.querySelectorAll('.qf-pop .fm-row')]
+    .find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
+  document.querySelector('#filterRows [data-qfrow="platform"]').click();
+  await waitFor(() => subRows().length >= 4);
+  const hosts = subRows().map((r) => r.querySelector('.fm-name').textContent).sort();
+  const subIndented = subRows().some((r) => r.querySelector('.fm-name').textContent === 'misskey.io');
 
   // mastodon.social を選ぶ → 2件・プラットフォーム行のバッジ点灯・開いたまま
-  pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  rowByName('mastodon.social').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(120);
   const socialCount = cards();
   const badgeOn = document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');
-  const stillOpen = pop.classList.contains('show');
+  const stillOpen = !!document.querySelector('.qf-pop.show');
 
   // もう一度クリックで解除 → 全5件・バッジ消灯
-  pop.querySelector('[data-qfval="mastodon.social"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  rowByName('mastodon.social').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(120);
   const cleared = cards();
   const badgeOff = !document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');

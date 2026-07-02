@@ -54,20 +54,22 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
 
+  // qf-pop is a React island: value rows are .fm-row (no data-qfval) and hashtag rows
+  // are labeled '#'+tag — count/find them via .fm-name.
+  const qfRows = () => [...document.querySelectorAll('.qf-pop .qf-vals .fm-row')];
+
   // --- Tag row: opens flyout with all user tags ---
   document.querySelector('[data-qfrow="tag"]').click();
-  await sleep(60);
-  const pop = document.querySelector('.qf-pop');
-  const tagFlyCount = pop ? pop.querySelectorAll('[data-qfval]').length : 0;
+  await waitFor(() => qfRows().length > 0);
+  const tagFlyCount = qfRows().length;
   document.body.click(); await sleep(40);
 
   // --- Hashtag row: opens flyout with hashtags from post text ---
   document.querySelector('[data-qfrow="hashtag"]').click();
-  await sleep(60);
-  const pop2 = document.querySelector('.qf-pop');
-  const htFlyCount = pop2 ? pop2.querySelectorAll('[data-qfval]').length : 0;
-  // select 'typescript' hashtag from flyout
-  const tsRow = pop2 && pop2.querySelector('[data-qfval="typescript"]');
+  await waitFor(() => qfRows().length > 0);
+  const htFlyCount = qfRows().length;
+  // select '#typescript' from the flyout
+  const tsRow = qfRows().find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === '#typescript'; });
   if (tsRow) tsRow.click();
   await sleep(120);
   document.body.click(); await sleep(40);

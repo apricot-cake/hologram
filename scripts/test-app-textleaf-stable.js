@@ -65,7 +65,11 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
   const sb = document.getElementById('searchBox');
-  const setVal = (v) => { sb.value = v; sb.dispatchEvent(new Event('input', { bubbles: true })); };
+  // React controlled input (searchbox island): write via the prototype setter + 'input'
+  const setVal = (v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
+    sb.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   const enter = () => sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   const r = {};
 
@@ -95,13 +99,14 @@ const evalJs = `(async () => {
   enter(); await wait(160);        // confirm 「ねこ」in ぴったり (exact)
   r.confChips = textChips();       // 1
   r.confExactCards = cards();      // 0 (ひらがな ≠ カタカナ body)
-  document.getElementById('searchModeFuzzy').click(); await wait(260);   // flip to おおまか
+  document.querySelector('#searchModeSeg .seg-opt[data-mode="fuzzy"]').click(); await wait(260);   // flip to おおまか
   r.afterFuzzyCards = cards();     // 0 — confirmed leaf stays exact, does NOT match ネコかわいい
   // re-save AFTER the flip and read the persisted leaf mode: still 'exact'
   const op = window.prompt; window.prompt = () => '凍結確認';
   document.getElementById('saveSearchBtn').click();
   window.prompt = op; await wait(300);
-  const dyn = (window.corpusFolders.allWithActive() || []).filter((c) => c.kind === 'dynamic');
+  // allWithActive was retired with the collections view — allCollections() is the raw list
+  const dyn = (window.corpusFolders.allCollections() || []).filter((c) => c.kind === 'dynamic');
   const c = dyn.find((x) => x.name === '凍結確認');
   const leaf = c && c.tree && (c.tree.children || []).find((n) => n.type === 'text');
   r.savedLeafMode = leaf ? leaf.mode : null;   // 'exact'

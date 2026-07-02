@@ -60,7 +60,13 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
   const sb = document.getElementById('searchBox');
-  sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  // React controlled input (searchbox island): a bare .value write is invisible to
+  // React's value tracker — go through the prototype setter, then fire 'input'.
+  const setVal = (v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
+    sb.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  setVal('投稿1');
   await wait(240);
   const r = {};
   r.leafCards = cards();   // 1 (投稿1 だけ一致)
@@ -69,7 +75,8 @@ const evalJs = `(async () => {
   document.getElementById('saveSearchBtn').click();
   window.prompt = op;
   await wait(300);
-  const dyn = (window.corpusFolders.allWithActive() || []).filter((c) => c.kind === 'dynamic');
+  // allWithActive was retired with the collections view — allCollections() is the raw list
+  const dyn = (window.corpusFolders.allCollections() || []).filter((c) => c.kind === 'dynamic');
   const c = dyn.find((x) => x.name === 'テスト保存');
   r.saved = !!c;
   r.hasQ = c ? ('q' in c) : null;                                              // false: q は保存しない
