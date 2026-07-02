@@ -10,7 +10,7 @@
 
 ### セキュリティ
 
-ハードニング済み（制限的CSP `script-src 'self'`＋base-uri/form-action 明示／contextIsolation+sandbox+nodeIntegration:false／SSRFガード／captureId allow-list／拡張ID形式検証／JPEGマジックバイト検査／zip-slip 二重ガード）。実害の H-1（16進 IPv4-mapped SSRF）解消済み。Low 3件（extId検証・CSP base-uri/form-action・resolveInFolder sep）は 2026-07-02 対応済み（CSP は実機1点確認が残＝島描画・相対リンク解決の無事）。
+ハードニング済み（制限的CSP `script-src 'self'`＋base-uri/form-action 明示／contextIsolation+sandbox+nodeIntegration:false／SSRFガード／captureId allow-list／拡張ID形式検証／JPEGマジックバイト検査／zip-slip 二重ガード）。実害の H-1（16進 IPv4-mapped SSRF）解消済み。Low 3件（extId検証・CSP base-uri/form-action・resolveInFolder sep）は 2026-07-02 対応済み（CSP の実機確認も同日完了＝リロード後の島描画・全画像デコード・コンソールエラーなしを CDP で確認）。
 
 - **【Low・脅威モデル次第】SSRFガードがホスト名を解決しない（DNSリバインディング）**（`native-host/media-download.js:76-88`）: コメント(41-45)明記の**意図的な受容リスク**。閉じるなら解決アドレスの public 検証＋接続ピン留め。許容なら現状維持。
 - **棄却（再調査しない）**: zip-slip（二重ガード）／captureId トラバーサル（`SAFE_ID`）／プロトタイプ汚染（own のみ）／trash の未エスケープ `<img>`（CSP で script 不発）／Referer 注入（undici が CRLF 拒否）／native message 長さ（allowed_origins＋~1MB）／onMessage sender 未検証（`externally_connectable` なし）／install・restart スクリプト（固定パス・非昇格）／サイドカーのパス（常に basename＋フォルダ内検査）／open-external（`https?://` allowlist）／サプライチェーン（実行時 npm 依存ゼロ・lockfile ピン）／sandbox:true 未設定（Electron 20+ は既定 true・nodeIntegration:false のため冗長）。
@@ -81,7 +81,6 @@
 - **右クリックからローカルファイル閲覧**: カード等のコンテキストメニューに「エクスプローラで表示/ファイルの場所を開く」を追加（実ファイルへの導線）。
 - **操作の通知をもっと出す**: `window.corpusUI.notify`（`ui.js:12-19`）は在るが、タグの個別編集・検索/ソート変更・フィルタリセット等では出ていない（調査）。無音の操作にもトーストを足して手応えを増やす（出しすぎ注意＝頻発操作は間引き）。
 - **拡張機能のエフェクト等をモダンに**: 拡張（`extension/`）のUI/アニメーション・エフェクトを現行アプリのガラス調に寄せて刷新。
-- **「Corpus」の頭文字を大文字で固定（低優先・点検のみ）**: UI 文言は既に `Corpus` で大文字統一済み（i18n/About）。かつて「amazon 風に大文字小文字併用にしよう」というやり取りがあり、その名残の小文字表記が UI 表示文字列のどこかに残っていないか念のため点検（`window.corpus*` 等のコード識別子は正当なので対象外）。残骸が無ければ本項目は消してよい。
 
 ## 実機検証・開発インフラ
 
