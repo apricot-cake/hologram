@@ -106,15 +106,24 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
+  // React controlled inputs (searchbox island / date popover): a bare .value write is
+  // invisible to React's value tracker — go through the prototype setter, then 'input'.
+  const setInput = (el, text) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const typeSearch = (text) => setInput(document.getElementById('searchBox'), text);
   await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
-  const sb = document.getElementById('searchBox');
   const seg = document.getElementById('searchModeSeg');
-  const exactBtn = document.getElementById('searchModeExact');
-  const fuzzyBtn = document.getElementById('searchModeFuzzy');
+  // the segment is the toolbar island now: state shows as .is-on per .seg-opt button
+  // (the old #searchModeExact/#searchModeFuzzy ids and the container's .is-fuzzy class
+  // are gone — the thumb slides by inline transform instead)
+  const exactBtn = seg.querySelector('.seg-opt[data-mode="normal"]');
+  const fuzzyBtn = seg.querySelector('.seg-opt[data-mode="fuzzy"]');
   const defaultMode = window.corpusSearch.getMode();      // 既定 = normal
-  const exactOnByDefault = exactBtn.classList.contains('is-on') && !seg.classList.contains('is-fuzzy');
+  const exactOnByDefault = exactBtn.classList.contains('is-on') && !fuzzyBtn.classList.contains('is-on');
   // ぴったり（既定）: カタカナ本文にひらがなクエリは部分一致しない → 0
-  sb.value = 'ねこ'; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  typeSearch('ねこ');
   await wait(220);
   const normalKana = cards();
   // セグメントの「おおまか」をクリックで切替（B 正規化）: 'ねこ' が 'ネコかわいい' に一致 → 1
@@ -122,16 +131,16 @@ const evalJs = `(async () => {
   await wait(220);
   const fuzzyKana = cards();
   const selValue = window.corpusSearch.getMode();          // fuzzy
-  const fuzzyOn = fuzzyBtn.classList.contains('is-on') && seg.classList.contains('is-fuzzy');
+  const fuzzyOn = fuzzyBtn.classList.contains('is-on') && !exactBtn.classList.contains('is-on');
   // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致 → 1
-  sb.value = 'こんにとは'; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  typeSearch('こんにとは');
   await wait(220);
   const fuzzyTypo = cards();
 
   // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
   // Clear the search term so it does not co-filter the grid, then drive the real
   // date popover (same path the user takes): set from/to, field, click Apply.
-  sb.value = ''; sb.dispatchEvent(new Event('input', { bubbles: true }));
+  typeSearch('');
   await wait(220);
   // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
   // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
@@ -142,11 +151,20 @@ const evalJs = `(async () => {
   const dzSet = () => Array.from(document.querySelectorAll('#postGrid .post-card'))
     .map((c) => (c.dataset.url || '').split('/').pop())
     .filter((id) => /^dz\\d$/.test(id)).sort().join(',');
+  // The date popover is the filter-popover React island now (no qfDate* ids): the row
+  // click opens a fresh .qf-popover, the field-type .chip toggles date↔capturedAt
+  // (.active ⇔ capturedAt), and the non-delete .btn-outline applies. Apply with a
+  // pre-existing date filter replaces it (addFilter is single-valued for dates).
   const applyDate = async (field, from, to) => {
-    document.getElementById('qfDateFrom').value = from;
-    document.getElementById('qfDateTo').value = to;
-    document.getElementById('qfDateType').dataset.field = field;
-    document.getElementById('qfDateApply').click();
+    document.querySelector('#filterRows [data-qfrow="date"]').click();
+    await waitFor(() => !!document.querySelector('.qf-popover input.date-input'));
+    const pop = document.querySelector('.qf-popover');
+    const [fromEl, toEl] = pop.querySelectorAll('input.date-input');
+    setInput(fromEl, from);
+    setInput(toEl, to);
+    const typeChip = pop.querySelector('button.chip');
+    if ((field === 'capturedAt') !== typeChip.classList.contains('active')) { typeChip.click(); await wait(40); }
+    pop.querySelector('.btn-outline:not(.qf-popover-delete)').click();
     // The grid re-renders async (folder refresh + animation); poll until the
     // visible post count settles to 2 (the boundary matches) before snapshotting.
     await waitFor(() => cards() === 2);

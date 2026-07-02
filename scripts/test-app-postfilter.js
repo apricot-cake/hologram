@@ -55,6 +55,16 @@ for (let i = 0; i < 3; i++) {
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
+  // React-island idioms: the qf-pop island renders rows without data-qfval — find a row
+  // by its .fm-name label (platform 'x' shows as PF_NAME.x = 'X'). The searchbox is a
+  // controlled react-aria input — a bare .value write is invisible to React's value
+  // tracker, so go through the prototype setter, then fire 'input'.
+  const qfRow = (name) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
+  const typeSearch = (text) => {
+    const sb = document.getElementById('searchBox');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, text);
+    sb.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
   const bar = document.getElementById('postActiveBar');
   const reset = document.getElementById('postResetBtn');
@@ -62,10 +72,10 @@ const evalJs = `(async () => {
   const barAlwaysOn = bar.style.display !== 'none';
   const resetHiddenBefore = reset.style.display === 'none';
   // add a platform filter via its flyout (sidebar restructure: rows → flyout)
-  document.querySelector('#filterRows [data-qfrow="platform"]').click(); await sleep(60);
-  const pop = document.querySelector('.qf-pop');
-  pop.querySelector('[data-qfval="x"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(80);
+  document.querySelector('#filterRows [data-qfrow="platform"]').click();
+  await waitFor(() => !!qfRow('X'));
+  qfRow('X').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(120);
   const pills = document.querySelectorAll('#queryChips .sb-active-chip').length;
   const resetShown = reset.style.display !== 'none';
   const cardsFiltered = document.querySelectorAll('#postGrid .post-card').length;
@@ -76,15 +86,13 @@ const evalJs = `(async () => {
   const resetHiddenAfter = reset.style.display === 'none';
   const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
   // a search term becomes a real text-leaf pill (qc-text), not the legacy 付箋
-  const sb = document.getElementById('searchBox');
-  sb.value = '投稿1'; sb.dispatchEvent(new Event('input', { bubbles: true }));
-  await sleep(260);   // 検索入力は 150ms デバウンス後に描画される（それを越えて待つ）
-  const searchPill = !!document.querySelector('#queryChips .qb-pill.qc-text');
+  typeSearch('投稿1');
+  // the term is applied after a 150ms debounce — poll instead of a fixed sleep
+  const searchPill = await waitFor(() => !!document.querySelector('#queryChips .qb-pill.qc-text'));
   const noLegacy = !document.querySelector('#queryChips [data-special="search"]');
   // deleting the text leaf via its ✕ clears the search (box empties, reset hides)
   document.querySelector('#queryChips .qb-pill.qc-text .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(80);
-  const searchCleared = sb.value === '' && reset.style.display === 'none';
+  const searchCleared = await waitFor(() => document.getElementById('searchBox').value === '' && reset.style.display === 'none');
   return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, noLegacy, searchCleared };
 })()`;
 

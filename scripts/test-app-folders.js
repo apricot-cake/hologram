@@ -84,13 +84,21 @@ const evalJs = `(async () => {
   const hoverPair = !!grid.querySelector('.post-card .clip-btn') && !!grid.querySelector('.post-card .info-btn') &&
     !grid.querySelector('.post-card .fold-btn, .post-card .edit-btn, .post-card .delete-btn, .post-card .open-btn');
 
-  // folders are reached via the card context menu: right-click → フォルダに追加 → picker row
+  // folders are reached via the card context menu: right-click → コレクションに追加… →
+  // picker row. Both menus are the ONE React ContextMenu island (.fold-menu.show, no
+  // .card-menu class / data-act / data-fid) — rows are found by their .fm-name label,
+  // and picking 'folder' transitions the SAME host to the folder picker (the bridge's
+  // transition guard keeps it open).
+  const menuRow = (name) => [...document.querySelectorAll('.fold-menu.show .fm-row')]
+    .find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
   grid.querySelector('.post-card[data-index="0"]').dispatchEvent(
-    new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })); await sleep(40);
-  const ctxOpen = !!document.querySelector('.card-menu.show .fm-row[data-act="folder"]');
-  click(document.querySelector('.card-menu .fm-row[data-act="folder"]')); await sleep(40);
-  const menuOpen = !!document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop)');
-  click(document.querySelector('.fold-menu.show:not(.card-menu):not(.cs-pop) .fm-row[data-fid]')); await sleep(50);
+    new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
+  await waitFor(() => !!menuRow('コレクションに追加…'));
+  const ctxOpen = !!menuRow('コレクションに追加…');
+  click(menuRow('コレクションに追加…'));
+  await waitFor(() => !!menuRow('一次資料'));
+  const menuOpen = !!menuRow('一次資料');   // the picker lists the created folder
+  click(menuRow('一次資料')); await sleep(50);
   const countText = String((folders()[0] || { items: [] }).items.length);   // the card joined the folder
 
   // filter by the folder: collections moved to the dedicated collection view (第3モード).

@@ -572,19 +572,6 @@
   // `p[field]` (an absolute ISO instant with a 'Z'/offset) is compared as-is;
   // Date comparison is on epoch millis, so an instant lands in the local day that
   // contains it — matching what the user sees on the card.
-  function localDayRange(from, to) {
-    return {
-      from: from ? new Date(from + 'T00:00:00') : null,
-      to: to
-        ? (() => {
-            const d = new Date(to + 'T00:00:00');
-            d.setDate(d.getDate() + 1);
-            return d;
-          })()
-        : null,
-    };
-  }
-
   function formatShortDate(dateStr) {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');
@@ -1632,116 +1619,17 @@
   // per-view differences (container, leaf predicate, label, callbacks). The tree is
   // ALWAYS a root group (op 'and' by default). For posts, activeFilters is a derived
   // flat shadow of the leaves (sidebar highlight / row badges / tab title / counts).
-  function emptyTree() {
-    return { kind: 'group', op: 'and', neg: false, children: [] };
-  }
-  function treeLeaves(n, out) {
-    out = out || [];
-    if (!n) return out;
-    if (n.kind === 'cond') out.push(n);
-    else (n.children || []).forEach((c) => treeLeaves(c, out));
-    return out;
-  }
-  function opposite(op) {
-    return op === 'and' ? 'or' : 'and';
-  }
-  // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
-  function facetTreeFrom(f, ops) {
-    const root = emptyTree();
-    const NO_OP = new Set(['date', 'engagement', 'clip', 'workspace']);
-    const byType = new Map();
-    for (const x of f) {
-      if (!byType.has(x.type)) byType.set(x.type, []);
-      byType.get(x.type).push(x);
-    }
-    for (const [type, list] of byType) {
-      const leaves = list.map((x) => Object.assign({ kind: 'cond' }, x));
-      if (NO_OP.has(type)) {
-        root.children.push(...leaves);
-        continue;
-      }
-      const op = (ops || {})[type] || 'or';
-      root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves });
-    }
-    return root;
-  }
-  // Post-side leaf predicate: a leaf condition → (post)=>bool. Hoisted out of
-  // renderPosts so the shared evalNode (and the poster builder) can reuse the engine.
-  function postPredOf(f) {
-    switch (f.type) {
-      // 'post' = SNS投稿（リンクあり）/ 'image' = 取り込み画像（リンクなし）。url の有無が本質。
-      case 'kind':
-        return (p) => (f.value === 'post') === !!p.url;
-      case 'platform':
-        return (p) => (f.value === '__none' ? !p.platform : p.platform === f.value);
-      case 'user':
-        return (p) => userKey(p) === f.value;
-      case 'instance':
-        return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
-      case 'postType':
-        return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
-      case 'media':
-        return (p) => p.mediaType === f.value;
-      case 'tag':
-        return (p) => (p.tags || []).includes(f.value);
-      case 'hashtag':
-        return (p) => (p.hashtags || []).includes(f.value);
-      case 'collection':
-        return (p) => !!(CF() && CF().has(f.value, p.captureId));
-      case 'clip':
-        return (p) => !!(CF() && CF().isClipped(p.captureId));
-      case 'workspace':
-        return (p) => !!(CF() && CF().isClipped(p.captureId)); // legacy alias for any old persisted ws leaf (tabs.json)
-      case 'date': {
-        const field = f.dateField || 'date';
-        const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
-        return (p) => {
-          if (!p[field]) return false;
-          const d = new Date(p[field]);
-          return (!from || d >= from) && (!to || d < to);
-        };
-      }
-      case 'engagement': {
-        if (!(f.min > 0)) return () => true;
-        return (p) => (f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min);
-      }
-      // Free-text leaf: the search-box term, now a first-class tree citizen.
-      // mode (exact/fuzzy) is frozen onto the leaf at confirm time. The compiled
-      // matcher is memoized on the node — evalNode calls postPredOf per item, so
-      // compiling in the bare factory body would recompile once per post.
-      // The !_compiled guard is essential: a node round-tripped through JSON
-      // (saved search / tab state / setTree's clone) keeps the string _compiledKey
-      // but loses the _compiled function — recompile instead of returning undefined.
-      case 'text': {
-        const q = (f.value || '').trim();
-        if (!q) return () => true;
-        const key = q + '\0' + (f.mode || 'exact');
-        if (f._compiledKey !== key || !f._compiled) {
-          f._compiledKey = key;
-          if (f.mode === 'fuzzy' && window.corpusSearch) {
-            const m = window.corpusSearch.compile(q);
-            f._compiled = (p) => m(textHaystackOf(p).join(' '));
-          } else {
-            const lq = q.toLowerCase();
-            f._compiled = (p) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq));
-          }
-        }
-        return f._compiled;
-      }
-      default:
-        return () => true;
-    }
-  }
-  // Recursive evaluation of a query tree against one item, using a view-supplied
-  // leaf predicate factory (predOf). Shared by both builders (post + poster).
-  function evalNode(n, item, predOf) {
-    if (n.kind === 'cond') {
-      const r = predOf(n)(item);
-      return n.neg ? !r : r;
-    }
-    const r = n.op === 'or' ? n.children.some((c) => evalNode(c, item, predOf)) : n.children.every((c) => evalNode(c, item, predOf));
-    return n.neg ? !r : r;
-  }
+  // The tree machinery + post-side predicates live in query.js (window.corpusQuery)
+  // — the first "pure logic → service" extraction of the viewer decomposition.
+  // Runtime couplings are injected here: collections/clips resolve through CF()
+  // lazily (folders.js registers after this closure is built, and predicates only
+  // run post-init), fuzzy text matching through corpusSearch.
+  const { emptyTree, treeLeaves, opposite, facetTreeFrom, evalNode, localDayRange, hostOf, userKey, textHaystackOf } = window.corpusQuery;
+  const postPredOf = window.corpusQuery.makePostPredOf({
+    isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
+    isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
+    fuzzyCompile: (q) => (window.corpusSearch ? window.corpusSearch.compile(q) : null),
+  });
 
   // The shared inline drag-builder. One instance per view. Encapsulates the tree
   // state, render, drag/drop, right-click menu, and mutation helpers so two
@@ -2465,15 +2353,7 @@
     };
   }
 
-  const hostOf = (url) => {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return '';
-    }
-  };
-  // Stable per-author key: prefer the platform user id, fall back to the handle.
-  const userKey = (p) => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+  // hostOf / userKey moved to query.js (destructured from window.corpusQuery above).
 
   // --- Load posts ---
   // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
@@ -2537,13 +2417,6 @@
   // The text-search haystack for one post: the fields the search box scans.
   // Returned as an array so the fuzzy path joins it and the exact path tests
   // each field individually. Used by the 'text' leaf predicate (postPredOf).
-  function textHaystackOf(p) {
-    return [p.text, p.title, p.eagleName, p.screenName, p.displayName]
-      .concat(p.tags || [])
-      .concat(p.hashtags || [])
-      .map((x) => (x == null ? '' : String(x)));
-  }
-
   function getFilteredPosts() {
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
     // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。

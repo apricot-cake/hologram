@@ -60,18 +60,22 @@ const evalJs = `(async () => {
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 4);
 
   // 作者行 → フライアウトに投稿数順で列挙される
-  document.querySelector('#filterRows [data-qfrow="user"]').click(); await sleep(60);
-  const pop = document.querySelector('.qf-pop');
-  const rows = () => [...pop.querySelectorAll('[data-qfval]')];
-  const allNames = rows().map(r => r.querySelector('.fm-name').textContent);   // Alice(2), Bob, Carol
+  // The qf-pop is a React island: rows are .fm-row (no data-qfval), and every pick
+  // remounts the popup (openId key) — so always re-query from document, never keep a
+  // reference to the pop element itself.
+  document.querySelector('#filterRows [data-qfrow="user"]').click();
+  await waitFor(() => document.querySelectorAll('.qf-pop .fm-row').length >= 3);
+  const rows = () => [...document.querySelectorAll('.qf-pop .fm-row')];
+  const nameOf = (r) => { const n = r.querySelector('.fm-name'); return n ? n.textContent : ''; };
+  const allNames = rows().map(nameOf);   // Alice(2), Bob, Carol
 
   // click Alice -> apply a user filter (flyout stays open, row shows ✓)
-  rows().find(r => r.querySelector('.fm-name').textContent === 'Alice')
+  rows().find(r => nameOf(r) === 'Alice')
     .dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(140);
   const chipText = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-user')].map(c => c.textContent);
   const cardCount = document.querySelectorAll('#postGrid .post-card').length;
-  const aliceActive = !!rows().find(r => r.querySelector('.fm-name').textContent === 'Alice' && r.querySelector('.fm-check'));
+  const aliceActive = await waitFor(() => !!rows().find(r => nameOf(r) === 'Alice' && r.querySelector('.fm-check')));
   const badgeOn = document.querySelector('#filterRows [data-badge="user"]').classList.contains('on');
 
   return { allNames, chipText, cardCount, aliceActive, badgeOn };
