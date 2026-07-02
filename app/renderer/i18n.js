@@ -304,7 +304,7 @@
       // viewer: about / version
       aboutTitle: 'このアプリについて',
       aboutVersion: 'バージョン $1',
-      aboutTagline: '投稿を丸ごと。あなたの SNS ライブラリに。',
+      aboutTagline: '投稿を丸ごと。あなたの SNS ライブラリ。',
 
       // viewer: export / import toasts
       exporting: 'エクスポート中...',

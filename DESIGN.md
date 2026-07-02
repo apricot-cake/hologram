@@ -25,7 +25,7 @@ Corpus は「企業的無機質さ」への対抗＝個人が作った・あな�
 - **色**: スクエアは固定イリデセントで light/dark 共通。UIの水色アクセント（`--sky-*`）はロゴと別レイヤーで不変。
 - **アセット再生成（単一導線）**: `assets/icon-master.png` 差替→`electron scripts/make-icons.js` 一回で全アイコン再生成（Electron 512／Chrome拡張 16-256／汎用256／バナー4種）。配置先が増えたら `make-icons.js` の `TARGETS`/`BANNERS` に足す。手順＝[docs/build.md](docs/build.md)。
 - **表記＝二段構え**（普通名詞 `corpus` の固有名詞性を守る）: ロゴ/リポ名/CLI/技術文脈→小文字 `corpus`／OS表示名/`productName`/タイトルバー/README散文→`Corpus`。前例＝amazon・spotify。全小文字統一は埋もれるので不採用。
-- **コピー**: タグライン「投稿を丸ごと。あなたの SNS ライブラリに。」訴求軸は**「投稿」**（画像は投稿の部分集合）。
+- **コピー**: タグライン「投稿を丸ごと。あなたの SNS ライブラリ。」訴求軸は**「投稿」**（画像は投稿の部分集合）。
 
 ### 用語
 
