@@ -317,6 +317,9 @@ declare global {
   interface CorpusSidebarTagsIsland {
     render(rows?: any[]): void;
   }
+  interface CorpusImageTabIsland {
+    render(model?: any): void;
+  }
   interface CorpusLightbox {
     open(items: any[], start?: number): void;
     close(): void;
@@ -350,6 +353,7 @@ declare global {
     corpusQueryChips: CorpusQueryChipsIsland;
     corpusSidebarTags: CorpusSidebarTagsIsland;
     corpusLightbox: CorpusLightbox;
+    corpusImageTab: CorpusImageTabIsland;
     corpusAboutIcon?: CorpusAboutIcon;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
@@ -362,6 +366,7 @@ declare global {
     __corpusQueryChips?: Record<string, any>;
     __corpusSbTagRows?: any[];
     __corpusLbLabels?: Record<string, string>;
+    __corpusImageTabModel?: any;
     JSZip?: any;
   }
 }

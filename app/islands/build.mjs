@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url)); // app/islands
 const appRoot = path.join(here, '..'); // app
 
-const ISLANDS = ['settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections', 'searchbox', 'posters', 'lightbox', 'toolbar', 'context-menu', 'kind-menu', 'filter-popover', 'qf-pop', 'inspector', 'edit-overlay', 'grid'];
+const ISLANDS = ['settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections', 'searchbox', 'posters', 'lightbox', 'toolbar', 'context-menu', 'kind-menu', 'filter-popover', 'qf-pop', 'inspector', 'edit-overlay', 'grid', 'image-tab'];
 
 // React is externalized out of every island and shared via one prebuilt runtime
 // (vendor-react.js, loaded first in index.html). These specifiers map to the

@@ -73,6 +73,10 @@
     tipAdoptTag: _s('tipAdoptTag'),
     ctxViewPoster: _s('ctxViewPoster'),
     ctxShowInFolder: _s('ctxShowInFolder'),
+    ctxOpenNewTab: _s('ctxOpenNewTab'),
+    imgTabFallback: _s('imgTabFallback'),
+    imgTabMissing: _s('imgTabMissing'),
+    imgTabCloseBtn: _s('imgTabCloseBtn'),
     tagAdopted: _f1('tagAdopted'),
     editAdoptSource: _s('editAdoptSource'),
     editCoocCharsOf: _f1('editCoocCharsOf'),
@@ -2014,7 +2018,7 @@
   // and percentileFn moved to records.js (window.corpusRecords) — 2nd extraction
   // slice. groupRecords is rebuilt here with the live manualGroups/ungrouped
   // bindings injected as getters (viewer reassigns them on load/edit).
-  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, stampPost, percentileFn } = window.corpusRecords;
+  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, stampPost, percentileFn } = window.corpusRecords;
   const groupRecords = window.corpusRecords.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
 
   // hostOf / userKey moved to query.js (destructured from window.corpusQuery above).
@@ -2058,6 +2062,10 @@
       else renderPosts(keepLimit);
       reconcileFolders();
       renderPostFolders();
+      // An active image tab shows library records — re-resolve it against the
+      // fresh set so deletions degrade to the missing state live.
+      const it = activeTab();
+      if (isImageTab(it)) renderImageTabView(it);
     } finally {
       _loadPostsInFlight = false;
       if (_loadPostsPending) {
@@ -2136,6 +2144,10 @@
   let activeTabId = null;
   let tabEditingId = null; // id of the tab being inline-renamed (React renders its input)
   let _tabPersistTimer = null;
+  // Image tabs (type:'image') show ONE post's media fit-to-screen with the
+  // inspector alongside instead of a filtered grid — they have no filter state.
+  const isImageTab = (t) => !!t && t.type === 'image';
+  const activeTab = () => tabs.find((t) => t.id === activeTabId);
   // Per-tab view-history for browser-style back/forward. Holds JSON snapshots of
   // snapshotState(); navIdx points at the current entry. Linear: navigating back
   // then making a fresh change drops the forward entries. In-memory per session
@@ -2159,6 +2171,7 @@
   // with the current state, record it for the stickyRecs change-detection below,
   // and push it onto the per-tab back/forward history (see pushNavHistory).
   function syncTitleAndPersist() {
+    if (isImageTab(activeTab())) return; // grid renders under an image tab are background refreshes — its title/persistence live on the image-tab path
     const snap = snapshotState();
     lastRenderedState = JSON.stringify(snap);
     if (restoringState) return;
@@ -2230,6 +2243,7 @@
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
     if (browseMode !== 'posts') return false; // history nav is post-view only (posters/collections excluded)
+    if (isImageTab(activeTab())) return false; // image tabs have no filter history
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return false;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return false;
     if (!document.getElementById('ivFolderModal').hidden) return false;
@@ -2261,7 +2275,7 @@
     clearTimeout(_tabPersistTimer);
     if (!window.corpus.setTabs) return;
     const at = tabs.find((t) => t.id === activeTabId);
-    if (at) {
+    if (at && !isImageTab(at)) {
       at.state = snapshotState();
       at._scrollTop = contentScrollTop();
     }
@@ -2269,7 +2283,9 @@
     // switches (main.js writes the payload verbatim — no whitelist). The old
     // renderLimit field is gone with the windowed path: the virtualized grid
     // restores any depth from scrollTop alone (stale saved fields are ignored).
-    window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop })) });
+    // Image tabs persist type+img instead of filter state (undefined fields
+    // drop out of the JSON, so filter tabs keep their old shape on disk).
+    window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, type: t.type, img: t.img })) });
   }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
@@ -2278,6 +2294,7 @@
   function saveActiveTabState() {
     const t = tabs.find((t) => t.id === activeTabId);
     if (!t) return;
+    if (isImageTab(t)) return; // img.idx is kept live by the island callback; there is no filter state to snapshot
     t.state = snapshotState();
     t._scrollTop = contentScrollTop(); // remember content scroll per tab (persisted too)
     t._navHist = navHist; // carry the back/forward history with the tab
@@ -2287,7 +2304,7 @@
   // grid has laid out; the virtualized grid derives its window from scrollTop
   // alone (its estimated container height already spans all items).
   function restoreTabView(t) {
-    if (!t) return;
+    if (!t || isImageTab(t)) return; // no grid scroll to restore under an image tab
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
   }
@@ -2310,8 +2327,8 @@
     // and all #tabBarInner event delegation.
     const tabModels = tabs.map((t) => {
       const isActive = t.id === activeTabId;
-      const s = isActive ? snapshotState() : t.state || {};
-      const icon = t.pinned ? pinSvg : TAB_ICONS[tabTitleOf(s, { allCount: allPosts.length }).iconType] || TAB_ICONS.all;
+      const s = isImageTab(t) ? {} : isActive ? snapshotState() : t.state || {};
+      const icon = t.pinned ? pinSvg : isImageTab(t) ? TAB_ICONS.media : TAB_ICONS[tabTitleOf(s, { allCount: allPosts.length }).iconType] || TAB_ICONS.all;
       return { id: t.id, title: renderTabTitle(t), icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && tabs.length > 1 };
     });
     const model = { tabs: tabModels, editingId: tabEditingId, closeTitle: MSG.tabClose, newTitle: MSG.tabNew };
@@ -2325,8 +2342,13 @@
     activeTabId = id;
     const t = tabs.find((t) => t.id === id);
     if (!t) return;
-    if (t.state) applyState(t.state);
-    else renderPosts();
+    if (isImageTab(t)) {
+      showImageTab(t);
+    } else {
+      hideImageTabView();
+      if (t.state) applyState(t.state);
+      else renderPosts();
+    }
     adoptTabNav(t);
     restoreTabView(t);
     renderTabs();
@@ -2334,6 +2356,7 @@
   }
   function addTab() {
     saveActiveTabState();
+    hideImageTabView(); // Ctrl+T from an image tab lands on a fresh grid tab
     const id = genTabId();
     tabs.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
     activeTabId = id;
@@ -2345,6 +2368,19 @@
   }
   function closeTab(id) {
     if (tabs.length <= 1) {
+      if (isImageTab(tabs[0])) {
+        // Last tab: a window always keeps one grid tab, so the image tab
+        // becomes a fresh filter tab instead of just resetting.
+        hideImageTabView();
+        const nid = genTabId();
+        tabs = [{ id: nid, pinned: false, title: null, state: null }];
+        activeTabId = nid;
+        resetAllFilters();
+        adoptTabNav(tabs[0]);
+        renderTabs();
+        persistTabsDebounced();
+        return;
+      }
       resetAllFilters();
       updateActiveTabTitle();
       persistTabsDebounced();
@@ -2357,8 +2393,13 @@
       const ni = Math.min(idx, tabs.length - 1);
       activeTabId = tabs[ni].id;
       const t = tabs[ni];
-      if (t.state) applyState(t.state);
-      else renderPosts();
+      if (isImageTab(t)) {
+        showImageTab(t);
+      } else {
+        hideImageTabView();
+        if (t.state) applyState(t.state);
+        else renderPosts();
+      }
       adoptTabNav(t);
       restoreTabView(t);
     }
@@ -2385,20 +2426,122 @@
     const src = tabs.find((t) => t.id === id);
     if (!src) return;
     const idx = tabs.indexOf(src);
-    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, state: JSON.parse(JSON.stringify(src.state || {})) };
+    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, type: src.type, img: src.img ? JSON.parse(JSON.stringify(src.img)) : undefined, state: JSON.parse(JSON.stringify(src.state || {})) };
     tabs.splice(idx + 1, 0, nt);
     activeTabId = nt.id;
-    if (nt.state && Object.keys(nt.state).length) applyState(nt.state);
-    else renderPosts();
+    if (isImageTab(nt)) {
+      showImageTab(nt);
+    } else {
+      hideImageTabView();
+      if (nt.state && Object.keys(nt.state).length) applyState(nt.state);
+      else renderPosts();
+    }
     adoptTabNav(nt); // duplicate starts its own history at the copied view
     renderTabs();
     persistTabsDebounced();
   }
+
+  // --- Image tabs (type:'image') — fit-to-screen detail view (Eagle 風) ---
+  // Persisted as { type:'image', img:{ recs:[captureId…], idx } }; recs resolve
+  // against the live library on every activation, so deletions degrade to a
+  // "missing" empty state instead of a broken image.
+  function imageTabGroup(t) {
+    const ids = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
+    const records = ids.map((id) => _postsById.get(id)).filter(Boolean);
+    if (!records.length) return null;
+    // Same rep pick as groupRecords: capture first, then any record with text.
+    const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
+    return { key: 'imgtab:' + t.id, records, rep, files: records.flatMap(groupFilesOf) };
+  }
+  function imageTabTitleOf(g) {
+    const p = g.rep;
+    const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
+    const base = raw || p.displayName || MSG.imgTabFallback;
+    return base.length > 24 ? base.slice(0, 24) + '…' : base;
+  }
+  // (Re)build the island model for an image tab and push it. Also called on
+  // library refreshes so a deleted post degrades to the missing state live.
+  function renderImageTabView(t) {
+    const g = imageTabGroup(t);
+    t._g = g; // runtime resolution (inspector toggle re-uses it; never persisted)
+    const items = g ? buildGroupGalleryItems(g) : [];
+    const labels = { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo };
+    const model = !items.length
+      ? { items: [], idx: 0, missing: true, labels, onCloseTab: () => closeTab(t.id) }
+      : {
+          items,
+          idx: Math.max(0, Math.min((t.img && t.img.idx) || 0, items.length - 1)),
+          inspectorOpen: !document.getElementById('postDetail').hidden,
+          labels,
+          onIndexChange: (i) => {
+            if (t.img) t.img.idx = i;
+            persistTabsDebounced();
+            renderImageTabView(t); // controlled index — repaint with the new slide
+          },
+          onToggleInspector: () => {
+            if (document.getElementById('postDetail').hidden) {
+              if (t._g) showDetail(t._g);
+            } else closeDetail();
+            renderImageTabView(t); // reflect the pressed state on the ℹ button
+          },
+          onCloseTab: () => closeTab(t.id),
+        };
+    window.__corpusImageTabModel = model;
+    if (window.corpusImageTab) window.corpusImageTab.render(model);
+  }
+  function showImageTab(t) {
+    document.body.classList.add('image-tab-active');
+    renderImageTabView(t);
+    // The inspector opens with the view (Eagle-style detail screen).
+    if (t._g) showDetail(t._g);
+    else closeDetail();
+    document.title = (t.title || MSG.imgTabFallback) + ' — Corpus';
+  }
+  function hideImageTabView() {
+    if (!document.body.classList.contains('image-tab-active')) return;
+    document.body.classList.remove('image-tab-active');
+    window.__corpusImageTabModel = null;
+    if (window.corpusImageTab) window.corpusImageTab.render(null);
+    closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
+  }
+  // Open a post group as its own tab. Background by default (browser-like:
+  // middle-click / context menu leave you in the grid).
+  function addImageTab(g, opts) {
+    const recs = g.records.map((r) => r.captureId).filter(Boolean);
+    if (!recs.length) return;
+    const id = genTabId();
+    const t = { id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null };
+    // Insert next to the current tab (browser-like), never inside the pinned run.
+    const ai = tabs.findIndex((tt) => tt.id === activeTabId);
+    let pos = ai >= 0 ? ai + 1 : tabs.length;
+    const lastPinned = tabs.reduce((acc, tt, i) => (tt.pinned ? i : acc), -1);
+    if (pos <= lastPinned) pos = lastPinned + 1;
+    tabs.splice(pos, 0, t);
+    if (opts && opts.activate) {
+      saveActiveTabState();
+      activeTabId = id;
+      showImageTab(t);
+      adoptTabNav(t);
+    }
+    renderTabs();
+    persistTabsDebounced();
+  }
+
   async function initTabs() {
     try {
       const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
       if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0 }));
+        tabs = saved.tabs.map((t) => ({
+          id: t.id || genTabId(),
+          pinned: !!t.pinned,
+          title: t.title || null,
+          state: t.state || null,
+          // Image tabs: sanitize the persisted shape (unknown/older files just
+          // yield a filter tab; an image tab with bad recs shows the missing state).
+          type: t.type === 'image' ? 'image' : undefined,
+          img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
+          _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
+        }));
         const sid = saved.activeTabId;
         activeTabId = sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id;
       } else {
@@ -2407,7 +2550,7 @@
         activeTabId = id;
       }
       const at = tabs.find((t) => t.id === activeTabId);
-      if (at && at.state) {
+      if (at && at.state && !isImageTab(at)) {
         // queryTree is the truth; migrate older states (f + ops, no tree).
         postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
         setSearchBoxValue(at.state.search || '');
@@ -2886,17 +3029,15 @@
     if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
   });
 
-  // Middle-click an image → open it full-size in its own window (Chromium's
-  // built-in image view via a bare psimg:// load).
+  // Middle-click an image → open the post as a background image tab
+  // (browser-like; replaces the old single-image window).
   document.getElementById('postGrid').addEventListener('auxclick', (e) => {
     if (e.button !== 1) return;
     const img = e.target.closest('.card-img');
     if (!img) return;
     e.preventDefault();
     const g = viewGroups[Number.parseInt(img.closest('.post-card')?.dataset.index, 10)];
-    if (!g) return;
-    const file = densityImage(g.rep, currentView);
-    if (file && window.corpus.openImageWindow) window.corpus.openImageWindow(file);
+    if (g) addImageTab(g);
   });
   // suppress the middle-click autoscroll on card images
   document.getElementById('postGrid').addEventListener('mousedown', (e) => {
@@ -2971,6 +3112,7 @@
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
   };
   // Card context menu — React-owned glass menu (window.corpusContextMenu); viewer owns
@@ -2983,6 +3125,7 @@
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m) => m && m.url) || {}).url || '';
     const items = [];
     if (g.rep.url) items.push({ label: MSG.tipOpen, act: 'open', icon: CM_IC.open });
+    items.push({ label: MSG.ctxOpenNewTab, act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: MSG.tipFolder, act: 'folder', icon: CM_IC.folder });
     if (CF()) items.push({ label: inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd, act: 'clip', icon: CM_IC.clip });
     items.push({ label: MSG.tipInfo, act: 'info', icon: CM_IC.info });
@@ -3003,6 +3146,8 @@
     const act = item.act;
     if (act === 'open') {
       if (g.rep.url) window.corpus.openExternal(g.rep.url);
+    } else if (act === 'newtab') {
+      addImageTab(g); // background, browser-like
     } else if (act === 'folder') {
       showFoldMenu(g, x, y);
       return;
@@ -3550,7 +3695,8 @@
     'keydown',
     (e) => {
       if (e.key !== 'Escape') return;
-      if (document.getElementById('postDetail').hidden) return;
+      const inImageTab = document.body.classList.contains('image-tab-active');
+      if (document.getElementById('postDetail').hidden && !inImageTab) return;
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
@@ -3559,6 +3705,10 @@
       if (document.querySelector('.confirm-overlay.show')) return;
       if (document.querySelector('.fold-menu.show')) return;
       if (window.corpusFilterPopover.get()) return;
+      if (inImageTab) {
+        closeTab(activeTabId); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
+        return;
+      }
       closeDetail();
     },
     true,
@@ -5701,6 +5851,15 @@
   }
   // First paint done — restore the active tab's scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));
+  // A restored image tab could only resolve its captureIds now that the
+  // library is loaded — enter the detail view here, after the grid restore.
+  {
+    const bootTab = tabs.find((t) => t.id === activeTabId);
+    if (isImageTab(bootTab)) {
+      showImageTab(bootTab);
+      renderTabs(); // grid-tab titles derive live counts — the load render skipped syncTitle under the image tab
+    }
+  }
   // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
   // remembered position is current at restart. persistTabsDebounced captures scrollY.
   let _scrollPersistTimer = null;

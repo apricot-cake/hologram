@@ -1176,6 +1176,36 @@
     }
     .lightbox-overlay.multi .lb-counter { display: block; }
 
+    /* --- Image tab (type:'image') — fit-to-screen detail view --- */
+    /* The active image tab swaps the browse chrome (query bar / sidebar / grid)
+       for a single media stage; the inspector column (#postDetail) stays. */
+    #imageTabView { display: none; }
+    body.image-tab-active #postActiveBar, body.image-tab-active #posterActiveBar,
+    body.image-tab-active #sidebar, body.image-tab-active #mode-post { display: none; }
+    body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; }
+    .itv-stage { flex: 1; position: relative; overflow: hidden; display: flex; min-width: 0; }
+    .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
+    img.itv-media { cursor: grab; }
+    img.itv-media:active { cursor: grabbing; }
+    .itv-video { margin: auto; }
+    .itv-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 40px; height: 56px; border: none; border-radius: 6px;
+      background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text-muted);
+      font-size: 28px; line-height: 1; cursor: pointer; z-index: 2;
+    }
+    .itv-nav:hover { background: var(--hover); color: var(--text); }
+    .itv-prev { left: 12px; }
+    .itv-next { right: 12px; }
+    .itv-counter {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      color: var(--text-muted); font-size: 12px;
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      padding: 3px 10px; border-radius: 12px; z-index: 2;
+    }
+    .itv-tools { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; gap: 6px; }
+    .itv-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-muted); font-size: 13px; }
+
     /* --- Original-media thumbnail strip (grid view) --- */
 
     /* --- Delete confirm --- */
@@ -1979,6 +2009,12 @@
     </div>
   </div><!-- /mode-post -->
 
+  <!-- Image tab (type:'image'): fit-to-screen media detail view. The React
+       island (window.corpusImageTab) renders into it; viewer.js toggles
+       body.image-tab-active which swaps it in for the query bar / sidebar /
+       grid while keeping the inspector column alongside (Eagle-style). -->
+  <div id="imageTabView"></div>
+
   <!-- Post inspector (ℹ on a card): persistent right column / slide-over.
        Reuses the iv-insp-* content styles from the old centered popup. -->
   <aside id="postDetail" class="inspector" hidden>
@@ -2109,6 +2145,15 @@
            because the panel is text-dense. */
         background: var(--glass-bg-panel);
         backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
+      }
+      /* Image tab: the inspector is part of the detail view (Eagle-style), so
+         it stays an inline column even below the breakpoint — a slide-over
+         would cover the very image being inspected. */
+      body.image-tab-active .inspector {
+        position: static; height: 100%; box-shadow: none;
+        background: var(--surface);
+        backdrop-filter: none; -webkit-backdrop-filter: none;
+        border-left: 1px solid var(--border);
       }
     }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
@@ -2400,6 +2445,11 @@
        cancel/save rendering, viewer.js owns the backdrop show/hide + selection/
        persistence/undo via window.corpusEditOverlay. -->
   <script src="islands/edit-overlay.js"></script>
+  <!-- Image-tab detail view: React owns the zoom/pan stage (react-zoom-pan-pinch)
+       + prev/next + ←/→ keys; viewer.js owns the tab object (type:'image'),
+       resolves its records to gallery items and toggles body.image-tab-active
+       via window.corpusImageTab. -->
+  <script src="islands/image-tab.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>
