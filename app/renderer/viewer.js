@@ -2205,166 +2205,20 @@
   // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
   const fileSrc = (file, w) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
 
-  // Per-density image source. A post may carry both a capture (screenshot) and
-  // real media/artwork; the density decides which leads:
-  //   tile / card → artwork preferred (the actual image leads — a clean grid),
-  //                 capture as fallback (posts whose original didn't download)
-  //   list        → capture preferred (the post as it looked in its compact row)
-  // NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
-  // height reservation (shotW/shotH) sizes the same image the card shows.
-  const SS_EXT = /\.jpe?g$/i;
-  const mediaFilesOf = (p) => (Array.isArray(p.media) ? p.media.filter((m) => m && m.file).map((m) => m.file) : []);
-  // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
-  const isScreenshot = (p) => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
-  const captureFile = (p) => (isScreenshot(p) ? p.image : '');
-  const artworkFile = (p) => {
-    const m = mediaFilesOf(p);
-    if (m.length) return m[0];
-    return p.image && !isScreenshot(p) ? p.image : '';
-  };
-  function densityImage(p, density) {
-    const cap = captureFile(p),
-      art = artworkFile(p);
-    return density === 'list' ? cap || art : art || cap;
-  }
-
-  // --- Grouping (ported from image-view) --------------------------------------
-  // Auto: records sharing the same post URL (multi-image drags, re-captures of
-  // one post) collapse into one card. Manual groups (manual-groups.json) win
-  // over auto. ungrouped.json opts individual post keys out.
-  const postIdKey = (p) => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-  // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
-  function postKeyOf(url) {
-    if (!url) return null;
-    let u;
-    try {
-      u = new URL(url);
-    } catch {
-      return null;
-    }
-    const host = u.hostname,
-      pa = u.pathname;
-    let m;
-    if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
-    if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
-    if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
-    if ((m = pa.match(/^\/notes\/([^/?#]+)/))) return 'misskey:' + host + ':' + m[1];
-    if ((host === 'www.pixiv.net' || host === 'pixiv.net') && (m = pa.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/))) return 'pixiv:' + m[1];
-    return null;
-  }
-  // The "artwork pages" of one record: original media, else the dragged/migrated image.
-  const groupFilesOf = (p) => {
-    const m = mediaFilesOf(p);
-    if (m.length) return m;
-    const a = artworkFile(p);
-    return a ? [a] : [];
-  };
-  function groupRecords(list) {
-    // url-derived group key, precomputed once per record by stampPost (_postKey);
-    // fall back to a live parse for any record that somehow predates the stamp.
-    const pk = (p) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
-    const manualOf = new Map(); // captureId → 'manual:idx' (manual groups win)
-    manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
-    let solo = 0;
-    const base = list.map((p) => {
-      let key;
-      const mg = manualOf.get(p.captureId);
-      if (mg) key = mg;
-      else {
-        const k = pk(p);
-        key = k && !ungrouped.has(k) ? k : '__solo' + solo++;
-      }
-      return { p, key };
-    });
-    // Self-reply chains: a record replying (replyToId) to another record IN THE
-    // LIBRARY by the SAME author joins that record's group, so リプ元＋セルフリプ
-    // render as one card. The platform-local own-id is the last segment of the
-    // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
-    // suppress the merge for either side.
-    const pidOf = (p) => {
-      const k = pk(p);
-      return k ? k.split(/[/:]/).pop() : null;
-    };
-    const idIndex = new Map(); // userId + '|' + ownPostId → entry
-    for (const e of base) {
-      const id = pidOf(e.p);
-      if (id && e.p.userId) idIndex.set(e.p.userId + '|' + id, e);
-    }
-    const alias = new Map(); // child group key → parent group key
-    for (const e of base) {
-      const p = e.p;
-      if (!p.replyToId || !p.userId) continue;
-      const ownKey = pk(p);
-      if (!ownKey || ungrouped.has(ownKey)) continue;
-      const parent = idIndex.get(p.userId + '|' + String(p.replyToId));
-      if (!parent || parent.key === e.key) continue;
-      if (String(parent.key).indexOf('__solo') === 0) continue; // parent opted out / unkeyed
-      alias.set(e.key, parent.key);
-    }
-    const resolveKey = (k) => {
-      let n = 0;
-      while (alias.has(k) && n++ < 10) k = alias.get(k);
-      return k;
-    };
-    const map = new Map();
-    const order = [];
-    for (const e of base) {
-      const key = resolveKey(e.key);
-      let g = map.get(key);
-      if (!g) {
-        g = { key, records: [] };
-        map.set(key, g);
-        order.push(g);
-      }
-      g.records.push(e.p);
-    }
-    for (const g of order) {
-      g.records.sort((a, b) => String(a.captureId || '').localeCompare(String(b.captureId || '')));
-      // Card rep: prefer the click-capture (screenshot+full meta), then any record
-      // with text, then the earliest — drags often carry no text/stats.
-      g.rep = g.records.find(isScreenshot) || g.records.find((r) => r.text) || g.records[0];
-      g.files = g.records.flatMap(groupFilesOf);
-    }
-    return order;
-  }
-
-  // Likes percentile within each platform — ranks "did well for its SNS" so X's
-  // raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
-  function percentileFn(list) {
-    const byPlat = {};
-    list.forEach((p) => {
-      const k = p.platform || '';
-      (byPlat[k] || (byPlat[k] = [])).push(p.likes || 0);
-    });
-    Object.values(byPlat).forEach((a) => a.sort((x, y) => x - y));
-    return (p) => {
-      const arr = byPlat[p.platform || ''] || [];
-      if (arr.length <= 1) return 1;
-      const v = p.likes || 0;
-      let lo = 0,
-        hi = arr.length;
-      while (lo < hi) {
-        const m = (lo + hi) >> 1;
-        if (arr[m] <= v) lo = m + 1;
-        else hi = m;
-      }
-      return (lo - 1) / (arr.length - 1);
-    };
-  }
+  // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
+  // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
+  // and percentileFn moved to records.js (window.corpusRecords) — 2nd extraction
+  // slice. groupRecords is rebuilt here with the live manualGroups/ungrouped
+  // bindings injected as getters (viewer reassigns them on load/edit).
+  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, stampPost, percentileFn } = window.corpusRecords;
+  const groupRecords = window.corpusRecords.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
 
   // hostOf / userKey moved to query.js (destructured from window.corpusQuery above).
 
   // --- Load posts ---
   // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
   // without replaying the entrance animation or resetting the scroll window.
-  // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
-  // comparison (done once per record on arrival, not per render).
-  function stampPost(p) {
-    p._dateMs = p.date ? +new Date(p.date) : 0;
-    p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
-    p._postKey = postKeyOf(p.url); // url-derived group key; groupRecords would re-parse it 3x/record otherwise
-    return p;
-  }
+  // stampPost (sort-timestamp + post-key precompute) lives in records.js.
   // Authoritative cache keyed by captureId. The renderer holds the full set and
   // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
   // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
