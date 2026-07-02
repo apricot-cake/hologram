@@ -49,7 +49,11 @@ const MAX_SPREAD = 1.6;
 
 // 2. foreground that rides on a fill — breaks if the fill drifts. Floor = AA.
 const FILL_CHECKS = [
-  { fg: '--accent-fg', fill: '--accent', floor: 4.5, what: 'white text on accent button' },
+  // Accent floor = 3.0 (icon/large-text tier), not the 4.5 text tier: the sky brand
+  // accent is deliberately light (DESIGN.md「水色アクセント」注意書き), and per its
+  //「弱ければ塗りだけ一段濃く」clause dark moved sky-500→sky-600 to clear this tier
+  // (both themes 3.32 — user decision 2026-07-02).
+  { fg: '--accent-fg', fill: '--accent', floor: 3.0, what: 'white text on accent button' },
   { fg: '--accent-subtle-fg', fill: '--accent-subtle', floor: 4.5, what: 'active ink on active pill' },
   // White ICONS on status fills (.ws-btn remove). Icon tier = 3:1, not 4.5.
   // (The --success token and its "added" check died with 7481710 — the clip

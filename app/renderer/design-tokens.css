@@ -227,8 +227,12 @@
      so the soft border suffices (no light-on-light problem). */
   --chip-border:   var(--border);
 
-  --accent:         var(--sky-500);
-  --accent-hover:   var(--sky-400);
+  /* Was sky-500: white button text measured 2.72 (< the 3.0 icon/large-text tier
+     in test-contrast-parity) — DESIGN.md's「弱ければ塗りだけ一段濃く」clause fired
+     (2026-07-02), so the fill went one step down; hover keeps the 1-step-lighter
+     relation. Hue unchanged. */
+  --accent:         var(--sky-600);
+  --accent-hover:   var(--sky-500);
   --accent-fg:      #ffffff;
   /* Dark accent-as-text: the lighter sky-300 (high contrast on the dark surface),
      NOT the fill-tuned --accent (too low as text). See light note. */
