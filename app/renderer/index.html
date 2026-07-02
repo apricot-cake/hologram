@@ -2327,6 +2327,10 @@
        data + pick/confirm actions; the searchbox island pulls them lazily. The
        value itself lives in corpusStore 'searchQuery'. Before viewer.js. -->
   <script src="searchbox.js"></script>
+  <!-- Post-grid bridge (window.corpusGrid): the imperative→declarative bridge for
+       the VIRTUALIZED post grid (list view). viewer.js calls render(model); the
+       grid island windows + renders the cells. Before viewer.js. -->
+  <script src="grid.js"></script>
   <script src="about-icon.js"></script>
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React
@@ -2361,6 +2365,11 @@
   <!-- Poster grid: React owns card rendering, viewer.js owns posterList + count +
        density classes + inspected highlight + click/contextmenu delegation. -->
   <script src="islands/posters.js"></script>
+  <!-- Virtualized post grid (list view): React owns cell rendering + windowing
+       (masonic) inside its own #postGridReact host; viewer.js owns viewGroups,
+       the container classes, and all delegated #postGrid events (via
+       window.corpusGrid). Card/tile still use the legacy string path above. -->
+  <script src="islands/grid.js"></script>
   <!-- Sidebar toolbar controls (search-mode segment; view-density toggle): React
        owns rendering, state lives in window.corpusSearch / window.corpusStore. -->
   <script src="islands/toolbar.js"></script>

@@ -1580,6 +1580,13 @@
   // filter/view/search change; the load-more path passes keepLimit=true.
   const RENDER_PAGE = 150;
   let renderLimit = RENDER_PAGE;
+  // Virtualized grid (window.corpusGrid → islands/grid): itemsKey bumps only when
+  // the viewGroups ARRAY was rebuilt, so the island knows when to reset its
+  // positioner (cached cell heights) vs merely repaint visible cells.
+  let _gridItemsKey = 0;
+  let _gridItemsArr = null;
+  let _gridAnimT = null;
+  const gridIslandActive = () => !!(window.corpusGrid && window.corpusGrid.isActive());
 
   // #mode-post is the scroll container (the page itself never scrolls), so scroll
   // position is read/written there, not on window.
@@ -2756,10 +2763,14 @@
   // Capped so a pathological deep scroll doesn't render thousands of cards at once.
   function restoreTabView(t) {
     if (!t) return;
-    const lim = Math.min(typeof t._renderLimit === 'number' ? t._renderLimit : RENDER_PAGE, RENDER_PAGE * 8);
-    if (lim > renderLimit) {
-      renderLimit = lim;
-      renderPosts(true);
+    // renderLimit growth is legacy-path only: the virtualized grid derives its
+    // window from scrollTop alone (its estimated height already spans all items).
+    if (!gridIslandActive()) {
+      const lim = Math.min(typeof t._renderLimit === 'number' ? t._renderLimit : RENDER_PAGE, RENDER_PAGE * 8);
+      if (lim > renderLimit) {
+        renderLimit = lim;
+        renderPosts(true);
+      }
     }
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
@@ -3176,6 +3187,85 @@
     return h.toString(36);
   }
 
+  function cardHtml(g, i) {
+    return window.corpusPostCard.html(cardModel(g, i));
+  }
+
+  // Resolve ONE group into a plain, fully-formatted card model: image src,
+  // formatted counts/dates, selection, clip, aspect — everything the markup
+  // needs as primitives. Shared by BOTH grid paths: the legacy card/tile path
+  // renders it to an HTML string (post-card island, renderToStaticMarkup) and
+  // feeds its own reconcile/masonry/windowing; the virtualized list path hands
+  // it to live React cells (grid island) via window.corpusGrid. Raw text/names
+  // are passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
+  function cardModel(g, i) {
+    const p = g.rep;
+    // Engagement: nonzero only (zeros are noise). Formatted here; the island
+    // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
+    const stats = {
+      likes: p.likes > 0 ? formatCount(p.likes) : null,
+      reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
+      replies: p.replies > 0 ? formatCount(p.replies) : null,
+      bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+    };
+    // Both dates: post date bare (primary) + capture date with a 📷 mark
+    // (secondary). Deduped when they land on the same day.
+    const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
+    const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
+    const postCompact = p.date ? compactDate(p.date) : '';
+    const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
+    const footDates = {
+      post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
+      cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
+    };
+    const pfName = p.platform ? PF_NAME[p.platform] || p.platform : '';
+    const userName = p.displayName || p.screenName || p.title || '';
+    const handle = p.screenName ? `@${p.screenName}` : '';
+    // Library images carry the filename as BOTH title and text — drop the
+    // duplicate body when they match the user line.
+    const textRaw = p.text || p.title || '';
+    const text = textRaw === userName ? '' : textRaw;
+    const imgFile = densityImage(p, currentView); // tile: artwork→capture; card/list: capture→artwork
+    // GIFs stay full-size in card/list so they keep animating (thumbnailer
+    // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
+    const imgW = currentView === 'tile' ? tileThumbW() : /\.gif$/i.test(imgFile || '') ? 0 : currentView === 'list' ? listThumbW() : cardThumbW();
+    // Reserve the card image's height up front (card masonry) so columns pack
+    // right the first time — pixel size from the index, learned cache fallback.
+    const aspRatio = currentView !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && imgAspect[p.captureId] ? imgAspect[p.captureId] : '';
+    // Post-type + media flags (grid view only; CSS hides them in compact list).
+    const flags = [];
+    if (p.isThread) flags.push(MSG.qfThread);
+    if (p.isReply) flags.push(MSG.qfReply);
+    if (p.isQuote) flags.push(MSG.qfQuote);
+    const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
+    const postKey = postIdKey(p);
+    return {
+      index: i,
+      url: p.url || '',
+      postKey,
+      selected: selectedSet.has(postKey),
+      noUrl: !p.url,
+      clipped: !!(CF() && CF().isClipped(p.captureId)),
+      hasThumb: !!(imgFile || p.video),
+      imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+      captureId: p.captureId || '',
+      aspRatio,
+      eager: !!SMOKE_CAPTURE,
+      platform: p.platform || '',
+      pfName,
+      nImg: g.files.length,
+      userName,
+      likesOv: p.likes != null ? MSG.likes(p.likes) : null,
+      handle,
+      flags,
+      mediaLabel,
+      text,
+      stats,
+      footDates,
+      tags: p.tags || [],
+    };
+  }
+
   function renderPosts(keepLimit) {
     // The post-card island supplies cardHtml() (window.corpusPostCard). In dev it
     // loads as a deferred ES module — AFTER viewer.js — so the very first paint can
@@ -3218,6 +3308,7 @@
     countEl.textContent = MSG.postCount(viewGroups.length);
 
     if (viewGroups.length === 0) {
+      if (window.corpusGrid) window.corpusGrid.render(null); // virtualized cells (if any) unmount before the blanket clear
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
@@ -3258,13 +3349,64 @@
 
     // i18n labels are identical for every card — push them to the post-card
     // island once per render (also keeps it in sync after a language change).
-    window.corpusPostCard.setLabels({
+    const cardLabels = {
       tipSelect: MSG.tipSelect,
       tipClip: MSG.tipClip,
       tipInfo: MSG.tipInfo,
       tipTagEdit: MSG.tipTagEdit,
       clickToExpand: MSG.clickToExpand,
-    });
+    };
+    window.corpusPostCard.setLabels(cardLabels);
+
+    // VIRTUALIZED PATH — list view is owned by the grid island (masonic windowing
+    // via window.corpusGrid). viewer.js keeps the data pipeline (viewGroups above),
+    // the container's classes/CSS vars, and every delegated #postGrid handler; the
+    // island owns cell rendering + the scroll window. All the legacy machinery
+    // below (renderLimit/sentinel, keyed reconcile, JS masonry) is card/tile-only
+    // and simply never runs here — it dies with those views' own inversion slices.
+    if (currentView === 'list' && window.corpusGrid) {
+      if (moreObserver) {
+        moreObserver.disconnect();
+        moreObserver = null;
+      }
+      // Clear leftover legacy card/tile nodes on the way in. The island renders
+      // into its own #postGridReact host, so this cannot touch React-managed DOM.
+      for (const n of [...grid.children]) if (n.id !== 'postGridReact') n.remove();
+      if (viewGroups !== _gridItemsArr) {
+        _gridItemsArr = viewGroups;
+        _gridItemsKey++; // rebuilt array → island resets its positioner + re-syncs scroll
+      }
+      window.corpusGrid.render({
+        view: 'list',
+        items: viewGroups,
+        itemsKey: _gridItemsKey,
+        // inspected rides on the model ONLY here (live cells re-derive it after a
+        // remount); the string path keeps its imperative ring so its HTML — and
+        // every cardSig — stays byte-identical.
+        modelOf: (g, i) => {
+          const m = cardModel(g, i);
+          m.inspected = inspectedKey !== null && m.postKey === inspectedKey;
+          return m;
+        },
+        keyOf: (g) => postIdKey(g.rep),
+        labels: cardLabels,
+        rowGutter: 4, // .post-grid.list-view gap
+        itemHeightEstimate: Math.round(listThumb * 1.25), // ≈ row height cap (img max-height)
+      });
+      // With windowing, cells keep MOUNTING while the user scrolls — drop the
+      // entrance class once the initial animation has played, or every late
+      // cell would replay it mid-scroll.
+      clearTimeout(_gridAnimT);
+      if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
+      _lastRenderGen = _allPostsGeneration;
+      _lastViewGroups = viewGroups;
+      _lastStickySize = stickyRecs.size;
+      if (!keepLimit) syncTitleAndPersist();
+      return;
+    }
+    // Hand the container back to the legacy path: the island unmounts its cells
+    // synchronously (flushSync) before the DOM writes below run.
+    if (window.corpusGrid) window.corpusGrid.render(null);
 
     // FAST PATH — pure load-more in card view: append ONLY the new slice into the
     // existing masonry columns so already-visible cards (and their <img>) aren't
@@ -3344,84 +3486,6 @@
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
     _lastStickySize = stickyRecs.size; // snapshot for load-more group reuse
-    function cardHtml(g, i) {
-      return window.corpusPostCard.html(cardModel(g, i));
-    }
-
-    // Resolve ONE group into a plain, fully-formatted card model: image src,
-    // formatted counts/dates, selection, clip, aspect — everything the markup
-    // needs as primitives. The post-card island renders this to the card HTML
-    // string; viewer.js still owns the reconcile, masonry, windowing, and every
-    // #postGrid event delegation around it. Raw text/names are passed unescaped —
-    // the island's JSX escapes them (was manual escapeHtml/escapeAttr here).
-    function cardModel(g, i) {
-      const p = g.rep;
-      // Engagement: nonzero only (zeros are noise). Formatted here; the island
-      // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
-      const stats = {
-        likes: p.likes > 0 ? formatCount(p.likes) : null,
-        reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
-        replies: p.replies > 0 ? formatCount(p.replies) : null,
-        bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
-      };
-      // Both dates: post date bare (primary) + capture date with a 📷 mark
-      // (secondary). Deduped when they land on the same day.
-      const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
-      const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
-      const postCompact = p.date ? compactDate(p.date) : '';
-      const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
-      const footDates = {
-        post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
-        cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
-      };
-      const pfName = p.platform ? PF_NAME[p.platform] || p.platform : '';
-      const userName = p.displayName || p.screenName || p.title || '';
-      const handle = p.screenName ? `@${p.screenName}` : '';
-      // Library images carry the filename as BOTH title and text — drop the
-      // duplicate body when they match the user line.
-      const textRaw = p.text || p.title || '';
-      const text = textRaw === userName ? '' : textRaw;
-      const imgFile = densityImage(p, currentView); // tile: artwork→capture; card/list: capture→artwork
-      // GIFs stay full-size in card/list so they keep animating (thumbnailer
-      // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
-      const imgW = currentView === 'tile' ? tileThumbW() : /\.gif$/i.test(imgFile || '') ? 0 : currentView === 'list' ? listThumbW() : cardThumbW();
-      // Reserve the card image's height up front (card masonry) so columns pack
-      // right the first time — pixel size from the index, learned cache fallback.
-      const aspRatio = currentView !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && imgAspect[p.captureId] ? imgAspect[p.captureId] : '';
-      // Post-type + media flags (grid view only; CSS hides them in compact list).
-      const flags = [];
-      if (p.isThread) flags.push(MSG.qfThread);
-      if (p.isReply) flags.push(MSG.qfReply);
-      if (p.isQuote) flags.push(MSG.qfQuote);
-      const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
-      const postKey = postIdKey(p);
-      return {
-        index: i,
-        url: p.url || '',
-        postKey,
-        selected: selectedSet.has(postKey),
-        noUrl: !p.url,
-        clipped: !!(CF() && CF().isClipped(p.captureId)),
-        hasThumb: !!(imgFile || p.video),
-        imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
-        captureId: p.captureId || '',
-        aspRatio,
-        eager: !!SMOKE_CAPTURE,
-        platform: p.platform || '',
-        pfName,
-        nImg: g.files.length,
-        userName,
-        likesOv: p.likes != null ? MSG.likes(p.likes) : null,
-        handle,
-        flags,
-        mediaLabel,
-        text,
-        stats,
-        footDates,
-        tags: p.tags || [],
-      };
-    }
-
     // Load-more sentinel (shared helper).
     setupMoreSentinel(grid);
 
@@ -3755,6 +3819,12 @@
   function syncSelectionClasses() {
     const grid = document.getElementById('postGrid');
     grid.classList.toggle('selecting', selectedSet.size > 0);
+    if (gridIslandActive()) {
+      // Virtualized cells re-read selectedSet through modelOf on repaint — an
+      // imperative class here would be lost the moment a cell remounts on scroll.
+      window.corpusGrid.repaint();
+      return;
+    }
     grid.querySelectorAll('.post-card').forEach((c) => {
       c.classList.toggle('selected', selectedSet.has(c.dataset.key));
     });
@@ -3862,6 +3932,7 @@
     window.corpusInspector.close();
     inspectedKey = null;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected')); // post + poster cards
+    if (gridIslandActive()) window.corpusGrid.repaint(); // clear the virtualized cells' model-driven ring too
     if (browseMode === 'posters') pushPosterModel(); // clear the React poster highlight too
     document.getElementById('postGrid').classList.remove('insp-open');
     refreshTileSlider(); // the grid width grew back — re-derive the track
@@ -4152,6 +4223,7 @@
       const card = document.querySelector('.post-card[data-index="' + gi + '"]');
       if (card) card.classList.add('inspected');
     }
+    if (gridIslandActive()) window.corpusGrid.repaint(); // virtualized cells re-derive .inspected from the model (survives remounts)
     refreshTileSlider(); // inline column narrows the grid — re-derive the track
   }
 

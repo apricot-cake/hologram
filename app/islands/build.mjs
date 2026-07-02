@@ -25,7 +25,7 @@ const appRoot = path.join(here, '..'); // app
 
 // post-card uses react-dom/server (renderToStaticMarkup); the rest use
 // react-dom/client (createRoot). Both bundle fine in lib IIFE mode.
-const ISLANDS = ['settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections', 'searchbox', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu', 'filter-popover', 'qf-pop', 'inspector', 'edit-overlay'];
+const ISLANDS = ['settings', 'sidebar-tags', 'query-chips', 'tabs', 'collections', 'searchbox', 'posters', 'post-card', 'lightbox', 'toolbar', 'context-menu', 'kind-menu', 'filter-popover', 'qf-pop', 'inspector', 'edit-overlay', 'grid'];
 
 // React is externalized out of every island and shared via one prebuilt runtime
 // (vendor-react.js, loaded first in index.html). These specifiers map to the

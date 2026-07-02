@@ -70,13 +70,16 @@ function PfBadge({ platform, name }) {
   );
 }
 
-export function PostCard({ m, L }) {
+// cellRef + m.inspected are set ONLY by the virtualized grid island (live React
+// cells); the string path (renderToStaticMarkup) passes neither, so its emitted
+// HTML stays byte-identical (the legacy path applies .inspected imperatively).
+export function PostCard({ m, L, cellRef }) {
   const stats = STAT_ORDER.filter((k) => m.stats[k] != null);
   const fd = m.footDates;
   const hasStats = stats.length > 0;
   const hasFoot = !!(fd.post || fd.cap);
   return (
-    <div className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '')} data-url={m.url} data-index={m.index} data-key={m.postKey}>
+    <div ref={cellRef} className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')} data-url={m.url} data-index={m.index} data-key={m.postKey}>
       <div className="select-check" title={L.tipSelect} />
       <div className="act-pill" aria-hidden="true" />
       <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}>
