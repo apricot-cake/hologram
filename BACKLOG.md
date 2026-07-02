@@ -130,7 +130,7 @@
 - **i18nキー網羅スクリプト**（2026-07-02・`scripts/test-i18n-parity.js`）: renderer MESSAGES＋拡張 _locales の キー/値形状/置換スロットのパリティ番人（現状 338/338・4/4 で整合）。
 
 ### 採用する（着手順）
-1. **JSDoc + checkJs**（.ts化なし）: preload/store/i18n の .d.ts から段階導入。グリッド等の React 大物前に「契約の見える化」。JSDoc 人手が律速。
+1. **TypeScript**（旧「JSDoc + checkJs（.ts化なし）」から方針変更・2026-07-02 ユーザー決定）: 型検査は `tsc --noEmit`（typescript は純JS実行＝本機アプリ制御ポリシー無風・Biome 1.9.4 は TS/TSX の lint+format 対応済み）。狙い（preload/store/i18n の契約の見える化）は不変。**段階導入の順序＝ビルド経路の有無で分ける**: ①islands（Vite ビルド済み＝.tsx 化に追加ツール不要）と `_shared` から着手 ②素JS層（viewer.js・store.js・query.js 等＝file:// 直ロードでビルド無し）は当面 .d.ts＋checkJs で契約だけ可視化し、「単一バンドル化」（React化節）で Vite 配下に入った時点で .ts 化 ③main プロセス（無ビルド実行が前提）は Electron 41+（Node 24 の type stripping）到達後に .ts 直実行可否を実測して判断（不可なら .d.ts 留め）。実質コストは window グローバル契約（corpusStore/corpusGrid 等のブリッジ）の型付け。
 2. **masonic**: ~~グリッド仮想化スライスの一部として~~ **導入済み（2026-07-02・全3ビュー反転完了）**。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
 3. **配布3点セット**: electron-builder publish/sign → electron-updater → SignPath 事前申請（審査が律速）＋@electron/fuses を署名のついで。時期・手順は下「リリース準備」節が真実源＝ここに重複させない。
 4. **SQLite 派生インデックス（DB 移行＝確定・2026-07-02）**: 数万件ライブラリは**製品のスケール目標**（画像メイン利用等でユーザーによっては到達する＝開発者ライブラリの成長を条件にしない・CLAUDE.md ルール）。真実源はサイドカー JSON のまま、`.index.json`＋常駐 Map を**再構築可能な SQLite インデックス**へ置換（起動全量スキャン・IPC 全量 clone・メモリ常駐・検索線形走査に一括で効く／壊れたら再構築＝「ファイルベース真実源」の恒久設計制約と両立）。着手＝最終形B の service 抽出後＋Electron EOL 更新（41+）後。**選定は2層に分解**（2026-07-02 調査）: ①**索引層**（メタデータ・ソート・ファセット）＝Electron 41 同梱 Node 24 の内蔵 `node:sqlite` が第1候補（依存ゼロ・ネイティブ .node 無し＝本機アプリ制御ポリシー無風・ステータスは RC）。②**全文検索層**＝`node:sqlite` は **FTS5 非同梱**（Node 24 時点・upstream 未解決）のため、必要と実測された時点で better-sqlite3（FTS5 同梱・ただし .node の本機ポリシー実行可否の実測が採用関門・Electron ABI リビルド＋asarUnpack）vs WASM sqlite（FTS5 ビルド可・ネイティブ無し）を比較。①だけでも主要ボトルネックは解消＝テキスト検索は正規化 haystack の事前計算＋JS で粘れる見込み（**旧 MiniSearch+BudouX 案はここに統合**・日本語は corpusSearch の正規化資産を FTS5 trigram/BudouX いずれでも前処理として再利用）。
@@ -147,7 +147,7 @@
 - **現状維持が最適解と確認済み**: 自前corpusStore（Zustand/TanStack Query は最終形B後に実痛が出たときだけ再訪）／自前Date/Intl（Intlキャッシュ+_dateMs 計測済み最適）／自前スモーク+puppeteer（実機=真実の文化）／自前HTML5 DnD／search.js継続／知覚ハッシュ／自前SVGアイコン。
 - **固有制約と正面衝突**: kuromoji・lindera-wasm（WASM=`wasm-unsafe-eval` が厳格CSPと非互換＝強化の道は BudouX 系）／Iconify（CDN動的取得が file://・`script-src 'self'` と根本非互換）／Azure Trusted Signing（日本拠点は申請不可・署名は SignPath→Certum の順）。
 - **react-aria 導入（スライスm）で理由消滅**: Floating UI（位置決め/衝突回避は RAC Popover が肩代わり・非React残余は最終形Bで消える）／Radix Primitives／cmdk・kbar（パレットは react-aria 自前＋search.js＝二重fuzzy回避）。
-- **解く問題が無い/代償過大**: @parcel/watcher（getEventsSince が解く問題は全reconcileで自己修復済＝架空）・graceful-fs／dnd-kit・pragmatic-dnd・SortableJS（現行~80行安定・木構造判定は導入後も手書き＝複雑さが移動するだけ）／Jotai・nanostores・Valtio・XState（独立フラグ集合に強みが刺さらない）／Motion・react-spring・auto-animate（View Transitions+CSS で核心実現済み）／electron-trpc・Comlink（TS前提・Comlink は Electron 非互換明記）／FlexSearch・Orama／dayjs・Luxon・Temporal／ArkType・superstruct／node:sqlite・sql.js・DuckDB／imghash／Paraglide・FormatJS・LinguiJS／Playwright視覚回帰・node:test／oxlint／Knip／electron-forge。
+- **解く問題が無い/代償過大**: @parcel/watcher（getEventsSince が解く問題は全reconcileで自己修復済＝架空）・graceful-fs／dnd-kit・pragmatic-dnd・SortableJS（現行~80行安定・木構造判定は導入後も手書き＝複雑さが移動するだけ）／Jotai・nanostores・Valtio・XState（独立フラグ集合に強みが刺さらない）／Motion・react-spring・auto-animate（View Transitions+CSS で核心実現済み）／electron-trpc・Comlink（Comlink は Electron 非互換明記／却下理由の一部「TS前提」は TS 採用（上#1）で消滅＝electron-trpc を再訪するなら「痛みが出たら」の IPC 集中ラッパー項の判断に合流）／FlexSearch・Orama／dayjs・Luxon・Temporal／ArkType・superstruct／node:sqlite・sql.js・DuckDB／imghash／Paraglide・FormatJS・LinguiJS／Playwright視覚回帰・node:test／oxlint／Knip／electron-forge。
 
 ## リリース準備
 
