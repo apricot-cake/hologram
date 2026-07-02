@@ -34,7 +34,7 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, copyLibraryInto, watchSaveFolder, resetDelta } = ctx;
+  const { getSaveFolder, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
 
   ipcMain.handle('import-posts', async (_e, posts) => {
     const folder = getSaveFolder();
@@ -261,45 +261,20 @@ function register(ctx) {
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 
-    const emit = (payload) => send('save-folder-progress', payload);
-
-    // 1) Copy the whole library into dest. src stays fully intact. Throttle copy
-    //    progress to ~100ms so an 18k-file move doesn't flood IPC.
-    let lastEmit = 0;
-    const cp = await copyLibraryInto(src, dest, (done, total) => {
-      const now = Date.now();
-      if (done === 0 || done === total || now - lastEmit >= 100) {
-        lastEmit = now;
-        emit({ phase: 'copy', done, total, percent: total ? Math.floor((done / total) * 100) : 100 });
-      }
+    // Whole crash-safe sequence lives in lib-migrate (copy+catch-up → flip →
+    // verified cleanup → shell removal → delayed straggler sweep).
+    return relocateLibrary(src, dest, {
+      readConfig,
+      writeConfig,
+      emit: (payload) => send('save-folder-progress', payload),
+      // Re-point the watcher and drop the delta baseline so the renderer full-resyncs.
+      afterFlip: () => {
+        watchSaveFolder();
+        resetDelta();
+      },
+      // The sweep fires a minute later — skip it if the library moved yet again.
+      stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
     });
-    if (!cp.ok) {
-      emit({ phase: 'error', error: cp.error });
-      return { ok: false, error: cp.error, name: cp.name };
-    }
-
-    // 2) Flip config to dest — dest is now authoritative AND complete.
-    emit({ phase: 'switch' });
-    const cfg = readConfig();
-    cfg.saveFolder = dest;
-    writeConfig(cfg);
-
-    // 3) Remove the old copies (best-effort; data is safe at dest regardless).
-    emit({ phase: 'cleanup' });
-    for (const f of cp.entries) {
-      try {
-        await fs.promises.rm(path.join(src, f), { recursive: true, force: true });
-      } catch {
-        /* harmless leftover */
-      }
-    }
-
-    // Re-point the watcher and drop the delta baseline so the renderer full-resyncs.
-    watchSaveFolder();
-    resetDelta();
-
-    emit({ phase: 'done', moved: cp.entries.length });
-    return { ok: true, saveFolder: dest, moved: cp.entries.length };
   });
 
   ipcMain.handle('import-images', async () => {

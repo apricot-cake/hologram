@@ -62,7 +62,6 @@ export function Data() {
   const [saveFolder, setSaveFolder] = useState('');
   const [migrating, setMigrating] = useState(false);
   const [progress, setProgress] = useState(null); // { pct, log: [] } while/after a move
-  const milestoneRef = useRef(0);
 
   // --- backup ---
   const [backup, setBackup] = useState(null); // { dir, interval, intervalValue, intervalUnit, lastResult }
@@ -81,7 +80,8 @@ export function Data() {
       .catch(() => {});
   }, []);
 
-  // Live migration progress events (viewer.js phase logic, milestone-throttled).
+  // Live migration progress events. The copy percent only drives the bar; log
+  // lines are phase milestones (start / switch / cleanup / done) — no "…20%" spam.
   useEffect(() => {
     wireIpcOnce();
     const onProg = (p) => {
@@ -92,10 +92,6 @@ export function Data() {
         if (p.phase === 'copy') {
           if (p.done === 0) log.push(t('logCopyStart', [p.total]));
           pct = p.percent;
-          if (p.percent >= milestoneRef.current + 20 && p.percent < 100) {
-            milestoneRef.current = p.percent - (p.percent % 20);
-            log.push(t('logCopying', [p.percent]));
-          }
         } else if (p.phase === 'switch') {
           pct = 100;
           log.push(t('logSwitch'));
@@ -104,6 +100,9 @@ export function Data() {
         } else if (p.phase === 'done') {
           pct = 100;
           log.push(t('logMoveDone', [p.moved]));
+          if (p.leftover > 0) log.push(t('logLeftover', [p.leftover]));
+        } else if (p.phase === 'straggler') {
+          log.push(t('logStraggler', [p.moved]));
         } else if (p.phase === 'error') {
           log.push(saveFolderErr(p.error));
         }
@@ -116,7 +115,6 @@ export function Data() {
 
   const chooseSaveFolder = async () => {
     setMigrating(true);
-    milestoneRef.current = 0;
     setProgress(null); // box appears on the first progress event (after a folder is picked)
     try {
       const res = await corpus().pickSaveFolder();

@@ -2,7 +2,7 @@
 
 完了は git が記録＝**完了項目は残さず削除**。実装済み機能・構成・検証手順は CLAUDE.md 他節＋メモリ `corpus-verify-notes` が真実源（重複させない）。
 
-**最優先**: 監査の確定セキュリティ／正しさは全て対応済み。次の注力候補＝要追加調査（L1〜L4）／タグ付けの手動UX改善／各機能設計から選ぶ。
+**最優先**: 監査の確定セキュリティ／正しさは全て対応済み。次の注力候補＝要追加調査（L2〜L4）／タグ付けの手動UX改善／各機能設計から選ぶ。
 
 ## 監査残課題（2026-06-27 UltraCode）
 
@@ -22,8 +22,7 @@
 
 `config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は tmp+rename でアトミック化済み（torn-read High は 9260c81 で解消）。確定分 #1〜#5 対応済み。残＝要追加調査。
 
-- **有力・要追加調査**:
-  - **L1【Med-High】** saveFolder 移動中のキャプチャが旧フォルダに取り残される（`main.js:1389` copyLibraryInto の snapshot→flip→cleanup 並行窓・bridge 非ロック）。対策＝移動中フラグで bridge 保留 or flip 前に src 再 readdir で差分追いコピー、cleanup は「dest 存在確認できたものだけ src 削除」。
+- **有力・要追加調査**（L1 は 2026-07-02 解消＝`lib-migrate.js`・番号は据え置き）:
   - **L2【Med】** import-posts の重複検出が `url` のみ＝URL なし（99.6% の Eagle 移行）が再インポートで二重化（`main.js:996`・`.trash` 非走査・BOM 非耐性）。対策＝captureId/画像ハッシュ/eagleName にフォールバック。
   - **L3【Med】** サイドカー/組織 JSON 読みが BOM 非耐性（`lib-index.js:146`・各 get-*・`lib-archive.js`）＝投稿が静かに欠落・最悪 record:null→reconcile が collections/clip 恒久 purge。対策＝各裸 parse に BOM剥ぎ一行差し（`parseJsonLoose`）。※共通ヘルパへの reader 二系統統合は degraded 追跡セマンティクスが別物で誇張＝見送り（2026-07-01調査・下「コード地ならし」節）。
   - **L4【Low】** import の `mergeManualGroups`（`lib-archive.js:122`）が集合 dedup のみでメンバー交差を解消せず「1 captureId 1 グループ」不変条件を破る（可逆）。対策＝union-find。
@@ -75,9 +74,6 @@
 
 - **重複保存の警告（コピー/置換/スキップ・未実装・設計調査済み 2026-06-21）**: 同じ投稿URLが既にある状態で再保存したら止めて3択。現状は captureId 単位で無条件別保存＝同じ画像が×N。判定キー＝既存 `postKeyOf(url)` の正規化キー（x⇄twitter 統合済）を共有モジュール化して renderer/main 共用。照会先＝`allPosts`（url→captureId 逆引き Map 1本・コンテンツハッシュ不採用＝スクショは毎回バイト差）。**警告はアプリ取込時に寄せる**＝拡張は一旦保存（write-once 維持）、アプリが delta 受信フックで先客検出→後追い解決ダイアログ（全経路1箇所・ブリッジ無改造）。3択は `delete-post` 再利用。`import-images`(url=null) は対象外。**段階**: P0 `postKeyOf` 共有化→P1 import-posts 正規化＋3択→P2 キャプチャ後追い検出→P3 遡及掃除UI。**要判断**: 警告タイミング（後追い vs 保存前バナー）／null 同士は非重複で安全か／置換で旧タグ引継ぎ／遡及掃除をやるか。
 - **画像に任意テキスト付与（自由メモ／未着手）**: タグと別の自由記述を紐付け。保存先（サイドカー欄追加）・全文検索対象に含めるか・UI（インスペクタ入力欄）は要設計。
-- **saveFolder 移行の整合チェックが無い（要追加）**: 現状コピーは collision 回避（`errorOnExist`）だけで、移行後に件数/サイズ照合をせず旧を消す（`main.js:1010-1029`＝cp.ok の bool のみ）。移行元削除の前に「dest の件数/合計サイズが src と一致」を検証してから cleanup したい（上「正しさ」L1 の取り残し窓とも関連）。
-- **移行元の空フォルダ（殻）が残る**: cleanup は `cp.entries` を1件ずつ rm するだけで、空になった src ディレクトリ自体は rmdir しない（`main.js:1026-1029`）＝旧 saveFolder が空フォルダとして残る。中身が空になったら src 自体も削除（誤指定した親フォルダを巻き込まない安全弁付きで）。
-- **移行ログの「コピー中… N%」行は要らない**: 進捗ログ（`Data.jsx:74-102`・i18n `logCopying`）の「コピー中… 20%/40%/60%」の羅列が冗長。進捗バーがあるのでログはフェーズ節目（開始/切替/削除/完了）だけで十分＝逐次%行を落とす。
 - **本体フォルダ/バックアップ先のパス変更を検知したい**: saveFolder やバックアップ先が（アプリ外での移動・リネーム・ドライブ変化で）実在しなくなった/変わったのを起動時などに検知して知らせる。現状は死パスで静かに空表示になりうる（「正しさ」棄却メモの saveFolder 死パス参照）。
 - **バックアップステータスをシンプルに（前回日時は残す）**: 表示を簡素化しつつ「前回バックアップ日時」は見えるように。
 - **未対応サイトでも要素キャプチャを使えるように＋対応PFのみメタデータ取得（要調査）**: どのサイトでも要素（画像）キャプチャは可能にし、メタデータ取得は対応プラットフォームのみとする。あわせて「非対応サイトでも取れる汎用メタデータには何があるか」（OGP/ページ title/URL/取得日時 等）を洗い出す。
@@ -98,7 +94,6 @@
 ## 実機検証・開発インフラ
 
 - **純ユニットアグリゲータの自動起動の配線（残り半分）**: `npm test`（`scripts/run-tests.js`・9スイート・CORPUS_CONFIG_DIR サンドボックス付き）は 2026-07-02 設置済み。残り＝**自動で叩く経路の選択**（既存 Windows サインイン時タスクに追加 vs pre-commit フック＝コミットが数秒重くなる）。GitHub Actions は public 化フェーズまで保留可。背景＝Biome 導入時に parity 2件が無音で赤だったのを実証（自動起動が無いと再発する）。
-- **⚠️ スモークハーネス test-app-{postfilter,search,users,folders,tabs} が陳腐化（無音の赤・2026-07-02 検出）**: グリッド反転の節目検証で発見→切り分けで **6a43c4c（反転着手前）でも同一 FAIL**＝グリッド起因でなく、それ以前の React 島化（スライスm=searchbox 等）でハーネスの操作イディオム（`sb.value=…; dispatchEvent('input')` は React controlled input に無効 等）が現 UI から乖離。npm test 非包含のため無音だった。test-app-render は現行 PASS。各テストの意図を保って現 UI（React islands・仮想化グリッド=#postGridReact ホスト・窓化で全件は DOM に無い）へ追従修復する。
 - **⚠️ Electron を EOL(33系)→サポート内(41/42) へ更新（2026-07-01 検出）**: 現固定 `app/package.json` `^33.2.0`。33系は **2025-04-29 EOL**＝内蔵 Chromium が約20か月分パッチ未適用（サポートは 41/42）。直近の Electron 層 CVE（[CVE-2026-34781](https://www.miggo.io/vulnerability-database/cve/CVE-2026-34781) clipboard DoS／[CVE-2026-34774](https://www.sentinelone.com/vulnerability-database/cve-2026-34774/) offscreen UAF）は未使用機能で直接影響なしだが、**実リスクの本体は Chromium 側未修正 CVE**＝任意画像バイトを renderer(psimg)/main(nativeImage) で復号するため画像デコーダ系 RCE が悪意画像経由で悪用され得る（即時性は低い）。**Chromium 本体が上がる重い更新**＝更新後は実機検証必須（キャプチャ/表示/サムネ生成/ウィンドウ挙動を目視）。急がないが放置しない。[Electron EOL 一覧](https://endoflife.date/electron)。
 - **拡張の実機E2E拡充**: 特に X＝要ログインで未自動化（puppeteer は bot検出で弾かれる）。`e2e-capture-test.js`（全PF PASS・X除外）の延長で X を認証済みプロファイル/Claude in Chrome で。手動X残テスト（A-1系）もここ。
 - **実機キャプチャの実ブラウザ経由 最終目視（残）**: Chrome 無しの end-to-end は検証済（メモリ `corpus-library-loss-incident`）。残＝実機 Chrome で1件キャプチャし `.jpg`+`.json` が落ちるのを目視（リモート不可）。

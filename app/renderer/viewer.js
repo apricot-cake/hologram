@@ -197,7 +197,6 @@
     saveFolderMoving: _s('saveFolderMoving'),
     saveFolderMoved: _f1('saveFolderMoved'),
     logCopyStart: _f1('logCopyStart'),
-    logCopying: _f1('logCopying'),
     logSwitch: _s('logSwitch'),
     logCleanup: _s('logCleanup'),
     logMoveDone: _f1('logMoveDone'),

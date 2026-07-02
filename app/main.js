@@ -13,6 +13,8 @@ const installer = require(path.join(nativeHostDir, 'install'));
 const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
 const { pruneDecision, nextBaseline } = require('./backup-guard');
+// Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
+const { relocateLibrary } = require('./lib-migrate');
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
 // Each exposes register(ctx); ctx is built after the core functions below and passed
 // in at the top-level registration site (see registerExtractedIpc, before whenReady).
@@ -730,47 +732,6 @@ function validateSaveFolder(dir) {
   return { ok: true };
 }
 
-// Copy the WHOLE library (sidecars, images, media, internal metadata, .trash)
-// from src into dest WITHOUT deleting src. The caller flips config to dest only
-// after this succeeds, then removes src — so at every instant a COMPLETE library
-// exists and config points at one of them. This is the crash-safe ordering: the
-// exact invariant whose violation made the library "disappear" before. Aborts
-// before copying anything if a name already exists at dest (never clobbers the
-// user's files there); rolls back partial copies on failure (src untouched).
-async function copyLibraryInto(src, dest, onProgress) {
-  let entries;
-  try {
-    entries = await fs.promises.readdir(src);
-  } catch {
-    entries = [];
-  }
-  entries = entries.filter((f) => !/\.tmp(-\d+)?$/i.test(f));
-  await fs.promises.mkdir(dest, { recursive: true });
-  for (const f of entries) {
-    if (fs.existsSync(path.join(dest, f))) return { ok: false, error: 'collision', name: f };
-  }
-  const total = entries.length;
-  if (onProgress) onProgress(0, total);
-  const copied = [];
-  try {
-    for (const f of entries) {
-      await fs.promises.cp(path.join(src, f), path.join(dest, f), { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true });
-      copied.push(f);
-      if (onProgress) onProgress(copied.length, total);
-    }
-  } catch (e) {
-    for (const c of copied) {
-      try {
-        await fs.promises.rm(path.join(dest, c), { recursive: true, force: true });
-      } catch {
-        /* best-effort */
-      }
-    }
-    return { ok: false, error: 'copy-failed', detail: e && e.message };
-  }
-  return { ok: true, entries };
-}
-
 let backupRunning = false;
 async function runBackup(reason) {
   const b = readBackupConfig();
@@ -1077,7 +1038,7 @@ function registerExtractedIpc() {
     fetchStillImage,
     pixivRefererFor,
     validateSaveFolder,
-    copyLibraryInto,
+    relocateLibrary,
     watchSaveFolder,
     getWin: () => win,
     getConfigLastCorrupt: () => configLastCorrupt,
