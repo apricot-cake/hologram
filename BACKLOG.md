@@ -2,7 +2,7 @@
 
 完了は git が記録＝**完了項目は残さず削除**。実装済み機能・構成・検証手順は CLAUDE.md 他節＋メモリ `corpus-verify-notes` が真実源（重複させない）。
 
-**最優先**: 監査の確定セキュリティ／正しさは全て対応済み。次の注力候補＝要追加調査（L2）／タグ付けの手動UX改善／各機能設計から選ぶ。
+**最優先**: 監査の確定セキュリティ／正しさ（L1〜L4 含む）は全て対応済み。次の注力候補＝タグ付けの手動UX改善／各機能設計から選ぶ。
 
 ## 監査残課題（2026-06-27 UltraCode）
 
@@ -20,10 +20,8 @@
 
 ### 正しさ／データ整合性
 
-`config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は tmp+rename でアトミック化済み（torn-read High は 9260c81 で解消）。確定分 #1〜#5 対応済み。残＝要追加調査。
+`config.json`・save-pointer・サイドカー本体（`writeSidecarAtomic`）・`.index.json` は tmp+rename でアトミック化済み（torn-read High は 9260c81 で解消）。確定分 #1〜#5・有力 L1〜L4 対応済み（2026-07-02 完了）。残＝下の「次に調べる」のみ。
 
-- **有力・要追加調査**（L1=移行取り残し・L3=BOM・L4=union-find は 2026-07-02 解消＝`lib-migrate.js`/`lib-json.js`/`mergeManualGroups`・番号は据え置き）:
-  - **L2【Med】** import-posts の重複検出が `url` のみ＝URL なし（99.6% の Eagle 移行）が再インポートで二重化（`ipc-transfer.js` import-posts・`.trash` 非走査）。対策＝captureId/画像ハッシュ/eagleName にフォールバック。※BOM 非耐性は L3 で解消済み。
 - **次に調べる（未裏取り）**: ①`lib-index.js:139,190` の mtimeMs 単一信号で「変更なし」誤判定＝タグ付けが tags/userKind/tagReviewed を単一 update-tags で原子書きか要確認。②self-reply グルーピングの alias 解決が深さ10打ち切り（`viewer.js:2458`）＝11超でグループ分裂。③saveFolder 移動後に renderer 組織ストア再読込しない（`viewer.js:5945`）。④delete-post の disk-sweep 前方一致（`main.js:881`）が `-N` 接尾辞 base を境界で分離できるか（境界テスト無）。⑤デバウンス persist の最終フラッシュが `before-quit` で保証されるか。
 - **棄却（再調査しない）**: update-tags/restore-post の torn-read（`writeSidecarAtomic`＋9260c81・直書き0件＝行番号 stale）／clear-all の delta 非リセット（added は現スキャン由来・stale は no-op・captureId 再利用なし）／facetCounts への sticky 混入（同 getFilteredPosts 由来で一様・~400ms clear）／buildUsers 先勝ちで表示名古い（表示のみ・userKey 安定・再起動で自己修復）／saveFolder 死パスで空表示（ENOENT→no-op・データ無傷）／import で folders.json 孤児化（起動時 `CF().load()` が import 前に移行＝到達不能）／trash の captureId 前方一致衝突（`Date.now()+rand16` で極小）。
 

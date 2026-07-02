@@ -35,27 +35,50 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
+  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
 
   ipcMain.handle('import-posts', async (_e, posts) => {
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
     fs.mkdirSync(folder, { recursive: true });
 
-    const existing = new Set();
-    try {
-      for (const f of fs.readdirSync(folder)) {
+    // Duplicate detection. url is the primary identity; URL-less posts (file/
+    // Eagle migrations — the dominant legacy case) would otherwise duplicate
+    // wholesale on a re-import, so they fall back to a composite of eagleName +
+    // capturedAt + image byte size (stat only — no content read/hash). All three
+    // must agree: eagleName alone is NOT unique (it's a user-visible title —
+    // real Eagle libraries carry many duplicate names), and a converter may
+    // stamp one capturedAt across a whole batch, so neither field alone is
+    // trustworthy. .trash is scanned too: a deliberately deleted post must not
+    // resurrect through a re-import while it still sits in trash.
+    const existingUrls = new Set();
+    const existingLegacy = new Set();
+    const legacyKeyOf = (name, at, bytes) => `${name}\u0000${at}\u0000${bytes}`;
+    const scanExisting = (dir) => {
+      let names = [];
+      try {
+        names = fs.readdirSync(dir);
+      } catch {
+        return; // absent (e.g. no .trash yet)
+      }
+      for (const f of names) {
         if (!f.toLowerCase().endsWith('.json') || f === 'config.json' || f === '.index.json') continue;
         try {
-          const r = parseJsonLoose(fs.readFileSync(path.join(folder, f), 'utf8'));
-          if (r.url) existing.add(r.url);
+          const r = parseJsonLoose(fs.readFileSync(path.join(dir, f), 'utf8'));
+          if (r.url) existingUrls.add(r.url);
+          else if (r.eagleName && r.capturedAt && typeof r.image === 'string') {
+            // statSync throw (image file missing) skips the key via the outer
+            // catch — that record just can't dedup, the import stays conservative.
+            existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(dir, r.image)).size));
+          }
         } catch {
-          /* skip */
+          /* skip unreadable */
         }
       }
-    } catch {
-      /* empty */
-    }
+    };
+    scanExisting(folder);
+    const trashDir = getTrashDir();
+    if (trashDir) scanExisting(trashDir);
 
     // Avatars are downloaded once per unique URL: a legacy library has many posts
     // per author, so dedup the network fetch and reuse the bytes for each record's
@@ -82,7 +105,13 @@ function register(ctx) {
         skipped++;
         continue;
       }
-      if (p.url && existing.has(p.url)) {
+      if (p.url && existingUrls.has(p.url)) {
+        skipped++;
+        continue;
+      }
+      const imgBuf = Buffer.from(p.image.split(',')[1] || '', 'base64');
+      const legacyKey = !p.url && p.eagleName && p.capturedAt ? legacyKeyOf(p.eagleName, p.capturedAt, imgBuf.length) : null;
+      if (legacyKey && existingLegacy.has(legacyKey)) {
         skipped++;
         continue;
       }
@@ -120,7 +149,7 @@ function register(ctx) {
         tags: Array.isArray(p.tags) ? p.tags : [],
       };
       try {
-        fs.writeFileSync(path.join(folder, `${captureId}.jpg`), Buffer.from(p.image.split(',')[1] || '', 'base64'));
+        fs.writeFileSync(path.join(folder, `${captureId}.jpg`), imgBuf);
         // Best-effort avatar before the sidecar so avatarFile reflects what landed
         // on disk. Wrapped on its own so an avatar failure leaves avatarFile null
         // (the viewer hides it) and NEVER fails the import.
@@ -137,7 +166,8 @@ function register(ctx) {
           }
         }
         fs.writeFileSync(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
-        if (p.url) existing.add(p.url);
+        if (p.url) existingUrls.add(p.url);
+        else if (legacyKey) existingLegacy.add(legacyKey);
         imported++;
       } catch {
         skipped++;
