@@ -26,7 +26,7 @@ BACKLOG に置くのは**「これから（残タスク）」と「やらない�
 **性能判断は製品目標（数万件・投稿者数千）基準**＝開発者ライブラリの現規模（メモリ`library-composition`）で体感に出るかを条件にしない（CLAUDE.md ルール）。データ層のスケールは「技術スタック候補」節の SQLite 派生インデックスが正本。
 
 - **main 側 I/O**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・`main.js:251`）＝初回ペイント前に同期ブロック。スリム化/チャンク化の余地。②psimg 原寸を `fs.readFile` で全バッファ（`main.js:366`）＝`stream:true` 特権があるのに非ストリーム。
-- **low 群（generation キャッシュ idiom の横展開で消せる衛生案件）**: textHaystack 反復 toLowerCase(2550)／buildSuggest 未キャッシュ(5616)／getFilteredPosts 前段 filter／date 述語の境界 Date 再生成／snapshotState 二重直列化／lightbox の decode/隣接プリロード欠如(3393)／pf-badge の backdrop-filter(`index.html:871`)。
+- **low 群（generation キャッシュ idiom の横展開で消せる衛生案件）**: textHaystack 反復 toLowerCase(2550)／buildSuggest 未キャッシュ（users.js へ抽出済み・タグ集計が毎キーストローク全走査のまま）／getFilteredPosts 前段 filter／date 述語の境界 Date 再生成／snapshotState 二重直列化／lightbox の decode/隣接プリロード欠如(3393)／pf-badge の backdrop-filter(`index.html:871`)。
 - **dev限定（未調査）**: `reloadIgnoringCache` 反復でレンダラ/GPU が蓄積し激重化（アイドル 2fps）＝再起動でクリア。蓄積系・根本未特定。
 
 ## タグ付け・整理（注力テーマ）
@@ -94,7 +94,7 @@ BACKLOG に置くのは**「これから（残タスク）」と「やらない�
 - **依存/UI 方針（確定）**: 全面リライトしない・段階移行／依存は痛みが出た時に keep/replace で判断（bespoke＝フィルタ/グルーピング/正規化/日本語あいまい検索は保つ・コモディティ＝位置決め/窓化/a11y は痛んだら委譲）／UI はガラス維持（styled kit 却下・※Tailwind+shadcn 移行候補との整合は「技術スタック候補＞方針転換候補」参照）／状態は corpusStore 継続／ルーター無し。
 - **現在地（残タスクの前提・一行）**: 島16個＋共有ストア window.corpusStore・全グリッド仮想化（masonic・list/tile/card＋poster/collection）・検索/フィルタ/インスペクタ/タグ編集（`_shared/TagEditor`）まで React 所有済み。React ランタイムは共有 vendor-react.js に一本化済み（c3269d4）。
 - **残タスク**:
-  - viewer.js（~5700行 IIFE）の store/service/hooks への段階抽出を継続（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。抽出済み＝query.js／records.js（重複保存警告の P0 postKeyOf 共有化を兼ねる）／facets.js／cooc.js（各 純ユニット付き・npm test 配線済み）。次のスライスは実装時に痛点から選ぶ（候補メモ: buildUsers/buildSuggest 等の集計系・タブ永続化）。
+  - viewer.js（~5700行 IIFE）の store/service/hooks への段階抽出を継続（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。抽出済み＝query.js／records.js（重複保存警告の P0 postKeyOf 共有化を兼ねる）／facets.js／cooc.js／users.js（buildUsers/buildSuggest 集計系・2026-07-03）（各 純ユニット付き・npm test 配線済み）。次のスライスは実装時に痛点から選ぶ（候補メモ: タブ永続化）。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。masonic が島3つに各自バンドルされる重複と、qf-pop/filter-popover のブリッジ定型重複（下「コード地ならし」）もここで回収。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 - **対象外と判断済み（再提案しない）**: #filterRows のバッジ（`renderFilterBadges`）＝純粋な派生テキスト＋クラス切替でドリフトリスクが無く現状維持。

@@ -706,7 +706,9 @@
     posterFilterVocab,
     namedPosters,
     posterFolders: () => pfStore.all(),
-    buildUsers,
+    // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
+    // after this point — a direct ref here would hit TDZ at wiring time.
+    buildUsers: () => buildUsers(),
   });
   // Tag co-occurrence math (charCandidatesFor / worksCooccurringWith /
   // relatedTagCandidates) moved to cooc.js (window.corpusCooc) — 4th extraction
@@ -1966,47 +1968,19 @@
   })();
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
-  // Group posts by author. Posts arrive newest-first, so the first occurrence
-  // carries the latest display name / handle for that user.
-  // Cached behind the allPosts generation (same idiom as _rebuildSidebarSets):
-  // buildUsers scans all ~9000 posts, and it was being re-run on every search
-  // keystroke via buildSuggest. Rebuild only when the library changes.
-  let _buildUsersGen = -1,
-    _cachedUsers = null;
-  function buildUsers() {
-    if (_buildUsersGen === _allPostsGeneration && _cachedUsers) return _cachedUsers;
-    const map = new Map();
-    for (const p of allPosts) {
-      if (!p.url) continue; // SNS posts only — match the post-view dataset
-      const key = userKey(p);
-      let u = map.get(key);
-      if (!u) {
-        u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '', avatarFile: '', followers: null, authorCreatedAt: '', instance: '', latest: '', firstPost: '', lastCapture: '', firstCapture: '', count: 0 };
-        map.set(key, u);
-      }
-      u.count++;
-      // Posts arrive newest-first, so the first non-empty occurrence is the latest
-      // value for that poster (same idiom as displayName/screenName below).
-      if (!u.displayName && p.displayName) u.displayName = p.displayName;
-      if (!u.screenName && p.screenName) u.screenName = p.screenName;
-      if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
-      if (u.followers == null && p.followers != null) u.followers = p.followers;
-      if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
-      if (!u.instance && (p.platform === 'misskey' || p.platform === 'mastodon')) {
-        const h = hostOf(p.url);
-        if (h) u.instance = h;
-      }
-      // Aggregate date range across this poster's posts (ISO strings compare lexically).
-      // latest/firstPost = 最終/初回投稿日; lastCapture/firstCapture = 最終/初回取得日.
-      if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;
-      if (p.date && (!u.firstPost || p.date < u.firstPost)) u.firstPost = p.date;
-      if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;
-      if (p.capturedAt && (!u.firstCapture || p.capturedAt < u.firstCapture)) u.firstCapture = p.capturedAt;
-    }
-    _cachedUsers = [...map.values()];
-    _buildUsersGen = _allPostsGeneration;
-    return _cachedUsers;
-  }
+  // buildUsers (generation-cached poster roll-up) + buildSuggest (search-box
+  // suggestion items) moved to users.js (window.corpusUsers) — 5th extraction
+  // slice. Reassigned lets (allPosts / _allPostsGeneration) are injected as
+  // getters; userKey/hostOf are consts already initialized at this point (the
+  // corpusQuery destructure above), so they pass through directly. corpusSearch
+  // is a getter because buildSuggest reads its live fuzzy mode per call.
+  const { buildUsers, buildSuggest } = window.corpusUsers.makeUsers({
+    allPosts: () => allPosts,
+    generation: () => _allPostsGeneration,
+    userKey,
+    hostOf,
+    corpusSearch: () => window.corpusSearch,
+  });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
@@ -5361,28 +5335,10 @@
   // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
   // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
   // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
-  // rendering, keyboard nav, open/close, positioning. viewer.js keeps the DATA
-  // side — buildSuggest (bespoke facet scan) and what a pick DOES (applySuggest) —
-  // wired through the corpusSearchBox bridge registered below.
-  function buildSuggest(q) {
-    const norm = (s) => String(s || '').toLowerCase();
-    const fuzzyOn = window.corpusSearch && window.corpusSearch.isFuzzy();
-    const matcher = fuzzyOn ? window.corpusSearch.compile(q) : null;
-    const hit = (s) => (fuzzyOn ? matcher(String(s || '')) : norm(s).includes(norm(q)));
-    const items = [];
-    const counts = new Map();
-    for (const p of allPosts) if (p.url) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
-    [...counts.keys()]
-      .filter(hit)
-      .sort((a, b) => counts.get(b) - counts.get(a))
-      .slice(0, 6)
-      .forEach((t) => items.push({ kind: 'tag', value: t, label: t, note: counts.get(t) }));
-    buildUsers()
-      .filter((u) => hit(u.displayName) || hit(u.screenName))
-      .slice(0, 4)
-      .forEach((u) => items.push({ kind: 'user', value: u.key, label: u.displayName || u.screenName || '(unknown)', note: u.count }));
-    return items;
-  }
+  // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
+  // from buildSuggest (users.js — wired above with buildUsers); viewer.js keeps
+  // what a pick DOES (applySuggest), wired through the corpusSearchBox bridge
+  // registered below.
   function applySuggest(it) {
     if (!it) return;
     setSearchBoxValue(''); // the typed text was for FINDING the filter — don't keep it as a body search
