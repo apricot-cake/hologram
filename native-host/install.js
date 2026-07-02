@@ -46,14 +46,22 @@ function deployBridge() {
   return destBridge;
 }
 
+// Chrome extension ids are exactly 32 chars of a\u2013p. Everything flowing into the
+// manifest's allowed_origins (IPC arg, CLI arg, config value) passes this gate;
+// invalid ids degrade to null, which writeManifest/updateAllowedOrigin already
+// handle (preserve or clear origins \u2014 never emit a malformed origin).
+const VALID_EXT_ID = /^[a-p]{32}$/;
+function sanitizeExtensionId(id) {
+  const trimmed = typeof id === 'string' ? id.trim() : '';
+  return VALID_EXT_ID.test(trimmed) ? trimmed : null;
+}
+
 // The unpacked extension's ID (path-derived, shown in chrome://extensions).
 // Stored in config.json by the app so we never commit a key to the repo.
 function readExtensionId() {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
-    if (cfg && typeof cfg.extensionId === 'string' && cfg.extensionId.trim()) {
-      return cfg.extensionId.trim();
-    }
+    if (cfg) return sanitizeExtensionId(cfg.extensionId);
   } catch {
     // No config yet.
   }
@@ -193,6 +201,7 @@ function unixManifestDirs() {
 }
 
 function install({ exe = process.execPath, runAsNode = false, extensionId } = {}) {
+  extensionId = sanitizeExtensionId(extensionId);
   if (extensionId) persistExtensionId(extensionId); // explicit id (CLI/app) → make it durable
   const id = extensionId || readExtensionId();
   const bridgePath = deployBridge();
@@ -221,6 +230,7 @@ function install({ exe = process.execPath, runAsNode = false, extensionId } = {}
 // (so we never clobber a working launcher with one that points at a non-ASCII
 // exe path). Falls back to a full install if no manifest exists yet.
 function updateAllowedOrigin(extensionId) {
+  extensionId = sanitizeExtensionId(extensionId);
   const mp = manifestPath();
   let manifest;
   try {

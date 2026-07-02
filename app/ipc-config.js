@@ -13,6 +13,11 @@ const path = require('node:path');
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
+// Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
+// boundary (IPC arg → native-messaging manifest allowed_origins), so anything
+// else is coerced to '' — same handling as an empty id (see install.js).
+const VALID_EXT_ID = /^[a-p]{32}$/;
+
 function register(ctx) {
   const { readConfig, writeConfig, getSaveFolder, readOrgJsonSync, writeOrgJsonSync, installer, getWin } = ctx;
 
@@ -23,7 +28,8 @@ function register(ctx) {
 
   ipcMain.handle('set-extension-id', (_event, id) => {
     const cfg = readConfig();
-    cfg.extensionId = typeof id === 'string' ? id.trim() : '';
+    const trimmed = typeof id === 'string' ? id.trim() : '';
+    cfg.extensionId = VALID_EXT_ID.test(trimmed) ? trimmed : '';
     writeConfig(cfg);
     try {
       // Update only the manifest's allowed origin; keep the existing launcher.
