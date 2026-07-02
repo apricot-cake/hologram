@@ -27,7 +27,15 @@
     "directories": {
       "output": "dist"
     },
-    "files": ["main.js", "preload.js", "lib-archive.js", "lib-index.js", "renderer/**/*", "vendor/**/*", "assets/**/*"],
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib-archive.js",
+      "lib-index.js",
+      "renderer/**/*",
+      "vendor/**/*",
+      "assets/**/*"
+    ],
     "extraResources": [
       {
         "from": "../native-host",
@@ -43,5 +51,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": false
     }
+  },
+  "dependencies": {
+    "masonic": "^4.1.0"
   }
 }
