@@ -32,7 +32,7 @@
 
 ### パフォーマンス（UI操作）
 
-**個人ライブラリの現状**（メモリ`library-composition`＝無タグ中心・投稿者数十件。Corpus自体の制約でなく開発者個人の現在の利用規模）＝投稿者/コレクション系の窓無し描画やメモ化欠如は現スケールで体感に出ない（将来 SNS 主体化で効く構造負債）。
+**性能判断は製品目標（数万件・投稿者数千）基準**＝開発者ライブラリの現規模（メモリ`library-composition`）で体感に出るかを条件にしない（2026-07-02 再定義・CLAUDE.md ルール）。投稿者/コレクション系の窓無し描画・メモ化欠如は一般ユーザー規模で顕在化する構造負債＝posterGrid/collectionGrid 仮想化は「React 化」節の残タスクに計上。データ層のスケールは「技術スタック候補」節の SQLite 派生インデックス（採用#4）が正本。
 
 - **main 側 I/O**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・`main.js:251`）＝初回ペイント前に同期ブロック。スリム化/チャンク化の余地。②psimg 原寸を `fs.readFile` で全バッファ（`main.js:366`）＝`stream:true` 特権があるのに非ストリーム。
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件）**: textHaystack 反復 toLowerCase(2550)／buildSuggest 未キャッシュ(5616)／getFilteredPosts 前段 filter／date 述語の境界 Date 再生成／snapshotState 二重直列化／lightbox の decode/隣接プリロード欠如(3393)／pf-badge の backdrop-filter(`index.html:871`)。
@@ -41,7 +41,7 @@
 
 ## タグ付け・整理（注力テーマ）
 
-開発者個人のライブラリはbooru型イラストアーカイブとして運用中（現状はメモリ`library-composition`参照＝Corpus自体の仕様でなく個人の利用実態）。**ソースタグ取込はこのライブラリでは無力**（URL/ソースタグ無し）＝実効レバーは**手動タグ付けの効率化（UX）**。
+実効レバーは利用実態で異なる＝**両輪でマッピング**（2026-07-02 に個人事情ゲートを撤廃・CLAUDE.md ルール）: ①**手動タグ付けの効率化（UX）**＝ソースタグの無いライブラリ（ローカル取込中心。開発者の現ライブラリもこれ＝メモリ`library-composition`・個人の利用実態であって Corpus の仕様ではない）に効く。②**ソースタグの取込・活用**（ハッシュタグ/pixiv タグ→タグ化・種別推定・inspector の adopt 動線拡充）＝SNS キャプチャ主体の一般ユーザーに効く。どちらかを個人事情で棚上げしない。
 
 - **関連タグ提案（共起・確認付き／未着手）**: 全タグの同時出現から「X→Y もよく一緒」を**弱いヒント**で出す汎用版。守る条件＝①押し付けない②なぜ出たか説明可（共起回数）③勝手に付けない④信頼度段階化（スコープ付き＝強・全タグ＝弱）⑤薄いうちは出さない。
 - **タグの複数グループ所属（未着手）**: 現状は実質1タグ1グループ。多重観点（「構図」かつ「主題」）を許すか。影響＝重複表示・件数二重計上・未分類の定義変化。前例＝danbooru 排他／Eagle・Notion 多重可。判断軸＝柔軟さが UI/集計の複雑化に見合うか。種別（1タグ1種別の排他レイヤー）とは別軸。
@@ -114,12 +114,13 @@
 - **残タスク**:
   - ~~グリッド完全React化～~ **完了（2026-07-02・スライス1-3）**: 全3ビュー（list/tile/card）を grid 島＝masonic 仮想化へ反転（9042件→DOM 十数〜数十セル）。旧機構（renderLimit/RENDER_PAGE・sentinel IntersectionObserver・キー付き reconcile/cardSig・手書きマサンリー .mcols/.mcol・fast path・learnCardAspects・タブ永続の `_renderLimit`）を一括削除、post-card テンプレート島も卒業（renderToStaticMarkup/ReactDOMServer を vendor から撤去）。スクロール復元は scrollTop 直復元（リロード跨ぎ実機PASS）。実装知はメモリ `corpus-react-settings-pilot`。
   - viewer.js（~5850行 IIFE）を store/service/hooks へ段階抽出（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。**第1弾完了（2026-07-02）＝クエリエンジン→`app/renderer/query.js`**（window.corpusQuery＝ツリー機構 emptyTree/treeLeaves/opposite/facetTreeFrom/evalNode＋純ヘルパ localDayRange/hostOf/userKey/textHaystackOf＋`makePostPredOf(deps)`＝コレクション/クリップ/fuzzy は viewer が注入）。純ユニット `scripts/test-query-unit.js`（56 assert）を npm test に追加＝getFilteredPosts の核が初めてテスト下に。**次の抽出候補**: groupRecords（グルーピング）／stampPost・postKeyOf（正規化）／qfValues のファセット集計。
+  - **posterGrid/collectionGrid の仮想化**（2026-07-02 追加＝性能判断の製品基準化に伴い個人スケール由来の棚上げを撤回）: post グリッドで確立した grid 島基盤（masonic＋corpusGrid ブリッジ・実装知はメモリ `corpus-react-settings-pilot`）への載せ替え。投稿者数千・コレクション多数で効く（少数でも害なし）。post 側より単純＝均等カードで aspect 予約不要。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。※c3269d4 で React ランタイムを全島から外部化し共有 vendor-react.js に一本化＝バンドル畳みの地ならしに着手済み。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 
 ## コード地ならし（純リファクタ・2026-07-01 多エージェント調査でトリアージ）
 
-> **位置づけ**: 振る舞い不変の内部改善のみ。**移行期に安全なのは衝突ゾーン外の小物だけ**＝大物（viewer.js 巨大関数分割・オーバーレイ集約）は上の React 化残タスクがリライトで自然消滅させる領域＝別立てにしない。実効レバー（手動タグUX）には効かない純地ならし＝優先度は高くない。検証で複数候補に誇張が判明＝核だけに縮小済み。
+> **位置づけ**: 振る舞い不変の内部改善のみ。**移行期に安全なのは衝突ゾーン外の小物だけ**＝大物（viewer.js 巨大関数分割・オーバーレイ集約）は上の React 化残タスクがリライトで自然消滅させる領域＝別立てにしない。注力テーマ（タグ付け・整理）には効かない純地ならし＝優先度は高くない。検証で複数候補に誇張が判明＝核だけに縮小済み。
 
 - **今やれる（衝突ゾーン外・単独可・挙動不変）**:
   - **clear-all の内部JSON誤全消去 footgun**（`main.js`）: 除外リストが or 鎖ハードコードで `import-posts` 側と分裂＝内部JSONを1つ足すと clear-all が誤全消去しうる予防案件。`INTERNAL_FILES.has()` 一本化が現行チェーンと集合一致を実確認済＝S・検証は「clear-all 1回で組織JSON残存」1点。
@@ -132,7 +133,7 @@
 
 ## 技術スタック候補（2026-07-01 調査・2026-07-02 に採用価値のあるものだけへ絞り込み）
 
-> 87候補を Corpus 固有制約（file:///厳格CSP/ファイルベース真実源/ガラス維持＝恒久的な設計制約）で採点した多エージェント調査の**生き残りだけ**を残す。フル判断ログ（優先度表16行・ティア表・却下理由表・カテゴリ別勝者/次点）は git 履歴参照（7714592 で導入・c26f3f6 時点が最終版）。**実効レバーはライブラリでなく手動タグ付けUX**（本丸は「タグ付け・整理」節）＝重い機能強化は最終形B後。
+> 87候補を Corpus 固有制約（file:///厳格CSP/ファイルベース真実源/ガラス維持＝恒久的な設計制約）で採点した多エージェント調査の**生き残りだけ**を残す。フル判断ログ（優先度表16行・ティア表・却下理由表・カテゴリ別勝者/次点）は git 履歴参照（7714592 で導入・c26f3f6 時点が最終版）。**重い機能強化は最終形B後**（本丸は「タグ付け・整理」節＝手動タグUXとソースタグ活用の両輪）。
 
 ### 導入済み
 - **react-aria-components**（スライスm・検索ボックス／実装知と罠はメモリ `corpus-react-settings-pilot`）: 以後の難所ポップオーバー/コマンドパレットは**追加依存ゼロ**で使い回す。先回り置換はしない＝既存の動く手書き（ContextMenu/GlassSelect 等）は温存。
@@ -141,16 +142,16 @@
 
 ### 採用する（着手順）
 1. **JSDoc + checkJs**（.ts化なし）: preload/store/i18n の .d.ts から段階導入。グリッド等の React 大物前に「契約の見える化」。JSDoc 人手が律速。
-2. **masonic**: グリッド仮想化スライス（上「React化」残タスク）の一部として。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
+2. **masonic**: ~~グリッド仮想化スライスの一部として~~ **導入済み（2026-07-02・全3ビュー反転完了）**。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
 3. **配布3点セット**: electron-builder publish/sign → electron-updater → SignPath 事前申請（審査が律速）＋@electron/fuses を署名のついで。時期・手順は下「リリース準備」節が真実源＝ここに重複させない。
+4. **SQLite 派生インデックス（DB 移行＝確定・2026-07-02）**: 数万件ライブラリは**製品のスケール目標**（画像メイン利用等でユーザーによっては到達する＝開発者ライブラリの成長を条件にしない・CLAUDE.md ルール）。真実源はサイドカー JSON のまま、`.index.json`＋常駐 Map を**再構築可能な SQLite インデックス**へ置換（起動全量スキャン・IPC 全量 clone・メモリ常駐・検索線形走査に一括で効く／壊れたら再構築＝「ファイルベース真実源」の恒久設計制約と両立）。着手＝最終形B の service 抽出後＋Electron EOL 更新（41+）後。**選定は2層に分解**（2026-07-02 調査）: ①**索引層**（メタデータ・ソート・ファセット）＝Electron 41 同梱 Node 24 の内蔵 `node:sqlite` が第1候補（依存ゼロ・ネイティブ .node 無し＝本機アプリ制御ポリシー無風・ステータスは RC）。②**全文検索層**＝`node:sqlite` は **FTS5 非同梱**（Node 24 時点・upstream 未解決）のため、必要と実測された時点で better-sqlite3（FTS5 同梱・ただし .node の本機ポリシー実行可否の実測が採用関門・Electron ABI リビルド＋asarUnpack）vs WASM sqlite（FTS5 ビルド可・ネイティブ無し）を比較。①だけでも主要ボトルネックは解消＝テキスト検索は正規化 haystack の事前計算＋JS で粘れる見込み（**旧 MiniSearch+BudouX 案はここに統合**・日本語は corpusSearch の正規化資産を FTS5 trigram/BudouX いずれでも前処理として再利用）。
 
-### 痛みが出たら（発火条件つき・先回り導入しない）
-- **MiniSearch + BudouX** ← 検索の線形劣化が体感に出たら。まず search.js＋haystack 事前計算で粘る（日本語境界に BudouX 必須・WASM 不使用で CSP 適合）。
-- **sharp** ← webp/avif が実際に欠けるか、サムネ同期ブロッキングが痛んだら（asarUnpack＝「実行時 npm 依存ゼロ」を破る越境コスト込みで判断）。
+### 痛みが出たら（発火条件つき・先回り導入しない。※発火条件は製品基準＝開発者ライブラリでの遭遇を条件にしない）
+- **sharp** ← サムネ経路（main.js getThumbnail）の webp/avif 対応可否を**実測してから**判断（webp は SNS 配信で一般的＝一般ユーザーは普通に遭遇する）。サムネ同期ブロッキングも同時に評価（asarUnpack＝「実行時 npm 依存ゼロ」を破る越境コスト込み）。
 - **Vitest** ← viewer.js の service 抽出後（最大痛点 getFilteredPosts 等はそれまで IIFE 内で対象外）。
 - **lucide-react** ← 最終形B完了時に本体アイコンを一括移行（DESIGN.md 指定と自前35SVGの実測一致は確認済み・島だけの先行導入はしない）。
 - **Zod か Valibot（main限定）＋IPC集中ラッパー（自前）** ← IPC 契約破れ・catch{}黙殺が実害を出したら、新Reactストア層の一部として同時に設計（対象は set*/persist系のみ・失敗のログ化/既定値化は振る舞い変更＝純リファクタでない・2026-07-01訂正）。
-- **better-sqlite3 + FTS5** ← ライブラリが数万件規模に育ったら再評価（現ボトルネックは IPC直列化＝.index.json+Map で十分）。
+- ~~better-sqlite3 + FTS5~~ → **「採用する」#4（SQLite 派生インデックス）へ昇格**（2026-07-02＝「ライブラリが数万件に育ったら」という開発者ライブラリ基準のゲートを撤廃・数万件は製品目標）。
 - **chokidar v4** ← 自前 fs.watch が実害を出したら（全reconcile が自己修復・2026-06 インシデントの真因は MSIX＝watcher でない）。
 
 ### 見送り（再提案しない）
