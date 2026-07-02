@@ -4383,9 +4383,10 @@
     PTILE_MAX = 220;
   const PCARD_MIN = 150,
     PCARD_MAX = 340;
-  // Which size the slider drives, per density (mirrors the post viewSizeState). The
-  // grid layouts read --ptile-size (tile) / --pcard-size (card) via auto-fill minmax;
-  // list is a full-width stack with no size axis, so it returns null (slider hidden).
+  // Which size the slider drives, per density (mirrors the post viewSizeState).
+  // The size feeds masonic's columnWidth (minimum — columns stretch to fill, the
+  // same math as the old CSS auto-fill minmax); list is a full-width stack with
+  // no size axis, so it returns null (slider hidden).
   function posterSizeState() {
     if (posterView === 'tile')
       return {
@@ -4395,7 +4396,6 @@
         },
         min: PTILE_MIN,
         max: PTILE_MAX,
-        varName: '--ptile-size',
         pref: 'posterTileSize',
       };
     if (posterView === 'card')
@@ -4406,7 +4406,6 @@
         },
         min: PCARD_MIN,
         max: PCARD_MAX,
-        varName: '--pcard-size',
         pref: 'posterCardSize',
       };
     return null;
@@ -4420,8 +4419,9 @@
     if (!grid) return null;
     const W = Math.floor(grid.getBoundingClientRect().width);
     if (!W) return null;
-    const gv = Number.parseFloat(getComputedStyle(grid).columnGap);
-    return { W, g: Number.isFinite(gv) ? gv : 14 };
+    // Gutters live in the masonic model now (pushPosterModel), not container CSS —
+    // keep this math in lockstep with the rowGutter pushed there.
+    return { W, g: posterView === 'tile' ? 10 : 14 };
   }
   const pColsFor = (size, m) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
   const pSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
@@ -4471,8 +4471,9 @@
       const n = nBig + nSmall - Number.parseInt(sl.value, 10); // un-invert → target column count
       const size = Math.max(st.min, Math.min(st.max, pSizeFor(n, m)));
       st.set(size);
-      const g = document.getElementById('posterGrid');
-      if (g) g.style.setProperty(st.varName, size + 'px'); // live re-flow, no re-render
+      // Live re-flow while dragging: masonic recreates its positioner on a
+      // columnWidth change (same wiring as the post tile slider).
+      window.corpusPosterGrid.patch({ columnWidth: size });
       window.corpus.setPref(st.pref, size);
     });
   })();
@@ -4714,11 +4715,10 @@
     posterList = filteredPosters();
     countEl.textContent = MSG.posterCount(posterList.length);
     syncBrowseBar();
-    // Density: toggle the grid layout classes + tile-size axis (tile view only).
+    // Density: the classes style the CELLS (descendant selectors); the column
+    // layout itself lives in the masonic model (pushPosterModel).
     grid.classList.toggle('tile-view', posterView === 'tile');
     grid.classList.toggle('list-view', posterView === 'list');
-    grid.style.setProperty('--ptile-size', posterTileSize + 'px');
-    grid.style.setProperty('--pcard-size', posterCardSize + 'px');
     // (The #posterDensityToggle glass thumb is positioned by the toolbar island, not here.)
     // Size slider: card + tile (auto-fill grids) have a size axis; list (full-width stack)
     // doesn't. The track maps to column counts so every step reflows (no dead zones).
@@ -4737,30 +4737,56 @@
     empty.style.display = 'none';
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
     pushPosterModel();
+    // With windowing, cells keep MOUNTING while the user scrolls — drop the
+    // entrance class once the initial animation has played, or every late
+    // cell would replay it mid-scroll (same wiring as the post grid).
+    clearTimeout(_posterAnimT);
+    if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
   }
-  // React owns the poster cards; viewer.js keeps posterList, the count badge, the
-  // grid density classes/vars, and #posterGrid's click/contextmenu delegation. The
-  // inspected highlight is model-driven (inspectedKey) so it survives re-renders —
-  // showPosterDetail / closeDetail re-push the model instead of toggling a class.
+  let _posterAnimT = null;
+  let _posterItemsArr = null; // last posterList pushed — identity change bumps itemsKey
+  let _posterItemsKey = 0;
+  // React owns the poster cells (virtualized — window.corpusPosterGrid bridge);
+  // viewer.js keeps posterList, the count badge, the density classes, and
+  // #posterGrid's click/contextmenu delegation. The inspected highlight is
+  // model-driven: modelOf re-reads inspectedKey live, so showPosterDetail /
+  // closeDetail re-push (paint bump) instead of toggling a class.
   function pushPosterModel() {
-    const cards = posterList.map((u, i) => {
-      const hasName = !!u.displayName;
-      const s = (u.displayName || u.screenName || '').trim();
-      return {
-        index: i,
-        inspected: inspectedKey === 'poster:' + u.key,
-        avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
-        monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
-        name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
-        handle: hasName && u.screenName ? u.screenName : null,
-        platform: u.platform || null,
-        pfName: u.platform ? PF_NAME[u.platform] || u.platform : null,
-        countLabel: MSG.posterPosts(formatCount(u.count)),
-      };
+    if (posterList !== _posterItemsArr) {
+      _posterItemsArr = posterList;
+      _posterItemsKey++; // rebuilt list → island resets its positioner + re-syncs scroll
+    }
+    window.corpusPosterGrid.render({
+      items: posterList,
+      itemsKey: _posterItemsKey,
+      modelOf: (u, i) => {
+        const hasName = !!u.displayName;
+        const s = (u.displayName || u.screenName || '').trim();
+        return {
+          index: i,
+          inspected: inspectedKey === 'poster:' + u.key,
+          avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
+          monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
+          name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
+          handle: hasName && u.screenName ? u.screenName : null,
+          platform: u.platform || null,
+          pfName: u.platform ? PF_NAME[u.platform] || u.platform : null,
+          countLabel: MSG.posterPosts(formatCount(u.count)),
+        };
+      },
+      keyOf: (u, i) => (u && u.key != null ? 'p:' + u.key : i),
+      tagTitle: MSG.tipTagEdit,
+      infoTitle: MSG.tipInfo,
+      // list: one full-width row column, gap 4. tile: squares packed by minimum
+      // width posterTileSize, gap 10. card: avatar-led columns of minimum width
+      // posterCardSize, gap 14 — masonic stretches columns to fill, the same
+      // math as the old CSS auto-fill minmax.
+      columnCount: posterView === 'list' ? 1 : undefined,
+      columnWidth: posterView === 'tile' ? posterTileSize : posterView === 'card' ? posterCardSize : undefined,
+      square: posterView === 'tile', // meta overlays the square avatar → cell height = column width
+      rowGutter: posterView === 'list' ? 4 : posterView === 'tile' ? 10 : 14,
+      itemHeightEstimate: posterView === 'list' ? 52 : Math.round(posterCardSize * 1.35),
     });
-    const model = { cards, tagTitle: MSG.tipTagEdit, infoTitle: MSG.tipInfo };
-    window.__corpusPostersModel = model;
-    if (window.corpusPosters) window.corpusPosters.render(model);
   }
   // Jump from a poster to its posts: posts mode + a single user filter for it.
   // We want ONLY this poster's posts, so drop every post filter carried over from
@@ -5096,10 +5122,20 @@
     const countEl = document.getElementById('collectionCount');
     if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
     syncBrowseBar();
-    // React owns the grid: build a plain model (cards/thumbs/labels) and push it to
-    // the island. viewer.js keeps the data, the count badge, and #collectionGrid's
-    // click/contextmenu delegation.
+    // React owns the grid (virtualized — window.corpusCollectionGrid bridge):
+    // build plain card models and push them. viewer.js keeps the data, the count
+    // badge, and #collectionGrid's click/contextmenu delegation. Card models stay
+    // EAGER (unlike posts/posters): thumbs/counts reuse the per-pass record scan
+    // (_collRecCache) that the sort above already paid for.
     const q = searchQuery().trim();
+    if (collectionList.length === 0) {
+      window.corpusCollectionGrid.render({
+        empty: true,
+        emptyBody: q ? { title: MSG.emptySearchTitle, desc: MSG.emptySearchDesc } : { title: MSG.collEmptyTitle, desc: MSG.collEmptyDesc },
+        newLabel: MSG.collNew,
+      });
+      return;
+    }
     const cards = collectionList.map((c, i) => {
       const recs = collectionRecords(c);
       const isDyn = c.kind === 'dynamic';
@@ -5113,16 +5149,19 @@
         thumbs: collectionThumbsFrom(recs).map((f) => fileSrc(f, 200)),
       };
     });
-    const model = {
-      empty: collectionList.length === 0,
-      emptyBody: collectionList.length === 0 ? (q ? { title: MSG.emptySearchTitle, desc: MSG.emptySearchDesc } : { title: MSG.collEmptyTitle, desc: MSG.collEmptyDesc }) : null,
+    window.corpusCollectionGrid.render({
+      items: [...cards, { newTile: true }], // "＋ 新規" rides as the last cell
+      itemsKey: ++_collectionItemsKey, // cards are rebuilt every pass → always a fresh positioner
+      modelOf: (c) => c,
+      keyOf: (c) => (c.newTile ? '__new__' : 'c:' + c.id),
       newLabel: MSG.collNew,
       dynamicTitle: MSG.collDynamicTitle,
-      cards,
-    };
-    window.__corpusCollectionsModel = model;
-    if (window.corpusCollections) window.corpusCollections.render(model);
+      columnWidth: 200, // old CSS: auto-fill minmax(200px,1fr), gap 14
+      rowGutter: 14,
+      itemHeightEstimate: 270, // square cover + meta at ~200px columns
+    });
   }
+  let _collectionItemsKey = 0;
   // Drill into a collection. Static: post view + a folder filter (folder leaf evaluates
   // CF().has(cid, captureId)). Dynamic: restore the saved search (tree + free-text) so
   // the result is shown and can be edited / re-saved. Reset other inputs either way.

@@ -1,14 +1,13 @@
-// Post-grid bridge — the imperative→declarative bridge for the VIRTUALIZED post
-// grid (#postGrid). viewer.js owns the whole data pipeline (getFilteredPosts →
-// groupRecords → viewGroups), the container's classes/CSS vars, and every
-// delegated #postGrid event handler; the grid island (islands/grid) owns cell
-// rendering + windowing (masonic). Kept SEPARATE from window.corpusStore for the
-// same reason as menu.js/qf-pop.js: modelOf/keyOf carry CALLBACKS. Plain IIFE on
-// window; loaded BEFORE viewer.js.
+// Grid bridges — the imperative→declarative bridge for every VIRTUALIZED grid
+// (#postGrid / #posterGrid / #collectionGrid). viewer.js owns the data pipeline,
+// the container's classes/CSS vars, and every delegated container event handler;
+// the grid islands own cell rendering + windowing (masonic). Kept SEPARATE from
+// window.corpusStore for the same reason as menu.js/qf-pop.js: modelOf/keyOf
+// carry CALLBACKS. Plain IIFE on window; loaded BEFORE viewer.js.
 //
-// model shape: { view, items: viewGroups, itemsKey, modelOf(group,i)→card model,
-// keyOf(group)→stable key, labels, rowGutter, itemHeightEstimate }.
-//  - itemsKey bumps ONLY when viewer rebuilt the viewGroups array (filter / sort /
+// model shape: { items, itemsKey, modelOf(item,i)→cell model, keyOf(item,i)→
+// stable key, columnCount?, columnWidth?, rowGutter, itemHeightEstimate, … }.
+//  - itemsKey bumps ONLY when viewer rebuilt the items array (filter / sort /
 //    search / data change). The island resets its positioner (cached cell
 //    heights) on it — and re-syncs scrollTop, per the PoC blank-grid trap.
 //  - paint (internal, bumps on every render/repaint) makes the island re-render
@@ -18,43 +17,48 @@
 // its cells synchronously (flushSync) before the caller's next line runs.
 (function () {
   'use strict';
-  let current = null;
-  let seq = 0;
-  const subs = new Set();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
+  function makeGridBridge() {
+    let current = null;
+    let seq = 0;
+    const subs = new Set();
+    const notify = () => {
+      for (const cb of [...subs]) {
+        try {
+          cb();
+        } catch (_e) {
+          /* ignore */
+        }
       }
+    };
+
+    function render(model) {
+      current = model ? { ...model, paint: ++seq } : null;
+      notify();
     }
-  };
-
-  function render(model) {
-    current = model ? { ...model, paint: ++seq } : null;
-    notify();
-  }
-  function repaint() {
-    if (!current) return;
-    current = { ...current, paint: ++seq };
-    notify();
-  }
-  // Merge a partial model update into the current one (live size-slider drags:
-  // viewer patches columnWidth per input instead of a full renderPosts).
-  function patch(partial) {
-    if (!current) return;
-    current = { ...current, ...partial, paint: ++seq };
-    notify();
-  }
-  const isActive = () => current !== null;
-  function get() {
-    return current;
-  } // stable ref between changes (prop-driven root render in the island)
-  function subscribe(cb) {
-    subs.add(cb);
-    return () => subs.delete(cb);
+    function repaint() {
+      if (!current) return;
+      current = { ...current, paint: ++seq };
+      notify();
+    }
+    // Merge a partial model update into the current one (live size-slider drags:
+    // viewer patches columnWidth per input instead of a full re-render).
+    function patch(partial) {
+      if (!current) return;
+      current = { ...current, ...partial, paint: ++seq };
+      notify();
+    }
+    const isActive = () => current !== null;
+    function get() {
+      return current;
+    } // stable ref between changes (prop-driven root render in the island)
+    function subscribe(cb) {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    }
+    return { render, repaint, patch, isActive, get, subscribe };
   }
 
-  window.corpusGrid = { render, repaint, patch, isActive, get, subscribe };
+  window.corpusGrid = makeGridBridge(); // posts (#postGrid)
+  window.corpusPosterGrid = makeGridBridge(); // posters (#posterGrid)
+  window.corpusCollectionGrid = makeGridBridge(); // collections (#collectionGrid)
 })();

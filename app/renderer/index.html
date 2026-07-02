@@ -612,7 +612,10 @@
 
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
-    .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--pcard-size, 200px), 1fr)); gap: 14px; }
+    /* Container-level layout (auto-fill grid / flex stack) is dead in the
+       virtualized grid — masonic positions cells absolutely inside its host.
+       The density classes stay purely for descendant (cell) styling. */
+    .poster-grid { display: block; }
     /* Card density (default): a vertical card LED BY THE AVATAR IMAGE (アイコンを画像
        部分に＝ライブラリのカードと同じ構造). Library colors (surface + subtle border +
        shadow) so it has the same contrast as post cards, not the flatter --surface-2. */
@@ -657,7 +660,6 @@
     .poster-info:hover, .poster-tag:hover { background: rgba(0,0,0,.5); transform: scale(1.1); }
     .poster-info svg, .poster-tag svg { width: 16px; height: 16px; display: block; }
     /* Tile density: same avatar-led square but meta OVERLAID (compact, no card chrome). */
-    .poster-grid.tile-view { grid-template-columns: repeat(auto-fill, minmax(var(--ptile-size, 132px), 1fr)); gap: 10px; }
     .poster-grid.tile-view .poster-card { border-radius: 12px; }
     .poster-grid.tile-view .poster-av { font-size: 34px; }
     .poster-grid.tile-view .poster-meta { position: absolute; left: 0; right: 0; bottom: 0; gap: 1px; padding: 18px 10px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); pointer-events: none; }
@@ -667,7 +669,6 @@
     .poster-grid.tile-view .poster-foot .pf-tag, .poster-grid.tile-view .poster-count { color: rgba(255,255,255,.82); }
     /* List density: full-width compact rows — small circular avatar + inline meta,
        library colors, ghost info/ws/tag (over the row, not an image). */
-    .poster-grid.list-view { display: flex; flex-direction: column; gap: 4px; }
     .poster-grid.list-view .poster-card { flex-direction: row; align-items: center; gap: 10px; padding: 7px 38px 7px 10px; border-radius: 8px; box-shadow: none; }
     /* List rows lift like cards via the shared .poster-card:hover (scale + shadow +
        z-index). Base list rows have box-shadow:none, so the hover shadow-md from that
@@ -683,7 +684,8 @@
     .sb-row.poster-toggle-row.active { background: var(--accent-subtle); color: var(--text-strong); }
     /* --- Collection view (第3モード): cards = name + count + 2×2 thumb + active ★.
        Modeled on .poster-card (same surface/border/shadow/hover language). --- */
-    .collection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; align-content: start; }
+    /* Same as .poster-grid: masonic owns the column layout now. */
+    .collection-grid { display: block; }
     .collection-card {
       position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
       background: var(--surface); border: 1px solid var(--border-subtle); border-radius: 10px;
@@ -775,7 +777,7 @@
        stay). #posterGrid/#posterActiveBar are already hidden by the not(.browse-posters)
        rules above; #postGrid/#emptyState need an explicit hide here. */
     #collectionGrid, #collectionControls { display: none; }
-    body.browse-collections #collectionGrid { display: grid !important; }
+    body.browse-collections #collectionGrid { display: block !important; }
     body.browse-collections #collectionControls { display: block; }
     body.browse-collections #postGrid,
     body.browse-collections #emptyState { display: none !important; }

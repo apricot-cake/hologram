@@ -1,9 +1,11 @@
-// Presentational collection grid. Emits the SAME DOM the old viewer.js innerHTML
-// did — `.collection-card[data-cid][data-index]` (+dynamic), `.collection-thumbs`,
-// `.collection-meta`, the `.collection-card.new[data-cnew]` tile, and the empty
-// state — so the delegated click/contextmenu handlers on #collectionGrid keep
-// firing. React renders; viewer.js owns the collection data, records/thumbs
-// computation, the count badge, and every event.
+// Virtualized collection grid — collection cells on the shared VirtualGridHost.
+// Emits the SAME DOM the old flow layout did — `.collection-card[data-cid]
+// [data-index]` (+dynamic), `.collection-thumbs`, `.collection-meta`, the
+// `.collection-card.new[data-cnew]` tile, and the empty state — so the delegated
+// click/contextmenu handlers on #collectionGrid keep firing. React renders +
+// windows; viewer.js owns the collection data, records/thumbs computation, the
+// count badge, and every event. The "＋ 新規" tile rides as the last item.
+import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.jsx';
 
 // Empty-collection cover — layers glyph, ported 1:1 from viewer.js COLL_EMPTY_ICON.
 function EmptyIcon() {
@@ -66,12 +68,21 @@ function NewCard({ label }) {
   );
 }
 
-export function Collections({ model }) {
-  if (!model) return null;
+// One windowed cell; the new-tile sentinel rides as the last item.
+function CollectionCell({ index, data }) {
+  const model = useGridModel();
+  if (data.newTile) return <NewCard label={model.newLabel} />;
+  return <Card c={model.modelOf(data, index)} dynamicTitle={model.dynamicTitle} />;
+}
+
+export function CollectionsHost({ model }) {
   if (model.empty) {
+    // 0 collections: a full-width message + the new tile. Two elements need no
+    // windowing — render them in flow, with the container's OLD grid geometry
+    // inline (the CSS-file layout moved into masonic for the windowed path).
     const b = model.emptyBody;
     return (
-      <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px' }}>
         <div className="empty-state" style={{ display: 'block', gridColumn: '1 / -1' }}>
           <p>
             <strong>{b.title}</strong>
@@ -79,15 +90,8 @@ export function Collections({ model }) {
           <p>{b.desc}</p>
         </div>
         <NewCard label={model.newLabel} />
-      </>
+      </div>
     );
   }
-  return (
-    <>
-      {model.cards.map((c) => (
-        <Card key={c.id} c={c} dynamicTitle={model.dynamicTitle} />
-      ))}
-      <NewCard label={model.newLabel} />
-    </>
-  );
+  return <VirtualGridHost model={model} cell={CollectionCell} />;
 }

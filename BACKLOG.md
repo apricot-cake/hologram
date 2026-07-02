@@ -27,7 +27,7 @@
 
 ### パフォーマンス（UI操作）
 
-**性能判断は製品目標（数万件・投稿者数千）基準**＝開発者ライブラリの現規模（メモリ`library-composition`）で体感に出るかを条件にしない（2026-07-02 再定義・CLAUDE.md ルール）。投稿者/コレクション系の窓無し描画・メモ化欠如は一般ユーザー規模で顕在化する構造負債＝posterGrid/collectionGrid 仮想化は「React 化」節の残タスクに計上。データ層のスケールは「技術スタック候補」節の SQLite 派生インデックス（採用#4）が正本。
+**性能判断は製品目標（数万件・投稿者数千）基準**＝開発者ライブラリの現規模（メモリ`library-composition`）で体感に出るかを条件にしない（2026-07-02 再定義・CLAUDE.md ルール）。投稿者/コレクションの窓無し描画は 2026-07-02 解消（grid 島基盤へ載せ替え＝全グリッド仮想化）。データ層のスケールは「技術スタック候補」節の SQLite 派生インデックス（採用#4）が正本。
 
 - **main 側 I/O**: ①起動時 listPostsDelta が全 ~7600件を1回の IPC structured clone（full:true・`main.js:251`）＝初回ペイント前に同期ブロック。スリム化/チャンク化の余地。②psimg 原寸を `fs.readFile` で全バッファ（`main.js:366`）＝`stream:true` 特権があるのに非ストリーム。
 - **low 群（generation キャッシュ idiom の横展開で消せる衛生案件）**: textHaystack 反復 toLowerCase(2550)／buildSuggest 未キャッシュ(5616)／getFilteredPosts 前段 filter／date 述語の境界 Date 再生成／snapshotState 二重直列化／lightbox の decode/隣接プリロード欠如(3393)／pf-badge の backdrop-filter(`index.html:871`)。
@@ -105,7 +105,7 @@
 - **残タスク**:
   - ~~グリッド完全React化～~ **完了（2026-07-02・スライス1-3）**: 全3ビュー（list/tile/card）を grid 島＝masonic 仮想化へ反転（9042件→DOM 十数〜数十セル）。旧機構（renderLimit/RENDER_PAGE・sentinel IntersectionObserver・キー付き reconcile/cardSig・手書きマサンリー .mcols/.mcol・fast path・learnCardAspects・タブ永続の `_renderLimit`）を一括削除、post-card テンプレート島も卒業（renderToStaticMarkup/ReactDOMServer を vendor から撤去）。スクロール復元は scrollTop 直復元（リロード跨ぎ実機PASS）。実装知はメモリ `corpus-react-settings-pilot`。
   - viewer.js（~5850行 IIFE）を store/service/hooks へ段階抽出（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。**第1弾完了（2026-07-02）＝クエリエンジン→`app/renderer/query.js`**（window.corpusQuery＝ツリー機構 emptyTree/treeLeaves/opposite/facetTreeFrom/evalNode＋純ヘルパ localDayRange/hostOf/userKey/textHaystackOf＋`makePostPredOf(deps)`＝コレクション/クリップ/fuzzy は viewer が注入）。純ユニット `scripts/test-query-unit.js`（56 assert）を npm test に追加＝getFilteredPosts の核が初めてテスト下に。**次の抽出候補**: groupRecords（グルーピング）／stampPost・postKeyOf（正規化）／qfValues のファセット集計。
-  - **posterGrid/collectionGrid の仮想化**（2026-07-02 追加＝性能判断の製品基準化に伴い個人スケール由来の棚上げを撤回）: post グリッドで確立した grid 島基盤（masonic＋corpusGrid ブリッジ・実装知はメモリ `corpus-react-settings-pilot`）への載せ替え。投稿者数千・コレクション多数で効く（少数でも害なし）。post 側より単純＝均等カードで aspect 予約不要。
+  - ~~posterGrid/collectionGrid の仮想化~~ **完了（2026-07-02）**: 両グリッドを grid 島基盤へ載せ替え（`_shared/VirtualGrid.jsx` 抽出＋ブリッジ工場化＝corpusPosterGrid/corpusCollectionGrid）。実装知はメモリ `corpus-react-settings-pilot`。※masonic が島3つに各自バンドルされる重複は「単一バンドル化」（下）で自然回収。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。※c3269d4 で React ランタイムを全島から外部化し共有 vendor-react.js に一本化＝バンドル畳みの地ならしに着手済み。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 

@@ -1,11 +1,12 @@
-// Presentational poster grid. Emits the SAME DOM the old viewer.js innerHTML did —
-// `.poster-card[data-index]` (+inspected) with `.poster-av`, `.poster-meta`
-// (.poster-name / .poster-handle / .poster-foot), and the `.poster-tag[data-ptag]`
-// / `.poster-info[data-pinfo]` hover buttons — so the delegated click/contextmenu
-// on #posterGrid keeps firing. React renders; viewer.js owns posterList, the count
-// badge, the grid density classes, the inspected highlight (model-driven), and
-// every event. Density modes (card/tile/list) are pure CSS on the grid container,
-// so the card markup is identical across them.
+// Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
+// the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
+// with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
+// .poster-foot), and the `.poster-tag[data-ptag]` / `.poster-info[data-pinfo]`
+// hover buttons — so the delegated click/contextmenu on #posterGrid keeps
+// firing. React renders + windows; viewer.js owns posterList, the count badge,
+// the density classes on the container, and every event. modelOf() re-reads the
+// inspected highlight live, so a bridge repaint() refreshes visible cells.
+import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.jsx';
 
 // 🏷 edit-tags button — ported 1:1 from viewer.js.
 function TagIcon() {
@@ -56,13 +57,12 @@ function PosterCard({ c, tagTitle, infoTitle }) {
   );
 }
 
-export function Posters({ model }) {
-  if (!model) return null;
-  return (
-    <>
-      {model.cards.map((c) => (
-        <PosterCard key={c.index} c={c} tagTitle={model.tagTitle} infoTitle={model.infoTitle} />
-      ))}
-    </>
-  );
+// One windowed cell: build the card model lazily (only visible cells pay).
+function PosterCell({ index, data }) {
+  const model = useGridModel();
+  return <PosterCard c={model.modelOf(data, index)} tagTitle={model.tagTitle} infoTitle={model.infoTitle} />;
+}
+
+export function PostersHost({ model }) {
+  return <VirtualGridHost model={model} cell={PosterCell} />;
 }
