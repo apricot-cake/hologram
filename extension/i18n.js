@@ -24,8 +24,9 @@
       bannerFailedReason: '保存に失敗: $1',
       reasonNoPermalink: '投稿リンクを取得できません',
       reasonNoPost: '投稿を特定できません',
-      // host が見つからないとき（未登録／登録直後で Chrome が未再起動）。Chrome は
-      // 起動時にネイティブホスト登録を読むので、まず再起動を促す。
+      // Native host not found (unregistered, or registered but Chrome not yet
+      // restarted). Chrome reads native-host registrations at startup, so the
+      // first suggestion is a restart.
       bannerHostMissing: 'Corpus の保存先に接続できません。Chrome を再起動してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)

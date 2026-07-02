@@ -28,8 +28,9 @@ function exportStamp() {
 // sidecars/images flat into it (parallel to BACKUP_SUBDIR's Corpus-mirror).
 const LIBRARY_SUBDIR = 'Corpus-library';
 
-// 任意の画像ファイルをライブラリ画像として取り込む（ユーザー自前の画像でもOK）。
-// source:'drag' を付けるので画像閲覧に出る。Corpusのメディアのみエクスポートの取り込みも兼ねる。
+// Import arbitrary image files as library images (the user's own files are fine).
+// Tagged source:'drag' so they appear in the image browse view. Also serves as the
+// import path for Corpus' media-only export.
 const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
 const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);

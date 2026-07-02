@@ -15,7 +15,7 @@
     return;
   }
 
-  // 二重注入防止
+  // Prevent double injection
   if (typeof window.__snsPostSaveCleanup === 'function') {
     window.__snsPostSaveCleanup();
     return;
@@ -27,9 +27,9 @@
   let savedScrollPosition = null;
   let lastCapturedPost = null; // re-measured at crop time (scroll/layout drift)
 
-  // === UI要素 ===
+  // === UI elements ===
 
-  // 上部バナー
+  // Top banner
   const banner = document.createElement('div');
   banner.style.cssText = `
     position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
@@ -41,7 +41,7 @@
   banner.textContent = MSG.select;
   document.body.appendChild(banner);
 
-  // ハイライト枠
+  // Highlight frame
   const highlight = document.createElement('div');
   highlight.style.cssText = `
     position: absolute; pointer-events: none; z-index: 2147483646;
@@ -60,7 +60,7 @@
     document.head.appendChild(captureStyle);
   }
 
-  // === 投稿検出 ===
+  // === Post detection ===
 
   function findPostElement(target) {
     if (typeof siteConfig.findPostElement === 'function') {
@@ -83,7 +83,7 @@
     return normalizeRect(siteConfig.getCaptureRect?.(post) || post.getBoundingClientRect());
   }
 
-  // === 診断ログ ===
+  // === Diagnostic logging ===
 
   // A small, PII-light snapshot of the clicked element so a broken selector can
   // be diagnosed from capture.log without a repro. outerHTML is truncated (the
@@ -113,7 +113,7 @@
     }
   }
 
-  // === イベントハンドラ ===
+  // === Event handlers ===
 
   function onMouseMove(e) {
     const post = findPostElement(e.target);
@@ -134,9 +134,10 @@
     // The page is only used to identify the clicked post and its permalink.
     const postUrl = siteConfig.getPermalink(post);
 
-    // パーマリンクが取れないとAPIメタデータも取れず、保存しても platform:null の
-    // レコードになりビューアに表示されない。ここで中止する。理由をバナーに出し、
-    // 掴んだ要素をログに残して原因特定を早める。
+    // Without a permalink the API metadata can't be fetched either — the save
+    // would produce a platform:null record the viewer never shows. Abort here,
+    // surface the reason on the banner, and log the grabbed element so the
+    // cause can be pinned down quickly.
     if (!postUrl) {
       logCaptureFailure('permalink', post);
       banner.textContent = getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]);
@@ -145,17 +146,17 @@
       return;
     }
 
-    // イベントリスナー除去（クリックは1回だけ）
+    // Remove event listeners (capture is single-shot)
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('contextmenu', onContextMenu, true);
 
-    // ハイライト・バナーを一旦すべて非表示にしてからキャプチャ
+    // Hide the highlight and banner before capturing
     highlight.style.display = 'none';
     banner.style.display = 'none';
     restoreCaptureState = siteConfig.prepareForCapture?.(post) || null;
 
-    // 見切れていればスクロールしてビューポート内に収める
+    // If the post is cut off, scroll it fully into the viewport
     const preRect = getPostRect(post);
     if (preRect.top < 0 || preRect.bottom > window.innerHeight) {
       savedScrollPosition = { x: window.scrollX, y: window.scrollY };
@@ -165,7 +166,7 @@
       window.scrollBy(0, -64);
     }
 
-    // 再描画を待ってからキャプチャ
+    // Wait for a repaint before capturing
     lastCapturedPost = post;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -212,10 +213,10 @@
     if (e.key === 'Escape') cleanup();
   }
 
-  // === クリーンアップ ===
+  // === Cleanup ===
 
-  // スクロール位置を復元（idempotent: 成功・失敗・キャンセルのどの経路からでも
-  // 1回だけ実行され、二重呼び出しは no-op）。
+  // Restore the scroll position (idempotent: runs once whichever path gets here
+  // first — success, failure, or cancel — and a second call is a no-op).
   function restoreScroll() {
     if (savedScrollPosition) {
       window.scrollTo({ left: savedScrollPosition.x, top: savedScrollPosition.y, behavior: 'instant' });
@@ -247,10 +248,10 @@
 
   window.__snsPostSaveCleanup = cleanup;
 
-  // === メッセージリスナー ===
+  // === Message listener ===
 
   function onRuntimeMessage(msg, _sender, sendResponse) {
-    // クロップ要求
+    // Crop request
     if (msg.type === 'cropImage') {
       const { dataUrl } = msg;
       const dpr = window.devicePixelRatio || 1;
@@ -289,10 +290,10 @@
         sendResponse(null);
       };
       img.src = dataUrl;
-      return true; // 非同期レスポンス
+      return true; // async response
     }
 
-    // 結果通知
+    // Result notification
     if (msg.type === 'notify') {
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
@@ -313,7 +314,7 @@
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
-  // === リスナー登録 ===
+  // === Listener registration ===
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClick, true);
   document.addEventListener('contextmenu', onContextMenu, true);
