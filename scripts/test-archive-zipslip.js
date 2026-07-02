@@ -20,12 +20,17 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-zipslip-'));
   const dest = path.join(root, 'lib');
   fs.mkdirSync(dest, { recursive: true });
+  // BOM tolerance (BACKLOG L3), piggybacked on this import: both org-JSON read
+  // paths — the zip entry (third-party tools export BOM'd JSON) and the existing
+  // file at dest (hand-edited) — must parse, or the merge silently drops a side.
+  const BOM = String.fromCharCode(0xfeff);
+  fs.writeFileSync(path.join(dest, 'collections.json'), BOM + JSON.stringify({ collections: [{ id: 'pre', name: 'P', items: [] }] }));
 
   const zip = new JSZip();
   // Legitimate entries.
   zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
   zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
-  zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
+  zip.file('library/folders.json', BOM + JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
   // Malicious entries — each must be rejected, never written outside dest.
   zip.file('library/..\\..\\evil-back.txt', 'PWNED-BACK'); // Windows backslash traversal
   zip.file('library/../../evil-fwd.txt', 'PWNED-FWD'); // POSIX traversal
@@ -43,7 +48,11 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   const merged = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
   assert.ok(
     merged.collections.some((c) => c.id === 'f1'),
-    'imported folders.json folded into collections.json',
+    'imported folders.json folded into collections.json (BOM in zip entry tolerated)',
+  );
+  assert.ok(
+    merged.collections.some((c) => c.id === 'pre'),
+    'pre-existing BOM-prefixed collections.json read and merged, not clobbered',
   );
   assert.ok(!fs.existsSync(path.join(dest, 'folders.json')), 'no local folders.json resurrected');
 

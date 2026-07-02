@@ -95,7 +95,9 @@ function logSaveOutcome(type, msg, res, err) {
 function readSaveFolder() {
   let configSaveFolder = null;
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
+    // README documents hand-editing config.json — strip the UTF-8 BOM Windows
+    // editors love to prepend, or the parse throws and this silently falls back.
+    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg && typeof cfg.saveFolder === 'string') configSaveFolder = cfg.saveFolder;
   } catch {
     // No config yet (or unreadable) — fall through to pointer / default.

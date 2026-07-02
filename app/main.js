@@ -13,6 +13,7 @@ const installer = require(path.join(nativeHostDir, 'install'));
 const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
 const { pruneDecision, nextBaseline } = require('./backup-guard');
+const { parseJsonLoose } = require('./lib-json');
 // Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
 const { relocateLibrary } = require('./lib-migrate');
 // IPC handler modules, extracted from this file (mechanical move — logic unchanged).
@@ -60,7 +61,7 @@ function readConfig() {
     return {}; // no config yet (fresh install) — absence is not corruption
   }
   try {
-    const cfg = JSON.parse(raw);
+    const cfg = parseJsonLoose(raw);
     configLastCorrupt = false;
     return cfg;
   } catch {
@@ -576,7 +577,7 @@ function readOrgJsonSync(filePath) {
     return { value: null, degraded: false };
   }
   try {
-    const value = JSON.parse(raw);
+    const value = parseJsonLoose(raw);
     degradedOrgFiles.delete(filePath); // clean read clears any prior degraded flag
     return { value, degraded: false };
   } catch {
@@ -638,7 +639,7 @@ async function purgeOldTrash() {
     if (!f.toLowerCase().endsWith('.json')) continue;
     const id = f.slice(0, -5);
     try {
-      const rec = JSON.parse(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
+      const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
       if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
     } catch {
       /* corrupt sidecar — skip */

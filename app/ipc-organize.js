@@ -10,6 +10,7 @@
 const { ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseJsonLoose } = require('./lib-json.js');
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
@@ -211,7 +212,7 @@ function register(ctx) {
   function migrateFoldersToCollections(folder) {
     let j;
     try {
-      j = JSON.parse(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
+      j = parseJsonLoose(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
     } catch {
       return null;
     }

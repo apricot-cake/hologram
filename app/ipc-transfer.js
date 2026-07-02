@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const archive = require('./lib-archive');
+const { parseJsonLoose } = require('./lib-json.js');
 let _JSZip = null;
 function getJSZip() {
   return _JSZip || (_JSZip = require(path.join(__dirname, 'vendor', 'jszip.min.js')));
@@ -46,7 +47,7 @@ function register(ctx) {
       for (const f of fs.readdirSync(folder)) {
         if (!f.toLowerCase().endsWith('.json') || f === 'config.json' || f === '.index.json') continue;
         try {
-          const r = JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'));
+          const r = parseJsonLoose(fs.readFileSync(path.join(folder, f), 'utf8'));
           if (r.url) existing.add(r.url);
         } catch {
           /* skip */

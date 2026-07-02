@@ -50,7 +50,7 @@ function deployBridge() {
 // Stored in config.json by the app so we never commit a key to the repo.
 function readExtensionId() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg && typeof cfg.extensionId === 'string' && cfg.extensionId.trim()) {
       return cfg.extensionId.trim();
     }
@@ -153,10 +153,22 @@ function persistExtensionId(id) {
   try {
     const p = path.join(configDir(), 'config.json');
     let cfg = {};
+    let raw = null;
     try {
-      cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
+      raw = fs.readFileSync(p, 'utf8');
     } catch {
-      /* fresh config */
+      /* fresh config — write from scratch below */
+    }
+    if (raw !== null) {
+      try {
+        cfg = JSON.parse(raw.replace(/^\uFEFF/, '')) || {};
+      } catch {
+        // Present but unparseable (torn write / bad hand edit): bail instead of
+        // rewriting the file as {extensionId} only — that would wipe saveFolder
+        // and backup in one stroke (same preserve-don't-clobber rule as the
+        // app's readConfig). Registration proceeds; the id persists next run.
+        return;
+      }
     }
     if (cfg.extensionId !== id) {
       cfg.extensionId = id;

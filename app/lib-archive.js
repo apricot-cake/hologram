@@ -18,6 +18,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseJsonLoose } = require('./lib-json.js');
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
@@ -373,7 +374,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   }
   const readCur = (file) => {
     try {
-      return JSON.parse(fs.readFileSync(path.join(destFolder, file), 'utf8'));
+      return parseJsonLoose(fs.readFileSync(path.join(destFolder, file), 'utf8'));
     } catch {
       return {};
     }
@@ -392,7 +393,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     if (!orgEntries[name]) continue;
     let inc = {};
     try {
-      inc = JSON.parse(await orgEntries[name].async('string'));
+      inc = parseJsonLoose(await orgEntries[name].async('string'));
     } catch {
       inc = {};
     }

@@ -15,6 +15,7 @@
 
 const path = require('node:path');
 const { imageSize } = require('./lib-imgsize.js');
+const { parseJsonLoose } = require('./lib-json.js');
 
 const INDEX_FILE = '.index.json';
 const BATCH = 64; // stat/read this many sidecars concurrently, then yield
@@ -117,7 +118,7 @@ function createPostIndex(opts) {
     snapshotLoaded = true; // mark first so a missing/corrupt snapshot isn't retried each call
     try {
       const raw = await fs.promises.readFile(path.join(folder, INDEX_FILE), 'utf8');
-      const idx = JSON.parse(raw);
+      const idx = parseJsonLoose(raw);
       if (idx && (idx.version === 1 || idx.version === 2) && idx.entries && typeof idx.entries === 'object') {
         // v1 sized the screenshot for captures; the card now shows the original,
         // so re-size ONLY those records (null their shotW → backfill re-augments).
@@ -175,7 +176,7 @@ function createPostIndex(opts) {
           }
           changed = true;
           try {
-            const rec = JSON.parse(await fs.promises.readFile(path.join(folder, f), 'utf8'));
+            const rec = parseJsonLoose(await fs.promises.readFile(path.join(folder, f), 'utf8'));
             const record = isPostRecord(rec) ? rec : null;
             if (record) await augmentDims(folder, record);
             map.set(f, { mtimeMs: st.mtimeMs, record });
@@ -238,7 +239,7 @@ function createPostIndex(opts) {
       if (prev && prev.mtimeMs === st.mtimeMs) continue; // spurious event, nothing moved
       let rec = null;
       try {
-        rec = JSON.parse(await fs.promises.readFile(full, 'utf8'));
+        rec = parseJsonLoose(await fs.promises.readFile(full, 'utf8'));
       } catch {
         rec = null;
       }

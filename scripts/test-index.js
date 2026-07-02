@@ -150,8 +150,29 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   assert.strictEqual(sidecarReads, 0, 'consistent map = no re-read on the following full scan');
   realFs.rmSync(dir2, { recursive: true, force: true });
 
+  // --- BOM tolerance (BACKLOG L3): a hand-edited sidecar saved with a UTF-8 BOM
+  //     must still parse — a throw here reads as record:null and the post silently
+  //     vanishes (worst case: reconcile purges it from collections/clip). Same for
+  //     a BOM'd .index.json snapshot (cold restore must not fall back to a rescan).
+  const BOM = String.fromCharCode(0xfeff);
+  const dir3 = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index3-'));
+  realFs.writeFileSync(path.join(dir3, 'bom.json'), BOM + JSON.stringify({ captureId: 'bom', image: 'bom.jpg', capturedAt: '2026-03-01T00:00:00Z' }));
+  const idxC = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
+  const rc = await idxC.list(dir3);
+  assert.strictEqual(rc.posts.length, 1, 'BOM sidecar still parses');
+  assert.strictEqual(rc.posts[0].captureId, 'bom', 'BOM sidecar record intact');
+  await idxC.writeSnapshot(dir3);
+  const snapPath = path.join(dir3, '.index.json');
+  realFs.writeFileSync(snapPath, BOM + realFs.readFileSync(snapPath, 'utf8'));
+  const idxD = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
+  sidecarReads = 0;
+  const rd = await idxD.list(dir3);
+  assert.strictEqual(rd.posts.length, 1, 'BOM snapshot restores');
+  assert.strictEqual(sidecarReads, 0, 'BOM snapshot still avoids the cold rescan');
+  realFs.rmSync(dir3, { recursive: true, force: true });
+
   realFs.rmSync(dir, { recursive: true, force: true });
-  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, and targeted applyChanges verified');
+  console.log('PASS test-index: reuse, prune, snapshot cold-restore, computeDelta, targeted applyChanges, and BOM tolerance verified');
 })().catch((e) => {
   try {
     realFs.rmSync(dir, { recursive: true, force: true });

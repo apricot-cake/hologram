@@ -9,6 +9,7 @@
 const { ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseJsonLoose } = require('./lib-json.js');
 
 function register(ctx) {
   const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic } = ctx;
@@ -24,7 +25,7 @@ function register(ctx) {
     let rec = null;
     if (jsonPath) {
       try {
-        rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+        rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
         if (rec.image) targets.add(path.basename(rec.image));
         if (rec.video) targets.add(path.basename(rec.video));
         if (rec.avatarFile) targets.add(path.basename(rec.avatarFile));
@@ -57,7 +58,7 @@ function register(ctx) {
     // Stamp trashedAt in the trash sidecar so auto-purge knows when to expire it.
     const trashJson = path.join(trashDir, `${base}.json`);
     try {
-      const r = JSON.parse(await fs.promises.readFile(trashJson, 'utf8'));
+      const r = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
       r.trashedAt = new Date().toISOString();
       await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
     } catch {
@@ -79,7 +80,7 @@ function register(ctx) {
     for (const f of names) {
       if (!f.toLowerCase().endsWith('.json')) continue;
       try {
-        const rec = JSON.parse(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
+        const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
         if (rec) records.push(rec);
       } catch {
         /* skip corrupt sidecar */
@@ -113,7 +114,7 @@ function register(ctx) {
     // clip membership (see writeSidecarAtomic).
     const jsonPath = path.join(folder, `${base}.json`);
     try {
-      const r = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+      const r = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
       delete r.trashedAt;
       await writeSidecarAtomic(jsonPath, r);
     } catch {}
@@ -154,7 +155,7 @@ function register(ctx) {
     const jsonPath = resolveInFolder(`${base}.json`);
     if (!jsonPath) return { ok: false };
     try {
-      const rec = JSON.parse(await fs.promises.readFile(jsonPath, 'utf8'));
+      const rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
       rec.tags = Array.isArray(tags) ? tags.map(String) : [];
       // Optional extra fields (e.g. the tagging wizard's plain/media flag). Only
       // an allow-listed set is honored so the renderer can't write arbitrary keys.
