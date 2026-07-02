@@ -3,8 +3,8 @@
 // window-scroll only, so the scroller plumbing here is hand-rolled, exactly as
 // validated in the runtime PoC). The island owns cell rendering + windowing;
 // viewer.js owns the data (model.items = viewGroups), the container classes, and
-// every delegated #postGrid handler. Cells emit the SAME .post-card DOM as the
-// legacy path (shared PostCard component), so delegation + CSS work unchanged.
+// every delegated #postGrid handler. Cells emit the long-standing .post-card DOM
+// contract (shared PostCard component), so delegation + CSS work unchanged.
 //
 // PoC trap, honored here: whenever the positioner is recreated (itemsKey change,
 // container width change) its position cache resets — if the scrollTop STATE is
@@ -13,7 +13,7 @@
 // by the scroll listener, and (c) force re-synced on every itemsKey change.
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { PostCard } from '../post-card/PostCard.jsx';
+import { PostCard } from '../_shared/PostCard.jsx';
 
 const ModelCtx = createContext(null);
 
@@ -23,7 +23,7 @@ function Cell({ index, data }) {
   const model = useContext(ModelCtx);
   const ref = useRef(null);
   // Cells (re)mount as the window scrolls; whether .text overflows is only
-  // knowable from layout, so re-check on every commit (legacy path did this
+  // knowable from layout, so re-check on every commit (the old path did this
   // once per render pass via rAF over the whole grid).
   useLayoutEffect(() => {
     const el = ref.current;
@@ -32,7 +32,18 @@ function Cell({ index, data }) {
       if (!t.classList.contains('expanded')) t.classList.toggle('truncated', t.scrollHeight > t.clientHeight);
     }
   });
-  return <PostCard m={model.modelOf(data, index)} L={model.labels} cellRef={ref} />;
+  // Report the natural aspect of images that had NO reserved height (card view:
+  // no shotW/H, no cached aspect) so viewer.js can cache it. The cell's own
+  // size change is picked up by the resize observer — no explicit re-flow.
+  const onImgLoad = model.onAspect
+    ? (e) => {
+        const img = e.currentTarget;
+        if (img.style.aspectRatio && img.style.aspectRatio !== 'auto') return; // height was reserved — nothing to learn
+        const cap = img.dataset.cap;
+        if (cap && img.naturalWidth && img.naturalHeight) model.onAspect(cap, img.naturalWidth + '/' + img.naturalHeight);
+      }
+    : undefined;
+  return <PostCard m={model.modelOf(data, index)} L={model.labels} cellRef={ref} onImgLoad={onImgLoad} />;
 }
 
 export function GridHost({ model }) {

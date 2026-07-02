@@ -1,17 +1,15 @@
-// Presentational post card. Emits the EXACT DOM the old viewer.js cardHtml string
-// did — `.post-card[data-url/data-index/data-key]` with the `.select-check`,
-// `.act-pill`, `.clip-btn[data-clip]` / `.info-btn[data-info]` / `.tag-btn`
-// `[data-tagedit]` hover buttons, `.card-thumb > .card-img` (+ `.pf-badge`),
-// `.card-ntag`, `.card-overlay`, and the `.post-meta` block. Unlike the other
-// islands, React does NOT own #postGrid: viewer.js turns this into a STRING via
-// renderToStaticMarkup and feeds it into its own keyed reconcile + JS masonry +
-// windowed load-more, and keeps every delegated click/contextmenu/dblclick on
-// #postGrid firing unchanged. So the markup here must stay byte-for-DOM identical.
+// Presentational post card — the one cell component of the virtualized grid
+// island (islands/grid). Emits the same DOM contract the old string-template
+// path did — `.post-card[data-url/data-index/data-key]` with the
+// `.select-check`, `.act-pill`, `.clip-btn[data-clip]` / `.info-btn[data-info]`
+// / `.tag-btn[data-tagedit]` hover buttons, `.card-thumb > .card-img`
+// (+ `.pf-badge`), `.card-ntag`, `.card-overlay`, and the `.post-meta` block.
+// That contract is LOAD-BEARING: every delegated click/contextmenu/dblclick
+// handler on #postGrid and all grid CSS key off these class names + data attrs.
 //
 // viewer.js resolves all the data (image src, formatted counts/dates, selection,
-// clip, aspect) into a plain model; this component only lays it out. Raw strings
-// (text, names) are passed unescaped — JSX escapes them, replacing the old manual
-// escapeHtml/escapeAttr.
+// clip, aspect, inspected) into a plain model; this component only lays it out.
+// Raw strings (text, names) are passed unescaped — JSX escapes them.
 
 // ── glyphs / icons (ported 1:1 from the old cardHtml) ──────────────────────────
 // Engagement stat glyphs: outline TEXT presentation (not color emoji, not SVG).
@@ -70,10 +68,9 @@ function PfBadge({ platform, name }) {
   );
 }
 
-// cellRef + m.inspected are set ONLY by the virtualized grid island (live React
-// cells); the string path (renderToStaticMarkup) passes neither, so its emitted
-// HTML stays byte-identical (the legacy path applies .inspected imperatively).
-export function PostCard({ m, L, cellRef }) {
+// onImgLoad reports a loaded image's natural aspect for cards without a
+// reserved height (viewer.js caches it so the NEXT render reserves correctly).
+export function PostCard({ m, L, cellRef, onImgLoad }) {
   const stats = STAT_ORDER.filter((k) => m.stats[k] != null);
   const fd = m.footDates;
   const hasStats = stats.length > 0;
@@ -93,7 +90,7 @@ export function PostCard({ m, L, cellRef }) {
       </button>
       {m.hasThumb && (
         <div className="card-thumb">
-          {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" /> : <div className="card-img card-video">{'▶'}</div>}
+          {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}
           {m.platform && <PfBadge platform={m.platform} name={m.pfName} />}
         </div>
       )}

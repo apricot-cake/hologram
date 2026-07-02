@@ -11,17 +11,16 @@
 //   react            → hooks (useState, useSyncExternalStore, …)
 //   react-dom        → createPortal, flushSync
 //   react-dom/client → createRoot (every root island)
-//   react-dom/server → renderToStaticMarkup (post-card only)
 //   react/jsx-runtime→ jsx/jsxs/Fragment (the automatic JSX runtime all
 //                      islands compile against)
+// (react-dom/server was dropped with the post-card string-template island —
+// re-add it here AND in build.mjs's externals if an island ever needs it.)
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import * as ReactDOMClient from 'react-dom/client';
-import * as ReactDOMServer from 'react-dom/server';
 import * as ReactJsxRuntime from 'react/jsx-runtime';
 
 window.React = React;
 window.ReactDOM = ReactDOM;
 window.ReactDOMClient = ReactDOMClient;
-window.ReactDOMServer = ReactDOMServer;
 window.ReactJsxRuntime = ReactJsxRuntime;

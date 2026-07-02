@@ -813,15 +813,13 @@
       gap: 16px;
       view-transition-name: post-grid;
     }
-    /* Masonry (card view only): JS packs cards into equal flex columns by measured
-       height so short cards no longer stretch to the grid row (Eagle-style
-       waterfall). Tile/list keep the grid above. content-visibility is off here
-       (offscreen cards must be measurable to pack) and card images load eagerly. */
+    /* Masonry (card view only): the virtualized grid island (masonic) measures
+       each card to pack Eagle-style waterfall columns — content-visibility must
+       be ON (visible) so offscreen-but-mounted cards report real heights, and
+       width:100% fills the island's positioned cell wrapper. (The old JS
+       .mcols/.mcol column DOM is gone.) */
     .post-grid.masonry { display: block; }
-    .post-grid.masonry .mcols { display: flex; align-items: flex-start; gap: 16px; }
-    .post-grid.masonry .mcol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
     .post-grid.masonry .post-card { content-visibility: visible; contain-intrinsic-size: auto; width: 100%; }
-    .post-grid.masonry .more-sentinel { width: 100%; }
     .post-card {
       background: var(--surface); border-radius: 8px; overflow: hidden;
       border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
@@ -2335,12 +2333,8 @@
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React
        externalized) reach window.React/ReactDOM/… instead of each inlining its
-       own ~186KB copy. Must precede the first island script (post-card). -->
+       own ~186KB copy. Must precede the first island script. -->
   <script src="islands/vendor-react.js"></script>
-  <!-- Post card markup: React (renderToStaticMarkup) turns a model into the card
-       HTML string; viewer.js owns the grid's reconcile/masonry/windowing/events.
-       Loaded BEFORE viewer.js so cardHtml() can call window.corpusPostCard. -->
-  <script src="islands/post-card.js"></script>
   <!-- Image lightbox / gallery: React owns the overlay UI; viewer.js resolves a
        post's gallery items and calls window.corpusLightbox.open(). Loaded BEFORE
        viewer.js so its init can push the nav-button labels. -->
@@ -2365,10 +2359,10 @@
   <!-- Poster grid: React owns card rendering, viewer.js owns posterList + count +
        density classes + inspected highlight + click/contextmenu delegation. -->
   <script src="islands/posters.js"></script>
-  <!-- Virtualized post grid (list + tile views): React owns cell rendering +
+  <!-- Virtualized post grid (all three views): React owns cell rendering +
        windowing (masonic) inside its own #postGridReact host; viewer.js owns
-       viewGroups, the container classes, and all delegated #postGrid events (via
-       window.corpusGrid). Card still uses the legacy string path above. -->
+       viewGroups, the container classes, and all delegated #postGrid events
+       (via window.corpusGrid). -->
   <script src="islands/grid.js"></script>
   <!-- Sidebar toolbar controls (search-mode segment; view-density toggle): React
        owns rendering, state lives in window.corpusSearch / window.corpusStore. -->

@@ -1,14 +1,14 @@
-// Virtualized post-grid island (window.corpusGrid bridge). Unlike the other
-// islands, React does NOT own #postGrid itself: the legacy card/tile path still
-// writes #postGrid's children directly (innerHTML / replaceChildren / masonry
-// node moves), and React must never watch its managed nodes vanish underneath
-// it. So the island renders into its OWN host <div> and attaches/detaches that
-// host as whole — the legacy path's blanket clears can only ever remove the
-// (detached-safe) host, never React-managed children.
+// Virtualized post-grid island (window.corpusGrid bridge) — owns cell rendering
+// + windowing for ALL grid views (card / tile / list). Unlike the other islands,
+// React does NOT root on #postGrid itself: viewer.js still blanket-clears the
+// container (empty state's innerHTML=''), and React must never watch its managed
+// nodes vanish underneath it. So the island renders into its OWN host <div> and
+// attaches/detaches that host as a whole — container clears can only ever remove
+// the (detached-safe) host, never React-managed children.
 //
 // Renders are prop-driven from the bridge listener and flushed SYNCHRONOUSLY
-// (flushSync): viewer.js relies on render(null) having fully handed the
-// container back before its next line runs the legacy DOM path. Bridge pushes
+// (flushSync): viewer.js relies on a render() having fully committed before its
+// next line runs (e.g. restoring scrollTop right after a push). Bridge pushes
 // always originate outside React (viewer.js), so flushSync is legal here.
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';

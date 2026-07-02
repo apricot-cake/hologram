@@ -1574,12 +1574,6 @@
     }
   })();
   if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
-  // Windowed rendering: render only the first `renderLimit` filtered posts and
-  // grow as a bottom sentinel nears the viewport. Rendering all (thousands) at
-  // once froze the UI and starved image (psimg) loads. Reset to one page on any
-  // filter/view/search change; the load-more path passes keepLimit=true.
-  const RENDER_PAGE = 150;
-  let renderLimit = RENDER_PAGE;
   // Virtualized grid (window.corpusGrid → islands/grid): itemsKey bumps only when
   // the viewGroups ARRAY was rebuilt, so the island knows when to reset its
   // positioner (cached cell heights) vs merely repaint visible cells.
@@ -1599,7 +1593,6 @@
     const el = contentScrollEl();
     if (el) el.scrollTop = y;
   };
-  let moreObserver = null;
   // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
   let manualGroups = []; // [[captureId,…],…] — user-built groups (win over auto)
   let ungrouped = new Set(); // post keys opted out of auto-grouping
@@ -2742,11 +2735,12 @@
       if (at) {
         at.state = snapshotState();
         at._scrollTop = contentScrollTop();
-        at._renderLimit = renderLimit;
       }
-      // scrollTop + renderLimit ride along so the view restores across RESTART, not
-      // just tab switches (main.js writes the payload verbatim — no whitelist).
-      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, renderLimit: t._renderLimit })) });
+      // scrollTop rides along so the view restores across RESTART, not just tab
+      // switches (main.js writes the payload verbatim — no whitelist). The old
+      // renderLimit field is gone with the windowed path: the virtualized grid
+      // restores any depth from scrollTop alone (stale saved fields are ignored).
+      window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop })) });
     }, 800);
   }
   function saveActiveTabState() {
@@ -2754,24 +2748,14 @@
     if (!t) return;
     t.state = snapshotState();
     t._scrollTop = contentScrollTop(); // remember content scroll per tab (persisted too)
-    t._renderLimit = renderLimit; // …and how far the windowed list had grown
     t._navHist = navHist; // carry the back/forward history with the tab
     t._navIdx = navIdx;
   }
-  // Restore a tab's remembered renderLimit (re-render to it so a deep-scroll layout is
-  // reproduced) then its content scroll. rAF×2 so the re-rendered content has laid out.
-  // Capped so a pathological deep scroll doesn't render thousands of cards at once.
+  // Restore a tab's remembered content scroll. rAF×2 so the freshly rendered
+  // grid has laid out; the virtualized grid derives its window from scrollTop
+  // alone (its estimated container height already spans all items).
   function restoreTabView(t) {
     if (!t) return;
-    // renderLimit growth is legacy-path only: the virtualized grid derives its
-    // window from scrollTop alone (its estimated height already spans all items).
-    if (!gridIslandActive()) {
-      const lim = Math.min(typeof t._renderLimit === 'number' ? t._renderLimit : RENDER_PAGE, RENDER_PAGE * 8);
-      if (lim > renderLimit) {
-        renderLimit = lim;
-        renderPosts(true);
-      }
-    }
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
   }
@@ -2882,7 +2866,7 @@
     try {
       const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
       if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0, _renderLimit: typeof t.renderLimit === 'number' ? t.renderLimit : RENDER_PAGE }));
+        tabs = saved.tabs.map((t) => ({ id: t.id || genTabId(), pinned: !!t.pinned, title: t.title || null, state: t.state || null, _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0 }));
         const sid = saved.activeTabId;
         activeTabId = sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id;
       } else {
@@ -3059,99 +3043,6 @@
 
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  // --- Masonry (card view): pack cards into N equal flex columns by measured
-  // height so short cards don't stretch (Eagle-style waterfall). Re-runs on image
-  // load (debounced) and resize; load-more re-renders so it re-packs naturally.
-  // Approach A (measure live); a future B could store image dims to skip the
-  // load-time settle and the eager image load.
-  let _masonryT = null;
-  function masonryColCount(gridW) {
-    const gap = 16;
-    return Math.max(1, Math.floor((gridW + gap) / (cardSize + gap)));
-  }
-  function layoutMasonry() {
-    const grid = document.getElementById('postGrid');
-    if (!grid || currentView !== 'card' || !grid.classList.contains('masonry')) return;
-    const cards = Array.from(grid.querySelectorAll('.post-card'));
-    if (!cards.length) return;
-    const sentinel = grid.querySelector('.more-sentinel');
-    const gap = 16;
-    const N = masonryColCount(grid.clientWidth);
-    const cols = Array.from({ length: N }, () => {
-      const d = document.createElement('div');
-      d.className = 'mcol';
-      return d;
-    });
-    const wrap = document.createElement('div');
-    wrap.className = 'mcols';
-    cols.forEach((c) => wrap.appendChild(c));
-    // Drop every card into col 0 first so each measures at the real COLUMN width.
-    cols[0].append(...cards);
-    grid.replaceChildren(wrap);
-    if (sentinel) grid.appendChild(sentinel);
-    const hs = cards.map((c) => c.offsetHeight); // one reflow read, correct width
-    // Greedy: each card into the currently-shortest column (keeps rough order).
-    const colH = new Array(N).fill(0);
-    cards.forEach((card, i) => {
-      let m = 0;
-      for (let c = 1; c < N; c++) if (colH[c] < colH[m]) m = c;
-      cols[m].appendChild(card);
-      colH[m] += hs[i] + gap;
-    });
-  }
-  function scheduleMasonry() {
-    clearTimeout(_masonryT); // reset-debounce: re-pack ONCE after image loads quiet down (not on every load = no jitter)
-    _masonryT = setTimeout(() => {
-      _masonryT = null;
-      layoutMasonry();
-    }, 160);
-  }
-  // Load-more sentinel: render the next page when a bottom marker nears the viewport.
-  // Shared by the full build and the fast card-grow path.
-  function setupMoreSentinel(grid) {
-    if (moreObserver) {
-      moreObserver.disconnect();
-      moreObserver = null;
-    }
-    const old = grid.querySelector('.more-sentinel');
-    if (old) old.remove();
-    if (viewGroups.length <= renderLimit) return;
-    const sentinel = document.createElement('div');
-    sentinel.className = 'more-sentinel';
-    sentinel.style.cssText = 'grid-column:1/-1;width:100%;height:1px;';
-    grid.appendChild(sentinel);
-    moreObserver = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((en) => en.isIntersecting)) {
-          renderLimit += RENDER_PAGE;
-          renderPosts(true);
-        }
-      },
-      { root: contentScrollEl(), rootMargin: '800px' },
-    );
-    moreObserver.observe(sentinel);
-  }
-  // Card images with a reserved height (shotW/shotH or cached aspect) don't re-pack
-  // on load. Only UNSIZED ones learn their aspect on load + trigger one debounced
-  // re-pack. Shared by the full build and the fast card-grow path.
-  function learnCardAspects(imgs) {
-    imgs.forEach((img) => {
-      if (img.style.aspectRatio && img.style.aspectRatio !== 'auto') return; // height reserved → leave it
-      const cap = img.getAttribute('data-cap');
-      const onReady = () => {
-        if (cap && img.naturalWidth && img.naturalHeight) {
-          const ar = img.naturalWidth + '/' + img.naturalHeight;
-          if (imgAspect[cap] !== ar) {
-            imgAspect[cap] = ar;
-            persistAspect();
-          }
-        }
-        scheduleMasonry();
-      };
-      if (img.complete && img.naturalWidth) onReady();
-      else img.addEventListener('load', onReady, { once: true });
-    });
-  }
   // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
   // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
   // so masonry packs correctly the first time = no settle/jitter and no eager load.
@@ -3168,36 +3059,11 @@
       } catch (e) {}
     }, 1000);
   }
-  window.addEventListener(
-    'resize',
-    () => {
-      if (currentView === 'card') scheduleMasonry();
-    },
-    { passive: true },
-  );
-
-  // Content fingerprint of a card's HTML, used by renderPosts to reuse an existing
-  // .post-card node when only its position changed. Strips the index-derived attrs
-  // (data-index/clip/info/tagedit all carry the slice index) so a pure reorder still
-  // matches; any real content change (image/stats/text/tags/selection) flips it.
-  function cardSig(html) {
-    const s = html.replace(/ data-(index|clip|info|tagedit)="\d+"/g, '');
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
-    return h.toString(36);
-  }
-
-  function cardHtml(g, i) {
-    return window.corpusPostCard.html(cardModel(g, i));
-  }
-
   // Resolve ONE group into a plain, fully-formatted card model: image src,
   // formatted counts/dates, selection, clip, aspect — everything the markup
-  // needs as primitives. Shared by BOTH grid paths: the legacy card/tile path
-  // renders it to an HTML string (post-card island, renderToStaticMarkup) and
-  // feeds its own reconcile/masonry/windowing; the virtualized list path hands
-  // it to live React cells (grid island) via window.corpusGrid. Raw text/names
-  // are passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
+  // needs as primitives. The grid island renders it with the shared PostCard
+  // component (live React cells via window.corpusGrid). Raw text/names are
+  // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
   function cardModel(g, i) {
     const p = g.rep;
     // Engagement: nonzero only (zeros are noise). Formatted here; the island
@@ -3266,22 +3132,17 @@
     };
   }
 
-  function renderPosts(keepLimit) {
-    // The post-card island supplies cardHtml() (window.corpusPostCard). In dev it
-    // loads as a deferred ES module — AFTER viewer.js — so the very first paint can
-    // race ahead of it. Stash this render and replay once the island registers; in
-    // prod the island's IIFE loads BEFORE viewer.js, so this guard never trips.
-    if (!window.corpusPostCard) {
-      window.__corpusOnPostCardReady = () => renderPosts(keepLimit);
-      return;
-    }
-    if (!keepLimit) renderLimit = RENDER_PAGE;
+  // inPlace (was keepLimit — the renderLimit it kept is gone with the windowed
+  // legacy path): true = in-place mutation re-render — reuse the grouped set
+  // when possible, keep sticky survivors, no entrance animation, and skip the
+  // tab-title/persist sync.
+  function renderPosts(inPlace) {
     // View signature (filter/sort/search/view) — stable across this render, so
-    // compute once and reuse for both the sticky-drop check and the fast-path guard.
+    // compute once and reuse for the sticky-drop and group-reuse checks.
     const stateSig = JSON.stringify(snapshotState());
     // A genuine filter/search/sort change drops the sticky survivors (they only
     // outlive in-place mutations, not user-driven view changes).
-    if (!keepLimit && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
+    if (!inPlace && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
       stickyRecs.clear();
     }
     updateSidebarState();
@@ -3291,12 +3152,13 @@
     const countEl = document.getElementById('postCount');
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
-    // Reuse the previous build's groups on a pure load-more: re-filtering+grouping
-    // ~9k records on every scroll page was wasted work. Safe only when the view
-    // signature, the data generation, AND the sticky set are all unchanged — the
-    // only inputs to getFilteredPosts/groupRecords (manual grouping bumps the
-    // generation via markPostsMutated). Any mismatch falls through to a fresh build.
-    const canReuseGroups = keepLimit && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
+    // Reuse the previous build's groups on an in-place re-render: re-filtering +
+    // re-grouping ~9k records for a mutation that can't change the set was wasted
+    // work. Safe only when the view signature, the data generation, AND the
+    // sticky set are all unchanged — the only inputs to getFilteredPosts/
+    // groupRecords (manual grouping bumps the generation via markPostsMutated).
+    // Any mismatch falls through to a fresh build.
+    const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
     if (canReuseGroups) {
       viewGroups = _lastViewGroups;
     } else {
@@ -3308,11 +3170,11 @@
     countEl.textContent = MSG.postCount(viewGroups.length);
 
     if (viewGroups.length === 0) {
-      if (window.corpusGrid) window.corpusGrid.render(null); // virtualized cells (if any) unmount before the blanket clear
+      window.corpusGrid.render(null); // virtualized cells unmount before the blanket clear
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
-      if (!keepLimit && !prefersReducedMotion()) {
+      if (!inPlace && !prefersReducedMotion()) {
         void empty.offsetWidth;
         empty.classList.add('anim-in');
         setTimeout(() => empty.classList.remove('anim-in'), 400);
@@ -3325,20 +3187,23 @@
       } else {
         empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` + `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
       }
-      if (!keepLimit) syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
+      if (!inPlace) syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
       return;
     }
 
-    grid.style.display = currentView === 'list' ? 'flex' : currentView === 'card' ? 'block' : 'grid';
+    // Container-level layout (the old flex column / CSS grid / masonry block) is
+    // dead in the virtualized grid — masonic positions cells absolutely inside
+    // its host. The view classes stay purely for descendant styling (.masonry
+    // keeps card cells content-visibility:visible + width:100%).
+    grid.style.display = 'block';
     grid.classList.toggle('list-view', currentView === 'list');
     grid.classList.toggle('tile-view', currentView === 'tile');
     applyTileLayout();
     empty.style.display = 'none';
 
     // Card entrance plays only on a fresh build (filter/sort/search), never on
-    // load-more (keepLimit) — otherwise every already-visible card re-animates
-    // on each scroll page. Skipped under prefers-reduced-motion.
-    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
+    // an in-place mutation re-render. Skipped under prefers-reduced-motion.
+    grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion());
     grid.classList.toggle('masonry', currentView === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selectedSet.size > 0);
@@ -3347,8 +3212,8 @@
     grid.classList.toggle('no-overlay', !tileOverlay);
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || activeFilters.some((f) => f.type === 'engagement'));
 
-    // i18n labels are identical for every card — push them to the post-card
-    // island once per render (also keeps it in sync after a language change).
+    // i18n labels are identical for every card — pushed once per render (also
+    // keeps them in sync after a language change).
     const cardLabels = {
       tipSelect: MSG.tipSelect,
       tipClip: MSG.tipClip,
@@ -3356,181 +3221,59 @@
       tipTagEdit: MSG.tipTagEdit,
       clickToExpand: MSG.clickToExpand,
     };
-    window.corpusPostCard.setLabels(cardLabels);
 
-    // VIRTUALIZED PATH — list + tile views are owned by the grid island (masonic
-    // windowing via window.corpusGrid). viewer.js keeps the data pipeline
-    // (viewGroups above), the container's classes/CSS vars, and every delegated
-    // #postGrid handler; the island owns cell rendering + the scroll window. The
-    // legacy machinery below (renderLimit/sentinel, keyed reconcile, JS masonry)
-    // is card-only now — it dies wholesale with the card inversion slice.
-    if ((currentView === 'list' || currentView === 'tile') && window.corpusGrid) {
-      // The container-level layout (flex column / CSS grid) is dead in the
-      // virtualized path — masonic positions cells absolutely inside the host.
-      // The .list-view/.tile-view classes stay purely for descendant styling.
-      grid.style.display = 'block';
-      if (moreObserver) {
-        moreObserver.disconnect();
-        moreObserver = null;
-      }
-      // Clear leftover legacy card nodes on the way in. The island renders
-      // into its own #postGridReact host, so this cannot touch React-managed DOM.
-      for (const n of [...grid.children]) if (n.id !== 'postGridReact') n.remove();
-      if (viewGroups !== _gridItemsArr) {
-        _gridItemsArr = viewGroups;
-        _gridItemsKey++; // rebuilt array → island resets its positioner + re-syncs scroll
-      }
-      window.corpusGrid.render({
-        view: currentView,
-        items: viewGroups,
-        itemsKey: _gridItemsKey,
-        // inspected rides on the model ONLY here (live cells re-derive it after a
-        // remount); the string path keeps its imperative ring so its HTML — and
-        // every cardSig — stays byte-identical.
-        modelOf: (g, i) => {
-          const m = cardModel(g, i);
-          m.inspected = inspectedKey !== null && m.postKey === inspectedKey;
-          return m;
-        },
-        keyOf: (g) => postIdKey(g.rep),
-        labels: cardLabels,
-        // list: one full-width column, gap 4 (.post-grid.list-view). tile: squares
-        // packed by minimum width tileSize, gap 8 (.post-grid.tile-view) — masonic
-        // stretches columns to fill, same math as the old CSS auto-fill minmax.
-        columnCount: currentView === 'list' ? 1 : undefined,
-        columnWidth: currentView === 'tile' ? tileSize : undefined,
-        square: currentView === 'tile', // aspect-ratio:1 cells → island uses the real column width as its height estimate
-        rowGutter: currentView === 'list' ? 4 : 8,
-        itemHeightEstimate: currentView === 'list' ? Math.round(listThumb * 1.25) : tileSize,
-      });
-      // With windowing, cells keep MOUNTING while the user scrolls — drop the
-      // entrance class once the initial animation has played, or every late
-      // cell would replay it mid-scroll.
-      clearTimeout(_gridAnimT);
-      if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
-      _lastRenderGen = _allPostsGeneration;
-      _lastViewGroups = viewGroups;
-      _lastStickySize = stickyRecs.size;
-      if (!keepLimit) syncTitleAndPersist();
-      return;
+    // THE GRID — fully React-owned (grid island via window.corpusGrid): masonic
+    // windowing + live cell rendering for all three views. viewer.js keeps the
+    // data pipeline (viewGroups above), the container's classes/CSS vars, and
+    // every delegated #postGrid handler.
+    if (viewGroups !== _gridItemsArr) {
+      _gridItemsArr = viewGroups;
+      _gridItemsKey++; // rebuilt array → island resets its positioner + re-syncs scroll
     }
-    // Hand the container back to the legacy path: the island unmounts its cells
-    // synchronously (flushSync) before the DOM writes below run.
-    if (window.corpusGrid) window.corpusGrid.render(null);
-
-    // FAST PATH — pure load-more in card view: append ONLY the new slice into the
-    // existing masonry columns so already-visible cards (and their <img>) aren't
-    // recreated. The old full innerHTML rebuild reloaded every visible image at the
-    // 150-card boundary (一瞬チラつき). Guarded tightly; any mismatch (filter/sort
-    // change, background reload, resized columns, list/tile view) falls through to
-    // the full rebuild below.
-    {
-      const wrap = grid.querySelector('.mcols');
-      const rendered = wrap ? wrap.querySelectorAll('.post-card').length : 0;
-      const sameQuery = lastRenderedState !== null && stateSig === lastRenderedState;
-      if (keepLimit && currentView === 'card' && wrap && rendered > 0 && _allPostsGeneration === _lastRenderGen && sameQuery && wrap.children.length === masonryColCount(grid.clientWidth) && rendered < viewGroups.length && renderLimit > rendered) {
-        const cols = [...wrap.querySelectorAll('.mcol')];
-        const upto = Math.min(renderLimit, viewGroups.length);
-        const htmls = viewGroups.slice(rendered, upto).map((g, k) => cardHtml(g, rendered + k));
-        const frag = document.createElement('div');
-        frag.innerHTML = htmls.join('');
-        const newCards = [...frag.children];
-        newCards.forEach((c, k) => c.setAttribute('data-sig', cardSig(htmls[k]))); // tag for later reconcile reuse
-        const colH = cols.map((c) => c.offsetHeight); // current column heights
-        cols[0].append(...newCards); // park to measure at column width
-        const gap = 16,
-          hs = newCards.map((c) => c.offsetHeight);
-        newCards.forEach((card, k) => {
-          // greedy: continue packing the shortest column
-          let m = 0;
-          for (let c = 1; c < cols.length; c++) if (colH[c] < colH[m]) m = c;
-          cols[m].appendChild(card);
-          colH[m] += hs[k] + gap;
-        });
-        learnCardAspects(newCards.flatMap((c) => [...c.querySelectorAll('.card-img')]));
-        setupMoreSentinel(grid);
-        requestAnimationFrame(() => newCards.forEach((card) => card.querySelectorAll('.text').forEach((el) => el.classList.toggle('truncated', el.scrollHeight > el.clientHeight))));
-        return;
-      }
-    }
-
-    // Keyed node-reuse reconcile (was a blunt grid.innerHTML= rebuild). Match existing
-    // .post-card nodes by their stable data-key (postIdKey of the group rep) and MOVE
-    // the unchanged ones into the new order instead of recreating them — each card's
-    // <img> survives, so an fs-watch delta (new capture / backfill) or a list/tile
-    // load-more no longer tears down + reloads every visible thumbnail (一覧チラつき).
-    // A card is parsed afresh only when its content changed (data-sig) or it's new.
-    {
-      const slice = viewGroups.slice(0, renderLimit);
-      const prev = new Map();
-      for (const n of grid.querySelectorAll('.post-card')) {
-        const k = n.getAttribute('data-key');
-        if (k !== null && !prev.has(k)) prev.set(k, n);
-      }
-      const parse = document.createElement('div');
-      const out = [];
-      for (let i = 0; i < slice.length; i++) {
-        const html = cardHtml(slice[i], i);
-        const sig = cardSig(html);
-        const key = slice[i].rep ? postIdKey(slice[i].rep) : null;
-        let node = key != null ? prev.get(key) : null;
-        if (node && node.getAttribute('data-sig') === sig) {
-          prev.delete(key); // reuse: only the position attrs may be stale
-          node.setAttribute('data-index', String(i));
-          const cb = node.querySelector('.clip-btn');
-          if (cb) cb.setAttribute('data-clip', String(i));
-          const ib = node.querySelector('.info-btn');
-          if (ib) ib.setAttribute('data-info', String(i));
-          const tb = node.querySelector('.tag-btn');
-          if (tb) tb.setAttribute('data-tagedit', String(i));
-        } else {
-          parse.innerHTML = html;
-          node = parse.firstElementChild;
-          node.setAttribute('data-sig', sig);
-          if (key != null) prev.delete(key);
+    window.corpusGrid.render({
+      view: currentView,
+      items: viewGroups,
+      itemsKey: _gridItemsKey,
+      // inspected rides on the model (live cells re-derive it after a remount —
+      // an imperative class would vanish with the recycled cell).
+      modelOf: (g, i) => {
+        const m = cardModel(g, i);
+        m.inspected = inspectedKey !== null && m.postKey === inspectedKey;
+        return m;
+      },
+      keyOf: (g) => postIdKey(g.rep),
+      labels: cardLabels,
+      // list: one full-width column, gap 4 (.post-grid.list-view). tile: squares
+      // packed by minimum width tileSize, gap 8 (.post-grid.tile-view). card:
+      // masonry columns of minimum width cardSize, gap 16 (.post-grid.masonry's
+      // old column gap) — masonic stretches columns to fill, the same math as
+      // the old CSS auto-fill minmax / hand-rolled masonryColCount.
+      columnCount: currentView === 'list' ? 1 : undefined,
+      columnWidth: currentView === 'tile' ? tileSize : currentView === 'card' ? cardSize : undefined,
+      square: currentView === 'tile', // aspect-ratio:1 cells → island uses the real column width as its height estimate
+      rowGutter: currentView === 'list' ? 4 : currentView === 'tile' ? 8 : 16,
+      itemHeightEstimate: currentView === 'list' ? Math.round(listThumb * 1.25) : currentView === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+      // Cards whose image has NO reserved height (no shotW/H in the index, no
+      // cached aspect — rare: video poster / unreadable header) report their real
+      // aspect on load. The cache reserves the height on the NEXT render; the
+      // cell's own resize is re-flowed by the island's ResizeObserver (replaces
+      // the old learnCardAspects + debounced full re-pack).
+      onAspect: (cap, ar) => {
+        if (imgAspect[cap] !== ar) {
+          imgAspect[cap] = ar;
+          persistAspect();
         }
-        out.push(node);
-      }
-      grid.replaceChildren(...out); // unmatched old nodes drop out here
-    }
+      },
+    });
+    // With windowing, cells keep MOUNTING while the user scrolls — drop the
+    // entrance class once the initial animation has played, or every late
+    // cell would replay it mid-scroll.
+    clearTimeout(_gridAnimT);
+    if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
-    _lastStickySize = stickyRecs.size; // snapshot for load-more group reuse
-    // Load-more sentinel (shared helper).
-    setupMoreSentinel(grid);
-
-    // Card view: pack into masonry columns once, now. Cards whose height is
-    // reserved up front (shotW/shotH from the index, or a cached aspect) DON'T
-    // re-pack when their image loads — the box is already the right size, so the
-    // lazy image just fills it with no layout change. Re-packing on every load was
-    // tearing down and rebuilding the WHOLE grid as images streamed in on scroll
-    // (the "コマ送り" full-grid flicker). Only UNSIZED cards (rare: video / a
-    // header we couldn't read) actually change height on load, so only those learn
-    // their aspect and trigger one debounced re-pack.
-    if (currentView === 'card') {
-      layoutMasonry();
-      learnCardAspects([...grid.querySelectorAll('.card-img')]);
-    }
-
-    // Mark truncated text elements
-    requestAnimationFrame(() => {
-      grid.querySelectorAll('.text').forEach((el) => {
-        el.classList.toggle('truncated', el.scrollHeight > el.clientHeight);
-      });
-    });
-
-    // Re-apply the inspected-card ring. Reconcile can keep a stale ring on a reused
-    // node, so clear any existing one first, then mark the current inspected card.
-    grid.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
-    if (inspectedKey) {
-      const ii = viewGroups.findIndex((g2) => postIdKey(g2.rep) === inspectedKey);
-      if (ii >= 0) {
-        const el = grid.querySelector('.post-card[data-index="' + ii + '"]');
-        if (el) el.classList.add('inspected');
-      }
-    }
-
-    if (!keepLimit) syncTitleAndPersist(); // keep the tab title + persistence in sync
+    _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse
+    if (!inPlace) syncTitleAndPersist(); // keep the tab title + persistence in sync
   }
 
   // Text expand/collapse on click
@@ -3827,17 +3570,10 @@
   // the grid + .selected per card. data-key round-trips to the template's postKey, so
   // this matches the template's own isSelected logic exactly.
   function syncSelectionClasses() {
-    const grid = document.getElementById('postGrid');
-    grid.classList.toggle('selecting', selectedSet.size > 0);
-    if (gridIslandActive()) {
-      // Virtualized cells re-read selectedSet through modelOf on repaint — an
-      // imperative class here would be lost the moment a cell remounts on scroll.
-      window.corpusGrid.repaint();
-      return;
-    }
-    grid.querySelectorAll('.post-card').forEach((c) => {
-      c.classList.toggle('selected', selectedSet.has(c.dataset.key));
-    });
+    document.getElementById('postGrid').classList.toggle('selecting', selectedSet.size > 0);
+    // Virtualized cells re-read selectedSet through modelOf on repaint — an
+    // imperative class here would be lost the moment a cell remounts on scroll.
+    window.corpusGrid.repaint();
   }
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -5682,13 +5418,11 @@
     st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
     if (!commit) {
-      if (gridIslandActive() && currentView === 'tile')
-        window.corpusGrid.patch({ columnWidth: tileSize }); // live re-flow while dragging (masonic recreates its positioner on columnWidth change)
-      else if (currentView === 'card') scheduleMasonry();
+      if (gridIslandActive() && st.columns) window.corpusGrid.patch({ columnWidth: st.get() }); // live re-flow while dragging (masonic recreates its positioner on columnWidth change)
       return;
-    } // drag: re-pack columns live
+    }
     window.corpus.setPref(st.pref, st.get());
-    renderPosts(); // re-request thumbnails at the new size (re-packs masonry too)
+    renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
     const grid = document.getElementById('postGrid');
@@ -6401,7 +6135,7 @@
   } catch {
     /* stay in library mode */
   }
-  // First paint done — restore the active tab's renderLimit + scroll (survives restart).
+  // First paint done — restore the active tab's scroll (survives restart).
   restoreTabView(tabs.find((t) => t.id === activeTabId));
   // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
   // remembered position is current at restart. persistTabsDebounced captures scrollY.
