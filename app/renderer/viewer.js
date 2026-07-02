@@ -72,6 +72,7 @@
     detailSourceTags: _s('detailSourceTags'),
     tipAdoptTag: _s('tipAdoptTag'),
     ctxViewPoster: _s('ctxViewPoster'),
+    ctxShowInFolder: _s('ctxShowInFolder'),
     tagAdopted: _f1('tagAdopted'),
     editAdoptSource: _s('editAdoptSource'),
     editCoocCharsOf: _f1('editCoocCharsOf'),
@@ -4802,7 +4803,7 @@
       };
     });
     window.corpusCollectionGrid.render({
-      items: [...cards, { newTile: true }], // "＋ 新規" rides as the last cell
+      items: [{ newTile: true }, ...cards], // "＋ 新規" leads as the FIRST cell (top-left — create is the primary action)
       itemsKey: ++_collectionItemsKey, // cards are rebuilt every pass → always a fresh positioner
       modelOf: (c) => c,
       keyOf: (c) => (c.newTile ? '__new__' : 'c:' + c.id),

@@ -4,7 +4,7 @@
 // `.collection-card.new[data-cnew]` tile, and the empty state — so the delegated
 // click/contextmenu handlers on #collectionGrid keep firing. React renders +
 // windows; viewer.js owns the collection data, records/thumbs computation, the
-// count badge, and every event. The "＋ 新規" tile rides as the last item.
+// count badge, and every event. The "＋ 新規" tile leads as the first item.
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 
@@ -68,7 +68,7 @@ function Card({ c, dynamicTitle }: { c: CollectionCardModel; dynamicTitle?: stri
   );
 }
 
-// The trailing "＋ 新規" tile — always present, even on the empty state.
+// The leading "＋ 新規" tile — always present, even on the empty state.
 function NewCard({ label }: { label?: string }) {
   return (
     <div className="collection-card new" data-cnew="1" tabIndex={0}>
@@ -80,7 +80,7 @@ function NewCard({ label }: { label?: string }) {
   );
 }
 
-// One windowed cell; the new-tile sentinel rides as the last item.
+// One windowed cell; the new-tile sentinel rides as the first item.
 function CollectionCell({ index, data }: GridCellProps) {
   const model = useGridModel();
   if (data.newTile) return <NewCard label={model.newLabel} />;
