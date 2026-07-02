@@ -516,7 +516,7 @@ function resolveInFolder(name) {
   const folder = getSaveFolder();
   if (!folder || !name) return null;
   const resolved = path.resolve(path.join(folder, path.basename(name)));
-  return resolved.startsWith(path.resolve(folder)) ? resolved : null;
+  return resolved.startsWith(path.resolve(folder) + path.sep) ? resolved : null;
 }
 
 // Atomically rewrite a sidecar the watcher tracks: write a sibling .tmp, then
@@ -1028,6 +1028,7 @@ function registerExtractedIpc() {
     getTrashDir,
     baseOf,
     VIEWABLE_EXTS,
+    INTERNAL_FILES,
     writeSidecarAtomic,
     readBackupConfig,
     writeBackupConfig,

@@ -160,9 +160,20 @@ child.on('close', () => {
   } catch {
     /* missing/unreadable → stays false */
   }
+  // filesystem-side verification of the clear-all skip list: the wipe must keep
+  // app-internal organization JSON (the shared INTERNAL_FILES set) while removing
+  // every post asset — a regression here means an internal file fell out of the
+  // skip set and got wiped along with the posts.
+  let clearKeptOrg = false;
+  try {
+    const left = fs.readdirSync(saveFolder);
+    clearKeptOrg = left.includes('tag-groups.json') && !left.some((f) => /\.jpe?g$/i.test(f));
+  } catch {
+    /* unreadable → stays false */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact;
-  console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact}`);
+  const ok = r.overlapRejected && r.dirSet && r.run1 && r.run2 && r.edit1 && r.edit2 && r.editIdempotent && mutableFresh && r.pruneWorks && r.guardHeld && mirrorIntact && clearKeptOrg;
+  console.log(`overlap=${r.overlapRejected} dirSet=${r.dirSet} run1=${r.run1} run2=${r.run2} edit1=${r.edit1} edit2=${r.edit2} editIdem=${r.editIdempotent} mutableFresh=${mutableFresh} prune=${r.pruneWorks} guard=${r.guardHeld} mirror=${mirrorAfter}/${mirrorIntact} clearKeptOrg=${clearKeptOrg}`);
   console.log(ok ? 'BACKUP_TEST_PASS' : 'BACKUP_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

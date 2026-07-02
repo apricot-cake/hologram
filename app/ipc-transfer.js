@@ -35,7 +35,7 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
+  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
 
   ipcMain.handle('import-posts', async (_e, posts) => {
     const folder = getSaveFolder();
@@ -191,26 +191,15 @@ function register(ctx) {
     });
     if (blocked) return { ok: false, blocked, count: 0 };
     let count = 0;
-    // Keep app metadata (config + migrated tag groups); wipe sidecars + every
-    // viewable media type (incl. jfif/avif/svg/video/-poster), mirroring delete-post.
+    // Keep app metadata (the shared INTERNAL_FILES set — config, index snapshot,
+    // organization JSON); wipe sidecars + every viewable media type (incl.
+    // jfif/avif/svg/video/-poster), mirroring delete-post. Using the same set as
+    // the watcher/index means a newly added internal file is skipped here too,
+    // instead of silently falling through to the wipe.
     const CLEAR_RE = new RegExp('\\.(' + VIEWABLE_EXTS.join('|') + '|json)$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (
-          f === 'config.json' ||
-          f === '.index.json' ||
-          f === 'tag-groups.json' ||
-          f === 'tag-types.json' ||
-          f === 'ungrouped.json' ||
-          f === 'manual-groups.json' ||
-          f === 'folders.json' ||
-          f === 'collections.json' ||
-          f === 'tabs.json' ||
-          f === 'poster-favorites.json' ||
-          f === 'poster-folders.json' ||
-          f === 'poster-tags.json'
-        )
-          continue;
+        if (INTERNAL_FILES.has(f)) continue;
         if (CLEAR_RE.test(f)) {
           try {
             fs.unlinkSync(path.join(folder, f));
