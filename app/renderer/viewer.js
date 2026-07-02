@@ -77,6 +77,7 @@
     editCoocCharsOf: _f1('editCoocCharsOf'),
     editCoocChars: _s('editCoocChars'),
     editCoocWhy: _f2('editCoocWhy'),
+    editCoocRelated: _s('editCoocRelated'),
     detailOpen: _s('detailOpen'),
     detailSauce: _s('detailSauce'),
     detailAscii: _s('detailAscii'),
@@ -702,6 +703,11 @@
     posterFolders: () => pfStore.all(),
     buildUsers,
   });
+  // Tag co-occurrence math (charCandidatesFor / worksCooccurringWith /
+  // relatedTagCandidates) moved to cooc.js (window.corpusCooc) — 4th extraction
+  // slice. Same deferred-getter wiring as facets above (allPosts is a reassigned
+  // let; the getters only run when a picker or homonym check fires).
+  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = window.corpusCooc.makeCooc({ allPosts: () => allPosts, tagKindOf });
   // Push the current category's row model to the qf-pop bridge. Called on every open
   // AND after every pick (the bridge bumps openId each call, which keys the island's
   // root and remounts its find-input local state — matching the old rebuild-on-every-
@@ -3262,7 +3268,14 @@
     const srcSet = new Set();
     for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
     const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
-    let coocGroup = null;
+    // Suggestion groups, strongest first. Tier 1 (kind-scoped): 作品 on the card →
+    // character candidates. Tier 2 (generic, post scope only): tags that often share
+    // a post with any selected tag — a weak hint, so it sits below the kinded group,
+    // dedupes against it, and stays silent until pairs have real support (minCount
+    // lives in cooc.js). Poster tagging keeps tier 1 only: its general vocabulary is
+    // deliberately separate from post-content descriptors (see groupedTagVocab).
+    const coocGroups = [];
+    const strong = new Set();
     const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
     if (workTags.length) {
       const cands = charCandidatesFor(workTags)
@@ -3270,13 +3283,23 @@
         .slice(0, 8);
       if (cands.length) {
         const who = workTags.join('・');
-        coocGroup = {
+        coocGroups.push({
           name: workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars,
           items: cands.map(([t, n]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
-        };
+        });
+        for (const [t] of cands) strong.add(t);
       }
     }
-    return { vocabGroups, srcTagsForPicker, coocGroup };
+    if (scope !== 'poster') {
+      const rel = relatedTagCandidates([...sel], { exclude: strong });
+      if (rel.length) {
+        coocGroups.push({
+          name: MSG.editCoocRelated,
+          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOf(r.tag) || null, title: MSG.editCoocWhy(r.withTag, r.count) })),
+        });
+      }
+    }
+    return { vocabGroups, srcTagsForPicker, coocGroups };
   }
 
   function refreshInspectorTagFields(g) {
@@ -3332,19 +3355,6 @@
     if (adding) await maybeDistinguishHomonym(fresh(), tag);
   }
 
-  // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
-  // elsewhere in the library (the current group excluded, so a just-added tag never
-  // counts itself as history).
-  function worksCooccurringWith(charTag, excludeIds) {
-    const works = new Set();
-    for (const p of allPosts) {
-      if (excludeIds && excludeIds.has(p.captureId)) continue;
-      const tags = Array.isArray(p.tags) ? p.tags : [];
-      if (!tags.includes(charTag)) continue;
-      for (const t of tags) if (tagKindOf(t) === 'work') works.add(t);
-    }
-    return works;
-  }
   // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
   // this character was seen with before, it's likely a same-name character from
   // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
@@ -3641,23 +3651,6 @@
     const ungrouped = [...applied].filter(ok).sort(byJa);
     if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
     return out;
-  }
-
-  // Tag co-occurrence: 作品 → characters that have shared a post with any of these
-  // 作品 tags, most-frequent first. Deterministic + explainable (the count IS the
-  // confidence). 種別 already fixes the two hard guesses (which tags relate, which is
-  // the parent), so what's left — which character belongs to which work — is high
-  // precision (a character co-occurs with ~one work).
-  function charCandidatesFor(workTags) {
-    if (!workTags || !workTags.length) return [];
-    const works = new Set(workTags);
-    const counts = new Map();
-    for (const p of allPosts) {
-      const tags = Array.isArray(p.tags) ? p.tags : [];
-      if (!tags.some((t) => works.has(t))) continue;
-      for (const t of tags) if (tagKindOf(t) === 'character') counts.set(t, (counts.get(t) || 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
   // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a

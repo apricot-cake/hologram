@@ -5,7 +5,7 @@ import { useState, useRef, useLayoutEffect, useMemo } from 'react';
 // staging list committed on Save). Mirrors the old refreshInspectorTags/
 // refreshInspectorPicker/renderEditTags/renderEditPicker + their delegated handlers,
 // but the picker filter query is now LOCAL React state instead of a round trip
-// through viewer.js: vocabGroups/coocGroup/srcTags arrive unfiltered (full universe)
+// through viewer.js: vocabGroups/coocGroups/srcTags arrive unfiltered (full universe)
 // and this component filters them by substring match client-side (matching the old
 // simple `.includes(q)` filter — no fuzzy search), so keystrokes never touch the
 // bridge. The add/filter input doubles as both "type a new tag" and "filter the
@@ -29,7 +29,7 @@ export interface TagEditorProps {
   className?: string | null;
   tags: string[];
   vocabGroups?: TagPickGroup[] | null;
-  coocGroup?: TagPickGroup | null;
+  coocGroups?: TagPickGroup[] | null;
   srcTags?: TagPickItem[] | null;
   labels: Record<string, string>;
   onAdd: (tag: string) => void;
@@ -43,7 +43,7 @@ export interface TagEditorProps {
   pickerClass?: string;
 }
 
-export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroup, srcTags, labels, onAdd, onRemove, onToggle, onContextMenu, autoFocus, showLabel = true, chipsClass = 'iv-tag-chips', addrowClass = 'iv-tag-addrow', pickerClass = 'edit-picker iv-tag-picker' }: TagEditorProps) {
+export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroups, srcTags, labels, onAdd, onRemove, onToggle, onContextMenu, autoFocus, showLabel = true, chipsClass = 'iv-tag-chips', addrowClass = 'iv-tag-addrow', pickerClass = 'edit-picker iv-tag-picker' }: TagEditorProps) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const selected = useMemo(() => new Set(tags), [tags]);
@@ -80,7 +80,9 @@ export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroup, s
     </button>
   );
 
-  const filteredCooc = q ? [] : coocGroup ? coocGroup.items : [];
+  // Co-occurrence suggestions are context hints, not vocabulary — hidden while the
+  // user is filter-typing (typing means "find me a known tag", not "suggest more").
+  const filteredCooc = q ? [] : (coocGroups || []).filter((g) => g.items.length);
   const filteredSrc = (srcTags || []).filter((it) => matches(it.tag));
   const filteredGroups = (vocabGroups || []).map((g) => ({ name: g.name, items: g.items.filter((it) => matches(it.tag)) })).filter((g) => g.items.length);
   const isEmpty = !filteredCooc.length && !filteredSrc.length && !filteredGroups.length;
@@ -132,12 +134,12 @@ export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroup, s
           <span className="edit-empty">{query ? labels.noMatch : labels.noVocab}</span>
         ) : (
           <>
-            {filteredCooc.length ? (
-              <div className="edit-pick-group">
-                <div className="edit-pick-gname">{(coocGroup as TagPickGroup).name}</div>
-                <div className="edit-pick-chips">{filteredCooc.map((it) => chip(it.tag, null, it.title))}</div>
+            {filteredCooc.map((g) => (
+              <div className="edit-pick-group" key={g.name}>
+                <div className="edit-pick-gname">{g.name}</div>
+                <div className="edit-pick-chips">{g.items.map((it) => chip(it.tag, it.kind, it.title))}</div>
               </div>
-            ) : null}
+            ))}
             {filteredSrc.length ? (
               <div className="edit-pick-group">
                 <div className="edit-pick-gname">{labels.adoptSource}</div>

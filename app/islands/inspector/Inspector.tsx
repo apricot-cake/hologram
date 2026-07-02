@@ -50,7 +50,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
       <Row k={m.labels.updated} v={m.updatedLabel} />
       <Row k={m.labels.images} v={m.imagesLabel} />
       <Row k={m.labels.imageOf} v={m.imageOfLabel} />
-      <TagEditor idPrefix="iv" className="iv-tag-edit" tags={m.tags} vocabGroups={m.vocabGroups} coocGroup={m.coocGroup} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onToggle={m.onTagToggle} onContextMenu={m.onTagContextMenu} />
+      <TagEditor idPrefix="iv" className="iv-tag-edit" tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onToggle={m.onTagToggle} onContextMenu={m.onTagContextMenu} />
       <div id="ivTagView" className="iv-tag-view">
         {m.srcTagsView.length ? (
           <div className="iv-insp-row">
@@ -136,7 +136,7 @@ function PosterInspector({ m }: { m: CorpusInspectorModel }) {
         className="iv-tag-edit iv-tag-edit-poster"
         tags={m.tags}
         vocabGroups={m.vocabGroups}
-        coocGroup={m.coocGroup}
+        coocGroups={m.coocGroups}
         srcTags={m.srcTagsForPicker}
         labels={m.tagLabels}
         onAdd={m.onTagAdd}

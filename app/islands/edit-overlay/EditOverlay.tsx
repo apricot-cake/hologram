@@ -21,7 +21,7 @@ export function EditOverlay() {
         pickerClass="edit-picker"
         tags={m.tags}
         vocabGroups={m.vocabGroups}
-        coocGroup={m.coocGroup}
+        coocGroups={m.coocGroups}
         srcTags={m.srcTagsForPicker}
         labels={m.tagLabels}
         onAdd={m.onTagAdd}

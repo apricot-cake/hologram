@@ -19,6 +19,7 @@ const TESTS = [
   'test-query-unit',
   'test-records-unit',
   'test-facets-unit',
+  'test-cooc-unit',
   'test-migrate-unit',
   'test-collections-merge',
   'test-token-parity',
