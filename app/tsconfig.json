@@ -1,0 +1,25 @@
+{
+  // TypeScript stage 1 (BACKLOG 採用#1): islands + _shared only — these already
+  // go through the Vite build, so .tsx needs no extra tooling. The build-less
+  // plain-JS layer (viewer.js, store.js, renderer/*.js) is NOT included here;
+  // it gets .d.ts/checkJs later and converts when 単一バンドル化 puts it under Vite.
+  // Type-check only (noEmit) — Vite strips types at build; tsc never emits.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "strict": true,
+    // Side-effect CSS imports (settings' './styles.css') are Vite assets, not
+    // modules to resolve — relative imports can't be covered by a wildcard
+    // ambient module, so unchecked is the correct Vite-project setting.
+    "noUncheckedSideEffectImports": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["islands/**/*"]
+}

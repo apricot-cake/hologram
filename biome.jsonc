@@ -78,7 +78,11 @@
       "suspicious": {
         "noAssignInExpressions": "off", // while ((m = re.exec())) 等のイディオム
         "noArrayIndexKey": "off", // 島はモデル丸ごと再pushで index key が正（部分並べ替えをしない）
-        "noRedundantUseStrict": "off" // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
+        "noRedundantUseStrict": "off", // Biome は .js を ESM 扱い＝CJS/plain-script の 'use strict' は本物。削ると sloppy 化の実害
+        // TS 段階導入（BACKLOG 採用#1）の方針: 素JS層（viewer.js/ブリッジ実装）が
+        // 未型付けの間、境界を越えるモデル/ペイロードの明示 any は「意図的な契約」
+        // （globals.d.ts に集約）。素JS層が TS 化される単一バンドル化以降に再訪。
+        "noExplicitAny": "off"
       },
       "performance": {
         "noDelete": "off" // delete はサイドカー/JSON のキー除去の正道（性能文脈でない）

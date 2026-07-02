@@ -1586,7 +1586,7 @@
         opTitle: MSG.qbTipOp,
       };
       // Stash the latest model per container (script order is viewer.js → islands,
-      // so the bundle may not be loaded yet; index.jsx replays the stash on load).
+      // so the bundle may not be loaded yet; index.tsx replays the stash on load).
       const key = container.id;
       (window.__corpusQueryChips || (window.__corpusQueryChips = {}))[key] = model;
       if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
@@ -2305,7 +2305,7 @@
       return { id: t.id, title: renderTabTitle(t), icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && tabs.length > 1 };
     });
     const model = { tabs: tabModels, editingId: tabEditingId, closeTitle: MSG.tabClose, newTitle: MSG.tabNew };
-    // Stash for the island bundle (script order is viewer.js → islands); index.jsx replays it.
+    // Stash for the island bundle (script order is viewer.js → islands); index.tsx replays it.
     window.__corpusTabsModel = model;
     if (window.corpusTabs) window.corpusTabs.render(model);
   }
@@ -5345,7 +5345,7 @@
   });
 
   // --- Backup status rail (always-visible sidebar footer #mirrorStatus) ---
-  // The settings *modal* moved to the React island (Data.jsx); this is only the
+  // The settings *modal* moved to the React island (Data.tsx); this is only the
   // at-a-glance rail, which lives outside the modal and so stays in viewer.js.
   // It reflects the auto-backup config + last result, refreshing on launch, when
   // settings opens, and on each backup start/finish.

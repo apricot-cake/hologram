@@ -1112,7 +1112,7 @@ function createWindow(show = true) {
   if (DEV_SERVER_URL) {
     // Dev: load the renderer from Vite (HMR + Fast Refresh for the islands). Vite's
     // root is app/, so index.html is served at /renderer/index.html and the island
-    // <script> tags are rewritten to their .jsx module sources (see vite.config.mjs).
+    // <script> tags are rewritten to their .tsx module sources (see vite.config.mjs).
     const q = new URLSearchParams({ theme, ...(smoke ? { smoke: '1' } : {}) }).toString();
     win.loadURL(`${DEV_SERVER_URL}/renderer/index.html?${q}`);
   } else {

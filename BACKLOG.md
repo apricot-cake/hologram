@@ -73,7 +73,7 @@
 
 ## コレクション
 
-- **新規作成ボタンを左上に**: 現状は一覧末尾の「＋ 新規」タイル（`Collections.jsx:52-59`＝これが「＋＋みたいなボタン」の正体・クリックで名前 prompt）。新規作成は一覧の左上に置きたい。
+- **新規作成ボタンを左上に**: 現状は一覧末尾の「＋ 新規」タイル（`Collections.tsx` の NewCard＝これが「＋＋みたいなボタン」の正体・クリックで名前 prompt）。新規作成は一覧の左上に置きたい。
 - **コレクションにもクエリビルダー（スマートコレクション）**: 手動メンバー管理だけでなく、クエリ条件で中身が動的に決まるコレクションを作れるように（既存 `query-chips` の条件木を流用）。
 - **コレクションにもタグ付け**: コレクション自体にタグを付けて分類できるように。
 ## 操作性・通知・拡張UI
@@ -102,7 +102,7 @@
 - **残タスク**:
   - ~~グリッド完全React化～~ **完了（2026-07-02・スライス1-3）**: 全3ビュー（list/tile/card）を grid 島＝masonic 仮想化へ反転（9042件→DOM 十数〜数十セル）。旧機構（renderLimit/RENDER_PAGE・sentinel IntersectionObserver・キー付き reconcile/cardSig・手書きマサンリー .mcols/.mcol・fast path・learnCardAspects・タブ永続の `_renderLimit`）を一括削除、post-card テンプレート島も卒業（renderToStaticMarkup/ReactDOMServer を vendor から撤去）。スクロール復元は scrollTop 直復元（リロード跨ぎ実機PASS）。実装知はメモリ `corpus-react-settings-pilot`。
   - viewer.js（~5850行 IIFE）を store/service/hooks へ段階抽出（純ロジック→service・横断状態→store・密着ロジック→hooks＝抽出であって全面リライトでない）。**第1弾完了（2026-07-02）＝クエリエンジン→`app/renderer/query.js`**（window.corpusQuery＝ツリー機構 emptyTree/treeLeaves/opposite/facetTreeFrom/evalNode＋純ヘルパ localDayRange/hostOf/userKey/textHaystackOf＋`makePostPredOf(deps)`＝コレクション/クリップ/fuzzy は viewer が注入）。純ユニット `scripts/test-query-unit.js`（56 assert）を npm test に追加＝getFilteredPosts の核が初めてテスト下に。**第2弾完了（2026-07-02）＝レコード正規化・グルーピング→`app/renderer/records.js`**（window.corpusRecords＝形状ヘルパ/postIdKey/postKeyOf/stampPost/makeGroupRecords(deps)/percentileFn・CommonJS でも export＝重複保存警告の P0「postKeyOf 共有モジュール化」を兼ねる・純ユニット test-records-unit 46 assert）。**第3弾完了（2026-07-02）＝facetCounts/qfValues→`app/renderer/facets.js`**（window.corpusFacets・makeFacets(deps)・test-facets-unit 30 assert）＝**当初の抽出候補3件は完遂**。次のスライスは実装時に痛点から選ぶ（候補メモ: buildUsers/buildSuggest 等の集計系・タブ永続化）。
-  - ~~posterGrid/collectionGrid の仮想化~~ **完了（2026-07-02）**: 両グリッドを grid 島基盤へ載せ替え（`_shared/VirtualGrid.jsx` 抽出＋ブリッジ工場化＝corpusPosterGrid/corpusCollectionGrid）。実装知はメモリ `corpus-react-settings-pilot`。※masonic が島3つに各自バンドルされる重複は「単一バンドル化」（下）で自然回収。
+  - ~~posterGrid/collectionGrid の仮想化~~ **完了（2026-07-02）**: 両グリッドを grid 島基盤へ載せ替え（`_shared/VirtualGrid.tsx` 抽出＋ブリッジ工場化＝corpusPosterGrid/corpusCollectionGrid）。実装知はメモリ `corpus-react-settings-pilot`。※masonic が島3つに各自バンドルされる重複は「単一バンドル化」（下）で自然回収。
   - 単一 root／単一バンドル化（島 IIFE×N を畳む・file:// ESM 制約は最終形B で別途）。※c3269d4 で React ランタイムを全島から外部化し共有 vendor-react.js に一本化＝バンドル畳みの地ならしに着手済み。
   - ポスターのフォルダ割当 toggle を実フォルダ作成で実データ再検証。
 
@@ -125,7 +125,7 @@
 - **i18nキー網羅スクリプト**（2026-07-02・`scripts/test-i18n-parity.js`）: renderer MESSAGES＋拡張 _locales の キー/値形状/置換スロットのパリティ番人（現状 338/338・4/4 で整合）。
 
 ### 採用する（着手順）
-1. **TypeScript**（旧「JSDoc + checkJs（.ts化なし）」から方針変更・2026-07-02 ユーザー決定）: 型検査は `tsc --noEmit`（typescript は純JS実行＝本機アプリ制御ポリシー無風・Biome 1.9.4 は TS/TSX の lint+format 対応済み）。狙い（preload/store/i18n の契約の見える化）は不変。**段階導入の順序＝ビルド経路の有無で分ける**: ①islands（Vite ビルド済み＝.tsx 化に追加ツール不要）と `_shared` から着手 ②素JS層（viewer.js・store.js・query.js 等＝file:// 直ロードでビルド無し）は当面 .d.ts＋checkJs で契約だけ可視化し、「単一バンドル化」（React化節）で Vite 配下に入った時点で .ts 化 ③main プロセス（無ビルド実行が前提）は Electron 41+（Node 24 の type stripping）到達後に .ts 直実行可否を実測して判断（不可なら .d.ts 留め）。実質コストは window グローバル契約（corpusStore/corpusGrid 等のブリッジ）の型付け。
+1. **TypeScript**（旧「JSDoc + checkJs（.ts化なし）」から方針変更・2026-07-02 ユーザー決定）: 型検査は `tsc --noEmit`（typescript 6.0 は純JS実行＝本機アプリ制御ポリシー無風・Biome 1.9.4 は TS/TSX の lint+format 対応済み）。**段階①完了（2026-07-02）**: islands＋`_shared` 全59ファイルを .tsx/.ts 化（strict・`app/tsconfig.json`）、window ブリッジ契約を `app/islands/types/globals.d.ts` に集約（corpusStore/corpusGrid/corpusQfPop 等＋preload 全面）、`test-typecheck` を npm test へ配線。検証＝ビルド出力ハッシュ比較で 18 バンドル中14がバイト同一・4差分も等価微修正2種のみと特定（実装知はメモリ `corpus-typescript-stage1`）。**残り**: ②素JS層（viewer.js・store.js・query.js 等＝file:// 直ロードでビルド無し）は当面 .d.ts＋checkJs で契約だけ可視化し、「単一バンドル化」（React化節）で Vite 配下に入った時点で .ts 化 ③main プロセス（無ビルド実行が前提）は Electron 41+（Node 24 の type stripping）到達後に .ts 直実行可否を実測して判断（不可なら .d.ts 留め）。
 2. **masonic**: ~~グリッド仮想化スライスの一部として~~ **導入済み（2026-07-02・全3ビュー反転完了）**。保険=TanStack Virtual（react-virtuoso は撤回済＝可変高マサンリー本領外）。
 3. **配布3点セット**: electron-builder publish/sign → electron-updater → SignPath 事前申請（審査が律速）＋@electron/fuses を署名のついで。時期・手順は下「リリース準備」節が真実源＝ここに重複させない。
 4. **SQLite 派生インデックス（DB 移行＝確定・2026-07-02）**（※真実源ごと DB 化する上位案は下「方針転換候補」参照＝本項はその第1段階を兼ねる）: 数万件ライブラリは**製品のスケール目標**（画像メイン利用等でユーザーによっては到達する＝開発者ライブラリの成長を条件にしない・CLAUDE.md ルール）。真実源はサイドカー JSON のまま、`.index.json`＋常駐 Map を**再構築可能な SQLite インデックス**へ置換（起動全量スキャン・IPC 全量 clone・メモリ常駐・検索線形走査に一括で効く／壊れたら再構築＝「ファイルベース真実源」の恒久設計制約と両立）。着手＝最終形B の service 抽出後＋Electron EOL 更新（41+）後。**選定は2層に分解**（2026-07-02 調査）: ①**索引層**（メタデータ・ソート・ファセット）＝Electron 41 同梱 Node 24 の内蔵 `node:sqlite` が第1候補（依存ゼロ・ネイティブ .node 無し＝本機アプリ制御ポリシー無風・ステータスは RC）。②**全文検索層**＝`node:sqlite` は **FTS5 非同梱**（Node 24 時点・upstream 未解決）のため、必要と実測された時点で better-sqlite3（FTS5 同梱・ただし .node の本機ポリシー実行可否の実測が採用関門・Electron ABI リビルド＋asarUnpack）vs WASM sqlite（FTS5 ビルド可・ネイティブ無し）を比較。①だけでも主要ボトルネックは解消＝テキスト検索は正規化 haystack の事前計算＋JS で粘れる見込み（**旧 MiniSearch+BudouX 案はここに統合**・日本語は corpusSearch の正規化資産を FTS5 trigram/BudouX いずれでも前処理として再利用）。
@@ -156,7 +156,7 @@
 - 初回起動時に**拡張インストールのガイド**（ストア公開後・未インストール/未接続を検知して案内）。
 - **デモGIF/スクショの充実**（README・LP 用に主要機能の短尺GIFを整備）。
 - **GitHub Pages で LP を作る**（public 化フェーズに合わせて）。
-- **About（バージョン情報）に外部リンク**: 現状 About は版数のみでリンク無し（`About.jsx`）＝GitHub リポ/リリースノート/ライセンス等へのリンクを追加。
+- **About（バージョン情報）に外部リンク**: 現状 About は版数のみでリンク無し（`About.tsx`）＝GitHub リポ/リリースノート/ライセンス等へのリンクを追加。
 - **タグラインの文言調整**: `aboutTagline`（`i18n.js:304`）「投稿を丸ごと。あなたの SNS ライブラリに。」の末尾「に。」を落として「…あなたの SNS ライブラリ。」にしたい。
 
 ### 0. 公開・署名の方針（2026-06-11 決定済）

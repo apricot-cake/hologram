@@ -51,7 +51,7 @@ await build({
     minify: true,
     sourcemap: false,
     lib: {
-      entry: path.join(here, 'vendor-react', 'index.js'),
+      entry: path.join(here, 'vendor-react', 'index.ts'),
       formats: ['iife'],
       name: '__corpusReactRuntime', // side-effect only (assigns window.*); no exports read
       fileName: () => 'vendor-react.js',
@@ -63,7 +63,7 @@ await build({
 // dep) keeps a literal require("react") in lib-IIFE output — externals are
 // global-mapped only for ESM imports — and throws at load. React 18+ has the
 // hook natively; point both import specifiers at a 1-line ESM re-export.
-const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.js');
+const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.ts');
 const RESOLVE_ALIAS = {
   'use-sync-external-store/shim/index.js': USE_SYNC_SHIM,
   'use-sync-external-store/shim': USE_SYNC_SHIM,
@@ -86,7 +86,7 @@ for (const name of ISLANDS) {
       modulePreload: { polyfill: false }, // no inline polyfill → keep CSP 'self'
       sourcemap: false,
       lib: {
-        entry: path.join(here, name, 'index.jsx'),
+        entry: path.join(here, name, 'index.tsx'),
         formats: ['iife'],
         name: '__corpusIsland_' + name.replace(/-/g, '_'), // IIFE needs a name; islands export nothing (side-effect only)
         fileName: () => name + '.js',

@@ -18,7 +18,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // still resolves: index.html is served at /renderer/index.html, its plain
 // non-module scripts (viewer.js, folders.js, theme.js, …) at /renderer/*,
 // ../vendor/jszip.min.js at /vendor/*, and the island sources at
-// /islands/<name>/index.jsx — all under the same root so Vite serves them.
+// /islands/<name>/index.tsx — all under the same root so Vite serves them.
 
 // Matches the committed island <script src="islands/NAME.js"> tags in index.html.
 const ISLAND_SCRIPT = /<script src="islands\/([\w-]+)\.js"><\/script>/g;
@@ -29,7 +29,7 @@ const ISLAND_SCRIPT = /<script src="islands\/([\w-]+)\.js"><\/script>/g;
 // HTML in dev. psimg:/data:/blob: are carried over so local images still load.
 const DEV_CSP = "default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; " + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " + "connect-src 'self' ws: http://localhost:*; base-uri 'none'; form-action 'none';";
 
-// Dev-only HTML rewrite: swap the island IIFE bundles for their .jsx ES-module
+// Dev-only HTML rewrite: swap the island IIFE bundles for their .tsx ES-module
 // sources (so Vite can HMR them) and relax the CSP meta. apply:'serve' keeps this
 // out of any future `vite build`.
 function corpusDevHtml() {
@@ -38,12 +38,12 @@ function corpusDevHtml() {
     apply: 'serve',
     transformIndexHtml(html) {
       // The prebuilt shared React runtime is prod-only: dev serves each island's
-      // .jsx as an ES module that imports React straight from node_modules, and
-      // vendor-react has a .js entry (no .jsx) the island rewrite below could not
+      // .tsx as an ES module that imports React straight from node_modules, and
+      // vendor-react has a .ts entry (no .tsx) the island rewrite below could not
       // resolve anyway. Strip its <script> before the island rewrite so the
-      // ISLAND_SCRIPT regex below doesn't turn it into a dead /index.jsx module.
+      // ISLAND_SCRIPT regex below doesn't turn it into a dead /index.tsx module.
       html = html.replace(/[ \t]*<script src="islands\/vendor-react\.js"><\/script>\r?\n?/, '');
-      html = html.replace(ISLAND_SCRIPT, (_m, name) => `<script type="module" src="/islands/${name}/index.jsx"></script>`);
+      html = html.replace(ISLAND_SCRIPT, (_m, name) => `<script type="module" src="/islands/${name}/index.tsx"></script>`);
       html = html.replace(/(<meta http-equiv="Content-Security-Policy" content=")[^"]*(">)/, `$1${DEV_CSP}$2`);
       return html;
     },
@@ -57,8 +57,8 @@ export default defineConfig({
     alias: {
       // Same alias as islands/build.mjs: the CJS use-sync-external-store shim is
       // replaced with a 1-line ESM re-export (React 18+ has the hook natively).
-      'use-sync-external-store/shim/index.js': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.js'),
-      'use-sync-external-store/shim': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.js'),
+      'use-sync-external-store/shim/index.js': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
+      'use-sync-external-store/shim': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
     },
   },
   plugins: [react(), corpusDevHtml()],
