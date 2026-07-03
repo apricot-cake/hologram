@@ -15,7 +15,10 @@ let el: HTMLDivElement | null = null;
 function host(): HTMLDivElement {
   if (!el) {
     el = document.createElement('div');
-    el.className = 'ui-tip glass-frost';
+    // glass-lens (high-transparency), NOT glass-frost: the tooltip floats over
+    // sidebar text and should read as see-through glass (user 2026-07-04 —
+    // frost's 55% fill looked like an opaque chip).
+    el.className = 'ui-tip glass-lens';
     el.setAttribute('role', 'tooltip');
     document.body.appendChild(el);
   }

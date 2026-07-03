@@ -12,8 +12,8 @@ import { tipProps } from '../_shared/tip.ts';
 // Emits the SAME DOM the old innerHTML did (.vt-thumb + three .view-toggle buttons with
 // data-mode) so the .view-toggle CSS is unchanged. Glyph-only in every state (the
 // active-label idiom is retired — 2026-07-04); segments name themselves via the
-// instant .ui-tip tooltip (native title was delayed + OS-styled), and the current
-// mode is spelled out by the section title's readout (SectionTitle).
+// instant .ui-tip tooltip (native title was delayed + OS-styled) and the glass
+// thumb marks the active one.
 
 const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 

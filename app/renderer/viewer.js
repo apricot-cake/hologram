@@ -134,7 +134,6 @@
     browsePosts: _s('browsePosts'),
     browsePosters: _s('browsePosters'),
     browseCollections: _s('browseCollections'),
-    browseModeTitle: _s('browseModeTitle'),
     // コレクションビュー（第3モード）
     collectionCount: _f1('collectionCount'),
     collItemCount: _f1('collItemCount'),
@@ -364,13 +363,10 @@
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
-  // #densityToggle, #posterDensityToggle and #browseToggle (incl. its labels and
-  // per-button tooltips) are rendered by the toolbar island now. The browse toggle's
-  // CONTAINER title stays here — the island never mutates its own mount container.
-  {
-    const bt = document.getElementById('browseToggle');
-    if (bt) bt.title = MSG.browseModeTitle;
-  }
+  // #densityToggle, #posterDensityToggle and #browseToggle (incl. per-button
+  // tooltips) are rendered by the toolbar island now. The browse toggle's old
+  // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
+  // redundant noise on hover (user 2026-07-04).
   setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
   setText('collectionNewLabel', MSG.collNew);
   {

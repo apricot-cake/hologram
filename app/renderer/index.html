@@ -590,9 +590,8 @@
     /* Browse-mode toggle (ライブラリ / 投稿者 / コレクション): reuses .view-toggle visuals
        verbatim — glyph-only in EVERY state (the active-label idiom was retired
        2026-07-04: text on the active segment made the thumb width jump per mode and
-       read as a different control from the layout toggle). Which mode is active is
-       named by the section title's mode readout (#sbViewTitle right side) and the
-       instant .ui-tip tooltips; the glass thumb marks it visually. */
+       read as a different control from the layout toggle). Segments name themselves
+       via the instant .ui-tip tooltips; the glass thumb marks the active one. */
     /* Lives at the sidebar top (.browse-bar-section = a .sb-section). */
     .browse-bar-section { margin-bottom: 16px; }
 
@@ -1400,16 +1399,6 @@
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 6px; padding-left: 0;   /* aligns to the gutter (container) */
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    }
-    /* Current-mode readout on section titles (「ビュー」…「ライブラリ」): the control
-       name sits left in caps, the CURRENT value right as a quieter label — the
-       iOS Settings label/value row, so "which is the segment, which is the mode"
-       reads at a glance (the old "ビュー · ライブラリ" one-liner didn't). The
-       space-between on .sb-title does the pushing; this styles the value. */
-    .sb-title-mode {
-      font-weight: 500; color: var(--text-muted);
-      text-transform: none; letter-spacing: 0;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
        pills + AND/OR toggle + reset. Shown only when at least one filter is active. */

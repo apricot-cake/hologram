@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { SearchModeSeg } from './SearchModeSeg.tsx';
 import { DensityToggle } from './DensityToggle.tsx';
 import { BrowseToggle } from './BrowseToggle.tsx';
-import { SectionTitle, BROWSE_MAP, VIEW_MAP } from './SectionTitle.tsx';
+import { SectionTitle } from './SectionTitle.tsx';
 import { GlassSelect } from './GlassSelect.tsx';
 import { initI18n } from '../_shared/i18n.ts';
 
@@ -38,22 +38,22 @@ function mountBrowse() {
   if (el) createRoot(el).render(<BrowseToggle el={el} />);
 }
 
-// Section titles that name the current mode/layout (e.g. "ビュー · ライブラリ",
-// "レイアウト · カード"). React-owned now, so viewer.js's static setText for these is
-// dropped — see SectionTitle.tsx and the note above.
+// Section titles ("ビュー" / "レイアウト") — static now (the mode readout was
+// retired; see SectionTitle.tsx). Still island-rendered so viewer.js's setText
+// stays dropped.
 function mountViewTitle() {
   const el = document.getElementById('sbViewTitle');
-  if (el) createRoot(el).render(<SectionTitle baseKey="sbViewTitle" storeKey="browseMode" map={BROWSE_MAP} defaultVal="posts" />);
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbViewTitle" />);
 }
 
 function mountLayoutTitle() {
   const el = document.getElementById('sbLayoutTitle');
-  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" storeKey="view" map={VIEW_MAP} defaultVal="card" />);
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" />);
 }
 
 function mountPosterLayoutTitle() {
   const el = document.getElementById('sbPosterLayoutTitle');
-  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" storeKey="posterView" map={VIEW_MAP} defaultVal="card" />);
+  if (el) createRoot(el).render(<SectionTitle baseKey="sbLayoutTitle" />);
 }
 
 // Sort selects (post / poster / collection) — one GlassSelect, three mounts. The
