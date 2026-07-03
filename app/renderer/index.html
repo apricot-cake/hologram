@@ -368,12 +368,13 @@
        old lone right-edge chip didn't look like a toggle (BACKLOG: 発見性が低い).
        Shared by the main search box and, compact, the filter flyout (.seg-control--qf).
        Labels are behavior-words (ぴったり/おおまか) + a one-line hint (DESIGN「声と語り口」). */
-    /* width:fit-content = the control hugs its two labels instead of stretching
-       across the whole column (user 2026-07-04: 幅いっぱいで間延び). The thumb slide
-       is an inline transform set by the island (fuzzy=left / exact=right), so no
-       .is-fuzzy CSS rule. Each option names itself via a .ui-tip tooltip on hover. */
+    /* Full-width = the control spans the same width as the input bar directly above
+       it (the search box in the sidebar, the 絞り込み find box in the flyout) so they
+       line up as one block (user 2026-07-04). The thumb slide is an inline transform
+       set by the island (fuzzy=left / exact=right). Each option names itself via a
+       .ui-tip tooltip on hover. */
     .seg-control {
-      position: relative; display: grid; grid-template-columns: 1fr 1fr; width: fit-content;
+      position: relative; display: grid; grid-template-columns: 1fr 1fr;
       background: var(--seg-track); border-radius: var(--radius-md);
       padding: 3px; margin-top: 8px; user-select: none;
     }
@@ -386,14 +387,20 @@
     }
     .seg-control .seg-opt {
       position: relative; z-index: 1; appearance: none; background: transparent;
-      border: 0; font: inherit; font-size: 12px; padding: 3px 16px;
+      border: 0; font: inherit; font-size: 12px; padding: 3px 4px;
       color: var(--text-muted); cursor: pointer;
       border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
     }
     .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
     .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
-    .seg-control--qf { margin: 2px 4px 6px; }
-    .seg-control--qf .seg-opt { padding: 3px 14px; font-size: 11px; }
+    /* Flyout variant: full-width to match the find box above it, and a MORE VISIBLE
+       track — the sidebar's light --seg-track melted into the refracted glass (user:
+       コントラスト低くて溶けてる). --surface-3 + a hairline reads as a recessed control
+       on glass, matching the find input's treatment. */
+    .seg-control--qf { margin: 6px 4px 2px; }
+    .seg-control--qf .seg-opt { padding: 3px 4px; font-size: 11px; }
+    .qf-pop .seg-control--qf { background: var(--surface-3); border: 1px solid var(--border-strong); }
+    .qf-pop .seg-control--qf .seg-thumb { background: var(--seg-thumb); }
     @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
@@ -715,7 +722,6 @@
        clip row) — only the search box stays useful. */
     body.browse-posters #postActiveBar,
     body.browse-posters #filterRows,
-    body.browse-posters #collectionSidebar,
     body.browse-posters #tileSizeRow,
     body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
     body.browse-posters #postsToolbar .sb-section:has(#sortSelect) { display: none !important; }
@@ -1574,9 +1580,8 @@
        and a sliver of scroll survives even when the list could have fit. */
     .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
     /* Find input + ぴったり/おおまか form the flyout's SEARCH HEADER (Finder/Mail:
-       field + scope bar as one block, hairline, then results). Without the hairline
-       the scope bar read as part of the value area below, not as the input's option. */
-    .qf-pop .seg-control--qf + .qf-vals { border-top: 1px solid var(--border); }
+       field + scope bar as one block, then results). The seg now carries its own
+       border (visible on glass), so the values area needs no extra hairline above it. */
     .qf-pop .qf-find {
       width: 100%; padding: 5px 10px; font-size: 12px;
       border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-3);
@@ -1605,12 +1610,15 @@
        click to scope the tags beside them). Replaces the wrapped-chip single flyout
        (2026-07-04): a grouped vocabulary reads faster as pick-a-group → see-its-tags
        than as one long chip-wrapped scroll. The flyout widens to hold both columns. */
-    .fold-menu.qf-pop--twopane { max-width: min(560px, calc(100vw - 24px)); width: 560px; }
+    /* width:max-content = the flyout sizes to its content (both columns), capped at
+       520px / viewport — NOT a fixed 560 slab (user 2026-07-04: 横長すぎ). The panes'
+       own min-widths set the effective floor (≈110+150+gutters), so a short vocabulary
+       gives a narrow flyout and a long one grows to the cap. */
+    .fold-menu.qf-pop--twopane { width: max-content; max-width: min(520px, calc(100vw - 24px)); }
     .qf-pop .qf-panes { flex: 1; display: flex; min-height: 0; }
-    .qf-pop .seg-control--qf + .qf-panes { border-top: 1px solid var(--border); }
-    /* Left column: the tag-groups (全て + each group), a fixed-width scrolling list.
+    /* Left column: the tag-groups (全て + each group), hugs its content (min 110px).
        Active group = the app's monotone-contrast active fill (not accent — DESIGN). */
-    .qf-pop .qf-groups { flex: 0 0 150px; overflow-y: auto; padding: 4px 4px 4px 2px; border-right: 1px solid var(--border); scrollbar-gutter: stable; }
+    .qf-pop .qf-groups { flex: 0 0 auto; min-width: 110px; max-width: 190px; overflow-y: auto; padding: 4px 4px 4px 2px; border-right: 1px solid var(--border); scrollbar-gutter: stable; }
     .qf-pop .qf-group-row {
       display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px;
       border: 0; border-radius: 6px; background: transparent; cursor: pointer;
@@ -1621,7 +1629,7 @@
     .qf-pop .qf-group-row.active { background: var(--accent-subtle); color: var(--text-strong); font-weight: 600; }
     .qf-pop .qf-group-row .fm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .qf-pop .qf-group-row .fm-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-    .qf-pop .qf-panes .qf-vals { flex: 1; }
+    .qf-pop .qf-panes .qf-vals { flex: 1 1 auto; min-width: 150px; }
     .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
     .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
     .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }
@@ -1660,16 +1668,6 @@
     transition: background .12s, color .12s;
   }
   .sb-row:hover { background: var(--sidebar-row-hover); }
-  /* Collection folder rows (Eagle-style sidebar list). Reuse .sb-row; active =
-     the app's monotone-contrast fill (folder currently filtering the library). */
-  .cf-list { display: flex; flex-direction: column; gap: 1px; }
-  .cf-row.active { background: var(--accent-subtle); }
-  .cf-row.active .sb-row-name { color: var(--text-strong); font-weight: 600; }
-  .cf-row.active .sb-row-ic { color: var(--text-strong); }
-  .cf-empty { padding: 2px 12px 4px; font-size: 11.5px; color: var(--text-subtle); }
-  /* 「管理」 link on the section title (right side via .sb-title space-between). */
-  .sb-manage-link { border: 0; background: none; cursor: pointer; padding: 0; font: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--accent-text); }
-  .sb-manage-link:hover { text-decoration: underline; }
   .sb-row .sb-row-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; transition: color .12s; }
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
@@ -1869,19 +1867,6 @@
              shows how many filters of that type are active. Categories are few
              and fixed, so they earn permanent sidebar spots (spatial memory);
              the unbounded lists (tags/authors/instances) live in the flyouts. -->
-        <!-- Collections = user folders, listed Eagle-style directly in the sidebar.
-             Clicking a row filters the library to that collection's members (a
-             'collection' filter leaf). Create / rename / delete happen in the shared
-             folder-manager modal via 「管理」. Replaces the old 3rd browse view
-             (2026-07-04: コレクションはビューでなくサイドバーのフォルダに戻す). -->
-        <div class="sb-section" id="collectionSidebar">
-          <div class="sb-title">
-            <span id="sbCollectionsTitle"></span>
-            <button class="sb-manage-link" id="collManageBtn" type="button"></button>
-          </div>
-          <div class="cf-list" id="collectionFolderList"></div>
-          <div class="cf-empty" id="collectionEmpty" style="display:none"></div>
-        </div>
         <div class="sb-section" id="filterRows">
           <div class="sb-title" id="sbFilterTitle"></div>
           <!-- Clip: the library-wide ephemeral flag (one-click 📎 on cards). A normal
@@ -1894,6 +1879,11 @@
             <span class="sb-row-badge" id="clipBadge"></span>
             <button class="clip-clear-btn" id="clipClear" type="button" aria-label="空にする" style="display:none;"><!-- trash icon injected by viewer.js (ICON_TRASH) --></button>
           </div>
+          <!-- フォルダ (collections): like the タグ row, a single sidebar row that opens a
+               flyout of the user's folders (data-qfrow="collection" → qfValues). Clicking
+               a folder toggles a 'collection' filter; the flyout footer 「管理」 opens the
+               folder-manager modal. Replaces the old expanded sidebar list (2026-07-04). -->
+          <button class="sb-row" type="button" data-qfrow="collection"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="sb-row-name" id="sbFolderRowName"></span><span class="sb-row-badge" data-badge="collection"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/></svg></span><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>

@@ -26,7 +26,7 @@
   //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
   //   buildUsers() — user facet source (cached in viewer)
   function makeFacets(deps) {
-    const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, multiOnly, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, buildUsers } = deps;
+    const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, multiOnly, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
 
     // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
     // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -206,6 +206,13 @@
               .forEach((it) => out.push(it));
           }
           return out;
+        }
+        case 'collection': {
+          // Library folders (collections.json). Each row toggles a 'collection' leaf
+          // (folder membership, CF().has). Count = current-query posts in that folder.
+          const folders = postFolders();
+          const cnt = facetCounts((p) => folders.filter((f) => (f.items || []).includes(p.captureId)).map((f) => f.id));
+          return folders.map((f) => ({ v: f.id, l: f.name, on: act('collection', f.id), count: cnt.get(f.id) || 0 }));
         }
         case 'hashtag': {
           const cnt = facetCounts((p) => p.hashtags);

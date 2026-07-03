@@ -140,9 +140,6 @@
     collItemCount: _f1('collItemCount'),
     collNew: _s('collNew'),
     collNewPrompt: _s('collNewPrompt'),
-    sbCollectionsTitle: _s('sbCollectionsTitle'),
-    collManageLink: _s('collManageLink'),
-    collSidebarEmpty: _s('collSidebarEmpty'),
     collOpen: _s('collOpen'),
     collRename: _s('collRename'),
     collRenamePrompt: _s('collRenamePrompt'),
@@ -371,9 +368,7 @@
   // tooltips) are rendered by the toolbar island now. The browse toggle's old
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
-  setText('sbCollectionsTitle', MSG.sbCollectionsTitle);
-  setText('collManageBtn', MSG.collManageLink);
-  setText('collectionEmpty', MSG.collSidebarEmpty);
+  setText('sbFolderRowName', MSG.qfCatFolder);
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   // Poster filter rows reuse the post-side row labels (same concepts).
   setText('sbPosterFilterTitle', MSG.sbFilterTitle);
@@ -651,6 +646,7 @@
     posterFilterVocab,
     namedPosters: () => namedPosters(),
     posterFolders: () => pfStore.all(),
+    postFolders: () => (CF() ? CF().all() : []), // library folders (collections.json) for the フォルダ flyout
     // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
     // after this point — a direct ref here would hit TDZ at wiring time.
     buildUsers: () => buildUsers(),
@@ -682,7 +678,10 @@
     // one-flyout wrapped-chip layout). Everything else stays a single row column.
     // No heading row: the user already clicked the category row, so repeating its name
     // as a (hover-highlighted, seemingly-clickable) row was noise.
-    const showManage = cat === 'poster-folder' && !!CF();
+    // The folder flyouts (library 'collection' + poster 'poster-folder') carry a
+    // 「フォルダを管理」 footer that opens the shared folder-manager modal — the create/
+    // rename/delete home now that folders live in a flyout, not a sidebar list.
+    const showManage = (cat === 'poster-folder' || cat === 'collection') && !!CF();
     window.corpusQfPop.open({
       anchorRect: qfAnchor.getBoundingClientRect(),
       sessionId: qfSession,
@@ -699,14 +698,19 @@
       onManage: showManage
         ? () => {
             hideQfPop();
-            // Reuse the shared modal for whichever folder store this flyout is about.
-            CF().openManager({
-              store: pfStore,
-              onChange: () => {
-                renderPosterFilterRows();
-                renderPosters();
-              },
-            });
+            if (cat === 'poster-folder') {
+              // Poster folder store — refresh the poster sidebar/grid on change.
+              CF().openManager({
+                store: pfStore,
+                onChange: () => {
+                  renderPosterFilterRows();
+                  renderPosters();
+                },
+              });
+            } else {
+              // Library folder store (default) — its onChange runs the shared refresh below.
+              CF().openManager();
+            }
           }
         : null,
       onPick: (it) => onQfPick(cat, it),
@@ -2750,43 +2754,7 @@
   // now only keeps the clip row entry in sync. Call sites keep the name.
   function renderPostFolders() {
     renderClipRow();
-    renderCollectionSidebar();
   }
-  // Collections as a sidebar folder list (Eagle-style): each row filters the library
-  // to that collection's members via a 'collection' leaf; active = that leaf is in the
-  // query. Rebuilt on any folder change (CF().onChange → renderPostFolders) and on
-  // query change (postQB onChange → renderPostFolders), so counts + active stay live.
-  const CF_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
-  function renderCollectionSidebar() {
-    const list = document.getElementById('collectionFolderList');
-    if (!list || !CF()) return;
-    const folders = CF().all();
-    const existing = new Set(allPosts.map((p) => p.captureId));
-    const active = new Set(activeFilters.filter((f) => f.type === 'collection').map((f) => f.value));
-    list.innerHTML = folders
-      .map((f) => {
-        const n = (f.items || []).filter((c) => existing.has(c)).length;
-        const on = active.has(f.id);
-        return `<button class="sb-row cf-row${on ? ' active' : ''}" type="button" data-cf="${escapeAttr(f.id)}"><span class="sb-row-ic">${CF_ICON}</span><span class="sb-row-name">${escapeHtml(f.name)}</span><span class="sb-row-badge${n ? ' on' : ''}">${n || ''}</span></button>`;
-      })
-      .join('');
-    const empty = document.getElementById('collectionEmpty');
-    if (empty) empty.style.display = folders.length ? 'none' : '';
-  }
-  (function setupCollectionSidebar() {
-    const list = document.getElementById('collectionFolderList');
-    if (list)
-      list.addEventListener('click', (e) => {
-        const row = e.target.closest('[data-cf]');
-        if (!row) return;
-        const id = row.dataset.cf;
-        const i = activeFilters.findIndex((f) => f.type === 'collection' && f.value === id);
-        if (i >= 0) removeFilter(i);
-        else addFilter({ type: 'collection', value: id }); // both re-render (afterQueryChange → renderPostFolders)
-      });
-    const manage = document.getElementById('collManageBtn');
-    if (manage) manage.addEventListener('click', () => CF() && CF().openManager());
-  })();
   // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
   // only clipped posts; 空にする clears all flags (the posts themselves are kept).
   function renderClipRow() {
