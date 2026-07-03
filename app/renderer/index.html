@@ -5,7 +5,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
   <title>Corpus</title>
   <link rel="stylesheet" href="design-tokens.css">
-  <link rel="stylesheet" href="islands/settings.css">
+  <!-- Island CSS (settings layout) is bundled into islands/app.js and injected at
+       runtime as a <style> (CSP style-src allows unsafe-inline) — no <link> needed. -->
   <script src="theme.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2373,62 +2374,14 @@
        externalized) reach window.React/ReactDOM/… instead of each inlining its
        own ~186KB copy. Must precede the first island script. -->
   <script src="islands/vendor-react.js"></script>
-  <!-- Image lightbox / gallery: React owns the overlay UI; viewer.js resolves a
-       post's gallery items and calls window.corpusLightbox.open(). Loaded BEFORE
-       viewer.js so its init can push the nav-button labels. -->
-  <script src="islands/lightbox.js"></script>
   <script src="viewer.js"></script>
-  <script src="islands/settings.js"></script>
-  <!-- Sidebar tag-group subrows: React owns rendering, viewer.js owns data+events. -->
-  <!-- Query-builder active bars: React owns chip rendering, viewer.js owns the
-       tree state + qbNodeMap + drag/click/contextmenu delegation. -->
-  <script src="islands/query-chips.js"></script>
-  <!-- Tab strip: React owns tab rendering, viewer.js owns the tabs array +
-       activeTabId + rename state + click/auxclick/contextmenu/rename delegation. -->
-  <script src="islands/tabs.js"></script>
-  <!-- Search box + suggest dropdown (react-aria ComboBox): the island owns the
-       input + dropdown UI (rendering, keyboard nav, open/close, positioning);
-       value = corpusStore 'searchQuery', data/actions via window.corpusSearchBox. -->
-  <script src="islands/searchbox.js"></script>
-  <!-- Poster grid: React owns card rendering, viewer.js owns posterList + count +
-       density classes + inspected highlight + click/contextmenu delegation. -->
-  <script src="islands/posters.js"></script>
-  <!-- Virtualized post grid (all three views): React owns cell rendering +
-       windowing (masonic) inside its own #postGridReact host; viewer.js owns
-       viewGroups, the container classes, and all delegated #postGrid events
-       (via window.corpusGrid). -->
-  <script src="islands/grid.js"></script>
-  <!-- Sidebar toolbar controls (search-mode segment; view-density toggle): React
-       owns rendering, state lives in window.corpusSearch / window.corpusStore. -->
-  <script src="islands/toolbar.js"></script>
-  <!-- Right-click context menus: React owns the glass popup rendering, viewer.js owns
-       the items + actions (via window.corpusContextMenu). -->
-  <script src="islands/context-menu.js"></script>
-  <!-- 種別 (tag-kind) menu: React owns the glass popup rendering (header + pick/rename
-       rows), viewer.js owns the row model + pick/rename actions (kind-menu.js bridge). -->
-  <script src="islands/kind-menu.js"></script>
-  <!-- Date / engagement / poster-date-range popovers: React owns the form rendering
-       (fields + apply/remove), viewer.js owns the field values + apply/remove actions
-       (via window.corpusFilterPopover). -->
-  <script src="islands/filter-popover.js"></script>
-  <!-- Sidebar filter value flyout (qf-pop): React owns the list/find/segment/footer
-       rendering, viewer.js owns the facet logic (qfValues) + pick routing (via
-       window.corpusQfPop). -->
-  <script src="islands/qf-pop.js"></script>
-  <!-- Post/poster inspector panel: React owns the detail body + inline tag editor
-       rendering, viewer.js owns the panel's hidden/insp-open chrome + all business
-       logic (persistence, undo, homonym detection, poster folders) via
-       window.corpusInspector. -->
-  <script src="islands/inspector.js"></script>
-  <!-- Bulk "add tags to selection" modal: React owns the label/chips/add-row/picker/
-       cancel/save rendering, viewer.js owns the backdrop show/hide + selection/
-       persistence/undo via window.corpusEditOverlay. -->
-  <script src="islands/edit-overlay.js"></script>
-  <!-- Image-tab detail view: React owns the zoom/pan stage (react-zoom-pan-pinch)
-       + prev/next + ←/→ keys; viewer.js owns the tab object (type:'image'),
-       resolves its records to gallery items and toggles body.image-tab-active
-       via window.corpusImageTab. -->
-  <script src="islands/image-tab.js"></script>
+  <!-- All React islands in ONE IIFE bundle: islands/build.mjs builds the app/index.tsx
+       barrel, which side-effect-imports every island. Loaded after viewer.js, which owns
+       data/state/event-delegation + the window.corpus* bridges; each island subscribes and
+       renders. Ordering is robust — islands pull current state and replay stashed models
+       (e.g. lightbox nav labels fall back to window.__corpusLbLabels), so folding lightbox
+       in here is safe. Shared code (masonic / react-aria / _shared/*) is bundled once. -->
+  <script src="islands/app.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>
