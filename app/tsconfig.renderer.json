@@ -27,6 +27,7 @@
     "renderer/i18n.js",
     "renderer/ui.js",
     "renderer/theme.js",
+    "renderer/bridge.js",
     "renderer/search.js",
     "renderer/menu.js",
     "renderer/kind-menu.js",

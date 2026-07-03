@@ -14,38 +14,8 @@
 // (not passed by the caller): every open() bumps it, so the island can key its root on
 // it and remount (reset + refocus the find input) on every open() call — including the
 // refresh after a pick, matching the old renderQfPop() rebuild-on-every-change behavior.
+// The subscribe/notify/openId machinery is the shared makeCallbackBridge (bridge.js).
 (function () {
   'use strict';
-  let current = null;
-  let seq = 0;
-  const subs = new Set();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
-    }
-  };
-
-  function open(model) {
-    current = { ...model, openId: ++seq };
-    notify();
-  }
-  function close() {
-    if (current) {
-      current = null;
-      notify();
-    }
-  }
-  function get() {
-    return current;
-  } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
-    subs.add(cb);
-    return () => subs.delete(cb);
-  }
-
-  window.corpusQfPop = { open, close, get, subscribe };
+  window.corpusMakeBridge('corpusQfPop');
 })();

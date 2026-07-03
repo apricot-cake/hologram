@@ -13,38 +13,8 @@
 // internal monotonic counter (not passed by the caller) so the island can key its form
 // on it and remount (reset local input state) on every open() — including re-opening
 // the SAME kind to edit a different node.
+// The subscribe/notify/openId machinery is the shared makeCallbackBridge (bridge.js).
 (function () {
   'use strict';
-  let current = null;
-  let seq = 0;
-  const subs = new Set();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
-    }
-  };
-
-  function open(model) {
-    current = { ...model, openId: ++seq };
-    notify();
-  }
-  function close() {
-    if (current) {
-      current = null;
-      notify();
-    }
-  }
-  function get() {
-    return current;
-  } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
-    subs.add(cb);
-    return () => subs.delete(cb);
-  }
-
-  window.corpusFilterPopover = { open, close, get, subscribe };
+  window.corpusMakeBridge('corpusFilterPopover');
 })();

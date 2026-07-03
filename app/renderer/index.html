@@ -2336,6 +2336,9 @@
   <!-- Shared renderer state store (window.corpusStore): one source of truth shared
        by viewer.js and the React islands during the migration. Before viewer.js. -->
   <script src="store.js"></script>
+  <!-- Shared callback-bridge factory (window.corpusMakeBridge): the subscribe/notify/
+       openId machinery behind qf-pop / filter-popover. Before those consumers. -->
+  <script src="bridge.js"></script>
   <!-- Context-menu controller (window.corpusContextMenu): the imperative→declarative
        bridge for right-click menus. viewer.js calls open(); the context-menu island
        renders. Before viewer.js. -->
