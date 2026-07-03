@@ -30,6 +30,14 @@
   },
   // import 並べ替えは今はしない（チャーン優先度が低い・必要なら別途）
   "organizeImports": { "enabled": false },
+  "overrides": [
+    {
+      // tsconfig.json は Biome が既知名として JSONC 扱いするが、プロジェクト分割の
+      // tsconfig.*.json（renderer 用 checkJs 等）は名前で認識されない＝コメント可を明示。
+      "include": ["**/tsconfig.*.json"],
+      "json": { "parser": { "allowComments": true, "allowTrailingCommas": true } }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

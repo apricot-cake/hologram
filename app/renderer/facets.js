@@ -101,6 +101,7 @@
         }
         case 'media': {
           const cnt = facetCounts((p) => p.mediaType);
+          /** @type {CorpusQfRow[]} */
           const out = [
             ['image', MSG.qfImage],
             ['video', MSG.qfVideo],

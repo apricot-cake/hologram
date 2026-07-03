@@ -11,6 +11,7 @@
   // --- Condition-tree machinery. The tree is ALWAYS a root group (op 'and' by
   // default); leaves are {kind:'cond', type, value, …}, groups carry children
   // and an optional neg. Shared by BOTH query builders (posts / posters). ---
+  /** @returns {CorpusQueryGroup} */
   function emptyTree() {
     return { kind: 'group', op: 'and', neg: false, children: [] };
   }

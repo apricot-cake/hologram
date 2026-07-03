@@ -1,0 +1,25 @@
+{
+  // TypeScript stage 2 (BACKLOG 採用#1「残り②」): checkJs over the build-less
+  // plain-JS renderer SERVICE layer (the viewer.js extraction slices + store).
+  // Contract-visibility only — no build, no emit; files convert to .ts when
+  // 単一バンドル化 puts them under Vite. viewer.js itself is NOT here yet (5.7k
+  // lines of DOM orchestration — it joins after further slicing). Opt-in is by
+  // explicit "files" so each module enters checked, not aspirationally.
+  //
+  // noImplicitAny stays OFF for this project: the modules are written in plain
+  // JS where internal lambda params would each need JSDoc noise; the contracts
+  // that matter (the window bridges) are typed in renderer/types/*.d.ts and
+  // assignment-checked here. The rest of strict stays on.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "files": ["renderer/types/renderer-globals.d.ts", "renderer/query.js", "renderer/records.js", "renderer/facets.js", "renderer/cooc.js", "renderer/users.js", "renderer/tab-state.js", "renderer/store.js"]
+}
