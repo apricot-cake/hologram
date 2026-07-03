@@ -46,6 +46,7 @@
     "renderer/listing.js",
     "renderer/geometry.js",
     "renderer/undo.js",
-    "renderer/store.js"
+    "renderer/store.js",
+    "renderer/folders.js"
   ]
 }

@@ -342,6 +342,65 @@ interface CorpusUndoApi {
   };
 }
 
+// ---- renderer/folders.js — library collections store + management modal +
+// library-wide clip set. The factory (window.corpusFolderStore) is shared by the
+// library collections store (isCollections) and the poster folder store
+// (viewer.js pfStore, no isCollections). A folder always has an id/name/items;
+// collections additionally carry kind/created and a dynamic saved-search (tree+q). ----
+interface CorpusFolder {
+  id: string;
+  name: string;
+  items: string[];
+  kind?: 'static' | 'dynamic';
+  created?: number | null;
+  tree?: CorpusQueryGroup | null;
+  q?: string;
+  [k: string]: any;
+}
+interface CorpusFolderStore {
+  all(): CorpusFolder[];
+  allRaw(): CorpusFolder[];
+  setAll(list: unknown): void;
+  byId(id: string | null | undefined): CorpusFolder | null;
+  has(id: string | null | undefined, key: string): boolean;
+  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null): CorpusFolder | null;
+  remove(id: string | null | undefined): void;
+  rename(id: string | null | undefined, name: string | null | undefined): boolean;
+  /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
+  toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): 'added' | 'removed' | null;
+  /** Drops keys no longer present (deleted items); true when anything changed. */
+  reconcile(existing: Set<string>): boolean;
+  /** Drag-reorder: place draggedId before/after targetId; true when the order changed. */
+  move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean): boolean;
+  /** Present only on the collections store (isCollections): re-save a dynamic collection's search. */
+  update?(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
+}
+type CorpusFolderStoreFactory = (opts: { idPrefix: string; persist: () => void; isCollections?: boolean }) => CorpusFolderStore;
+interface CorpusFoldersApi {
+  load(): Promise<void>;
+  all(): CorpusFolder[];
+  byId(id: string | null | undefined): CorpusFolder | null;
+  has(id: string | null | undefined, key: string): boolean;
+  isClipped(cid: string): boolean;
+  toggleClip(captureIds: string[] | null | undefined, anchorCid?: string | null): 'added' | 'removed' | null;
+  clearClips(): number;
+  clippedItems(): string[];
+  clipCount(existing?: Set<string> | null): number;
+  reconcile(existing: Set<string>): void;
+  toggleIn(fid: string | null | undefined, captureIds: string[] | null | undefined, anchorCid?: string | null): 'added' | 'removed' | null;
+  openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null): void;
+  closeManager(): void;
+  isManagerOpen(): boolean;
+  allCollections(): CorpusFolder[];
+  createCollection(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null): CorpusFolder | null;
+  updateCollection(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
+  renameCollection(id: string | null | undefined, name: string | null | undefined): boolean;
+  removeCollection(id: string | null | undefined): void;
+  toast(msg: unknown): void;
+  onChange(cb: (kind?: string) => void): void;
+  isLoaded(): boolean;
+}
+
 // renderer/store.js's window.corpusStore contract (CorpusStore) now comes from
 // islands/types/globals.d.ts, which this tsc project shares directly (it is in
 // tsconfig.renderer.json "files") — the old duplicated CorpusStoreApi is gone.
@@ -357,4 +416,6 @@ interface Window {
   corpusListing: CorpusListingApi;
   corpusGeometry: CorpusGeometryApi;
   corpusUndo: CorpusUndoApi;
+  corpusFolderStore: CorpusFolderStoreFactory;
+  corpusFolders: CorpusFoldersApi;
 }

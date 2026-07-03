@@ -13,6 +13,13 @@
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
+  // event.target → nearest matching ancestor as an HTMLElement (null when the
+  // target is not an Element or no match) — keeps the DOM casts in one place.
+  /** @param {Event} e @param {string} sel @returns {HTMLElement | null} */
+  const closestOf = (e, sel) => {
+    const t = e.target;
+    return t instanceof Element ? /** @type {HTMLElement | null} */ (t.closest(sel)) : null;
+  };
 
   // Folder-list store shared by the library collections (below, isCollections) and the
   // poster folders (viewer.js, via window.corpusFolderStore, no isCollections). Owns the
@@ -22,6 +29,7 @@
   // isCollections (library only) generalizes folders into "collections": each carries
   // kind/created, and dynamic collections carry a saved-search payload (tree + q). The
   // poster store omits isCollections, so its surface/behavior is exactly as before.
+  /** @param {{ idPrefix: string; persist: () => void; isCollections?: boolean }} opts */
   function createFolderStore({ idPrefix, persist, isCollections }) {
     let folders = [];
     const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
@@ -148,6 +156,7 @@
   let mgrStore = store;
   let mgrAfter = () => notify('list');
   let loaded = false;
+  /** @type {Promise<void> | null} */
   let loadPromise = null;
   const subs = [];
 
@@ -170,7 +179,7 @@
     if (!modal) return;
     const title = modal.querySelector('.iv-insp-title');
     if (title) title.textContent = t('foldManageTitle');
-    const inp = $('ivFolderNewName');
+    const inp = /** @type {HTMLInputElement | null} */ ($('ivFolderNewName'));
     if (inp) inp.placeholder = t('foldNewPlaceholder');
     const createBtn = $('ivFolderCreate');
     if (createBtn) createBtn.textContent = t('foldCreate');
@@ -303,7 +312,7 @@
     if (m) m.hidden = false;
     setTimeout(() => {
       try {
-        $('ivFolderNewName').focus();
+        $('ivFolderNewName')?.focus();
       } catch {
         /* ignore */
       }
@@ -335,7 +344,7 @@
       : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
   }
   function create() {
-    const inp = $('ivFolderNewName');
+    const inp = /** @type {HTMLInputElement | null} */ ($('ivFolderNewName'));
     if (!inp) return;
     if (!mgrStore.create(inp.value)) return; // store mints the id + persists
     inp.value = '';
@@ -346,18 +355,20 @@
   function bind() {
     const modal = $('ivFolderModal');
     if (!modal) return;
-    $('ivFolderClose').addEventListener('click', closeManager);
+    const flist = $('ivFolderList');
+    if (!flist) return;
+    $('ivFolderClose')?.addEventListener('click', closeManager);
     modal.addEventListener('click', (e) => {
       if (e.target === modal) closeManager();
     });
-    $('ivFolderCreate').addEventListener('click', create);
-    $('ivFolderNewName').addEventListener('keydown', (e) => {
+    $('ivFolderCreate')?.addEventListener('click', create);
+    $('ivFolderNewName')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') create();
     });
-    $('ivFolderList').addEventListener('click', (e) => {
-      const row = e.target.closest('.iv-folder-row');
+    flist.addEventListener('click', (e) => {
+      const row = closestOf(e, '.iv-folder-row');
       if (!row) return;
-      const act = e.target.closest('[data-fact]');
+      const act = closestOf(e, '[data-fact]');
       if (!act) return;
       const fid = row.dataset.fid;
       const f = mgrStore.byId(fid);
@@ -373,37 +384,40 @@
     });
     // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
     // notify so the sidebar chips re-render in the new order.
-    const flist = $('ivFolderList');
+    /** @type {string | null | undefined} */
     let dragId = null;
     const clearMarks = () => flist.querySelectorAll('.iv-drop-before, .iv-drop-after').forEach((el) => el.classList.remove('iv-drop-before', 'iv-drop-after'));
+    /** @param {HTMLElement} row @param {number} clientY */
     const dropBefore = (row, clientY) => {
       const r = row.getBoundingClientRect();
       return clientY < r.top + r.height / 2;
     };
     flist.addEventListener('dragstart', (e) => {
-      const row = e.target.closest('.iv-folder-row');
+      const row = closestOf(e, '.iv-folder-row');
       if (!row) return;
       dragId = row.dataset.fid;
-      e.dataTransfer.effectAllowed = 'move';
-      try {
-        e.dataTransfer.setData('text/plain', dragId);
-      } catch {
-        /* some engines disallow */
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try {
+          e.dataTransfer.setData('text/plain', dragId || '');
+        } catch {
+          /* some engines disallow */
+        }
       }
       row.classList.add('iv-dragging');
     });
     flist.addEventListener('dragover', (e) => {
       if (!dragId) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
       clearMarks();
-      const row = e.target.closest('.iv-folder-row');
+      const row = closestOf(e, '.iv-folder-row');
       if (row && row.dataset.fid !== dragId) row.classList.add(dropBefore(row, e.clientY) ? 'iv-drop-before' : 'iv-drop-after');
     });
     flist.addEventListener('drop', (e) => {
       if (!dragId) return;
       e.preventDefault();
-      const row = e.target.closest('.iv-folder-row');
+      const row = closestOf(e, '.iv-folder-row');
       if (row && row.dataset.fid !== dragId && mgrStore.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) {
         renderModal();
         mgrAfter();
@@ -444,7 +458,7 @@
       return f;
     },
     updateCollection: (id, patch) => {
-      const ok = store.update(id, patch);
+      const ok = store.update ? store.update(id, patch) : false; // update exists only on the collections store (isCollections)
       if (ok) notify('list');
       return ok;
     },
