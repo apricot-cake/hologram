@@ -103,6 +103,37 @@ interface CorpusCoocApi {
   };
 }
 
+// ---- renderer/tags.js — tag vocabulary / 種別 (kind) domain (read-side only;
+// mutations stay in viewer.js, so every store dep is a getter) ----
+interface CorpusTagPickerItem {
+  tag: string;
+  kind?: string | null;
+  title?: string;
+}
+interface CorpusTagsApi {
+  makeTags(deps: {
+    tagTypes(): Record<string, string>;
+    tagLabels(): Record<string, string>;
+    tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
+    posterTags(): Record<string, string[]>;
+    allPosts(): CorpusPost[];
+    MSG: { [k: string]: any };
+    charCandidatesFor(workTags: string[]): Array<[string, number]>;
+    relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
+  }): {
+    tagKindOf(tag: string): string | null;
+    kindLabel(kind: string): string;
+    posterTagsOf(key: string): string[];
+    /** Poster-applied tags, ordered 作品 → キャラ → 一般 then ja-collation. */
+    posterFilterVocab(): string[];
+    groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }>;
+    /** The React tag editor's data bundle: sectioned vocab + source hashtags + cooc suggestion tiers. */
+    inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: CorpusPost[] | null | undefined, scope?: string): { vocabGroups: Array<{ name: string; items: CorpusTagPickerItem[] }>; srcTagsForPicker: CorpusTagPickerItem[]; coocGroups: Array<{ name: string; items: CorpusTagPickerItem[] }> };
+  };
+  /** Set-equality on tag arrays (order-insensitive). */
+  sameTags(a: string[], b: string[]): boolean;
+}
+
 // ---- renderer/users.js — poster roll-up + search-box suggestions ----
 interface CorpusUserAgg {
   key: string;
@@ -233,6 +264,7 @@ interface Window {
   corpusRecords: CorpusRecordsApi;
   corpusFacets: CorpusFacetsApi;
   corpusCooc: CorpusCoocApi;
+  corpusTags: CorpusTagsApi;
   corpusUsers: CorpusUsersApi;
   corpusTabState: CorpusTabStateApi;
   corpusListing: CorpusListingApi;

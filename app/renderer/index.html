@@ -2349,6 +2349,11 @@
   <script src="records.js"></script>
   <script src="facets.js"></script>
   <script src="cooc.js"></script>
+  <!-- Tag vocabulary / 種別 domain service (window.corpusTags): kind lookup,
+       picker vocabularies (post/poster scopes) and the tag-editor data bundle —
+       pure read-side logic extracted from viewer.js; runtime deps injected there.
+       Node-tested by scripts/test-tags-unit.js. Before viewer.js. -->
+  <script src="tags.js"></script>
   <script src="users.js"></script>
   <!-- Tab-state service (window.corpusTabState): tab titles (filterLabel/tabTitleOf),
        the back/forward nav-history state machine, and the tabs.json (de)serialization

@@ -20,6 +20,7 @@ const TESTS = [
   'test-records-unit',
   'test-facets-unit',
   'test-cooc-unit',
+  'test-tags-unit',
   'test-users-unit',
   'test-tabstate-unit',
   'test-listing-unit',

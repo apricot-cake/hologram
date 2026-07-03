@@ -615,6 +615,24 @@
       qfTagGroup = null;
     }
   });
+  // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
+  // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.js
+  // (window.corpusTags) — 8th extraction slice. Wired BEFORE the facets/cooc
+  // wiring below, which passes tagKindOf/posterTagsOf/posterFilterVocab as
+  // direct refs. The tag stores are reassigned lets (declared later — the
+  // getters only run at call time); charCandidatesFor/relatedTagCandidates are
+  // consts from the cooc destructure below, so they enter as deferred arrows.
+  const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = window.corpusTags.makeTags({
+    tagTypes: () => tagTypes,
+    tagLabels: () => tagLabels,
+    tagGroups: () => tagGroups,
+    posterTags: () => posterTags,
+    allPosts: () => allPosts,
+    MSG,
+    charCandidatesFor: (w) => charCandidatesFor(w),
+    relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
+  });
+  const { sameTags } = window.corpusTags;
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
   // injected: reassigned lets (allPosts/tagGroups/multiOnly/qfTagGroup) as getters,
@@ -1006,16 +1024,11 @@
   // later category sections; here we only assign + reflect the kind on the tag itself.
   let tagTypes = {};
   // The work/character pair is renamable (種別ペアのリネーム): tagLabels holds the
-  // user's custom names; a kind with no entry falls back to the built-in KIND_LABEL.
+  // user's custom names; a kind with no entry falls back to the built-in
+  // KIND_LABEL (tags.js).
   // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
   let tagLabels = {};
-  const KIND_LABEL = { work: MSG.kindWork, character: MSG.kindCharacter }; // MSG is finalized at load
-  function tagKindOf(tag) {
-    return tagTypes[tag] || null;
-  }
-  function kindLabel(kind) {
-    return (tagLabels && tagLabels[kind]) || KIND_LABEL[kind] || '';
-  }
+  // tagKindOf / kindLabel moved to tags.js (corpusTags wiring above).
   // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
   function applyKindLabels() {
@@ -3238,59 +3251,9 @@
   // a full re-open) — the React tag editor keeps its own input text/focus and scroll
   // across a refresh (same openId). The chips + picker live in the panel itself — tag
   // editing is per-card here, no mode to enter (matches the poster inspector).
-  function sameTags(a, b) {
-    if (a.length !== b.length) return false;
-    const s = new Set(a);
-    return b.every((t) => s.has(t));
-  }
+  // sameTags moved to tags.js (window.corpusTags.sameTags).
 
-  // Same underlying vocabulary as renderTagPicker (groupedTagVocab/charCandidatesFor,
-  // shared with the bulk edit overlay's picker) but shaped as DATA for the React tag
-  // editor, which filters by its own local query client-side — so keystrokes never
-  // round-trip through here (unlike renderTagPicker's HTML, which is only ever asked
-  // for the full/unfiltered vocabulary: query is always '').
-  function inspectorTagPickerData(selectedTags, recordsForSource, scope) {
-    const sel = new Set(selectedTags || []);
-    const vocabGroups = groupedTagVocab('', { scope: scope || 'post' }).map((g) => ({
-      name: g.name,
-      items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
-    }));
-    const srcSet = new Set();
-    for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
-    const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
-    // Suggestion groups, strongest first. Tier 1 (kind-scoped): 作品 on the card →
-    // character candidates. Tier 2 (generic, post scope only): tags that often share
-    // a post with any selected tag — a weak hint, so it sits below the kinded group,
-    // dedupes against it, and stays silent until pairs have real support (minCount
-    // lives in cooc.js). Poster tagging keeps tier 1 only: its general vocabulary is
-    // deliberately separate from post-content descriptors (see groupedTagVocab).
-    const coocGroups = [];
-    const strong = new Set();
-    const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
-    if (workTags.length) {
-      const cands = charCandidatesFor(workTags)
-        .filter(([t]) => !sel.has(t))
-        .slice(0, 8);
-      if (cands.length) {
-        const who = workTags.join('・');
-        coocGroups.push({
-          name: workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars,
-          items: cands.map(([t, n]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
-        });
-        for (const [t] of cands) strong.add(t);
-      }
-    }
-    if (scope !== 'poster') {
-      const rel = relatedTagCandidates([...sel], { exclude: strong });
-      if (rel.length) {
-        coocGroups.push({
-          name: MSG.editCoocRelated,
-          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOf(r.tag) || null, title: MSG.editCoocWhy(r.withTag, r.count) })),
-        });
-      }
-    }
-    return { vocabGroups, srcTagsForPicker, coocGroups };
-  }
+  // inspectorTagPickerData moved to tags.js (corpusTags wiring above).
 
   function refreshInspectorTagFields(g) {
     if (!g) return;
@@ -3600,53 +3563,7 @@
   let editTags = [];
   let editAdditive = false; // true = merge into each record's existing tags (always true — no replace UI exists)
 
-  // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
-  // ungrouped tags that exist on posts), each section filtered by `query`. Shared
-  // by the inspector's TagEditor and the bulk edit modal (via inspectorTagPickerData).
-  function groupedTagVocab(query, opts) {
-    const scope = (opts && opts.scope) || 'post';
-    const q = (query || '').toLowerCase();
-    const ok = (t) => !q || t.toLowerCase().includes(q);
-    const byJa = (a, b) => a.localeCompare(b, 'ja');
-    const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
-    const out = [];
-    // 用語帳: 作品/キャラ are first-class categories — surface them as their own
-    // sections ahead of the freeform groups, and pull kinded tags OUT of their
-    // group / 未分類 so each tag shows once (種別 takes precedence, danbooru-style).
-    const kindSec = { work: [], character: [] };
-    for (const [t, k] of Object.entries(tagTypes)) if (k === 'work' || k === 'character') kindSec[k].push(t);
-    for (const [k, name] of [
-      ['work', kindLabel('work')],
-      ['character', kindLabel('character')],
-    ]) {
-      const tags = kindSec[k].filter(ok).sort(byJa);
-      if (tags.length) out.push({ name, tags });
-    }
-    // Poster scope shares 作品/キャラ (a tag's 種別 is a global attribute of the
-    // string) but keeps a SEPARATE general pool: the freeform post groups
-    // (人物/角度/形式) and post-applied tags are post-content descriptors,
-    // meaningless for a person. The poster general pool grows from poster-applied
-    // tags instead (posterTags), so people get their own vocabulary.
-    if (scope === 'poster') {
-      const applied = new Set();
-      for (const arr of Object.values(posterTags)) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
-      const general = [...applied].filter(ok).sort(byJa);
-      if (general.length) out.push({ name: MSG.tagGroupOther, tags: general });
-      return out;
-    }
-    for (const g of tagGroups) {
-      const tags = (g.tags || [])
-        .filter((t) => !tagKindOf(t))
-        .filter(ok)
-        .sort(byJa);
-      if (tags.length) out.push({ name: g.name, tags });
-    }
-    const applied = new Set();
-    for (const p of allPosts) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!grouped.has(t) && !tagKindOf(t)) applied.add(t);
-    const ungrouped = [...applied].filter(ok).sort(byJa);
-    if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
-    return out;
-  }
+  // groupedTagVocab moved to tags.js (corpusTags wiring above).
 
   // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
   // staging-list mutation. Not persisted yet — Save (see tagSelectedBtn below) is the
@@ -4137,22 +4054,7 @@
         /* best-effort */
       });
   }
-  function posterTagsOf(key) {
-    const t = posterTags[key];
-    return Array.isArray(t) ? t : [];
-  }
-  // Tags actually applied to at least one poster — the vocabulary the filter offers.
-  // Kinded (作品/キャラ) tags stay in (種別 dots distinguish them); order is by 種別
-  // (作品 → キャラ → 一般) then ja-collation so the flyout reads like the palette.
-  function posterFilterVocab() {
-    const set = new Set();
-    for (const arr of Object.values(posterTags)) for (const t of Array.isArray(arr) ? arr : []) set.add(t);
-    const rank = (t) => {
-      const k = tagKindOf(t);
-      return k === 'work' ? 0 : k === 'character' ? 1 : 2;
-    };
-    return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'ja'));
-  }
+  // posterTagsOf / posterFilterVocab moved to tags.js (corpusTags wiring above).
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
   // Reuses the shared folder-list store (folders.js createFolderStore) so the
