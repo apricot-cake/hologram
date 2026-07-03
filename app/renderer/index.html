@@ -2370,6 +2370,11 @@
        pure logic extracted from viewer.js; runtime deps injected there.
        Node-tested by scripts/test-listing-unit.js. Before viewer.js. -->
   <script src="listing.js"></script>
+  <!-- Grid geometry service (window.corpusGeometry): pure column / slider-track /
+       thumbnail-bucket math shared by the post tile slider and the poster size
+       slider — no DOM (viewer.js measures the containers and passes metrics in).
+       Node-tested by scripts/test-geometry-unit.js. Before viewer.js. -->
+  <script src="geometry.js"></script>
   <!-- Shared renderer state store (window.corpusStore): one source of truth shared
        by viewer.js and the React islands during the migration. Before viewer.js. -->
   <script src="store.js"></script>

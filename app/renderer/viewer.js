@@ -1250,14 +1250,16 @@
   let inspectedKey = null; // postIdKey of the group shown in the inspector (ring marker)
   let viewGroups = []; // current render result: [{ key, records, rep, files }]
   let taggingApi = null; // shared 種別 (kind) menu API; set by showKindMenu() below
+  // Column / slider-track / thumbnail-bucket math lives in geometry.js now.
+  const { sizeFor, sliderTrack, trackCols, thumbW } = window.corpusGeometry;
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
-  const tileThumbW = () => Math.min(960, Math.max(180, Math.ceil((tileSize * 1.4) / 60) * 60));
+  const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
   // card/list serve a thumbnail too now (they used to load the full original —
   // multi-MB pixiv/X art decoded on every scroll and stuttered). DPR-aware, 60px
   // buckets, capped at the thumbnailer's 720px max (main.js getThumbnail).
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cardThumbW = () => Math.min(720, Math.max(240, Math.ceil((cardSize * 1.3 * _dpr) / 60) * 60));
-  const listThumbW = () => Math.min(720, Math.max(120, Math.ceil((listThumb * 1.5 * _dpr) / 60) * 60));
+  const cardThumbW = () => thumbW(cardSize * 1.3 * _dpr, 240, 720);
+  const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
   function applyTileLayout(syncSlider = true) {
     const grid = document.getElementById('postGrid');
     if (grid) {
@@ -3747,8 +3749,6 @@
     // keep this math in lockstep with the rowGutter pushed there.
     return { W, g: posterView === 'tile' ? 10 : 14 };
   }
-  const pColsFor = (size, m) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
-  const pSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
   function refreshPosterSlider() {
     const sl = document.getElementById('posterTileSlider');
     const row = document.getElementById('posterTileSizeRow');
@@ -3760,14 +3760,12 @@
     }
     const m = posterGridMetrics();
     if (!m) return;
-    const nBig = Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g))); // fewest cols whose size stays ≤ max
-    const nSmall = Math.max(nBig, pColsFor(st.min, m)); // most cols (smallest)
-    if (row) row.style.display = nBig === nSmall ? 'none' : 'flex'; // single stop conveys nothing → hide
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m);
+    if (row) row.style.display = tr.single ? 'none' : 'flex'; // single stop conveys nothing → hide
     sl.step = '1';
-    sl.min = String(nBig);
-    sl.max = String(nSmall);
-    const n = Math.min(nSmall, Math.max(nBig, pColsFor(st.get(), m)));
-    sl.value = String(nBig + nSmall - n); // inverted: right = larger
+    sl.min = String(tr.nBig);
+    sl.max = String(tr.nSmall);
+    sl.value = String(tr.value); // inverted: right = larger
   }
   // Poster grid density (card / tile / list) — rendered by the toolbar island
   // (window.corpusStore 'posterView'). React owns the active state + glass thumb;
@@ -3790,10 +3788,8 @@
       const st = posterSizeState();
       const m = posterGridMetrics();
       if (!st || !m) return;
-      const nBig = Number.parseInt(sl.min, 10),
-        nSmall = Number.parseInt(sl.max, 10);
-      const n = nBig + nSmall - Number.parseInt(sl.value, 10); // un-invert → target column count
-      const size = Math.max(st.min, Math.min(st.max, pSizeFor(n, m)));
+      const n = trackCols(Number.parseInt(sl.value, 10), Number.parseInt(sl.min, 10), Number.parseInt(sl.max, 10)); // un-invert → target column count
+      const size = Math.max(st.min, Math.min(st.max, sizeFor(n, m)));
       st.set(size);
       // Live re-flow while dragging: masonic recreates its positioner on a
       // columnWidth change (same wiring as the post tile slider).
@@ -4554,8 +4550,6 @@
     const gv = Number.parseFloat(getComputedStyle(grid).columnGap);
     return { W, g: Number.isFinite(gv) ? gv : 8 };
   }
-  const tileColsFor = (s, m) => Math.max(1, Math.floor((m.W + m.g) / (s + m.g)));
-  const tileSizeFor = (n, m) => Math.floor((m.W - (n - 1) * m.g) / n);
   function refreshTileSlider() {
     const sl = document.getElementById('tileSlider');
     if (!sl) return;
@@ -4572,26 +4566,20 @@
     const m = tileGridMetrics();
     if (!m) return;
     sl.step = '1';
-    // ceil = the FEWEST columns whose exact-fit size still stays ≤ max —
-    // floor here would offer a notch whose size clamps and never reflows.
     // Card view: always allow 1 column — CSS auto-fill handles width naturally.
-    const nBig = currentView === 'card' ? 1 : Math.max(1, Math.ceil((m.W + m.g) / (st.max + m.g)));
-    const nSmall = Math.max(nBig, tileColsFor(st.min, m)); // many columns = small
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentView === 'card' ? { minCols: 1 } : undefined);
     // Hide the row when only one column count is geometrically possible — the
     // slider would have a single stop and convey nothing.
     const sizeRow = document.getElementById('tileSizeRow');
-    if (sizeRow) sizeRow.style.display = nBig === nSmall ? 'none' : '';
-    sl.min = String(nBig);
-    sl.max = String(nSmall);
+    if (sizeRow) sizeRow.style.display = tr.single ? 'none' : '';
+    sl.min = String(tr.nBig);
+    sl.max = String(tr.nSmall);
     sl.disabled = false;
-    const n = Math.min(nSmall, Math.max(nBig, tileColsFor(st.get(), m)));
-    sl.value = String(nBig + nSmall - n); // inverted: right = larger
+    sl.value = String(tr.value); // inverted: right = larger
   }
   const tileSlider = document.getElementById('tileSlider');
   function sliderCols() {
-    const nBig = Number.parseInt(tileSlider.min, 10),
-      nSmall = Number.parseInt(tileSlider.max, 10);
-    return nBig + nSmall - Number.parseInt(tileSlider.value, 10);
+    return trackCols(Number.parseInt(tileSlider.value, 10), Number.parseInt(tileSlider.min, 10), Number.parseInt(tileSlider.max, 10));
   }
   let _dragMetrics = null; // grid geometry cached for the duration of one size drag
   function onSliderMove(commit) {
@@ -4606,7 +4594,7 @@
     const m = (!commit && _dragMetrics) || tileGridMetrics();
     if (!m) return;
     _dragMetrics = commit ? null : m;
-    setViewSize(tileSizeFor(sliderCols(), m), commit);
+    setViewSize(sizeFor(sliderCols(), m), commit);
   }
   tileSlider.addEventListener('input', () => onSliderMove(false));
   tileSlider.addEventListener('change', () => onSliderMove(true));

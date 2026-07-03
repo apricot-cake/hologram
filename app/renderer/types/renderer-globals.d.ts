@@ -299,6 +299,24 @@ interface CorpusListingApi {
   cloneTree(tree: CorpusQueryNode): any;
 }
 
+// ---- renderer/geometry.js — pure column / slider-track / thumbnail math ----
+// Metrics: W = floored fractional container width, g = gutter px.
+interface CorpusGridMetrics {
+  W: number;
+  g: number;
+}
+interface CorpusGeometryApi {
+  colsFor(size: number, m: CorpusGridMetrics): number;
+  sizeFor(n: number, m: CorpusGridMetrics): number;
+  minColsFor(max: number, m: CorpusGridMetrics): number;
+  /** Column-count slider track, inverted (right = larger = fewer columns). */
+  sliderTrack(st: { min: number; max: number; size: number }, m: CorpusGridMetrics, opts?: { minCols?: number }): { nBig: number; nSmall: number; single: boolean; value: number };
+  /** Un-invert a track value back to its target column count (self-inverse). */
+  trackCols(value: number, nBig: number, nSmall: number): number;
+  /** 60px-bucketed thumbnail width, clamped to [min, max]. */
+  thumbW(raw: number, min: number, max: number): number;
+}
+
 // ---- renderer/store.js — key-addressed external store (same contract as the
 // islands' globals.d.ts CorpusStore; duplicated across the two tsc projects
 // until 単一バンドル化 merges them) ----
@@ -318,5 +336,6 @@ interface Window {
   corpusUsers: CorpusUsersApi;
   corpusTabState: CorpusTabStateApi;
   corpusListing: CorpusListingApi;
+  corpusGeometry: CorpusGeometryApi;
   corpusStore: CorpusStoreApi;
 }
