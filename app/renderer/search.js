@@ -8,8 +8,13 @@
 //   → 正規化後に「A または C」で各語を判定し、空白区切りの全語を AND 結合。
 (function () {
   'use strict';
+  // Default = 'fuzzy' (おおまか): the loose matcher is the more forgiving first
+  // experience (typos / wording differences still hit); a user who prefers literal
+  // matching flips to ぴったり and that choice is persisted (pref 'searchMode') and
+  // restored by applyMode below (2026-07-04). Only an explicit 'normal' pref maps to
+  // exact — an unset pref keeps the fuzzy default.
   /** @type {'normal' | 'fuzzy'} */
-  let mode = 'normal';
+  let mode = 'fuzzy';
   // Set (not array) so subscribe can return an unsubscribe that actually removes the
   // listener — React islands subscribe via useSyncExternalStore and must detach on
   // unmount (and to avoid duplicate registrations across HMR reloads in dev).
@@ -151,9 +156,10 @@
     toggle() {
       this.setMode(mode === 'fuzzy' ? 'normal' : 'fuzzy');
     },
-    // pref からの初期反映（永続化しない）。
+    // pref からの初期反映（永続化しない）。既定は fuzzy（おおまか）＝明示的に
+    // 'normal' を選んだ時だけ ぴったり。未設定（undefined）は fuzzy のまま。
     applyMode(m) {
-      mode = m === 'fuzzy' ? 'fuzzy' : 'normal';
+      mode = m === 'normal' ? 'normal' : 'fuzzy';
       notify();
     },
     // Returns an unsubscribe fn (existing callers ignore it — backward compatible).

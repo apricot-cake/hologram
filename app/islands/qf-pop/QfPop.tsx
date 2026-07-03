@@ -1,6 +1,7 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
+import { tipProps } from '../_shared/tip.ts';
 
 // Render list entries buildRows() flattens the facet items into.
 type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: CorpusQfPopItem };
@@ -161,13 +162,13 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
           <div className="qf-find-wrap">
             <input ref={inputRef} type="text" className="qf-find" placeholder={model.findPlaceholder} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          <div className={'seg-control seg-control--qf' + (fuzzy ? ' is-fuzzy' : '')} role="group" aria-label={model.searchModeTitle}>
-            <span className="seg-thumb" aria-hidden="true" />
-            <button type="button" className={'seg-opt' + (!fuzzy ? ' is-on' : '')} data-mode="normal" title={model.exactHint} onClick={() => window.corpusSearch.setMode('normal')}>
-              {model.exactLabel}
-            </button>
-            <button type="button" className={'seg-opt' + (fuzzy ? ' is-on' : '')} data-mode="fuzzy" title={model.fuzzyHint} onClick={() => window.corpusSearch.setMode('fuzzy')}>
+          <div className="seg-control seg-control--qf" role="group" aria-label={model.searchModeTitle}>
+            <span className="seg-thumb" aria-hidden="true" style={{ transform: fuzzy ? '' : 'translateX(100%)' }} />
+            <button type="button" className={'seg-opt' + (fuzzy ? ' is-on' : '')} data-mode="fuzzy" {...tipProps(model.fuzzyHint || '')} onClick={() => window.corpusSearch.setMode('fuzzy')}>
               {model.fuzzyLabel}
+            </button>
+            <button type="button" className={'seg-opt' + (!fuzzy ? ' is-on' : '')} data-mode="normal" {...tipProps(model.exactHint || '')} onClick={() => window.corpusSearch.setMode('normal')}>
+              {model.exactLabel}
             </button>
           </div>
         </>

@@ -4747,27 +4747,17 @@
     renderPosts();
   });
 
-  // 検索方式の切替（ぴったり / おおまか）＝macOS 風セグメント。両方を常に見せ、
-  // 状態と切替手段がひと目で分かる（旧・右端の単独チップは「切替」と気づけなかった）。
-  // corpusSearch がモードを集約＝メイン検索とフライアウト絞り込みで共有する。
-  // The segment UI is rendered by the toolbar island (#searchModeSeg). viewer keeps
-  // only: (1) the hint text outside the segment (#searchModeHint), (2) the container's
-  // aria-label, and (3) the side effect when the mode changes (follow the editing
-  // leaf / re-render). The island and this listener both subscribe to corpusSearch —
-  // separate concerns (island = rendering, this = viewer-side effects).
+  // 検索方式の切替（おおまか / ぴったり）＝macOS 風セグメント。両方を常に見せ、
+  // 状態と切替手段がひと目で分かる。corpusSearch がモードを集約＝メイン検索と
+  // フライアウト絞り込みで共有する。UI は toolbar 島（#searchModeSeg）が描画し、
+  // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。viewer
+  // はコンテナの aria-label とモード変更時の副作用（編集中リーフ追従 / 再描画）だけ持つ。
   {
     const sms = document.getElementById('searchModeSeg');
     if (sms) sms.setAttribute('aria-label', MSG.searchModeTitle);
   }
-  const searchModeHint = document.getElementById('searchModeHint');
-  function syncSearchHint() {
-    if (searchModeHint && window.corpusSearch) {
-      searchModeHint.textContent = window.corpusSearch.isFuzzy() ? MSG.searchHintLoose : MSG.searchHintExact;
-    }
-  }
   if (window.corpusSearch) {
     window.corpusSearch.subscribe(() => {
-      syncSearchHint();
       // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
       // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads f.mode).
       if (browseMode === 'posts' && editingTextNode) {
@@ -4777,7 +4767,6 @@
         renderPosts();
       }
     });
-    syncSearchHint();
   }
 
   // --- Import from ZIP ---

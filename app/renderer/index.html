@@ -368,8 +368,12 @@
        old lone right-edge chip didn't look like a toggle (BACKLOG: 発見性が低い).
        Shared by the main search box and, compact, the filter flyout (.seg-control--qf).
        Labels are behavior-words (ぴったり/おおまか) + a one-line hint (DESIGN「声と語り口」). */
+    /* width:fit-content = the control hugs its two labels instead of stretching
+       across the whole column (user 2026-07-04: 幅いっぱいで間延び). The thumb slide
+       is an inline transform set by the island (fuzzy=left / exact=right), so no
+       .is-fuzzy CSS rule. Each option names itself via a .ui-tip tooltip on hover. */
     .seg-control {
-      position: relative; display: grid; grid-template-columns: 1fr 1fr;
+      position: relative; display: grid; grid-template-columns: 1fr 1fr; width: fit-content;
       background: var(--seg-track); border-radius: var(--radius-md);
       padding: 3px; margin-top: 8px; user-select: none;
     }
@@ -380,18 +384,16 @@
       box-shadow: var(--shadow-xs);
       transition: transform var(--dur-slow) var(--ease-out);
     }
-    .seg-control.is-fuzzy .seg-thumb { transform: translateX(100%); }
     .seg-control .seg-opt {
       position: relative; z-index: 1; appearance: none; background: transparent;
-      border: 0; font: inherit; font-size: 12px; padding: 3px 4px;
+      border: 0; font: inherit; font-size: 12px; padding: 3px 16px;
       color: var(--text-muted); cursor: pointer;
       border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
     }
     .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
     .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
-    .seg-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
     .seg-control--qf { margin: 2px 4px 6px; }
-    .seg-control--qf .seg-opt { padding: 4px 4px; font-size: 11px; }
+    .seg-control--qf .seg-opt { padding: 3px 14px; font-size: 11px; }
     @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
     /* バックアップ設定のラジオ/チェック行 */
     .radio-line { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; cursor: pointer; flex-wrap: wrap; }
@@ -1857,10 +1859,10 @@
                  icon + the input (keeps id="searchBox" / .search-box for CSS and
                  the /-shortcut focus) + the suggest dropdown. -->
             <div class="search-wrap" id="searchWrap"></div>
-            <!-- Filled by the toolbar island (window.corpusSearch state). Empty
-                 container = React mount point; #searchModeHint stays viewer-owned. -->
+            <!-- Search-mode segment (おおまか/ぴったり), rendered by the toolbar island
+                 (window.corpusSearch state). Each option explains itself via a hover
+                 .ui-tip now, so the old always-on hint line below is gone (2026-07-04). -->
             <div class="seg-control" id="searchModeSeg" role="group"></div>
-            <div class="seg-hint" id="searchModeHint"></div>
           </div>
           <div class="sb-section">
             <div class="sb-title" id="sbSortTitle"></div>
