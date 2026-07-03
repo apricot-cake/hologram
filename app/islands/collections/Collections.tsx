@@ -1,12 +1,11 @@
-// Virtualized collection grid — collection cells on the shared VirtualGridHost.
-// Emits the SAME DOM the old flow layout did — `.collection-card[data-cid]
-// [data-index]` (+dynamic), `.collection-thumbs`, `.collection-meta`, the
-// `.collection-card.new[data-cnew]` tile, and the empty state — so the delegated
-// click/contextmenu handlers on #collectionGrid keep firing. React renders +
-// windows; viewer.js owns the collection data, records/thumbs computation, the
-// count badge, and every event. The "＋ 新規" tile leads as the first item.
-import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
-import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+// Collection grid — a plain uniform CSS grid (aligned rows), NOT masonic masonry.
+// Collections are few (user-created folders) and mostly uniform, so the Pinterest-
+// style stagger read as broken (user 2026-07-04: 組み方が変); a uniform grid is the
+// right shape and needs no virtualization at this count. Emits the SAME DOM the old
+// flow layout did — `.collection-card[data-cid][data-index]` (+dynamic),
+// `.collection-thumbs`, `.collection-meta`, the `.collection-card.new[data-cnew]`
+// create tile, and the empty state — so the delegated click/contextmenu handlers on
+// #collectionGrid keep firing. viewer.js owns the data, thumbs, count, and events.
 
 // The collection cell model viewer.js resolves per card — only the fields laid out here.
 interface CollectionCardModel {
@@ -68,7 +67,9 @@ function Card({ c, dynamicTitle }: { c: CollectionCardModel; dynamicTitle?: stri
   );
 }
 
-// The leading "＋ 新規" tile — always present, even on the empty state.
+// The leading "＋ 新規" create tile — always present, even on the empty state.
+// The big glyph IS the plus, so the label is just "新規" (the collNew string no
+// longer carries its own ＋ — user 2026-07-04: ＋＋新規).
 function NewCard({ label }: { label?: string }) {
   return (
     <div className="collection-card new" data-cnew="1" tabIndex={0}>
@@ -80,21 +81,12 @@ function NewCard({ label }: { label?: string }) {
   );
 }
 
-// One windowed cell; the new-tile sentinel rides as the first item.
-function CollectionCell({ index, data }: GridCellProps) {
-  const model = useGridModel();
-  if (data.newTile) return <NewCard label={model.newLabel} />;
-  return <Card c={model.modelOf(data, index)} dynamicTitle={model.dynamicTitle} />;
-}
-
 export function CollectionsHost({ model }: { model: CorpusGridModel }) {
   if (model.empty) {
-    // 0 collections: a full-width message + the new tile. Two elements need no
-    // windowing — render them in flow, with the container's OLD grid geometry
-    // inline (the CSS-file layout moved into masonic for the windowed path).
+    // 0 collections: a full-width message + the create tile.
     const b = model.emptyBody;
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px' }}>
+      <div className="collection-grid-inner">
         <div className="empty-state" style={{ display: 'block', gridColumn: '1 / -1' }}>
           <p>
             <strong>{b.title}</strong>
@@ -105,5 +97,10 @@ export function CollectionsHost({ model }: { model: CorpusGridModel }) {
       </div>
     );
   }
-  return <VirtualGridHost model={model} cell={CollectionCell} />;
+  const items = model.items || [];
+  return (
+    <div className="collection-grid-inner">
+      {items.map((it, i) => (it.newTile ? <NewCard key="__new" label={model.newLabel} /> : <Card key={it.id ?? i} c={model.modelOf(it, i)} dynamicTitle={model.dynamicTitle} />))}
+    </div>
+  );
 }

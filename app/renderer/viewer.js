@@ -369,7 +369,6 @@
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
   setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
-  setText('collectionNewLabel', MSG.collNew);
   {
     const cs = document.getElementById('collectionSortSelect');
     if (cs) {
@@ -4310,15 +4309,11 @@
       };
     });
     window.corpusCollectionGrid.render({
-      items: [{ newTile: true }, ...cards], // "＋ 新規" leads as the FIRST cell (top-left — create is the primary action)
-      itemsKey: ++_collectionItemsKey, // cards are rebuilt every pass → always a fresh positioner
+      items: [{ newTile: true }, ...cards], // create tile leads as the FIRST cell (top-left — create is the primary action)
+      itemsKey: ++_collectionItemsKey,
       modelOf: (c) => c,
-      keyOf: (c) => (c.newTile ? '__new__' : 'c:' + c.id),
       newLabel: MSG.collNew,
       dynamicTitle: MSG.collDynamicTitle,
-      columnWidth: 200, // old CSS: auto-fill minmax(200px,1fr), gap 14
-      rowGutter: 14,
-      itemHeightEstimate: 270, // square cover + meta at ~200px columns
     });
   }
   let _collectionItemsKey = 0;
@@ -4438,10 +4433,6 @@
         collectionSort = cs.value;
         renderCollections();
       });
-  }
-  {
-    const cn = document.getElementById('collectionNewBtn');
-    if (cn) cn.addEventListener('click', promptNewCollection);
   }
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)

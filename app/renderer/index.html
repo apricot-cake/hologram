@@ -603,6 +603,13 @@
        virtualized grid — masonic positions cells absolutely inside its host.
        The density classes stay purely for descendant (cell) styling. */
     .poster-grid { display: block; }
+    /* Collections = a uniform CSS grid (aligned rows), not masonry: few, mostly
+       uniform cards read cleaner in rows than staggered (2026-07-04). The island
+       renders this inner grid inside #collectionGrid (display:block host). */
+    .collection-grid-inner {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px; align-items: start;
+    }
     /* Card density (default): a vertical card LED BY THE AVATAR IMAGE (アイコンを画像
        部分に＝ライブラリのカードと同じ構造). Library colors (surface + subtle border +
        shadow) so it has the same contrast as post cards, not the flatter --surface-2. */
@@ -1918,7 +1925,9 @@
             <option value="recent"></option>
             <option value="count"></option>
           </select>
-          <button class="sb-row" type="button" id="collectionNewBtn" style="margin-top:14px;"><span class="sb-row-ic">＋</span><span class="sb-row-name" id="collectionNewLabel"></span></button>
+          <!-- No sidebar 「新規」 button: the grid's create tile (top-left ＋) is the
+               single create affordance — the sidebar one was a redundant, doubly-
+               prefixed 「＋ ＋新規」 (user 2026-07-04). -->
         </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
              with that category's values (multi-select, stays open). The badge
