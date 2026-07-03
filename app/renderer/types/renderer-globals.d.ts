@@ -38,6 +38,25 @@ interface CorpusQueryApi {
   /** Migrates a flat filter list (+ per-type ops) into a condition tree. */
   facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): CorpusQueryGroup;
   evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean;
+  // Tree mutation domain (9th slice) — pure surgery; viewer binds these to its
+  // per-builder tree. All mutate in place except wrapAllInGroup (new root).
+  /** child → parent map, rebuilt for one surgery pass. */
+  treeParentMap(tree: CorpusQueryGroup): Map<CorpusQueryNode, CorpusQueryGroup>;
+  nodeContains(a: CorpusQueryNode | null | undefined, b: CorpusQueryNode | null | undefined): boolean;
+  detachNode(node: CorpusQueryNode, pmap: Map<CorpusQueryNode, CorpusQueryGroup>): void;
+  /** Drops empty groups; collapses single-member non-root groups (neg folds into the survivor). */
+  cleanupTree(tree: CorpusQueryGroup): void;
+  hasLeafValue(tree: CorpusQueryGroup, type: string, value: unknown): boolean;
+  /** Removes matching cond leaves anywhere in the tree (+cleanup); true when something was removed. */
+  removeCondsMatching(tree: CorpusQueryGroup, pred: (c: CorpusQueryLeaf) => boolean): boolean;
+  /** Shadow identity: date matches by type alone, engagement by engType, others by value. */
+  sameLeaf(c: CorpusQueryLeaf, f: { type: string; [k: string]: any }): boolean;
+  /** Flat deduped leaf shadow (sidebar highlight / row badges / tab title). */
+  buildShadow(tree: CorpusQueryGroup): Array<{ type: string; [k: string]: any }>;
+  /** Applies a drag-drop; false = rejected (drop onto itself / own descendant). */
+  dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | undefined, target: CorpusQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean;
+  /** Wraps the whole expression in one group; returns the NEW root, or null when empty. */
+  wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null;
   /** LOCAL-day range: from = local midnight, to = NEXT local midnight (exclusive). */
   localDayRange(from?: string | null, to?: string | null): { from: Date | null; to: Date | null };
   hostOf(url: string | null | undefined): string;

@@ -187,6 +187,90 @@ const ldr = Q.localDayRange('2026-05-10', '2026-05-10');
 assert('localDayRange: to は翌日ローカル 0時(排他)', ldr.to.getTime() - ldr.from.getTime() === 24 * 3600 * 1000 || ldr.to.getDate() === 11);
 assert('localDayRange: 片側 null 対応', Q.localDayRange('', '').from === null && Q.localDayRange('', '').to === null);
 
+// --- 木変異ドメイン（第9スライス: createQueryBuilder から抽出した純ロジック）---
+const mkLeaf = (type, value, extra) => Object.assign({ kind: 'cond', type, value }, extra);
+const mkGrp = (op, children, neg) => ({ kind: 'group', op, neg: !!neg, children });
+
+// treeParentMap / nodeContains / detachNode
+{
+  const a = mkLeaf('tag', 'a');
+  const b = mkLeaf('tag', 'b');
+  const inner = mkGrp('or', [a, b]);
+  const t = mkGrp('and', [inner]);
+  const pmap = Q.treeParentMap(t);
+  assert('treeParentMap: 子→親を全段解決', pmap.get(a) === inner && pmap.get(inner) === t);
+  assert('nodeContains: 自身と子孫は true', Q.nodeContains(t, a) && Q.nodeContains(inner, inner));
+  assert('nodeContains: 葉は子を含まない', !Q.nodeContains(a, b));
+  Q.detachNode(a, pmap);
+  assert('detachNode: 親の children から除去', inner.children.length === 1 && inner.children[0] === b);
+  Q.detachNode(t, pmap); // 親なし（root）は no-op
+  assert('detachNode: root は no-op', t.children.length === 1);
+}
+
+// cleanupTree: 空グループ除去・単独グループ折り畳み（neg は生存者へ合流）
+{
+  const only = mkLeaf('tag', 'x', { neg: false });
+  const t = mkGrp('and', [mkGrp('or', [], false), mkGrp('or', [only], true)]);
+  Q.cleanupTree(t);
+  assert('cleanupTree: 空グループ除去+単独折り畳み', t.children.length === 1 && t.children[0] === only);
+  assert('cleanupTree: 折り畳みで neg が生存者に反転合流', only.neg === true);
+}
+
+// hasLeafValue / removeCondsMatching
+{
+  const t = mkGrp('and', [mkLeaf('tag', 'a'), mkGrp('or', [mkLeaf('tag', 'b'), mkLeaf('platform', 'x')])]);
+  assert('hasLeafValue: ネスト内も探索', Q.hasLeafValue(t, 'tag', 'b') && !Q.hasLeafValue(t, 'tag', 'zzz'));
+  const changed = Q.removeCondsMatching(t, (c) => c.type === 'tag');
+  assert('removeCondsMatching: 全段から削除+変更検知', changed && Q.treeLeaves(t).length === 1);
+  assert('removeCondsMatching: 残り1葉のグループは折り畳み済み', t.children[0].kind === 'cond' && t.children[0].type === 'platform');
+  assert('removeCondsMatching: 不一致なら false', Q.removeCondsMatching(t, (c) => c.type === 'nope') === false);
+}
+
+// sameLeaf: date は型一致のみ・engagement は engType・他は value
+assert('sameLeaf: date は値無視で一致', Q.sameLeaf(mkLeaf('date', undefined, { from: '2026-01-01' }), { type: 'date' }));
+assert('sameLeaf: engagement は engType 比較', Q.sameLeaf(mkLeaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'likes' }) && !Q.sameLeaf(mkLeaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'reposts' }));
+assert('sameLeaf: 通常型は value 比較', Q.sameLeaf(mkLeaf('tag', 'a'), { type: 'tag', value: 'a' }) && !Q.sameLeaf(mkLeaf('tag', 'a'), { type: 'tag', value: 'b' }));
+
+// buildShadow: 重複排除・date/engagement は素通し（kind/neg 除去）・label 保持
+{
+  const t = mkGrp('and', [mkLeaf('tag', 'a', { label: 'ラベル' }), mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), mkLeaf('engagement', undefined, { engType: 'likes', min: 5 })]);
+  const sh = Q.buildShadow(t);
+  assert('buildShadow: type+value で重複排除', sh.filter((f) => f.type === 'tag').length === 1);
+  assert('buildShadow: label 保持', sh.find((f) => f.type === 'tag').label === 'ラベル');
+  const dt = sh.find((f) => f.type === 'date');
+  assert('buildShadow: date は kind/neg を落として素通し', dt && dt.from === '2026-01-01' && dt.kind === undefined && dt.neg === undefined);
+  assert(
+    'buildShadow: engagement も素通し',
+    sh.some((f) => f.type === 'engagement' && f.min === 5),
+  );
+}
+
+// dropNode: pair（親の逆演算子でペア化）/ inside / root・自己・子孫拒否
+{
+  const a = mkLeaf('tag', 'a');
+  const b = mkLeaf('tag', 'b');
+  const c = mkLeaf('tag', 'c');
+  const t = mkGrp('and', [a, b, c]);
+  assert('dropNode: pair はターゲット位置に逆 op のペアグループ', Q.dropNode(t, c, a, 'pair') === true && t.children[0].kind === 'group' && t.children[0].op === 'or' && t.children[0].children[0] === a && t.children[0].children[1] === c);
+  const pairGrp = t.children[0];
+  assert('dropNode: inside はグループ末尾へ追加', Q.dropNode(t, b, pairGrp, 'inside') === true && pairGrp.children[2] === b);
+  assert('dropNode: root へ移動（2人残の元グループは折り畳まれず存続）', Q.dropNode(t, b, t, 'root') === true && t.children[t.children.length - 1] === b && pairGrp.children.length === 2);
+  assert('dropNode: 自分自身へは拒否', Q.dropNode(t, a, a, 'pair') === false);
+  assert('dropNode: 自分の子孫へは拒否', Q.dropNode(t, pairGrp, a, 'inside') === false);
+  assert('dropNode: target null は拒否', Q.dropNode(t, a, null, 'pair') === false);
+}
+
+// wrapAllInGroup: 全体を一段括る（新 root を返す）・単独は折り畳み・空は null
+{
+  const t = mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]);
+  const w = Q.wrapAllInGroup(t);
+  assert('wrapAllInGroup: 旧 root が op ごと1グループに包まれ新 root は and', w.op === 'and' && w.children.length === 1 && w.children[0].kind === 'group' && w.children[0].op === 'or' && w.children[0].children.length === 2);
+  const single = mkGrp('and', [mkLeaf('tag', 'a')]);
+  const ws = Q.wrapAllInGroup(single);
+  assert('wrapAllInGroup: 単独条件の括りは折り畳みで実質 no-op', ws.children.length === 1 && ws.children[0].kind === 'cond');
+  assert('wrapAllInGroup: 空 tree は null', Q.wrapAllInGroup(Q.emptyTree()) === null);
+}
+
 if (failed) {
   console.error(`FAIL test-query-unit: ${failed} assertion(s) red`);
   process.exit(1);

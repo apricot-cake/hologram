@@ -1403,87 +1403,16 @@
     const singleValueTypes = ctx.singleValueTypes || [];
     const noDupTypes = ctx.noDupTypes || [];
 
-    // --- Tree mutation helpers (all operate on THIS instance's tree). ---
-    const treeParentMap = () => {
-      const m = new Map();
-      (function rec(n) {
-        (n.children || []).forEach((c) => {
-          m.set(c, n);
-          rec(c);
-        });
-      })(tree);
-      return m;
-    };
-    const nodeContains = (a, b) => {
-      if (a === b) return true;
-      if (!a || a.kind !== 'group') return false;
-      return (a.children || []).some((c) => nodeContains(c, b));
-    };
-    const detachNode = (node, pmap) => {
-      const par = pmap.get(node);
-      if (!par) return;
-      const i = par.children.indexOf(node);
-      if (i >= 0) par.children.splice(i, 1);
-    };
-    // Auto-clean: drop empty groups, collapse single-member non-root groups (folding
-    // their negation into the survivor) — “1メンバーになったら括弧は自動で消える”.
-    const cleanupTree = () => {
-      (function rec(node) {
-        if (node.kind !== 'group') return;
-        const out = [];
-        for (const c of node.children) {
-          rec(c);
-          if (c.kind === 'group') {
-            if (!c.children.length) continue; // drop empty
-            if (c.children.length === 1) {
-              const only = c.children[0];
-              if (c.neg) only.neg = !only.neg;
-              out.push(only);
-              continue;
-            } // collapse singleton
-          }
-          out.push(c);
-        }
-        node.children = out;
-      })(tree);
-    };
-    const qHasValue = (type, value) => treeLeaves(tree).some((c) => c.type === type && c.value === value);
-    const removeCondsMatching = (pred) => {
-      const before = treeLeaves(tree).length;
-      (function rec(node) {
-        if (node.kind !== 'group') return;
-        node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
-        node.children.forEach(rec);
-      })(tree);
-      cleanupTree();
-      return treeLeaves(tree).length !== before; // changed?
-    };
-    const sameLeaf = (c, f) => {
-      if (c.type !== f.type) return false;
-      if (f.type === 'date') return true; // single date condition
-      if (f.type === 'engagement') return c.engType === f.engType;
-      return c.value === f.value;
-    };
+    // --- Tree mutation domain lives in query.js (9th extraction slice); the
+    // bindings below close over THIS instance's tree. Q is referenced directly
+    // (not destructured at module level) because the instance methods reuse the
+    // service names — removeCondsMatching etc. — with the tree pre-bound.
+    const Q = window.corpusQuery;
+    const qHasValue = (type, value) => Q.hasLeafValue(tree, type, value);
+    const removeCondsMatching = (pred) => Q.removeCondsMatching(tree, pred);
     // Rebuild the flat (deduped) leaf shadow and hand it to the view (onShadow).
     const syncShadow = () => {
-      const seen = new Set();
-      const out = [];
-      for (const c of treeLeaves(tree)) {
-        if (c.type === 'date' || c.type === 'engagement') {
-          const f = Object.assign({}, c);
-          delete f.kind;
-          delete f.neg;
-          out.push(f);
-          continue;
-        }
-        const k = c.type + ' ' + c.value;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        const f = { type: c.type, value: c.value };
-        if (c.label) f.label = c.label;
-        out.push(f);
-      }
-      shadow = out;
+      shadow = Q.buildShadow(tree);
       if (ctx.onShadow) ctx.onShadow(shadow);
     };
     // One canonical refresh after any tree mutation: rebuild the shadow, then let
@@ -1562,7 +1491,7 @@
       else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
       const node = Object.assign({ kind: 'cond' }, filter);
       tree.children.push(node);
-      cleanupTree();
+      Q.cleanupTree(tree);
       refresh();
       return node; // callers binding to the new leaf (e.g. the editing text leaf) need it
     }
@@ -1571,22 +1500,22 @@
     function removeFilter(index) {
       const f = shadow[index];
       if (!f) return;
-      removeCondsMatching((c) => sameLeaf(c, f));
+      removeCondsMatching((c) => Q.sameLeaf(c, f));
       refresh();
     }
     function removeNode(node) {
       if (ctx.onLeafMutated) ctx.onLeafMutated(node); // let the view reconcile (e.g. unbind the editing text leaf)
-      const pmap = treeParentMap();
-      detachNode(node, pmap);
-      cleanupTree();
+      Q.detachNode(node, Q.treeParentMap(tree));
+      Q.cleanupTree(tree);
       refresh();
     }
-    // グループ追加ボタン: 今の式ぜんぶを一発で囲う＝ネストのショートカット（押すたび深く）。
+    // Group-add button: wrap the whole current expression in one go — the
+    // nesting shortcut (each press nests deeper). The service returns a NEW
+    // root, so reassign this instance's tree.
     function wrapAllInGroup() {
-      if (!tree.children.length) return;
-      const g = { kind: 'group', op: tree.op, neg: false, children: tree.children };
-      tree = { kind: 'group', op: 'and', neg: false, children: [g] };
-      cleanupTree(); // single-condition wrap collapses (nothing meaningful to group)
+      const wrapped = Q.wrapAllInGroup(tree);
+      if (!wrapped) return;
+      tree = wrapped;
       refresh();
     }
 
@@ -1692,7 +1621,7 @@
       const t = qbDropTarget(e);
       const drag = nodeById(qbDragId);
       const tnode = t.nid ? nodeById(t.nid) : tree;
-      if (drag && tnode && (tnode === drag || nodeContains(drag, tnode))) return; // can't drop into self / own descendant
+      if (drag && tnode && (tnode === drag || Q.nodeContains(drag, tnode))) return; // can't drop into self / own descendant
       if (t.kind === 'pill' || t.kind === 'frame') t.el.classList.add('qb-drop-on');
       else if (t.kind === 'inside') t.el.classList.add('qb-drop-into');
       else chips.classList.add('qb-drop-root');
@@ -1710,24 +1639,10 @@
       if (!drag) return;
       if (ctx.onLeafMutated) ctx.onLeafMutated(drag); // a dragged editing-text leaf is confirmed (box clears, leaf stays)
       const target = t.nid ? nodeById(t.nid) : tree;
-      if (!target || target === drag || nodeContains(drag, target)) return; // can't drop onto itself / own descendant
-      const pmap = treeParentMap();
-      detachNode(drag, pmap); // remove from its current parent first
-      if (t.kind === 'pill' || t.kind === 'frame') {
-        // wrap target + drag in a new group (pair / nest)
-        const par = pmap.get(target) || tree;
-        const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
-        const i = par.children.indexOf(target);
-        if (i >= 0) par.children[i] = g;
-        else par.children.push(g);
-      } else if (t.kind === 'inside') {
-        // add as a member of the group
-        target.children.push(drag);
-      } else {
-        // bar background → move to the top level
-        tree.children.push(drag);
-      }
-      cleanupTree();
+      // pill/frame → wrap target+drag in a pair group; inside → add as a member;
+      // bar background → move to the top level. dropNode rejects self/descendant.
+      const mode = t.kind === 'pill' || t.kind === 'frame' ? 'pair' : t.kind === 'inside' ? 'inside' : 'root';
+      if (!Q.dropNode(tree, drag, target, mode)) return;
       refresh();
     });
 
@@ -1776,7 +1691,7 @@
       // Replace the tree (clone + self-heal singleton groups + recompute shadow).
       setTree: (t) => {
         tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
-        cleanupTree();
+        Q.cleanupTree(tree);
         syncShadow();
       },
       resetTree: () => {

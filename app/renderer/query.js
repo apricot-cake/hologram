@@ -56,6 +56,143 @@
     return n.neg ? !r : r;
   }
 
+  // --- Tree mutation domain (9th extraction slice). Pure tree surgery shared
+  // by BOTH builder instances (posts / posters): every function takes the tree
+  // (or nodes) as an argument and touches no DOM. The drag/drop/render/menu
+  // wiring stays in viewer.js (createQueryBuilder), which binds these to its
+  // per-instance tree. ---
+  /** child → parent map, rebuilt for one surgery pass. */
+  function treeParentMap(tree) {
+    const m = new Map();
+    (function rec(n) {
+      (n.children || []).forEach((c) => {
+        m.set(c, n);
+        rec(c);
+      });
+    })(tree);
+    return m;
+  }
+  function nodeContains(a, b) {
+    if (a === b) return true;
+    if (!a || a.kind !== 'group') return false;
+    return (a.children || []).some((c) => nodeContains(c, b));
+  }
+  function detachNode(node, pmap) {
+    const par = pmap.get(node);
+    if (!par) return;
+    const i = par.children.indexOf(node);
+    if (i >= 0) par.children.splice(i, 1);
+  }
+  // Auto-clean: drop empty groups, collapse single-member non-root groups,
+  // folding the group's negation into the survivor ("parentheses vanish once a
+  // group is down to one member").
+  function cleanupTree(tree) {
+    (function rec(node) {
+      if (node.kind !== 'group') return;
+      const out = [];
+      for (const c of node.children) {
+        rec(c);
+        if (c.kind === 'group') {
+          if (!c.children.length) continue; // drop empty
+          if (c.children.length === 1) {
+            const only = c.children[0];
+            if (c.neg) only.neg = !only.neg;
+            out.push(only);
+            continue;
+          } // collapse singleton
+        }
+        out.push(c);
+      }
+      node.children = out;
+    })(tree);
+  }
+  function hasLeafValue(tree, type, value) {
+    return treeLeaves(tree).some((c) => c.type === type && c.value === value);
+  }
+  // Remove every cond leaf matching pred, anywhere in the tree (+ cleanup).
+  // Returns whether anything was actually removed (callers gate a refresh on it).
+  function removeCondsMatching(tree, pred) {
+    const before = treeLeaves(tree).length;
+    (function rec(node) {
+      if (node.kind !== 'group') return;
+      node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
+      node.children.forEach(rec);
+    })(tree);
+    cleanupTree(tree);
+    return treeLeaves(tree).length !== before; // changed?
+  }
+  // Shadow-filter identity: date matches by type alone (single date condition),
+  // engagement by engType, everything else by value.
+  function sameLeaf(c, f) {
+    if (c.type !== f.type) return false;
+    if (f.type === 'date') return true; // single date condition
+    if (f.type === 'engagement') return c.engType === f.engType;
+    return c.value === f.value;
+  }
+  // The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
+  // tab title consume. date/engagement pass through whole (minus tree-only
+  // fields); other types dedupe on type+value.
+  function buildShadow(tree) {
+    const seen = new Set();
+    const out = [];
+    for (const c of treeLeaves(tree)) {
+      if (c.type === 'date' || c.type === 'engagement') {
+        const f = Object.assign({}, c);
+        delete f.kind;
+        delete f.neg;
+        out.push(f);
+        continue;
+      }
+      const k = c.type + ' ' + c.value;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const f = { type: c.type, value: c.value };
+      if (c.label) f.label = c.label;
+      out.push(f);
+    }
+    return out;
+  }
+  // Apply a drag-drop onto the tree: 'pair' wraps target+drag in a new group
+  // (with the opposite operator of the surrounding group), 'inside' adds drag
+  // as a member of the target group, 'root' moves it to the top level. Returns
+  // false (tree untouched) when the drop is rejected — onto itself or into its
+  // own descendant.
+  function dropNode(tree, drag, target, mode) {
+    if (!target || target === drag || nodeContains(drag, target)) return false;
+    const pmap = treeParentMap(tree);
+    detachNode(drag, pmap); // remove from its current parent first
+    if (mode === 'pair') {
+      const par = pmap.get(target) || tree;
+      const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
+      const i = par.children.indexOf(target);
+      if (i >= 0) par.children[i] = g;
+      else par.children.push(g);
+    } else if (mode === 'inside') {
+      target.children.push(drag);
+    } else {
+      tree.children.push(drag);
+    }
+    cleanupTree(tree);
+    return true;
+  }
+  // Wrap the whole current expression in one group (each press nests deeper).
+  // Returns the NEW root (the caller reassigns its tree) or null when there is
+  // nothing to wrap. A single-condition wrap collapses via cleanup (nothing
+  // meaningful to group).
+  /**
+   * @param {CorpusQueryGroup} tree
+   * @returns {CorpusQueryGroup | null}
+   */
+  function wrapAllInGroup(tree) {
+    if (!tree.children.length) return null;
+    /** @type {CorpusQueryGroup} */
+    const g = { kind: 'group', op: tree.op, neg: false, children: tree.children };
+    /** @type {CorpusQueryGroup} */
+    const root = { kind: 'group', op: 'and', neg: false, children: [g] };
+    cleanupTree(root);
+    return root;
+  }
+
   // --- Pure post helpers (used by the predicates below and by viewer.js). ---
   // Date filters compare in LOCAL days: from = local midnight, to = the NEXT
   // local midnight (exclusive), so a single-day range covers the whole day.
@@ -170,5 +307,5 @@
     };
   }
 
-  window.corpusQuery = { emptyTree, treeLeaves, opposite, facetTreeFrom, evalNode, localDayRange, hostOf, userKey, textHaystackOf, makePostPredOf };
+  window.corpusQuery = { emptyTree, treeLeaves, opposite, facetTreeFrom, evalNode, treeParentMap, nodeContains, detachNode, cleanupTree, hasLeafValue, removeCondsMatching, sameLeaf, buildShadow, dropNode, wrapAllInGroup, localDayRange, hostOf, userKey, textHaystackOf, makePostPredOf };
 })();
