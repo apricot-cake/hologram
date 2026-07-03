@@ -29,9 +29,11 @@ function usePlaceFlyout(popRef: RefObject<HTMLDivElement | null>, anchorRect: Co
     if (!pop) return;
     pop.style.left = anchorRect.right + 8 + 'px';
     pop.style.top = anchorRect.top + 'px';
-    const pr = pop.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-    if (pr.bottom > innerHeight - 8) pop.style.top = Math.max(8, innerHeight - pr.height - 8) + 'px';
+    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    if (anchorRect.right + 8 + w > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - w - 8) + 'px';
+    if (anchorRect.top + h > innerHeight - 8) pop.style.top = Math.max(8, innerHeight - h - 8) + 'px';
   }, [anchorRect]);
 }
 

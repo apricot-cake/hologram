@@ -70,9 +70,11 @@ export function GlassSelect({ sel, storeKey, options }: { sel: HTMLSelectElement
     pop.style.left = r.left + 'px';
     pop.style.top = r.bottom + 4 + 'px';
     pop.style.minWidth = r.width + 'px';
-    const pr = pop.getBoundingClientRect();
-    if (pr.bottom > innerHeight - 8) pop.style.top = Math.max(8, r.top - pr.height - 4) + 'px';
-    if (pr.right > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
+    const pw = pop.offsetWidth;
+    const ph = pop.offsetHeight;
+    if (r.bottom + 4 + ph > innerHeight - 8) pop.style.top = Math.max(8, r.top - ph - 4) + 'px';
+    if (r.left + pw > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - pw - 8) + 'px';
   }, [open]);
 
   // Outside-click (capture) + Escape close, matching the old document listeners.

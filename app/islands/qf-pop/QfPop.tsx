@@ -39,11 +39,15 @@ function usePlaceFlyout(popRef: RefObject<HTMLDivElement | null>, anchorRect: Co
     pop.style.maxHeight = '';
     pop.style.left = anchorRect.right + 8 + 'px';
     pop.style.top = anchorRect.top + 'px';
-    const pr = pop.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
+    // offsetWidth/Height, NOT getBoundingClientRect: this effect runs while corpusPopIn
+    // is mid-scale(.96), so the rect under-measures ~4% and the maxHeight came out one
+    // chip-row short — a sliver of scroll on a list that would have fit.
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    if (anchorRect.right + 8 + w > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - w - 8) + 'px';
     let top = anchorRect.top;
-    if (pr.bottom > innerHeight - 8) {
-      top = Math.max(8, innerHeight - pr.height - 8);
+    if (top + h > innerHeight - 8) {
+      top = Math.max(8, innerHeight - h - 8);
       pop.style.top = top + 'px';
     }
     pop.style.maxHeight = innerHeight - top - 8 + 'px';

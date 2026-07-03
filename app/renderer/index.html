@@ -390,7 +390,7 @@
     .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
     .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
     .seg-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
-    .seg-control--qf { margin: 2px 4px 4px; }
+    .seg-control--qf { margin: 2px 4px 6px; }
     .seg-control--qf .seg-opt { padding: 4px 4px; font-size: 11px; }
     @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
     /* バックアップ設定のラジオ/チェック行 */
@@ -1635,8 +1635,14 @@
     /* No permanent drag-grip glyph on pills: draggability is signalled by the
        grab cursor, the empty-zone "ここへドラッグで移動" hint and the ⓘ help.
        (The tiny ⋮⋮ read as a squashed 三 and added noise to every pill.) */
-    .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; }
-    .qf-find-wrap { position: relative; display: flex; align-items: center; margin: 2px 4px 4px; }
+    /* scrollbar-gutter: without it the scrollbar that appears AFTER placement
+       re-wraps the chip rows narrower → content grows past the measured height
+       and a sliver of scroll survives even when the list could have fit. */
+    .qf-pop .qf-vals { overflow-y: auto; flex: 1; min-height: 0; scrollbar-gutter: stable; }
+    /* Find input + ぴったり/おおまか form the flyout's SEARCH HEADER (Finder/Mail:
+       field + scope bar as one block, hairline, then results). Without the hairline
+       the scope bar read as part of the value area below, not as the input's option. */
+    .qf-pop .seg-control--qf + .qf-vals { border-top: 1px solid var(--border); }
     .qf-pop .qf-find {
       width: 100%; padding: 5px 10px; font-size: 12px;
       border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-3);
@@ -1665,11 +1671,17 @@
        marathon. Pill = value (shape language); same anatomy as the card-edit tag
        picker (.edit-pick-chips); precedent = Photos.app keyword manager. The flyout
        widens past the fold-menu default so several chips fit per line. */
-    .fold-menu.qf-pop--chips { max-width: 340px; }
+    .fold-menu.qf-pop--chips { max-width: min(520px, calc(100vw - 32px)); }
     .qf-pop .qf-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px 8px 7px; }
-    .qf-pop .qf-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-family: inherit; }
+    /* These chips sit ON GLASS, not the Mica sidebar: the sidebar's grey fill read
+       dark/muddy over the busy refracted backdrop, so light steps BRIGHTER than the
+       glass instead (solid surface pill — the .act-pill neutral-white language).
+       Dark's chip fill is already a lighter-than-backdrop step and stays. Type is
+       12px to match the fm-row lists (11px was a regression from the row era). */
+    .qf-pop .qf-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-family: inherit; font-size: 12px; }
+    html:not([data-theme="dark"]) .qf-pop .qf-chip:not(.active) { background: var(--surface); }
     .qf-pop .qf-chip .fm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-    .qf-pop .qf-chip .fm-count { font-size: 10px; }
+    .qf-pop .qf-chip .fm-count { font-size: 11px; }
     /* 0件 chip: greyed via text color like the 0件 rows (still pickable). */
     .qf-pop .qf-chip.off { color: var(--text-muted); }
     .qf-pop .qf-chip.off .fm-count { color: var(--text-subtle); }

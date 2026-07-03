@@ -39,9 +39,11 @@ export function KindMenuHost() {
       top = menu.y;
     pop.style.left = left + 'px';
     pop.style.top = top + 'px';
-    const r = pop.getBoundingClientRect();
-    if (r.right > innerWidth - 8) left = Math.max(8, innerWidth - r.width - 8);
-    if (r.bottom > innerHeight - 8) top = Math.max(8, innerHeight - r.height - 8);
+    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    if (left + w > innerWidth - 8) left = Math.max(8, innerWidth - w - 8);
+    if (top + h > innerHeight - 8) top = Math.max(8, innerHeight - h - 8);
     pop.style.left = left + 'px';
     pop.style.top = top + 'px';
   }, [menu]);
