@@ -165,6 +165,59 @@ interface CorpusTabStateApi {
   sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null;
 }
 
+// ---- renderer/listing.js — the "what is visible, in what order" pipeline for
+// all three browse modes (post filter+sort / poster filter+sort / collection
+// derivations incl. the per-render-pass record cache) ----
+interface CorpusCollection {
+  id: string;
+  name?: string;
+  kind?: 'dynamic';
+  items?: string[];
+  tree?: CorpusQueryGroup | null;
+  q?: string;
+  created?: number;
+  [k: string]: any;
+}
+interface CorpusListingApi {
+  makeListing(deps: {
+    allPosts(): CorpusPost[];
+    postsById(): Map<string, CorpusPost>;
+    mediaFilesOf(p: CorpusPost): string[];
+    densityImage(p: CorpusPost, density: string): string;
+    percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
+    evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean;
+    treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[];
+    postPredOf(f: CorpusQueryLeaf): (p: CorpusPost) => boolean;
+    currentTree(): CorpusQueryGroup;
+    stickyRecs: Set<string>;
+    sortValue(): string;
+    searchQuery(): string;
+    buildUsers(): CorpusUserAgg[];
+    posterQBEval(u: CorpusUserAgg): boolean;
+    posterQBTree(): CorpusQueryGroup;
+    posterSort(): string;
+    collectionSort(): string;
+    allCollections(): CorpusCollection[];
+    filterLabel(f: { type: string; [k: string]: any }): string;
+  }): {
+    getFilteredPosts(): CorpusPost[];
+    namedPosters(): CorpusUserAgg[];
+    filteredPosters(): CorpusUserAgg[];
+    /** Folds a legacy free-text q into the tree as a confirmed 'text' leaf. */
+    treeWithLegacyQ(tree: CorpusQueryGroup | null | undefined, q: string | null | undefined): CorpusQueryGroup | null;
+    dynamicMatches(coll: CorpusCollection): CorpusPost[];
+    /** Arms the per-render-pass record memo (renderCollections calls this first). */
+    resetCollectionCache(): void;
+    collectionRecords(coll: CorpusCollection): CorpusPost[];
+    collectionThumbsFrom(recs: CorpusPost[]): string[];
+    collectionItemCount(coll: CorpusCollection): number;
+    collCondLabels(coll: CorpusCollection): string[];
+    filteredCollections(): CorpusCollection[];
+  };
+  /** Deep-clone a query tree for persistence, dropping transient _memo fields. */
+  cloneTree(tree: CorpusQueryNode): any;
+}
+
 // ---- renderer/store.js — key-addressed external store (same contract as the
 // islands' globals.d.ts CorpusStore; duplicated across the two tsc projects
 // until 単一バンドル化 merges them) ----
@@ -182,5 +235,6 @@ interface Window {
   corpusCooc: CorpusCoocApi;
   corpusUsers: CorpusUsersApi;
   corpusTabState: CorpusTabStateApi;
+  corpusListing: CorpusListingApi;
   corpusStore: CorpusStoreApi;
 }

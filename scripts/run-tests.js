@@ -22,6 +22,7 @@ const TESTS = [
   'test-cooc-unit',
   'test-users-unit',
   'test-tabstate-unit',
+  'test-listing-unit',
   'test-migrate-unit',
   'test-collections-merge',
   'test-token-parity',

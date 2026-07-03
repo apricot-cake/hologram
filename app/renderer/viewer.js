@@ -619,10 +619,10 @@
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
   // injected: reassigned lets (allPosts/tagGroups/multiOnly/qfTagGroup) as getters,
   // and consts declared after this point (posterQB / pfStore / the corpusQuery
-  // destructure) as deferred arrow wrappers — a direct ref here would hit TDZ at
-  // wiring time; the wrappers only run when a flyout opens.
+  // destructure / the listing.js products) as deferred arrow wrappers — a direct
+  // ref here would hit TDZ at wiring time; the wrappers only run when a flyout opens.
   const { qfValues } = window.corpusFacets.makeFacets({
-    getFilteredPosts,
+    getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
     posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
     allPosts: () => allPosts,
@@ -635,9 +635,9 @@
     qfTagGroup: () => qfTagGroup,
     multiOnly: () => multiOnly,
     posterTagsOf,
-    filteredPosters,
+    filteredPosters: () => filteredPosters(),
     posterFilterVocab,
-    namedPosters,
+    namedPosters: () => namedPosters(),
     posterFolders: () => pfStore.all(),
     // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
     // after this point — a direct ref here would hit TDZ at wiring time.
@@ -1986,61 +1986,34 @@
     CF().reconcile(new Set(allPosts.map((p) => p.captureId)));
   }
 
-  // The text-search haystack for one post: the fields the search box scans.
-  // Returned as an array so the fuzzy path joins it and the exact path tests
-  // each field individually. Used by the 'text' leaf predicate (postPredOf).
-  function getFilteredPosts() {
-    // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
-    // 無いレコードだけ除外。SNS投稿だけ/画像だけの絞り込みは「種別」フィルタ(kind)で。
-    let posts = allPosts.filter((p) => p.image || mediaFilesOf(p).length || p.text || p.title);
-    const sort = sortSelect.value;
-    // The search-box term now lives in the query tree as a 'text' leaf — evaluated by
-    // evalNode below alongside every other condition (no separate text-filter phase).
-
-    // ---- Query-builder evaluation: boolean condition tree ----
-    // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
-    // conditions, built directly by the inline drag builder; evalNode walks it
-    // recursively. See docs/design-query-builder.md「改訂③」.
-    const queryRoot = currentTree(); // the boolean query tree (root group)
-    if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
-
-    // Sticky records: items un-matched by a recent mutation stay visible
-    // (cleared on the next filter change / data refresh).
-    if (stickyRecs.size) {
-      const have = new Set(posts.map((p) => p.captureId));
-      for (const p of allPosts) if (stickyRecs.has(p.captureId) && !have.has(p.captureId)) posts.push(p);
-    }
-
-    // Sort — use pre-cached numeric timestamps (_dateMs/_capturedMs) to avoid
-    // new Date() per comparator call (was ~120k allocations per sort on 9k posts).
-    switch (sort) {
-      case 'date-desc':
-        posts.sort((a, b) => (b._dateMs || 0) - (a._dateMs || 0));
-        break;
-      case 'date-asc':
-        posts.sort((a, b) => (a._dateMs || 0) - (b._dateMs || 0));
-        break;
-      case 'likes-desc':
-        posts.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-        break;
-      case 'reposts-desc':
-        posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0));
-        break;
-      case 'replies-desc':
-        posts.sort((a, b) => (b.replies || 0) - (a.replies || 0));
-        break;
-      case 'captured-desc':
-        posts.sort((a, b) => (b._capturedMs || 0) - (a._capturedMs || 0));
-        break;
-      case 'likes-pct': {
-        const pct = percentileFn(posts);
-        posts.sort((a, b) => pct(b) - pct(a));
-        break;
-      }
-    }
-
-    return posts;
-  }
+  // The listing pipeline — getFilteredPosts (content gate → query tree → sticky
+  // merge → sort), namedPosters/filteredPosters, and the collection derivations —
+  // moved to listing.js (window.corpusListing), 7th extraction slice. Runtime
+  // couplings are injected: reassigned lets (allPosts/_postsById/posterSort/
+  // collectionSort) as getters; posterQB is a const declared later — arrow
+  // wrappers defer the read past TDZ (they only run once posters render).
+  const { getFilteredPosts, namedPosters, filteredPosters, treeWithLegacyQ, dynamicMatches, resetCollectionCache, collectionRecords, collectionThumbsFrom, collectionItemCount, collCondLabels, filteredCollections } = window.corpusListing.makeListing({
+    allPosts: () => allPosts,
+    postsById: () => _postsById,
+    mediaFilesOf,
+    densityImage,
+    percentileFn,
+    evalNode,
+    treeLeaves,
+    postPredOf,
+    currentTree,
+    stickyRecs,
+    sortValue: () => sortSelect.value,
+    searchQuery,
+    buildUsers,
+    posterQBEval: (u) => posterQB.eval(u),
+    posterQBTree: () => posterQB.getTree(),
+    posterSort: () => posterSort,
+    collectionSort: () => collectionSort,
+    allCollections: () => (CF() ? CF().allCollections() : []),
+    filterLabel,
+  });
+  const { cloneTree } = window.corpusListing;
 
   let lastRenderedState = null;
   let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
@@ -4333,42 +4306,8 @@
       b.classList.toggle('on', n > 0);
     });
   }
-  // Named posters only — the identity-less ('(unknown)') bucket stays out of the grid.
-  function namedPosters() {
-    return buildUsers().filter((u) => u.displayName || u.screenName);
-  }
-  function filteredPosters() {
-    const q = searchQuery().trim().toLowerCase();
-    let list = namedPosters();
-    // Boolean query tree (platform / instance / tag / folder / date).
-    const root = posterQB.getTree();
-    if (root.children.length) list = list.filter((u) => posterQB.eval(u));
-    // Search is kept OUT of the tree (same作法 as the post side).
-    if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
-    const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
-    list = list.slice();
-    // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
-    // query's date leaf (range axis == sort axis), falling back to 最終投稿日 (latest).
-    if (posterSort === 'date-desc' || posterSort === 'date-asc') {
-      const dl = treeLeaves(root).find((c) => c.type === 'date');
-      const field = (dl && dl.dateField) || 'latest',
-        asc = posterSort === 'date-asc';
-      list.sort((a, b) => {
-        const av = a[field] || '',
-          bv = b[field] || '';
-        if (!av && !bv) return b.count - a.count;
-        if (!av) return 1;
-        if (!bv) return -1;
-        const c = av.localeCompare(bv); // ISO strings compare lexically
-        return (asc ? c : -c) || b.count - a.count;
-      });
-    } else if (posterSort === 'name') {
-      list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
-    } else {
-      list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b))); // 'count' (default)
-    }
-    return list;
-  }
+  // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
+  // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
   function renderPosters(keepLimit) {
     const grid = document.getElementById('posterGrid');
@@ -4701,81 +4640,11 @@
   // is the reliable way back (no fragile back-button bounce — ユーザー要望).
   let collectionSort = 'name'; // 'name' | 'recent' | 'count'
   let collectionList = [];
-  // Records backing a collection's cover + count. Static = its explicit items
-  // (existing ones only); dynamic = posts matching the saved search (tree + q)
-  // against the CURRENT library (= 開けば最新). Memoized per renderCollections pass
-  // (_collRecCache) so the sort + the card map don't each re-scan allPosts.
-  let _collRecCache = null;
-  // Fold a legacy free-text q into a tree as a confirmed 'text' leaf (pre-text-leaf
-  // saves stored the search term separately in coll.q). Returns the tree to evaluate —
-  // a pass-through when q is empty or the tree already carries a text leaf.
-  function treeWithLegacyQ(tree, q) {
-    const t = tree && Array.isArray(tree.children) ? tree : null;
-    if (!q || !q.trim() || (t && treeLeaves(t).some((c) => c.type === 'text'))) return t;
-    return { kind: 'group', op: 'and', neg: false, children: [...((t && t.children) || []), { kind: 'cond', type: 'text', value: q.trim(), mode: 'exact' }] };
-  }
-  // Deep-clone a query tree for persistence, dropping transient memo fields (_compiled…).
-  const cloneTree = (tree) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
-  function dynamicMatches(coll) {
-    const tree = treeWithLegacyQ(coll.tree, coll.q); // text term lives in the tree now (q = legacy only)
-    const out = [];
-    for (const p of allPosts) {
-      if (!(p.image || mediaFilesOf(p).length || p.text || p.title)) continue; // mirror getFilteredPosts' content gate
-      if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
-      out.push(p);
-    }
-    return out;
-  }
-  function collectionRecords(coll) {
-    if (_collRecCache && _collRecCache.has(coll.id)) return _collRecCache.get(coll.id);
-    let recs;
-    if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
-    else {
-      recs = [];
-      for (const cid of coll.items) {
-        const r = _postsById.get(cid);
-        if (r) recs.push(r);
-      }
-    }
-    if (_collRecCache) _collRecCache.set(coll.id, recs);
-    return recs;
-  }
-  function collectionThumbsFrom(recs) {
-    const files = [];
-    for (const rec of recs) {
-      const f = densityImage(rec, 'card');
-      if (f) files.push(f);
-      if (files.length >= 4) break;
-    }
-    return files;
-  }
-  function collectionItemCount(coll) {
-    return collectionRecords(coll).length;
-  }
-  // Small condition chips under a dynamic card's name (saved tree leaves + the
-  // free-text q). Capped; purely informational (the mock's optional 条件チップ).
-  function collCondLabels(coll) {
-    const chips = [];
-    try {
-      for (const leaf of treeLeaves(coll.tree)) {
-        chips.push(filterLabel(leaf));
-        if (chips.length >= 4) break;
-      }
-    } catch {
-      /* ignore malformed tree */
-    }
-    if (coll.q && coll.q.trim() && chips.length < 4) chips.push('“' + coll.q.trim() + '”');
-    return chips; // React renders the .collection-cond chips from these labels
-  }
-  function filteredCollections() {
-    const q = searchQuery().trim().toLowerCase();
-    let list = (CF() ? CF().allCollections() : []).slice();
-    if (q) list = list.filter((c) => (c.name || '').toLowerCase().includes(q));
-    if (collectionSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
-    else if (collectionSort === 'count') list.sort((a, b) => collectionItemCount(b) - collectionItemCount(a) || (a.name || '').localeCompare(b.name || ''));
-    else list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    return list;
-  }
+  // Collection record derivations (treeWithLegacyQ / dynamicMatches /
+  // collectionRecords / thumbs / counts / cond chips / filteredCollections) and
+  // cloneTree moved to listing.js (7th slice — destructured with getFilteredPosts
+  // above). The per-pass record cache lives there too — renderCollections calls
+  // resetCollectionCache() at the top of each pass.
   // Placeholder for an empty collection's cover — the same layers glyph as the view toggle.
   const COLL_EMPTY_ICON =
     '<svg class="ct-empty-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>';
@@ -4783,7 +4652,7 @@
   const COLL_BOLT_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
   function renderCollections() {
     if (!document.getElementById('collectionGrid')) return;
-    _collRecCache = new Map(); // fresh per pass (sort + card map reuse the same scan)
+    resetCollectionCache(); // fresh per pass (sort + card map reuse the same scan)
     collectionList = filteredCollections();
     const countEl = document.getElementById('collectionCount');
     if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
