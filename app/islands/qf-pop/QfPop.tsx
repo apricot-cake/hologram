@@ -1,6 +1,6 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 // Render list entries buildRows() flattens the facet items into.
 type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: CorpusQfPopItem };
@@ -71,6 +71,49 @@ function buildRows(items: CorpusQfPopItem[]) {
   return out;
 }
 
+// Chip-wrap rendering for tag-like value lists (model.chips): consecutive value
+// rows flow as WRAPPED PILLS between the group headings / dividers, instead of one
+// menu row per value — a one-per-line column made a grown tag vocabulary a scroll
+// marathon. Same anatomy as the card-edit tag picker (.edit-pick-chips) and the
+// sidebar value chips (.sb-chip: pill = value); precedent = Photos.app keyword
+// manager. Full name on hover via title (chips ellipsize at the flyout width).
+function ChipRows({ rows, onPick }: { rows: QfRow[]; onPick: (it: CorpusQfPopItem) => void }) {
+  const out: ReactNode[] = [];
+  let buf: CorpusQfPopItem[] = [];
+  const flush = () => {
+    if (!buf.length) return;
+    const items = buf;
+    buf = [];
+    out.push(
+      <div key={'c' + out.length} className="qf-chips">
+        {items.map((it, j) => (
+          <button key={j} type="button" title={it.l} className={'sb-chip qf-chip' + (it.on ? ' active' : '') + (it.facetDim && it.count === 0 ? ' off' : '')} onClick={() => onPick(it)}>
+            {it.kind && <span className={'tk-dot tk-' + it.kind} title={it.dotTitle} />}
+            <span className="fm-name">{it.l}</span>
+            {it.count != null && <span className="fm-count">{it.count}</span>}
+          </button>
+        ))}
+      </div>,
+    );
+  };
+  for (const r of rows) {
+    if (r.type === 'row') {
+      buf.push(r.item);
+      continue;
+    }
+    flush();
+    if (r.type === 'div') out.push(<div key={'d' + out.length} className="qf-div" />);
+    else
+      out.push(
+        <div key={'g' + out.length} className="qf-ghead">
+          {r.text}
+        </div>,
+      );
+  }
+  flush();
+  return <>{out}</>;
+}
+
 function QfBody({ model }: { model: CorpusQfPopModel }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -125,6 +168,8 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
           <div className="qf-zone-empty" style={{ padding: '6px 8px' }}>
             —
           </div>
+        ) : model.chips ? (
+          <ChipRows rows={visible} onPick={model.onPick} />
         ) : (
           visible.map((r, i) => {
             if (r.type === 'div') return <div key={i} className="qf-div" />;
@@ -190,7 +235,7 @@ export function QfPopHost() {
 
   if (!model) return null;
   return createPortal(
-    <div className="fold-menu qf-pop show" ref={popRef} key={model.openId}>
+    <div className={'fold-menu qf-pop show' + (model.chips ? ' qf-pop--chips' : '')} ref={popRef} key={model.openId}>
       <QfBody model={model} />
     </div>,
     document.body,

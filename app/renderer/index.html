@@ -1660,6 +1660,19 @@
     .qf-pop .fm-row.off { color: var(--text-muted); }
     .qf-pop .fm-row.off .fm-count { color: var(--text-subtle); }
     .qf-pop .qf-div { height: 1px; background: var(--border); margin: 5px 6px; }
+    /* Chip-wrap mode (tag-like lists): values flow as wrapped .sb-chip pills instead
+       of one menu row each — a grown tag vocabulary in a single column was a scroll
+       marathon. Pill = value (shape language); same anatomy as the card-edit tag
+       picker (.edit-pick-chips); precedent = Photos.app keyword manager. The flyout
+       widens past the fold-menu default so several chips fit per line. */
+    .fold-menu.qf-pop--chips { max-width: 340px; }
+    .qf-pop .qf-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px 8px 7px; }
+    .qf-pop .qf-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-family: inherit; }
+    .qf-pop .qf-chip .fm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .qf-pop .qf-chip .fm-count { font-size: 10px; }
+    /* 0件 chip: greyed via text color like the 0件 rows (still pickable). */
+    .qf-pop .qf-chip.off { color: var(--text-muted); }
+    .qf-pop .qf-chip.off .fm-count { color: var(--text-subtle); }
     .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
     .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
     .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }

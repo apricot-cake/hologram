@@ -173,6 +173,8 @@ declare global {
     anchorRect: CorpusAnchorRect;
     items: CorpusQfPopItem[];
     showFind?: boolean;
+    /** Render values as wrapped pill chips (tag-like lists) instead of menu rows. */
+    chips?: boolean;
     findPlaceholder?: string;
     searchModeTitle?: string;
     exactLabel?: string;

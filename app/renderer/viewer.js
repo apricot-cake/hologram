@@ -679,6 +679,11 @@
     // fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter((it) => it.ghead == null).length;
     const showFind = !['platform', 'poster-platform'].includes(cat) && valueCount > 8;
+    // Tag-like value lists (short pill-able names, open-ended vocabularies) render as
+    // wrapped chips instead of one menu row per value — the vertical column made long
+    // tag lists a scroll marathon (2026-07-03). Row lists stay for everything else
+    // (poster names, folders, fixed short lists).
+    const chips = ['tag', 'work', 'character', 'poster-tag', 'poster-work', 'poster-character', 'hashtag'].includes(cat);
     // No heading row: the user already clicked the category row, so repeating its name
     // as a (hover-highlighted, seemingly-clickable) row was noise.
     const showManage = cat === 'poster-folder' && !!CF();
@@ -686,6 +691,7 @@
       anchorRect: qfAnchor.getBoundingClientRect(),
       items,
       showFind,
+      chips,
       findPlaceholder: MSG.qfFindPh,
       searchModeTitle: MSG.searchModeTitle,
       exactLabel: MSG.searchExact,
