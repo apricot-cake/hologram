@@ -60,12 +60,11 @@ const evalJs = `(async () => {
     const vals = document.querySelectorAll('#posterQueryChips .qb-cluster .qb-val').length;
     const noOpt = !document.querySelector('#posterQueryChips .qb-opt');
     const noFormula = !document.querySelector('#posterQueryChips .qb-op, #posterQueryChips .qb-paren, #posterQueryChips [draggable="true"]');
-    const sentEl = document.getElementById('posterQuerySent');
-    const sentence = sentEl && sentEl.style.display !== 'none' ? sentEl.textContent : '';
+    const sentGone = !document.getElementById('posterQuerySent'); // 読み下し文は⑤追補で廃止
     // リセット clears the poster tree
     click(document.querySelector('#posterResetBtn')); await wait(120);
     const afterReset = cards();                                // back to 4
-    return { ok: true, log, allFour, pX, orAuto, clusters, vals, noOpt, noFormula, sentence, afterReset };
+    return { ok: true, log, allFour, pX, orAuto, clusters, vals, noOpt, noFormula, sentGone, afterReset };
   } catch (e) { return { ok: false, log, err: e.message }; }
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -78,9 +77,9 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const ok = r.ok === true && r.allFour === 4 && r.pX === 2 && r.orAuto === 3 && r.clusters === 1 && r.vals === 2 &&
-    r.noOpt === true && r.noFormula === true && typeof r.sentence === 'string' && r.sentence.length > 0 && r.afterReset === 4;
+    r.noOpt === true && r.noFormula === true && r.sentGone === true && r.afterReset === 4;
   console.log(`log=${JSON.stringify(r.log)} err=${r.err || '-'} allFour=${r.allFour} pX=${r.pX} orAuto=${r.orAuto}` +
-    ` clusters=${r.clusters} vals=${r.vals} noOpt=${r.noOpt} noFormula=${r.noFormula} sentence=${JSON.stringify(r.sentence)} afterReset=${r.afterReset}`);
+    ` clusters=${r.clusters} vals=${r.vals} noOpt=${r.noOpt} noFormula=${r.noFormula} sentGone=${r.sentGone} afterReset=${r.afterReset}`);
   console.log(ok ? 'POSTER_TREE_VERIFY_PASS' : 'POSTER_TREE_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

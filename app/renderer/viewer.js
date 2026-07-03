@@ -39,18 +39,12 @@
     qcJoinOr: _s('qcJoinOr'),
     qbOptAll: _s('qbOptAll'),
     qbOptAny: _s('qbOptAny'),
-    qbOptTip: _s('qbOptTip'),
+    qbOptAllTip: _s('qbOptAllTip'),
+    qbOptAnyTip: _s('qbOptAnyTip'),
     qbExclLabel: _s('qbExclLabel'),
     qbMenuExclude: _s('qbMenuExclude'),
     qbMenuInclude: _s('qbMenuInclude'),
     qbSummaryTip: _s('qbSummaryTip'),
-    qsAll: _s('qsAll'),
-    qsAny: _s('qsAny'),
-    qsExcl: _s('qsExcl'),
-    qsAndJoin: _s('qsAndJoin'),
-    qsOrJoin: _s('qsOrJoin'),
-    qsListJoin: _s('qsListJoin'),
-    qsJoin: _s('qsJoin'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
     qbHelp2: _s('qbHelp2'),
@@ -1389,7 +1383,7 @@
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through corpusSearch.
-  const { emptyTree, treeLeaves, opposite, facetTreeFrom, evalNode, localDayRange, hostOf, userKey, textHaystackOf } = window.corpusQuery;
+  const { emptyTree, treeLeaves, facetTreeFrom, evalNode, localDayRange, hostOf, userKey, textHaystackOf } = window.corpusQuery;
   const postPredOf = window.corpusQuery.makePostPredOf({
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
@@ -1403,7 +1397,7 @@
   // behaviour from one codebase. The bar shows NO boolean vocabulary: values
   // cluster by attribute, the only operator surface is the すべて/どれか toggle
   // on multi-value clusters, and exclusions live in the 除く cluster.
-  // ctx: { container, barEl?, sentEl?, emptyEl?, resetBtn?, predOf, labelOf, glyphOf,
+  // ctx: { container, barEl?, emptyEl?, resetBtn?, predOf, labelOf, glyphOf,
   //        getSearchVal?, onClearSearch?, onChange, onShadow?, openLeafEditor?,
   //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
   //        standaloneTypes? }
@@ -1441,22 +1435,6 @@
       ctx.onChange();
     };
 
-    // 読み下し文 — the plain-language reading of the current facet query. The
-    // chips carry no operator vocabulary, so this line is the semantic
-    // guarantee; it appears once 2+ conditions make the meaning non-obvious.
-    function sentenceOf(view) {
-      const count = view.clusters.reduce((n, c) => n + c.leaves.length, 0) + view.singles.length + view.excl.length;
-      if (count < 2) return '';
-      const parts = [];
-      for (const cl of view.clusters) {
-        const labels = cl.leaves.map((l) => ctx.labelOf(l));
-        if (labels.length === 1) parts.push(labels[0]);
-        else parts.push((cl.op === 'and' ? MSG.qsAll : MSG.qsAny).replace('$1', labels.join(cl.op === 'and' ? MSG.qsAndJoin : MSG.qsOrJoin)));
-      }
-      for (const l of view.singles) parts.push(ctx.labelOf(l));
-      if (view.excl.length) parts.push(MSG.qsExcl.replace('$1', view.excl.map((l) => ctx.labelOf(l)).join(MSG.qsListJoin)));
-      return parts.join(MSG.qsJoin);
-    }
     // Read-only text for a NON-facet tree (persisted 改訂③ nesting the ④ UI
     // cannot edit): honest parenthesised form; the existing リセット button is
     // the rebuild path.
@@ -1515,7 +1493,6 @@
       const clusters = [];
       let excl = null;
       let summary = null;
-      let sentence = '';
       if (view) {
         for (const cl of view.clusters) {
           // The cluster's group node (2+ values) is what the toggle writes to.
@@ -1527,18 +1504,13 @@
             items: cl.leaves.map(itemModel),
             // The one remaining operator surface: multi-value clusters with 2+
             // values. Single-value types stay a silent どれか (schema-forced).
-            opWord: grpNode && facetOpts.multiValueTypes.includes(cl.type) ? (cl.op === 'and' ? MSG.qbOptAll : MSG.qbOptAny) : null,
+            op: grpNode && facetOpts.multiValueTypes.includes(cl.type) ? cl.op : null,
           });
         }
-        for (const l of view.singles) clusters.push({ id: null, typeCls: 'qc-' + l.type, glyph: ctx.glyphOf(l.type), items: [itemModel(l)], opWord: null });
+        for (const l of view.singles) clusters.push({ id: null, typeCls: 'qc-' + l.type, glyph: ctx.glyphOf(l.type), items: [itemModel(l)], op: null });
         if (view.excl.length) excl = { label: MSG.qbExclLabel, items: view.excl.map(itemModel) };
-        sentence = sentenceOf(view);
       } else {
         summary = { text: summaryOf(tree, true), tip: MSG.qbSummaryTip };
-      }
-      if (ctx.sentEl) {
-        ctx.sentEl.textContent = sentence;
-        ctx.sentEl.style.display = sentence ? '' : 'none';
       }
       // Posts fold the search term into the tree as a real 'text' leaf (textInTree),
       // so suppress the echo chip there. Posters still echo their box term.
@@ -1550,7 +1522,10 @@
         excl,
         summary,
         delTitle: MSG.qfDelete,
-        optTitle: MSG.qbOptTip,
+        optAll: MSG.qbOptAll,
+        optAny: MSG.qbOptAny,
+        optAllTip: MSG.qbOptAllTip,
+        optAnyTip: MSG.qbOptAnyTip,
       };
       // Stash the latest model per container (script order is viewer.js → islands,
       // so the bundle may not be loaded yet; index.tsx replays the stash on load).
@@ -1589,15 +1564,16 @@
       Q.cleanupTree(tree);
       refresh();
     }
-    // Bar interaction (click): the すべて/どれか toggle, delete a value (✕),
+    // Bar interaction (click): the すべて/どれか segment, delete a value (✕),
     // clear the search echo, or open a leaf editor (date/engagement). The
     // exclusion move lives in the right-click menu.
     chips.addEventListener('click', (e) => {
-      const optBtn = e.target.closest('.qb-opt[data-act="opt"]');
+      const optBtn = e.target.closest('.qb-opt-btn[data-act="opt"]');
       if (optBtn) {
         const n = nodeById(optBtn.dataset.nid);
-        if (n && n.kind === 'group') {
-          n.op = opposite(n.op);
+        // Segment semantics: clicking a side SELECTS it (the active side is inert).
+        if (n && n.kind === 'group' && n.op !== optBtn.dataset.op) {
+          n.op = optBtn.dataset.op;
           refresh();
         }
         return;
@@ -1687,7 +1663,6 @@
   const postQB = createQueryBuilder({
     container: document.getElementById('queryChips'),
     barEl: document.getElementById('postActiveBar'),
-    sentEl: document.getElementById('querySent'),
     emptyEl: document.getElementById('qbEmptyHint'),
     resetBtn: document.getElementById('postResetBtn'),
     saveBtn: document.getElementById('saveSearchBtn'),
@@ -4026,7 +4001,6 @@
   const posterQB = createQueryBuilder({
     container: document.getElementById('posterQueryChips'),
     barEl: document.getElementById('posterActiveBar'),
-    sentEl: document.getElementById('posterQuerySent'),
     emptyEl: document.getElementById('posterQbEmptyHint'),
     resetBtn: document.getElementById('posterResetBtn'),
     predOf: posterPredOf,

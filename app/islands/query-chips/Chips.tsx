@@ -18,15 +18,18 @@ interface QbItem {
   typeCls: string;
 }
 interface QbCluster {
-  id: string | null; // the group node's id (2+ values) — the opt toggle writes here
+  id: string | null; // the group node's id (2+ values) — the opt segment writes here
   typeCls: string;
   glyph: string;
   items: QbItem[];
-  opWord?: string | null; // すべて/どれか label; null = no toggle (single value / schema-forced)
+  op?: 'and' | 'or' | null; // current operator; null = no switch (single value / schema-forced)
 }
 interface QbShared {
   delTitle?: string;
-  optTitle?: string;
+  optAll?: string;
+  optAny?: string;
+  optAllTip?: string;
+  optAnyTip?: string;
 }
 export interface ChipsModel {
   searchSeg?: { glyph: string; text: string } | null;
@@ -36,7 +39,10 @@ export interface ChipsModel {
   excl?: { label: string; items: QbItem[] } | null;
   summary?: { text: string; tip: string } | null;
   delTitle?: string;
-  optTitle?: string;
+  optAll?: string;
+  optAny?: string;
+  optAllTip?: string;
+  optAnyTip?: string;
 }
 
 // In-value delete ✕ — ported 1:1 from the 改訂③ pill.
@@ -73,8 +79,24 @@ function Val({ it, delTitle, withGlyph }: { it: QbItem; delTitle?: string; withG
 }
 
 // An attribute cluster: one glass pill = type glyph + values joined by 「・」 +
-// the optional すべて/どれか toggle. A single-value cluster reads like the old
+// the optional すべて/どれか segment. A single-value cluster reads like the old
 // single pill — same shape, zero new vocabulary.
+// The segment shows BOTH options (mini scope-bar) so it reads as a pressable
+// two-way switch, not a status badge — the ぴったり/おおまか precedent, which
+// replaced a lone word chip for exactly this discoverability failure.
+function OptSeg({ c, shared }: { c: QbCluster; shared: QbShared }) {
+  const seg = (op: 'and' | 'or', word?: string, tip?: string) => (
+    <button type="button" className={'qb-opt-btn' + (c.op === op ? ' is-on' : '')} data-act="opt" data-op={op} data-nid={c.id} title={tip}>
+      {word}
+    </button>
+  );
+  return (
+    <span className="qb-opt" role="group">
+      {seg('and', shared.optAll, shared.optAllTip)}
+      {seg('or', shared.optAny, shared.optAnyTip)}
+    </span>
+  );
+}
 function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
   return (
     <span className={'qb-cluster sb-active-chip ' + c.typeCls}>
@@ -85,11 +107,7 @@ function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
           <Val it={it} delTitle={shared.delTitle} />
         </Fragment>
       ))}
-      {c.opWord && c.id && (
-        <button type="button" className="qb-opt" data-act="opt" data-nid={c.id} title={shared.optTitle}>
-          {c.opWord}
-        </button>
-      )}
+      {c.op && c.id && <OptSeg c={c} shared={shared} />}
     </span>
   );
 }
@@ -116,7 +134,7 @@ function Excl({ e, shared }: { e: { label: string; items: QbItem[] }; shared: Qb
 // cluster, or the read-only summary of a non-facet persisted tree.
 export function Chips({ model }: { model?: ChipsModel | null }) {
   if (!model) return null;
-  const shared = { delTitle: model.delTitle, optTitle: model.optTitle };
+  const shared = { delTitle: model.delTitle, optAll: model.optAll, optAny: model.optAny, optAllTip: model.optAllTip, optAnyTip: model.optAnyTip };
   return (
     <>
       {model.searchSeg && (

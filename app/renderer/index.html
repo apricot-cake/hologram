@@ -1437,7 +1437,7 @@
        not — first-run users tried, BACKLOG 誤認 2026-06-21), one value (it
        holds N discrete chips). Back/forward + tabs survive without an address
        bar — Finder is the precedent. Layout: [◀ ▶ nav] · [lead glyph + title +
-       chips, wrapping, sentence caption below] · [count + save + reset + help]. */
+       chips, wrapping] · [count + save + reset + help]. */
     .content-activebar {
       position: sticky; top: var(--tabbar-h); z-index: 40;
       flex-shrink: 0;
@@ -1445,8 +1445,8 @@
       padding: 7px 16px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--glass-border);
     }
-    /* Nav + lead glyph anchor to the FIRST row (chips), not the 2-line block's
-       middle — otherwise they float between the chips and the 読み下し文. */
+    /* Nav + lead glyph anchor to the FIRST row of chips — otherwise they float
+       to the block's middle when the chips wrap to multiple rows. */
     .qb-nav { flex: none; display: flex; align-items: center; gap: 2px; align-self: flex-start; }
     .qb-nav .icon-btn { width: 28px; height: 28px; }
     .qb-nav .icon-btn svg { width: 17px; height: 17px; }
@@ -1583,11 +1583,20 @@
     .qb-val-edit { cursor: pointer; }
     .qb-val-edit:hover .qb-val-label { text-decoration: underline dotted; }
     .qb-sep { color: var(--text-subtle); pointer-events: none; user-select: none; }
-    /* すべて/どれか: a quiet word toggle tucked inside the cluster (monotone —
-       アクティブ表現はモノトーンのコントラスト). */
-    .qb-opt { border: none; background: var(--hover); cursor: pointer; padding: 1px 7px; border-radius: 999px;
-      font-size: 10.5px; color: var(--text-muted-strong); white-space: nowrap; align-self: center; }
-    .qb-opt:hover { color: var(--text); }
+    /* すべて/どれか = miniature segmented control (recessed track + raised
+       thumb), the app's vocabulary for a two-state switch: BOTH options stay
+       visible so it reads as pressable and the alternative frames the meaning
+       ("all of these" vs "any of these"). Same reasoning that replaced the
+       lone search-mode chip with ぴったり/おおまか (.seg-control) — a single
+       word read as a status badge, not a switch (ユーザー指摘 2026-07-03). */
+    .qb-opt { display: inline-flex; align-self: center; padding: 2px; gap: 2px;
+      background: var(--seg-track); border-radius: 7px; }
+    .qb-opt-btn { border: 0; background: transparent; cursor: pointer; padding: 1px 7px;
+      border-radius: 5px; font: inherit; font-size: 10.5px; color: var(--text-muted);
+      white-space: nowrap; transition: color var(--dur-base); }
+    .qb-opt-btn:hover:not(.is-on) { color: var(--text); }
+    .qb-opt-btn.is-on { background: var(--seg-thumb); color: var(--text-strong);
+      font-weight: 600; box-shadow: var(--shadow-xs); cursor: default; }
     .qb-excl-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
     /* Read-only 「かつ」 between the search echo and the query. */
     .qc-conn { font-size: 11px; color: var(--text-subtle); margin: 0 4px; align-self: center; pointer-events: none; }
@@ -1601,8 +1610,6 @@
     .qb-val:hover .qb-del-btn { opacity: .75; }
     .qb-del-btn:hover { opacity: 1; color: var(--danger); background: color-mix(in srgb, var(--red-500) 16%, transparent); }
     .qb-del-btn svg { display: block; }
-    /* 読み下し文: the plain-language reading under the chips (full-width flex row). */
-    .qb-sent { flex-basis: 100%; font-size: 11px; color: var(--text-subtle); line-height: 1.5; min-width: 0; }
     /* Read-only summary of a persisted non-facet (改訂③) tree. */
     .qb-summary { font-size: 12px; color: var(--text-muted-strong); align-self: center; cursor: help; min-width: 0; }
     /* ⓘ クエリビルダの使い方ヘルプ。バーの右端＝ヘルプの定番コーナーに置く
@@ -1781,7 +1788,6 @@
         <span class="sb-activebar-title" id="activebarLabel"></span>
         <span class="qb-empty" id="qbEmptyHint" style="display:none"></span>
         <div class="sb-chips" id="queryChips"></div>
-        <div class="qb-sent" id="querySent" style="display:none"></div>
       </div>
     </div>
     <div class="qb-trail">
@@ -1799,7 +1805,6 @@
       <div class="qb-main">
         <span class="qb-empty" id="posterQbEmptyHint" style="display:none"></span>
         <div class="sb-chips" id="posterQueryChips"></div>
-        <div class="qb-sent" id="posterQuerySent" style="display:none"></div>
       </div>
     </div>
     <div class="qb-trail">

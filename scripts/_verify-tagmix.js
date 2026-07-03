@@ -1,9 +1,10 @@
 'use strict';
-// Throwaway: verify the facet-chip query builder (docs/design-query-builder.md 改訂④).
-// Values cluster per attribute (tags default すべて=AND); the すべて/どれか toggle is
-// the ONLY operator surface; exclusion moves a value into the 除く cluster via the
-// right-click menu; the bar carries no boolean vocabulary (no parens/connector/drag)
-// and the 読み下し文 line guarantees the semantics.
+// Throwaway: verify the facet-chip query builder (docs/design-query-builder.md 改訂④⑤).
+// Values cluster per attribute (tags default すべて=AND); the すべて/どれか mini-
+// segment (both options visible, click a side to select) is the ONLY operator
+// surface; exclusion moves a value into the 除く cluster via the right-click menu;
+// the bar carries no boolean vocabulary (no parens/connector/drag) and no
+// 読み下し文 line (⑤追補で廃止 — the segment itself carries the semantics).
 // Seeds: p1[A], p2[A], p3[A,B], p4[].
 //   tag A                       -> [A]                     -> 3
 //   tag B                       -> tag cluster A・B(すべて) -> A∧B = 1
@@ -44,7 +45,8 @@ const evalJs = `(async () => {
   const valByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-val')].find((p) => (p.querySelector('.qb-val-label') || {}).textContent === t);
   const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
   const qfVal = (label) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === label; });
-  const opt = () => document.querySelector('#queryChips .qb-opt');
+  const optOn = () => document.querySelector('#queryChips .qb-opt .qb-opt-btn.is-on');
+  const optBtn = (op) => document.querySelector('#queryChips .qb-opt .qb-opt-btn[data-op="' + op + '"]');
   const log = [];
   try {
     await waitFor(() => cards() >= 4);
@@ -55,11 +57,11 @@ const evalJs = `(async () => {
     click(await waitFor(() => qfVal('B'))); await wait(100);
     const andAB = cards();                                   // タグ既定すべて(AND) → 1
     const clusters = document.querySelectorAll('#queryChips .qb-cluster').length; // ひとまとまり
-    const optAll = opt() ? opt().textContent.trim() : '';
-    click(opt()); await wait(100);
+    const optAll = optOn() ? optOn().textContent.trim() : '';
+    click(optBtn('or')); await wait(100);
     const orAB = cards();                                    // どれか(OR) → 3
-    const optAny = opt() ? opt().textContent.trim() : '';
-    click(opt()); await wait(100);
+    const optAny = optOn() ? optOn().textContent.trim() : '';
+    click(optBtn('and')); await wait(100);
     const andAB2 = cards();                                  // すべて → 1
     // 右クリック→「除く」へ移す → A ∧ ¬B → 2
     rclick(valByLabel('B'));
@@ -74,13 +76,13 @@ const evalJs = `(async () => {
     log.push('backRow=' + !!backRow);
     click(backRow); await wait(120);
     const restored = cards();
-    const optRestored = opt() ? opt().textContent.trim() : '';
-    // 構造: 式の語彙・ドラッグの不在＋読み下し文
+    const optRestored = optOn() ? optOn().textContent.trim() : '';
+    // 構造: 式の語彙・ドラッグ・読み下し文の不在＋セグメントは常に両選択肢を見せる
     const noFormula = !document.querySelector('#queryChips .qb-op, #queryChips .qb-paren, #queryChips .qb-group-add');
     const noDrag = !document.querySelector('#queryChips [draggable="true"]');
-    const sentEl = document.getElementById('querySent');
-    const sentence = sentEl && sentEl.style.display !== 'none' ? sentEl.textContent : '';
-    return { ok: true, log, onlyA, andAB, clusters, optAll, orAB, optAny, andAB2, andNotB, exclHasB, restored, optRestored, noFormula, noDrag, sentence };
+    const sentGone = !document.getElementById('querySent');
+    const segBoth = document.querySelectorAll('#queryChips .qb-opt .qb-opt-btn').length === 2;
+    return { ok: true, log, onlyA, andAB, clusters, optAll, orAB, optAny, andAB2, andNotB, exclHasB, restored, optRestored, noFormula, noDrag, sentGone, segBoth };
   } catch (e) { return { ok: false, log, err: e.message }; }
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -95,10 +97,10 @@ child.on('close', () => {
   const ok = r.ok === true && r.onlyA === 3 && r.andAB === 1 && r.clusters === 1 && r.optAll === 'すべて' &&
     r.orAB === 3 && r.optAny === 'どれか' && r.andAB2 === 1 && r.andNotB === 2 && r.exclHasB === true &&
     r.restored === 1 && r.optRestored === 'すべて' && r.noFormula === true && r.noDrag === true &&
-    typeof r.sentence === 'string' && r.sentence.includes('すべて含む');
+    r.sentGone === true && r.segBoth === true;
   console.log(`log=${JSON.stringify(r.log)} err=${r.err || '-'} onlyA=${r.onlyA} andAB=${r.andAB} clusters=${r.clusters}` +
     ` optAll=${r.optAll} orAB=${r.orAB} optAny=${r.optAny} andAB2=${r.andAB2} andNotB=${r.andNotB} exclHasB=${r.exclHasB}` +
-    ` restored=${r.restored} optRestored=${r.optRestored} noFormula=${r.noFormula} noDrag=${r.noDrag} sentence=${JSON.stringify(r.sentence)}`);
+    ` restored=${r.restored} optRestored=${r.optRestored} noFormula=${r.noFormula} noDrag=${r.noDrag} sentGone=${r.sentGone} segBoth=${r.segBoth}`);
   console.log(ok ? 'TAGMIX_VERIFY_PASS' : 'TAGMIX_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });
