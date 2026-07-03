@@ -119,6 +119,11 @@ interface CorpusRecordsApi {
   groupFilesOf(p: CorpusPost): string[];
   /** Grouping factory; manualGroups/ungrouped are getters (viewer reassigns the arrays). */
   makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): string[] }): (list: CorpusPost[]) => CorpusPostGroup[];
+  /** Lightbox gallery-item factory; fileSrc keeps the psimg URL scheme viewer-owned. */
+  makeGallery(deps: { fileSrc(file: string): string }): {
+    buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[];
+    buildGroupGalleryItems(g: CorpusPostGroup): { src: string; alt: string; video: boolean }[];
+  };
   /** Per-platform likes percentile (0..1) over the given population. */
   percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
   /** Pre-computes _dateMs/_capturedMs/_postKey/_quotedKey on arrival. */

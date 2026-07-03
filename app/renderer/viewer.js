@@ -1676,7 +1676,6 @@
   });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
-  const imgSrc = (p) => (p.image ? 'psimg://img/' + encodeURIComponent(p.image) : '');
   // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
   const fileSrc = (file, w) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
 
@@ -2574,33 +2573,9 @@
     else window.__corpusLbLabels = lbLabels;
   }
 
-  // Gallery items for a post: the screenshot first, then each original image.
-  const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
-  // Gallery for a whole group: every record's items in captureId order, deduped by src.
-  function buildGroupGalleryItems(g) {
-    if (g.records.length === 1) return buildGalleryItems(g.rep);
-    const seen = new Set();
-    const items = [];
-    for (const r of g.records) {
-      for (const it of buildGalleryItems(r)) {
-        if (seen.has(it.src)) continue;
-        seen.add(it.src);
-        items.push(it);
-      }
-    }
-    return items;
-  }
-  function buildGalleryItems(p) {
-    const items = [];
-    if (p.image) items.push({ src: imgSrc(p), alt: '', video: false });
-    if (p.video) items.push({ src: 'psimg://img/' + encodeURIComponent(p.video), alt: '', video: true });
-    if (Array.isArray(p.media)) {
-      for (const m of p.media) {
-        if (m && m.file) items.push({ src: 'psimg://img/' + encodeURIComponent(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
-      }
-    }
-    return items;
-  }
+  // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
+  // scheme stays viewer-owned via the injected fileSrc.
+  const { buildGroupGalleryItems } = window.corpusRecords.makeGallery({ fileSrc });
 
   document.getElementById('postGrid').addEventListener('click', (e) => {
     // Image -> open the gallery (screenshot + originals, whole group).

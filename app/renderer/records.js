@@ -174,6 +174,42 @@
     };
   }
 
+  // --- Lightbox gallery items (twelfth extraction slice) ----------------------
+  // The URL scheme (psimg://) stays viewer-owned: fileSrc is injected so the
+  // protocol knowledge isn't duplicated here.
+  const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+  // deps: fileSrc(file) — renderer media URL builder (viewer.js).
+  function makeGallery(deps) {
+    const { fileSrc } = deps;
+    // Gallery items for a post: the screenshot first, then each original image.
+    function buildGalleryItems(p) {
+      const items = [];
+      if (p.image) items.push({ src: fileSrc(p.image), alt: '', video: false });
+      if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
+      if (Array.isArray(p.media)) {
+        for (const m of p.media) {
+          if (m && m.file) items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
+        }
+      }
+      return items;
+    }
+    // Gallery for a whole group: every record's items in captureId order, deduped by src.
+    function buildGroupGalleryItems(g) {
+      if (g.records.length === 1) return buildGalleryItems(g.rep);
+      const seen = new Set();
+      const items = [];
+      for (const r of g.records) {
+        for (const it of buildGalleryItems(r)) {
+          if (seen.has(it.src)) continue;
+          seen.add(it.src);
+          items.push(it);
+        }
+      }
+      return items;
+    }
+    return { buildGalleryItems, buildGroupGalleryItems };
+  }
+
   // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
   // comparison (done once per record on arrival, not per render).
   function stampPost(p) {
@@ -184,7 +220,7 @@
     return p;
   }
 
-  const api = { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, makeGroupRecords, percentileFn, stampPost };
+  const api = { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, makeGroupRecords, makeGallery, percentileFn, stampPost };
   if (typeof window !== 'undefined') window.corpusRecords = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

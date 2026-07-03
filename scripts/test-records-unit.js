@@ -150,8 +150,24 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
   assert('percentile プラットフォーム分離（x の 10 は中位）', pct(list[1]) === 0.5);
 }
 
+// --- makeGallery: ライトボックス項目（image→video→media 順・グループは src 去重） ---
+{
+  const { buildGalleryItems, buildGroupGalleryItems } = R.makeGallery({ fileSrc: (f) => 'stub://' + f });
+  const p1 = { image: 'shot.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
+  const items = buildGalleryItems(p1);
+  assert('gallery 順序＝image→video→media', items.map((i) => i.src).join() === 'stub://shot.jpg,stub://clip.mp4,stub://a.png,stub://b.mp4');
+  assert('gallery video フラグ（image=false/video=true/media は拡張子判定）', items.map((i) => i.video).join() === 'false,true,false,true');
+  assert('gallery alt 引き継ぎ（無指定は空）', items[2].alt === 'A' && items[3].alt === '');
+  assert('gallery null/空 file の media はスキップ', items.length === 4);
+  const r1 = { image: 'shot.jpg' };
+  const r2 = { image: 'shot.jpg', media: [{ file: 'c.png' }] };
+  assert('group 単独＝rep の items 直行', buildGroupGalleryItems({ records: [r1], rep: r1 }).length === 1);
+  const gi = buildGroupGalleryItems({ records: [r1, r2], rep: r1 });
+  assert('group 複数＝src 去重（shot.jpg は1回）', gi.map((i) => i.src).join() === 'stub://shot.jpg,stub://c.png');
+}
+
 if (failed) {
   console.error(`FAIL test-records-unit: ${failed} assertion(s) red`);
   process.exit(1);
 }
-console.log('PASS test-records-unit: postKeyOf / stampPost / shape helpers / grouping / percentile all green');
+console.log('PASS test-records-unit: postKeyOf / stampPost / shape helpers / grouping / gallery / percentile all green');
