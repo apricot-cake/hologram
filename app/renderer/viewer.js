@@ -455,90 +455,23 @@
     views: MSG.qfEngViews,
   };
 
-  // Returns the human-readable label for a single active filter. Shared by
-  // the query-chip renderer and the tab title generator.
-  function filterLabel(f) {
-    switch (f.type) {
-      case 'kind':
-        return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
-      case 'platform':
-        return f.value === '__none' ? MSG.qfPlatformNone : PF_NAME[f.value] || f.value;
-      case 'postType':
-        return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
-      case 'date': {
-        const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
-        const fromStr = f.from ? formatShortDate(f.from) : '';
-        const toStr = f.to ? formatShortDate(f.to) : '';
-        return `${typeName}: ${fromStr}〜${toStr}`;
-      }
-      case 'engagement':
-        return `${ENG_TYPE_LABELS[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
-      case 'tag':
-        return f.value;
-      case 'hashtag':
-        return `#${f.value}`;
-      case 'collection': {
-        const fobj = CF() && CF().byId(f.value);
-        return fobj ? fobj.name : f.value;
-      }
-      case 'clip':
-        return MSG.clipTitle;
-      case 'media':
-        return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
-      case 'instance':
-        return f.value;
-      case 'user':
-        return f.label || f.value;
-      case 'text':
-        return f.value;
-      default:
-        return f.value || f.type;
-    }
-  }
-
-  // Derives a tab title from a snapshot state. Pure function (no DOM reads).
-  // All active labels joined with ・ in priority order so every tab is unique.
-  function tabTitleOf(state, ctx) {
-    const filters = (state && state.f) || [];
-    const search = (state && state.search) || '';
-    const multi = !!(state && state.multi);
-    const allCount = ctx && ctx.allCount != null ? ctx.allCount : 0;
-
-    if (!filters.length && !search && !multi) {
-      return { text: MSG.filterAll + '(' + formatCount(allCount) + ')', iconType: 'all' };
-    }
-
-    const parts = [];
-    let primaryIconType = null;
-    const add = (label, iconType) => {
-      parts.push(label);
-      if (!primaryIconType) primaryIconType = iconType;
-    };
-
-    const byType = {};
-    filters.forEach((f) => {
-      (byType[f.type] = byType[f.type] || []).push(f);
-    });
-
-    // Search terms are 'text' leaves now (in state.f), shown first with the magnifier glyph.
-    if (byType.text)
-      byType.text.forEach((f) => {
-        const v = String(f.value || '');
-        add('”' + (v.length > 12 ? v.slice(0, 12) + '…' : v) + '”', 'search');
-      });
-    if (byType.tag) byType.tag.forEach((f) => add(filterLabel(f), 'tag'));
-    if (byType.hashtag) byType.hashtag.forEach((f) => add(filterLabel(f), 'hashtag'));
-    if (byType.user) byType.user.forEach((f) => add(filterLabel(f), 'user'));
-    filters.filter((f) => f.type === 'platform' || f.type === 'instance').forEach((f) => add(filterLabel(f), f.type));
-    filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
-    if (multi && !byType.media) add(MSG.qfMultiImage, 'media');
-    if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
-    if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
-    if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
-    filters.filter((f) => f.type === 'clip' || f.type === 'collection').forEach((f) => add(filterLabel(f), f.type));
-
-    return { text: parts.join('・'), iconType: primaryIconType || 'all' };
-  }
+  // filterLabel (query-chip renderer + tab titles share it) and tabTitleOf moved
+  // to tab-state.js (window.corpusTabState) — 6th extraction slice. Consts
+  // declared after this point (PF_NAME / CF) are injected as deferred arrows — a
+  // direct ref here would hit TDZ at wiring time; the wrappers only run at
+  // render time. formatShortDate / formatCount are hoisted function declarations
+  // (direct refs are fine).
+  const { filterLabel, tabTitleOf } = window.corpusTabState.makeTabLabels({
+    MSG,
+    engTypeLabels: ENG_TYPE_LABELS,
+    platformName: (v) => PF_NAME[v] || v,
+    formatShortDate,
+    formatCount,
+    collectionName: (id) => {
+      const fobj = CF() && CF().byId(id);
+      return fobj ? fobj.name : null;
+    },
+  });
 
   // Leading type glyph for a query-builder chip — the SAME icons as the sidebar
   // filter rows, so a chip's category reads at a glance (the monotone glass pill
@@ -2122,12 +2055,6 @@
   // inspector alongside instead of a filtered grid — they have no filter state.
   const isImageTab = (t) => !!t && t.type === 'image';
   const activeTab = () => tabs.find((t) => t.id === activeTabId);
-  // Per-tab view-history for browser-style back/forward. Holds JSON snapshots of
-  // snapshotState(); navIdx points at the current entry. Linear: navigating back
-  // then making a fresh change drops the forward entries. In-memory per session
-  // (rides on the tab object across switches; not written to disk).
-  let navHist = [];
-  let navIdx = -1;
   let appBooted = false; // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
   const NAV_CAP = 60;
   function snapshotState() {
@@ -2143,13 +2070,13 @@
   }
   // Called from every fresh renderPosts(): keep the tab title + persistence in sync
   // with the current state, record it for the stickyRecs change-detection below,
-  // and push it onto the per-tab back/forward history (see pushNavHistory).
+  // and push it onto the per-tab back/forward history (see nav.push).
   function syncTitleAndPersist() {
     if (isImageTab(activeTab())) return; // grid renders under an image tab are background refreshes — its title/persistence live on the image-tab path
     const snap = snapshotState();
     lastRenderedState = JSON.stringify(snap);
     if (restoringState) return;
-    pushNavHistory(snap); // record this view for back/forward (skipped while restoring)
+    nav.push(snap); // record this view for back/forward (skipped while restoring)
     document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
     updateActiveTabTitle();
     persistTabsDebounced();
@@ -2171,48 +2098,27 @@
   }
 
   // --- View history (browser-style back/forward) ---
+  // The state machine (hist/idx/cap/dedupe/forward-branch drop/adopt) lives in
+  // tab-state.js (makeNavHistory); viewer keeps the DOM button sync and the
+  // persistence hooks. applyState's restoringState guards the re-push.
+  const nav = window.corpusTabState.makeNavHistory({
+    cap: NAV_CAP,
+    enabled: () => appBooted,
+    snapshot: snapshotState,
+    apply: applyState,
+    onChange: updateNavButtons,
+  });
   function updateNavButtons() {
     const b = document.getElementById('navBackBtn'),
       f = document.getElementById('navFwdBtn');
-    if (b) b.disabled = navIdx <= 0;
-    if (f) f.disabled = navIdx >= navHist.length - 1;
-  }
-  // Record a fresh view. Called from syncTitleAndPersist on every real render
-  // that isn't a restore. No-op when the state equals the current entry, so
-  // background refreshes / re-renders of the same query don't pile up.
-  function pushNavHistory(snap) {
-    if (!appBooted) return;
-    const s = JSON.stringify(snap);
-    if (navIdx >= 0 && navHist[navIdx] === s) return;
-    if (navIdx < navHist.length - 1) navHist = navHist.slice(0, navIdx + 1); // drop forward branch
-    navHist.push(s);
-    if (navHist.length > NAV_CAP) navHist = navHist.slice(navHist.length - NAV_CAP);
-    navIdx = navHist.length - 1;
-    updateNavButtons();
-  }
-  function navTo(idx) {
-    if (idx < 0 || idx >= navHist.length || idx === navIdx) return;
-    navIdx = idx;
-    applyState(JSON.parse(navHist[navIdx])); // restoringState in applyState guards the re-push
-    updateNavButtons();
-    persistTabsDebounced();
+    if (b) b.disabled = !nav.canBack();
+    if (f) f.disabled = !nav.canForward();
   }
   function navBack() {
-    navTo(navIdx - 1);
+    if (nav.back()) persistTabsDebounced();
   }
   function navForward() {
-    navTo(navIdx + 1);
-  }
-  // Adopt (or seed) a tab's history when it becomes active.
-  function adoptTabNav(t) {
-    if (t && Array.isArray(t._navHist) && t._navHist.length) {
-      navHist = t._navHist;
-      navIdx = typeof t._navIdx === 'number' ? Math.max(0, Math.min(t._navIdx, navHist.length - 1)) : navHist.length - 1;
-    } else {
-      navHist = [JSON.stringify(snapshotState())];
-      navIdx = 0;
-    }
-    updateNavButtons();
+    if (nav.forward()) persistTabsDebounced();
   }
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
@@ -2242,9 +2148,9 @@
     clip: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
   };
-  function genTabId() {
-    return 'tab_' + Math.random().toString(36).slice(2, 10);
-  }
+  // genTabId + the tabs.json payload/restore shape live in tab-state.js (6th
+  // extraction slice) — serializeTabs documents the persisted field set.
+  const { genTabId, serializeTabs, sanitizeSavedTabs } = window.corpusTabState;
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
     if (!window.corpus.setTabs) return;
@@ -2253,13 +2159,7 @@
       at.state = snapshotState();
       at._scrollTop = contentScrollTop();
     }
-    // scrollTop rides along so the view restores across RESTART, not just tab
-    // switches (main.js writes the payload verbatim — no whitelist). The old
-    // renderLimit field is gone with the windowed path: the virtualized grid
-    // restores any depth from scrollTop alone (stale saved fields are ignored).
-    // Image tabs persist type+img instead of filter state (undefined fields
-    // drop out of the JSON, so filter tabs keep their old shape on disk).
-    window.corpus.setTabs({ activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, type: t.type, img: t.img })) });
+    window.corpus.setTabs(serializeTabs(tabs, activeTabId));
   }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
@@ -2271,8 +2171,7 @@
     if (isImageTab(t)) return; // img.idx is kept live by the island callback; there is no filter state to snapshot
     t.state = snapshotState();
     t._scrollTop = contentScrollTop(); // remember content scroll per tab (persisted too)
-    t._navHist = navHist; // carry the back/forward history with the tab
-    t._navIdx = navIdx;
+    nav.saveInto(t); // carry the back/forward history with the tab
   }
   // Restore a tab's remembered content scroll. rAF×2 so the freshly rendered
   // grid has laid out; the virtualized grid derives its window from scrollTop
@@ -2323,7 +2222,7 @@
       if (t.state) applyState(t.state);
       else renderPosts();
     }
-    adoptTabNav(t);
+    nav.adopt(t);
     restoreTabView(t);
     renderTabs();
     persistTabsDebounced();
@@ -2335,7 +2234,7 @@
     tabs.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
     activeTabId = id;
     applyState({ f: [], ops: {}, search: '', sort: sortSelect.value, multi: false });
-    adoptTabNav(tabs.find((t) => t.id === id)); // fresh tab → fresh history (seeded with the empty view)
+    nav.adopt(tabs.find((t) => t.id === id)); // fresh tab → fresh history (seeded with the empty view)
     requestAnimationFrame(() => scrollContentTo(0)); // new tab starts at the top
     renderTabs();
     persistTabsDebounced();
@@ -2350,7 +2249,7 @@
         tabs = [{ id: nid, pinned: false, title: null, state: null }];
         activeTabId = nid;
         resetAllFilters();
-        adoptTabNav(tabs[0]);
+        nav.adopt(tabs[0]);
         renderTabs();
         persistTabsDebounced();
         return;
@@ -2374,7 +2273,7 @@
         if (t.state) applyState(t.state);
         else renderPosts();
       }
-      adoptTabNav(t);
+      nav.adopt(t);
       restoreTabView(t);
     }
     renderTabs();
@@ -2410,7 +2309,7 @@
       if (nt.state && Object.keys(nt.state).length) applyState(nt.state);
       else renderPosts();
     }
-    adoptTabNav(nt); // duplicate starts its own history at the copied view
+    nav.adopt(nt); // duplicate starts its own history at the copied view
     renderTabs();
     persistTabsDebounced();
   }
@@ -2495,7 +2394,7 @@
       saveActiveTabState();
       activeTabId = id;
       showImageTab(t);
-      adoptTabNav(t);
+      nav.adopt(t);
     }
     renderTabs();
     persistTabsDebounced();
@@ -2504,20 +2403,10 @@
   async function initTabs() {
     try {
       const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
-      if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs.map((t) => ({
-          id: t.id || genTabId(),
-          pinned: !!t.pinned,
-          title: t.title || null,
-          state: t.state || null,
-          // Image tabs: sanitize the persisted shape (unknown/older files just
-          // yield a filter tab; an image tab with bad recs shows the missing state).
-          type: t.type === 'image' ? 'image' : undefined,
-          img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
-          _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
-        }));
-        const sid = saved.activeTabId;
-        activeTabId = sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id;
+      const st = sanitizeSavedTabs(saved, genTabId); // null when nothing usable was saved
+      if (st) {
+        tabs = st.tabs;
+        activeTabId = st.activeTabId;
       } else {
         const id = genTabId();
         tabs = [{ id, pinned: false, title: null, state: null }];

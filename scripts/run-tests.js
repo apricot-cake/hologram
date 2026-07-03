@@ -21,6 +21,7 @@ const TESTS = [
   'test-facets-unit',
   'test-cooc-unit',
   'test-users-unit',
+  'test-tabstate-unit',
   'test-migrate-unit',
   'test-collections-merge',
   'test-token-parity',

@@ -2350,6 +2350,11 @@
   <script src="facets.js"></script>
   <script src="cooc.js"></script>
   <script src="users.js"></script>
+  <!-- Tab-state service (window.corpusTabState): tab titles (filterLabel/tabTitleOf),
+       the back/forward nav-history state machine, and the tabs.json (de)serialization
+       pair — pure logic extracted from viewer.js; runtime deps injected there.
+       Node-tested by scripts/test-tabstate-unit.js. Before viewer.js. -->
+  <script src="tab-state.js"></script>
   <!-- Shared renderer state store (window.corpusStore): one source of truth shared
        by viewer.js and the React islands during the migration. Before viewer.js. -->
   <script src="store.js"></script>
