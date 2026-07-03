@@ -55,6 +55,7 @@
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
+    qfAllTags: _s('qfAllTags'),
     qfFindPh: _s('qfFindPh'),
     deleteKeyword: _s('deleteKeyword'),
     confirmKeywordPh: _s('confirmKeywordPh'),
@@ -596,6 +597,10 @@
   // so typing never touches this bridge (only a pick or a fresh open does). ----
   let qfCat = null;
   let qfAnchor = null; // 同じ行をもう一度押したら閉じる（トグル）
+  // Bumped only on a FRESH open (showQfPopAt), NOT on the re-render after a pick. The
+  // island keys its root on this, so a value pick re-renders in place (preserving the
+  // selected tag group + find text) while opening a different row remounts fresh.
+  let qfSession = 0;
   function hideQfPop() {
     window.corpusQfPop.close();
   }
@@ -675,19 +680,19 @@
     // fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter((it) => it.ghead == null).length;
     const showFind = !['platform', 'poster-platform'].includes(cat) && valueCount > 8;
-    // Tag-like value lists (short pill-able names, open-ended vocabularies) render as
-    // wrapped chips instead of one menu row per value — the vertical column made long
-    // tag lists a scroll marathon (2026-07-03). Row lists stay for everything else
-    // (poster names, folders, fixed short lists).
-    const chips = ['tag', 'work', 'character', 'poster-tag', 'poster-work', 'poster-character', 'hashtag'].includes(cat);
+    // The タグ flyout carries user tag-groups (facets emits ghead markers). When
+    // present, the island lays them out Eagle-style — group list on the LEFT,
+    // the selected group's tags as rows on the RIGHT (2026-07-04, replacing the
+    // one-flyout wrapped-chip layout). Everything else stays a single row column.
     // No heading row: the user already clicked the category row, so repeating its name
     // as a (hover-highlighted, seemingly-clickable) row was noise.
     const showManage = cat === 'poster-folder' && !!CF();
     window.corpusQfPop.open({
       anchorRect: qfAnchor.getBoundingClientRect(),
+      sessionId: qfSession,
       items,
       showFind,
-      chips,
+      allGroupLabel: MSG.qfAllTags,
       findPlaceholder: MSG.qfFindPh,
       searchModeTitle: MSG.searchModeTitle,
       exactLabel: MSG.searchExact,
@@ -776,6 +781,7 @@
     anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
+    qfSession++; // fresh open → island remounts (resets group/find); picks keep it
     renderQfPop();
   }
 

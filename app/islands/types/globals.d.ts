@@ -170,11 +170,14 @@ declare global {
   }
   interface CorpusQfPopModel {
     openId: number;
+    /** Bumped only on a fresh open (not on a pick) — the island keys its root on this
+        so picks re-render in place (group/find preserved). */
+    sessionId?: number;
     anchorRect: CorpusAnchorRect;
     items: CorpusQfPopItem[];
     showFind?: boolean;
-    /** Render values as wrapped pill chips (tag-like lists) instead of menu rows. */
-    chips?: boolean;
+    /** Left-pane "all" label for the two-pane (grouped tag) layout. */
+    allGroupLabel?: string;
     findPlaceholder?: string;
     searchModeTitle?: string;
     exactLabel?: string;

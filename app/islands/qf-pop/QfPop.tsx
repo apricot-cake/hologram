@@ -1,9 +1,13 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { ReactNode, RefObject } from 'react';
+import type { RefObject } from 'react';
 
 // Render list entries buildRows() flattens the facet items into.
 type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: CorpusQfPopItem };
+
+// A tag group parsed out of the flat facet items (a ghead marker + the value rows
+// that follow it, until the next ghead).
+type QfGroup = { name: string; items: CorpusQfPopItem[] };
 
 // Glass value-flyout (qf-pop) — ONE always-mounted host that renders whatever
 // window.corpusQfPop currently holds (or nothing). viewer.js owns the bespoke facet
@@ -17,9 +21,11 @@ type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; 
 // triggers this remount — the old "don't re-render on every keystroke" trick (kept to
 // preserve input focus) falls out for free instead of needing a special case.
 //
-// Emits the SAME DOM the old imperative builder did (.fold-menu.qf-pop >
-// .qf-find-wrap/.seg-control--qf + .qf-vals > .fm-row/.qf-ghead/.qf-div + .qf-footer)
-// so the existing CSS is unchanged. Labels are provided already-localized by viewer.
+// Two layouts: a flat single column of .fm-row (platforms/authors/folders/…), and —
+// when the items carry tag-group headings (ghead) — an Eagle-style TWO-PANE (group
+// list on the left, the selected group's tags as rows on the right; 2026-07-04,
+// replacing the wrapped-chip layout). Same row/CSS anatomy either way; labels arrive
+// already-localized from viewer.
 
 const Check = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -75,51 +81,42 @@ function buildRows(items: CorpusQfPopItem[]) {
   return out;
 }
 
-// Chip-wrap rendering for tag-like value lists (model.chips): consecutive value
-// rows flow as WRAPPED PILLS between the group headings / dividers, instead of one
-// menu row per value — a one-per-line column made a grown tag vocabulary a scroll
-// marathon. Same anatomy as the card-edit tag picker (.edit-pick-chips) and the
-// sidebar value chips (.sb-chip: pill = value); precedent = Photos.app keyword
-// manager. Full name on hover via title (chips ellipsize at the flyout width).
-function ChipRows({ rows, onPick }: { rows: QfRow[]; onPick: (it: CorpusQfPopItem) => void }) {
-  const out: ReactNode[] = [];
-  let buf: CorpusQfPopItem[] = [];
-  const flush = () => {
-    if (!buf.length) return;
-    const items = buf;
-    buf = [];
-    out.push(
-      <div key={'c' + out.length} className="qf-chips">
-        {items.map((it, j) => (
-          <button key={j} type="button" title={it.l} className={'sb-chip qf-chip' + (it.on ? ' active' : '') + (it.facetDim && it.count === 0 ? ' off' : '')} onClick={() => onPick(it)}>
-            {it.kind && <span className={'tk-dot tk-' + it.kind} title={it.dotTitle} />}
-            <span className="fm-name">{it.l}</span>
-            {it.count != null && <span className="fm-count">{it.count}</span>}
-          </button>
-        ))}
-      </div>,
-    );
-  };
-  for (const r of rows) {
-    if (r.type === 'row') {
-      buf.push(r.item);
-      continue;
+// Split the flat facet items into tag groups (a ghead marker opens a group; the value
+// rows until the next ghead are its members). Returns [] when there are no gheads.
+function buildGroups(items: CorpusQfPopItem[]): QfGroup[] {
+  const groups: QfGroup[] = [];
+  let cur: QfGroup | null = null;
+  for (const it of items) {
+    if (it.ghead != null) {
+      cur = { name: it.ghead, items: [] };
+      groups.push(cur);
+    } else if (cur) {
+      cur.items.push(it);
     }
-    flush();
-    if (r.type === 'div') out.push(<div key={'d' + out.length} className="qf-div" />);
-    else
-      out.push(
-        <div key={'g' + out.length} className="qf-ghead">
-          {r.text}
-        </div>,
-      );
   }
-  flush();
-  return <>{out}</>;
+  return groups;
+}
+
+// One value row, shared by both layouts.
+function ValueRow({ it, onPick }: { it: CorpusQfPopItem; onPick: (it: CorpusQfPopItem) => void }) {
+  return (
+    <div className={'fm-row' + (it.sub ? ' fm-sub' : '') + (it.facetDim && it.count === 0 ? ' off' : '')} onClick={() => onPick(it)}>
+      {it.kind && <span className={'tk-dot tk-' + it.kind} title={it.dotTitle} />}
+      <span className="fm-name">{it.l}</span>
+      {it.count != null && <span className="fm-count">{it.count}</span>}
+      {it.on && (
+        <span className="fm-check">
+          <Check />
+        </span>
+      )}
+    </div>
+  );
 }
 
 function QfBody({ model }: { model: CorpusQfPopModel }) {
   const [query, setQuery] = useState('');
+  // Selected tag group in two-pane mode: -1 = すべて (all tags), else index into groups.
+  const [groupSel, setGroupSel] = useState(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!model.showFind) return;
@@ -130,8 +127,12 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
   }, [model.showFind]);
   const fuzzy = useSyncExternalStore(window.corpusSearch.subscribe, window.corpusSearch.isFuzzy);
 
+  const groups = useMemo(() => buildGroups(model.items), [model.items]);
+  const twoPane = groups.length > 0;
+  // Flat rows for the single-column layout (non-grouped categories).
   const rows = useMemo(() => buildRows(model.items), [model.items]);
-  const hasAnyRows = useMemo(() => rows.some((r) => r.type === 'row'), [rows]);
+  // All tag rows across every group, count-desc then name — the すべて view.
+  const allTags = useMemo(() => groups.flatMap((g) => g.items).sort((a, b) => (b.count || 0) - (a.count || 0) || String(a.l).localeCompare(String(b.l), 'ja')), [groups]);
 
   // 検索方式（通常=部分一致 / あいまい=corpusSearch）はメイン検索と共有。@ プレフィックス
   // は screen name（sn）を対象にする（旧 applyQfFind と同じ規約）。
@@ -144,10 +145,14 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
     return matcher ? matcher(s) : s.includes(q);
   };
   const filtering = !!q;
+  const matchItem = (it: CorpusQfPopItem) => !filtering || (atMode ? hit(it.sn || '') : hit(it.l));
+  // Flat-layout visible list (keeps dividers / any stray gheads when not filtering).
   const visible = rows.filter((r) => {
     if (r.type !== 'row') return !filtering;
-    return !filtering || (atMode ? hit(r.item.sn || '') : hit(r.item.l));
+    return matchItem(r.item);
   });
+  // Two-pane right column: the selected group's tags (すべて = allTags), filtered.
+  const paneItems = (groupSel < 0 ? allTags : groups[groupSel] ? groups[groupSel].items : []).filter(matchItem);
 
   return (
     <>
@@ -167,38 +172,50 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
           </div>
         </>
       )}
-      <div className="qf-vals">
-        {!hasAnyRows ? (
-          <div className="qf-zone-empty" style={{ padding: '6px 8px' }}>
-            —
+      {twoPane ? (
+        <div className="qf-panes">
+          <div className="qf-groups">
+            <button type="button" className={'qf-group-row' + (groupSel < 0 ? ' active' : '')} onClick={() => setGroupSel(-1)}>
+              <span className="fm-name">{model.allGroupLabel}</span>
+              <span className="fm-count">{allTags.length}</span>
+            </button>
+            {groups.map((g, gi) => (
+              <button key={gi} type="button" className={'qf-group-row' + (groupSel === gi ? ' active' : '')} onClick={() => setGroupSel(gi)}>
+                <span className="fm-name">{g.name}</span>
+                <span className="fm-count">{g.items.length}</span>
+              </button>
+            ))}
           </div>
-        ) : model.chips ? (
-          <ChipRows rows={visible} onPick={model.onPick} />
-        ) : (
-          visible.map((r, i) => {
-            if (r.type === 'div') return <div key={i} className="qf-div" />;
-            if (r.type === 'ghead')
-              return (
-                <div key={i} className="qf-ghead">
-                  {r.text}
-                </div>
-              );
-            const it = r.item;
-            return (
-              <div key={i} className={'fm-row' + (it.sub ? ' fm-sub' : '') + (it.facetDim && it.count === 0 ? ' off' : '')} onClick={() => model.onPick(it)}>
-                {it.kind && <span className={'tk-dot tk-' + it.kind} title={it.dotTitle} />}
-                <span className="fm-name">{it.l}</span>
-                {it.count != null && <span className="fm-count">{it.count}</span>}
-                {it.on && (
-                  <span className="fm-check">
-                    <Check />
-                  </span>
-                )}
+          <div className="qf-vals">
+            {paneItems.length === 0 ? (
+              <div className="qf-zone-empty" style={{ padding: '6px 8px' }}>
+                —
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : (
+              paneItems.map((it, i) => <ValueRow key={i} it={it} onPick={model.onPick} />)
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="qf-vals">
+          {visible.filter((r) => r.type === 'row').length === 0 ? (
+            <div className="qf-zone-empty" style={{ padding: '6px 8px' }}>
+              —
+            </div>
+          ) : (
+            visible.map((r, i) => {
+              if (r.type === 'div') return <div key={i} className="qf-div" />;
+              if (r.type === 'ghead')
+                return (
+                  <div key={i} className="qf-ghead">
+                    {r.text}
+                  </div>
+                );
+              return <ValueRow key={i} it={r.item} onPick={model.onPick} />;
+            })
+          )}
+        </div>
+      )}
       {model.footerLabel && (
         <div className="qf-footer">
           <button className="qf-footer-link" type="button" onClick={() => (model.onManage as () => void)()}>
@@ -238,8 +255,12 @@ export function QfPopHost() {
   }, [model]);
 
   if (!model) return null;
+  const twoPane = model.items.some((it) => it.ghead != null);
+  // Key on sessionId (bumped only on a fresh open), NOT openId (bumped on every pick):
+  // a value pick re-renders in place so the selected group + find text survive; opening
+  // a different row remounts (fresh group/find/focus). Fall back to openId if unset.
   return createPortal(
-    <div className={'fold-menu qf-pop show' + (model.chips ? ' qf-pop--chips' : '')} ref={popRef} key={model.openId}>
+    <div className={'fold-menu qf-pop show' + (twoPane ? ' qf-pop--twopane' : '')} ref={popRef} key={model.sessionId ?? model.openId}>
       <QfBody model={model} />
     </div>,
     document.body,

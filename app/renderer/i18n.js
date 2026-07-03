@@ -266,6 +266,7 @@
       sbTopTip: '最上部へ',
       ungroupDone: 'グループを解除しました',
       tagGroupOther: '未分類',
+      qfAllTags: 'すべて',
       qfFindPh: '絞り込み…',
       sbFilterTitle: 'フィルタ',
       // viewer: settings > backup（指定フォルダ内への増分ミラー）
@@ -638,6 +639,7 @@
       sbTopTip: 'Back to top',
       ungroupDone: 'Ungrouped',
       tagGroupOther: 'Uncategorized',
+      qfAllTags: 'All',
       qfFindPh: 'Filter…',
       sbFilterTitle: 'Filters',
       // viewer: settings > backup (incremental export to a chosen folder)
