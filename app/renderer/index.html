@@ -1643,7 +1643,11 @@
       color: var(--text); outline: none;
     }
     .qf-pop .qf-find:focus { border-color: var(--accent); }
-    .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; color: var(--text-muted); padding: 6px 8px 2px; }
+    /* Tag-group heading inside the flyout: same non-interactive-header anatomy as
+       .fm-head (10px/600/subtle) so it can't be mistaken for a pickable tag row, and
+       groups are chunked by whitespace above the heading rather than divider lines. */
+    .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; letter-spacing: .3px; color: var(--text-subtle); padding: 12px 8px 3px; pointer-events: none; }
+    .qf-pop .qf-vals > .qf-ghead:first-child { padding-top: 5px; }
     /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
     .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
     .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
