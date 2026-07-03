@@ -1,14 +1,16 @@
 'use strict';
-// Throwaway: verify the inline drag query builder (docs/design-query-builder.md 改訂③).
-// The faceted per-type select was removed; conditions are flat at the top level and
-// combine with AND by default, the AND/OR connector toggles on click, and ≠ negates.
+// Throwaway: verify the facet-chip query builder (docs/design-query-builder.md 改訂④).
+// Values cluster per attribute (tags default すべて=AND); the すべて/どれか toggle is
+// the ONLY operator surface; exclusion moves a value into the 除く cluster via the
+// right-click menu; the bar carries no boolean vocabulary (no parens/connector/drag)
+// and the 読み下し文 line guarantees the semantics.
 // Seeds: p1[A], p2[A], p3[A,B], p4[].
-//   open tag flyout, click A -> [A]            -> p1,p2,p3      = 3
-//   click B                  -> [A かつ B]      -> A∧B = p3      = 1   (top-level AND default)
-//   click connector          -> [A または B]    -> A∨B = p1..p3  = 3   (connector is clickable)
-//   click connector again    -> [A かつ B]      -> A∧B           = 1
-//   ≠ on the B pill          -> [A かつ ≠B]     -> A∧¬B = p1,p2  = 2   (negation)
-//   structure: no .qc-op-sel / no .qc-group / pills are draggable / has .qb-op
+//   tag A                       -> [A]                     -> 3
+//   tag B                       -> tag cluster A・B(すべて) -> A∧B = 1
+//   click すべて/どれか          -> どれか                   -> A∨B = 3
+//   click again                 -> すべて                   -> 1
+//   right-click B →「除く」へ移す -> A ∧ ¬B                  -> 2 (B は除くクラスタ)
+//   right-click B → 戻す         -> A・B(すべて)             -> 1
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -35,37 +37,51 @@ for (let i = 0; i < 4; i++) {
 }
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await wait(40); } return null; };
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  const pillByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-pill')].find((p) => (p.querySelector('.qb-pill-label') || {}).textContent === t);
-  await waitFor(() => cards() >= 4);
-
-  // タグ行クリックで全タグフライアウトを開き、A・B を順に選ぶ（フライアウトは開いたまま）
-  click(document.querySelector('#filterRows [data-qfrow="tag"]')); await wait(80);
-  click(document.querySelector('.qf-pop [data-qfval="A"]')); await wait(80);
-  const onlyA = cards();                                 // [A] → 3
-  click(document.querySelector('.qf-pop [data-qfval="B"]')); await wait(80);
-  const andAB = cards();                                 // top-level AND default → A∧B → 1
-  // 連結語（かつ/または）はクリックで一括トグル
-  const op = () => document.querySelector('#queryChips .qb-op-root');
-  const opShown = !!op();
-  click(op()); await wait(80);
-  const orAB = cards();                                  // A∨B → 3
-  click(op()); await wait(80);
-  const andAB2 = cards();                                // back to A∧B → 1
-  // ≠ で B を否定（右クリック→メニュー「除外」）。A かつ ≠B
-  const rclick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }));
-  const bPill = pillByLabel('B');
-  rclick(bPill); await wait(80);
-  click(document.querySelector('.qb-menu [data-act="neg"]')); await wait(80);
-  const andNotB = cards();                               // A∧¬B → p1,p2 → 2
-  const bNeg = !!pillByLabel('B') && pillByLabel('B').classList.contains('neg');
-
-  const noOpSel = !document.querySelector('#queryChips .qc-op-sel');
-  const noGroupCls = !document.querySelector('#queryChips .qc-group');
-  const pillsDraggable = [...document.querySelectorAll('#queryChips .qb-pill')].every((p) => p.getAttribute('draggable') === 'true');
-  return { onlyA, andAB, opShown, orAB, andAB2, andNotB, bNeg, noOpSel, noGroupCls, pillsDraggable };
+  const rclick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
+  const valByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-val')].find((p) => (p.querySelector('.qb-val-label') || {}).textContent === t);
+  const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
+  const qfVal = (label) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === label; });
+  const opt = () => document.querySelector('#queryChips .qb-opt');
+  const log = [];
+  try {
+    await waitFor(() => cards() >= 4);
+    // タグ行→フライアウトで A・B を順に選ぶ（フライアウトは開いたまま）
+    click(document.querySelector('#filterRows [data-qfrow="tag"]')); await wait(80);
+    click(await waitFor(() => qfVal('A'))); await wait(100);
+    const onlyA = cards();                                   // [A] → 3
+    click(await waitFor(() => qfVal('B'))); await wait(100);
+    const andAB = cards();                                   // タグ既定すべて(AND) → 1
+    const clusters = document.querySelectorAll('#queryChips .qb-cluster').length; // ひとまとまり
+    const optAll = opt() ? opt().textContent.trim() : '';
+    click(opt()); await wait(100);
+    const orAB = cards();                                    // どれか(OR) → 3
+    const optAny = opt() ? opt().textContent.trim() : '';
+    click(opt()); await wait(100);
+    const andAB2 = cards();                                  // すべて → 1
+    // 右クリック→「除く」へ移す → A ∧ ¬B → 2
+    rclick(valByLabel('B'));
+    const exclRow = await waitFor(() => menuRow('移す'));
+    log.push('exclRow=' + !!exclRow);
+    click(exclRow); await wait(120);
+    const andNotB = cards();
+    const exclHasB = !![...document.querySelectorAll('#queryChips .qb-cluster-excl .qb-val-label')].find((l) => l.textContent === 'B');
+    // 右クリック→戻す → A・B(すべて) → 1
+    rclick(valByLabel('B'));
+    const backRow = await waitFor(() => menuRow('戻す'));
+    log.push('backRow=' + !!backRow);
+    click(backRow); await wait(120);
+    const restored = cards();
+    const optRestored = opt() ? opt().textContent.trim() : '';
+    // 構造: 式の語彙・ドラッグの不在＋読み下し文
+    const noFormula = !document.querySelector('#queryChips .qb-op, #queryChips .qb-paren, #queryChips .qb-group-add');
+    const noDrag = !document.querySelector('#queryChips [draggable="true"]');
+    const sentEl = document.getElementById('querySent');
+    const sentence = sentEl && sentEl.style.display !== 'none' ? sentEl.textContent : '';
+    return { ok: true, log, onlyA, andAB, clusters, optAll, orAB, optAny, andAB2, andNotB, exclHasB, restored, optRestored, noFormula, noDrag, sentence };
+  } catch (e) { return { ok: false, log, err: e.message }; }
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -76,10 +92,13 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.onlyA === 3 && r.andAB === 1 && r.opShown === true && r.orAB === 3 && r.andAB2 === 1 &&
-    r.andNotB === 2 && r.bNeg === true && r.noOpSel === true && r.noGroupCls === true && r.pillsDraggable === true;
-  console.log(`onlyA=${r.onlyA} andAB=${r.andAB} opShown=${r.opShown} orAB=${r.orAB} andAB2=${r.andAB2}` +
-    ` andNotB=${r.andNotB} bNeg=${r.bNeg} noOpSel=${r.noOpSel} noGroupCls=${r.noGroupCls} pillsDraggable=${r.pillsDraggable}`);
+  const ok = r.ok === true && r.onlyA === 3 && r.andAB === 1 && r.clusters === 1 && r.optAll === 'すべて' &&
+    r.orAB === 3 && r.optAny === 'どれか' && r.andAB2 === 1 && r.andNotB === 2 && r.exclHasB === true &&
+    r.restored === 1 && r.optRestored === 'すべて' && r.noFormula === true && r.noDrag === true &&
+    typeof r.sentence === 'string' && r.sentence.includes('すべて含む');
+  console.log(`log=${JSON.stringify(r.log)} err=${r.err || '-'} onlyA=${r.onlyA} andAB=${r.andAB} clusters=${r.clusters}` +
+    ` optAll=${r.optAll} orAB=${r.orAB} optAny=${r.optAny} andAB2=${r.andAB2} andNotB=${r.andNotB} exclHasB=${r.exclHasB}` +
+    ` restored=${r.restored} optRestored=${r.optRestored} noFormula=${r.noFormula} noDrag=${r.noDrag} sentence=${JSON.stringify(r.sentence)}`);
   console.log(ok ? 'TAGMIX_VERIFY_PASS' : 'TAGMIX_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

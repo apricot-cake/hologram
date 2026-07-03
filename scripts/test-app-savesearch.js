@@ -84,7 +84,7 @@ const evalJs = `(async () => {
   r.boxAfterSave = sb.value;                                                   // '' (auto-confirm)
 
   // --- restore: open the saved search and confirm the tree comes back ---
-  const textChips = () => document.querySelectorAll('#queryChips .qb-pill.qc-text').length;
+  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
   const goColl = () => document.querySelector('#browseToggle [data-mode="collections"]').click();
   const cardByName = (nm) => [...document.querySelectorAll('#collectionGrid .collection-card[data-cid]')]
     .find((el) => ((el.querySelector('.collection-name') || {}).textContent || '').includes(nm));

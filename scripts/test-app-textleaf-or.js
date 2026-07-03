@@ -1,14 +1,14 @@
 'use strict';
 
-// Verifies two confirmed 'text' leaves can be combined with a DRAG into an OR group
-// (the headline scenario: 猫 Enter → 犬 → drag onto each other → (猫 OR 犬), then the
-// connector toggles to AND). Drag is synthesized the same way as _verify-tree.js, so
-// this runs in the SMOKE hidden window — no real app needed.
+// Verifies multiple confirmed 'text' leaves under the 改訂④ facet builder: text is a
+// STANDALONE type (one chip per term, no cluster/toggle), terms combine with the root
+// AND, and a term moves to the 除く cluster via the right-click menu ("doesn't contain").
+// Runs in the SMOKE hidden window — no real app needed.
 //   seeds: p0 本文「猫がすき」/ p1「犬がすき」/ p2「猫と犬」/ p3「鳥」
-//   猫 (confirm)          -> p0,p2          = 2
-//   犬 (editing) AND 猫   -> 猫と犬          = 1
-//   drag 犬 onto 猫       -> (猫 OR 犬)      = 3
-//   click the connector  -> (猫 AND 犬)     = 1
+//   猫 (confirm)            -> p0,p2       = 2
+//   犬 (editing) AND 猫     -> 猫と犬       = 1
+//   犬 を右クリック→「除く」 -> 猫 ∧ ¬犬     = 猫がすき = 1
+//   戻す                    -> 猫 ∧ 犬      = 1
 //
 //   node scripts/test-app-textleaf-or.js
 
@@ -59,18 +59,12 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-pill.qc-text').length;
-  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  const pillByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-pill')].find((p) => (p.querySelector('.qb-pill-label') || {}).textContent === t);
-  const dnd = (src, dst) => {
-    const dt = new DataTransfer();
-    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-    const r = dst.getBoundingClientRect();
-    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
-    dst.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: cx, clientY: cy }));
-    dst.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: cx, clientY: cy }));
-    src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
-  };
+  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
+  const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await wait(40); } return null; };
+  const valByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-val')].find((p) => (p.querySelector('.qb-val-label') || {}).textContent === t);
+  const rclick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
+  const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
+  const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await waitFor(() => cards() >= 4);
   const sb = document.getElementById('searchBox');
   // React controlled input (searchbox island): write via the prototype setter + 'input'
@@ -87,15 +81,20 @@ const evalJs = `(async () => {
   r.chips = textChips();       // 2 (猫 confirmed + 犬 editing)
   r.andCards = cards();        // 猫 AND 犬 = 猫と犬 = 1
   enter(); await wait(140);    // confirm 犬 too
-  const catPill = pillByLabel('猫'), dogPill = pillByLabel('犬');
-  r.pills = (!!catPill) + ',' + (!!dogPill);
-  dnd(dogPill, catPill); await wait(180);
-  r.orCards = cards();         // (猫 OR 犬) = 3
-  r.hasGroup = !!document.querySelector('#queryChips .qb-grp .qb-paren');
-  const op = document.querySelector('#queryChips .qb-grp .qb-op');
-  if (op) op.click();
-  await wait(180);
-  r.andAfter = cards();        // (猫 AND 犬) = 1
+  // text は単独型: クラスタ化もトグルも無し（1語1チップのまま）
+  r.textClusters = document.querySelectorAll('#queryChips .qb-cluster.qc-text').length;
+  r.noOpt = !document.querySelector('#queryChips .qb-opt');
+  // 犬 を右クリック→「除く」へ移す → 猫 ∧ ¬犬 = 猫がすき = 1
+  rclick(valByLabel('犬'));
+  const exclRow = await waitFor(() => menuRow('移す'));
+  click(exclRow); await wait(180);
+  r.exclCards = cards();
+  r.exclHas = !![...document.querySelectorAll('#queryChips .qb-cluster-excl .qb-val-label')].find((l) => l.textContent === '犬');
+  // 戻す → 猫 ∧ 犬 = 1
+  rclick(valByLabel('犬'));
+  const backRow = await waitFor(() => menuRow('戻す'));
+  click(backRow); await wait(180);
+  r.backCards = cards();
   return r;
 })()`;
 
@@ -117,8 +116,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.catCards === 2 && r.chips === 2 && r.andCards === 1 && r.pills === 'true,true' && r.orCards === 3 && r.hasGroup === true && r.andAfter === 1;
-  console.log(`catCards=${r.catCards} chips=${r.chips} andCards=${r.andCards} pills=${r.pills} orCards=${r.orCards} hasGroup=${r.hasGroup} andAfter=${r.andAfter}`);
+  const ok = r.catCards === 2 && r.chips === 2 && r.andCards === 1 && r.textClusters === 2 && r.noOpt === true && r.exclCards === 1 && r.exclHas === true && r.backCards === 1;
+  console.log(`catCards=${r.catCards} chips=${r.chips} andCards=${r.andCards} textClusters=${r.textClusters} noOpt=${r.noOpt} exclCards=${r.exclCards} exclHas=${r.exclHas} backCards=${r.backCards}`);
   console.log(ok ? 'TEXTLEAF_OR_TEST_PASS' : 'TEXTLEAF_OR_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

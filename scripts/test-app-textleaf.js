@@ -2,7 +2,7 @@
 
 // Verifies the search term as a first-class 'text' leaf in the query tree (the
 // search box now edits a tree leaf instead of a special "付箋" chip):
-//   - typing「ねこ」(ぴったり) creates ONE .qb-pill.qc-text leaf chip (not the old
+//   - typing「ねこ」(ぴったり) creates ONE .qb-val.qc-text leaf chip (not the old
 //     data-special="search" 付箋) and, exact-mode, does NOT match katakana body → 0 cards
 //   - switching to おおまか makes the EDITING leaf follow the mode → matches「ネコかわいい」→ 1
 //   - Enter confirms: box clears, the leaf chip stays
@@ -59,7 +59,7 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-pill.qc-text').length;
+  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
   const specialChips = () => document.querySelectorAll('#queryChips [data-special="search"]').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);

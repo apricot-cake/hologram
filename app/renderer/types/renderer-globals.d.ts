@@ -31,6 +31,24 @@ interface CorpusQueryGroup {
 }
 type CorpusQueryNode = CorpusQueryLeaf | CorpusQueryGroup;
 
+// Facet domain (改訂④ ファセット・チップ): the UI builds only facet-CNF trees.
+// opts = the view-owned type schema (multi-value vs standalone types).
+interface CorpusFacetOpts {
+  multiValueTypes?: string[];
+  standaloneTypes?: string[];
+}
+interface CorpusFacetCluster {
+  type: string;
+  op: 'and' | 'or';
+  leaves: CorpusQueryLeaf[];
+  grouped: boolean;
+}
+interface CorpusFacetView {
+  clusters: CorpusFacetCluster[];
+  singles: CorpusQueryLeaf[];
+  excl: CorpusQueryLeaf[];
+}
+
 interface CorpusQueryApi {
   emptyTree(): CorpusQueryGroup;
   treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[];
@@ -57,6 +75,19 @@ interface CorpusQueryApi {
   dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | undefined, target: CorpusQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean;
   /** Wraps the whole expression in one group; returns the NEW root, or null when empty. */
   wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null;
+  // Facet domain (改訂④) — strict analysis + canonical mutations.
+  /** Default within-cluster operator: multi-value types 'and', others 'or'. */
+  facetDefaultOp(type: string, opts: CorpusFacetOpts): 'and' | 'or';
+  /** Strict facet analysis; null = not facet-shaped (renders as a read-only summary). */
+  facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): CorpusFacetView | null;
+  /** Rebuilds a facet-shaped tree into canonical form in place; false = not facet-shaped. */
+  canonicalizeFacet(tree: CorpusQueryGroup, opts: CorpusFacetOpts): boolean;
+  /** Inserts a positive leaf into its type cluster (group-join / pair-up / top level). */
+  facetAdd(tree: CorpusQueryGroup, node: CorpusQueryLeaf, opts: CorpusFacetOpts): CorpusQueryLeaf;
+  /** Sets a cluster's operator (the すべて/どれか toggle); false when no such group. */
+  facetSetOp(tree: CorpusQueryGroup, type: string, op: string): boolean;
+  /** Moves a leaf between its cluster and the 除く cluster; false when neg is unchanged. */
+  facetSetNeg(tree: CorpusQueryGroup, node: CorpusQueryLeaf, neg: boolean, opts: CorpusFacetOpts): boolean;
   /** LOCAL-day range: from = local midnight, to = NEXT local midnight (exclusive). */
   localDayRange(from?: string | null, to?: string | null): { from: Date | null; to: Date | null };
   hostOf(url: string | null | undefined): string;

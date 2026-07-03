@@ -61,7 +61,7 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-pill.qc-text').length;
+  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
   const sb = document.getElementById('searchBox');

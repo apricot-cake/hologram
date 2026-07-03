@@ -36,18 +36,26 @@
     ctxClipRemove: _s('ctxClipRemove'),
     qcJoinAnd: _s('qcJoinAnd'),
     qcJoinOr: _s('qcJoinOr'),
-    qbAddGroup: _s('qbAddGroup'),
-    qbAddGroupTip: _s('qbAddGroupTip'),
-    qbTipOp: _s('qbTipOp'),
-    qbMenuNeg: _s('qbMenuNeg'),
-    qbMenuNegGroup: _s('qbMenuNegGroup'),
+    qbOptAll: _s('qbOptAll'),
+    qbOptAny: _s('qbOptAny'),
+    qbOptTip: _s('qbOptTip'),
+    qbExclLabel: _s('qbExclLabel'),
+    qbMenuExclude: _s('qbMenuExclude'),
+    qbMenuInclude: _s('qbMenuInclude'),
+    qbSummaryTip: _s('qbSummaryTip'),
+    qsAll: _s('qsAll'),
+    qsAny: _s('qsAny'),
+    qsExcl: _s('qsExcl'),
+    qsAndJoin: _s('qsAndJoin'),
+    qsOrJoin: _s('qsOrJoin'),
+    qsListJoin: _s('qsListJoin'),
+    qsJoin: _s('qsJoin'),
     qbHelpTitle: _s('qbHelpTitle'),
     qbHelp1: _s('qbHelp1'),
     qbHelp2: _s('qbHelp2'),
     qbHelp3: _s('qbHelp3'),
     qbHelp4: _s('qbHelp4'),
     qbHelp5: _s('qbHelp5'),
-    qbHelp6: _s('qbHelp6'),
     qfCatFolder: _s('qfCatFolder'),
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
@@ -791,7 +799,7 @@
   function showQbHelp() {
     const btn = document.getElementById('qbHelpBtn');
     if (!btn) return;
-    qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` + [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5, MSG.qbHelp6].map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
+    qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` + [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5].map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
     const r = btn.getBoundingClientRect();
     qbHelpPop.style.left = r.left + 'px';
     qbHelpPop.style.top = r.bottom + 6 + 'px';
@@ -1386,22 +1394,30 @@
     postKeyOf: window.corpusRecords.postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
-  // The shared inline drag-builder. One instance per view. Encapsulates the tree
-  // state, render, drag/drop, right-click menu, and mutation helpers so two
-  // independent bars (posts / posters) get identical behaviour from one codebase.
-  // ctx: { container, barEl?, resetBtn?, predOf, labelOf, glyphOf, getSearchVal?,
-  //        onClearSearch?, onChange, onShadow?, openLeafEditor?, editableLeafTypes?,
-  //        singleValueTypes?, noDupTypes? }
+  // The shared facet-chip builder (改訂④, docs/design-query-builder.md). One
+  // instance per view. Encapsulates the tree state, the cluster view-model, and
+  // the mutation helpers so two independent bars (posts / posters) get identical
+  // behaviour from one codebase. The bar shows NO boolean vocabulary: values
+  // cluster by attribute, the only operator surface is the すべて/どれか toggle
+  // on multi-value clusters, and exclusions live in the 除く cluster.
+  // ctx: { container, barEl?, sentEl?, resetBtn?, predOf, labelOf, glyphOf,
+  //        getSearchVal?, onClearSearch?, onChange, onShadow?, openLeafEditor?,
+  //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
+  //        standaloneTypes? }
   function createQueryBuilder(ctx) {
     let tree = emptyTree();
     let qbNodeMap = new Map(); // data-nid → tree node (rebuilt each render)
-    let qbDragId = null; // node id currently being dragged
     let shadow = []; // last computed flat (deduped) leaf shadow
     const chips = ctx.container;
     const nodeById = (id) => qbNodeMap.get(id) || null;
     const editableLeafTypes = ctx.editableLeafTypes || [];
     const singleValueTypes = ctx.singleValueTypes || [];
     const noDupTypes = ctx.noDupTypes || [];
+    // Facet schema: which types may hold 2+ values with an すべて/どれか choice
+    // (multi-value attributes), and which stay standalone chips. Every other
+    // type clusters as a silent どれか — the schema answers the operator
+    // question, so the UI never has to ask.
+    const facetOpts = { multiValueTypes: ctx.multiValueTypes || [], standaloneTypes: ctx.standaloneTypes || [] };
 
     // --- Tree mutation domain lives in query.js (9th extraction slice); the
     // bindings below close over THIS instance's tree. Q is referenced directly
@@ -1422,10 +1438,35 @@
       ctx.onChange();
     };
 
-    // --- Render: the tree as draggable pills + parenthesised groups on the bar. ---
+    // 読み下し文 — the plain-language reading of the current facet query. The
+    // chips carry no operator vocabulary, so this line is the semantic
+    // guarantee; it appears once 2+ conditions make the meaning non-obvious.
+    function sentenceOf(view) {
+      const count = view.clusters.reduce((n, c) => n + c.leaves.length, 0) + view.singles.length + view.excl.length;
+      if (count < 2) return '';
+      const parts = [];
+      for (const cl of view.clusters) {
+        const labels = cl.leaves.map((l) => ctx.labelOf(l));
+        if (labels.length === 1) parts.push(labels[0]);
+        else parts.push((cl.op === 'and' ? MSG.qsAll : MSG.qsAny).replace('$1', labels.join(cl.op === 'and' ? MSG.qsAndJoin : MSG.qsOrJoin)));
+      }
+      for (const l of view.singles) parts.push(ctx.labelOf(l));
+      if (view.excl.length) parts.push(MSG.qsExcl.replace('$1', view.excl.map((l) => ctx.labelOf(l)).join(MSG.qsListJoin)));
+      return parts.join(MSG.qsJoin);
+    }
+    // Read-only text for a NON-facet tree (persisted 改訂③ nesting the ④ UI
+    // cannot edit): honest parenthesised form; the existing リセット button is
+    // the rebuild path.
+    function summaryOf(node, isRoot) {
+      if (node.kind === 'cond') return (node.neg ? '≠' : '') + ctx.labelOf(node);
+      const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${MSG.qcJoinOr} ` : ` ${MSG.qcJoinAnd} `);
+      return isRoot ? inner : `${node.neg ? '≠' : ''}(${inner})`;
+    }
+
+    // --- Render: the tree as attribute clusters (facet chips) on the bar. ---
     function render() {
       const container = chips;
-      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-pill')).map((el) => el.textContent.trim()));
+      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-val-label')).map((el) => el.textContent.trim()));
       const bar = ctx.barEl || null;
       const searchVal = ctx.getSearchVal ? (ctx.getSearchVal() || '').trim() : '';
       // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
@@ -1443,36 +1484,68 @@
       if (resetBtn) resetBtn.style.display = hasQuery || searchVal ? '' : 'none';
       // Save-as-dynamic-collection button: shown only when there's something to save.
       if (saveBtn) saveBtn.style.display = hasQuery || searchVal ? '' : 'none';
+      // Re-assert the canonical facet shape before reading it (mutations keep it,
+      // but a freshly loaded compatible tree may still carry bare 2+-value runs;
+      // the すべて/どれか toggle needs real group nodes to write to).
+      const isFacet = Q.canonicalizeFacet(tree, facetOpts);
+      const view = isFacet ? Q.facetViewOf(tree, facetOpts) : null;
       // Rebuild qbNodeMap (data-nid → node) in the same pre-order the DOM carries,
       // so the delegated handlers' nodeById() keeps resolving. The React island only
       // RENDERS this model; viewer.js keeps the ids, the state, and the events.
       qbNodeMap = new Map();
       let idc = 0;
-      const NE = '≠';
-      const animate = !prefersReducedMotion();
-      const nodeModel = (node) => {
+      const nid = (node) => {
         const id = 'n' + idc++;
         qbNodeMap.set(id, node);
-        if (node.kind === 'cond') {
-          const label = ctx.labelOf(node);
-          // chip-new entrance: flag leaves whose label wasn't on the bar last render
-          // (skip the live-updating editing chip — it would flicker per keystroke).
-          const isNew = animate && !(ctx.isEditingLeaf && ctx.isEditingLeaf(node)) && !prevLabels.has((node.neg ? NE : '') + label);
-          return { id, kind: 'cond', typeCls: 'qc-' + node.type, neg: !!node.neg, glyph: ctx.glyphOf(node.type), label, isNew };
-        }
-        return { id, kind: 'group', neg: !!node.neg, opWord: node.op === 'or' ? MSG.qcJoinOr : MSG.qcJoinAnd, children: node.children.map((c) => nodeModel(c)) };
+        return id;
       };
+      const animate = !prefersReducedMotion();
+      const itemModel = (leaf) => {
+        const label = ctx.labelOf(leaf);
+        // chip-new entrance: flag leaves whose label wasn't on the bar last render
+        // (skip the live-updating editing chip — it would flicker per keystroke).
+        const isNew = animate && !(ctx.isEditingLeaf && ctx.isEditingLeaf(leaf)) && !prevLabels.has(label);
+        return { id: nid(leaf), label, isNew, editable: editableLeafTypes.includes(leaf.type), glyph: ctx.glyphOf(leaf.type), typeCls: 'qc-' + leaf.type };
+      };
+      const clusters = [];
+      let excl = null;
+      let summary = null;
+      let sentence = '';
+      if (view) {
+        for (const cl of view.clusters) {
+          // The cluster's group node (2+ values) is what the toggle writes to.
+          const grpNode = cl.leaves.length > 1 ? tree.children.find((c) => c.kind === 'group' && c.children.includes(cl.leaves[0])) : null;
+          clusters.push({
+            id: grpNode ? nid(grpNode) : null,
+            typeCls: 'qc-' + cl.type,
+            glyph: ctx.glyphOf(cl.type),
+            items: cl.leaves.map(itemModel),
+            // The one remaining operator surface: multi-value clusters with 2+
+            // values. Single-value types stay a silent どれか (schema-forced).
+            opWord: grpNode && facetOpts.multiValueTypes.includes(cl.type) ? (cl.op === 'and' ? MSG.qbOptAll : MSG.qbOptAny) : null,
+          });
+        }
+        for (const l of view.singles) clusters.push({ id: null, typeCls: 'qc-' + l.type, glyph: ctx.glyphOf(l.type), items: [itemModel(l)], opWord: null });
+        if (view.excl.length) excl = { label: MSG.qbExclLabel, items: view.excl.map(itemModel) };
+        sentence = sentenceOf(view);
+      } else {
+        summary = { text: summaryOf(tree, true), tip: MSG.qbSummaryTip };
+      }
+      if (ctx.sentEl) {
+        ctx.sentEl.textContent = sentence;
+        ctx.sentEl.style.display = sentence ? '' : 'none';
+      }
       // Posts fold the search term into the tree as a real 'text' leaf (textInTree),
       // so suppress the echo chip there. Posters still echo their box term.
       const model = {
         searchSeg: searchVal && !ctx.textInTree ? { glyph: ctx.glyphOf('search'), text: searchVal } : null,
         searchJoin: hasQuery,
         joinAndWord: MSG.qcJoinAnd,
-        root: nodeModel(tree),
-        addBtn: hasQuery,
-        addBtnTitle: MSG.qbAddGroupTip,
+        clusters,
+        excl,
+        summary,
         delTitle: MSG.qfDelete,
-        opTitle: MSG.qbTipOp,
+        optTitle: MSG.qbOptTip,
       };
       // Stash the latest model per container (script order is viewer.js → islands,
       // so the bundle may not be loaded yet; index.tsx replays the stash on load).
@@ -1481,16 +1554,18 @@
       if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
     }
 
-    // Sidebar entry points add a NEW condition at the TOP level of the tree (改訂③:
-    // 新しい条件はトップ階層に載る). Structure (groups / nesting) is built only by
-    // dragging on the bar.
+    // Sidebar entry points add a condition into its attribute cluster (改訂④):
+    // the newcomer joins its type's group, or pairs with the existing bare leaf
+    // (structure is DERIVED — the user never builds it). On a non-facet tree
+    // (persisted 改訂③ nesting) it lands at the top level (AND) instead.
     function addFilter(filter) {
       // Single-valued types (択一): a new one replaces the existing anywhere.
       if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
       // Prevent exact duplicates (anywhere in the tree), except for multi types.
       else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
       const node = Object.assign({ kind: 'cond' }, filter);
-      tree.children.push(node);
+      if (Q.facetViewOf(tree, facetOpts)) Q.facetAdd(tree, node, facetOpts);
+      else tree.children.push(node);
       Q.cleanupTree(tree);
       refresh();
       return node; // callers binding to the new leaf (e.g. the editing text leaf) need it
@@ -1509,28 +1584,14 @@
       Q.cleanupTree(tree);
       refresh();
     }
-    // Group-add button: wrap the whole current expression in one go — the
-    // nesting shortcut (each press nests deeper). The service returns a NEW
-    // root, so reassign this instance's tree.
-    function wrapAllInGroup() {
-      const wrapped = Q.wrapAllInGroup(tree);
-      if (!wrapped) return;
-      tree = wrapped;
-      refresh();
-    }
-
-    // Bar interaction (click): toggle a group's operator, clear search, delete a
-    // condition (the ✕ button), wrap the whole expression, or open a leaf editor
-    // (date/engagement). Negation + a redundant delete live in the right-click menu.
+    // Bar interaction (click): the すべて/どれか toggle, delete a value (✕),
+    // clear the search echo, or open a leaf editor (date/engagement). The
+    // exclusion move lives in the right-click menu.
     chips.addEventListener('click', (e) => {
-      if (e.target.closest('[data-qb-group-add]')) {
-        wrapAllInGroup();
-        return;
-      }
-      const opBtn = e.target.closest('.qb-op[data-act="op"]');
-      if (opBtn) {
-        const n = nodeById(opBtn.dataset.nid);
-        if (n) {
+      const optBtn = e.target.closest('.qb-opt[data-act="opt"]');
+      if (optBtn) {
+        const n = nodeById(optBtn.dataset.nid);
+        if (n && n.kind === 'group') {
           n.op = opposite(n.op);
           refresh();
         }
@@ -1547,151 +1608,50 @@
         if (ctx.onClearSearch) ctx.onClearSearch();
         return;
       }
-      const pill = e.target.closest('.qb-pill');
-      if (!pill) return;
-      const node = nodeById(pill.dataset.nid);
+      const val = e.target.closest('.qb-val');
+      if (!val) return;
+      const node = nodeById(val.dataset.nid);
       if (!node || node.kind !== 'cond') return;
-      // 編集可能な葉（日付・反応）は左クリックで編集ポップへ。それ以外は何もしない
-      // （削除は✕、否定は右クリック、ピル本体はドラッグのつかみどころ）。
+      // 編集可能な葉（日付・反応）は左クリックで編集ポップへ。それ以外は何もしない。
       if (editableLeafTypes.includes(node.type) && ctx.openLeafEditor) ctx.openLeafEditor(node);
     });
 
-    // --- Drag & drop: drag pills/groups into parenthesised groups (改訂③). ---
-    function qbClearDropHints() {
-      chips.querySelectorAll('.qb-drop-into, .qb-drop-on').forEach((el) => el.classList.remove('qb-drop-into', 'qb-drop-on'));
-      chips.classList.remove('qb-drop-root');
-    }
-    // Where does a drag-event drop? onto a pill (merge → pair group), a group frame
-    // (wrap → nest), inside a group body (add member), or the bar background (→ root).
-    function qbDropTarget(e) {
-      let el = e.target && e.target.nodeType === 1 ? e.target : null;
-      if (!el || !chips.contains(el)) el = document.elementFromPoint(e.clientX, e.clientY);
-      if (!el || !chips.contains(el)) return { kind: 'root' };
-      const pill = el.closest('.qb-pill');
-      if (pill) return { kind: 'pill', nid: pill.dataset.nid, el: pill };
-      const frame = el.closest('.qb-paren, .qb-op:not(.qb-op-root)');
-      if (frame) {
-        const g = frame.closest('.qb-grp');
-        if (g && !g.classList.contains('qb-root')) return { kind: 'frame', nid: g.dataset.nid, el: g };
-      }
-      const grp = el.closest('.qb-grp:not(.qb-root)');
-      if (grp) return { kind: 'inside', nid: grp.dataset.nid, el: grp };
-      return { kind: 'root' };
-    }
-    // Drag start: a pill drags that condition; a paren / operator label drags the
-    // whole enclosing group (掴む対象で「中身 vs 丸ごと」を分ける).
-    chips.addEventListener('dragstart', (e) => {
-      const handle = e.target.closest('.qb-pill, .qb-paren, .qb-op:not(.qb-op-root)');
-      if (!handle) {
-        e.preventDefault();
-        return;
-      }
-      let id, dragEl;
-      if (handle.classList.contains('qb-pill')) {
-        id = handle.dataset.nid;
-        dragEl = handle;
-      } else {
-        const g = handle.closest('.qb-grp');
-        id = g && g.dataset.nid;
-        dragEl = g;
-      }
-      if (!id) {
-        e.preventDefault();
-        return;
-      }
-      qbDragId = id;
-      try {
-        e.dataTransfer.setData('text/plain', id);
-        e.dataTransfer.effectAllowed = 'move';
-      } catch (_) {}
-      if (dragEl) requestAnimationFrame(() => dragEl.classList.add('qb-dragging'));
-    });
-    chips.addEventListener('dragend', () => {
-      qbDragId = null;
-      chips.querySelectorAll('.qb-dragging').forEach((el) => el.classList.remove('qb-dragging'));
-      qbClearDropHints();
-    });
-    chips.addEventListener('dragover', (e) => {
-      if (!qbDragId) return;
-      e.preventDefault();
-      try {
-        e.dataTransfer.dropEffect = 'move';
-      } catch (_) {}
-      qbClearDropHints();
-      const t = qbDropTarget(e);
-      const drag = nodeById(qbDragId);
-      const tnode = t.nid ? nodeById(t.nid) : tree;
-      if (drag && tnode && (tnode === drag || Q.nodeContains(drag, tnode))) return; // can't drop into self / own descendant
-      if (t.kind === 'pill' || t.kind === 'frame') t.el.classList.add('qb-drop-on');
-      else if (t.kind === 'inside') t.el.classList.add('qb-drop-into');
-      else chips.classList.add('qb-drop-root');
-    });
-    chips.addEventListener('dragleave', (e) => {
-      if (e.target === chips) qbClearDropHints();
-    });
-    chips.addEventListener('drop', (e) => {
-      if (!qbDragId) return;
-      e.preventDefault();
-      const t = qbDropTarget(e);
-      const drag = nodeById(qbDragId);
-      qbDragId = null;
-      qbClearDropHints();
-      if (!drag) return;
-      if (ctx.onLeafMutated) ctx.onLeafMutated(drag); // a dragged editing-text leaf is confirmed (box clears, leaf stays)
-      const target = t.nid ? nodeById(t.nid) : tree;
-      // pill/frame → wrap target+drag in a pair group; inside → add as a member;
-      // bar background → move to the top level. dropNode rejects self/descendant.
-      const mode = t.kind === 'pill' || t.kind === 'frame' ? 'pair' : t.kind === 'inside' ? 'inside' : 'root';
-      if (!Q.dropNode(tree, drag, target, mode)) return;
-      refresh();
-    });
-
-    // Right-click menu: negate / delete a pill or group. Negation is a low-frequency
-    // operation, so (like the card menu, DESIGN.md) it lives behind a right-click rather
-    // than a hover badge. React-owned glass menu (window.corpusContextMenu); this builder
-    // owns the items + actions. One bridge serves BOTH builder instances (postQB /
-    // posterQB) — no per-instance menu DOM.
-    function showQbMenu(node, isGroup, x, y) {
+    // Right-click a value → 「除外へ移す／含む条件に戻す」＋削除 (fold-menu 様式,
+    // right-click = the menu of actions per DESIGN). React-owned glass menu
+    // (window.corpusContextMenu); one bridge serves BOTH builder instances.
+    function showQbMenu(node, x, y) {
       const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
       const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-      const items = [{ label: isGroup ? MSG.qbMenuNegGroup : MSG.qbMenuNeg, act: 'neg', icon: NEG, checked: !!node.neg }, { sep: true }, { label: MSG.qfDelete, act: 'del', icon: DEL, danger: true }];
+      const items = [{ label: node.neg ? MSG.qbMenuInclude : MSG.qbMenuExclude, act: 'neg', icon: NEG }, { sep: true }, { label: MSG.qfDelete, act: 'del', icon: DEL, danger: true }];
       window.corpusContextMenu.open({ items, x, y }, (item) => {
         if (item.act === 'neg') {
-          node.neg = !node.neg;
+          if (ctx.onLeafMutated) ctx.onLeafMutated(node); // an editing text leaf moving to 除く is confirmed
+          Q.facetSetNeg(tree, node, !node.neg, facetOpts);
           refresh();
         } else if (item.act === 'del') {
           removeNode(node);
         }
       });
     }
-    // Right-click a pill → its leaf menu; a paren / operator / group body → the group's.
     chips.addEventListener('contextmenu', (e) => {
-      const pill = e.target.closest('.qb-pill');
-      if (pill) {
-        const n = nodeById(pill.dataset.nid);
-        if (n && n.kind === 'cond') {
-          e.preventDefault();
-          showQbMenu(n, false, e.clientX, e.clientY);
-        }
-        return;
-      }
-      const frameEl = e.target.closest('.qb-paren, .qb-op:not(.qb-op-root)');
-      const g = frameEl ? frameEl.closest('.qb-grp:not(.qb-root)') : e.target.closest('.qb-grp:not(.qb-root)');
-      if (g) {
-        const n = nodeById(g.dataset.nid);
-        if (n && n.kind === 'group') {
-          e.preventDefault();
-          showQbMenu(n, true, e.clientX, e.clientY);
-        }
+      const val = e.target.closest('.qb-val');
+      if (!val) return;
+      const n = nodeById(val.dataset.nid);
+      if (n && n.kind === 'cond') {
+        e.preventDefault();
+        showQbMenu(n, e.clientX, e.clientY);
       }
     });
 
     return {
       getTree: () => tree,
       // Replace the tree (clone + self-heal singleton groups + recompute shadow).
+      // Facet-compatible persisted trees normalize into the canonical shape;
+      // anything else stays intact and renders as the read-only summary.
       setTree: (t) => {
         tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
         Q.cleanupTree(tree);
+        Q.canonicalizeFacet(tree, facetOpts);
         syncShadow();
       },
       resetTree: () => {
@@ -1722,6 +1682,7 @@
   const postQB = createQueryBuilder({
     container: document.getElementById('queryChips'),
     barEl: document.getElementById('postActiveBar'),
+    sentEl: document.getElementById('querySent'),
     resetBtn: document.getElementById('postResetBtn'),
     saveBtn: document.getElementById('saveSearchBtn'),
     predOf: postPredOf,
@@ -1756,6 +1717,12 @@
     editableLeafTypes: ['date', 'engagement'],
     singleValueTypes: ['date', 'kind'],
     noDupTypes: ['engagement', 'text'],
+    // Facet schema (改訂④): tags/hashtags/collections are multi-value per post
+    // (both すべて/どれか meaningful, default すべて); date/engagement/clip/text
+    // (+ the legacy 'workspace' alias) stay standalone chips. Everything else
+    // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
+    multiValueTypes: ['tag', 'hashtag', 'collection'],
+    standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'],
   });
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
@@ -4053,6 +4020,7 @@
   const posterQB = createQueryBuilder({
     container: document.getElementById('posterQueryChips'),
     barEl: document.getElementById('posterActiveBar'),
+    sentEl: document.getElementById('posterQuerySent'),
     resetBtn: document.getElementById('posterResetBtn'),
     predOf: posterPredOf,
     labelOf: posterFilterLabel,
@@ -4074,6 +4042,10 @@
     editableLeafTypes: ['date'],
     singleValueTypes: ['date', 'folder'], // 択一: 1つ選ぶと既存を置換
     noDupTypes: [],
+    // Poster facet schema: a poster aggregates many tags (すべて/どれか both
+    // meaningful); date + the workspace toggle stay standalone chips.
+    multiValueTypes: ['tag'],
+    standaloneTypes: ['date', 'workspace'],
   });
 
   // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the

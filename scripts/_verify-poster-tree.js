@@ -1,13 +1,12 @@
 'use strict';
-// Throwaway: verify the POSTER-view inline drag query builder (the same builder as the
-// post view, evaluated against poster/user objects). Mirrors _verify-tree.js for posters.
+// Throwaway: verify the POSTER-view facet builder (改訂④ — the same builder factory as
+// the post view, evaluated against poster/user objects). Mirrors _verify-tree.js Part 1.
 // Seeds 4 posters: Alice(x) Bob(bluesky) Carol(x) Dave(misskey).
-//   switch to poster mode                        -> 4 cards
-//   add platform=x                               -> [X]              -> Alice,Carol = 2
-//   add platform=bluesky (top-level AND)         -> [X かつ Bluesky] -> 0
-//   drag Bluesky pill onto X pill                -> [(X または Bluesky)] -> 3 (group op = 親の逆 = OR)
-//   click the group connector                    -> [(X かつ Bluesky)]   -> 0
-//   click リセット                               -> 4
+//   switch to poster mode          -> 4 cards
+//   platform=x                     -> [X]              -> Alice,Carol = 2
+//   platform=bluesky               -> (X・Bluesky) auto-OR -> 3  ← 改訂③では恒偽ANDで 0 だった罠
+//   structure: 1クラスタ2値・トグル無し・式の語彙/ドラッグ無し・読み下し文表示
+//   click リセット                  -> 4
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -41,18 +40,8 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await wait(40); } return null; };
   const cards = () => document.querySelectorAll('#posterGrid .poster-card').length;
-  const pills = () => document.querySelectorAll('#posterQueryChips .qb-pill').length;
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  const pillByLabel = (t) => [...document.querySelectorAll('#posterQueryChips .qb-pill')].find((p) => (p.querySelector('.qb-pill-label') || {}).textContent === t);
-  const dnd = (src, dst) => {
-    const dt = new DataTransfer();
-    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-    const r = dst.getBoundingClientRect();
-    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
-    dst.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: cx, clientY: cy }));
-    dst.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: cx, clientY: cy }));
-    src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
-  };
+  const qfVal = (label) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === label; });
   const log = [];
   try {
     // wait for posts to load, then switch to poster mode
@@ -60,29 +49,23 @@ const evalJs = `(async () => {
     click(document.querySelector('#browseToggle [data-mode="posters"]')); await wait(150);
     await waitFor(() => cards() >= 4);
     const allFour = cards();                                   // 4 posters
-    // add platform=x via the poster sidebar flyout
+    // platform=x via the poster sidebar flyout
     click(document.querySelector('#posterFilterRows [data-qfrow="poster-platform"]')); await wait(90);
-    click(await waitFor(() => document.querySelector('.qf-pop.show [data-qfval="x"]'))); await wait(120);
+    click(await waitFor(() => qfVal('X'))); await wait(120);
     const pX = cards();                                        // [X] → Alice,Carol = 2
-    const onePill = pills();                                   // one pill on the poster bar
-    // add platform=bluesky (top-level AND) from the same open flyout
-    click(await waitFor(() => document.querySelector('.qf-pop.show [data-qfval="bluesky"]'))); await wait(120);
-    const andXBs = cards();                                    // X ∧ Bluesky → 0
-    // drag the Bluesky pill onto the X pill → parenthesised pair group, op = 親の逆 = OR
-    const bsPill = pillByLabel('Bluesky'); const xPill = pillByLabel('X');
-    log.push('pills=' + !!bsPill + ',' + !!xPill);
-    dnd(bsPill, xPill); await wait(150);
-    const orGroup = cards();                                   // (X ∨ Bluesky) → 3
-    const hasGrp = !!document.querySelector('#posterQueryChips .qb-grp .qb-paren');
-    // flip the group's connector to かつ (AND)
-    const gop = document.querySelector('#posterQueryChips .qb-grp .qb-op');
-    log.push('gop=' + !!gop);
-    if (gop) { click(gop); await wait(120); }
-    const andGroup = cards();                                  // (X ∧ Bluesky) → 0
+    // platform=bluesky from the same open flyout → クラスタに合流して自動どれか(OR)
+    click(await waitFor(() => qfVal('Bluesky'))); await wait(120);
+    const orAuto = cards();                                    // (X ∨ Bluesky) → 3
+    const clusters = document.querySelectorAll('#posterQueryChips .qb-cluster').length;
+    const vals = document.querySelectorAll('#posterQueryChips .qb-cluster .qb-val').length;
+    const noOpt = !document.querySelector('#posterQueryChips .qb-opt');
+    const noFormula = !document.querySelector('#posterQueryChips .qb-op, #posterQueryChips .qb-paren, #posterQueryChips [draggable="true"]');
+    const sentEl = document.getElementById('posterQuerySent');
+    const sentence = sentEl && sentEl.style.display !== 'none' ? sentEl.textContent : '';
     // リセット clears the poster tree
     click(document.querySelector('#posterResetBtn')); await wait(120);
     const afterReset = cards();                                // back to 4
-    return { ok: true, log, allFour, pX, onePill, andXBs, orGroup, hasGrp, andGroup, afterReset };
+    return { ok: true, log, allFour, pX, orAuto, clusters, vals, noOpt, noFormula, sentence, afterReset };
   } catch (e) { return { ok: false, log, err: e.message }; }
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -94,10 +77,10 @@ child.on('close', () => {
   const m = out.match(/EVAL_RESULT (.+)/);
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.ok === true && r.allFour === 4 && r.pX === 2 && r.onePill === 1 &&
-    r.andXBs === 0 && r.orGroup === 3 && r.hasGrp === true && r.andGroup === 0 && r.afterReset === 4;
-  console.log(`log=${JSON.stringify(r.log)} err=${r.err || '-'} allFour=${r.allFour} pX=${r.pX} onePill=${r.onePill}` +
-    ` andXBs=${r.andXBs} orGroup=${r.orGroup} hasGrp=${r.hasGrp} andGroup=${r.andGroup} afterReset=${r.afterReset}`);
+  const ok = r.ok === true && r.allFour === 4 && r.pX === 2 && r.orAuto === 3 && r.clusters === 1 && r.vals === 2 &&
+    r.noOpt === true && r.noFormula === true && typeof r.sentence === 'string' && r.sentence.length > 0 && r.afterReset === 4;
+  console.log(`log=${JSON.stringify(r.log)} err=${r.err || '-'} allFour=${r.allFour} pX=${r.pX} orAuto=${r.orAuto}` +
+    ` clusters=${r.clusters} vals=${r.vals} noOpt=${r.noOpt} noFormula=${r.noFormula} sentence=${JSON.stringify(r.sentence)} afterReset=${r.afterReset}`);
   console.log(ok ? 'POSTER_TREE_VERIFY_PASS' : 'POSTER_TREE_VERIFY_FAIL');
   process.exit(ok ? 0 : 1);
 });

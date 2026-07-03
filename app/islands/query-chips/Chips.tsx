@@ -1,40 +1,45 @@
-// Presentational chips for the query-builder active bar. Emits the SAME DOM the
-// old viewer.js innerHTML did — `.qb-pill`/`.qb-grp`/`.qb-op`/`.qb-paren` with the
-// `data-nid` ids — so the delegated handlers (click/drag/contextmenu) on the
-// container keep resolving nodes via viewer.js's qbNodeMap. React renders; the
-// builder keeps owning state + ids + events.
+// Presentational chips for the query-builder active bar (改訂④ ファセット・
+// チップ, docs/design-query-builder.md). Values cluster by attribute inside one
+// glass pill; the only operator surface is the すべて/どれか toggle (.qb-opt) on
+// multi-value clusters; exclusions render in the 除く cluster; a non-facet
+// persisted tree renders as a read-only summary. Emits `data-nid` ids so the
+// delegated handlers (click/contextmenu) on the container keep resolving nodes
+// via viewer.js's qbNodeMap. React renders; the builder owns state + events.
 
-import type { ReactNode } from 'react';
+import { Fragment } from 'react';
 
-// The view-model viewer.js's createQueryBuilder render() pushes. Leaves (kind
-// 'cond') and groups share one node shape; only the fields each renderer reads.
-interface QbNode {
+// The view-model viewer.js's createQueryBuilder render() pushes.
+interface QbItem {
   id: string;
-  kind?: string;
-  neg?: boolean;
+  label: string;
   isNew?: boolean;
-  typeCls?: string;
-  glyph?: string;
-  label?: string;
-  opWord?: string;
-  children?: QbNode[];
+  editable?: boolean;
+  glyph: string;
+  typeCls: string;
+}
+interface QbCluster {
+  id: string | null; // the group node's id (2+ values) — the opt toggle writes here
+  typeCls: string;
+  glyph: string;
+  items: QbItem[];
+  opWord?: string | null; // すべて/どれか label; null = no toggle (single value / schema-forced)
 }
 interface QbShared {
   delTitle?: string;
-  opTitle?: string;
+  optTitle?: string;
 }
 export interface ChipsModel {
-  root: QbNode;
   searchSeg?: { glyph: string; text: string } | null;
   searchJoin?: boolean;
   joinAndWord?: string;
-  addBtn?: boolean;
-  addBtnTitle?: string;
+  clusters: QbCluster[];
+  excl?: { label: string; items: QbItem[] } | null;
+  summary?: { text: string; tip: string } | null;
   delTitle?: string;
-  opTitle?: string;
+  optTitle?: string;
 }
 
-// In-pill delete ✕ — ported 1:1 from viewer.js's `delIc` string.
+// In-value delete ✕ — ported 1:1 from the 改訂③ pill.
 function DelIc() {
   return (
     <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
@@ -46,68 +51,72 @@ function DelIc() {
 
 // Raw glyph SVG from viewer.js's qcGlyph (a `<svg class="qc-ic">…`). Inserted via
 // dangerouslySetInnerHTML; the wrapper is display:contents so it stays layout-
-// transparent — the old DOM had the <svg> as a direct child, and the glyph CSS
-// (`.sb-active-chip .qc-ic`) is a descendant rule, so this matches either way.
+// transparent (the glyph CSS is a descendant rule either way).
 function Glyph({ html }: { html: string }) {
   // biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — qcGlyph strings are app-defined constants from viewer.js, never user content
   return <span style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-// A condition leaf → draggable pill (hover ✕ deletes; left-click opens the leaf
-// editor for date/engagement; right-click → negate/delete menu — all in viewer.js).
-function Pill({ n, delTitle }: { n: QbNode; delTitle?: string }) {
-  const cls = 'qb-pill sb-active-chip ' + n.typeCls + (n.neg ? ' neg' : '') + (n.isNew ? ' chip-new' : '');
+// One value inside a cluster: label + hover ✕; date/engagement values open
+// their editor on click (data-edit); right-click → 除外/削除 menu (viewer.js).
+function Val({ it, delTitle, withGlyph }: { it: QbItem; delTitle?: string; withGlyph?: boolean }) {
+  const cls = 'qb-val ' + it.typeCls + (it.isNew ? ' chip-new' : '') + (it.editable ? ' qb-val-edit' : '');
   return (
-    <span className={cls} draggable data-nid={n.id}>
-      <Glyph html={n.glyph as string} />
-      {n.neg && <span className="qb-ne">≠</span>}
-      <span className="qb-pill-label">{n.label}</span>
-      <button type="button" className="qb-del-btn" data-act="del" data-nid={n.id} title={delTitle} aria-label={delTitle} tabIndex={-1}>
+    <span className={cls} data-nid={it.id} data-edit={it.editable ? '1' : undefined}>
+      {withGlyph && <Glyph html={it.glyph} />}
+      <span className="qb-val-label">{it.label}</span>
+      <button type="button" className="qb-del-btn" data-act="del" data-nid={it.id} title={delTitle} aria-label={delTitle} tabIndex={-1}>
         <DelIc />
       </button>
     </span>
   );
 }
 
-// A group → its members joined by clickable operator connectors. The root renders
-// bare members (no parens, connectors are `.qb-op-root`); a non-root group is
-// wrapped in literal parens and may be negated. Every connector in a group carries
-// the group's id, so clicking any of them toggles that group's operator.
-function Group({ n, isRoot, shared }: { n: QbNode; isRoot: boolean; shared: QbShared }) {
-  const items: ReactNode[] = [];
-  (n.children as QbNode[]).forEach((c, i) => {
-    if (i > 0) {
-      items.push(
-        <button key={'op' + i} type="button" className={isRoot ? 'qb-op qb-op-root' : 'qb-op'} data-act="op" data-nid={n.id} title={shared.opTitle} draggable={isRoot ? undefined : true}>
-          {n.opWord}
-        </button>,
-      );
-    }
-    items.push(<Node key={'n' + i} n={c} shared={shared} />);
-  });
-  if (isRoot) return <>{items}</>;
+// An attribute cluster: one glass pill = type glyph + values joined by 「・」 +
+// the optional すべて/どれか toggle. A single-value cluster reads like the old
+// single pill — same shape, zero new vocabulary.
+function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
   return (
-    <span className={'qb-grp' + (n.neg ? ' neg' : '')} data-nid={n.id}>
-      <span className="qb-paren qb-paren-l" draggable>
-        {(n.neg ? '≠' : '') + '('}
-      </span>
-      {items}
-      <span className="qb-paren qb-paren-r" draggable>
-        )
-      </span>
+    <span className={'qb-cluster sb-active-chip ' + c.typeCls}>
+      <Glyph html={c.glyph} />
+      {c.items.map((it, i) => (
+        <Fragment key={it.id}>
+          {i > 0 && <span className="qb-sep">・</span>}
+          <Val it={it} delTitle={shared.delTitle} />
+        </Fragment>
+      ))}
+      {c.opWord && c.id && (
+        <button type="button" className="qb-opt" data-act="opt" data-nid={c.id} title={shared.optTitle}>
+          {c.opWord}
+        </button>
+      )}
     </span>
   );
 }
 
-function Node({ n, shared }: { n: QbNode; shared: QbShared }) {
-  return n.kind === 'cond' ? <Pill n={n} delTitle={shared.delTitle} /> : <Group n={n} isRoot={false} shared={shared} />;
+// The 除く cluster: a leading word instead of a type glyph (its values can mix
+// types, so each value carries its own glyph). Root-AND semantics make it read
+// "none of these" — no operator ambiguity, nothing to toggle.
+function Excl({ e, shared }: { e: { label: string; items: QbItem[] }; shared: QbShared }) {
+  return (
+    <span className="qb-cluster qb-cluster-excl sb-active-chip">
+      <span className="qb-excl-label">{e.label}</span>
+      {e.items.map((it, i) => (
+        <Fragment key={it.id}>
+          {i > 0 && <span className="qb-sep">・</span>}
+          <Val it={it} delTitle={shared.delTitle} withGlyph />
+        </Fragment>
+      ))}
+    </span>
+  );
 }
 
 // The whole bar's chips: optional search echo segment (posters only — posts fold
-// the term into the tree as a real leaf), the tree root, and the add-group button.
+// the term into the tree as a real leaf), the attribute clusters, the 除く
+// cluster, or the read-only summary of a non-facet persisted tree.
 export function Chips({ model }: { model?: ChipsModel | null }) {
   if (!model) return null;
-  const shared = { delTitle: model.delTitle, opTitle: model.opTitle };
+  const shared = { delTitle: model.delTitle, optTitle: model.optTitle };
   return (
     <>
       {model.searchSeg && (
@@ -119,11 +128,17 @@ export function Chips({ model }: { model?: ChipsModel | null }) {
           {model.searchJoin && <span className="qc-conn">{model.joinAndWord}</span>}
         </>
       )}
-      <Group n={model.root} isRoot shared={shared} />
-      {model.addBtn && (
-        <button type="button" className="qb-group-add" data-qb-group-add="" title={model.addBtnTitle}>
-          ( )
-        </button>
+      {model.summary ? (
+        <span className="qb-summary" title={model.summary.tip}>
+          {model.summary.text}
+        </span>
+      ) : (
+        <>
+          {model.clusters.map((c, i) => (
+            <Cluster key={c.typeCls + i} c={c} shared={shared} />
+          ))}
+          {model.excl && <Excl e={model.excl} shared={shared} />}
+        </>
       )}
     </>
   );

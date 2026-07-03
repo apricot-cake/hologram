@@ -193,6 +193,120 @@
     return root;
   }
 
+  // --- Facet domain (改訂④ ファセット・チップ, docs/design-query-builder.md).
+  // The UI only ever BUILDS facet-CNF trees: root group(and) whose children are
+  // per-type groups (2+ positive values of one type), bare positive leaves, and
+  // negated leaves (the 除く cluster — root-AND makes them "none of these").
+  // Arbitrary trees remain evaluable (evalNode is untouched) for persisted
+  // 改訂③ states; the bar just renders those read-only.
+  // opts: { multiValueTypes: string[], standaloneTypes: string[] } — view-owned
+  // type schemas (posts vs posters differ), injected like predOf. ---
+  /** Default within-cluster operator: multi-value attributes narrow by default
+   *  (すべて); for single-value attributes "any of" is the only satisfiable read. */
+  function facetDefaultOp(type, opts) {
+    return (opts.multiValueTypes || []).includes(type) ? 'and' : 'or';
+  }
+  // Strict facet analysis. null = NOT facet-shaped (OR root / real nesting /
+  // negated, empty or mixed-type groups / two containers of one type) → the bar
+  // falls back to a read-only summary. Semantics-preserving with ONE deliberate
+  // repair: 2+ bare single-value leaves of one type read as 'or' (their root-AND
+  // was the 改訂③ two-platform always-false trap).
+  function facetViewOf(tree, opts) {
+    if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
+    const standalone = new Set(opts.standaloneTypes || []);
+    const multi = new Set(opts.multiValueTypes || []);
+    const clusters = new Map(); // type → cluster (insertion order = display order)
+    const singles = [];
+    const excl = [];
+    for (const c of tree.children) {
+      if (c.kind === 'cond') {
+        if (c.neg) {
+          excl.push(c);
+          continue;
+        }
+        if (standalone.has(c.type)) {
+          singles.push(c);
+          continue;
+        }
+        const cl = clusters.get(c.type);
+        if (cl) {
+          if (cl.grouped) return null; // group + stray leaf of one type = cluster∧leaf, not a cluster
+          cl.leaves.push(c);
+          cl.op = multi.has(c.type) ? 'and' : 'or'; // bare leaves combine via the root AND (single-value: repaired)
+        } else clusters.set(c.type, { type: c.type, op: facetDefaultOp(c.type, opts), leaves: [c], grouped: false });
+        continue;
+      }
+      if (c.kind !== 'group' || c.neg || !c.children.length) return null;
+      const first = c.children[0];
+      const t = first.kind === 'cond' ? first.type : null;
+      if (!t || standalone.has(t) || clusters.has(t)) return null;
+      for (const l of c.children) if (l.kind !== 'cond' || l.neg || l.type !== t) return null;
+      clusters.set(t, { type: t, op: multi.has(t) ? c.op : 'or', leaves: c.children.slice(), grouped: true });
+    }
+    return { clusters: Array.from(clusters.values()), singles, excl };
+  }
+  // Rebuild a facet-shaped tree into canonical form IN PLACE: every 2+-value
+  // cluster becomes a real group (the すべて/どれか toggle needs a node to write
+  // to), ordered clusters → standalone leaves → excluded leaves. Returns true
+  // when the tree was facet-shaped (now canonical); false leaves it untouched.
+  function canonicalizeFacet(tree, opts) {
+    const v = facetViewOf(tree, opts);
+    if (!v) return false;
+    const out = [];
+    for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : { kind: 'group', op: cl.op, neg: false, children: cl.leaves });
+    out.push(...v.singles, ...v.excl);
+    tree.children = out;
+    return true;
+  }
+  // Insert a POSITIVE leaf into its type cluster: join the existing group, wrap
+  // the existing bare leaf + the newcomer into a fresh group (default op), or
+  // land at the top level (standalone types always do). Callers handle
+  // single-value replacement and dup checks; only call on facet-shaped trees.
+  function facetAdd(tree, node, opts) {
+    if (!(opts.standaloneTypes || []).includes(node.type)) {
+      for (let i = 0; i < tree.children.length; i++) {
+        const c = tree.children[i];
+        if (c.kind === 'group' && !c.neg && c.children.length && c.children[0].kind === 'cond' && c.children[0].type === node.type) {
+          c.children.push(node);
+          return node;
+        }
+        if (c.kind === 'cond' && !c.neg && c.type === node.type) {
+          tree.children[i] = { kind: 'group', op: facetDefaultOp(node.type, opts), neg: false, children: [c, node] };
+          return node;
+        }
+      }
+    }
+    tree.children.push(node);
+    return node;
+  }
+  // The すべて/どれか toggle: set a cluster's operator. Clusters with 2+ values
+  // are real groups in a canonical tree; false when no such group exists.
+  function facetSetOp(tree, type, op) {
+    for (const c of tree.children) {
+      if (c.kind === 'group' && !c.neg && c.children.length && c.children[0].kind === 'cond' && c.children[0].type === type) {
+        c.op = op === 'and' ? 'and' : 'or';
+        return true;
+      }
+    }
+    return false;
+  }
+  // Move a leaf between its cluster and the 除く cluster: detach, flip neg,
+  // re-insert (negated → top level; positive → back through facetAdd). A value
+  // returning while it already exists positively is dropped as redundant.
+  function facetSetNeg(tree, node, neg, opts) {
+    if (!!node.neg === !!neg) return false;
+    detachNode(node, treeParentMap(tree));
+    cleanupTree(tree);
+    node.neg = !!neg;
+    if (neg) {
+      tree.children.push(node);
+      return true;
+    }
+    const dup = treeLeaves(tree).some((c) => !c.neg && c.type === node.type && c.value === node.value);
+    if (!dup) facetAdd(tree, node, opts);
+    return true;
+  }
+
   // --- Pure post helpers (used by the predicates below and by viewer.js). ---
   // Date filters compare in LOCAL days: from = local midnight, to = the NEXT
   // local midnight (exclusive), so a single-day range covers the whole day.
@@ -307,5 +421,32 @@
     };
   }
 
-  window.corpusQuery = { emptyTree, treeLeaves, opposite, facetTreeFrom, evalNode, treeParentMap, nodeContains, detachNode, cleanupTree, hasLeafValue, removeCondsMatching, sameLeaf, buildShadow, dropNode, wrapAllInGroup, localDayRange, hostOf, userKey, textHaystackOf, makePostPredOf };
+  window.corpusQuery = {
+    emptyTree,
+    treeLeaves,
+    opposite,
+    facetTreeFrom,
+    evalNode,
+    treeParentMap,
+    nodeContains,
+    detachNode,
+    cleanupTree,
+    hasLeafValue,
+    removeCondsMatching,
+    sameLeaf,
+    buildShadow,
+    dropNode,
+    wrapAllInGroup,
+    facetDefaultOp,
+    facetViewOf,
+    canonicalizeFacet,
+    facetAdd,
+    facetSetOp,
+    facetSetNeg,
+    localDayRange,
+    hostOf,
+    userKey,
+    textHaystackOf,
+    makePostPredOf,
+  };
 })();

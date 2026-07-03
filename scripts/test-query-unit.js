@@ -271,6 +271,92 @@ assert('sameLeaf: 通常型は value 比較', Q.sameLeaf(mkLeaf('tag', 'a'), { t
   assert('wrapAllInGroup: 空 tree は null', Q.wrapAllInGroup(Q.emptyTree()) === null);
 }
 
+// --- ファセット・ドメイン（改訂④: UI が作る形をファセットCNFに固定する純ロジック）---
+const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'clip', 'text'] };
+assert('facetDefaultOp: 多値=and / 他=or', Q.facetDefaultOp('tag', OPTS) === 'and' && Q.facetDefaultOp('platform', OPTS) === 'or');
+
+// facetViewOf: 正準形をクラスタ/単独/除外へ分解
+{
+  const t = mkGrp('and', [mkGrp('or', [mkLeaf('platform', 'x'), mkLeaf('platform', 'misskey')]), mkLeaf('tag', 'a'), mkLeaf('date', undefined, { from: '2026-01-01' }), mkLeaf('tag', 'b', { neg: true })]);
+  const v = Q.facetViewOf(t, OPTS);
+  assert('facetViewOf: クラスタ/単独/除外へ分解', !!v && v.clusters.length === 2 && v.singles.length === 1 && v.excl.length === 1);
+  assert('facetViewOf: platform グループは or', v.clusters[0].type === 'platform' && v.clusters[0].op === 'or');
+}
+{
+  const v = Q.facetViewOf(mkGrp('and', [mkLeaf('platform', 'x'), mkLeaf('platform', 'misskey')]), OPTS);
+  assert('facetViewOf: 単一値型の裸2葉(恒偽AND)は or に修復', !!v && v.clusters[0].op === 'or' && v.clusters[0].leaves.length === 2);
+}
+{
+  const v = Q.facetViewOf(mkGrp('and', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]), OPTS);
+  assert('facetViewOf: 多値型の裸2葉は and（root AND の意味保存）', !!v && v.clusters[0].op === 'and');
+}
+assert('facetViewOf: OR ルートは null', Q.facetViewOf(mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]), OPTS) === null);
+assert('facetViewOf: 入れ子グループは null', Q.facetViewOf(mkGrp('and', [mkGrp('or', [mkLeaf('tag', 'a'), mkGrp('and', [mkLeaf('tag', 'b'), mkLeaf('tag', 'c')])])]), OPTS) === null);
+assert('facetViewOf: neg グループは null', Q.facetViewOf(mkGrp('and', [mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')], true)]), OPTS) === null);
+assert('facetViewOf: 型混在グループは null', Q.facetViewOf(mkGrp('and', [mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('platform', 'x')])]), OPTS) === null);
+assert('facetViewOf: グループ+同型の裸葉は null（クラスタ∧葉は別物）', Q.facetViewOf(mkGrp('and', [mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]), mkLeaf('tag', 'c')]), OPTS) === null);
+assert('facetViewOf: 単独型(text)のグループは null', Q.facetViewOf(mkGrp('and', [mkGrp('or', [mkLeaf('text', 'a'), mkLeaf('text', 'b')])]), OPTS) === null);
+
+// canonicalizeFacet: 裸2葉→実グループ化・並べ替え（クラスタ→単独→除外）
+{
+  const t = mkGrp('and', [mkLeaf('tag', 'x', { neg: true }), mkLeaf('date', undefined, { from: '2026-01-01' }), mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]);
+  assert('canonicalizeFacet: 変換成功', Q.canonicalizeFacet(t, OPTS) === true);
+  assert('canonicalizeFacet: 2葉クラスタが実グループ(and)に', t.children[0].kind === 'group' && t.children[0].op === 'and' && t.children[0].children.length === 2);
+  assert('canonicalizeFacet: 並び=クラスタ→単独→除外', t.children[1].type === 'date' && t.children[2].neg === true);
+}
+{
+  const t = mkGrp('or', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')]);
+  const before = JSON.stringify(t);
+  assert('canonicalizeFacet: 非ファセット形は false・非破壊', Q.canonicalizeFacet(t, OPTS) === false && JSON.stringify(t) === before);
+}
+
+// facetAdd: 裸葉→2値目でグループ化（既定 op）→以降は合流・単独型はトップへ
+{
+  const t = mkGrp('and', []);
+  Q.facetAdd(t, mkLeaf('tag', 'a'), OPTS);
+  assert('facetAdd: 最初の値は裸葉', t.children.length === 1 && t.children[0].kind === 'cond');
+  Q.facetAdd(t, mkLeaf('tag', 'b'), OPTS);
+  assert('facetAdd: 2値目で既定 op のグループ化(tag=and)', t.children[0].kind === 'group' && t.children[0].op === 'and' && t.children[0].children.length === 2);
+  t.children[0].op = 'or'; // ユーザーが「どれか」へ切替
+  Q.facetAdd(t, mkLeaf('tag', 'c'), OPTS);
+  assert('facetAdd: 3値目は既存グループへ合流(op 維持)', t.children[0].children.length === 3 && t.children[0].op === 'or');
+  Q.facetAdd(t, mkLeaf('platform', 'x'), OPTS);
+  Q.facetAdd(t, mkLeaf('platform', 'misskey'), OPTS);
+  assert('facetAdd: platform は既定 or でグループ化', t.children[1].kind === 'group' && t.children[1].op === 'or');
+  Q.facetAdd(t, mkLeaf('text', 'hey'), OPTS);
+  Q.facetAdd(t, mkLeaf('text', 'yo'), OPTS);
+  assert('facetAdd: 単独型はグループ化せずトップへ', t.children.filter((c) => c.kind === 'cond' && c.type === 'text').length === 2);
+}
+
+// facetSetOp: すべて/どれか トグルの書き込み先
+{
+  const t = mkGrp('and', [mkGrp('and', [mkLeaf('tag', 'a'), mkLeaf('tag', 'b')])]);
+  assert('facetSetOp: op を書き換え', Q.facetSetOp(t, 'tag', 'or') === true && t.children[0].op === 'or');
+  assert('facetSetOp: 該当グループ無しは false', Q.facetSetOp(t, 'platform', 'or') === false);
+}
+
+// facetSetNeg: 除くへ移動⇄クラスタへ復帰（op 維持・1値クラスタは折り畳み・冗長は消滅）
+{
+  const a = mkLeaf('tag', 'a');
+  const b = mkLeaf('tag', 'b');
+  const c = mkLeaf('tag', 'c');
+  const t = mkGrp('and', [mkGrp('or', [a, b, c])]);
+  assert('facetSetNeg: 除外へ移動', Q.facetSetNeg(t, c, true, OPTS) === true && c.neg === true && t.children[t.children.length - 1] === c);
+  assert('facetSetNeg: 残りクラスタは維持', t.children[0].kind === 'group' && t.children[0].children.length === 2);
+  assert('facetSetNeg: 戻すと元クラスタへ合流(op 維持)', Q.facetSetNeg(t, c, false, OPTS) === true && c.neg === false && t.children[0].children.length === 3 && t.children[0].op === 'or');
+  Q.facetSetNeg(t, b, true, OPTS);
+  Q.facetSetNeg(t, a, true, OPTS);
+  assert('facetSetNeg: 1値になったクラスタは折り畳み', t.children[0] === c && c.neg === false);
+  assert('facetSetNeg: neg 不変は false', Q.facetSetNeg(t, a, true, OPTS) === false);
+}
+{
+  const d1 = mkLeaf('tag', 'd');
+  const d2 = mkLeaf('tag', 'd', { neg: true });
+  const t = mkGrp('and', [d1, d2]);
+  Q.facetSetNeg(t, d2, false, OPTS);
+  assert('facetSetNeg: 戻し先に同値の陽性があれば冗長 leaf は消える', Q.treeLeaves(t).length === 1 && t.children[0] === d1);
+}
+
 if (failed) {
   console.error(`FAIL test-query-unit: ${failed} assertion(s) red`);
   process.exit(1);

@@ -88,10 +88,10 @@ const evalJs = `(async () => {
   // a search term becomes a real text-leaf pill (qc-text), not the legacy 付箋
   typeSearch('投稿1');
   // the term is applied after a 150ms debounce — poll instead of a fixed sleep
-  const searchPill = await waitFor(() => !!document.querySelector('#queryChips .qb-pill.qc-text'));
+  const searchPill = await waitFor(() => !!document.querySelector('#queryChips .qb-val.qc-text'));
   const noLegacy = !document.querySelector('#queryChips [data-special="search"]');
   // deleting the text leaf via its ✕ clears the search (box empties, reset hides)
-  document.querySelector('#queryChips .qb-pill.qc-text .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  document.querySelector('#queryChips .qb-val.qc-text .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const searchCleared = await waitFor(() => document.getElementById('searchBox').value === '' && reset.style.display === 'none');
   return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, noLegacy, searchCleared };
 })()`;

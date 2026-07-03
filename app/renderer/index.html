@@ -1561,52 +1561,44 @@
        so both themes show a matching edge. */
     [data-theme="dark"] .sb-active-chip { border-color: rgba(255, 255, 255, 0.24); }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
-    .sb-active-chip.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
+    .sb-active-chip.chip-new, .qb-val.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
     /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
-    /* Inline query builder (docs/design-query-builder.md 改訂③): conditions are
-       draggable pills (.qb-pill); groups show literal parentheses (.qb-paren); the
-       AND/OR between members is a clickable toggle (.qb-op); a hover ✕ (.qb-del-btn)
-       removes a pill and right-click opens the negate / delete menu (.qb-menu); a
-       negated pill / group shows a leading ≠. Pills reuse .sb-active-chip glass. */
-    .qb-pill { position: relative; cursor: grab; }
-    .qb-pill:active { cursor: grabbing; }
-    .qb-pill .qb-pill-label { min-width: 0; }
-    .qb-pill.neg .qb-pill-label { text-decoration: line-through; opacity: .65; }
-    .qb-pill .qb-ne { color: var(--text-muted); font-weight: 600; margin-right: 1px; }
-    .qb-grp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; position: relative; }
-    .qb-paren { color: var(--text-subtle); font-size: 16px; line-height: 1; cursor: grab; user-select: none; align-self: center; }
-    .qb-paren:active { cursor: grabbing; }
-    /* AND/OR connector: a quiet, now CLICKABLE word (the old non-operative label was
-       the documented pain point — making it toggle resolves it). Same for the root. */
-    .qb-op { border: none; background: none; cursor: pointer; padding: 1px 5px; border-radius: 5px;
-      font-size: 11px; color: var(--text-subtle); white-space: nowrap; align-self: center; }
-    .qb-op:hover { background: var(--hover); color: var(--text); }
+    /* Facet-chip query builder (docs/design-query-builder.md 改訂④): values
+       cluster by attribute inside ONE glass pill (.qb-cluster), joined by 「・」
+       (.qb-sep), each with a hover ✕ (.qb-del-btn). The only operator surface is
+       the すべて/どれか toggle (.qb-opt) on multi-value clusters; exclusions live
+       in the 除く cluster (.qb-cluster-excl); a non-facet persisted tree renders
+       read-only (.qb-summary). No parens, no connective words, no drag. */
+    .qb-cluster { gap: 4px; }
+    .qb-cluster:hover { opacity: 1; }  /* cancel .sb-active-chip's click-fade: the container itself isn't clickable */
+    .qb-val { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+    .qb-val .qb-val-label { min-width: 0; }
+    .qb-val-edit { cursor: pointer; }
+    .qb-val-edit:hover .qb-val-label { text-decoration: underline dotted; }
+    .qb-sep { color: var(--text-subtle); pointer-events: none; user-select: none; }
+    /* すべて/どれか: a quiet word toggle tucked inside the cluster (monotone —
+       アクティブ表現はモノトーンのコントラスト). */
+    .qb-opt { border: none; background: var(--hover); cursor: pointer; padding: 1px 7px; border-radius: 999px;
+      font-size: 10.5px; color: var(--text-muted-strong); white-space: nowrap; align-self: center; }
+    .qb-opt:hover { color: var(--text); }
+    .qb-excl-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
     /* Read-only 「かつ」 between the search echo and the query. */
     .qc-conn { font-size: 11px; color: var(--text-subtle); margin: 0 4px; align-self: center; pointer-events: none; }
-    /* ✕ delete: tucked at the pill's right edge, INSIDE its bounds (the old ≠ corner
-       badge floated outside and overlapped neighbours / the row above). Reserves its
-       slot always so revealing it on hover causes no layout shift. Negate + a
-       redundant delete live in the right-click menu. */
-    .qb-pill:hover { opacity: 1; }   /* cancel .sb-active-chip's click-fade: plain pills no longer act on left-click */
+    /* ✕ delete: tucked at the value's right edge, INSIDE its bounds. Reserves its
+       slot always so revealing it on hover causes no layout shift. The exclusion
+       move + a redundant delete live in the right-click menu. */
     .qb-del-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
       width: 15px; height: 15px; margin-left: 1px; margin-right: -4px; padding: 0; border: none;
       border-radius: 50%; background: none; color: var(--text-muted); cursor: pointer; opacity: 0;
       transition: opacity .12s, color .12s, background .12s; }
-    .qb-pill:hover .qb-del-btn { opacity: .75; }
+    .qb-val:hover .qb-del-btn { opacity: .75; }
     .qb-del-btn:hover { opacity: 1; color: var(--danger); background: color-mix(in srgb, var(--red-500) 16%, transparent); }
     .qb-del-btn svg { display: block; }
-    /* Drag affordances: dim the dragged element, light the drop target. */
-    .qb-dragging { opacity: .4; }
-    .qb-drop-on { outline: 2px solid var(--accent-soft); outline-offset: 2px; border-radius: 999px; }
-    .qb-grp.qb-drop-on { border-radius: 8px; }
-    .qb-grp.qb-drop-into { box-shadow: inset 0 0 0 1.5px var(--accent-soft); border-radius: 8px; }
-    #queryChips.qb-drop-root, #posterQueryChips.qb-drop-root { box-shadow: inset 0 0 0 1.5px var(--accent-soft); border-radius: 8px; }
-    /* 「グループで囲う」: wrap-the-whole-query button at the bar's right edge. */
-    .qb-group-add { font-size: 13px; padding: 2px 9px; margin-left: 6px; white-space: nowrap; line-height: 1.2;
-      border: 1px solid var(--border-strong); border-radius: 6px; background: var(--field-bg);
-      color: var(--text-muted-strong); cursor: pointer; font-variant-numeric: tabular-nums; }
-    .qb-group-add:hover { background: var(--hover); color: var(--text); }
+    /* 読み下し文: the plain-language reading under the chips (full-width flex row). */
+    .qb-sent { flex-basis: 100%; font-size: 11px; color: var(--text-subtle); line-height: 1.5; min-width: 0; }
+    /* Read-only summary of a persisted non-facet (改訂③) tree. */
+    .qb-summary { font-size: 12px; color: var(--text-muted-strong); align-self: center; cursor: help; min-width: 0; }
     /* ⓘ クエリビルダの使い方ヘルプ。バーの右端＝ヘルプの定番コーナーに置く
        (margin-left:auto でチップ/リセットを左に寄せ、ⓘ だけ右へ逃がす)。 */
     .qb-help {
@@ -1782,6 +1774,7 @@
       <div class="qb-main">
         <span class="sb-activebar-title" id="activebarLabel"></span>
         <div class="sb-chips" id="queryChips"></div>
+        <div class="qb-sent" id="querySent" style="display:none"></div>
       </div>
     </div>
     <div class="qb-trail">
@@ -1792,12 +1785,13 @@
     </div>
   </div>
   <!-- Poster-view query bar (mirrors #postActiveBar; shown only in poster mode).
-       Same inline drag query-builder, rendered by the posterQB instance. -->
+       Same facet-chip query builder, rendered by the posterQB instance. -->
   <div id="posterActiveBar" class="content-activebar" style="display:none">
     <div class="qb-field">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
       <div class="qb-main">
         <div class="sb-chips" id="posterQueryChips"></div>
+        <div class="qb-sent" id="posterQuerySent" style="display:none"></div>
       </div>
     </div>
     <div class="qb-trail">
@@ -2173,8 +2167,8 @@
     /* The card currently shown in the inspector — tinted ring, not solid */
     .post-card.inspected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
 
-    /* (Old .iv-andor AND/OR toggle removed in the query-builder 改訂③ redesign —
-       operators are now the inline .qb-op connector.) */
+    /* (Old .iv-andor AND/OR toggle removed in the query-builder 改訂③ redesign;
+       改訂④ removed the operator vocabulary from the bar entirely.) */
 
     /* Folder management modal */
     .iv-folder-new { display: flex; gap: 6px; margin: 10px 0; }
