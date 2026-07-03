@@ -2,12 +2,14 @@ import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'reac
 import { t } from '../_shared/i18n.ts';
 import { tipProps } from '../_shared/tip.ts';
 
-// Browse-mode segmented control (ライブラリ / 投稿者 / コレクション). The active mode is
-// shared state in window.corpusStore ('browseMode'); viewer.js subscribes and runs the
-// heavy orchestration (body class, grid render swap, closeDetail, setPref). React owns
-// ONLY this control's rendering AND its glass-thumb positioning — viewer.js's
+// Browse-mode segmented control (ライブラリ / 投稿者). The active mode is shared state in
+// window.corpusStore ('browseMode'); viewer.js subscribes and runs the heavy
+// orchestration (body class, grid render swap, closeDetail, setPref). React owns ONLY
+// this control's rendering AND its glass-thumb positioning — viewer.js's
 // positionViewThumb EXCLUDES #browseToggle so there are never two writers on the
 // .vt-thumb element. (Same shape as DensityToggle; see its notes.)
+// Collections are no longer a browse mode — they live as a sidebar folder list in the
+// library view now (2026-07-04), so this dropped from 3 segments to 2.
 //
 // Emits the SAME DOM the old innerHTML did (.vt-thumb + three .view-toggle buttons with
 // data-mode) so the .view-toggle CSS is unchanged. Glyph-only in every state (the
@@ -29,19 +31,10 @@ function BrowseIcon({ v }: { v: string }) {
       </svg>
     );
   }
-  if (v === 'posters') {
-    return (
-      <svg className="vt-ico" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    );
-  }
   return (
-    <svg className="vt-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
-      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
-      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+    <svg className="vt-ico" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
     </svg>
   );
 }
@@ -49,7 +42,6 @@ function BrowseIcon({ v }: { v: string }) {
 const MODES = [
   { v: 'posts', key: 'browsePosts' },
   { v: 'posters', key: 'browsePosters' },
-  { v: 'collections', key: 'browseCollections' },
 ];
 
 const subscribe = (cb: () => void) => window.corpusStore.subscribe('browseMode', cb);

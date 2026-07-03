@@ -603,13 +603,6 @@
        virtualized grid — masonic positions cells absolutely inside its host.
        The density classes stay purely for descendant (cell) styling. */
     .poster-grid { display: block; }
-    /* Collections = a uniform CSS grid (aligned rows), not masonry: few, mostly
-       uniform cards read cleaner in rows than staggered (2026-07-04). The island
-       renders this inner grid inside #collectionGrid (display:block host). */
-    .collection-grid-inner {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 14px; align-items: start;
-    }
     /* Card density (default): a vertical card LED BY THE AVATAR IMAGE (アイコンを画像
        部分に＝ライブラリのカードと同じ構造). Library colors (surface + subtle border +
        shadow) so it has the same contrast as post cards, not the flatter --surface-2. */
@@ -676,45 +669,6 @@
     /* Poster toggle row (no flyout): active = monotone contrast
        (DESIGN: アクティブはグレー面、色は機能的一点だけ). */
     .sb-row.poster-toggle-row.active { background: var(--accent-subtle); color: var(--text-strong); }
-    /* --- Collection view (第3モード): cards = name + count + 2×2 thumb + active ★.
-       Modeled on .poster-card (same surface/border/shadow/hover language). --- */
-    /* Same as .poster-grid: masonic owns the column layout now. */
-    .collection-grid { display: block; }
-    .collection-card {
-      position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
-      background: var(--surface); border: 1px solid var(--border-subtle); border-radius: 10px;
-      box-shadow: var(--shadow-sm); cursor: pointer;
-      transition: box-shadow .15s, border-color .15s, transform .18s var(--ease-out);
-    }
-    .collection-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); z-index: 1; }
-    .collection-card.active { border-color: var(--accent-soft); }
-    /* Mosaic cover: tiles pack to fill the square by count (1=full, 2=split,
-       3=big-left+2-right, 4=2×2) so small collections never show empty cells. */
-    .collection-thumbs {
-      display: grid; gap: 2px; aspect-ratio: 1; background: var(--surface-3); overflow: hidden;
-    }
-    .collection-thumbs.n1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-    .collection-thumbs.n2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
-    .collection-thumbs.n3,
-    .collection-thumbs.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-    .collection-thumbs.n3 img:first-child { grid-column: 1; grid-row: 1 / span 2; }
-    .collection-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .collection-thumbs.empty { place-items: center; background: var(--surface-2); }
-    .collection-thumbs.empty .ct-empty-ic { width: 30%; height: 30%; color: var(--text-muted); opacity: .5; }
-    .collection-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 10px; }
-    .collection-name { font-weight: 600; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .collection-name .col-bolt { color: var(--accent); margin-right: 3px; display: inline-flex; vertical-align: -1px; }
-    .collection-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
-    /* Dynamic collection (saved search): a faint accent border + ⚡ before the name +
-       optional condition chips. The cover/count come from matching the live library. */
-    .collection-card.dynamic { border-color: color-mix(in srgb, var(--accent) 32%, var(--border-subtle)); }
-    .collection-cond { display: flex; flex-wrap: wrap; gap: 3px; margin: 1px 0; min-width: 0; }
-    .collection-cond .cc { font-size: 10px; color: var(--text-muted); background: var(--surface-3); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 5px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* "+ New" card: a dashed placeholder leading the create flow. */
-    .collection-card.new { align-items: center; justify-content: center; min-height: 140px; background: transparent; border-style: dashed; box-shadow: none; color: var(--text-muted); }
-    .collection-card.new:hover { border-color: var(--accent); color: var(--text); transform: none; box-shadow: none; }
-    .collection-card.new .ct-newinner { font-size: 30px; line-height: 1; }
-    .collection-card.new .collection-meta { padding: 6px 0 0; align-items: center; }
     .sb-row.poster-toggle-row.active .sb-row-ic { color: var(--text-strong); }
     /* Poster folders: sidebar list (text rows + hover, active = monotone contrast)
        + create input. Membership is assigned from the poster inspector (chips). */
@@ -761,26 +715,12 @@
        clip row) — only the search box stays useful. */
     body.browse-posters #postActiveBar,
     body.browse-posters #filterRows,
+    body.browse-posters #collectionSidebar,
     body.browse-posters #tileSizeRow,
     body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
     body.browse-posters #postsToolbar .sb-section:has(#sortSelect) { display: none !important; }
     /* The poster query bar mirrors #postActiveBar: only shown while browsing posters. */
     body:not(.browse-posters) #posterActiveBar { display: none !important; }
-    /* Collection mode (第3モード): mirror the poster pattern. The grid + its sidebar
-       controls show; all post/poster chrome hides (only the search box + browse toggle
-       stay). #posterGrid/#posterActiveBar are already hidden by the not(.browse-posters)
-       rules above; #postGrid/#emptyState need an explicit hide here. */
-    #collectionGrid, #collectionControls { display: none; }
-    body.browse-collections #collectionGrid { display: block !important; }
-    body.browse-collections #collectionControls { display: block; }
-    body.browse-collections #postGrid,
-    body.browse-collections #emptyState { display: none !important; }
-    body.browse-collections #postActiveBar,
-    body.browse-collections #filterRows,
-    body.browse-collections #tileSizeRow,
-    body.browse-collections #posterViewSection,
-    body.browse-collections #postsToolbar .sb-section:has(#densityToggle),
-    body.browse-collections #postsToolbar .sb-section:has(#sortSelect) { display: none !important; }
 
     /* Tile-size ± (shown only in the tile density) */
     /* Tile size: thin slider, small→large glyphs at the ends */
@@ -1720,6 +1660,16 @@
     transition: background .12s, color .12s;
   }
   .sb-row:hover { background: var(--sidebar-row-hover); }
+  /* Collection folder rows (Eagle-style sidebar list). Reuse .sb-row; active =
+     the app's monotone-contrast fill (folder currently filtering the library). */
+  .cf-list { display: flex; flex-direction: column; gap: 1px; }
+  .cf-row.active { background: var(--accent-subtle); }
+  .cf-row.active .sb-row-name { color: var(--text-strong); font-weight: 600; }
+  .cf-row.active .sb-row-ic { color: var(--text-strong); }
+  .cf-empty { padding: 2px 12px 4px; font-size: 11.5px; color: var(--text-subtle); }
+  /* 「管理」 link on the section title (right side via .sb-title space-between). */
+  .sb-manage-link { border: 0; background: none; cursor: pointer; padding: 0; font: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--accent-text); }
+  .sb-manage-link:hover { text-decoration: underline; }
   .sb-row .sb-row-ic { display: flex; align-items: center; color: var(--text-muted); flex-shrink: 0; transition: color .12s; }
   .sb-row .sb-row-ic svg { width: 14px; height: 14px; display: block; }
   .sb-row:hover .sb-row-ic { color: var(--text); }
@@ -1788,7 +1738,6 @@
     </div>
     <div class="qb-trail">
       <span class="post-count" id="postCount"></span>
-      <button class="sb-save-search" id="saveSearchBtn" type="button" title="この絞り込みを動的コレクションとして保存" style="display:none"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>検索を保存</button>
       <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
       <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
     </div>
@@ -1915,25 +1864,24 @@
             <button class="sb-row" type="button" data-qfrow="poster-folder"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="sb-row-name" id="sbPosterFolderRowName"></span><span class="sb-row-badge" data-badge="poster-folder"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           </div>
         </div>
-        <!-- Collection-mode controls (sort + new). Shown only while browsing collections. -->
-        <div class="sb-section" id="collectionControls">
-          <span class="post-count" id="collectionCount" style="display:block; margin-bottom:12px; color:var(--text-muted);"></span>
-          <div class="sb-title" id="sbCollectionSortTitle"></div>
-          <!-- Hidden value source; toolbar island GlassSelect renders the glass control. -->
-          <select id="collectionSortSelect" class="cs-host">
-            <option value="name"></option>
-            <option value="recent"></option>
-            <option value="count"></option>
-          </select>
-          <!-- No sidebar 「新規」 button: the grid's create tile (top-left ＋) is the
-               single create affordance — the sidebar one was a redundant, doubly-
-               prefixed 「＋ ＋新規」 (user 2026-07-04). -->
-        </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
              with that category's values (multi-select, stays open). The badge
              shows how many filters of that type are active. Categories are few
              and fixed, so they earn permanent sidebar spots (spatial memory);
              the unbounded lists (tags/authors/instances) live in the flyouts. -->
+        <!-- Collections = user folders, listed Eagle-style directly in the sidebar.
+             Clicking a row filters the library to that collection's members (a
+             'collection' filter leaf). Create / rename / delete happen in the shared
+             folder-manager modal via 「管理」. Replaces the old 3rd browse view
+             (2026-07-04: コレクションはビューでなくサイドバーのフォルダに戻す). -->
+        <div class="sb-section" id="collectionSidebar">
+          <div class="sb-title">
+            <span id="sbCollectionsTitle"></span>
+            <button class="sb-manage-link" id="collManageBtn" type="button"></button>
+          </div>
+          <div class="cf-list" id="collectionFolderList"></div>
+          <div class="cf-empty" id="collectionEmpty" style="display:none"></div>
+        </div>
         <div class="sb-section" id="filterRows">
           <div class="sb-title" id="sbFilterTitle"></div>
           <!-- Clip: the library-wide ephemeral flag (one-click 📎 on cards). A normal
@@ -2002,7 +1950,6 @@
       <div class="tab-panel active" id="panelPosts">
         <div id="postGrid" class="post-grid"></div>
         <div id="posterGrid" class="poster-grid"></div>
-        <div id="collectionGrid" class="collection-grid"></div>
         <div id="emptyState" class="empty-state" style="display:none;"></div>
       </div>
 
@@ -2449,9 +2396,6 @@
   <!-- Tab strip: React owns tab rendering, viewer.js owns the tabs array +
        activeTabId + rename state + click/auxclick/contextmenu/rename delegation. -->
   <script src="islands/tabs.js"></script>
-  <!-- Collection grid: React owns card rendering, viewer.js owns the collection
-       list + records/thumbs + count badge + click/contextmenu delegation. -->
-  <script src="islands/collections.js"></script>
   <!-- Search box + suggest dropdown (react-aria ComboBox): the island owns the
        input + dropdown UI (rendering, keyboard nav, open/close, positioning);
        value = corpusStore 'searchQuery', data/actions via window.corpusSearchBox. -->

@@ -60,5 +60,4 @@
 
   window.corpusGrid = makeGridBridge(); // posts (#postGrid)
   window.corpusPosterGrid = makeGridBridge(); // posters (#posterGrid)
-  window.corpusCollectionGrid = makeGridBridge(); // collections (#collectionGrid)
 })();

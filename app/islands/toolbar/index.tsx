@@ -76,12 +76,6 @@ const SORT_POSTER = [
   { value: 'date-desc', key: 'posterSortNewest' },
   { value: 'date-asc', key: 'posterSortOldest' },
 ];
-const SORT_COLLECTION = [
-  { value: 'name', key: 'collSortName' },
-  { value: 'recent', key: 'collSortRecent' },
-  { value: 'count', key: 'collSortCount' },
-];
-
 function mountSort(id: string, storeKey: string, options: { value: string; key: string }[]) {
   const sel = document.getElementById(id) as HTMLSelectElement | null;
   if (!sel) return;
@@ -102,7 +96,6 @@ function mountAll() {
   mountPosterLayoutTitle();
   mountSort('sortSelect', 'sortPost', SORT_POST);
   mountSort('posterSortSelect', 'sortPoster', SORT_POSTER);
-  mountSort('collectionSortSelect', 'sortCollection', SORT_COLLECTION);
 }
 
 // Resolve i18n before render so t() is synchronous in components. The single

@@ -140,6 +140,9 @@
     collItemCount: _f1('collItemCount'),
     collNew: _s('collNew'),
     collNewPrompt: _s('collNewPrompt'),
+    sbCollectionsTitle: _s('sbCollectionsTitle'),
+    collManageLink: _s('collManageLink'),
+    collSidebarEmpty: _s('collSidebarEmpty'),
     collOpen: _s('collOpen'),
     collRename: _s('collRename'),
     collRenamePrompt: _s('collRenamePrompt'),
@@ -368,15 +371,9 @@
   // tooltips) are rendered by the toolbar island now. The browse toggle's old
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
-  setText('sbCollectionSortTitle', MSG.sbCollectionSortTitle);
-  {
-    const cs = document.getElementById('collectionSortSelect');
-    if (cs) {
-      cs.options[0].textContent = MSG.collSortName;
-      cs.options[1].textContent = MSG.collSortRecent;
-      cs.options[2].textContent = MSG.collSortCount;
-    }
-  }
+  setText('sbCollectionsTitle', MSG.sbCollectionsTitle);
+  setText('collManageBtn', MSG.collManageLink);
+  setText('collectionEmpty', MSG.collSidebarEmpty);
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   // Poster filter rows reuse the post-side row labels (same concepts).
   setText('sbPosterFilterTitle', MSG.sbFilterTitle);
@@ -1345,11 +1342,8 @@
           if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px');
         });
       const resetBtn = ctx.resetBtn || null;
-      const saveBtn = ctx.saveBtn || null;
       const hasQuery = tree.children.length > 0;
       if (resetBtn) resetBtn.style.display = hasQuery || searchVal ? '' : 'none';
-      // Save-as-dynamic-collection button: shown only when there's something to save.
-      if (saveBtn) saveBtn.style.display = hasQuery || searchVal ? '' : 'none';
       // Empty bar → hint at the entry point (the bar displays filters; it takes none).
       if (ctx.emptyEl) ctx.emptyEl.style.display = hasQuery || searchVal ? 'none' : '';
       // Re-assert the canonical facet shape before reading it (mutations keep it,
@@ -1550,7 +1544,6 @@
     barEl: document.getElementById('postActiveBar'),
     emptyEl: document.getElementById('qbEmptyHint'),
     resetBtn: document.getElementById('postResetBtn'),
-    saveBtn: document.getElementById('saveSearchBtn'),
     predOf: postPredOf,
     labelOf: filterLabel,
     glyphOf: qcGlyph,
@@ -1725,7 +1718,6 @@
       _allPostsGeneration++;
       stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理
       if (browseMode === 'posters') renderPosters(keepLimit);
-      else if (browseMode === 'collections') renderCollections();
       else renderPosts(keepLimit);
       reconcileFolders();
       renderPostFolders();
@@ -1752,7 +1744,10 @@
   // couplings are injected: reassigned lets (allPosts/_postsById/posterSort/
   // collectionSort) as getters; posterQB is a const declared later — arrow
   // wrappers defer the read past TDZ (they only run once posters render).
-  const { getFilteredPosts, namedPosters, filteredPosters, treeWithLegacyQ, dynamicMatches, resetCollectionCache, collectionRecords, collectionThumbsFrom, collectionItemCount, collCondLabels, filteredCollections } = window.corpusListing.makeListing({
+  // Collection derivations (filteredCollections / dynamicMatches / …) are no longer
+  // destructured — collections became a sidebar folder list (2026-07-04), so only the
+  // post/poster selection pipeline is used here. cloneTree stays (tab-state serialize).
+  const { getFilteredPosts, namedPosters, filteredPosters } = window.corpusListing.makeListing({
     allPosts: () => allPosts,
     postsById: () => _postsById,
     mediaFilesOf,
@@ -1769,7 +1764,6 @@
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
     posterSort: () => posterSort,
-    collectionSort: () => collectionSort,
     allCollections: () => (CF() ? CF().allCollections() : []),
     filterLabel,
   });
@@ -2756,7 +2750,43 @@
   // now only keeps the clip row entry in sync. Call sites keep the name.
   function renderPostFolders() {
     renderClipRow();
+    renderCollectionSidebar();
   }
+  // Collections as a sidebar folder list (Eagle-style): each row filters the library
+  // to that collection's members via a 'collection' leaf; active = that leaf is in the
+  // query. Rebuilt on any folder change (CF().onChange → renderPostFolders) and on
+  // query change (postQB onChange → renderPostFolders), so counts + active stay live.
+  const CF_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+  function renderCollectionSidebar() {
+    const list = document.getElementById('collectionFolderList');
+    if (!list || !CF()) return;
+    const folders = CF().all();
+    const existing = new Set(allPosts.map((p) => p.captureId));
+    const active = new Set(activeFilters.filter((f) => f.type === 'collection').map((f) => f.value));
+    list.innerHTML = folders
+      .map((f) => {
+        const n = (f.items || []).filter((c) => existing.has(c)).length;
+        const on = active.has(f.id);
+        return `<button class="sb-row cf-row${on ? ' active' : ''}" type="button" data-cf="${escapeAttr(f.id)}"><span class="sb-row-ic">${CF_ICON}</span><span class="sb-row-name">${escapeHtml(f.name)}</span><span class="sb-row-badge${n ? ' on' : ''}">${n || ''}</span></button>`;
+      })
+      .join('');
+    const empty = document.getElementById('collectionEmpty');
+    if (empty) empty.style.display = folders.length ? 'none' : '';
+  }
+  (function setupCollectionSidebar() {
+    const list = document.getElementById('collectionFolderList');
+    if (list)
+      list.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-cf]');
+        if (!row) return;
+        const id = row.dataset.cf;
+        const i = activeFilters.findIndex((f) => f.type === 'collection' && f.value === id);
+        if (i >= 0) removeFilter(i);
+        else addFilter({ type: 'collection', value: id }); // both re-render (afterQueryChange → renderPostFolders)
+      });
+    const manage = document.getElementById('collManageBtn');
+    if (manage) manage.addEventListener('click', () => CF() && CF().openManager());
+  })();
   // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
   // only clipped posts; 空にする clears all flags (the posts themselves are kept).
   function renderClipRow() {
@@ -3598,7 +3628,7 @@
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
   function setBrowseMode(mode, opts) {
-    mode = mode === 'posters' || mode === 'collections' ? mode : 'posts';
+    mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
     posterReturn = null; // an explicit mode switch ends any pending poster-return
     browseMode = mode;
     // Mirror into the store so the React islands (BrowseToggle active/thumb, SectionTitle's
@@ -3614,7 +3644,6 @@
     // toggle's geometry; the island's ResizeObserver picks that up and re-slides its own
     // thumb, so there is nothing to measure here.
     document.body.classList.toggle('browse-posters', mode === 'posters'); // CSS hides the inactive grid
-    document.body.classList.toggle('browse-collections', mode === 'collections');
     closeDetail(); // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
@@ -3623,7 +3652,6 @@
     const render = () => {
       if (browseMode !== mode) return;
       if (mode === 'posters') renderPosters();
-      else if (mode === 'collections') renderCollections();
       else renderPosts();
     };
     if (opts && opts.silent) {
@@ -4257,183 +4285,9 @@
     showQfPopAt(cat, row);
   });
 
-  // --- Collection view (第3モード) -----------------------------------------
-  // Collections (collections.json) as cards: name + count + a 2×2 thumbnail of the
-  // first items + a ★ on the active one (the 🔖 tray target). Clicking a card drills
-  // into the post view filtered by that collection; the always-present browse toggle
-  // is the reliable way back (no fragile back-button bounce — ユーザー要望).
-  let collectionSort = 'name'; // 'name' | 'recent' | 'count'
-  let collectionList = [];
-  // Collection record derivations (treeWithLegacyQ / dynamicMatches /
-  // collectionRecords / thumbs / counts / cond chips / filteredCollections) and
-  // cloneTree moved to listing.js (7th slice — destructured with getFilteredPosts
-  // above). The per-pass record cache lives there too — renderCollections calls
-  // resetCollectionCache() at the top of each pass.
-  // Placeholder for an empty collection's cover — the same layers glyph as the view toggle.
-  const COLL_EMPTY_ICON =
-    '<svg class="ct-empty-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>';
-  // ⚡ marks a dynamic collection (saved search) before its name — the only dynamic cue.
-  const COLL_BOLT_ICON = '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
-  function renderCollections() {
-    if (!document.getElementById('collectionGrid')) return;
-    resetCollectionCache(); // fresh per pass (sort + card map reuse the same scan)
-    collectionList = filteredCollections();
-    const countEl = document.getElementById('collectionCount');
-    if (countEl) countEl.textContent = MSG.collectionCount(collectionList.length);
-    syncBrowseBar();
-    // React owns the grid (virtualized — window.corpusCollectionGrid bridge):
-    // build plain card models and push them. viewer.js keeps the data, the count
-    // badge, and #collectionGrid's click/contextmenu delegation. Card models stay
-    // EAGER (unlike posts/posters): thumbs/counts reuse the per-pass record scan
-    // (_collRecCache) that the sort above already paid for.
-    const q = searchQuery().trim();
-    if (collectionList.length === 0) {
-      window.corpusCollectionGrid.render({
-        empty: true,
-        emptyBody: q ? { title: MSG.emptySearchTitle, desc: MSG.emptySearchDesc } : { title: MSG.collEmptyTitle, desc: MSG.collEmptyDesc },
-        newLabel: MSG.collNew,
-      });
-      return;
-    }
-    const cards = collectionList.map((c, i) => {
-      const recs = collectionRecords(c);
-      const isDyn = c.kind === 'dynamic';
-      return {
-        id: c.id,
-        index: i,
-        dynamic: isDyn,
-        name: c.name,
-        condChips: isDyn ? collCondLabels(c) : [],
-        countLabel: MSG.collItemCount(recs.length),
-        thumbs: collectionThumbsFrom(recs).map((f) => fileSrc(f, 200)),
-      };
-    });
-    window.corpusCollectionGrid.render({
-      items: [{ newTile: true }, ...cards], // create tile leads as the FIRST cell (top-left — create is the primary action)
-      itemsKey: ++_collectionItemsKey,
-      modelOf: (c) => c,
-      newLabel: MSG.collNew,
-      dynamicTitle: MSG.collDynamicTitle,
-    });
-  }
-  let _collectionItemsKey = 0;
-  // Drill into a collection. Static: post view + a folder filter (folder leaf evaluates
-  // CF().has(cid, captureId)). Dynamic: restore the saved search (tree + free-text) so
-  // the result is shown and can be edited / re-saved. Reset other inputs either way.
-  function openCollection(cid) {
-    const c = CF() && CF().byId(cid);
-    if (!c) return;
-    const set = (id, v) => {
-      const el = document.getElementById(id);
-      if (el) el.value = v;
-    };
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
-    setBrowseMode('posts');
-    if (c.kind === 'dynamic') {
-      // Restore the saved tree; text terms ride inside it (legacy q folded in as a leaf).
-      postQB.setTree(treeWithLegacyQ(c.tree, c.q));
-      editingTextNode = null; // restored text leaves are confirmed; the box stays empty
-      setSearchBoxValue('');
-      afterQueryChange(); // re-renders chips + bar + grid from the restored tree
-    } else {
-      postQB.resetTree();
-      editingTextNode = null;
-      setSearchBoxValue('');
-      addFilter({ type: 'collection', value: cid }); // re-renders
-    }
-  }
-  function promptNewCollection() {
-    const name = window.prompt(MSG.collNewPrompt, '');
-    if (name && name.trim() && CF()) CF().createCollection(name); // notify('list') → onChange → renderCollections
-  }
-  // Save the current post-view filter (query tree + free-text) as a NEW dynamic collection
-  // (= a saved search). The post-view "この検索を保存" button calls this.
-  function promptSaveSearch() {
-    if (!CF()) return;
-    if (browseMode === 'posts') confirmEditingTextLeaf(); // fold any in-progress box term into the tree first
-    const tree = postQB.getTree();
-    if (!tree.children.length) {
-      CF().toast(MSG.collSaveEmpty);
-      return;
-    } // nothing to save
-    const name = window.prompt(MSG.collSavePrompt, '');
-    if (!name || !name.trim()) return;
-    CF().createCollection(name, { kind: 'dynamic', tree: cloneTree(tree) });
-    CF().toast(MSG.collSaved);
-  }
-  {
-    const sv = document.getElementById('saveSearchBtn');
-    if (sv) sv.addEventListener('click', promptSaveSearch);
-  }
-  document.getElementById('collectionGrid').addEventListener('click', (e) => {
-    if (e.target.closest('[data-cnew]')) {
-      promptNewCollection();
-      return;
-    }
-    const card = e.target.closest('.collection-card');
-    if (!card) return;
-    if (card.dataset.cid) openCollection(card.dataset.cid);
-  });
-  // Collection card right-click menu: open / rename / delete (mirrors the poster card
-  // menu — fold-menu chrome + clampIntoView). One menu DOM for the view.
-  // Collection context menu (right-click a collection card): open / update-query
-  // (dynamic only) / rename / delete. React-owned glass popup via
-  // window.corpusContextMenu; viewer owns the items + actions here.
-  function collMenuItems(c) {
-    const items = [{ label: MSG.collOpen, act: 'open' }];
-    // Dynamic collections add "条件を今の絞り込みで更新" (re-save the search from the
-    // current filter); static collections have no extra row.
-    if (c.kind === 'dynamic') items.push({ label: MSG.collUpdateQuery, act: 'updateq' });
-    items.push({ label: MSG.collRename, act: 'rename' });
-    items.push({ sep: true });
-    items.push({ label: MSG.collDelete, act: 'delete', danger: true });
-    return items;
-  }
-  function onCollMenuPick(c, item) {
-    const a = item.act;
-    if (a === 'open') openCollection(c.id);
-    else if (a === 'updateq') updateDynamicFromCurrent(c);
-    else if (a === 'rename') {
-      const nm = window.prompt(MSG.collRenamePrompt, c.name);
-      if (nm && nm.trim()) CF().renameCollection(c.id, nm);
-    } else if (a === 'delete') {
-      if (window.confirm(MSG.collDeleteConfirm(c.name))) CF().removeCollection(c.id);
-    }
-  }
-  function showCollMenu(c, x, y) {
-    window.corpusContextMenu.open({ items: collMenuItems(c), x, y }, (item) => onCollMenuPick(c, item));
-  }
-  document.getElementById('collectionGrid').addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.collection-card:not(.new)');
-    if (!card) return;
-    e.preventDefault();
-    const c = CF() && CF().byId(card.dataset.cid);
-    if (c) showCollMenu(c, e.clientX, e.clientY);
-  });
-  // Overwrite a dynamic collection's saved condition with the post view's CURRENT
-  // filter (tree + free-text) — re-save the search after tweaking it.
-  function updateDynamicFromCurrent(c) {
-    if (!CF() || c.kind !== 'dynamic') return;
-    // Called from the collections view; the post-side text term is already a tree leaf.
-    const tree = postQB.getTree();
-    if (!tree.children.length) {
-      CF().toast(MSG.collSaveEmpty);
-      return;
-    } // nothing to save
-    CF().updateCollection(c.id, { tree: cloneTree(tree) });
-    CF().toast(MSG.collUpdated);
-  }
-  // Collection sidebar: sort select + new button.
-  {
-    const cs = document.getElementById('collectionSortSelect');
-    if (cs)
-      cs.addEventListener('change', () => {
-        collectionSort = cs.value;
-        renderCollections();
-      });
-  }
+  // Collections are a sidebar folder list now (renderCollectionSidebar), not a
+  // browse view. The old third-mode grid, its context menu, and dynamic collections
+  // (saved searches) were removed 2026-07-04 — see the collection sidebar above.
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
   // quantize the real width to "how many columns fit", so their track maps to
@@ -4647,10 +4501,6 @@
     _searchRenderTimer = setTimeout(() => {
       if (browseMode === 'posters') {
         renderPosters();
-        return;
-      }
-      if (browseMode === 'collections') {
-        renderCollections();
         return;
       }
       syncEditingTextLeaf(); // posts: the box edits a 'text' leaf in the query tree
@@ -5090,11 +4940,7 @@
         postQB.syncShadow();
         postQB.render();
       }
-      renderPostFolders();
-      if (browseMode === 'collections') {
-        renderCollections();
-        return;
-      } // collection view: refresh the grid (covers create/rename/delete/active)
+      renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
       if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
     });
   if (window.corpus.onPostsChanged) {
@@ -5150,7 +4996,8 @@
   // buildUsers has data for the poster grid. silent = no history/pref echo.
   try {
     const prefs = await window.corpus.getPrefs();
-    const bm = prefs && (prefs.browseMode === 'posters' || prefs.browseMode === 'collections') ? prefs.browseMode : 'posts';
+    // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
+    const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
     // Run the heavy restore synchronously (silent = no history/pref echo, no animation),
     // THEN push the mode into the store so the island reflects active + thumb. browseMode
     // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the

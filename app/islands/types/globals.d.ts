@@ -342,7 +342,6 @@ declare global {
     corpusViewer?: CorpusViewer;
     corpusGrid: CorpusGridBridge;
     corpusPosterGrid: CorpusGridBridge;
-    corpusCollectionGrid: CorpusGridBridge;
     corpusQfPop: CorpusQfPop;
     corpusContextMenu: CorpusContextMenu;
     corpusKindMenu: CorpusKindMenu;
