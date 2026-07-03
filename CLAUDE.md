@@ -2,7 +2,7 @@
 Corpus = SNS投稿を画像・メタデータごとローカル保存し検索・整理できる「自分だけのSNSライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし）。
 
 # ドキュメント
-詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=BACKLOG.md
+詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=メモリ`corpus-backlog`（旧BACKLOG.md・repo外）
 
 # ストレージと実行環境
 - 配置は`~/.corpus`(config/ログ)と`saveFolder`(既定`~/Corpus/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
@@ -11,7 +11,7 @@ Corpus = SNS投稿を画像・メタデータごとローカル保存し検索�
 - テストは`CORPUS_CONFIG_DIR=<tmp>`でサンドボックス化（Electronスモークは`CORPUS_SMOKE=1`）
 
 # ルール
-- UI変更はDESIGN.md準拠
+- UI変更はデザイン規約＝メモリ`corpus-design`（旧DESIGN.md・repo外）準拠
 - lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
 - 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
 - テスト済みケースは再テストしない（`scripts/test-progress.md`確認必須／手順docs/testing.md）

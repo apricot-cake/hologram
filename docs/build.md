@@ -63,4 +63,4 @@ electron-builder, win/nsis。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `corpus`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 
-Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。ロゴの設計根拠は [DESIGN.md](../DESIGN.md)「ブランド／ロゴ」。
+Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。ロゴの設計根拠はデザイン規約（メモリ `corpus-design`・旧 DESIGN.md）「ブランド／ロゴ」。
