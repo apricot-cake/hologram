@@ -1427,13 +1427,17 @@
        (it pierces over the sidebar's top; the sidebar starts below it). Sticks
        directly under the (sticky) tab bar. Its height feeds --activebar-h (set in
        JS) so the floating sidebar below can offset its sticky top. */
-    /* Query bar = the browser toolbar row under the tabs. Mirrors Chrome:
-       [◀ ▶ nav] · [rounded omnibox pill stretches to just before the count] ·
-       [count + reset + help]. The pill (qb-field) GROWS to fill the space up to
-       the trailing cluster (flex:1) — like a URL bar — with its tokens left-
-       anchored inside and empty field space to the right. The count・reset・help
-       live OUTSIDE the pill so there's no barbell gap inside the capsule. 前例:
-       Chrome/Edge のアドレスバー（オムニボックスがツールバー幅いっぱいに伸びる）。 */
+    /* Query bar = a TOOLBAR row under the tabs, NOT an input field. Active
+       filters are chips laid directly on the bar surface — the industry shape
+       for applied filters (Linear/Notion filter rows, Lightroom's Library
+       Filter bar, SAP Fiori "filter feedback bar", Baymard's applied-filters
+       overview). The former omnibox capsule (field fill + border + pill
+       radius, 前例 Chrome) made three promises an address bar keeps and this
+       bar breaks: one line (chips + 読み下し文 wrap to two), typable (it is
+       not — first-run users tried, BACKLOG 誤認 2026-06-21), one value (it
+       holds N discrete chips). Back/forward + tabs survive without an address
+       bar — Finder is the precedent. Layout: [◀ ▶ nav] · [lead glyph + title +
+       chips, wrapping, sentence caption below] · [count + save + reset + help]. */
     .content-activebar {
       position: sticky; top: var(--tabbar-h); z-index: 40;
       flex-shrink: 0;
@@ -1441,20 +1445,22 @@
       padding: 7px 16px;
       background: var(--sidebar-bg); border-bottom: 1px solid var(--glass-border);
     }
-    .qb-nav { flex: none; display: flex; align-items: center; gap: 2px; }
+    /* Nav + lead glyph anchor to the FIRST row (chips), not the 2-line block's
+       middle — otherwise they float between the chips and the 読み下し文. */
+    .qb-nav { flex: none; display: flex; align-items: center; gap: 2px; align-self: flex-start; }
     .qb-nav .icon-btn { width: 28px; height: 28px; }
     .qb-nav .icon-btn svg { width: 17px; height: 17px; }
     .qb-nav .icon-btn:disabled { opacity: .3; cursor: default; }
     .qb-nav .icon-btn:disabled:hover { background: none; color: var(--text-subtle); border-color: transparent; }
-    .qb-field {
+    .qb-body {
       flex: 1 1 auto; min-width: 0;
       display: flex; align-items: center; gap: 8px;
-      padding: 2px 16px 2px 14px;
-      background: var(--field-bg); border: 1px solid var(--border-strong);
-      border-radius: var(--radius-pill);
     }
-    .qb-field .qb-lead { flex: none; display: inline-flex; align-items: center; color: var(--text-muted); }
-    .qb-field .qb-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .qb-body .qb-lead { flex: none; display: inline-flex; align-items: center; color: var(--text-muted); align-self: flex-start; margin-top: 6px; }
+    .qb-body .qb-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    /* Empty-bar hint: the bar is a display, not an input — teach the entry
+       point instead (声: 平易・次にやることの導線). Hidden once anything is on. */
+    .qb-empty { font-size: 12px; color: var(--text-subtle); }
     .content-activebar .sb-activebar-title { flex: none; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
     .content-activebar #queryChips, .content-activebar #posterQueryChips { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; min-width: 0; justify-content: flex-start; align-items: center; }
     /* Trailing cluster sits just past the pill's right edge (outside the capsule).
@@ -1769,10 +1775,11 @@
       <button class="icon-btn icon-btn--ghost" id="navBackBtn" type="button" aria-label="戻る" title="戻る (Alt+←)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
       <button class="icon-btn icon-btn--ghost" id="navFwdBtn" type="button" aria-label="進む" title="進む (Alt+→)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
     </div>
-    <div class="qb-field">
+    <div class="qb-body">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
       <div class="qb-main">
         <span class="sb-activebar-title" id="activebarLabel"></span>
+        <span class="qb-empty" id="qbEmptyHint" style="display:none"></span>
         <div class="sb-chips" id="queryChips"></div>
         <div class="qb-sent" id="querySent" style="display:none"></div>
       </div>
@@ -1787,9 +1794,10 @@
   <!-- Poster-view query bar (mirrors #postActiveBar; shown only in poster mode).
        Same facet-chip query builder, rendered by the posterQB instance. -->
   <div id="posterActiveBar" class="content-activebar" style="display:none">
-    <div class="qb-field">
+    <div class="qb-body">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
       <div class="qb-main">
+        <span class="qb-empty" id="posterQbEmptyHint" style="display:none"></span>
         <div class="sb-chips" id="posterQueryChips"></div>
         <div class="qb-sent" id="posterQuerySent" style="display:none"></div>
       </div>

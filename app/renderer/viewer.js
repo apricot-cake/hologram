@@ -31,6 +31,7 @@
     tipTagCycle: _s('tipTagCycle'),
     sbFilterTitle: _s('sbFilterTitle'),
     activebarLabel: _s('activebarLabel'),
+    qbEmptyHint: _s('qbEmptyHint'),
     ctxManage: _s('ctxManage'),
     ctxClipAdd: _s('ctxClipAdd'),
     ctxClipRemove: _s('ctxClipRemove'),
@@ -427,6 +428,8 @@
   setText('sbSortTitle', MSG.sbSortTitle);
   setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('activebarLabel', MSG.activebarLabel);
+  setText('qbEmptyHint', MSG.qbEmptyHint);
+  setText('posterQbEmptyHint', MSG.qbEmptyHint);
   setText('sbWorkRowTitle', MSG.kindWork);
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
@@ -1400,7 +1403,7 @@
   // behaviour from one codebase. The bar shows NO boolean vocabulary: values
   // cluster by attribute, the only operator surface is the すべて/どれか toggle
   // on multi-value clusters, and exclusions live in the 除く cluster.
-  // ctx: { container, barEl?, sentEl?, resetBtn?, predOf, labelOf, glyphOf,
+  // ctx: { container, barEl?, sentEl?, emptyEl?, resetBtn?, predOf, labelOf, glyphOf,
   //        getSearchVal?, onClearSearch?, onChange, onShadow?, openLeafEditor?,
   //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
   //        standaloneTypes? }
@@ -1484,6 +1487,8 @@
       if (resetBtn) resetBtn.style.display = hasQuery || searchVal ? '' : 'none';
       // Save-as-dynamic-collection button: shown only when there's something to save.
       if (saveBtn) saveBtn.style.display = hasQuery || searchVal ? '' : 'none';
+      // Empty bar → hint at the entry point (the bar displays filters; it takes none).
+      if (ctx.emptyEl) ctx.emptyEl.style.display = hasQuery || searchVal ? 'none' : '';
       // Re-assert the canonical facet shape before reading it (mutations keep it,
       // but a freshly loaded compatible tree may still carry bare 2+-value runs;
       // the すべて/どれか toggle needs real group nodes to write to).
@@ -1683,6 +1688,7 @@
     container: document.getElementById('queryChips'),
     barEl: document.getElementById('postActiveBar'),
     sentEl: document.getElementById('querySent'),
+    emptyEl: document.getElementById('qbEmptyHint'),
     resetBtn: document.getElementById('postResetBtn'),
     saveBtn: document.getElementById('saveSearchBtn'),
     predOf: postPredOf,
@@ -4021,6 +4027,7 @@
     container: document.getElementById('posterQueryChips'),
     barEl: document.getElementById('posterActiveBar'),
     sentEl: document.getElementById('posterQuerySent'),
+    emptyEl: document.getElementById('posterQbEmptyHint'),
     resetBtn: document.getElementById('posterResetBtn'),
     predOf: posterPredOf,
     labelOf: posterFilterLabel,
