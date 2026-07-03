@@ -35,7 +35,6 @@ const filtered = posts.slice(0, 3);
 const active = new Set(['platform:x', 'tag:風景']);
 const posterActive = new Set(['tag:P趣味']);
 let tagGroups = [];
-let qfTagGroup = null;
 let multiOnly = false;
 
 const KIND = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
@@ -65,7 +64,6 @@ const deps = {
   PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
   tagKindOf: (t) => KIND[t],
   tagGroups: () => tagGroups,
-  qfTagGroup: () => qfTagGroup,
   multiOnly: () => multiOnly,
   posterTagsOf: (key) => posterTags[key] || [],
   filteredPosters: () => posters,
@@ -116,7 +114,7 @@ const { facetCounts, qfValues } = F.makeFacets(deps);
   assert('media count', media[0].count === 2 && media[1].count === 1);
 }
 
-// --- tag（グループ見出し・__other・スコープ） ---
+// --- tag（グループ見出し・__other） ---
 {
   let rows = qfValues('tag');
   // グループ未定義: 種別付き（作品A/キャラX）を除いた一般タグのみ・present 先行
@@ -129,14 +127,8 @@ const { facetCounts, qfValues } = F.makeFacets(deps);
   tagGroups = [{ id: 'g1', name: '雰囲気', tags: ['風景'] }];
   rows = qfValues('tag');
   assert('tag グループ見出し+その他見出し', rows[0].ghead === '雰囲気' && rows[1].v === '風景' && rows.some((r) => r.ghead === 'その他'));
-
-  qfTagGroup = 'g1';
-  rows = qfValues('tag');
-  assert('tag グループスコープ（g1 のみ・見出し無し）', rows.length === 1 && rows[0].v === '風景');
-  qfTagGroup = '__other';
-  rows = qfValues('tag');
-  assert('tag __other＝未所属のみ', rows.length === 1 && rows[0].v === '未分類タグ');
-  qfTagGroup = null;
+  const otherIdx = rows.findIndex((r) => r.ghead === 'その他');
+  assert('tag その他見出し下＝未所属のみ', rows[otherIdx + 1].v === '未分類タグ');
   tagGroups = [];
 }
 

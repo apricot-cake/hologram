@@ -166,15 +166,15 @@ export function QfPopHost() {
   const popRef = useRef<HTMLDivElement | null>(null);
   usePlaceFlyout(popRef, model && model.anchorRect);
 
-  // Dismiss on outside-click (capture) / Escape. Exempt .sb-row / [data-tag-group]
-  // clicks: the row handler already closes-and-reopens itself (avoids a double-close
-  // race) — same exemption as the filter-popover island.
+  // Dismiss on outside-click (capture) / Escape. Exempt .sb-row clicks: the row
+  // handler already closes-and-reopens itself (avoids a double-close race) — same
+  // exemption as the filter-popover island.
   useEffect(() => {
     if (!model) return;
     const onDoc = (e: MouseEvent) => {
       if (!document.contains(e.target as Node)) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      if ((e.target as Element).closest('.sb-row') || (e.target as Element).closest('[data-tag-group]')) return;
+      if ((e.target as Element).closest('.sb-row')) return;
       window.corpusQfPop.close();
     };
     const onKey = (e: KeyboardEvent) => {

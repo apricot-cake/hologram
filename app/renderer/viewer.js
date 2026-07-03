@@ -55,7 +55,6 @@
     sbTopTip: _s('sbTopTip'),
     ungroupDone: _s('ungroupDone'),
     tagGroupOther: _s('tagGroupOther'),
-    tagAllRow: _s('tagAllRow'),
     qfFindPh: _s('qfFindPh'),
     deleteKeyword: _s('deleteKeyword'),
     confirmKeywordPh: _s('confirmKeywordPh'),
@@ -440,10 +439,6 @@
   sortSelect.options[5].textContent = MSG.sortCaptured;
   sortSelect.options[6].textContent = MSG.sortLikesPct;
 
-  // --- Disclosure chevrons (thin SVG; right = flyout indicator, down = collapsible) ---
-  const CHEV_R = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg>';
-  const CHEV_D = '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg>';
-
   // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
   // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
   // the native <select> (.cs-host), renders the glass trigger + popup, and drives the
@@ -605,7 +600,6 @@
   // so typing never touches this bridge (only a pick or a fresh open does). ----
   let qfCat = null;
   let qfAnchor = null; // 同じ行をもう一度押したら閉じる（トグル）
-  let qfTagGroup = null; // タグサブ行クリック時にセット（グループ絞り込み）
   function hideQfPop() {
     window.corpusQfPop.close();
   }
@@ -617,7 +611,6 @@
       document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
       qfCat = null;
       qfAnchor = null;
-      qfTagGroup = null;
     }
   });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
@@ -640,7 +633,7 @@
   const { sameTags } = window.corpusTags;
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
-  // injected: reassigned lets (allPosts/tagGroups/multiOnly/qfTagGroup) as getters,
+  // injected: reassigned lets (allPosts/tagGroups/multiOnly) as getters,
   // and consts declared after this point (posterQB / pfStore / the corpusQuery
   // destructure / the listing.js products) as deferred arrow wrappers — a direct
   // ref here would hit TDZ at wiring time; the wrappers only run when a flyout opens.
@@ -655,7 +648,6 @@
     PF_NAME,
     tagKindOf,
     tagGroups: () => tagGroups,
-    qfTagGroup: () => qfTagGroup,
     multiOnly: () => multiOnly,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
@@ -686,7 +678,7 @@
     // genuinely long, open-ended lists (tags/authors). The platform list is short +
     // fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter((it) => it.ghead == null).length;
-    const showFind = !['platform', 'poster-platform'].includes(cat) && (qfTagGroup || valueCount > 8);
+    const showFind = !['platform', 'poster-platform'].includes(cat) && valueCount > 8;
     // No heading row: the user already clicked the category row, so repeating its name
     // as a (hover-highlighted, seemingly-clickable) row was noise.
     const showManage = cat === 'poster-folder' && !!CF();
@@ -772,8 +764,8 @@
     updateSidebarState();
     renderQfPop();
   }
-  // 行/グループボタンの横にフライアウトを開く（同じアンカー再クリックで閉じる）
-  function showQfPopAt(cat, anchorEl, tagGroupId) {
+  // 行の横にフライアウトを開く（同じアンカー再クリックで閉じる）
+  function showQfPopAt(cat, anchorEl) {
     if (window.corpusQfPop.get() && qfAnchor === anchorEl) {
       hideQfPop();
       return;
@@ -782,7 +774,6 @@
     anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
-    qfTagGroup = tagGroupId || null;
     renderQfPop();
   }
 
@@ -941,10 +932,9 @@
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   document.getElementById('filterRows').addEventListener('click', (e) => {
-    const sub = e.target.closest('[data-tag-group]');
     const row = e.target.closest('[data-qfrow]');
-    if (!sub && !row) return;
-    const cat = sub ? 'tag' : row.dataset.qfrow;
+    if (!row) return;
+    const cat = row.dataset.qfrow;
     const openKind = window.corpusFilterPopover.get()?.kind;
     // Re-clicking the row whose popover is already open = toggle it closed.
     if (cat === 'date' && openKind === 'date') {
@@ -956,16 +946,6 @@
       return;
     }
     closeAllMenus(); // switching rows closes any open date/eng popover first
-    if (sub) {
-      const gid = sub.dataset.tagGroup;
-      showQfPopAt('tag', sub, gid === '__all' ? null : gid);
-      return;
-    }
-    if (cat === 'tag' && tagGroups.length) {
-      hideQfPop();
-      toggleTagGroupsCollapsed();
-      return;
-    }
     if (cat === 'date') {
       hideQfPop();
       openDatePopover(null);
@@ -1019,9 +999,11 @@
     });
   }
 
-  // --- Tag area: ★よく使うタグ（チップ直置き・3状態サイクル）＋タググループの
-  // 行ボタン（押すとそのグループのタグがフライアウトで開く）。タグ本体は
-  // 青天井に増えるが、グループはユーザーが作る有限リストなので常設できる。
+  // --- Tag area: the タグ row opens ONE flyout listing every general tag,
+  // sectioned by tag group (facets.js emits the ghead rows). Groups are
+  // user-created and unbounded, so they live INSIDE the scrollable flyout —
+  // permanent sidebar rows for them stretched the column without bound
+  // (sub-rows removed 2026-07-03).
   let tagGroups = []; // {id,name,tags[]} from tag-groups.json (loaded at startup)
   // 用語帳 (Phase 2 ①): a tag's 種別 is an attribute of the TAG. `tagTypes` maps a
   // tag string → kind ('work' | 'character'); tags absent from it are 一般 (general).
@@ -1090,11 +1072,10 @@
     );
     _sidebarSetsGen = _allPostsGeneration;
   }
-  // Refresh the tag-derived sidebar rows (作品/キャラ 種別 rows + tag-group sub-rows).
+  // Refresh the tag-derived sidebar rows (作品/キャラ 種別 rows).
   function updateSidebarTags() {
     _rebuildSidebarSets();
     updateKindRows();
-    updateSidebarTagGroups();
   }
   // 用語帳 (Phase 2 ②): the 作品/キャラ rows are progressively disclosed — each appears
   // only once at least one tag wears that 種別. No kinds set → no rows → zero trace for
@@ -1114,89 +1095,6 @@
     if (wr) wr.style.display = hasWork ? '' : 'none';
     if (cr) cr.style.display = hasChar ? '' : 'none';
   }
-  // --- Tag group sub-rows (Plan A) ---
-  const TAGGROUPS_COLLAPSED_KEY = 'corpus.tagGroupsCollapsed';
-  let tagGroupsCollapsed = localStorage.getItem(TAGGROUPS_COLLAPSED_KEY) === '1';
-
-  function toggleTagGroupsCollapsed() {
-    const tagRow = document.querySelector('[data-qfrow="tag"]');
-    const yBefore = tagRow ? tagRow.getBoundingClientRect().top : null;
-    tagGroupsCollapsed = !tagGroupsCollapsed;
-    localStorage.setItem(TAGGROUPS_COLLAPSED_KEY, tagGroupsCollapsed ? '1' : '');
-    updateSidebarTagGroups();
-    // アニメーション完了後にタグ行の Y ずれをスクロール補正（カーソル下を維持）
-    if (yBefore !== null)
-      setTimeout(() => {
-        const yAfter = tagRow.getBoundingClientRect().top;
-        const delta = yAfter - yBefore;
-        if (Math.abs(delta) > 0.5) {
-          const scroll = tagRow.closest('.sb-scroll');
-          if (scroll) scroll.scrollTop += delta;
-        }
-      }, 190);
-  }
-
-  // Hand tag-group row DATA to the React sidebar-tags island (it renders the
-  // .sb-subrow buttons). Stash a copy too, so the island can paint even if its
-  // bundle finishes loading after this first runs.
-  function pushTagSubrows(rows) {
-    window.__corpusSbTagRows = rows;
-    if (window.corpusSidebarTags) window.corpusSidebarTags.render(rows);
-  }
-
-  function updateSidebarTagGroups() {
-    const host = document.getElementById('sbTagGroupSubRows');
-    const chev = document.getElementById('sbTagChevron');
-    if (!host) return;
-    // .sb-subrows-inner が消えていたら（起動タイミング競合など）再生成する
-    let inner = host.querySelector('.sb-subrows-inner');
-    if (!inner) {
-      inner = document.createElement('div');
-      inner.className = 'sb-subrows-inner';
-      host.appendChild(inner);
-    }
-    if (!tagGroups.length) {
-      if (chev) {
-        chev.innerHTML = CHEV_R;
-        chev.classList.remove('collapsed');
-      }
-      pushTagSubrows([]);
-      return;
-    }
-    if (chev) {
-      chev.innerHTML = CHEV_D;
-      chev.classList.toggle('collapsed', tagGroupsCollapsed);
-    }
-    host.classList.toggle('collapsed', tagGroupsCollapsed);
-    _rebuildSidebarSets();
-    const allTagSet = _cachedTagSet;
-    // 用語帳: kinded tags graduated to the 作品/キャラ rows — the タグ section counts
-    // and lists general tags only, so they aren't shown / counted twice.
-    const genTags = [...allTagSet].filter((t) => !tagKindOf(t));
-    const genSet = new Set(genTags);
-    const activeTags = new Set(activeFilters.filter((f) => f.type === 'tag').map((f) => f.value));
-    // Build plain row DATA; the React sidebar-tags island renders the buttons
-    // (same .sb-subrow markup + data-tag-group, so the delegated #filterRows
-    // click handler still fires). React owns rendering; we keep owning the data.
-    const rows = [];
-    if (genTags.length) {
-      rows.push({ key: '__all', name: MSG.tagAllRow, count: genTags.length, active: false });
-    }
-    for (const g of tagGroups) {
-      const count = (g.tags || []).filter((t) => genSet.has(t)).length;
-      if (!count) continue;
-      const active = (g.tags || []).some((t) => activeTags.has(t));
-      rows.push({ key: g.id, name: g.name || '', count, active });
-    }
-    const grouped = new Set(tagGroups.flatMap((g) => g.tags || []));
-    const otherCount = genTags.filter((t) => !grouped.has(t)).length;
-    if (otherCount) {
-      const active = [...activeTags].some((t) => !grouped.has(t) && !tagKindOf(t));
-      rows.push({ key: '__other', name: MSG.tagGroupOther, count: otherCount, active });
-    }
-    pushTagSubrows(rows);
-  }
-
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).

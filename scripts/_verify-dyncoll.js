@@ -24,8 +24,7 @@ async function main() {
   // 1) Library mode + clean filters + apply the 自分の絵 tag (tree has one leaf).
   await ev(`(()=>{const b=document.querySelector('.browse-toggle button[data-mode="posts"]');if(b)b.click();})()`); await wait(400);
   await ev(`(()=>{const r=document.getElementById('postResetBtn');if(r&&r.offsetParent!==null)r.click();})()`); await wait(300);
-  await ev(`(()=>{ if(!document.querySelector('#filterRows [data-tag-group="__all"]')){const r=document.querySelector('#filterRows [data-qfrow="tag"]');if(r)r.click();} })()`); await wait(300);
-  await ev(`(()=>{const s=document.querySelector('#filterRows [data-tag-group="__all"]');if(s)s.click();})()`); await wait(400);
+  await ev(`(()=>{const r=document.querySelector('#filterRows [data-qfrow="tag"]');if(r)r.click();})()`); await wait(400);
   await ev(`(()=>{const o=document.querySelector('.qf-pop [data-qfval="自分の絵"]');if(o)o.click();})()`); await wait(400);
   await ev(`document.body.click()`); await wait(300);
   log('after filter', await ev(`(document.getElementById('postCount')||{}).textContent||null`));

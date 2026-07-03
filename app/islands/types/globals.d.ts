@@ -314,9 +314,6 @@ declare global {
   interface CorpusQueryChipsIsland {
     render(id: string, model: any): void;
   }
-  interface CorpusSidebarTagsIsland {
-    render(rows?: any[]): void;
-  }
   interface CorpusImageTabIsland {
     render(model?: any): void;
   }
@@ -351,7 +348,6 @@ declare global {
     corpusSettings: CorpusSettings;
     corpusTabs: CorpusTabsIsland;
     corpusQueryChips: CorpusQueryChipsIsland;
-    corpusSidebarTags: CorpusSidebarTagsIsland;
     corpusLightbox: CorpusLightbox;
     corpusImageTab: CorpusImageTabIsland;
     corpusAboutIcon?: CorpusAboutIcon;
@@ -364,7 +360,6 @@ declare global {
     // Pre-island stashes: viewer.js may push before an island bundle loads.
     __corpusTabsModel?: any;
     __corpusQueryChips?: Record<string, any>;
-    __corpusSbTagRows?: any[];
     __corpusLbLabels?: Record<string, string>;
     __corpusImageTabModel?: any;
     JSZip?: any;

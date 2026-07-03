@@ -134,14 +134,14 @@ export function FilterPopoverHost() {
   usePlaceFlyout(popRef, model && model.anchorRect);
 
   // Dismiss on outside-click (capture) / Escape, like the old popovers' shared document
-  // listener — but excluding .sb-row / [data-tag-group] clicks, which the row handler
-  // already closes-and-reopens itself (avoids a double-close race).
+  // listener — but excluding .sb-row clicks, which the row handler already
+  // closes-and-reopens itself (avoids a double-close race).
   useEffect(() => {
     if (!model) return;
     const onDoc = (e: MouseEvent) => {
       if (!document.contains(e.target as Node)) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      if ((e.target as Element).closest('.sb-row') || (e.target as Element).closest('[data-tag-group]')) return;
+      if ((e.target as Element).closest('.sb-row')) return;
       window.corpusFilterPopover.close();
     };
     const onKey = (e: KeyboardEvent) => {

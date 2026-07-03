@@ -3,7 +3,7 @@
 // "pure logic → service" slice of the viewer decomposition (最終形B). Plain IIFE on
 // window (like query.js / records.js); loaded BEFORE viewer.js; touches no DOM.
 // Every runtime coupling is INJECTED via makeFacets(deps) — reassigned viewer lets
-// (allPosts / tagGroups / multiOnly / qfTagGroup) come in as getter functions, and
+// (allPosts / tagGroups / multiOnly) come in as getter functions, and
 // consts declared after the wiring point (posterQB / pfStore / the corpusQuery
 // destructure) as deferred wrappers — so this file loads under Node too
 // (scripts/test-facets-unit.js). CommonJS-exported like records.js.
@@ -21,12 +21,12 @@
   //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
   //   MSG (value) / PF_NAME (value) — label tables (const by the wiring point)
   //   tagKindOf(tag) — 用語帳 kind ('work'/'character'/undefined)
-  //   tagGroups() / qfTagGroup() / multiOnly() — live viewer state getters
+  //   tagGroups() / multiOnly() — live viewer state getters
   //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
   //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
   //   buildUsers() — user facet source (cached in viewer)
   function makeFacets(deps) {
-    const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, qfTagGroup, multiOnly, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, buildUsers } = deps;
+    const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, multiOnly, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, buildUsers } = deps;
 
     // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
     // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -183,24 +183,7 @@
           // Within a list/group, present values (count desc) precede absent ones.
           const byCount = (a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
           const allTags = [...new Set(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
-          const groupScope = qfTagGroup();
           const groups = tagGroups();
-          if (groupScope) {
-            if (groupScope === '__other') {
-              const grouped = new Set(groups.flatMap((g) => g.tags || []));
-              return allTags
-                .filter((t) => !grouped.has(t))
-                .map(item)
-                .sort(byCount);
-            }
-            const g = groups.find((x) => x.id === groupScope);
-            if (g)
-              return (g.tags || [])
-                .filter((t) => allTags.includes(t))
-                .map(item)
-                .sort(byCount);
-            return [];
-          }
           if (!groups.length) return allTags.map(item).sort(byCount);
           const grouped = new Set();
           const out = [];

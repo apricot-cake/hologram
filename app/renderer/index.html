@@ -147,7 +147,7 @@
       margin: var(--sidebar-float);
       /* Flat fill — the vertical gradient was dropped (user). */
       background-color: var(--sidebar-bg);
-      display: flex; flex-direction: column; padding: 18px 10px 0; gap: 2px;
+      display: flex; flex-direction: column; padding: 14px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（角丸でクリップ） */
       /* Window-like: a defined rim + lift (replaces the old 1px content hairline). */
       border: 1px solid var(--glass-border);
@@ -326,8 +326,8 @@
 
     /* --- Toolbar (stacked in the sidebar) --- */
     .toolbar {
-      display: flex; flex-direction: column; align-items: stretch; gap: 22px;
-      margin-bottom: 22px;   /* same inter-section rhythm as .sb-section */
+      display: flex; flex-direction: column; align-items: stretch; gap: 18px;
+      margin-bottom: 18px;   /* same inter-section rhythm as .sb-section */
     }
     .toolbar select { width: 100%; }
     .toolbar .view-toggle, .toolbar > .chip { align-self: flex-start; }
@@ -383,13 +383,13 @@
     .seg-control.is-fuzzy .seg-thumb { transform: translateX(100%); }
     .seg-control .seg-opt {
       position: relative; z-index: 1; appearance: none; background: transparent;
-      border: 0; font: inherit; font-size: 12px; padding: 5px 4px;
+      border: 0; font: inherit; font-size: 12px; padding: 3px 4px;
       color: var(--text-muted); cursor: pointer;
       border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
     }
     .seg-control .seg-opt.is-on { color: var(--text-strong); font-weight: 600; }
     .seg-control .seg-opt:hover:not(.is-on) { color: var(--text); }
-    .seg-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+    .seg-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
     .seg-control--qf { margin: 2px 4px 4px; }
     .seg-control--qf .seg-opt { padding: 4px 4px; font-size: 11px; }
     @media (prefers-reduced-motion: reduce) { .seg-control .seg-thumb { transition: none; } }
@@ -407,7 +407,7 @@
     .cs-btn {
       width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px;
       background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: 6px;
-      padding: 6px 12px; font-size: 13px; color: var(--text); cursor: pointer; text-align: left;
+      padding: 4px 12px; font-size: 12.5px; color: var(--text); cursor: pointer; text-align: left;
       transition: border-color .12s;
     }
     .cs-btn:hover { border-color: var(--text-muted); background: var(--hover); }
@@ -481,9 +481,9 @@
        the 12px side padding carries the 23px text axis). */
     #sidebar select { padding-top: 5px; padding-bottom: 5px; transition: border-color .12s, background .12s; }
     #sidebar select:hover { background: var(--hover); border-color: var(--text-muted); }
-    /* 13px = same as the sibling #sidebar select; at 14px the 13-glyph JP
-       placeholder ("テキスト・ユーザー名で検索") overran the ~178px field and clipped. */
-    #sidebar .search-box { padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+    /* 12.5px = same as the sibling .cs-btn (at 14px the 13-glyph JP placeholder
+       "テキスト・ユーザー名で検索" overran the ~178px field and clipped). */
+    #sidebar .search-box { padding-top: 5px; padding-bottom: 5px; font-size: 12.5px; }
     /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
        (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
        content-pad (12px) inside it — so headers read as one step out, content
@@ -534,13 +534,13 @@
     }
     .view-toggle button {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      height: 31px; box-sizing: border-box; padding: 0;
+      height: 26px; box-sizing: border-box; padding: 0;
       background: transparent; border: none; border-radius: 6px;
       cursor: pointer; color: var(--text-muted); line-height: 0;
       transition: background .15s, color .15s;
     }
     /* Glyph stays outlined in every state; the thumb behind it marks the active one. */
-    .view-toggle .vt-ico { width: 17px; height: 17px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
+    .view-toggle .vt-ico { width: 15px; height: 15px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .view-toggle .vt-label { display: none; }
     /* Active = a single glass thumb (.vt-thumb, a real element) that SLIDES between
        segments (macOS segmented-control motion). The thumb is the BUTTON/chip, not
@@ -1404,15 +1404,15 @@
        same axis, and pills use a 12px inner pad. */
     /* Rhythm: generous space BETWEEN sections, tight spacing inside them
        (title→content 6px, rows 4-8px) — Linear-style grouping. */
-    .sb-section { padding: 0; margin-bottom: 22px; }
+    .sb-section { padding: 0; margin-bottom: 18px; }
     /* Lower column: separate the big groups (filters / tags / clip /
        folders) by generous WHITESPACE rather than divider lines (user: no
        rules). The extra air carries the structure. */
-    .sb-scroll > .sb-section { margin-bottom: 26px; }
+    .sb-scroll > .sb-section { margin-bottom: 18px; }
     .sb-title {
       font-size: 11px; font-weight: 600; color: var(--text-muted-strong);
       text-transform: uppercase; letter-spacing: 0.5px;
-      margin-bottom: 8px; padding-left: 0;   /* aligns to the gutter (container) */
+      margin-bottom: 6px; padding-left: 0;   /* aligns to the gutter (container) */
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
     /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
@@ -1658,23 +1658,6 @@
     .qf-pop .qf-footer { border-top: 1px solid var(--border); padding: 2px 0; flex-shrink: 0; }
     .qf-pop .qf-footer-link { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--accent-text); background: none; border: none; cursor: pointer; }
     .qf-pop .qf-footer-link:hover { background: var(--hover); text-decoration: underline; }
-    /* --- Plan A: tag group sub-rows --- */
-    /* Grid trick: animates open/close without display:none jump.
-       The inner flex container needs min-height:0 to collapse below its content. */
-    .sb-subrows { display: grid; grid-template-rows: 1fr; overflow: hidden;
-      transition: grid-template-rows 180ms ease-out; }
-    .sb-subrows.collapsed { grid-template-rows: 0fr; }
-    .sb-subrows-inner { display: flex; flex-direction: column; min-height: 0; }
-    @media (prefers-reduced-motion: reduce) { .sb-subrows { transition: none; } }
-    .sb-subrow { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px calc(var(--sb-gutter) + 22px); font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 5px; border: none; background: none; width: 100%; text-align: left; }
-    .sb-subrow:hover { background: var(--sidebar-row-hover); }
-    .sb-subrow.active { color: var(--accent-text); }
-    .sb-subrow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sb-subrow-count { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
-    .sb-subrow-arrow { margin-left: 4px; /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
-    .sb-row-disclosure { display: inline-flex; align-items: center; transition: transform 200ms ease-out; }
-    .sb-row-disclosure.collapsed { transform: rotate(-90deg); }
-@media (prefers-reduced-motion: reduce) { .sb-row-disclosure { transition: none; } }
     /* リアルタイム検索サジェスト（検索ボックス直下・タグ/作者候補）
        react-aria Popover: position/visibility は portal + inline style 側が持つので
        ここはパネルの見た目と行だけ。--trigger-width は react-aria が供給。 */
@@ -1704,7 +1687,7 @@
      1px border keeps the 23px text axis geometry intact. */
   .sb-row {
     display: flex; align-items: center; gap: 7px; width: 100%;
-    padding: 5px 12px; margin-bottom: 1px; text-align: left;
+    padding: 4px 12px; margin-bottom: 1px; text-align: left;
     background: transparent; border: 1px solid transparent;
     border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer;
     transition: background .12s, color .12s;
@@ -1716,9 +1699,8 @@
   .sb-row .sb-row-name { flex: 1; }
   /* Active-filter count (AND clip count — same part). The old filled grey
      pill read as a clunky notification badge against the flat sidebar (user: ダサい);
-     replaced by a PLAIN right-aligned number matching the tag sub-row counts
-     (.sb-subrow-count). It marks an ACTIVE category, so it carries a touch more
-     weight + the full --text ink (vs the muted passive tag counts) — "active = grey
+     replaced by a PLAIN right-aligned number. It marks an ACTIVE category, so it
+     carries a touch more weight + the full --text ink — "active = grey
      contrast", not a tint or a box (DESIGN.md). */
   .sb-row .sb-row-badge {
     display: none; flex-shrink: 0;
@@ -1728,27 +1710,14 @@
   .sb-row .sb-row-badge.on { display: inline-block; }
   /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
      All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
-  .sb-row-arrow, .sb-subrow-arrow, .cs-btn .cs-arrow {
+  .sb-row-arrow, .cs-btn .cs-arrow {
     color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
     pointer-events: none;
   }
   /* Flyout arrows: hover-only. */
-  #filterRows .sb-row .sb-row-arrow:not(.sb-row-disclosure) { opacity: 0; transition: opacity .12s; }
-  #filterRows .sb-row:hover .sb-row-arrow:not(.sb-row-disclosure),
-  #filterRows .sb-row.qf-open .sb-row-arrow:not(.sb-row-disclosure) { opacity: 1; }
-  /* Tag disclosure (▾ on タグ): hover-only when EXPANDED — the visible subrows already
-     show the open state, so the chevron is redundant (Finder-style quiet). When COLLAPSED
-     it is the only cue that hidden content exists, so keep it shown. */
-  #filterRows .sb-row .sb-row-disclosure { opacity: 0; transition: opacity .12s; }
-  #filterRows .sb-row:hover .sb-row-disclosure,
-  #filterRows .sb-row.qf-open .sb-row-disclosure,
-  #filterRows .sb-row .sb-row-disclosure.collapsed { opacity: 1; }
-  /* Tag sub-rows (すべてのタグ/人物…) share the same hover-only flyout chevron */
-  #filterRows .sb-subrow .sb-subrow-arrow { opacity: 0; transition: opacity .12s; }
-  #filterRows .sb-subrow:hover .sb-subrow-arrow,
-  #filterRows .sb-subrow.qf-open .sb-subrow-arrow { opacity: 1; }
-  /* tag-group buttons: squared corners + chevron so they read as「開くもの」—
-     丸ピル（タグ実体）との境界をはっきりさせる */
+  #filterRows .sb-row .sb-row-arrow { opacity: 0; transition: opacity .12s; }
+  #filterRows .sb-row:hover .sb-row-arrow,
+  #filterRows .sb-row.qf-open .sb-row-arrow { opacity: 1; }
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
   .sb-sub {
@@ -1957,8 +1926,7 @@
           <button class="sb-row" type="button" data-qfrow="work" id="sbWorkRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M14.83 14.83a4 4 0 1 1 0-5.66"/></svg></span><span class="sb-row-name" id="sbWorkRowTitle"></span><span class="sb-row-badge" data-badge="work"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="character" id="sbCharRow" style="display:none;"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span><span class="sb-row-name" id="sbCharRowTitle"></span><span class="sb-row-badge" data-badge="character"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="hashtag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg></span><span class="sb-row-name" id="sbHashtagRowTitle"></span><span class="sb-row-badge" data-badge="hashtag"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
-          <button class="sb-row" type="button" data-qfrow="tag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg></span><span class="sb-row-name" id="sbTagRowTitle"></span><span class="sb-row-badge" data-badge="tag"></span><span class="sb-row-arrow sb-row-disclosure" id="sbTagChevron"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3.5l4 4 4-4"/></svg></span></button>
-          <div id="sbTagGroupSubRows" class="sb-subrows"><div class="sb-subrows-inner"></div></div>
+          <button class="sb-row" type="button" data-qfrow="tag"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.5" fill="currentColor"/></svg></span><span class="sb-row-name" id="sbTagRowTitle"></span><span class="sb-row-badge" data-badge="tag"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
         </div>
 
         </div><!-- /sb-scroll -->
@@ -2420,7 +2388,6 @@
   <script src="viewer.js"></script>
   <script src="islands/settings.js"></script>
   <!-- Sidebar tag-group subrows: React owns rendering, viewer.js owns data+events. -->
-  <script src="islands/sidebar-tags.js"></script>
   <!-- Query-builder active bars: React owns chip rendering, viewer.js owns the
        tree state + qbNodeMap + drag/click/contextmenu delegation. -->
   <script src="islands/query-chips.js"></script>
