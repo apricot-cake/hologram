@@ -1104,16 +1104,13 @@
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
-  const UNDO_MAX = 50;
-  const undoStack = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
-  let redoStack = [];
-
-  function pushUndo(type, records) {
-    if (!records || !records.length) return;
-    undoStack.push({ type, records });
-    if (undoStack.length > UNDO_MAX) undoStack.shift();
-    redoStack = []; // discard redo on new edit (linear history)
-  }
+  // Stack semantics (cap / redo discard / prev-next direction) live in undo.js;
+  // the two apply callbacks below carry the viewer-owned side effects.
+  const _undo = window.corpusUndo.makeUndo({
+    applyTags: (records) => applyTagUndo(records),
+    applyPosterTags: (records) => applyPosterTagUndo(records),
+  });
+  const pushUndo = _undo.push;
 
   async function applyTagUndo(records) {
     for (const r of records) {
@@ -1148,30 +1145,11 @@
   }
 
   async function doUndo() {
-    const entry = undoStack.pop();
-    if (!entry) return;
-    if (entry.type === 'poster-tags') {
-      await applyPosterTagUndo(entry.records.map((r) => ({ key: r.key, tags: r.prevTags })));
-    } else {
-      const reverse = entry.records.map((r) => ({ captureId: r.captureId, image: r.image, tags: r.prevTags }));
-      await applyTagUndo(reverse);
-    }
-    redoStack.push(entry);
-    showToast('Undo');
+    if (await _undo.undo()) showToast('Undo');
   }
 
   async function doRedo() {
-    const entry = redoStack.pop();
-    if (!entry) return;
-    if (entry.type === 'poster-tags') {
-      await applyPosterTagUndo(entry.records.map((r) => ({ key: r.key, tags: r.newTags })));
-    } else {
-      const forward = entry.records.map((r) => ({ captureId: r.captureId, image: r.image, tags: r.newTags }));
-      await applyTagUndo(forward);
-    }
-    undoStack.push(entry);
-    if (undoStack.length > UNDO_MAX) undoStack.shift();
-    showToast('Redo');
+    if (await _undo.redo()) showToast('Redo');
   }
 
   document.addEventListener('keydown', (e) => {

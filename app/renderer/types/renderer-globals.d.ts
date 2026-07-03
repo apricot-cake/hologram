@@ -317,6 +317,26 @@ interface CorpusGeometryApi {
   thumbW(raw: number, min: number, max: number): number;
 }
 
+// ---- renderer/undo.js — linear tag-edit undo/redo stack ----
+interface CorpusUndoRecord {
+  captureId?: string;
+  image?: string;
+  key?: string;
+  prevTags: string[];
+  newTags: string[];
+}
+interface CorpusUndoApi {
+  makeUndo(deps: {
+    applyTags(records: { captureId?: string; image?: string; tags: string[] }[]): Promise<void> | void;
+    applyPosterTags(records: { key?: string; tags: string[] }[]): Promise<void> | void;
+  }): {
+    push(type: string, records: CorpusUndoRecord[]): void;
+    /** Both resolve to whether an entry was applied (callers toast only then). */
+    undo(): Promise<boolean>;
+    redo(): Promise<boolean>;
+  };
+}
+
 // ---- renderer/store.js — key-addressed external store (same contract as the
 // islands' globals.d.ts CorpusStore; duplicated across the two tsc projects
 // until 単一バンドル化 merges them) ----
@@ -337,5 +357,6 @@ interface Window {
   corpusTabState: CorpusTabStateApi;
   corpusListing: CorpusListingApi;
   corpusGeometry: CorpusGeometryApi;
+  corpusUndo: CorpusUndoApi;
   corpusStore: CorpusStoreApi;
 }

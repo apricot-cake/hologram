@@ -25,6 +25,7 @@ const TESTS = [
   'test-tabstate-unit',
   'test-listing-unit',
   'test-geometry-unit',
+  'test-undo-unit',
   'test-migrate-unit',
   'test-collections-merge',
   'test-token-parity',
