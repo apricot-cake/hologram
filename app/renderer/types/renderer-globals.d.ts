@@ -337,15 +337,9 @@ interface CorpusUndoApi {
   };
 }
 
-// ---- renderer/store.js — key-addressed external store (same contract as the
-// islands' globals.d.ts CorpusStore; duplicated across the two tsc projects
-// until 単一バンドル化 merges them) ----
-interface CorpusStoreApi {
-  get(key: string): any;
-  set(key: string, val: unknown): void;
-  subscribe(key: string, cb: () => void): () => void;
-  subscribe(cb: () => void): () => void;
-}
+// renderer/store.js's window.corpusStore contract (CorpusStore) now comes from
+// islands/types/globals.d.ts, which this tsc project shares directly (it is in
+// tsconfig.renderer.json "files") — the old duplicated CorpusStoreApi is gone.
 
 interface Window {
   corpusQuery: CorpusQueryApi;
@@ -358,5 +352,4 @@ interface Window {
   corpusListing: CorpusListingApi;
   corpusGeometry: CorpusGeometryApi;
   corpusUndo: CorpusUndoApi;
-  corpusStore: CorpusStoreApi;
 }

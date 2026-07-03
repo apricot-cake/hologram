@@ -8,7 +8,8 @@
 //   → 正規化後に「A または C」で各語を判定し、空白区切りの全語を AND 結合。
 (function () {
   'use strict';
-  let mode = 'normal'; // 'normal' | 'fuzzy'
+  /** @type {'normal' | 'fuzzy'} */
+  let mode = 'normal';
   // Set (not array) so subscribe can return an unsubscribe that actually removes the
   // listener — React islands subscribe via useSyncExternalStore and must detach on
   // unmount (and to avoid duplicate registrations across HMR reloads in dev).

@@ -21,5 +21,31 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "files": ["renderer/types/renderer-globals.d.ts", "renderer/query.js", "renderer/records.js", "renderer/facets.js", "renderer/cooc.js", "renderer/tags.js", "renderer/users.js", "renderer/tab-state.js", "renderer/listing.js", "renderer/geometry.js", "renderer/undo.js", "renderer/store.js"]
+  "files": [
+    "renderer/types/renderer-globals.d.ts",
+    "islands/types/globals.d.ts",
+    "renderer/i18n.js",
+    "renderer/ui.js",
+    "renderer/theme.js",
+    "renderer/search.js",
+    "renderer/menu.js",
+    "renderer/kind-menu.js",
+    "renderer/qf-pop.js",
+    "renderer/filter-popover.js",
+    "renderer/searchbox.js",
+    "renderer/grid.js",
+    "renderer/shell.js",
+    "renderer/about-icon.js",
+    "renderer/query.js",
+    "renderer/records.js",
+    "renderer/facets.js",
+    "renderer/cooc.js",
+    "renderer/tags.js",
+    "renderer/users.js",
+    "renderer/tab-state.js",
+    "renderer/listing.js",
+    "renderer/geometry.js",
+    "renderer/undo.js",
+    "renderer/store.js"
+  ]
 }
