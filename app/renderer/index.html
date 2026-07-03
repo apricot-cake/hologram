@@ -587,28 +587,14 @@
     .view-toggle button.active { color: var(--text); }
     [data-theme="dark"] .view-toggle button.active { color: var(--text-strong); }
 
-    /* Browse-mode toggle (ライブラリ / 投稿者 / コレクション): reuses .view-toggle visuals.
-       3 labels don't fit the sidebar width, so only the ACTIVE segment shows its label
-       (Material-3 nav style); the inactive ones are icon-only chips. Every button is
-       sized to its content (width follows text length) and the toggle hugs them rather
-       than filling the column. Per-button title tooltips name the icon-only segments
-       (set in viewer.js). The glass thumb measures the active button. */
+    /* Browse-mode toggle (ライブラリ / 投稿者 / コレクション): reuses .view-toggle visuals
+       verbatim — glyph-only in EVERY state (the active-label idiom was retired
+       2026-07-04: text on the active segment made the thumb width jump per mode and
+       read as a different control from the layout toggle). Which mode is active is
+       named by the section title's mode readout (#sbViewTitle right side) and the
+       instant .ui-tip tooltips; the glass thumb marks it visually. */
     /* Lives at the sidebar top (.browse-bar-section = a .sb-section). */
     .browse-bar-section { margin-bottom: 16px; }
-    /* Full-width like the other sidebar boxes (search / sort / density toggle): the
-       track spans the gutter and the 3 buttons split it evenly (flex:1 from .view-toggle).
-       Was width:fit-content = narrower than the boxes below it (user: 横幅が揃わない). */
-    .browse-toggle button { gap: 7px; white-space: nowrap; min-width: 0; }
-    /* Active = label only (hide its icon): "ライブラリ" is too long to sit beside the
-       icon in an even third of the full-width track (it ellipsised). Inactive stays
-       icon-only — the selected-is-text idiom (Bluesky/X profile tabs, per the markup). */
-    .browse-toggle button.active .vt-ico { display: none; }
-    .browse-toggle button.active .vt-label { overflow: hidden; text-overflow: ellipsis; }
-    .browse-toggle .vt-ico { width: 15px; height: 15px; }
-    .browse-toggle .vt-label { display: none; }
-    /* 10.5px so the longest label (コレクション = 6 full-width chars) fits an even third
-       of the full-width track without ellipsis (12.5px overflowed at 75px > 64px). */
-    .browse-toggle button.active .vt-label { display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
 
     /* Poster grid — auto-fill cards (角丸四角=押すと開く). avatar + 投稿者名 +
        @ユーザー名 + プラットフォーム + 投稿数. Click=インスペクタ / dblclick=投稿一覧. */
@@ -1414,6 +1400,16 @@
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 6px; padding-left: 0;   /* aligns to the gutter (container) */
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    /* Current-mode readout on section titles (「ビュー」…「ライブラリ」): the control
+       name sits left in caps, the CURRENT value right as a quieter label — the
+       iOS Settings label/value row, so "which is the segment, which is the mode"
+       reads at a glance (the old "ビュー · ライブラリ" one-liner didn't). The
+       space-between on .sb-title does the pushing; this styles the value. */
+    .sb-title-mode {
+      font-weight: 500; color: var(--text-muted);
+      text-transform: none; letter-spacing: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* Active-filter bar pinned to the sidebar bottom (sticky). Holds the active filter
        pills + AND/OR toggle + reset. Shown only when at least one filter is active. */
@@ -2253,6 +2249,22 @@
       border: 1px solid var(--glass-rim);
       box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop-sm);
     }
+
+    /* Instant tooltip (.ui-tip + .glass-frost, singleton div owned by
+       islands/_shared/tip.ts): replaces native `title` on custom controls — the
+       OS tooltip is ~1s delayed and OS-styled (user: チープ). Shows immediately
+       on hover/focus with a fast fade+rise; glass-frost supplies the material.
+       Topmost surface (above every fold-menu/popover at ≤13500). */
+    .ui-tip {
+      position: fixed; z-index: 14000; pointer-events: none;
+      padding: 4px 9px; border-radius: 7px;
+      font-size: 11.5px; font-weight: 500; line-height: 1.35;
+      color: var(--text-strong); white-space: nowrap;
+      opacity: 0; visibility: hidden; translate: 0 3px;
+      transition: opacity .12s var(--ease-out), translate .12s var(--ease-out), visibility 0s .12s;
+    }
+    .ui-tip.show { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
+    @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; translate: 0 0; } }
 
     /* a11y escape hatch: solid surfaces when the OS asks for less transparency */
     @media (prefers-reduced-transparency: reduce) {

@@ -1,5 +1,6 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { tipProps } from '../_shared/tip.ts';
 
 // Browse-mode segmented control (ライブラリ / 投稿者 / コレクション). The active mode is
 // shared state in window.corpusStore ('browseMode'); viewer.js subscribes and runs the
@@ -9,10 +10,10 @@ import { t } from '../_shared/i18n.ts';
 // .vt-thumb element. (Same shape as DensityToggle; see its notes.)
 //
 // Emits the SAME DOM the old innerHTML did (.vt-thumb + three .view-toggle buttons with
-// data-mode) so the .view-toggle / .browse-toggle CSS is unchanged. Unlike the density
-// toggle, .browse-toggle shows the label on the ACTIVE button (CSS) — so the thumb width
-// changes per mode — and keeps a per-button title so the icon-only inactive segments
-// still name themselves on hover.
+// data-mode) so the .view-toggle CSS is unchanged. Glyph-only in every state (the
+// active-label idiom is retired — 2026-07-04); segments name themselves via the
+// instant .ui-tip tooltip (native title was delayed + OS-styled), and the current
+// mode is spelled out by the section title's readout (SectionTitle).
 
 const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -102,7 +103,7 @@ export function BrowseToggle({ el }: { el: HTMLElement }) {
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {MODES.map(({ v, key }) => (
-        <button key={v} type="button" data-mode={v} title={t(key)} className={v === mode ? 'active' : undefined} onClick={() => window.corpusStore.set('browseMode', v)}>
+        <button key={v} type="button" data-mode={v} {...tipProps(t(key))} className={v === mode ? 'active' : undefined} onClick={() => window.corpusStore.set('browseMode', v)}>
           <BrowseIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>

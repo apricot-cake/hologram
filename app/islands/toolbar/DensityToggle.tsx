@@ -1,5 +1,6 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { tipProps } from '../_shared/tip.ts';
 
 // View-density toggle (card / tile / list). One component, two mounts: the post grid
 // (storeKey='view', data-view) and the poster grid (storeKey='posterView', data-pview).
@@ -99,7 +100,7 @@ export function DensityToggle({ el, storeKey = 'view', dataAttr = 'data-view', d
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {VIEWS.map(({ v, key }) => (
-        <button key={v} type="button" {...{ [dataAttr]: v }} className={v === view ? 'active' : undefined} onClick={() => window.corpusStore.set(storeKey, v)}>
+        <button key={v} type="button" {...{ [dataAttr]: v }} {...tipProps(t(key))} className={v === view ? 'active' : undefined} onClick={() => window.corpusStore.set(storeKey, v)}>
           <ViewIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>
