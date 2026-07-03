@@ -1644,10 +1644,11 @@
     }
     .qf-pop .qf-find:focus { border-color: var(--accent); }
     /* Tag-group heading inside the flyout: same non-interactive-header anatomy as
-       .fm-head (10px/600/subtle) so it can't be mistaken for a pickable tag row, and
-       groups are chunked by whitespace above the heading rather than divider lines. */
-    .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; letter-spacing: .3px; color: var(--text-subtle); padding: 12px 8px 3px; pointer-events: none; }
-    .qf-pop .qf-vals > .qf-ghead:first-child { padding-top: 5px; }
+       .fm-head (10px/600/subtle) PLUS a hairline above the group — the macOS menu
+       section pattern (separator + small grey header). Whitespace + faint text alone
+       still read as a greyed-out tag row (0-count rows share that tone). */
+    .qf-pop .qf-ghead { font-size: 10px; font-weight: 600; letter-spacing: .3px; color: var(--text-subtle); padding: 8px 8px 3px; margin-top: 5px; border-top: 1px solid var(--border); pointer-events: none; }
+    .qf-pop .qf-vals > .qf-ghead:first-child { margin-top: 0; border-top: none; padding-top: 5px; }
     /* instance sub-rows nested under Misskey/Mastodon in the platform flyout */
     .qf-pop .fm-row.fm-sub { padding-left: 24px; font-size: 11px; color: var(--text-muted); }
     .qf-pop .fm-row.fm-sub .fm-name { color: inherit; }
