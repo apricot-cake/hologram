@@ -41,21 +41,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "files": [
-    "main.js",
-    "preload.js",
-    "backup-guard.js",
-    "ipc-backup.js",
-    "ipc-config.js",
-    "ipc-organize.js",
-    "ipc-posts.js",
-    "ipc-transfer.js",
-    "ipc-trash.js",
-    "ipc-window.js",
-    "lib-archive.js",
-    "lib-imgsize.js",
-    "lib-index.js",
-    "lib-json.js",
-    "lib-migrate.js"
-  ]
+  "files": ["main.js", "preload.js", "backup-guard.js", "ipc-backup.js", "ipc-config.js", "ipc-organize.js", "ipc-posts.js", "ipc-transfer.js", "ipc-trash.js", "ipc-window.js", "lib-archive.js", "lib-imgsize.js", "lib-index.js", "lib-json.js", "lib-migrate.js"]
 }
