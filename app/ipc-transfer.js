@@ -128,7 +128,7 @@ function register(ctx) {
         screenName: p.screenName || null,
         userId: p.userId || null,
         avatar: p.avatar || null,
-        avatarFile: null,
+        avatarFile: /** @type {string | null} */ (null),
         followers: p.followers ?? null,
         authorCreatedAt: p.authorCreatedAt || null,
         likes: p.likes ?? null,

@@ -86,7 +86,7 @@ function register(ctx) {
         /* skip corrupt sidecar */
       }
     }
-    records.sort((a, b) => new Date(b.trashedAt || 0) - new Date(a.trashedAt || 0));
+    records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());
     return records;
   });
 

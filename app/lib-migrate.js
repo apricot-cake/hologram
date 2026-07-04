@@ -51,6 +51,11 @@ async function listNonTmp(dir) {
 // finds nothing new. Aborts before copying anything if a name already exists at
 // dest (never clobbers the user's files there); rolls back partial copies on any
 // failure (src untouched). Returns { ok, entries } with entries = every name copied.
+// The explicit @returns makes `ok` a literal discriminant so `if (!cp.ok) return`
+// narrows the success branch (entries defined) at the call site.
+/**
+ * @returns {Promise<{ ok: false, error: string, name?: string, detail?: string } | { ok: true, entries: string[] }>}
+ */
 async function copyLibraryInto(src, dest, onProgress) {
   let entries = await listNonTmp(src);
   await fs.promises.mkdir(dest, { recursive: true });

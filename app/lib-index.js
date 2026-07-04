@@ -203,7 +203,7 @@ function createPostIndex(opts) {
         stamps.set(e.record.captureId, e.mtimeMs);
       }
     }
-    posts.sort((a, b) => new Date(b.capturedAt || 0) - new Date(a.capturedAt || 0));
+    posts.sort((a, b) => new Date(b.capturedAt || 0).getTime() - new Date(a.capturedAt || 0).getTime());
     return { posts, changed, stamps };
   }
 

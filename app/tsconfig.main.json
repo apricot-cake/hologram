@@ -1,0 +1,61 @@
+{
+  // TypeScript stage 2, main-process half (BACKLOG 採用#1「残り②」/ Wave0 の
+  // 「main checkJs 化」): checkJs over the build-less Electron MAIN-process CJS
+  // layer (main.js + ipc-*.js + lib-*.js + preload.js + backup-guard.js).
+  //
+  // Contract-visibility only — no build, no emit. These files run un-built under
+  // Node/Electron, so this project stays checkJs (not .ts). Direct .ts execution
+  // waits for Electron 41+ (Node 24 type stripping); until then checkJs beats a
+  // hand-written .d.ts that silently drifts from the code. This is the cheap
+  // Wave0 win that does NOT need the Electron bump.
+  //
+  // Separate project from tsconfig.renderer.json because the runtime is Node/CJS,
+  // not the DOM/global-IIFE renderer: module is CommonJS, the lib is ES2022 with
+  // NO DOM, and only @types/node is auto-included (electron resolves via require).
+  //
+  // noImplicitAny stays OFF (same rationale as the renderer project): plain JS
+  // where internal lambda params would each need JSDoc noise. The rest of strict
+  // stays on so real contract breaks (null handling, wrong arg counts to the
+  // typed electron/node APIs, missing properties) surface.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    // node16 (not the TS7.0-deprecated "node") — app/package.json has no
+    // "type" field, so .js resolves as CommonJS: require/module.exports and
+    // extensionless relative requires stay valid.
+    "module": "node16",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": false,
+    // Caught errors stay `any` (pre-4.4 behavior). The main layer reports errors
+    // to the renderer via `err.message` at ~9 sites; the renderer service layer
+    // never inspects caught errors (it swallows them), so there's no shared
+    // narrowing idiom to match. Leaving these as `any` keeps behavior byte-
+    // identical instead of forcing `instanceof Error` guards that would change
+    // the non-Error error string. Same "don't model internal idiom noise" spirit
+    // as noImplicitAny above; the rest of strict stays on.
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "backup-guard.js",
+    "ipc-backup.js",
+    "ipc-config.js",
+    "ipc-organize.js",
+    "ipc-posts.js",
+    "ipc-transfer.js",
+    "ipc-trash.js",
+    "ipc-window.js",
+    "lib-archive.js",
+    "lib-imgsize.js",
+    "lib-index.js",
+    "lib-json.js",
+    "lib-migrate.js"
+  ]
+}

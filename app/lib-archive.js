@@ -299,6 +299,7 @@ async function buildImagesZip(JSZip, srcFolder) {
 // maxBytes. Never buffers the whole entry in memory, so a bomb that under-declares
 // its size in the central directory is still capped at the byte budget (it just
 // pays decompression cost up to the cap, then the partial file is discarded).
+/** @returns {Promise<void>} — typed so resolve() takes no argument. */
 function writeEntryStreamed(entry, tmpPath, maxBytes) {
   return new Promise((resolve, reject) => {
     const out = fs.createWriteStream(tmpPath);
