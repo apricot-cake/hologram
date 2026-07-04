@@ -46,6 +46,7 @@
     "renderer/tab-state.js",
     "renderer/listing.js",
     "renderer/geometry.js",
+    "renderer/format.js",
     "renderer/undo.js",
     "renderer/store.js",
     "renderer/folders.js"

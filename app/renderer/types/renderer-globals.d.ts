@@ -322,6 +322,26 @@ interface CorpusGeometryApi {
   thumbW(raw: number, min: number, max: number): number;
 }
 
+// ---- renderer/format.js — pure count/date display formatters ----
+interface CorpusFormatApi {
+  /** Engagement count abbreviation (1.2K / 3.4M); null/undefined → ''. */
+  formatCount(n: number | null | undefined): string;
+  /** Numeric short date for filter chips (M/D this year, else Y/M/D). */
+  formatShortDate(dateStr: string): string;
+  /** Compact month-name card date ("Jun 13" / "6月13日"); invalid → ''. */
+  compactDate(ds: string | number | Date): string;
+  /** Full date + time for the card hover tooltip; invalid → ''. */
+  formatDate(isoStr: string | number | Date): string;
+  /** Absolute zero-padded Y/M/D HH:MM for the backup tooltip. */
+  fmtTime(iso: string | number | Date): string;
+  /** Relative backup time; today/yesterday words injected via labels. */
+  fmtBackupTime(iso: string | number | Date, labels: { today: string; yesterday: string }): string;
+  /** Platform-default locale date; falsy → '' (inspector join date). */
+  localeDate(x: string | number | Date | null | undefined): string;
+  /** Platform-default locale date+time; falsy → '' (posted/saved/updated). */
+  localeDateTime(x: string | number | Date | null | undefined): string;
+}
+
 // ---- renderer/undo.js — linear tag-edit undo/redo stack ----
 interface CorpusUndoRecord {
   captureId?: string;
@@ -427,6 +447,7 @@ interface Window {
   corpusTabState: CorpusTabStateApi;
   corpusListing: CorpusListingApi;
   corpusGeometry: CorpusGeometryApi;
+  corpusFormat: CorpusFormatApi;
   corpusUndo: CorpusUndoApi;
   corpusFolderStore: CorpusFolderStoreFactory;
   corpusFolders: CorpusFoldersApi;

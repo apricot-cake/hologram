@@ -6,6 +6,9 @@
   const _s = (key) => getMessage(key);
   const _f1 = (key) => (a) => getMessage(key, [a]);
   const _f2 = (key) => (a, b) => getMessage(key, [a, b]);
+  // Count / date display formatters live in format.js now (loaded before this
+  // script). Relative backup-time labels (今日/昨日) are injected at the call site.
+  const { formatCount, formatShortDate, compactDate, formatDate, fmtTime, fmtBackupTime, localeDate, localeDateTime } = window.corpusFormat;
   // Back-compat shim so existing call sites (MSG.key / MSG.key(args)) keep working.
   // Static keys are pre-resolved strings; interpolated keys are bound functions.
   const MSG = {
@@ -483,41 +486,6 @@
     const g = QC_GLYPH[type === 'text' ? 'search' : type]; // text leaf reuses the magnifier glyph
     return g ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>` : '';
   };
-
-  // Turns a "YYYY-MM-DD" date-picker range into absolute epoch bounds for the
-  // date-filter predicates (post + poster). The picker value is a LOCAL calendar
-  // day, and every date the app shows (cards, tooltip, inspector) is rendered in
-  // local time — so the range must be anchored to local midnight, NOT UTC.
-  //   - `new Date('YYYY-MM-DDT00:00:00')` (no trailing 'Z') is parsed as local
-  //     midnight; appending 'Z' would shift the bound by the UTC offset and, in
-  //     non-UTC zones (e.g. JST), silently drop/add posts near midnight whose
-  //     local calendar day differs from their UTC day. Do not add 'Z' here.
-  //   - `to` is the exclusive START of the day after the selected end day, so the
-  //     whole end day is included (to-inclusive via next-day-exclusive). setDate
-  //     past month/DST edges is handled by Date normalization.
-  // `p[field]` (an absolute ISO instant with a 'Z'/offset) is compared as-is;
-  // Date comparison is on epoch millis, so an instant lands in the local day that
-  // contains it — matching what the user sees on the card.
-  function formatShortDate(dateStr) {
-    if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    const thisYear = new Date().getFullYear().toString();
-    return y === thisYear ? `${Number.parseInt(m)}/${Number.parseInt(d)}` : `${y}/${Number.parseInt(m)}/${Number.parseInt(d)}`;
-  }
-
-  // Card footer date: ONE compact date (Ivory/Tweetbot cell anatomy — full
-  // timestamps belong to the tooltip and the inspector, not the card).
-  // Month-name short date (e.g. "Jun 13" / "6月13日") — a bare "6/13" reads as a
-  // fraction / page count next to the ×N image badge (user report). Formatters
-  // cached: compactDate runs once per card × up to 150 cards.
-  const _compactFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
-  const _compactFmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  function compactDate(ds) {
-    if (!ds) return '';
-    const d = new Date(ds);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.getFullYear() === new Date().getFullYear() ? _compactFmt.format(d) : _compactFmtY.format(d);
-  }
 
   const PF_NAME = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
@@ -3109,11 +3077,11 @@
       jumpable: !!jumpUser,
       screenNameLabel: p.screenName ? '@' + p.screenName : '',
       followersLabel: p.followers != null ? formatCount(p.followers) : '',
-      joinedLabel: p.authorCreatedAt ? new Date(p.authorCreatedAt).toLocaleDateString() : '',
+      joinedLabel: localeDate(p.authorCreatedAt),
       engagementLabel: eng.join('   '),
-      postedLabel: p.date ? new Date(p.date).toLocaleString() : '',
-      savedLabel: p.capturedAt ? new Date(p.capturedAt).toLocaleString() : '',
-      updatedLabel: p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '',
+      postedLabel: localeDateTime(p.date),
+      savedLabel: localeDateTime(p.capturedAt),
+      updatedLabel: localeDateTime(p.updatedAt),
       imagesLabel: g.files.length > 1 ? MSG.imagesCount(g.files.length) : '',
       imageOfLabel: p.imageIndex && p.imageCount ? MSG.imageOf(p.imageIndex, p.imageCount) : '',
       tags: userTags,
@@ -4096,7 +4064,7 @@
       platformLabel: pfName,
       postsLabel: formatCount(u.count),
       followersLabel: u.followers != null ? formatCount(u.followers) : '',
-      joinedLabel: u.authorCreatedAt ? new Date(u.authorCreatedAt).toLocaleDateString() : '',
+      joinedLabel: localeDate(u.authorCreatedAt),
       works,
       tags,
       ...inspectorTagPickerData(tags, [], 'poster'),
@@ -4638,29 +4606,9 @@
     let cfg = null;
     let mirrorSyncing = false;
 
-    const fmtTime = (iso) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return '';
-      const p = (n) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-    };
-    // Compact, natural relative time for the always-visible rail line (今日/昨日/M/D).
-    const fmtBackupTime = (iso) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return '';
-      const now = new Date();
-      const p = (n) => String(n).padStart(2, '0');
-      const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
-      const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-      const yest = new Date(now);
-      yest.setDate(now.getDate() - 1);
-      if (sameDay(d, now)) return `${MSG.timeToday} ${hhmm}`;
-      if (sameDay(d, yest)) return `${MSG.timeYesterday} ${hhmm}`;
-      if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hhmm}`;
-      return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-    };
+    // Backup absolute/relative time (format.js). The relative form's 今日/昨日 words
+    // are i18n-owned here and passed in as labels.
+    const backupLabels = { today: MSG.timeToday, yesterday: MSG.timeYesterday };
     // Status glyphs: spinning circular-arrows (syncing), a check (done) and a warning
     // triangle (error). Paired with an explicit word so the rail says WHAT it is.
     const MS_ICON_SYNC =
@@ -4716,7 +4664,7 @@
       // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
       // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
       el.className = 'mirror-status is-done';
-      const ts = fmtBackupTime(r.at);
+      const ts = fmtBackupTime(r.at, backupLabels);
       el.innerHTML = MS_ICON_DONE + `<span class="ms-body"><span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>${ts ? `<span class="ms-time">${escapeHtml(ts)}</span>` : ''}</span>`;
       let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
@@ -4864,24 +4812,8 @@
   });
 
   // --- Utility functions ---
-  function formatCount(n) {
-    if (n == null) return '';
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 10000) return (n / 1000).toFixed(1) + 'K';
-    return String(n);
-  }
-
-  // Cached Intl formatters: toLocaleDateString/TimeString build a fresh formatter
-  // on every call, which dominated render time (formatDate runs 2×/card for the
-  // hover tooltip × 150 cards). Reusing one formatter each is ~10× faster.
-  const _dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });
-  const _timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
-  function formatDate(isoStr) {
-    const d = new Date(isoStr);
-    if (Number.isNaN(d.getTime())) return '';
-    return _dateFmt.format(d) + ' ' + _timeFmt.format(d);
-  }
-
+  // Count / date formatters (formatCount / formatDate / compactDate / …) live in
+  // format.js now; escapeHtml/escapeAttr stay as thin aliases over corpusUI.
   function escapeHtml(str) {
     return window.corpusUI.escapeHtml(str);
   }

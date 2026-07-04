@@ -2328,6 +2328,11 @@
        slider — no DOM (viewer.js measures the containers and passes metrics in).
        Node-tested by scripts/test-geometry-unit.js. Before viewer.js. -->
   <script src="geometry.js"></script>
+  <!-- Display formatting service (window.corpusFormat): pure count/date presentation
+       formatters (engagement counts, card/inspector dates, backup rail relative time)
+       with cached Intl formatters — no DOM, no i18n state (relative-time labels are
+       passed in). Node-tested by scripts/test-format-unit.js. Before viewer.js. -->
+  <script src="format.js"></script>
   <!-- Undo/redo service (window.corpusUndo): the linear tag-edit history stack
        (push cap / redo discard / prev-next direction). Re-apply side effects are
        injected by viewer.js. Node-tested by scripts/test-undo-unit.js. Before
