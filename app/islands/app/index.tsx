@@ -24,3 +24,13 @@ import '../inspector/index.tsx';
 import '../edit-overlay/index.tsx';
 import '../grid/index.tsx';
 import '../image-tab/index.tsx';
+// The viewer orchestrator (renderer/viewer.js) folds into this single bundle so
+// it compiles through Vite (enabling checkJs → .ts). It is a plain window-IIFE
+// (no imports/exports); its body `await`s corpusI18n so it stays deferred behind
+// the synchronous island mounts above — the pull→push convergence is unchanged
+// from when it loaded as its own <script> before app.js. Imported LAST so every
+// island bridge/mount is registered first. @ts-ignore: viewer.js is untyped here
+// (it is checkJs'd in the renderer tsconfig project, not this islands project);
+// Vite/rollup resolve the path at build/dev time regardless.
+// @ts-ignore
+import '../../renderer/viewer.js';

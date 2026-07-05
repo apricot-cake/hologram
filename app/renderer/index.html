@@ -2382,13 +2382,14 @@
        externalized) reach window.React/ReactDOM/… instead of each inlining its
        own ~186KB copy. Must precede the first island script. -->
   <script src="islands/vendor-react.js"></script>
-  <script src="viewer.js"></script>
-  <!-- All React islands in ONE IIFE bundle: islands/build.mjs builds the app/index.tsx
-       barrel, which side-effect-imports every island. Loaded after viewer.js, which owns
-       data/state/event-delegation + the window.corpus* bridges; each island subscribes and
-       renders. Ordering is robust — islands pull current state and replay stashed models
-       (e.g. lightbox nav labels fall back to window.__corpusLbLabels), so folding lightbox
-       in here is safe. Shared code (masonic / react-aria / _shared/*) is bundled once. -->
+  <!-- All React islands AND the viewer orchestrator in ONE IIFE bundle:
+       islands/build.mjs builds the app/index.tsx barrel, which side-effect-imports
+       every island and (last) renderer/viewer.js. viewer owns data/state/event-
+       delegation + the window.corpus* bridges; each island subscribes and renders.
+       Ordering is robust — viewer's body awaits corpusI18n so it stays deferred
+       behind the synchronous island mounts, and islands pull current state / replay
+       stashed models (e.g. lightbox nav labels fall back to window.__corpusLbLabels).
+       Shared code (masonic / react-aria / _shared/*) is bundled once. -->
   <script src="islands/app.js"></script>
   <script src="shell.js"></script>
 </body>
