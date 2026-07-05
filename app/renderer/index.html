@@ -830,44 +830,69 @@
     .card-thumb { position: relative; display: block; line-height: 0; }
     .post-grid.tile-view .card-thumb, .post-grid.list-view .card-thumb { display: contents; }
 
-    /* --- Stacked cards: a multi-image group reads as a paper pile ------------
-       Photo-app stack idiom (Google Photos photo stacks / Apple Photos album
-       piles): two sheet edges peek above the image, INSIDE the card box, so
-       multiplicity is visible at a glance — the ×N badge alone had near-zero
-       discoverability (ユーザー指摘 2026-07-05; the badge stays as the precise
-       count). Sheets are flush against the image top (no overlap → no z-index
-       games) and the 12px strip is plain flow layout rendered synchronously, so
-       the masonry height reservation stays exact (no load-time settle). */
-    .card-thumb.stacked { padding-top: 12px; }
-    .stack-sheet {
-      position: absolute; box-sizing: border-box;
-      background: var(--surface-2);
-      border: 1px solid var(--border); border-bottom: none;
-      transition: top .2s var(--ease-out), height .2s var(--ease-out), left .2s var(--ease-out), right .2s var(--ease-out);
+    /* --- Stacked cards: a multi-image group = the CARD itself duplicated -----
+       Photo-app stack idiom, whole-card version (motion-study canvas
+       2026-07-05; replaces the 8d5b7ad paper-edge strips): rotated dummy cards
+       peek out BEHIND the real card, each carrying the group's 2nd/3rd real
+       thumbnail (.stack-sheet-img). The front card stays upright — text never
+       rotates. Sheets are absolutely positioned (zero height contribution =
+       masonry reservation stays exact) at z-index:-1 inside the card's own
+       stacking context, so they hide behind the card and only the peek shows.
+       The peek is tuned to stay inside each layout's gutter — card/tile
+       neighbors' paint order vs our sheets is DOM-order-dependent, so never
+       let sheets reach a neighbor. ×N badge stays as the precise count. */
+    .post-card .stack-sheet {
+      position: absolute; inset: 0; z-index: -1; overflow: hidden;
+      background: var(--surface); border: 1px solid var(--border);   /* --border (not subtle): a white sheet on the near-white --bg needs the step */
+      border-radius: 8px; box-shadow: var(--shadow-sm);
     }
-    .stack-sheet.stack-s1 { top: 6px; height: 6px; left: 5px; right: 5px; border-radius: 5px 5px 0 0; }
-    .stack-sheet.stack-s2 { top: 2px; height: 4px; left: 11px; right: 11px; border-radius: 4px 4px 0 0; }
-    /* Hover: the pile loosens (sheets rise + widen a touch) — same 200ms
-       ease-out family as the card lift; suppressed with reduced motion. */
-    @media (prefers-reduced-motion: no-preference) {
-      .post-card:hover .stack-s1 { top: 5px; height: 7px; left: 3px; right: 3px; }
-      .post-card:hover .stack-s2 { top: 0; height: 5px; left: 8px; right: 8px; }
+    /* Card view: sheet top ~56% = thumbnail area (mirrors the card anatomy —
+       image on top, meta panel below). */
+    .stack-sheet .stack-sheet-img {
+      position: absolute; inset: 0 0 44% 0;
+      background-size: cover; background-position: center top;
+      border-radius: 8px 8px 0 0;
     }
-    /* tile: the thumb regains a real box filling the square; the image gives up
-       the strip's 12px (its existing height:100% now resolves against the
-       thumb's padded content box — object-fit cover just re-crops). The cell
-       itself stays square. */
-    .post-grid.tile-view .card-thumb.stacked { display: block; position: absolute; inset: 0; line-height: 0; }
-    /* list: same — the thumb becomes the fixed-width flex item the img used to
-       be, and the img fills it under the strip. */
-    .post-grid.list-view .card-thumb.stacked {
+    .post-grid.masonry .post-card.grouped { overflow: visible; z-index: 0; }
+    .post-grid.masonry .post-card.grouped:hover { z-index: 1; }   /* (0,4,0) — restore the hover lift over the rule above */
+    /* The card is overflow:visible now — the thumb re-clips the hover img zoom. */
+    .post-grid.masonry .post-card.grouped .card-thumb { overflow: hidden; border-radius: 8px 8px 0 0; }
+    .post-grid.masonry .post-card.grouped .post-meta { position: relative; background: var(--surface); border-radius: 0 0 8px 8px; }
+    .post-grid.masonry .stack-sheet.stack-s1 { transform: rotate(-3deg) translate(-3px, 2px); }
+    .post-grid.masonry .stack-sheet.stack-s2 { transform: rotate(2.4deg) translate(3px, -1px); }
+    /* tile: square image-only cells → full-bleed sheet thumbs (no meta split),
+       REDUCED angles (at 180px tiles, 3° + 3px overruns the 8px gutter; 2°/1.6°
+       ≈ 5-7px peek stays inside it). The thumb regains a real box to clip the
+       hover zoom now that the card is overflow:visible. */
+    .post-grid.tile-view .post-card.grouped { overflow: visible; z-index: 0; }
+    .post-grid.tile-view .post-card.grouped:hover { z-index: 1; }
+    .post-grid.tile-view .post-card.grouped .card-thumb {
+      display: block; position: absolute; inset: 0; overflow: hidden;
+      border-radius: 8px; line-height: 0;
+    }
+    .post-grid.tile-view .stack-sheet .stack-sheet-img { inset: 0; border-radius: 8px; }
+    .post-grid.tile-view .stack-sheet.stack-s1 { transform: rotate(-2deg) translate(-2px, 2px); }
+    .post-grid.tile-view .stack-sheet.stack-s2 { transform: rotate(1.6deg) translate(2px, -1px); }
+    /* list: mini-stack behind the 88px thumb column only (a rotated full-width
+       row displaces corners ~25px — never viable). Row gap is widened for
+       grouped visibility (see the list rowGutter note in viewer.js); slight
+       left overhang past the row edge is accepted (user 2026-07-05). */
+    .post-grid.list-view .post-card.grouped { overflow: visible; z-index: 0; }
+    .post-grid.list-view .post-card.grouped:hover { z-index: 1; }
+    .post-grid.list-view .post-card.grouped .card-thumb {
       display: block; position: relative; line-height: 0;
       flex: 0 0 var(--list-thumb, 88px); width: var(--list-thumb, 88px);
-      align-self: stretch;
+      align-self: stretch; overflow: hidden; border-radius: 6px 0 0 6px;
     }
-    .post-grid.list-view .card-thumb.stacked .card-img {
+    .post-grid.list-view .post-card.grouped .card-thumb .card-img {
       width: 100%; min-width: 0; height: 100%; max-height: none; object-fit: cover;
     }
+    .post-grid.list-view .stack-sheet {
+      inset: 0 auto 0 0; width: var(--list-thumb, 88px); border-radius: 6px;
+    }
+    .post-grid.list-view .stack-sheet .stack-sheet-img { inset: 0; border-radius: 6px; }
+    .post-grid.list-view .stack-sheet.stack-s1 { transform: rotate(-2.5deg) translate(-2px, 2px); }
+    .post-grid.list-view .stack-sheet.stack-s2 { transform: rotate(2deg) translate(2px, -1px); }
     .pf-badge {
       position: absolute; left: 8px; bottom: 8px; z-index: 1;
       display: inline-flex; align-items: center; gap: 5px;
@@ -969,7 +994,9 @@
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
-      display: flex; flex-direction: column; gap: 4px;
+      /* gap mirrors the masonic rowGutter (viewer.js) — widened 4→10 so a
+         grouped row's stack-sheet peek has room to read. */
+      display: flex; flex-direction: column; gap: 10px;
       grid-template-columns: unset;
     }
     .post-grid.list-view .post-card {

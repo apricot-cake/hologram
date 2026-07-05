@@ -2372,6 +2372,11 @@
     if (p.isQuote) flags.push(MSG.qfQuote);
     const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
     const postKey = postIdKey(p);
+    // Multi-image stack: the 2nd/3rd images ride the back sheets (real
+    // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
+    // image (GIFs too: a static flattened thumb is right for a back sheet).
+    const stackW = currentView === 'tile' ? tileThumbW() : currentView === 'list' ? listThumbW() : cardThumbW();
+    const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, stackW)) : [];
     return {
       index: i,
       url: p.url || '',
@@ -2387,6 +2392,7 @@
       platform: p.platform || '',
       pfName,
       nImg: g.files.length,
+      stackSrcs,
       userName,
       likesOv: p.likes != null ? MSG.likes(p.likes) : null,
       handle,
@@ -2510,15 +2516,18 @@
       },
       keyOf: (g) => postIdKey(g.rep),
       labels: cardLabels,
-      // list: one full-width column, gap 4 (.post-grid.list-view). tile: squares
-      // packed by minimum width tileSize, gap 8 (.post-grid.tile-view). card:
-      // masonry columns of minimum width cardSize, gap 16 (.post-grid.masonry's
-      // old column gap) — masonic stretches columns to fill, the same math as
-      // the old CSS auto-fill minmax / hand-rolled masonryColCount.
+      // list: one full-width column, gap 10 — widened from 4 so a grouped row's
+      // stack-sheet peek (±2.5° on the 88px thumb ≈ 4-6px) reads instead of
+      // colliding with the neighbor row (single column = safe, no repack math).
+      // tile: squares packed by minimum width tileSize, gap 8
+      // (.post-grid.tile-view). card: masonry columns of minimum width
+      // cardSize, gap 16 (.post-grid.masonry's old column gap) — masonic
+      // stretches columns to fill, the same math as the old CSS auto-fill
+      // minmax / hand-rolled masonryColCount.
       columnCount: currentView === 'list' ? 1 : undefined,
       columnWidth: currentView === 'tile' ? tileSize : currentView === 'card' ? cardSize : undefined,
       square: currentView === 'tile', // aspect-ratio:1 cells → island uses the real column width as its height estimate
-      rowGutter: currentView === 'list' ? 4 : currentView === 'tile' ? 8 : 16,
+      rowGutter: currentView === 'list' ? 10 : currentView === 'tile' ? 8 : 16,
       itemHeightEstimate: currentView === 'list' ? Math.round(listThumb * 1.25) : currentView === 'tile' ? tileSize : Math.round(cardSize * 1.2),
       // Cards whose image has NO reserved height (no shotW/H in the index, no
       // cached aspect — rare: video poster / unreadable header) report their real

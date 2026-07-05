@@ -35,6 +35,9 @@ export interface PostCardModel {
   platform?: string | null;
   pfName?: string;
   nImg?: number;
+  /** Thumb srcs for the 2nd/3rd images of a multi-image group — they ride the
+      back stack sheets (real thumbnails, not placeholders). */
+  stackSrcs?: string[];
   userName?: string;
   likesOv?: string | number | null;
   handle?: string | null;
@@ -113,13 +116,22 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
   return (
     <div
       ref={cellRef}
-      className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')}
+      className={'post-card' + ((m.nImg as number) > 1 ? ' grouped' : '') + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')}
       data-url={m.url}
       data-index={m.index}
       data-key={m.postKey}
       // --card-i drives the entrance stagger delay (CSS caps it via min()).
       style={{ '--card-i': m.index } as CSSProperties}
     >
+      {/* Multi-image group → the whole card reads as a duplicated pile: rotated
+          dummy cards peek out BEHIND this one (z-index:-1), each carrying the
+          group's 2nd/3rd real thumbnail. Per-layout geometry lives in CSS. */}
+      {(m.nImg as number) > 1 &&
+        (m.stackSrcs || []).map((src, k) => (
+          <span key={k} className={'stack-sheet stack-s' + (k + 1)} aria-hidden="true">
+            {src && <span className="stack-sheet-img" style={{ backgroundImage: `url("${src}")` }} />}
+          </span>
+        ))}
       <div className="select-check" title={L.tipSelect} />
       <div className="act-pill" aria-hidden="true" />
       <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}>
@@ -132,15 +144,7 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
         <TagIcon />
       </button>
       {m.hasThumb && (
-        <div className={'card-thumb' + ((m.nImg as number) > 1 ? ' stacked' : '')}>
-          {/* Multi-image group → paper-pile sheets peeking above the image
-              (photo-app stack idiom); the ×N badge alone was undiscoverable. */}
-          {(m.nImg as number) > 1 && (
-            <>
-              <span className="stack-sheet stack-s2" aria-hidden="true" />
-              <span className="stack-sheet stack-s1" aria-hidden="true" />
-            </>
-          )}
+        <div className="card-thumb">
           {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}
           {m.platform && <PfBadge platform={m.platform} name={m.pfName} />}
         </div>
