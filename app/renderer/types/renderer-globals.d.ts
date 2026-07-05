@@ -12,6 +12,10 @@
 // globals.d.ts. viewer.js is NOT checked yet; these contracts serve the service
 // modules' own bodies and the future viewer/main adoption.
 
+// Third-party global loaded via <script> in index.html (app/vendor/jszip.min.js);
+// viewer.js references it as a bare global for library import/export.
+declare const JSZip: any;
+
 // ---- Sidecar post record (open shape — fields land from capture JSON) ----
 type CorpusPost = { [k: string]: any };
 
@@ -95,7 +99,7 @@ interface CorpusQueryApi {
   userKey(p: CorpusPost): string;
   textHaystackOf(p: CorpusPost): string[];
   /** Post-side leaf-predicate factory; runtime couplings injected by viewer.js. */
-  makePostPredOf(deps: { isInCollection(id: string, captureId: string): boolean; isClipped(captureId: string): boolean; fuzzyCompile?(q: string): (hay: string) => boolean; postKeyOf?(url: string | null | undefined): string | null }): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean;
+  makePostPredOf(deps: { isInCollection(id: string, captureId: string): boolean; isClipped(captureId: string): boolean; fuzzyCompile?(q: string): ((hay: string) => boolean) | null; postKeyOf?(url: string | null | undefined): string | null }): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean;
   /** Poster-side leaf-predicate factory (mirror of makePostPredOf); poster-only couplings injected by viewer.js. */
   makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: CorpusQueryLeaf) => (u: CorpusUserAgg) => boolean;
 }
@@ -119,8 +123,8 @@ interface CorpusRecordsApi {
   /** Normalized url-derived group key (x.com⇄twitter.com folded); null for no-url records. */
   postKeyOf(url: string | null | undefined): string | null;
   groupFilesOf(p: CorpusPost): string[];
-  /** Grouping factory; manualGroups/ungrouped are getters (viewer reassigns the arrays). */
-  makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): string[] }): (list: CorpusPost[]) => CorpusPostGroup[];
+  /** Grouping factory; manualGroups/ungrouped are getters (viewer reassigns them; ungrouped is a Set of opted-out post keys). */
+  makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }): (list: CorpusPost[]) => CorpusPostGroup[];
   /** Lightbox gallery-item factory; fileSrc keeps the psimg URL scheme viewer-owned. */
   makeGallery(deps: { fileSrc(file: string): string }): {
     buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[];

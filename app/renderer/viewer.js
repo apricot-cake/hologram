@@ -341,6 +341,21 @@
     if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
   }
 
+  // --- Typed DOM accessors (checkJs). getElementById returns HTMLElement|null;
+  // these assert the element exists — it is static markup in index.html and the
+  // surrounding code already dereferences it directly — and narrow to the concrete
+  // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
+  // folders.js: casts an event target to the nearest matching element (or null). ---
+  const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
+  const inputById = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id));
+  const selectById = (id) => /** @type {HTMLSelectElement} */ (document.getElementById(id));
+  const btnById = (id) => /** @type {HTMLButtonElement} */ (document.getElementById(id));
+  /** @param {Event} e @param {string} sel */
+  const closestOf = (e, sel) => {
+    const t = /** @type {HTMLElement | null} */ (e.target);
+    return t instanceof Element ? /** @type {HTMLElement | null} */ (t.closest(sel)) : null;
+  };
+
   // --- Apply i18n to static elements ---
   const setText = (id, text) => {
     const el = document.getElementById(id);
@@ -383,7 +398,7 @@
   setText('sbPosterDateRowName', MSG.qfDate);
   setText('sbPosterFolderRowName', MSG.qfCatFolder);
   {
-    const ps = document.getElementById('posterSortSelect');
+    const ps = selectById('posterSortSelect');
     if (ps) {
       ps.options[0].textContent = MSG.posterSortCount;
       ps.options[1].textContent = MSG.posterSortName;
@@ -418,10 +433,10 @@
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
-  document.getElementById('sbTop').title = MSG.sbTopTip;
+  byId('sbTop').title = MSG.sbTopTip;
 
   // Sort select options
-  const sortSelect = document.getElementById('sortSelect');
+  const sortSelect = selectById('sortSelect');
   sortSelect.options[0].textContent = MSG.sortDateDesc;
   sortSelect.options[1].textContent = MSG.sortDateAsc;
   sortSelect.options[2].textContent = MSG.sortLikes;
@@ -504,7 +519,7 @@
     postQB.resetTree();
     editingTextNode = null; // the editing text leaf is gone with the tree
     const set = (id, v) => {
-      const el = document.getElementById(id);
+      const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
       if (el) el.value = v;
     };
     setSearchBoxValue('');
@@ -515,17 +530,17 @@
     posterReturn = null;
     if (bounce) setBrowseMode('posters');
   }
-  document.getElementById('postResetBtn').addEventListener('click', resetAllFilters);
+  byId('postResetBtn').addEventListener('click', resetAllFilters);
 
   // Back/forward through the per-tab view history: buttons + Alt+←/→ + mouse
   // side buttons. Guarded so they never fire while typing, with an overlay open,
   // or in poster mode (mirrors the Ctrl+A guard convention).
-  document.getElementById('navBackBtn').addEventListener('click', navBack);
-  document.getElementById('navFwdBtn').addEventListener('click', navForward);
+  byId('navBackBtn').addEventListener('click', navBack);
+  byId('navFwdBtn').addEventListener('click', navForward);
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const t = e.target;
+    const t = /** @type {HTMLElement | null} */ (e.target);
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (!navAllowed()) return;
     e.preventDefault();
@@ -543,15 +558,15 @@
   });
 
   // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
-  document.getElementById('emptyState').addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
+  byId('emptyState').addEventListener('click', (e) => {
+    const btn = closestOf(e, 'button');
     if (!btn) return;
     if (btn.id === 'emptyResetBtn') {
       if (browseMode === 'posters') {
         setSearchBoxValue('');
         renderPosters();
       } else resetAllFilters();
-    } else if (btn.id === 'emptyImportBtn') document.getElementById('importZipInput').click();
+    } else if (btn.id === 'emptyImportBtn') byId('importZipInput').click();
   });
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
@@ -778,7 +793,7 @@
     if (pr.right > innerWidth - 8) qbHelpPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
   }
   // Hover (and keyboard focus) to reveal — it's a passive hint, no click needed.
-  const qbHelpBtn = document.getElementById('qbHelpBtn');
+  const qbHelpBtn = byId('qbHelpBtn');
   qbHelpBtn.addEventListener('mouseenter', showQbHelp);
   qbHelpBtn.addEventListener('mouseleave', hideQbHelp);
   qbHelpBtn.addEventListener('focus', showQbHelp);
@@ -810,7 +825,7 @@
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingDateNode = node || null;
     const existing = editingDateNode;
-    const anchor = document.querySelector('#filterRows [data-qfrow="date"]');
+    const anchor = /** @type {HTMLElement} */ (document.querySelector('#filterRows [data-qfrow="date"]'));
     const r = anchor.getBoundingClientRect();
     window.corpusFilterPopover.open({
       kind: 'date',
@@ -840,7 +855,7 @@
     closeAllMenus();
     const editNode = arg && arg.kind === 'cond' ? arg : null;
     editingPosterDateNode = editNode;
-    const anchor = document.querySelector('#posterFilterRows [data-qfrow="poster-date"]');
+    const anchor = /** @type {HTMLElement} */ (document.querySelector('#posterFilterRows [data-qfrow="poster-date"]'));
     if (!anchor) return;
     const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
     const r = anchor.getBoundingClientRect();
@@ -875,7 +890,7 @@
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingEngNode = node || null;
     const existing = editingEngNode;
-    const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]');
+    const anchor = /** @type {HTMLElement} */ (document.querySelector('#filterRows [data-qfrow="engagement"]'));
     const r = anchor.getBoundingClientRect();
     window.corpusFilterPopover.open({
       kind: 'eng',
@@ -913,8 +928,8 @@
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
-  document.getElementById('filterRows').addEventListener('click', (e) => {
-    const row = e.target.closest('[data-qfrow]');
+  byId('filterRows').addEventListener('click', (e) => {
+    const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
     const openKind = window.corpusFilterPopover.get()?.kind;
@@ -975,7 +990,7 @@
     counts.work = tagWork;
     counts.character = tagChar;
     document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
-      const n = counts[b.dataset.badge] || 0;
+      const n = counts[/** @type {HTMLElement} */ (b).dataset.badge || ''] || 0;
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
@@ -991,12 +1006,12 @@
   // tag string → kind ('work' | 'character'); tags absent from it are 一般 (general).
   // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
   // later category sections; here we only assign + reflect the kind on the tag itself.
-  let tagTypes = {};
+  let tagTypes = /** @type {Record<string, string>} */ ({});
   // The work/character pair is renamable (種別ペアのリネーム): tagLabels holds the
   // user's custom names; a kind with no entry falls back to the built-in
   // KIND_LABEL (tags.js).
   // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
-  let tagLabels = {};
+  let tagLabels = /** @type {Record<string, string>} */ ({});
   // tagKindOf / kindLabel moved to tags.js (corpusTags wiring above).
   // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
@@ -1100,7 +1115,7 @@
     renderPosts(true);
     // Keep the inspector in sync if it's showing the affected group (undo isn't fired
     // while typing in the add input, so a full re-render here is safe).
-    if (!document.getElementById('postDetail').hidden && inspectedKey) {
+    if (!byId('postDetail').hidden && inspectedKey) {
       const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
       if (fresh) showDetail(fresh);
     }
@@ -1115,7 +1130,7 @@
       else delete posterTags[r.key];
     }
     persistPosterTags();
-    if (!document.getElementById('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
+    if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
   }
@@ -1215,7 +1230,7 @@
   const cardThumbW = () => thumbW(cardSize * 1.3 * _dpr, 240, 720);
   const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
   function applyTileLayout(syncSlider = true) {
-    const grid = document.getElementById('postGrid');
+    const grid = byId('postGrid');
     if (grid) {
       grid.style.setProperty('--tile-size', tileSize + 'px');
       grid.style.setProperty('--card-size', cardSize + 'px');
@@ -1425,7 +1440,7 @@
     // clear the search echo, or open a leaf editor (date/engagement). The
     // exclusion move lives in the right-click menu.
     chips.addEventListener('click', (e) => {
-      const optBtn = e.target.closest('.qb-opt-btn[data-act="opt"]');
+      const optBtn = closestOf(e, '.qb-opt-btn[data-act="opt"]');
       if (optBtn) {
         const n = nodeById(optBtn.dataset.nid);
         // Segment semantics: clicking a side SELECTS it (the active side is inert).
@@ -1435,18 +1450,18 @@
         }
         return;
       }
-      const delBtn = e.target.closest('.qb-del-btn[data-act="del"]');
+      const delBtn = closestOf(e, '.qb-del-btn[data-act="del"]');
       if (delBtn) {
         const n = nodeById(delBtn.dataset.nid);
         if (n) removeNode(n);
         return;
       }
       // 検索の特殊ピルは検索を解除。
-      if (e.target.closest('[data-special="search"]')) {
+      if (closestOf(e, '[data-special="search"]')) {
         if (ctx.onClearSearch) ctx.onClearSearch();
         return;
       }
-      const val = e.target.closest('.qb-val');
+      const val = closestOf(e, '.qb-val');
       if (!val) return;
       const node = nodeById(val.dataset.nid);
       if (!node || node.kind !== 'cond') return;
@@ -1472,7 +1487,7 @@
       });
     }
     chips.addEventListener('contextmenu', (e) => {
-      const val = e.target.closest('.qb-val');
+      const val = closestOf(e, '.qb-val');
       if (!val) return;
       const n = nodeById(val.dataset.nid);
       if (n && n.kind === 'cond') {
@@ -1742,7 +1757,12 @@
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
     posterSort: () => posterSort,
-    allCollections: () => (CF() ? CF().allCollections() : []),
+    // Collections migrated to sidebar folders; the collection-sort UI is gone, so
+    // listing.js's filteredCollections() is dormant smart-collection foundation and
+    // is never called here. This getter satisfies its contract with the default
+    // (alphabetical) sort — never actually invoked in the current build.
+    collectionSort: () => 'name',
+    allCollections: () => /** @type {CorpusCollection[]} */ (CF() ? CF().allCollections() : []),
     filterLabel,
   });
   const { cloneTree } = window.corpusListing;
@@ -1814,8 +1834,8 @@
     onChange: updateNavButtons,
   });
   function updateNavButtons() {
-    const b = document.getElementById('navBackBtn'),
-      f = document.getElementById('navFwdBtn');
+    const b = btnById('navBackBtn'),
+      f = btnById('navFwdBtn');
     if (b) b.disabled = !nav.canBack();
     if (f) f.disabled = !nav.canForward();
   }
@@ -1831,7 +1851,7 @@
     if (isImageTab(activeTab())) return false; // image tabs have no filter history
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return false;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return false;
-    if (!document.getElementById('ivFolderModal').hidden) return false;
+    if (!byId('ivFolderModal').hidden) return false;
     return true;
   }
 
@@ -2049,7 +2069,7 @@
       : {
           items,
           idx: Math.max(0, Math.min((t.img && t.img.idx) || 0, items.length - 1)),
-          inspectorOpen: !document.getElementById('postDetail').hidden,
+          inspectorOpen: !byId('postDetail').hidden,
           labels,
           onIndexChange: (i) => {
             if (t.img) t.img.idx = i;
@@ -2057,7 +2077,7 @@
             renderImageTabView(t); // controlled index — repaint with the new slide
           },
           onToggleInspector: () => {
-            if (document.getElementById('postDetail').hidden) {
+            if (byId('postDetail').hidden) {
               if (t._g) showDetail(t._g);
             } else closeDetail();
             renderImageTabView(t); // reflect the pressed state on the ℹ button
@@ -2088,7 +2108,7 @@
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
-    const t = { id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null };
+    const t = /** @type {CorpusTab} */ ({ id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null });
     // Insert next to the current tab (browser-like), never inside the pinned run.
     const ai = tabs.findIndex((tt) => tt.id === activeTabId);
     let pos = ai >= 0 ? ai + 1 : tabs.length;
@@ -2136,7 +2156,7 @@
     renderTabs();
   }
   (function setupTabBar() {
-    const bar = document.getElementById('tabBarInner');
+    const bar = byId('tabBarInner');
     if (!bar) return;
     // Tab context menu (right-click a tab): pin / rename / duplicate / close /
     // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
@@ -2178,7 +2198,7 @@
       if (!tabs.find((t) => t.id === id)) return;
       tabEditingId = id;
       renderTabs();
-      const input = bar.querySelector('.tab-rename-input');
+      const input = /** @type {HTMLInputElement | null} */ (bar.querySelector('.tab-rename-input'));
       if (input) {
         input.focus();
         input.select();
@@ -2186,7 +2206,7 @@
     }
     function commitTabRename() {
       if (!tabEditingId) return;
-      const input = bar.querySelector('.tab-rename-input');
+      const input = /** @type {HTMLInputElement | null} */ (bar.querySelector('.tab-rename-input'));
       const id = tabEditingId;
       tabEditingId = null;
       if (input) renameTab(id, input.value);
@@ -2200,7 +2220,7 @@
     // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
     // they keep working across React re-renders of the strip.
     bar.addEventListener('keydown', (e) => {
-      if (!tabEditingId || !e.target.closest('.tab-rename-input')) return;
+      if (!tabEditingId || !closestOf(e, '.tab-rename-input')) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         commitTabRename();
@@ -2210,22 +2230,22 @@
       }
     });
     bar.addEventListener('focusout', (e) => {
-      if (tabEditingId && e.target.closest('.tab-rename-input')) commitTabRename();
+      if (tabEditingId && closestOf(e, '.tab-rename-input')) commitTabRename();
     });
     bar.addEventListener('click', (e) => {
-      const closeBtn = e.target.closest('[data-close]');
+      const closeBtn = closestOf(e, '[data-close]');
       if (closeBtn) {
         e.stopPropagation();
         closeTab(closeBtn.dataset.close);
         return;
       }
-      const newBtn = e.target.closest('.tab-new');
+      const newBtn = closestOf(e, '.tab-new');
       if (newBtn) {
         addTab();
         return;
       }
-      const tabBtn = e.target.closest('.tab-item[data-tab]');
-      if (tabBtn && !e.target.closest('.tab-rename-input')) {
+      const tabBtn = closestOf(e, '.tab-item[data-tab]');
+      if (tabBtn && !closestOf(e, '.tab-rename-input')) {
         switchTab(tabBtn.dataset.tab);
         return;
       }
@@ -2234,7 +2254,7 @@
     // (pinned tabs and the last remaining tab stay protected).
     bar.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
-      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      const tabBtn = closestOf(e, '.tab-item[data-tab]');
       if (!tabBtn) return;
       e.preventDefault();
       const t = tabs.find((x) => x.id === tabBtn.dataset.tab);
@@ -2242,17 +2262,17 @@
     });
     // Suppress the middle-click autoscroll cursor over the tab strip.
     bar.addEventListener('mousedown', (e) => {
-      if (e.button === 1 && e.target.closest('.tab-item[data-tab]')) e.preventDefault();
+      if (e.button === 1 && closestOf(e, '.tab-item[data-tab]')) e.preventDefault();
     });
     bar.addEventListener('contextmenu', (e) => {
-      const tabBtn = e.target.closest('.tab-item[data-tab]');
+      const tabBtn = closestOf(e, '.tab-item[data-tab]');
       if (!tabBtn) return;
       e.preventDefault();
       showTabMenu(tabBtn.dataset.tab, e);
     });
     bar.addEventListener('dblclick', (e) => {
-      const tabBtn = e.target.closest('.tab-item[data-tab]');
-      if (!tabBtn || e.target.closest('[data-close]')) return;
+      const tabBtn = closestOf(e, '.tab-item[data-tab]');
+      if (!tabBtn || closestOf(e, '[data-close]')) return;
       startTabRename(tabBtn.dataset.tab);
     });
     document.addEventListener('keydown', (e) => {
@@ -2390,9 +2410,9 @@
     }
     updateSidebarState();
     syncBrowseBar(); // keep the ライブラリ/投稿者 toggle's glass thumb measured
-    const grid = document.getElementById('postGrid');
-    const empty = document.getElementById('emptyState');
-    const countEl = document.getElementById('postCount');
+    const grid = byId('postGrid');
+    const empty = byId('emptyState');
+    const countEl = byId('postCount');
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
     // Reuse the previous build's groups on an in-place re-render: re-filtering +
@@ -2520,8 +2540,8 @@
   }
 
   // Text expand/collapse on click
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const textEl = e.target.closest('.text');
+  byId('postGrid').addEventListener('click', (e) => {
+    const textEl = closestOf(e, '.text');
     if (textEl) {
       e.stopPropagation();
       textEl.classList.toggle('expanded');
@@ -2550,53 +2570,53 @@
   // scheme stays viewer-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = window.corpusRecords.makeGallery({ fileSrc });
 
-  document.getElementById('postGrid').addEventListener('click', (e) => {
+  byId('postGrid').addEventListener('click', (e) => {
     // Image -> open the gallery (screenshot + originals, whole group).
     // While the inspector is open, a single click swaps its content instead
     // (inline browsing); the gallery is then reached by double-click.
-    const img = e.target.closest('.card-img');
+    const img = closestOf(e, '.card-img');
     if (img) {
       e.stopPropagation();
-      const g = viewGroups[Number.parseInt(img.closest('.post-card')?.dataset.index, 10)];
+      const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
       if (!g) return;
-      if (!document.getElementById('postDetail').hidden) {
+      if (!byId('postDetail').hidden) {
         showDetail(g);
         return;
       }
       window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
     }
   });
-  document.getElementById('postGrid').addEventListener('dblclick', (e) => {
-    const img = e.target.closest('.card-img');
-    if (!img || document.getElementById('postDetail').hidden) return;
-    const g = viewGroups[Number.parseInt(img.closest('.post-card')?.dataset.index, 10)];
+  byId('postGrid').addEventListener('dblclick', (e) => {
+    const img = closestOf(e, '.card-img');
+    if (!img || byId('postDetail').hidden) return;
+    const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
     if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
   });
 
   // Middle-click an image → open the post as a background image tab
   // (browser-like; replaces the old single-image window).
-  document.getElementById('postGrid').addEventListener('auxclick', (e) => {
+  byId('postGrid').addEventListener('auxclick', (e) => {
     if (e.button !== 1) return;
-    const img = e.target.closest('.card-img');
+    const img = closestOf(e, '.card-img');
     if (!img) return;
     e.preventDefault();
-    const g = viewGroups[Number.parseInt(img.closest('.post-card')?.dataset.index, 10)];
+    const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
     if (g) addImageTab(g);
   });
   // suppress the middle-click autoscroll on card images
-  document.getElementById('postGrid').addEventListener('mousedown', (e) => {
-    if (e.button === 1 && e.target.closest('.card-img')) e.preventDefault();
+  byId('postGrid').addEventListener('mousedown', (e) => {
+    if (e.button === 1 && closestOf(e, '.card-img')) e.preventDefault();
   });
 
   // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
   // the entrance animation: re-render (keepLimit) only when a clip filter could change
   // the visible set.
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.clip-btn');
+  byId('postGrid').addEventListener('click', (e) => {
+    const btn = closestOf(e, '.clip-btn');
     if (!btn) return;
     e.stopPropagation();
     if (!CF()) return;
-    const g = viewGroups[Number.parseInt(btn.dataset.clip, 10)];
+    const g = viewGroups[Number.parseInt(btn.dataset.clip ?? '', 10)];
     if (!g || !g.rep.captureId) return;
     keepCurrentVisible(); // removal can un-match an active clip filter
     const res = CF().toggleClip(
@@ -2618,7 +2638,7 @@
   function foldMenuItems(g) {
     const list = CF() ? CF().all() : [];
     const rep = g.rep.captureId;
-    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) }));
+    const items = /** @type {CorpusMenuItem[]} */ (list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })));
     if (list.length) items.push({ sep: true });
     items.push({ label: MSG.ctxManage, act: 'manage', manage: true });
     return items;
@@ -2697,7 +2717,7 @@
       return;
     } // opens the folder picker (bridge keeps it open)
     else if (act === 'clip') {
-      const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`);
+      const b = /** @type {HTMLElement | null} */ (document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`));
       if (b) b.click();
     } else if (act === 'info') showDetail(g);
     else if (act === 'poster') jumpToPoster(g.rep);
@@ -2712,12 +2732,12 @@
     const { items, srcUrl } = cardMenuItems(g);
     window.corpusContextMenu.open({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
   }
-  document.getElementById('postGrid').addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.post-card');
+  byId('postGrid').addEventListener('contextmenu', (e) => {
+    const card = closestOf(e, '.post-card');
     if (!card) return;
     e.preventDefault();
-    if (document.getElementById('postGrid').classList.contains('selecting')) return; // selection bar owns bulk actions
-    const g = viewGroups[Number.parseInt(card.dataset.index, 10)];
+    if (byId('postGrid').classList.contains('selecting')) return; // selection bar owns bulk actions
+    const g = viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
     if (g) showCardMenu(g, e.clientX, e.clientY);
   });
 
@@ -2741,7 +2761,7 @@
     const active = activeFilters.some((f) => f.type === 'clip');
     row.classList.toggle('active', active);
     if (badge) {
-      badge.textContent = n;
+      badge.textContent = String(n);
       badge.classList.toggle('on', n > 0);
     }
     if (clear) clear.style.display = n > 0 ? '' : 'none';
@@ -2775,7 +2795,7 @@
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
   function toggleCardSelection(card, shiftKey) {
-    const idx = Number.parseInt(card.dataset.index, 10);
+    const idx = Number.parseInt(card.dataset.index ?? '', 10);
     const key = card.dataset.key;
     if (shiftKey && selectionAnchor !== null) {
       const lo = Math.min(selectionAnchor, idx);
@@ -2798,7 +2818,7 @@
   // the grid + .selected per card. data-key round-trips to the template's postKey, so
   // this matches the template's own isSelected logic exactly.
   function syncSelectionClasses() {
-    document.getElementById('postGrid').classList.toggle('selecting', selectedSet.size > 0);
+    byId('postGrid').classList.toggle('selecting', selectedSet.size > 0);
     // Virtualized cells re-read selectedSet through modelOf on repaint — an
     // imperative class here would be lost the moment a cell remounts on scroll.
     window.corpusGrid.repaint();
@@ -2806,8 +2826,8 @@
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
   // Clicking the card body does not select while nothing is selected yet.
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const ring = e.target.closest('.select-check');
+  byId('postGrid').addEventListener('click', (e) => {
+    const ring = closestOf(e, '.select-check');
     if (!ring) return;
     e.stopPropagation();
     const card = ring.closest('.post-card');
@@ -2817,11 +2837,11 @@
   // Selection mode (≥1 selected): a click ANYWHERE on a card toggles it.
   // Capture phase so it pre-empts every other card action (gallery, text
   // expand, ℹ/edit/delete/📁/open) until the selection is cleared.
-  document.getElementById('postGrid').addEventListener(
+  byId('postGrid').addEventListener(
     'click',
     (e) => {
       if (selectedSet.size === 0) return;
-      const card = e.target.closest('.post-card');
+      const card = closestOf(e, '.post-card');
       if (!card) return;
       e.preventDefault();
       e.stopPropagation();
@@ -2836,11 +2856,11 @@
       executeDeleteGroup(g);
     } else {
       pendingDeleteGroup = g;
-      document.getElementById('confirmMsg').textContent = g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost;
-      document.getElementById('confirmSkipLabel').style.display = 'flex';
-      document.getElementById('confirmSkip').checked = false;
+      byId('confirmMsg').textContent = g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost;
+      byId('confirmSkipLabel').style.display = 'flex';
+      inputById('confirmSkip').checked = false;
       setConfirmKeywordMode(false);
-      document.getElementById('confirmOverlay').classList.add('show');
+      byId('confirmOverlay').classList.add('show');
     }
   }
 
@@ -2902,13 +2922,13 @@
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
-    document.getElementById('postDetail').hidden = true;
+    byId('postDetail').hidden = true;
     window.corpusInspector.close();
     inspectedKey = null;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected')); // post + poster cards
     if (gridIslandActive()) window.corpusGrid.repaint(); // clear the virtualized cells' model-driven ring too
     if (browseMode === 'posters') pushPosterModel(); // clear the React poster highlight too
-    document.getElementById('postGrid').classList.remove('insp-open');
+    byId('postGrid').classList.remove('insp-open');
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
   function persistManual() {
@@ -3140,9 +3160,9 @@
         }
       },
     });
-    document.getElementById('postDetail').hidden = false;
+    byId('postDetail').hidden = false;
     // While open, a card click swaps the panel (not zoom) → plain pointer.
-    document.getElementById('postGrid').classList.add('insp-open');
+    byId('postGrid').classList.add('insp-open');
     // Ring-mark the inspected card so swapping content stays traceable.
     inspectedKey = postIdKey(p);
     document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
@@ -3190,12 +3210,12 @@
     (e) => {
       if (e.key !== 'Escape') return;
       const inImageTab = document.body.classList.contains('image-tab-active');
-      if (document.getElementById('postDetail').hidden && !inImageTab) return;
-      const t = e.target;
+      if (byId('postDetail').hidden && !inImageTab) return;
+      const t = /** @type {HTMLElement | null} */ (e.target);
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
       if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-      if (!document.getElementById('ivFolderModal').hidden) return;
+      if (!byId('ivFolderModal').hidden) return;
       if (document.querySelector('.confirm-overlay.show')) return;
       if (document.querySelector('.fold-menu.show')) return;
       if (window.corpusFilterPopover.get()) return;
@@ -3216,13 +3236,13 @@
   document.addEventListener(
     'click',
     (e) => {
-      const insp = document.getElementById('postDetail');
+      const insp = byId('postDetail');
       if (insp.hidden) return;
       if (!matchMedia('(max-width: 1279px)').matches) return;
-      if (insp.contains(e.target)) return;
-      if (!e.target.closest('#mode-post')) return; // sidebar/overlays: leave it open
-      if (e.target.closest('.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
-      if (e.target.closest('.poster-card')) return; // poster click = go to that poster's posts
+      if (insp.contains(/** @type {Node | null} */ (e.target))) return;
+      if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
+      if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
+      if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
       e.preventDefault();
       e.stopPropagation();
       closeDetail();
@@ -3230,23 +3250,23 @@
     true,
   );
   // ℹ button on card → detail popup (re-click same card toggles close)
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.info-btn');
+  byId('postGrid').addEventListener('click', (e) => {
+    const btn = closestOf(e, '.info-btn');
     if (!btn) return;
     e.stopPropagation();
-    const g = viewGroups[Number.parseInt(btn.dataset.info, 10)];
-    if (!document.getElementById('postDetail').hidden && inspectedKey && g && postIdKey(g.rep) === inspectedKey) {
+    const g = viewGroups[Number.parseInt(btn.dataset.info ?? '', 10)];
+    if (!byId('postDetail').hidden && inspectedKey && g && postIdKey(g.rep) === inspectedKey) {
       closeDetail();
       return;
     }
     showDetail(g);
   });
   // 🏷 button on card → open the inspector (tags are editable inline there)
-  document.getElementById('postGrid').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tag-btn');
+  byId('postGrid').addEventListener('click', (e) => {
+    const btn = closestOf(e, '.tag-btn');
     if (!btn) return;
     e.stopPropagation();
-    const g = viewGroups[Number.parseInt(btn.dataset.tagedit, 10)];
+    const g = viewGroups[Number.parseInt(btn.dataset.tagedit ?? '', 10)];
     if (!g) return;
     showDetail(g);
   });
@@ -3270,7 +3290,7 @@
   function closeEditOverlay() {
     editingRecords = [];
     editAdditive = false;
-    document.getElementById('editOverlay').classList.remove('show');
+    byId('editOverlay').classList.remove('show');
     window.corpusEditOverlay.close();
   }
 
@@ -3301,19 +3321,19 @@
   // showDetail/showPosterDetail), so no delegated #postDetail listeners are needed.
 
   // Background click (outside the box) cancels, same as editCancel/onCancel below.
-  document.getElementById('editOverlay').addEventListener('click', (e) => {
+  byId('editOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeEditOverlay();
   });
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
-  const selectionBar = document.getElementById('selectionBar');
-  const selectAllBtn = document.getElementById('selectAllBtn');
-  const tagSelectedBtn = document.getElementById('tagSelectedBtn');
-  const folderSelectedBtn = document.getElementById('folderSelectedBtn');
-  const groupSelectedBtn = document.getElementById('groupSelectedBtn');
-  const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-  const cancelSelectBtn = document.getElementById('cancelSelectBtn');
-  const selectedCountEl = document.getElementById('selectedCount');
+  const selectionBar = byId('selectionBar');
+  const selectAllBtn = btnById('selectAllBtn');
+  const tagSelectedBtn = btnById('tagSelectedBtn');
+  const folderSelectedBtn = btnById('folderSelectedBtn');
+  const groupSelectedBtn = btnById('groupSelectedBtn');
+  const deleteSelectedBtn = btnById('deleteSelectedBtn');
+  const cancelSelectBtn = btnById('cancelSelectBtn');
+  const selectedCountEl = byId('selectedCount');
 
   selectAllBtn.textContent = MSG.selectAll;
   tagSelectedBtn.textContent = MSG.tagSelected;
@@ -3402,7 +3422,7 @@
         showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
       },
     });
-    document.getElementById('editOverlay').classList.add('show');
+    byId('editOverlay').classList.add('show');
   });
 
   // フォルダに追加: open the folder picker for the whole selection (no default
@@ -3413,7 +3433,7 @@
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;
-    const r = e.currentTarget.getBoundingClientRect();
+    const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
     showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
   });
 
@@ -3474,11 +3494,11 @@
   // typing in a field or when a modal/overlay is open (native select-all there).
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
-    const t = e.target;
+    const t = /** @type {HTMLElement | null} */ (e.target);
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-    if (!document.getElementById('ivFolderModal').hidden) return;
+    if (!byId('ivFolderModal').hidden) return;
     if (browseMode !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
     e.preventDefault();
@@ -3494,13 +3514,13 @@
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
     if (!slash && !ctrlK) return;
-    const t = e.target;
+    const t = /** @type {HTMLElement | null} */ (e.target);
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-    if (!document.getElementById('ivFolderModal').hidden) return;
+    if (!byId('ivFolderModal').hidden) return;
     e.preventDefault();
-    const sb = document.getElementById('searchBox'); // the searchbox island's Input (id preserved)
+    const sb = /** @type {HTMLInputElement | null} */ (document.getElementById('searchBox')); // the searchbox island's Input (id preserved)
     if (!sb) return; // island not mounted yet (sub-second boot window)
     sb.focus();
     sb.select();
@@ -3509,10 +3529,10 @@
   deleteSelectedBtn.addEventListener('click', () => {
     if (selectedSet.size === 0) return;
     pendingDeleteGroup = null;
-    document.getElementById('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
-    document.getElementById('confirmSkipLabel').style.display = 'none';
+    byId('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
+    byId('confirmSkipLabel').style.display = 'none';
     setConfirmKeywordMode(false);
-    document.getElementById('confirmOverlay').classList.add('show');
+    byId('confirmOverlay').classList.add('show');
     pendingBulkDelete = true;
   });
 
@@ -3665,7 +3685,7 @@
   // moves the layout at column-count thresholds. Mapping each detent to one column
   // count makes every step visible (no dead zones). Right = larger = fewer columns.
   function posterGridMetrics() {
-    const grid = document.getElementById('posterGrid');
+    const grid = byId('posterGrid');
     if (!grid) return null;
     const W = Math.floor(grid.getBoundingClientRect().width);
     if (!W) return null;
@@ -3674,7 +3694,7 @@
     return { W, g: posterView === 'tile' ? 10 : 14 };
   }
   function refreshPosterSlider() {
-    const sl = document.getElementById('posterTileSlider');
+    const sl = inputById('posterTileSlider');
     const row = document.getElementById('posterTileSizeRow');
     if (!sl) return;
     const st = posterSizeState();
@@ -3706,7 +3726,7 @@
     _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
   });
   (function setupPosterSizeSlider() {
-    const sl = document.getElementById('posterTileSlider');
+    const sl = inputById('posterTileSlider');
     if (!sl) return;
     sl.addEventListener('input', () => {
       const st = posterSizeState();
@@ -3732,7 +3752,7 @@
   let posterWorkGroups = []; // recent works shown in the poster inspector
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
-  let posterTags = {};
+  let posterTags = /** @type {Record<string, string[]>} */ ({});
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() {
@@ -3767,7 +3787,7 @@
     const res = pfStore.toggleIn(id, key);
     if (!res) return false;
     const f = posterFolderById(id);
-    showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f.name));
+    showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f?.name ?? ''));
     renderPosterFilterRows(); // folder badge count changed
     if (treeLeaves(posterQB.getTree()).some((c) => c.type === 'folder')) renderPosters(); // membership change may add/remove from the filtered grid
     return res === 'added';
@@ -3861,7 +3881,7 @@
       'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
     };
     document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
-      const n = counts[b.dataset.badge] || 0;
+      const n = counts[/** @type {HTMLElement} */ (b).dataset.badge || ''] || 0;
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
@@ -3870,11 +3890,11 @@
   // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
   function renderPosters(keepLimit) {
-    const grid = document.getElementById('posterGrid');
-    const empty = document.getElementById('emptyState');
+    const grid = byId('posterGrid');
+    const empty = byId('emptyState');
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数は
     // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
-    const countEl = document.getElementById('posterCount');
+    const countEl = byId('posterCount');
     renderPosterFilterRows();
     posterQB.render(); // draw the query bar (pills / groups) for the poster tree
     posterList = filteredPosters();
@@ -3962,7 +3982,7 @@
     if (!u) return;
     postQB.resetTree();
     const set = (id, v) => {
-      const el = document.getElementById(id);
+      const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
       if (el) el.value = v;
     };
     setSearchBoxValue('');
@@ -4084,20 +4104,20 @@
         if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
     });
-    document.getElementById('postDetail').hidden = false;
+    byId('postDetail').hidden = false;
     inspectedKey = 'poster:' + u.key;
     document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected')); // post cards (poster cards are model-driven)
     pushPosterModel(); // React re-highlights the inspected poster card from inspectedKey
   }
-  document.getElementById('posterGrid').addEventListener('click', (e) => {
-    const card = e.target.closest('.poster-card');
+  byId('posterGrid').addEventListener('click', (e) => {
+    const card = closestOf(e, '.poster-card');
     if (!card) return;
-    const u = posterList[Number.parseInt(card.dataset.index, 10)];
+    const u = posterList[Number.parseInt(card.dataset.index ?? '', 10)];
     if (!u) return;
     // ℹ opens the inspector (shared idiom with post cards' .info-btn); re-click the
     // inspected poster's ℹ toggles it closed.
-    if (e.target.closest('.poster-info')) {
-      if (!document.getElementById('postDetail').hidden && inspectedKey === 'poster:' + u.key) {
+    if (closestOf(e, '.poster-info')) {
+      if (!byId('postDetail').hidden && inspectedKey === 'poster:' + u.key) {
         closeDetail();
         return;
       }
@@ -4105,7 +4125,7 @@
       return;
     }
     // 🏷 → open the inspector and focus its tag input (mirrors the library 🏷 button).
-    if (e.target.closest('.poster-tag')) {
+    if (closestOf(e, '.poster-tag')) {
       showPosterDetail(u, { focusTag: true });
       return;
     }
@@ -4119,7 +4139,7 @@
   // poster-folders (toggle, stays open). React-owned glass popup via
   // window.corpusContextMenu; viewer owns the items + actions here.
   function posterMenuItems(u) {
-    const items = [{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }];
+    const items = /** @type {CorpusMenuItem[]} */ ([{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }]);
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
     }
@@ -4147,16 +4167,16 @@
   function showPosterMenu(u, x, y) {
     window.corpusContextMenu.open({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
-  document.getElementById('posterGrid').addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.poster-card');
+  byId('posterGrid').addEventListener('contextmenu', (e) => {
+    const card = closestOf(e, '.poster-card');
     if (!card) return;
     e.preventDefault();
-    const u = posterList[Number.parseInt(card.dataset.index, 10)];
+    const u = posterList[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
   // Poster-mode sort (sidebar). The remaining poster filters are rows → flyouts.
   {
-    const ps = document.getElementById('posterSortSelect');
+    const ps = selectById('posterSortSelect');
     if (ps)
       ps.addEventListener('change', () => {
         posterSort = ps.value; // 'count' | 'name' | 'date-desc' | 'date-asc'
@@ -4176,8 +4196,8 @@
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
   // flyout (poster-* categories); the date row opens the date popover.
   // Selections live in the transient posterXxx state.
-  document.getElementById('posterFilterRows').addEventListener('click', (e) => {
-    const row = e.target.closest('[data-qfrow]');
+  byId('posterFilterRows').addEventListener('click', (e) => {
+    const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
     if (cat === 'poster-date' && window.corpusFilterPopover.get()?.kind === 'posterDate') {
@@ -4249,7 +4269,7 @@
     renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
-    const grid = document.getElementById('postGrid');
+    const grid = byId('postGrid');
     if (!grid) return null;
     // floor of the FRACTIONAL width: clientWidth rounds up half-pixels, which
     // makes an exact-fill size 1px too wide and silently drops a column.
@@ -4259,7 +4279,7 @@
     return { W, g: Number.isFinite(gv) ? gv : 8 };
   }
   function refreshTileSlider() {
-    const sl = document.getElementById('tileSlider');
+    const sl = inputById('tileSlider');
     if (!sl) return;
     const st = viewSizeState();
     if (!st.columns) {
@@ -4285,7 +4305,7 @@
     sl.disabled = false;
     sl.value = String(tr.value); // inverted: right = larger
   }
-  const tileSlider = document.getElementById('tileSlider');
+  const tileSlider = inputById('tileSlider');
   function sliderCols() {
     return trackCols(Number.parseInt(tileSlider.value, 10), Number.parseInt(tileSlider.min, 10), Number.parseInt(tileSlider.max, 10));
   }
@@ -4310,7 +4330,7 @@
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
-    const t = e.target;
+    const t = /** @type {HTMLElement | null} */ (e.target);
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();
     if (tileSlider.disabled) return;
@@ -4333,7 +4353,7 @@
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
     // via CSS), so flip the class directly instead of re-grouping + rebuilding the
     // grid (a full renderPosts reloaded every tile image = flicker).
-    const grid = document.getElementById('postGrid');
+    const grid = byId('postGrid');
     if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
   }
   // Bridges the React settings island calls into (the controls live there now,
@@ -4483,7 +4503,7 @@
   // Register the island's data callbacks. onConfirmText replicates the old bare-
   // Enter behavior: only posts mode confirms a text leaf (posters/collections
   // filter live off the box value, Enter is a no-op there).
-  window.corpusSearchBox.init({
+  window.corpusSearchBox?.init({
     getSuggestions: (q) => buildSuggest(q),
     onPick: applySuggest,
     onConfirmText: () => {
@@ -4522,8 +4542,8 @@
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して
   // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
   // レンダラで読んで importPosts。
-  document.getElementById('importZipInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+  byId('importZipInput').addEventListener('change', async (e) => {
+    const file = /** @type {HTMLInputElement} */ (e.target).files?.[0];
     if (!file) return;
     showToast(MSG.importing);
     try {
@@ -4533,7 +4553,7 @@
       if (isComplete) {
         const res = await window.corpus.importComplete(buf);
         await loadPosts();
-        e.target.value = '';
+        /** @type {HTMLInputElement} */ (e.target).value = '';
         if (!res || !res.ok) {
           showToast(MSG.importFailed);
           return;
@@ -4545,7 +4565,7 @@
       const metaEntry = zip.file('metadata.json');
       if (!metaEntry) {
         showToast(MSG.importFailed);
-        e.target.value = '';
+        /** @type {HTMLInputElement} */ (e.target).value = '';
         return;
       }
       const meta = JSON.parse(await metaEntry.async('string'));
@@ -4558,12 +4578,12 @@
       }
       const { imported, skipped } = await window.corpus.importPosts(posts);
       await loadPosts();
-      e.target.value = '';
+      /** @type {HTMLInputElement} */ (e.target).value = '';
       if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
       else showToast(MSG.imported(imported));
     } catch {
       showToast(MSG.importFailed);
-      e.target.value = '';
+      /** @type {HTMLInputElement} */ (e.target).value = '';
     }
   });
 
@@ -4573,7 +4593,7 @@
   // It reflects the auto-backup config + last result, refreshing on launch, when
   // settings opens, and on each backup start/finish.
   (function setupMirrorStatusRail() {
-    const el = document.getElementById('mirrorStatus');
+    const el = byId('mirrorStatus');
     if (!el) return;
     let cfg = null;
     let mirrorSyncing = false;
@@ -4697,38 +4717,38 @@
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (MSG.deleteKeyword)
   // to enable the OK button — a stray click can't wipe everything.
-  const confirmKeywordEl = document.getElementById('confirmKeyword');
+  const confirmKeywordEl = inputById('confirmKeyword');
   function setConfirmKeywordMode(on) {
     confirmKeywordEl.style.display = on ? '' : 'none';
     confirmKeywordEl.value = '';
-    document.getElementById('confirmOk').disabled = on;
+    btnById('confirmOk').disabled = on;
   }
   confirmKeywordEl.addEventListener('input', () => {
-    document.getElementById('confirmOk').disabled = confirmKeywordEl.value.trim() !== MSG.deleteKeyword;
+    btnById('confirmOk').disabled = confirmKeywordEl.value.trim() !== MSG.deleteKeyword;
   });
   // Opening the clear-all confirm (the shared keyword-gated overlay) is exposed so
   // the React Danger section triggers the exact same destructive flow — no second
   // implementation of a wipe dialog.
   function openClearAllConfirm() {
     pendingDeleteGroup = null;
-    document.getElementById('confirmMsg').textContent = MSG.confirmClear;
-    document.getElementById('confirmSkipLabel').style.display = 'none';
+    byId('confirmMsg').textContent = MSG.confirmClear;
+    byId('confirmSkipLabel').style.display = 'none';
     confirmKeywordEl.placeholder = MSG.confirmKeywordPh;
     setConfirmKeywordMode(true);
-    document.getElementById('confirmOverlay').classList.add('show');
+    byId('confirmOverlay').classList.add('show');
     confirmKeywordEl.focus();
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { confirmClearAll: openClearAllConfirm });
 
-  document.getElementById('confirmCancel').addEventListener('click', () => {
+  byId('confirmCancel').addEventListener('click', () => {
     pendingDeleteGroup = null;
     pendingBulkDelete = false;
     setConfirmKeywordMode(false);
-    document.getElementById('confirmOverlay').classList.remove('show');
+    byId('confirmOverlay').classList.remove('show');
   });
 
-  document.getElementById('confirmOk').addEventListener('click', async () => {
-    document.getElementById('confirmOverlay').classList.remove('show');
+  byId('confirmOk').addEventListener('click', async () => {
+    byId('confirmOverlay').classList.remove('show');
 
     if (pendingBulkDelete) {
       // Bulk delete selected groups — every record of each selected group
@@ -4748,7 +4768,7 @@
       showToast(MSG.deletedN(count));
     } else if (pendingDeleteGroup) {
       // Individual post (group) delete
-      if (document.getElementById('confirmSkip').checked) {
+      if (inputById('confirmSkip').checked) {
         skipDeleteConfirm = true;
         window.corpus.setPref('skipDeleteConfirm', true);
       }
@@ -4774,12 +4794,12 @@
   });
 
   // Close overlay on background click
-  document.getElementById('confirmOverlay').addEventListener('click', (e) => {
+  byId('confirmOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       pendingDeleteGroup = null;
       pendingBulkDelete = false;
       setConfirmKeywordMode(false);
-      e.currentTarget.classList.remove('show');
+      /** @type {HTMLElement} */ (e.currentTarget).classList.remove('show');
     }
   });
 

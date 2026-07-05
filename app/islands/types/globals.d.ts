@@ -60,7 +60,7 @@ declare global {
     get(): string;
     set(pref: string, persist?: boolean): void;
     resolve(): string;
-    applyTitleBar(): void;
+    applyTitleBar(open?: boolean): void;
   }
 
   // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
@@ -212,11 +212,14 @@ declare global {
     x: number;
     y: number;
     // Returning a new items array keeps the menu open (toggle rows); returning
-    // nothing closes it.
-    onPick: ((item: CorpusMenuItem) => CorpusMenuItem[] | undefined) | null;
+    // nothing closes it. The `| void` arm is that "close" signal — it also lets
+    // void-returning pick handlers (the common case) assign cleanly.
+    // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
+    onPick: ((item: CorpusMenuItem) => CorpusMenuItem[] | void) | null;
   }
   interface CorpusContextMenu {
-    open(model: { items: CorpusMenuItem[]; x: number; y: number }, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | undefined): void;
+    // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
+    open(model: { items: CorpusMenuItem[]; x: number; y: number }, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | void): void;
     close(): void;
     pick(item: CorpusMenuItem): void;
     get(): CorpusContextMenuModel | null;
@@ -227,7 +230,7 @@ declare global {
   interface CorpusKindMenuRow {
     kind?: string;
     label?: string;
-    dot?: string;
+    dot?: boolean;
     renameable?: boolean;
     checked?: boolean;
     sep?: boolean;
