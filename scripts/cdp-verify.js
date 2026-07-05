@@ -7,6 +7,10 @@
 //   node scripts/cdp-verify.js eval "<js expr; may return a value or a Promise>"
 //   node scripts/cdp-verify.js shot <out.jpg> [quality]
 //
+// shot captures WITHOUT stealing focus by default (fromSurface reads the
+// compositor surface, so a backgrounded window shoots fine — no bringToFront).
+// It only pops the window forward if the frame is blank (minimized = not
+// painting); CDP_FOCUS=1 forces that intrusive path.
 // shot takes a FULL-PAGE screenshot (no clip). NOTE: passing a `clip` to
 // Page.captureScreenshot resizes the visual viewport and it STICKS (a known trap
 // that left content rendered into the top-left until restart). So we never clip —
@@ -107,31 +111,62 @@ async function main() {
   } else {
     await send('Page.enable', {});
     await send('Runtime.enable', {});
-    // A minimized window stops painting → blank/black frames (even fromSurface:false).
-    // Detect it (Windows minimized → screenX == -32000), restore at the OS level, then
-    // re-minimize afterward so the window is left exactly as found (the user keeps it
-    // minimized to stay out of the way — don't pop it up for good).
-    let wasMin = false;
-    try {
-      const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true });
-      wasMin = !!(r && r.result && r.result.value);
-    } catch (e) {
-      /* ignore */
-    }
-    if (wasMin) {
-      osShowWindow(9);
-      await new Promise((r) => setTimeout(r, 400));
-    } // SW_RESTORE + repaint
-    try {
-      await send('Page.bringToFront', {});
-    } catch (e) {
-      /* ignore */
-    }
-    const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: arg2 ? Number(arg2) : 80, captureBeyondViewport: false, fromSurface: process.env.CDP_SURFACE === '1' });
     const out = arg || 'scripts/_shot.jpg';
-    fs.writeFileSync(out, Buffer.from(r.data, 'base64'));
-    console.log('wrote', out, Buffer.from(r.data, 'base64').length, 'bytes');
-    if (wasMin) osShowWindow(6); // SW_MINIMIZE — leave the window as we found it
+    const quality = arg2 ? Number(arg2) : 80;
+    // Background-first (2026-07-05): fromSurface reads the compositor surface
+    // directly, so a window sitting BEHIND other windows captures WITHOUT stealing
+    // focus. We do NOT bringToFront by default — it yanks the window forward and
+    // steals the active window every shot.
+    // ⚠️ CRITICAL: fromSurface HANGS FOREVER on a fully-occluded / throttled window
+    // (it waits for a compositor frame that never arrives) — a hung capture wedged
+    // the GPU and crashed the app once. So the surface capture is RACED against a
+    // timeout; on timeout/blank we fall back to the intrusive path: OS-restore (if
+    // minimized) + bringToFront (forces a paint) + a plain non-surface capture that
+    // can't hang, then re-minimize to leave the window as found. CDP_FOCUS=1 skips
+    // straight to the fallback.
+    const capSurface = () => send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: true });
+    const withTimeout = (p, ms) => {
+      let t;
+      return Promise.race([
+        p.finally(() => clearTimeout(t)),
+        new Promise((_, rej) => {
+          t = setTimeout(() => rej(new Error('cap-timeout')), ms);
+        }),
+      ]);
+    };
+    const blank = (d) => !d || Buffer.from(d, 'base64').length < 6000;
+    let data = null;
+    if (process.env.CDP_FOCUS !== '1') {
+      try {
+        data = (await withTimeout(capSurface(), 1500)).data;
+      } catch (e) {
+        data = null; // timed out (occluded/throttled) or errored → fall back
+      }
+    }
+    if (blank(data)) {
+      let wasMin = false;
+      try {
+        const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true });
+        wasMin = !!(r && r.result && r.result.value);
+      } catch (e) {
+        /* ignore */
+      }
+      if (wasMin) {
+        osShowWindow(9);
+        await new Promise((r) => setTimeout(r, 400));
+      } // SW_RESTORE + repaint
+      try {
+        await send('Page.bringToFront', {});
+      } catch (e) {
+        /* ignore */
+      }
+      // Window is painting now → a plain (non-surface) capture is safe and won't hang.
+      data = (await send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: false })).data;
+      if (wasMin) osShowWindow(6); // SW_MINIMIZE — leave the window as we found it
+    }
+    const buf = Buffer.from(data, 'base64');
+    fs.writeFileSync(out, buf);
+    console.log('wrote', out, buf.length, 'bytes');
   }
   ws.close();
 }

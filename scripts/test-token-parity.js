@@ -53,6 +53,9 @@ const SHARED_EXACT = new Set([
   // --glass-edge/rim/hi/sheen/drop*/relief-bg also differ per theme.)
   '--glass-bg-bar',
   '--glass-bg-panel',
+  // Motion timing, theme-agnostic like --dur-*/--ease-* (just no --dur- prefix):
+  // the card-entrance stagger step (34ms) is the same in both themes.
+  '--stagger',
 ]);
 const isShared = (n) => SHARED_EXACT.has(n) || SHARED_PREFIX.some((p) => n.startsWith(p));
 
