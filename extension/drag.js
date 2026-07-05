@@ -130,20 +130,24 @@
     chrome.runtime.sendMessage(p, (res) => {
       const ok = res && res.ok;
       const partial = ok && res.metaOk === false; // saved, but no post metadata
+      const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
       overlay.textContent = partial
         ? t('bannerSavedNoMeta')
-        : ok
-          ? t('bannerSaved')
-          : res && res.hostMissing
-            ? t('bannerHostMissing') // missing native host → "restart Chrome"
-            : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
+        : grouped
+          ? t('bannerSavedGrouped', [res.grouped + 1])
+          : ok
+            ? t('bannerSaved')
+            : res && res.hostMissing
+              ? t('bannerHostMissing') // missing native host → "restart Chrome"
+              : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
       overlay.style.background = partial ? BG_PARTIAL : ok ? BG_OVER : BG_FAIL;
       setTimeout(
         () => {
           hideOverlay();
           savingViaDrop = false;
         },
-        partial ? 2600 : 1400,
+        // grouped: hold a beat longer — it explains where the image "went"
+        partial ? 2600 : grouped ? 2200 : 1400,
       );
     });
   }

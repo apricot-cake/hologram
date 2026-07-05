@@ -147,7 +147,10 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   } catch (err) {
     throw stageError('bridge', err?.message || 'bridge save failed');
   }
-  notify(tab.id, true, { metaOk });
+  // grouped = prior saves of this post this session → the banner says the save
+  // merged with them (the app folds same-URL records into one card).
+  const grouped = await bumpRecentSave(record.url);
+  notify(tab.id, true, { metaOk, grouped });
 }
 
 // Build the sidecar record shared by both save paths. The click path adds image +
@@ -255,6 +258,35 @@ function sendDraggedToBridge(captureId, imageUrl, imageReferer, record, metaOk) 
 
 function notify(tabId, success, extra = {}) {
   chrome.tabs.sendMessage(tabId, { type: 'notify', success, ...extra }).catch(() => {});
+}
+
+// --- Recent-save memory (per post URL) ------------------------------------------
+// Consecutive saves of the SAME post (multi-page manga, re-grabs) merge into one
+// card in the app, so the save toast should say so — otherwise the second save
+// looks like a no-op (nothing new appears; the card face doesn't change).
+// The count lives in chrome.storage.session: survives service-worker restarts,
+// clears when the browser closes ("recent" ≈ this browsing session). Keyed by the
+// record's canonical post URL (both save paths build it from the same metadata).
+// Returns how many saves of this URL happened BEFORE this one (0 = first).
+const RECENT_SAVES_KEY = 'recentSaves.v1';
+const RECENT_SAVES_MAX = 200; // prune oldest beyond this many distinct posts
+async function bumpRecentSave(url) {
+  if (!url) return 0;
+  try {
+    const got = await chrome.storage.session.get(RECENT_SAVES_KEY);
+    const map = got[RECENT_SAVES_KEY] || {};
+    const prev = map[url] ? map[url].n : 0;
+    map[url] = { n: prev + 1, t: Date.now() };
+    const keys = Object.keys(map);
+    if (keys.length > RECENT_SAVES_MAX) {
+      keys.sort((a, b) => map[a].t - map[b].t);
+      for (const k of keys.slice(0, keys.length - RECENT_SAVES_MAX)) delete map[k];
+    }
+    await chrome.storage.session.set({ [RECENT_SAVES_KEY]: map });
+    return prev;
+  } catch {
+    return 0; // memory is best-effort; never fail or delay a save over it
+  }
 }
 
 // Best-effort diagnostics: append one capture event to the native host's
@@ -421,8 +453,10 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   }
   // Surface metadata-fetch failure to the drop overlay (same partial-success
   // signal as the click-save banner) so a screenshot-less illustration that
-  // saved without post info isn't shown as a plain success.
-  return { ...ack, metaOk };
+  // saved without post info isn't shown as a plain success. grouped = prior
+  // saves of this post this session (the overlay says the save merged).
+  const grouped = await bumpRecentSave(record.url);
+  return { ...ack, metaOk, grouped };
 }
 
 // Choose which original to save for a dragged image, preferring the platform

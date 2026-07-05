@@ -17,6 +17,10 @@
       bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
       bannerSaving: '保存中...',
       bannerSaved: '画像を保存しました',
+      // $1 = how many images of this post are saved now (2nd, 3rd, …). Shown when
+      // a save hits a post already saved this session — the app folds same-post
+      // records into ONE stacked card, so nothing "new" appears in the grid.
+      bannerSavedGrouped: '保存しました — さっきの画像とグループ化されます（$1枚目）',
       bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
       bannerFailed: '保存に失敗しました',
       // $1 = reason. Shown when a save fails with a known cause, so the banner
@@ -37,6 +41,7 @@
       bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
       bannerSaving: 'Saving...',
       bannerSaved: 'Image saved',
+      bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
       bannerSavedNoMeta: 'Saved (post info unavailable)',
       bannerFailed: 'Save failed',
       bannerFailedReason: 'Save failed: $1',

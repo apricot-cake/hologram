@@ -304,7 +304,10 @@
         // a specific "restart Chrome" hint (the registry is read at startup).
         banner.textContent = msg.hostMissing ? getMessage('bannerHostMissing') : msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
       } else {
-        banner.textContent = partial ? MSG.savedNoMeta : MSG.saved;
+        // grouped > 0: this post was already saved this session — the app folds
+        // same-post saves into one stacked card, so say so instead of a plain
+        // success (otherwise the save looks like a silent no-op in the grid).
+        banner.textContent = partial ? MSG.savedNoMeta : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
       banner.style.background = partial ? '#f59e0b' : msg.success ? '#00ba7c' : '#f4212e';
       // Hold failures (and partials) longer so the reason is readable.
