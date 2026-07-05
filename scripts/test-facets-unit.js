@@ -35,7 +35,7 @@ const filtered = posts.slice(0, 3);
 const active = new Set(['platform:x', 'tag:風景']);
 const posterActive = new Set(['tag:P趣味']);
 let tagGroups = [];
-let multiOnly = false;
+const multiOnly = false;
 
 const KIND = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
 
@@ -107,10 +107,10 @@ const { facetCounts, qfValues } = F.makeFacets(deps);
   const by = Object.fromEntries(rows.map((r) => [r.v, r.count]));
   assert('postType 多重バケット', by.post === 1 && by.reply === 1 && by.quote === 1 && by.thread === 0);
 
-  multiOnly = true;
+  // 複数画像 moved to its own sidebar toggle row — the メディア flyout is back to
+  // exactly the per-record media types (no __multi).
   const media = qfValues('media');
-  assert('media 3種+__multi（multiOnly ライブ読み）', media.length === 4 && media[3].v === '__multi' && media[3].on === true);
-  multiOnly = false;
+  assert('media = image/video/gif のみ（__multi 撤去）', media.length === 3 && media.map((r) => r.v).join(',') === 'image,video,gif');
   assert('media count', media[0].count === 2 && media[1].count === 1);
 }
 

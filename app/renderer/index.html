@@ -527,7 +527,7 @@
     /* Active clip filter: accent INK on the icon only — no fill (motion-study
        canvas 2026-07-05; the grey slab read as a heavier state than it is).
        Hover keeps the plain .sb-row treatment. */
-    .clip-row.active .sb-row-ic { color: var(--accent-text); }
+    .clip-row.active .sb-row-ic, .multi-row.active .sb-row-ic { color: var(--accent-text); }
     .clip-clear-btn {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
       background: transparent; border: none; padding: 3px; border-radius: 4px;
@@ -831,41 +831,74 @@
     .post-grid.tile-view .card-thumb, .post-grid.list-view .card-thumb { display: contents; }
 
     /* --- Stacked cards: a multi-image group = the CARD itself duplicated -----
-       Photo-app stack idiom, whole-card version (motion-study canvas
-       2026-07-05; replaces the 8d5b7ad paper-edge strips): rotated dummy cards
-       peek out BEHIND the real card, each carrying the group's 2nd/3rd real
-       thumbnail (.stack-sheet-img). The front card stays upright — text never
-       rotates. Sheets are absolutely positioned (zero height contribution =
-       masonry reservation stays exact) at z-index:-1 inside the card's own
-       stacking context, so they hide behind the card and only the peek shows.
-       The peek is tuned to stay inside each layout's gutter — card/tile
-       neighbors' paint order vs our sheets is DOM-order-dependent, so never
-       let sheets reach a neighbor. ×N badge stays as the precise count. */
+       Inner-deck at REST + fan-out on HOVER (motion-study 2026-07-05; replaces
+       the outward-rotation-only peek). The old peek rotated the sheets out past
+       the card edge, so its whole visibility budget was the layout's gutter
+       (~8px) and it shrank to nothing as the tile shrank — the exact wall the
+       user hit. New model, two states:
+
+       REST — the multi-ness is drawn INSIDE the card's own footprint. The front
+       face (thumb/meta) is pushed down by --deck (padding-top); the sheets fill
+       the PADDING box (inset:0), so their tops already sit --deck above the inset
+       front face and never cross the border box. Only that fixed --deck-tall band
+       peeks. s1 (always present — it's the 2nd image, so the ONLY back sheet on a
+       ×2 group) is the BACKMOST layer and fills the band from the very top, so a
+       ×2 reads as a clear single step with no empty strip; s2 (the 3rd image, only
+       on ×3+) steps in front of it. Zero gutter is consumed (non-stacked cards,
+       the majority, pay nothing) and the peek is a constant pixel height that
+       survives any tile size.
+
+       HOVER — no stack-specific effect (user 2026-07-05: the sheet motion felt
+       unnecessary). The card lifts as any card does and the whole deck rides up
+       with it; the sheets themselves don't move. Geometry is per-layout via the
+       --s1/--s2 (rest) custom props. ×N badge stays as the precise count. */
+    .post-card.grouped {
+      background: transparent;   /* the deck band shows the sheets behind */
+      border-color: transparent; /* the front-face edge is drawn by ::before */
+      box-shadow: none;          /* the sheets + ::before carry every shadow */
+      padding-top: var(--deck, 9px);  /* pushes the front face down = the deck */
+      content-visibility: visible;    /* cv:auto's implicit paint containment
+         would clip the fanned sheets to the card box; cheap to drop since the
+         virtualized grid unmounts offscreen cells anyway. */
+    }
     .post-card .stack-sheet {
-      position: absolute; inset: 0; z-index: -1; overflow: hidden;
-      background: var(--surface); border: 1px solid var(--border);   /* --border (not subtle): a white sheet on the near-white --bg needs the step */
+      position: absolute; inset: 0;   /* fill the PADDING box — the card's padding-top
+         IS the deck, so the sheet's top already peeks --deck above the inset front
+         face and never crosses the border box (zero gutter, no outward peek) */
+      overflow: hidden; transform-origin: top center;
+      background: var(--surface); border: 1px solid var(--border-strong);   /* strong, not hairline: a white sheet edge on a near-white bg/front needs a real line */
       border-radius: 8px; box-shadow: var(--shadow-md);   /* md, not sm: white sheets carrying white-ish images need the shadow to read at all */
     }
-    /* content-visibility:auto imposes implicit PAINT CONTAINMENT — it clips
-       every descendant to the card box, so the sheets peeking outside were
-       silently erased in tile/list (masonry already forces visible for
-       measurement). Grouped cards opt out; cheap — the virtualized grid
-       unmounts offscreen cells anyway, cv is only a belt on the overscan. */
-    .post-card.grouped { content-visibility: visible; }
-    /* Separation card↔sheets: the card's own box-shadow paints UNDER its
-       negative-z children (CSS paint order), so card + sheets melted into one
-       white shape (user 2026-07-05). A ::before overlay re-casts the card's
-       edge ABOVE the sheets — hairline ring + contact shadow = the front card
-       visibly sits ON the pile. z-index:0 keeps it under the positioned
-       content (.card-thumb / .post-meta / buttons come later in DOM). */
+    /* Depth dim: back sheets tint their IMAGE toward --text (dark in light theme,
+       light in dark) so the stepped deck reads as distinct layers even when every
+       thumbnail is near-white manga line-art. Scoped to the image (NOT the whole
+       sheet) so list's white sheet-body doesn't peek as a gray band across the
+       row top — only the thumbnail sliver dims. s1 is backmost so it's the dimmer. */
+    .stack-sheet .stack-sheet-img::after {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      pointer-events: none; background: var(--stack-dim, transparent);
+    }
+    .post-card.grouped .stack-s1 { z-index: -2; transform: var(--s1); --stack-dim: color-mix(in srgb, var(--text) 15%, transparent); }
+    .post-card.grouped .stack-s2 { z-index: -1; transform: var(--s2); --stack-dim: color-mix(in srgb, var(--text) 8%, transparent); }
+    /* Chrome sits on the FRONT face, not in the deck band: push the ×N badge
+       (always-on for grouped) and the ○ select ring down by --deck. */
+    .post-grid:not(.tile-view) .post-card.grouped .card-ntag { top: calc(8px + var(--deck)); }
+    .post-grid.tile-view .post-card.grouped .card-ntag { top: calc(6px + var(--deck)); }
+    .post-card.grouped .select-check { top: calc(8px + var(--deck)); }
+    /* Front-face edge re-cast ABOVE the negative-z sheets (the card's own
+       box-shadow paints UNDER them — CSS paint order). Rings the INSET front
+       face only (top at --deck) so it reads as sitting ON the pile; deepens on
+       hover for the lift. z-index:0 keeps it under the positioned content. */
     .post-card.grouped::before {
-      content: ''; position: absolute; inset: -1px; z-index: 0;
+      content: ''; position: absolute; top: var(--deck, 9px);
+      left: -1px; right: -1px; bottom: -1px; z-index: 0;
       border-radius: inherit; pointer-events: none;
       box-shadow: 0 0 0 1px var(--border-strong), 0 2px 8px rgba(16, 19, 26, 0.18);
+      transition: box-shadow var(--dur-hover) var(--ease-out);
     }
-    [data-theme="dark"] .post-card.grouped::before {
-      box-shadow: 0 0 0 1px var(--border-strong), 0 2px 8px rgba(0, 0, 0, 0.55);
-    }
+    .post-card.grouped:hover::before { box-shadow: 0 0 0 1px var(--border-strong), 0 8px 20px rgba(16, 19, 26, 0.24); }
+    [data-theme="dark"] .post-card.grouped::before { box-shadow: 0 0 0 1px var(--border-strong), 0 2px 8px rgba(0, 0, 0, 0.55); }
+    [data-theme="dark"] .post-card.grouped:hover::before { box-shadow: 0 0 0 1px var(--border-strong), 0 8px 20px rgba(0, 0, 0, 0.6); }
     /* Card view: sheet top ~56% = thumbnail area (mirrors the card anatomy —
        image on top, meta panel below). */
     .stack-sheet .stack-sheet-img {
@@ -873,34 +906,43 @@
       background-size: cover; background-position: center top;
       border-radius: 8px 8px 0 0;
     }
-    .post-grid.masonry .post-card.grouped { overflow: visible; z-index: 0; }
-    .post-grid.masonry .post-card.grouped:hover { z-index: 1; }   /* (0,4,0) — restore the hover lift over the rule above */
+    /* ---- card view (masonry) ---- */
+    .post-grid.masonry .post-card.grouped {
+      overflow: visible; z-index: 0; --deck: 15px;
+      --s1: scale(0.93);                     /* backmost: fills the band from the top */
+      --s2: translateY(7px) scale(0.965);    /* middle: steps down toward the face */
+    }
+    .post-grid.masonry .post-card.grouped:hover { z-index: 1; box-shadow: none; }   /* beat the generic hover md; ::before carries the lift */
     /* The card is overflow:visible now — the thumb re-clips the hover img zoom. */
     .post-grid.masonry .post-card.grouped .card-thumb { overflow: hidden; border-radius: 8px 8px 0 0; }
     .post-grid.masonry .post-card.grouped .post-meta { position: relative; background: var(--surface); border-radius: 0 0 8px 8px; }
-    .post-grid.masonry .stack-sheet.stack-s1 { transform: rotate(-3deg) translate(-3px, 2px); }
-    .post-grid.masonry .stack-sheet.stack-s2 { transform: rotate(2.4deg) translate(3px, -1px); }
-    /* tile: square image-only cells → full-bleed sheet thumbs (no meta split).
-       Same fanned rotation as the card (user 2026-07-05 — keep the idiom
-       consistent across layouts). A few px of corner peek escapes the 8px
-       gutter; the sheet is z-index:-1 behind the tile so the slight overlap
-       with a neighbor reads as depth, not a glitch. The thumb regains a real
-       box to clip the hover zoom now that the card is overflow:visible. */
-    .post-grid.tile-view .post-card.grouped { overflow: visible; z-index: 0; }
-    .post-grid.tile-view .post-card.grouped:hover { z-index: 1; }
+    /* ---- tile: square image-only cells → full-bleed sheet thumbs (no meta
+       split). Same inner-deck; the front thumb regains a clip box for the hover
+       img zoom now that the card is overflow:visible. ---- */
+    .post-grid.tile-view .post-card.grouped {
+      overflow: visible; z-index: 0; --deck: 13px;
+      --s1: scale(0.92);                     /* backmost: fills the band from the top */
+      --s2: translateY(6px) scale(0.955);    /* middle: steps down */
+    }
+    .post-grid.tile-view .post-card.grouped:hover { z-index: 1; box-shadow: none; }
+    /* the front thumb is ABSOLUTE (fills the padding box), so padding-top can't
+       push it — inset its top by --deck explicitly to open the deck band. */
     .post-grid.tile-view .post-card.grouped .card-thumb {
-      display: block; position: absolute; inset: 0; overflow: hidden;
+      display: block; position: absolute; inset: var(--deck) 0 0 0; overflow: hidden;
       border-radius: 8px; line-height: 0;
     }
     .post-grid.tile-view .stack-sheet .stack-sheet-img { inset: 0; border-radius: 8px; }
-    .post-grid.tile-view .stack-sheet.stack-s1 { transform: rotate(-3deg) translate(-3px, 2px); }
-    .post-grid.tile-view .stack-sheet.stack-s2 { transform: rotate(2.4deg) translate(3px, -1px); }
-    /* list: the WHOLE ROW is the stacked object, fanned like the card (user
-       2026-07-05). A long row is a long lever, so the angle is small (±1.2°)
-       to keep the fanned corners inside the widened row gap; the sheet mirrors
-       the row anatomy — thumb-wide image at the left, white body. */
-    .post-grid.list-view .post-card.grouped { overflow: visible; z-index: 0; }
-    .post-grid.list-view .post-card.grouped:hover { z-index: 1; }
+    /* ---- list: the WHOLE ROW is the stacked object. The deck peeks along the
+       row's top edge; the sheet mirrors the row anatomy (thumb-wide image left,
+       white body — only the image dims, so no gray band crosses the row top). A
+       row is a wide, short lever, so the rest taper uses scaleX≈1 with a real
+       scaleY to keep the bottom inside. ---- */
+    .post-grid.list-view .post-card.grouped {
+      overflow: visible; z-index: 0; --deck: 10px;
+      --s1: scale(0.997, 0.8);               /* backmost: fills the band top (scaleY keeps the bottom inside) */
+      --s2: translateY(5px) scale(0.999, 0.9); /* middle: steps down */
+    }
+    .post-grid.list-view .post-card.grouped:hover { z-index: 1; box-shadow: none; }
     .post-grid.list-view .post-card.grouped .card-thumb {
       display: block; position: relative; line-height: 0;
       flex: 0 0 var(--list-thumb, 88px); width: var(--list-thumb, 88px);
@@ -913,8 +955,6 @@
     .post-grid.list-view .stack-sheet .stack-sheet-img {
       inset: 0 auto 0 0; width: var(--list-thumb, 88px); border-radius: 6px 0 0 6px;
     }
-    .post-grid.list-view .stack-sheet.stack-s1 { transform: rotate(-1.2deg) translate(-3px, 2px); }
-    .post-grid.list-view .stack-sheet.stack-s2 { transform: rotate(1deg) translate(3px, -1px); }
     .pf-badge {
       position: absolute; left: 8px; bottom: 8px; z-index: 1;
       display: inline-flex; align-items: center; gap: 5px;
@@ -1016,9 +1056,10 @@
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
-      /* gap mirrors the masonic rowGutter (viewer.js) — widened 4→14 so a
-         grouped row's fanned stack-sheets (±1.2° ≈ 8px at the row ends) clear
-         the neighbor rows. */
+      /* gap mirrors the masonic rowGutter (viewer.js). Kept at 14 for scanning
+         rhythm; the grouped-row stack no longer needs clearance here — its rest
+         deck stays inside the row footprint and the hover fan raises z-index so
+         it paints above neighbors rather than parting them. */
       display: flex; flex-direction: column; gap: 14px;
       grid-template-columns: unset;
     }
@@ -2004,6 +2045,11 @@
           <button class="sb-row" type="button" data-qfrow="platform"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="sb-row-name" id="sbPlatformTitle"></span><span class="sb-row-badge" data-badge="platform"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="postType"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="sb-row-name" id="sbPostTypeTitle"></span><span class="sb-row-badge" data-badge="postType"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="media"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/></svg></span><span class="sb-row-name" id="sbMediaTitle"></span><span class="sb-row-badge" data-badge="media"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
+          <!-- 複数画像 (grouped): a direct 2-state toggle (no flyout, like クリップ) for
+               the group-level multiOnly — show only posts whose auto-group holds more
+               than one image. Promoted out of the メディア flyout to its own row so the
+               grouped-image filter is a first-class sidebar entry (user 2026-07-05). -->
+          <button class="sb-row multi-row" id="multiRow" type="button"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="sb-row-name">複数画像</span></button>
           <button class="sb-row" type="button" data-qfrow="date"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></span><span class="sb-row-name" id="sbDateTitle"></span><span class="sb-row-badge" data-badge="date"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="engagement"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span><span class="sb-row-name" id="sbEngTitle"></span><span class="sb-row-badge" data-badge="engagement"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>
           <button class="sb-row" type="button" data-qfrow="user"><span class="sb-row-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="sb-row-name" id="sbAuthorTitle">投稿者</span><span class="sb-row-badge" data-badge="user"></span><span class="sb-row-arrow"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l4 4-4 4"/></svg></span></button>

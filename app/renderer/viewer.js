@@ -629,7 +629,6 @@
     PF_NAME,
     tagKindOf,
     tagGroups: () => tagGroups,
-    multiOnly: () => multiOnly,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -709,14 +708,8 @@
   // open so several values can be picked in a row).
   function onQfPick(cat, it) {
     const v = it.v;
-    // 複数画像 (media flyout): toggles the group-level multiOnly, not a filter.
-    if (cat === 'media' && v === '__multi') {
-      multiOnly = !multiOnly;
-      renderQfPop();
-      renderFilterBadges();
-      renderPosts();
-      return;
-    }
+    // (複数画像 moved to its own sidebar toggle row — see setupMultiSidebar. It's no
+    //  longer emitted into the メディア flyout, so there's no __multi case here.)
     // Poster flyouts toggle a top-level leaf in the poster query tree (addFilter /
     // removeByLeaf both refresh rows + bar + grid). 作品/キャラ/タグ all map to one tag
     // leaf type (種別 only scopes which the row offers).
@@ -929,6 +922,16 @@
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   byId('filterRows').addEventListener('click', (e) => {
+    // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
+    // delegated listener rather than its own — the row can be (re)built after wiring
+    // time, so a listener bound at load could miss it. Flips the group-level flag.
+    if (closestOf(e, '#multiRow')) {
+      multiOnly = !multiOnly;
+      renderMultiRow();
+      renderFilterBadges();
+      renderPosts();
+      return;
+    }
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow;
@@ -973,7 +976,8 @@
     const counts = {};
     for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
     counts.platform = (counts.platform || 0) + (counts.instance || 0);
-    if (multiOnly) counts.media = (counts.media || 0) + 1; // 複数画像 folded into メディア
+    // (複数画像 is no longer folded into the メディア badge — it's its own row now,
+    //  lit via the accent icon in renderMultiRow.)
     // 用語帳: split the tag badge by 種別 so a 作品/キャラ filter lights its own row's
     // badge, leaving the タグ row badge for general (未分類) tags only.
     let tagWork = 0,
@@ -2516,9 +2520,9 @@
       },
       keyOf: (g) => postIdKey(g.rep),
       labels: cardLabels,
-      // list: one full-width column, gap 14 — widened from 4 so a grouped
-      // row's fanned stack-sheets (±1.2° ≈ 8px at the row ends) clear the
-      // neighbor rows (single column = safe, no repack math). tile: squares
+      // list: one full-width column, gap 14 — kept wide (from 4) for scanning
+      // rhythm; the grouped-row stack no longer needs clearance (its rest deck
+      // stays inside the row and the hover fan raises z-index). tile: squares
       // packed by minimum width tileSize, gap 8 (.post-grid.tile-view). card:
       // masonry columns of minimum width cardSize, gap 16 (.post-grid.masonry's
       // old column gap) — masonic stretches columns to fill, the same math as
@@ -2757,9 +2761,10 @@
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); this
-  // now only keeps the clip row entry in sync. Call sites keep the name.
+  // now only keeps the clip + 複数画像 row entries in sync. Call sites keep the name.
   function renderPostFolders() {
     renderClipRow();
+    renderMultiRow();
   }
   // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
   // only clipped posts; 空にする clears all flags (the posts themselves are kept).
@@ -2803,6 +2808,14 @@
         renderPosts(true);
       });
   })();
+
+  // 複数画像 sidebar row: reflect the group-level multiOnly flag as the row's active
+  // state (accent icon). The click that flips it is handled by the delegated
+  // #filterRows listener above (setup-time binding could miss a rebuilt row).
+  function renderMultiRow() {
+    const row = document.getElementById('multiRow');
+    if (row) row.classList.toggle('active', multiOnly);
+  }
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
