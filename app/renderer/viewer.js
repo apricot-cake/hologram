@@ -452,7 +452,7 @@
   // direct ref here would hit TDZ at wiring time; the wrappers only run at
   // render time. formatShortDate / formatCount are hoisted function declarations
   // (direct refs are fine).
-  const { filterLabel, tabTitleOf } = window.corpusTabState.makeTabLabels({
+  const { filterLabel, tabTitleOf, posterFilterLabel } = window.corpusTabState.makeTabLabels({
     MSG,
     engTypeLabels: ENG_TYPE_LABELS,
     platformName: (v) => PF_NAME[v] || v,
@@ -461,6 +461,12 @@
     collectionName: (id) => {
       const fobj = CF() && CF().byId(id);
       return fobj ? fobj.name : null;
+    },
+    // Deferred arrow (posterFolderById is a const declared far below — same TDZ
+    // dance as CF()/collectionName; the wrapper only runs at render time).
+    posterFolderName: (id) => {
+      const fo = posterFolderById(id);
+      return fo ? fo.name : null;
     },
   });
 
@@ -1237,7 +1243,7 @@
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through corpusSearch.
-  const { emptyTree, treeLeaves, facetTreeFrom, evalNode, localDayRange, hostOf, userKey, textHaystackOf } = window.corpusQuery;
+  const { emptyTree, treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } = window.corpusQuery;
   const postPredOf = window.corpusQuery.makePostPredOf({
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
@@ -3770,48 +3776,14 @@
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
   // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
-  function posterPredOf(f) {
-    switch (f.type) {
-      case 'platform':
-        return (u) => u.platform === f.value;
-      case 'instance':
-        return (u) => u.instance === f.value;
-      case 'tag':
-        return (u) => posterTagsOf(u.key).includes(f.value); // 作品/キャラも同じ tag 型
-      case 'folder': {
-        const fo = posterFolderById(f.value);
-        const set = new Set(fo ? fo.items : []);
-        return (u) => set.has(u.key);
-      }
-      case 'date': {
-        const field = f.dateField || 'latest'; // latest | lastCapture | authorCreatedAt
-        const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
-        return (u) => {
-          const v = u[field];
-          if (!v) return false;
-          const d = new Date(v);
-          return (!from || d >= from) && (!to || d < to);
-        };
-      }
-      default:
-        return () => true;
-    }
-  }
-  // Poster pill label: folder name + date dim are poster-specific; the rest (platform /
-  // instance / tag) reuse the shared filterLabel.
-  function posterFilterLabel(f) {
-    if (f.type === 'folder') {
-      const fo = posterFolderById(f.value);
-      return fo ? fo.name : f.value;
-    }
-    if (f.type === 'date') {
-      const dimName = f.dateField === 'lastCapture' ? MSG.posterDateLastCapture : f.dateField === 'authorCreatedAt' ? MSG.posterDateCreated : MSG.posterDateLastPost;
-      const fromStr = f.from ? formatShortDate(f.from) : '';
-      const toStr = f.to ? formatShortDate(f.to) : '';
-      return `${dimName}: ${fromStr}〜${toStr}`;
-    }
-    return filterLabel(f);
-  }
+  // Poster leaf predicate — extracted to query.js (makePosterPredOf), the mirror
+  // of postPredOf above. posterTagsOf (tags.js) and posterFolderById (pfStore)
+  // are both declared above, so a direct ref is TDZ-safe. posterFilterLabel now
+  // lives in tab-state.js's makeTabLabels (destructured near filterLabel).
+  const posterPredOf = window.corpusQuery.makePosterPredOf({
+    posterTagsOf,
+    folderById: posterFolderById,
+  });
   let posterShadow = []; // flat leaf shadow of the poster tree (sidebar badges / rows)
   let editingPosterDateNode = null; // the date leaf being edited via the popover (null = new)
   // The poster-side builder instance. transient (no tabs / nav history for posters);

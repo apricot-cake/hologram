@@ -130,6 +130,31 @@ assert('text(url): 非URL形の語（notes）は URL だけの一致では当た
 assert('text(url): fuzzy モードでも URL 貼り付けは exact 経路で当たる', predOfU({ type: 'text', value: 'https://misskey.io/notes/abc', mode: 'fuzzy' })(R.stampPost(post())));
 assert('text: description（Eagle 注釈）にも当たる', predOfU({ type: 'text', value: '注釈テキスト', mode: 'exact' })(post({ description: 'ここに注釈テキストがある' })));
 
+// --- makePosterPredOf: poster フィルタ述語（post 側 makePostPredOf の対称）---
+// deps=posterTagsOf（key→タグ配列・tags.js）/ folderById（id→{items}・pfStore）を注入。
+const posterTags = new Map([['x:@aaa', ['作画', 'Ave Mujica']]]);
+const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
+const posterPredOf = Q.makePosterPredOf({
+  posterTagsOf: (key) => posterTags.get(key) || [],
+  folderById: (id) => posterFolders.get(id) || null,
+});
+const poster = (over) => Object.assign({ key: 'x:@aaa', platform: 'x', instance: '', latest: '2026-05-10T12:00:00Z', lastCapture: '2026-06-01T00:00:00Z', authorCreatedAt: '2020-01-01T00:00:00Z' }, over || {});
+assert('poster platform: 一致', posterPredOf({ type: 'platform', value: 'x' })(poster()));
+assert('poster platform: 不一致', !posterPredOf({ type: 'platform', value: 'misskey' })(poster()));
+assert('poster instance: 一致', posterPredOf({ type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' })));
+assert('poster tag: 注入 posterTagsOf 経由で含む', posterPredOf({ type: 'tag', value: 'Ave Mujica' })(poster()));
+assert('poster tag: タグ無しポスターは不一致(クラッシュしない)', !posterPredOf({ type: 'tag', value: '作画' })(poster({ key: 'x:@none' })));
+assert('poster folder: メンバーは一致', posterPredOf({ type: 'folder', value: 'fo-1' })(poster()));
+assert('poster folder: 非メンバーは不一致', !posterPredOf({ type: 'folder', value: 'fo-1' })(poster({ key: 'x:@zzz' })));
+assert('poster folder: 未知フォルダは空集合＝不一致', !posterPredOf({ type: 'folder', value: 'fo-none' })(poster()));
+// date: 既定フィールド=latest、to は翌日 0時未満（post 側と同じ localDayRange 規約）
+const pMay10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
+assert('poster date: 既定 latest がその日のローカル 23:59 を含む', posterPredOf(pMay10)(poster({ latest: dLocal('2026-05-10T23:59:00').toISOString() })));
+assert('poster date: 翌日ローカル 00:00 は含まない', !posterPredOf(pMay10)(poster({ latest: dLocal('2026-05-11T00:00:00').toISOString() })));
+assert('poster date: dateField=lastCapture を参照', posterPredOf({ type: 'date', dateField: 'lastCapture', from: '2026-06-01', to: '2026-06-01' })(poster({ lastCapture: dLocal('2026-06-01T10:00:00').toISOString() })));
+assert('poster date: フィールド欠損は不一致', !posterPredOf(pMay10)(poster({ latest: '' })));
+assert('poster: 未知タイプは素通し(true)', posterPredOf({ type: 'workspace' })(poster()));
+
 // --- evalNode: AND/OR/否定/入れ子 ---
 const leaf = (type, value, neg) => ({ kind: 'cond', type, value, neg: !!neg });
 const group = (op, children, neg) => ({ kind: 'group', op, neg: !!neg, children });

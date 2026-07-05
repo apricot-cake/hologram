@@ -421,6 +421,44 @@
     };
   }
 
+  // --- Poster-side leaf predicate factory: a poster-filter leaf → (poster)=>bool.
+  // Mirrors makePostPredOf so both builders (posts / posters) source their
+  // predicate from this one engine (previously posterPredOf lived in viewer.js —
+  // an asymmetry with the extracted post side). Poster facets are a subset
+  // (platform / instance / tag / folder / date). deps carry the poster-only
+  // couplings the engine must not own:
+  //   posterTagsOf(key) → string[]           — tags.js (作品/キャラ share 'tag')
+  //   folderById(id) → {items:string[]}|null — poster-folders.js state
+  function makePosterPredOf(deps) {
+    return function posterPredOf(f) {
+      switch (f.type) {
+        case 'platform':
+          return (u) => u.platform === f.value;
+        case 'instance':
+          return (u) => u.instance === f.value;
+        case 'tag':
+          return (u) => deps.posterTagsOf(u.key).includes(f.value); // 作品/キャラも同じ tag 型
+        case 'folder': {
+          const fo = deps.folderById(f.value);
+          const set = new Set(fo ? fo.items : []);
+          return (u) => set.has(u.key);
+        }
+        case 'date': {
+          const field = f.dateField || 'latest'; // latest | lastCapture | authorCreatedAt
+          const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
+          return (u) => {
+            const v = u[field];
+            if (!v) return false;
+            const d = new Date(v);
+            return (!from || d >= from) && (!to || d < to);
+          };
+        }
+        default:
+          return () => true;
+      }
+    };
+  }
+
   window.corpusQuery = {
     emptyTree,
     treeLeaves,
@@ -448,5 +486,6 @@
     userKey,
     textHaystackOf,
     makePostPredOf,
+    makePosterPredOf,
   };
 })();

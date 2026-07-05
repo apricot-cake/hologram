@@ -96,6 +96,8 @@ interface CorpusQueryApi {
   textHaystackOf(p: CorpusPost): string[];
   /** Post-side leaf-predicate factory; runtime couplings injected by viewer.js. */
   makePostPredOf(deps: { isInCollection(id: string, captureId: string): boolean; isClipped(captureId: string): boolean; fuzzyCompile?(q: string): (hay: string) => boolean; postKeyOf?(url: string | null | undefined): string | null }): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean;
+  /** Poster-side leaf-predicate factory (mirror of makePostPredOf); poster-only couplings injected by viewer.js. */
+  makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: CorpusQueryLeaf) => (u: CorpusUserAgg) => boolean;
 }
 
 // ---- renderer/records.js — record shape helpers + grouping (dual-exported
@@ -242,9 +244,18 @@ interface CorpusNavHistory {
 }
 interface CorpusTabStateApi {
   genTabId(): string;
-  makeTabLabels(deps: { MSG: { [k: string]: any }; engTypeLabels: { [k: string]: string }; platformName(v: string): string; formatShortDate(dateStr: string): string; formatCount(n: number | null | undefined): string; collectionName(id: string): string | null | undefined }): {
+  makeTabLabels(deps: {
+    MSG: { [k: string]: any };
+    engTypeLabels: { [k: string]: string };
+    platformName(v: string): string;
+    formatShortDate(dateStr: string): string;
+    formatCount(n: number | null | undefined): string;
+    collectionName(id: string): string | null | undefined;
+    posterFolderName(id: string): string | null | undefined;
+  }): {
     filterLabel(f: { type: string; [k: string]: any }): string;
     tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
+    posterFilterLabel(f: { type: string; [k: string]: any }): string;
   };
   makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusTabSnapshot; apply(s: CorpusTabSnapshot): void; onChange(): void }): CorpusNavHistory;
   serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> };

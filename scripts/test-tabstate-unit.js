@@ -38,14 +38,18 @@ const MSG = {
   qfGif: 'GIF',
   filterAll: 'すべて',
   qfMultiImage: '複数画像',
+  posterDateLastPost: '最終投稿',
+  posterDateLastCapture: '最終取得',
+  posterDateCreated: 'アカウント作成',
 };
-const { filterLabel, tabTitleOf } = T.makeTabLabels({
+const { filterLabel, tabTitleOf, posterFilterLabel } = T.makeTabLabels({
   MSG,
   engTypeLabels: { likes: 'いいね' },
   platformName: (v) => ({ x: 'X', pixiv: 'pixiv' })[v] || v,
   formatShortDate: (s) => 'D:' + s,
   formatCount: (n) => 'C' + n,
   collectionName: (id) => (id === 'c1' ? 'お気に入り' : null),
+  posterFolderName: (id) => (id === 'fo1' ? 'イラスト' : null),
 });
 
 // --- filterLabel: one case per switch branch ---
@@ -66,6 +70,13 @@ assert('media 3分岐', filterLabel({ type: 'media', value: 'image' }) === '画�
 assert('instance は値・user は label 優先', filterLabel({ type: 'instance', value: 'misskey.io' }) === 'misskey.io' && filterLabel({ type: 'user', value: 'x:u1', label: 'アリス' }) === 'アリス');
 assert('user label 無しは value', filterLabel({ type: 'user', value: 'x:u1' }) === 'x:u1');
 assert('text は値・default は value||type', filterLabel({ type: 'text', value: 'query' }) === 'query' && filterLabel({ type: 'unknown' }) === 'unknown');
+
+// --- posterFilterLabel: folder / date は poster 固有、他は filterLabel へ委譲 ---
+assert('poster folder: 名前解決', posterFilterLabel({ type: 'folder', value: 'fo1' }) === 'イラスト');
+assert('poster folder: 未知は id フォールバック', posterFilterLabel({ type: 'folder', value: 'foX' }) === 'foX');
+assert('poster date: 既定 dim=最終投稿＋from/to 整形', posterFilterLabel({ type: 'date', from: '2026-01-01', to: '2026-02-01' }) === '最終投稿: D:2026-01-01〜D:2026-02-01');
+assert('poster date: lastCapture/authorCreatedAt の dim 切替', posterFilterLabel({ type: 'date', dateField: 'lastCapture', from: '2026-01-01' }) === '最終取得: D:2026-01-01〜' && posterFilterLabel({ type: 'date', dateField: 'authorCreatedAt', to: '2026-02-01' }) === 'アカウント作成: 〜D:2026-02-01');
+assert('poster その他型は filterLabel へ委譲', posterFilterLabel({ type: 'platform', value: 'x' }) === 'X' && posterFilterLabel({ type: 'tag', value: '風景' }) === '風景');
 
 // --- tabTitleOf ---
 {

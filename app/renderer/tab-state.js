@@ -109,7 +109,25 @@
       return { text: parts.join('・'), iconType: primaryIconType || 'all' };
     }
 
-    return { filterLabel, tabTitleOf };
+    // Poster query-chip / row label. folder name + date dimension are
+    // poster-specific; platform / instance / tag reuse the shared filterLabel.
+    // deps.posterFolderName resolves a poster-folder id → name (or null) from
+    // the viewer-owned pfStore, mirroring collectionName above.
+    function posterFilterLabel(f) {
+      if (f.type === 'folder') {
+        const name = deps.posterFolderName(f.value);
+        return name != null ? name : f.value;
+      }
+      if (f.type === 'date') {
+        const dimName = f.dateField === 'lastCapture' ? MSG.posterDateLastCapture : f.dateField === 'authorCreatedAt' ? MSG.posterDateCreated : MSG.posterDateLastPost;
+        const fromStr = f.from ? formatShortDate(f.from) : '';
+        const toStr = f.to ? formatShortDate(f.to) : '';
+        return `${dimName}: ${fromStr}〜${toStr}`;
+      }
+      return filterLabel(f);
+    }
+
+    return { filterLabel, tabTitleOf, posterFilterLabel };
   }
 
   // Per-tab view-history for browser-style back/forward. Holds JSON snapshots;
