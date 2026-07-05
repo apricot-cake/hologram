@@ -818,6 +818,45 @@
        the card box, which there coincides with the image edge. */
     .card-thumb { position: relative; display: block; line-height: 0; }
     .post-grid.tile-view .card-thumb, .post-grid.list-view .card-thumb { display: contents; }
+
+    /* --- Stacked cards: a multi-image group reads as a paper pile ------------
+       Photo-app stack idiom (Google Photos photo stacks / Apple Photos album
+       piles): two sheet edges peek above the image, INSIDE the card box, so
+       multiplicity is visible at a glance — the ×N badge alone had near-zero
+       discoverability (ユーザー指摘 2026-07-05; the badge stays as the precise
+       count). Sheets are flush against the image top (no overlap → no z-index
+       games) and the 12px strip is plain flow layout rendered synchronously, so
+       the masonry height reservation stays exact (no load-time settle). */
+    .card-thumb.stacked { padding-top: 12px; }
+    .stack-sheet {
+      position: absolute; box-sizing: border-box;
+      background: var(--surface-2);
+      border: 1px solid var(--border); border-bottom: none;
+      transition: top .2s var(--ease-out), height .2s var(--ease-out), left .2s var(--ease-out), right .2s var(--ease-out);
+    }
+    .stack-sheet.stack-s1 { top: 6px; height: 6px; left: 5px; right: 5px; border-radius: 5px 5px 0 0; }
+    .stack-sheet.stack-s2 { top: 2px; height: 4px; left: 11px; right: 11px; border-radius: 4px 4px 0 0; }
+    /* Hover: the pile loosens (sheets rise + widen a touch) — same 200ms
+       ease-out family as the card lift; suppressed with reduced motion. */
+    @media (prefers-reduced-motion: no-preference) {
+      .post-card:hover .stack-s1 { top: 5px; height: 7px; left: 3px; right: 3px; }
+      .post-card:hover .stack-s2 { top: 0; height: 5px; left: 8px; right: 8px; }
+    }
+    /* tile: the thumb regains a real box filling the square; the image gives up
+       the strip's 12px (its existing height:100% now resolves against the
+       thumb's padded content box — object-fit cover just re-crops). The cell
+       itself stays square. */
+    .post-grid.tile-view .card-thumb.stacked { display: block; position: absolute; inset: 0; line-height: 0; }
+    /* list: same — the thumb becomes the fixed-width flex item the img used to
+       be, and the img fills it under the strip. */
+    .post-grid.list-view .card-thumb.stacked {
+      display: block; position: relative; line-height: 0;
+      flex: 0 0 var(--list-thumb, 88px); width: var(--list-thumb, 88px);
+      align-self: stretch;
+    }
+    .post-grid.list-view .card-thumb.stacked .card-img {
+      width: 100%; min-width: 0; height: 100%; max-height: none; object-fit: cover;
+    }
     .pf-badge {
       position: absolute; left: 8px; bottom: 8px; z-index: 1;
       display: inline-flex; align-items: center; gap: 5px;

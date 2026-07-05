@@ -124,7 +124,15 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
         <TagIcon />
       </button>
       {m.hasThumb && (
-        <div className="card-thumb">
+        <div className={'card-thumb' + ((m.nImg as number) > 1 ? ' stacked' : '')}>
+          {/* Multi-image group → paper-pile sheets peeking above the image
+              (photo-app stack idiom); the ×N badge alone was undiscoverable. */}
+          {(m.nImg as number) > 1 && (
+            <>
+              <span className="stack-sheet stack-s2" aria-hidden="true" />
+              <span className="stack-sheet stack-s1" aria-hidden="true" />
+            </>
+          )}
           {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}
           {m.platform && <PfBadge platform={m.platform} name={m.pfName} />}
         </div>
