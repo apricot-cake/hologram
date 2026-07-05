@@ -881,13 +881,11 @@
     .post-grid.masonry .stack-sheet.stack-s1 { transform: rotate(-3deg) translate(-3px, 2px); }
     .post-grid.masonry .stack-sheet.stack-s2 { transform: rotate(2.4deg) translate(3px, -1px); }
     /* tile: square image-only cells → full-bleed sheet thumbs (no meta split).
-       STRAIGHT deck, not the fanned rotation: a rotated peek only shows corner
-       triangles, and the 8px tile gutter caps them at ~8px — invisible (user
-       2026-07-05, twice). A straight lift + shrink instead peeks a FULL-WIDTH
-       stepped band above the tile (Google Photos stack anatomy) — a few px of
-       band read clearly where corner slivers don't. Peek total 7px < 8px
-       gutter. The thumb regains a real box to clip the hover zoom now that
-       the card is overflow:visible. */
+       Same fanned rotation as the card (user 2026-07-05 — keep the idiom
+       consistent across layouts). A few px of corner peek escapes the 8px
+       gutter; the sheet is z-index:-1 behind the tile so the slight overlap
+       with a neighbor reads as depth, not a glitch. The thumb regains a real
+       box to clip the hover zoom now that the card is overflow:visible. */
     .post-grid.tile-view .post-card.grouped { overflow: visible; z-index: 0; }
     .post-grid.tile-view .post-card.grouped:hover { z-index: 1; }
     .post-grid.tile-view .post-card.grouped .card-thumb {
@@ -895,19 +893,12 @@
       border-radius: 8px; line-height: 0;
     }
     .post-grid.tile-view .stack-sheet .stack-sheet-img { inset: 0; border-radius: 8px; }
-    /* transform-origin top: center-origin scale pulls the top edge DOWN by
-       H*(1-s)/2 (≈6px at 300px tiles), swallowing the whole lift — the band
-       never surfaced. Top-origin keeps the lift = the visible band, at every
-       tile size. */
-    .post-grid.tile-view .stack-sheet { transform-origin: top center; }
-    .post-grid.tile-view .stack-sheet.stack-s1 { transform: translateY(-4px) scale(0.96); }
-    .post-grid.tile-view .stack-sheet.stack-s2 { transform: translateY(-7px) scale(0.92); }
-    /* list: the WHOLE ROW is the stacked object (user 2026-07-05 — thumb-only
-       read as "images stacked", not "posts stacked"). A long row is a long
-       lever: ±0.5° already displaces the row ENDS by ~4-5px, so tiny angles
-       read clearly while staying inside the 10px row gap (a card-like 3° would
-       displace ~25px — that's why the angles are small, not timid). Sheets
-       mirror the row anatomy: thumb-wide image at the left, white body. */
+    .post-grid.tile-view .stack-sheet.stack-s1 { transform: rotate(-3deg) translate(-3px, 2px); }
+    .post-grid.tile-view .stack-sheet.stack-s2 { transform: rotate(2.4deg) translate(3px, -1px); }
+    /* list: the WHOLE ROW is the stacked object, fanned like the card (user
+       2026-07-05). A long row is a long lever, so the angle is small (±1.2°)
+       to keep the fanned corners inside the widened row gap; the sheet mirrors
+       the row anatomy — thumb-wide image at the left, white body. */
     .post-grid.list-view .post-card.grouped { overflow: visible; z-index: 0; }
     .post-grid.list-view .post-card.grouped:hover { z-index: 1; }
     .post-grid.list-view .post-card.grouped .card-thumb {
@@ -922,8 +913,8 @@
     .post-grid.list-view .stack-sheet .stack-sheet-img {
       inset: 0 auto 0 0; width: var(--list-thumb, 88px); border-radius: 6px 0 0 6px;
     }
-    .post-grid.list-view .stack-sheet.stack-s1 { transform: rotate(-0.5deg) translate(-3px, 2px); }
-    .post-grid.list-view .stack-sheet.stack-s2 { transform: rotate(0.4deg) translate(3px, -1px); }
+    .post-grid.list-view .stack-sheet.stack-s1 { transform: rotate(-1.2deg) translate(-3px, 2px); }
+    .post-grid.list-view .stack-sheet.stack-s2 { transform: rotate(1deg) translate(3px, -1px); }
     .pf-badge {
       position: absolute; left: 8px; bottom: 8px; z-index: 1;
       display: inline-flex; align-items: center; gap: 5px;
@@ -1025,9 +1016,10 @@
 
     /* --- List view: text-first (scanning post text is the point of the list) --- */
     .post-grid.list-view {
-      /* gap mirrors the masonic rowGutter (viewer.js) — widened 4→10 so a
-         grouped row's stack-sheet peek has room to read. */
-      display: flex; flex-direction: column; gap: 10px;
+      /* gap mirrors the masonic rowGutter (viewer.js) — widened 4→14 so a
+         grouped row's fanned stack-sheets (±1.2° ≈ 8px at the row ends) clear
+         the neighbor rows. */
+      display: flex; flex-direction: column; gap: 14px;
       grid-template-columns: unset;
     }
     .post-grid.list-view .post-card {
