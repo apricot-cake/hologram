@@ -11,7 +11,7 @@
 // clip, aspect, inspected) into a plain model; this component only lays it out.
 // Raw strings (text, names) are passed unescaped — JSX escapes them.
 
-import type { ReactEventHandler, Ref } from 'react';
+import type { CSSProperties, ReactEventHandler, Ref } from 'react';
 
 // The cell model viewer.js resolves per card (see its cardModel()) — only the
 // fields this component lays out.
@@ -111,7 +111,15 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
   const hasStats = stats.length > 0;
   const hasFoot = !!(fd.post || fd.cap);
   return (
-    <div ref={cellRef} className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')} data-url={m.url} data-index={m.index} data-key={m.postKey}>
+    <div
+      ref={cellRef}
+      className={'post-card' + (m.selected ? ' selected' : '') + (m.noUrl ? ' no-url' : '') + (m.inspected ? ' inspected' : '')}
+      data-url={m.url}
+      data-index={m.index}
+      data-key={m.postKey}
+      // --card-i drives the entrance stagger delay (CSS caps it via min()).
+      style={{ '--card-i': m.index } as CSSProperties}
+    >
       <div className="select-check" title={L.tipSelect} />
       <div className="act-pill" aria-hidden="true" />
       <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}>

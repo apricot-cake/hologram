@@ -6,6 +6,7 @@
 // firing. React renders + windows; viewer.js owns posterList, the count badge,
 // the density classes on the container, and every event. modelOf() re-reads the
 // inspected highlight live, so a bridge repaint() refreshes visible cells.
+import type { CSSProperties } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 
@@ -45,7 +46,13 @@ function InfoIcon() {
 
 function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?: string; infoTitle?: string }) {
   return (
-    <div className={'poster-card' + (c.inspected ? ' inspected' : '')} data-index={c.index} tabIndex={0}>
+    <div
+      className={'poster-card' + (c.inspected ? ' inspected' : '')}
+      data-index={c.index}
+      tabIndex={0}
+      // --card-i drives the entrance stagger delay (CSS caps it via min()).
+      style={{ '--card-i': c.index } as CSSProperties}
+    >
       <div className="poster-av">{c.avatarSrc ? <img src={c.avatarSrc} alt="" loading="lazy" /> : c.monogram}</div>
       <div className="poster-meta">
         <div className="poster-name">{c.name}</div>

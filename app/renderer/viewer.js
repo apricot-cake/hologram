@@ -1199,6 +1199,10 @@
   let _gridItemsKey = 0;
   let _gridItemsArr = null;
   let _gridAnimT = null;
+  // How long .anim-in stays on a grid after a fresh build. Must outlive the
+  // LAST staggered card or its backwards-fill entrance gets cancelled mid-run:
+  // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
+  const GRID_ANIM_MS = 950;
   const gridIslandActive = () => !!(window.corpusGrid && window.corpusGrid.isActive());
 
   // #mode-post is the scroll container (the page itself never scrolls), so scroll
@@ -2532,7 +2536,7 @@
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll.
     clearTimeout(_gridAnimT);
-    if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
+    if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
     _lastRenderGen = _allPostsGeneration; // mark the generation of this build
     _lastViewGroups = viewGroups;
     _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse
@@ -3926,7 +3930,7 @@
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll (same wiring as the post grid).
     clearTimeout(_posterAnimT);
-    if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), 400);
+    if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
   }
   let _posterAnimT = null;
   let _posterItemsArr = null; // last posterList pushed — identity change bumps itemsKey

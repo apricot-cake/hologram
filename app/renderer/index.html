@@ -178,7 +178,7 @@
       display: none; position: fixed; bottom: 52px; left: 14px;
       border-radius: 14px; padding: 10px 12px; z-index: 12000; white-space: nowrap;
     }
-    .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn .15s ease-out; }
+    .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
     /* Glass material system (.glass-lens / .glass-frost / .glass-relief) is defined
        as a utility layer at the END of this stylesheet so it wins source-order over
        component rules like .fold-menu. See "=== Glass material system ===" there. */
@@ -349,12 +349,21 @@
     .mirror-status.is-syncing .ms-ic { animation: ms-spin 0.9s linear infinite; }
     @keyframes ms-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .mirror-status.is-syncing .ms-ic { animation: none; } }
+    /* Unified field anatomy (motion-study canvas 2026-07-05): 32px / r8 /
+       recessed fill (--field-bg + inset shadow) + visible border. */
     .search-box {
-      width: 100%; box-sizing: border-box;
-      padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 14px; outline: none; transition: border-color 0.15s;
+      width: 100%; box-sizing: border-box; height: 32px;
+      padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+      background: var(--field-bg); color: var(--text);
+      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
+      font-size: 14px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
     }
-    .search-box:focus { border-color: var(--accent); }
+    [data-theme="dark"] .search-box { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+    .search-box:focus {
+      border-color: var(--accent); background: var(--surface);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--sky-500) 32%, transparent);
+    }
     /* Search field + leading magnifier (macOS search-field anatomy). */
     .search-wrap { position: relative; display: flex; align-items: center; }
     .search-wrap .search-ico {
@@ -378,17 +387,22 @@
       position: relative; display: grid; grid-template-columns: 1fr 1fr;
       background: var(--seg-track); border-radius: var(--radius-md);
       padding: 3px; margin-top: 8px; user-select: none;
+      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.06);   /* recessed track */
     }
+    [data-theme="dark"] .seg-control { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
     .seg-control .seg-thumb {
       position: absolute; top: 3px; left: 3px;
       width: calc(50% - 3px); height: calc(100% - 6px);
       background: var(--seg-thumb); border-radius: calc(var(--radius-md) - 2px);
-      box-shadow: var(--shadow-xs);
+      box-shadow: 0 1px 2px rgba(16, 19, 26, 0.12), 0 0 0 1px var(--border-strong);
       transition: transform var(--dur-slow) var(--ease-out);
+    }
+    [data-theme="dark"] .seg-control .seg-thumb {
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
     }
     .seg-control .seg-opt {
       position: relative; z-index: 1; appearance: none; background: transparent;
-      border: 0; font: inherit; font-size: 12px; padding: 3px 4px;
+      border: 0; font: inherit; font-size: 12px; padding: 0 4px; height: 26px;
       color: var(--text-muted); cursor: pointer;
       border-radius: calc(var(--radius-md) - 2px); transition: color var(--dur-base);
     }
@@ -416,10 +430,12 @@
     select.cs-host { display: none !important; }
     .cs-btn {
       width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: 6px;
-      padding: 4px 12px; font-size: 12.5px; color: var(--text); cursor: pointer; text-align: left;
-      transition: border-color .12s;
+      height: 32px; background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+      padding: 0 12px; font-size: 12.5px; color: var(--text); cursor: pointer; text-align: left;
+      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.05);
+      transition: border-color .12s, background .12s;
     }
+    [data-theme="dark"] .cs-btn { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
     .cs-btn:hover { border-color: var(--text-muted); background: var(--hover); }
     .cs-btn .cs-arrow { /* color/display/flex-shrink from shared .sb-row-arrow rule */ }
     .cs-pop { min-width: 160px; }
@@ -493,7 +509,7 @@
     #sidebar select:hover { background: var(--hover); border-color: var(--text-muted); }
     /* 12.5px = same as the sibling .cs-btn (at 14px the 13-glyph JP placeholder
        "テキスト・ユーザー名で検索" overran the ~178px field and clipped). */
-    #sidebar .search-box { padding-top: 5px; padding-bottom: 5px; font-size: 12.5px; }
+    #sidebar .search-box { font-size: 12.5px; }
     /* Two axes, both derived from the gutter: section HEADERS sit at the gutter
        (box edge); all CONTENT (filter-row icons, bar text, chips) sits one
        content-pad (12px) inside it — so headers read as one step out, content
@@ -508,9 +524,10 @@
       font-variant-numeric: tabular-nums; transition: opacity .12s;
     }
     #clipBadge.sb-row-badge.on { display: inline-block; }
-    .clip-row.active { background: var(--accent-subtle); color: var(--accent-subtle-fg); }
-    .clip-row.active .sb-row-ic { color: var(--accent-subtle-fg); }
-    .clip-row.active:hover { background: color-mix(in oklch, var(--accent-subtle) 85%, var(--hover)); }
+    /* Active clip filter: accent INK on the icon only — no fill (motion-study
+       canvas 2026-07-05; the grey slab read as a heavier state than it is).
+       Hover keeps the plain .sb-row treatment. */
+    .clip-row.active .sb-row-ic { color: var(--accent-text); }
     .clip-clear-btn {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
       background: transparent; border: none; padding: 3px; border-radius: 4px;
@@ -540,8 +557,10 @@
        never resize or shove each other. */
     .view-toggle {
       display: flex; border: none; border-radius: 8px;
-      background: var(--seg-track); padding: 2px; gap: 2px;
+      background: var(--seg-track); padding: 3px; gap: 2px;   /* 26px buttons + 6 = 32px */
+      box-shadow: inset 0 1px 2px rgba(16, 19, 26, 0.06);      /* recessed track */
     }
+    [data-theme="dark"] .view-toggle { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
     .view-toggle button {
       flex: 1; display: flex; align-items: center; justify-content: center;
       height: 26px; box-sizing: border-box; padding: 0;
@@ -552,42 +571,26 @@
     /* Glyph stays outlined in every state; the thumb behind it marks the active one. */
     .view-toggle .vt-ico { width: 15px; height: 15px; display: block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .view-toggle .vt-label { display: none; }
-    /* Active = a single glass thumb (.vt-thumb, a real element) that SLIDES between
+    /* Active = a single FLAT thumb (.vt-thumb, a real element) that SLIDES between
        segments (macOS segmented-control motion). The thumb is the BUTTON/chip, not
        the track. JS sets its inline width/transform from the active button's
        measured geometry (a ::before with var() didn't resolve % translate / inherited
-       props reliably). Material from --glass-* tokens (both themes). */
+       props reliably). Flat white on a recessed track — the liquid-glass thumb was
+       retired with the control unification (motion-study canvas 2026-07-05):
+       same material as .seg-thumb so every segmented control reads as one family. */
     .view-toggle { position: relative; }
     .vt-thumb {
-      position: absolute; z-index: 0; top: 2px; bottom: 2px; left: 2px; pointer-events: none;
-      width: calc((100% - 8px) / 3);   /* card fallback before JS measures left/width */
+      position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; pointer-events: none;
+      width: calc((100% - 10px) / 3);   /* card fallback before JS measures left/width */
       border-radius: 6px;
       transition: left .22s var(--ease-out), width .22s var(--ease-out);
-      /* Rich but FLAT liquid glass (2026-06-21): a bright frosted fill with real
-         REFRACTION of the track (backdrop url(#glassRefract)) for the liquid quality, a
-         crisp defining outer edge + a thin TOP light-line (glass catching light on its
-         top edge) for contrast. NO convex dome / centre-clear radial / bulge — flat,
-         just richer + higher-contrast than the previous near-invisible flat version. */
-      background: linear-gradient(180deg, rgba(255,255,255,0.80), rgba(255,255,255,0.60));
-      backdrop-filter: blur(5px) saturate(155%) url(#glassRefract);
-      -webkit-backdrop-filter: blur(5px) saturate(155%);
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.95),       /* thin top light-line (edge catch) */
-        inset 0 0 0 1px rgba(255,255,255,0.55),      /* bright glass rim */
-        0 0 0 0.5px rgba(20,22,40,0.16),             /* crisp outer hairline = defined vs track */
-        0 2px 5px -1px rgba(20,22,40,0.22);          /* soft drop = sits above the track */
+      background: var(--seg-thumb);
+      box-shadow: 0 1px 2px rgba(16, 19, 26, 0.12), 0 0 0 1px var(--border-strong);
     }
-    /* No dome highlight — flat glass in both themes (the ::before convex cue is retired). */
+    /* No dome highlight — flat in both themes (the ::before convex cue is retired). */
     .vt-thumb::before { display: none; }
     [data-theme="dark"] .vt-thumb {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--seg-thumb) 86%, #fff) 0%, var(--seg-thumb) 100%);
-      backdrop-filter: blur(5px) saturate(135%) url(#glassRefract);
-      -webkit-backdrop-filter: blur(5px) saturate(135%);
-      box-shadow:
-        inset 0 1px 0 var(--glass-hi),
-        inset 0 0 0 1px var(--glass-rim),
-        0 0 0 0.5px rgba(0,0,0,0.35),
-        0 2px 5px -1px rgba(0,0,0,0.40);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
     }
     /* Flat slide — no jelly bulge (the mid-travel scale pulse read as the thumb puffing up). */
     @media (prefers-reduced-motion: reduce) { .vt-thumb { transition: none; } }
@@ -619,12 +622,15 @@
       display: flex; flex-direction: column; min-width: 0; overflow: hidden;
       background: var(--surface); border: 1px solid var(--border-subtle); border-radius: 10px;
       box-shadow: var(--shadow-sm); cursor: pointer;
-      transition: box-shadow .15s, border-color .15s, transform .18s var(--ease-out);
+      transition: box-shadow var(--dur-hover) var(--ease-out), border-color var(--dur-hover), transform var(--dur-hover) var(--ease-out);
     }
-    .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); z-index: 1; }
+    .poster-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: translateY(-3px) scale(1.014); z-index: 1; }
     /* backwards (not both): a forwards fill pins transform:none and kills :hover scale
-       (see the .post-grid.anim-in note for the full reasoning). */
-    .poster-grid.anim-in .poster-card { animation: corpusCardIn .26s ease-out backwards; }
+       (see the .post-grid.anim-in note for the full reasoning). Staggered like posts. */
+    .poster-grid.anim-in .poster-card {
+      animation: corpusCardIn var(--dur-entrance) var(--ease-out) backwards;
+      animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
+    }
     .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
     .poster-av {
       width: 100%; aspect-ratio: 1; flex: none; overflow: hidden;
@@ -766,7 +772,7 @@
     .post-card {
       background: var(--surface); border-radius: 8px; overflow: hidden;
       border: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);
-      cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s, transform 0.18s var(--ease-out);
+      cursor: pointer; transition: box-shadow var(--dur-hover) var(--ease-out), border-color var(--dur-hover), transform var(--dur-hover) var(--ease-out);
       position: relative;
       /* Skip rendering offscreen cards (huge win for thousands of items, like
          the image grid). The intrinsic size is the per-density height estimate. */
@@ -783,13 +789,18 @@
     html.smoke-capture .post-card { content-visibility: visible; }
     html.smoke-capture .post-grid .post-card,
     html.smoke-capture .empty-state { animation: none !important; opacity: 1 !important; transform: none !important; }
-    /* Hover lift: deeper shadow + a slight scale reads as "picked up"
-       (Pinterest/gallery idiom). All layouts incl. list rows — the whole row scales
-       as one element; z-index lifts it above neighbors so the grow isn't clipped.
+    /* Hover lift: deeper shadow + a rise-and-slight-grow reads as "picked up"
+       (Pinterest/gallery idiom; values from the motion-study canvas 2026-07-05).
+       All layouts incl. list rows — the whole row lifts as one element; z-index
+       raises it above neighbors so the grow isn't clipped.
        Transform origin is the center; off under prefers-reduced-motion. */
-    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: scale(1.02); z-index: 1; }
+    .post-card:hover { box-shadow: var(--shadow-md); border-color: var(--border); transform: translateY(-3px) scale(1.014); z-index: 1; }
+    /* Slow thumbnail zoom under the lift (clipped by the card / thumb box). */
+    .card-thumb .card-img { transition: transform .5s var(--ease-out); }
+    .post-card:hover .card-thumb .card-img { transform: scale(1.055); }
     @media (prefers-reduced-motion: reduce) {
       .post-card:hover, .poster-card:hover { transform: none; }
+      .post-card:hover .card-thumb .card-img { transform: none; }
     }
     .post-card img {
       width: 100%; display: block;
@@ -937,10 +948,12 @@
     }
     .post-card:hover .select-check { opacity: 1; }
     .post-card.selected .select-check { opacity: 1; background: var(--accent); border-color: #fff; }
-    /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph) */
+    /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph).
+       Draws in with an overshoot on selection (corpusCheckDraw). */
     .post-card.selected .select-check::after {
       content: ''; width: 5px; height: 9px; margin-top: -1px;
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+      animation: corpusCheckDraw .3s var(--ease-out) backwards;
     }
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
@@ -1082,12 +1095,14 @@
       margin-bottom: 12px;
     }
     label { display: block; font-size: 13px; color: var(--text); margin-bottom: 6px; }
-    input[type="text"] {
+    /* Generic dialog text input. :not(.search-box) — the attribute selector
+       otherwise outweighs the unified .search-box field anatomy (r8/32px). */
+    input[type="text"]:not(.search-box) {
       width: 100%; padding: 8px 12px;
       border: 1px solid var(--border); border-radius: 6px;
       font-size: 14px; outline: none; transition: border-color 0.15s;
     }
-    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]:not(.search-box):focus { border-color: var(--accent); }
     .hint { font-size: 12px; color: var(--text-subtle); margin-top: 6px; }
     .actions { display: flex; align-items: center; margin-top: 16px; }
 
@@ -1271,7 +1286,7 @@
       border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
     }
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
-    .fold-menu.show { display: block; animation: corpusPopIn 150ms var(--ease-out) both; }
+    .fold-menu.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out) both; }
     .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
     .fold-menu .fm-row {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
@@ -1368,6 +1383,9 @@
       backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
       box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border); padding: 16px;
       z-index: 1001; min-width: 260px;
+      /* Entrance pop. Placement code must keep measuring via offsetWidth/Height —
+         getBoundingClientRect mid-pop reads ~4% small (scale .96 start). */
+      animation: corpusPopIn var(--dur-pop) var(--ease-out) both;
     }
     /* Poster date popover: 日付の種類 / 並び替え / 期間 を小見出し付きで縦に積む。 */
     .pd-field { margin-bottom: 10px; }
@@ -1547,7 +1565,13 @@
        so both themes show a matching edge. */
     [data-theme="dark"] .sb-active-chip { border-color: rgba(255, 255, 255, 0.24); }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
-    .sb-active-chip.chip-new, .qb-val.chip-new { animation: corpusPillIn 130ms var(--ease-out) both; }
+    .sb-active-chip.chip-new, .qb-val.chip-new { animation: corpusPillIn var(--dur-pop) var(--ease-out) both; }
+    /* Chip exit: the query-chips island keeps removed values as .leaving ghosts
+       for the animation's length, then prunes them (pointer-events off so the
+       stale data-nid can't reach the delegated handlers). */
+    .qb-val.leaving { animation: corpusPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
+    /* A whole attribute cluster removed → the entire pill leaves as one. */
+    .sb-active-chip.leaving { animation: corpusPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
     /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
     /* Facet-chip query builder (docs/design-query-builder.md 改訂④): values
@@ -1606,7 +1630,7 @@
       border-radius: 10px; box-shadow: var(--shadow-pop); padding: 12px 14px;
       font-size: 12px; line-height: 1.7; color: var(--text);
     }
-    .qb-help-pop.show { display: block; animation: corpusPopIn .15s ease-out; }
+    .qb-help-pop.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
     .qb-help-pop .qh-title { font-weight: 700; margin-bottom: 6px; }
     .qb-help-pop .qh-row { display: flex; gap: 7px; margin-top: 4px; }
     .qb-help-pop .qh-row::before { content: '・'; color: var(--text-subtle); flex-shrink: 0; }
@@ -1722,7 +1746,10 @@
     color: var(--text); font-size: 11px; font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
-  .sb-row .sb-row-badge.on { display: inline-block; }
+  .sb-row .sb-row-badge.on { display: inline-block; animation: corpusBadgePop .3s var(--ease-out); }
+  /* Rows with an active filter mark their icon in accent ink (motion-study
+     canvas 2026-07-05) — (0,3,1) outweighs the (0,2,1) hover rule above. */
+  .sb-row:has(.sb-row-badge.on) .sb-row-ic { color: var(--accent-text); }
   /* --- Disclosure arrows (single source of truth; shape = inline SVG set in HTML/JS) ---
      All ▸/▾ indicators share this token. Per-component rules keep only spacing. */
   .sb-row-arrow, .cs-btn .cs-arrow {
@@ -2115,7 +2142,7 @@
       padding: 16px 18px; font-size: 12px;
     }
     .inspector[hidden] { display: none; }
-    .inspector:not([hidden]) { animation: corpusPanelIn .2s ease-out; }
+    .inspector:not([hidden]) { animation: corpusPanelIn var(--dur-panel) var(--ease-out); }
     @media (max-width: 1279px) {
       .inspector {
         position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0; bottom: 0; height: auto;
@@ -2171,16 +2198,19 @@
     .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
     .iv-fold-btn:hover { background: var(--hover); }
 
-    /* transient toast (e.g. "added to folder") — shared, top-level, fixed */
+    /* transient toast (e.g. "added to folder") — shared, top-level, fixed.
+       Glass material stays (DESIGN: toast = floating surface); entrance = rise
+       + slight scale settle (motion-study canvas 2026-07-05). */
     .iv-toast {
-      position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(8px);
+      position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(14px) scale(.96);
       background: rgba(20,22,26,0.68); color: #fff; padding: 9px 18px; border-radius: 20px;
       backdrop-filter: blur(16px) saturate(130%); -webkit-backdrop-filter: blur(16px) saturate(130%);
       border: 1px solid rgba(255,255,255,0.12);
       font-size: 13px; z-index: 12000; opacity: 0; pointer-events: none;
-      transition: opacity .15s, transform .15s; box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,0.10);
+      transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out);
+      box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,0.10);
     }
-    .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 
     /* ============================================================
        === Glass material system — pick the tier by WHAT IS BEHIND ===
@@ -2266,22 +2296,42 @@
        (viewer.js adds .anim-in; load-more / reduced-motion skip it). Everything
        is neutralized under prefers-reduced-motion. -->
   <style>
-    @keyframes corpusCardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes corpusCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
     @keyframes corpusFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
-    @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
-    @keyframes corpusPillIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
+    @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+    @keyframes corpusPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+    /* Chip exit — the island marks removed values .leaving and prunes them
+       after the run (see query-chips AnimatedChips). */
+    @keyframes corpusPillOut { to { opacity: 0; transform: scale(.55); } }
+    /* Badge pop on activation. Uses the independent `scale` property, NOT
+       transform: #clipBadge carries transform: translateY(-50%) — a transform
+       keyframe would yank it off its vertical axis mid-pop. */
+    @keyframes corpusBadgePop { 0% { scale: 1; } 50% { scale: 1.5; } 100% { scale: 1; } }
+    /* Selection check draw: overshoot then settle. rotate(45deg) rides along in
+       every frame — it's what shapes the border-drawn checkmark. */
+    @keyframes corpusCheckDraw {
+      0% { transform: rotate(45deg) scale(0); opacity: 0; }
+      70% { transform: rotate(45deg) scale(1.15); opacity: 1; }
+      100% { transform: rotate(45deg) scale(1); }
+    }
     /* Card entrance — only when the grid is (re)built fresh, e.g. filter/sort/search.
        Fill is `backwards`, NOT `both`: the grid keeps .anim-in until the next render,
        so a forwards fill would pin the final `transform: none` on every card forever —
        and an animation's value outranks the `:hover` rule, which silently killed the
        hover-scale lift. `backwards` still holds the hidden pre-start state but stops
-       contributing a transform once the run ends, so :hover scale works again. */
-    .post-grid.anim-in .post-card { animation: corpusCardIn .26s ease-out backwards; }
+       contributing a transform once the run ends, so :hover scale works again.
+       Staggered: each card delays by its model index (--card-i, inline from the
+       island), capped at 15 steps so the grid's .anim-in removal window
+       (GRID_ANIM_MS in viewer.js) can cover the last card. */
+    .post-grid.anim-in .post-card {
+      animation: corpusCardIn var(--dur-entrance) var(--ease-out) backwards;
+      animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
+    }
 
     /* Empty state: same slide-in as cards when first shown. */
-    .empty-state.anim-in { animation: corpusCardIn .26s ease-out both; }
+    .empty-state.anim-in { animation: corpusCardIn var(--dur-entrance) var(--ease-out) both; }
 
     /* View mode transition (card↔tile↔list): scope to the grid only so sidebar
        doesn't repaint. Old grid fades out quickly; new grid's anim-in handles

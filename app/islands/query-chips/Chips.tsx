@@ -9,20 +9,25 @@
 import { Fragment } from 'react';
 
 // The view-model viewer.js's createQueryBuilder render() pushes.
-interface QbItem {
+// `leaving` is set only by the island's AnimatedChips wrapper (never by
+// viewer.js): a removed value/cluster is kept as a ghost for the length of the
+// corpusPillOut exit animation, then pruned.
+export interface QbItem {
   id: string;
   label: string;
   isNew?: boolean;
+  leaving?: boolean;
   editable?: boolean;
   glyph: string;
   typeCls: string;
 }
-interface QbCluster {
+export interface QbCluster {
   id: string | null; // the group node's id (2+ values) — the opt segment writes here
   typeCls: string;
   glyph: string;
   items: QbItem[];
   op?: 'and' | 'or' | null; // current operator; null = no switch (single value / schema-forced)
+  leaving?: boolean;
 }
 interface QbShared {
   delTitle?: string;
@@ -36,7 +41,7 @@ export interface ChipsModel {
   searchJoin?: boolean;
   joinAndWord?: string;
   clusters: QbCluster[];
-  excl?: { label: string; items: QbItem[] } | null;
+  excl?: { label: string; items: QbItem[]; leaving?: boolean } | null;
   summary?: { text: string; tip: string } | null;
   delTitle?: string;
   optAll?: string;
@@ -66,7 +71,7 @@ function Glyph({ html }: { html: string }) {
 // One value inside a cluster: label + hover ✕; date/engagement values open
 // their editor on click (data-edit); right-click → 除外/削除 menu (viewer.js).
 function Val({ it, delTitle, withGlyph }: { it: QbItem; delTitle?: string; withGlyph?: boolean }) {
-  const cls = 'qb-val ' + it.typeCls + (it.isNew ? ' chip-new' : '') + (it.editable ? ' qb-val-edit' : '');
+  const cls = 'qb-val ' + it.typeCls + (it.isNew ? ' chip-new' : '') + (it.leaving ? ' leaving' : '') + (it.editable ? ' qb-val-edit' : '');
   return (
     <span className={cls} data-nid={it.id} data-edit={it.editable ? '1' : undefined}>
       {withGlyph && <Glyph html={it.glyph} />}
@@ -99,7 +104,7 @@ function OptSeg({ c, shared }: { c: QbCluster; shared: QbShared }) {
 }
 function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
   return (
-    <span className={'qb-cluster sb-active-chip ' + c.typeCls}>
+    <span className={'qb-cluster sb-active-chip ' + c.typeCls + (c.leaving ? ' leaving' : '')}>
       <Glyph html={c.glyph} />
       {c.items.map((it, i) => (
         <Fragment key={it.id}>
@@ -115,9 +120,9 @@ function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
 // The 除く cluster: a leading word instead of a type glyph (its values can mix
 // types, so each value carries its own glyph). Root-AND semantics make it read
 // "none of these" — no operator ambiguity, nothing to toggle.
-function Excl({ e, shared }: { e: { label: string; items: QbItem[] }; shared: QbShared }) {
+function Excl({ e, shared }: { e: { label: string; items: QbItem[]; leaving?: boolean }; shared: QbShared }) {
   return (
-    <span className="qb-cluster qb-cluster-excl sb-active-chip">
+    <span className={'qb-cluster qb-cluster-excl sb-active-chip' + (e.leaving ? ' leaving' : '')}>
       <span className="qb-excl-label">{e.label}</span>
       {e.items.map((it, i) => (
         <Fragment key={it.id}>

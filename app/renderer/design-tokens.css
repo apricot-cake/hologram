@@ -323,8 +323,9 @@
      measured height (it wraps when many chips), so the floating sidebar below can
      offset its sticky top to clear it. */
   --activebar-h: 46px;
-  /* Gap around the floating ("window-like") sidebar — Claude-app style. */
-  --sidebar-float: 10px;
+  /* Margin around the floating ("window-like") sidebar — Claude-app style.
+     Asymmetric: extra left breathing room (motion-study canvas, 2026-07-05). */
+  --sidebar-float: 14px 10px 14px 22px;
 
   --shadow-xs:  0 1px 2px rgba(16, 19, 26, 0.05);
   --shadow-sm:  0 1px 3px rgba(16, 19, 26, 0.07), 0 1px 2px rgba(16, 19, 26, 0.04);
@@ -338,6 +339,12 @@
   --dur-fast: 0.1s;
   --dur-base: 0.15s;
   --dur-slow: 0.24s;
+  /* Motion-study vocabulary (canvas 2026-07-05): one crisp system on --ease-out. */
+  --dur-hover: 0.18s;
+  --dur-pop: 0.2s;
+  --dur-panel: 0.26s;
+  --dur-entrance: 0.36s;
+  --stagger: 34ms;
 
   /* ---- Glass (frosted) — TRANSIENT floating surfaces only (menus/flyouts/
      activebar/slide-over/toast). Persistent surfaces (sidebar, cards, inline
