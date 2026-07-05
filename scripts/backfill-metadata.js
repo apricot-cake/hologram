@@ -41,14 +41,15 @@ function saveFolder() {
   return path.join(os.homedir(), 'Corpus');
 }
 
-// DL the author avatar to <base>-avatar.<ext> when the record has an avatar URL
-// but no local file. Best-effort: returns the filename on success, else null.
-// pixiv needs a Referer; use the stored one or derive it from the i.pximg.net host.
-async function ensureAvatarFile(folder, base, avatarUrl, referer) {
+// DL the author avatar into the shared avatars/ store when the record has an
+// avatar URL but no local file. Best-effort: returns the folder-relative path
+// ('avatars/<hash>.<ext>') on success, else null. pixiv needs a Referer; use
+// the stored one or derive it from the i.pximg.net host.
+async function ensureAvatarFile(folder, avatarUrl, referer) {
   if (!avatarUrl) return null;
   const ref = referer || pixivRefererFor(avatarUrl);
   try {
-    return await downloadAvatar(avatarUrl, ref, folder, base);
+    return await downloadAvatar(avatarUrl, ref, folder);
   } catch {
     return null;
   }
@@ -87,8 +88,7 @@ function listSidecars(folder) {
         skipped++;
         continue;
       }
-      const base = path.basename(f, '.json');
-      const af = await ensureAvatarFile(folder, base, rec.avatar, rec.avatarReferer);
+      const af = await ensureAvatarFile(folder, rec.avatar, rec.avatarReferer);
       if (!af) {
         failed++;
         console.log('  no avatar:', f, rec.avatar);
@@ -172,8 +172,7 @@ function listSidecars(folder) {
     // Fill the avatar image if we have a URL but no local file yet (merged keeps
     // rec.avatarFile via the spread). The fresh fetch carries avatarReferer for pixiv.
     if (merged.avatar && !merged.avatarFile) {
-      const base = path.basename(f, '.json');
-      const af = await ensureAvatarFile(folder, base, merged.avatar, m.avatarReferer);
+      const af = await ensureAvatarFile(folder, merged.avatar, m.avatarReferer);
       if (af) merged.avatarFile = af;
     }
 

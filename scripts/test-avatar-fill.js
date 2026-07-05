@@ -1,10 +1,11 @@
 'use strict';
 
 // backfill --avatars: for sidecars that have an avatar URL but no local file,
-// download <base>-avatar.<ext> and set avatarFile; skip ones already filled or
-// with no avatar. Spawns the REAL script with a preloaded fetch stub (the SSRF
-// guard refuses localhost, so a real local server can't stand in — we stub
-// global.fetch via `node -r`). Also unit-tests pixivRefererFor.
+// download into the shared store (avatars/<urlhash>.<ext>) and set avatarFile;
+// skip ones already filled or with no avatar. Spawns the REAL script with a
+// preloaded fetch stub (the SSRF guard refuses localhost, so a real local server
+// can't stand in — we stub global.fetch via `node -r`). Also unit-tests
+// pixivRefererFor.
 //
 //   node scripts/test-avatar-fill.js
 
@@ -65,9 +66,10 @@ const res = spawnSync(process.execPath, ['-r', stub, path.join(__dirname, 'backf
 check('script exited 0', res.status === 0);
 check('stdout reports filled 1', /filled 1\b/.test(res.stdout || ''));
 
+const avHash = require('node:crypto').createHash('sha1').update('https://h/photo.jpg').digest('hex').slice(0, 16);
 const recA = JSON.parse(fs.readFileSync(path.join(saveFolder, A + '.json'), 'utf8'));
-check('A: avatarFile set to <base>-avatar.png', recA.avatarFile === A + '-avatar.png');
-check('A: avatar image on disk', fs.existsSync(path.join(saveFolder, A + '-avatar.png')));
+check('A: avatarFile set to avatars/<urlhash>.png', recA.avatarFile === `avatars/${avHash}.png`);
+check('A: avatar image on disk', fs.existsSync(path.join(saveFolder, 'avatars', `${avHash}.png`)));
 
 const recB = JSON.parse(fs.readFileSync(path.join(saveFolder, B + '.json'), 'utf8'));
 check('B: avatarFile unchanged (already had one)', recB.avatarFile === B + '-avatar.jpg');

@@ -71,13 +71,17 @@ const check = (label, cond) => {
   );
   check('descriptor carries file + alt + dims', saved[0].file === base + '-media-0.png' && saved[0].alt === 'pic' && saved[0].width === 1);
 
-  // --- downloadAvatar: valid → <base>-avatar.<ext>; bad/empty → null; Referer forwarded ---
-  const ab = '1717500000000-cccc';
-  const avFile = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder, ab);
-  check('downloadAvatar writes <base>-avatar.jpg', avFile === ab + '-avatar.jpg' && fs.existsSync(path.join(saveFolder, avFile)));
-  check('downloadAvatar(null) → null', (await downloadAvatar(null, undefined, saveFolder, ab)) === null);
-  check('downloadAvatar(404) → null', (await downloadAvatar('https://h/missing', undefined, saveFolder, ab)) === null);
-  await downloadAvatar('https://h/photo.jpg', 'https://www.pixiv.net/', saveFolder, ab);
+  // --- downloadAvatar: shared store avatars/<urlhash>.<ext>; bad/empty → null;
+  //     same URL reuses the existing file WITHOUT a fetch; Referer forwarded ---
+  const avHash = (u) => require('node:crypto').createHash('sha1').update(u).digest('hex').slice(0, 16);
+  const avFile = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder);
+  check('downloadAvatar writes avatars/<urlhash>.jpg', avFile === `avatars/${avHash('https://h/photo.jpg')}.jpg` && fs.existsSync(path.join(saveFolder, avFile)));
+  check('downloadAvatar(null) → null', (await downloadAvatar(null, undefined, saveFolder)) === null);
+  check('downloadAvatar(404) → null', (await downloadAvatar('https://h/missing', undefined, saveFolder)) === null);
+  lastFetch = null;
+  const avFile2 = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder);
+  check('downloadAvatar reuses existing file (no fetch)', avFile2 === avFile && lastFetch === null);
+  await downloadAvatar('https://h/img.png', 'https://www.pixiv.net/', saveFolder);
   check('downloadAvatar forwards pixiv Referer', !!(lastFetch && lastFetch.headers && lastFetch.headers.Referer === 'https://www.pixiv.net/'));
 
   // --- handleSave end-to-end: sidecar media reflects what landed; ack ok ---

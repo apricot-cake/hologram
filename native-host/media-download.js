@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
+const crypto = require('node:crypto');
 
 // --- Original-media download (best-effort, still images only) ---
 // Supported still-image content types -> file extension. Anything else (video,
@@ -204,17 +205,34 @@ async function downloadMedia(mediaList, dir, base) {
   return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
 }
 
-// Download the author avatar to <base>-avatar.<ext> so the viewer can show it
-// offline (no external fetch at display time). pixiv passes a Referer because
-// i.pximg.net 403s without one. Returns the filename or null; like media, a
-// failure here never fails the save.
-async function downloadAvatar(avatar, referer, dir, base) {
+// Download the author avatar into the shared store <dir>/avatars/ so the viewer
+// can show it offline (no external fetch at display time). One file per avatar
+// URL — NOT per capture: the legacy <captureId>-avatar.<ext> scheme wrote (and
+// fetched) the same icon once per save, so authors saved often piled up dozens
+// of identical copies. Avatar URLs on every supported platform are content-
+// addressed (bsky CDN bafkrei… hashes, twimg profile_images ids, pximg dated
+// paths), so "same URL = same pixels": files are keyed by a hash of the URL and
+// an existing file skips both the fetch and the write. A changed avatar arrives
+// under a new URL and lands as a new file; the superseded one stays behind only
+// as the target of older sidecars (tiny — no GC).
+// Returns the folder-relative path 'avatars/<hash>.<ext>' (forward slash = the
+// canonical sidecar form) or null; like media, a failure never fails the save.
+// Legacy sidecars keep their <captureId>-avatar.<ext> files untouched.
+const AVATAR_SUBDIR = 'avatars';
+async function downloadAvatar(avatar, referer, dir) {
   if (typeof avatar !== 'string' || !avatar) return null;
+  const hash = crypto.createHash('sha1').update(avatar).digest('hex').slice(0, 16);
+  const sub = path.join(dir, AVATAR_SUBDIR);
+  // The extension is only known from the response content-type, so probe every
+  // supported one — a hit means this exact URL was already downloaded.
+  for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
+    if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) return `${AVATAR_SUBDIR}/${hash}.${ext}`;
+  }
   const got = await fetchStillImage(avatar, referer);
   if (!got) return null;
-  const file = `${base}-avatar.${got.ext}`;
-  fs.writeFileSync(path.join(dir, file), got.buf);
-  return file;
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, `${hash}.${got.ext}`), got.buf);
+  return `${AVATAR_SUBDIR}/${hash}.${got.ext}`;
 }
 
 // pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
@@ -235,6 +253,7 @@ module.exports = {
   downloadOneMedia,
   downloadMedia,
   downloadAvatar,
+  AVATAR_SUBDIR,
   pixivRefererFor,
   checkMediaUrl,
   isPrivateIp,

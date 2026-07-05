@@ -36,7 +36,7 @@ const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
 
 function register(ctx) {
-  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, fetchStillImage, pixivRefererFor, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
+  const { getSaveFolder, getTrashDir, readConfig, writeConfig, readSavePointer, getConfigLastCorrupt, clearAllBlockReason, VIEWABLE_EXTS, INTERNAL_FILES, pixivRefererFor, downloadAvatar, getWin, send, validateSaveFolder, relocateLibrary, watchSaveFolder, resetDelta } = ctx;
 
   ipcMain.handle('import-posts', async (_e, posts) => {
     const folder = getSaveFolder();
@@ -81,20 +81,21 @@ function register(ctx) {
     const trashDir = getTrashDir();
     if (trashDir) scanExisting(trashDir);
 
-    // Avatars are downloaded once per unique URL: a legacy library has many posts
-    // per author, so dedup the network fetch and reuse the bytes for each record's
-    // own <captureId>-avatar.<ext>. null = a URL we already tried and failed.
-    const avatarCache = new Map();
-    async function fetchAvatarCached(url) {
-      if (avatarCache.has(url)) return avatarCache.get(url);
-      let got = null;
+    // Avatars land in the shared avatars/ store (one file per avatar URL) — the
+    // store itself dedupes successful downloads by existence, so only FAILED URLs
+    // need a local cache (a legacy import with dead avatar hosts would otherwise
+    // re-pay the fetch timeout once per record of that author).
+    const avatarFailed = new Set();
+    async function fetchAvatarShared(url) {
+      if (avatarFailed.has(url)) return null;
+      let file = null;
       try {
-        got = await fetchStillImage(url, pixivRefererFor(url));
+        file = await downloadAvatar(url, pixivRefererFor(url), folder);
       } catch {
-        got = null;
+        file = null;
       }
-      avatarCache.set(url, got);
-      return got;
+      if (!file) avatarFailed.add(url);
+      return file;
     }
 
     const stamp = Date.now();
@@ -156,12 +157,8 @@ function register(ctx) {
         // (the viewer hides it) and NEVER fails the import.
         if (rec.avatar) {
           try {
-            const got = await fetchAvatarCached(rec.avatar);
-            if (got) {
-              const af = `${captureId}-avatar.${got.ext}`;
-              fs.writeFileSync(path.join(folder, af), got.buf);
-              rec.avatarFile = af;
-            }
+            const af = await fetchAvatarShared(rec.avatar);
+            if (af) rec.avatarFile = af;
           } catch {
             /* avatar is best-effort */
           }

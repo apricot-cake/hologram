@@ -9,8 +9,9 @@ const path = require('node:path');
 const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', 'native-host');
 const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
 const installer = require(path.join(nativeHostDir, 'install'));
-// Best-effort avatar download for import-posts (same SSRF guard/caps as capture).
-const { fetchStillImage, pixivRefererFor } = require(path.join(nativeHostDir, 'media-download'));
+// Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
+// same shared avatars/ store — downloadAvatar dedupes by avatar URL).
+const { pixivRefererFor, downloadAvatar } = require(path.join(nativeHostDir, 'media-download'));
 const { createPostIndex, computeDelta } = require('./lib-index');
 const { pruneDecision, nextBaseline } = require('./backup-guard');
 const { parseJsonLoose } = require('./lib-json');
@@ -466,17 +467,15 @@ function registerImageProtocol() {
       if (!folder) return new Response('No save folder', { status: 404 });
 
       const url = new URL(request.url);
-      const name = path.basename(decodeURIComponent(url.pathname.replace(/^\/+/, '')));
-      if (!name || name === '.' || name === '..') return new Response('Not found', { status: 404 });
+      const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+      if (!rel || rel === '.' || rel === '..') return new Response('Not found', { status: 404 });
 
-      const folderResolved = path.resolve(folder);
-      const resolved = path.resolve(path.join(folder, name));
-      // name is already a basename, but assert the resolved path is strictly
-      // INSIDE the save folder. Compare against folder + separator: a bare
-      // startsWith(folder) would also accept a sibling like "<folder>-other".
-      if (!resolved.startsWith(folderResolved + path.sep)) {
-        return new Response('Forbidden', { status: 403 });
-      }
+      // Same containment rule as every file handler: basenames only, plus the
+      // sanctioned 'avatars/<file>' subpath (shared avatar store). resolveInFolder
+      // asserts the resolved path lands strictly INSIDE the save folder.
+      const resolved = resolveInFolder(rel);
+      if (!resolved) return new Response('Forbidden', { status: 403 });
+      const name = path.basename(resolved);
 
       const w = Number.parseInt(url.searchParams.get('w') || '', 10);
       if (Number.isFinite(w) && w >= 64 && w <= 720) {
@@ -512,10 +511,18 @@ function registerImageProtocol() {
 // ./ipc-window.js (registered via ipcWindow.register below).
 
 // --- File helpers (all confined to the save folder) ---
+// Capture files live FLAT in the save folder (basename only). The one sanctioned
+// subfolder is the shared avatar store 'avatars/<file>' (single level, no deeper):
+// anything else is squashed to its basename, and the resolved path must still
+// land strictly inside the folder.
 function resolveInFolder(name) {
   const folder = getSaveFolder();
   if (!folder || !name) return null;
-  const resolved = path.resolve(path.join(folder, path.basename(name)));
+  const rel = String(name).replace(/\\/g, '/');
+  const m = rel.match(/^avatars\/([^/]+)$/);
+  if (m && (m[1] === '.' || m[1] === '..')) return null;
+  const safe = m ? path.join('avatars', m[1]) : path.basename(rel);
+  const resolved = path.resolve(path.join(folder, safe));
   return resolved.startsWith(path.resolve(folder) + path.sep) ? resolved : null;
 }
 
@@ -771,6 +778,30 @@ async function runBackup(reason) {
         /* skip inaccessible entries */
       }
     }
+    // Shared avatar store (avatars/<urlhash>.<ext> — write-once, single level):
+    // mirror it under the same relative names so a restore keeps author icons.
+    // Collected as 'avatars/<f>' entries; path.join resolves the '/' on Windows.
+    const collectSubdir = async (root, sub, into, stats) => {
+      let names = [];
+      try {
+        names = await fs.promises.readdir(path.join(root, sub));
+      } catch {
+        return; // subfolder absent (pre-avatars library)
+      }
+      for (const f of names) {
+        if (/\.tmp(-\d+)?$/i.test(f)) continue;
+        try {
+          const st = await fs.promises.stat(path.join(root, sub, f));
+          if (st.isFile()) {
+            into.add(`${sub}/${f}`);
+            if (stats) stats.set(`${sub}/${f}`, { size: st.size, mtimeMs: st.mtimeMs });
+          }
+        } catch {
+          /* skip inaccessible entries */
+        }
+      }
+    };
+    await collectSubdir(src, 'avatars', srcSet, srcStat);
     result.fileCount = srcSet.size;
 
     // Collect destination files
@@ -781,6 +812,7 @@ async function runBackup(reason) {
       destFiles = [];
     }
     const destSet = new Set(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
+    await collectSubdir(dest, 'avatars', destSet, null);
 
     // Decide whether a destination copy is stale and must be refreshed. Write-once
     // captures (.jpg + .json sidecar) never change, so their presence at dest is
@@ -806,6 +838,9 @@ async function runBackup(reason) {
 
     // Copy files missing at dest, and re-copy mutable internal files that drifted.
     // The copy is atomic (tmp + rename) so a reader never sees a half-written file.
+    if ([...srcSet].some((f) => f.startsWith('avatars/'))) {
+      await fs.promises.mkdir(path.join(dest, 'avatars'), { recursive: true });
+    }
     for (const f of srcSet) {
       if (destSet.has(f) && !(await needsRefresh(f))) continue;
       const tmp = path.join(dest, f + '.tmp-' + Date.now());
@@ -1037,8 +1072,8 @@ function registerExtractedIpc() {
     runBackup,
     readSavePointer,
     clearAllBlockReason,
-    fetchStillImage,
     pixivRefererFor,
+    downloadAvatar,
     validateSaveFolder,
     relocateLibrary,
     watchSaveFolder,

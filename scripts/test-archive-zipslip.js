@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const { importCompleteZip } = require('../app/lib-archive.js');
+const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.js');
 
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-zipslip-'));
@@ -30,11 +30,18 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   // Legitimate entries.
   zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
   zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
+  zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // shared avatar store (sanctioned subpath)
   zip.file('library/folders.json', BOM + JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
   // Malicious entries — each must be rejected, never written outside dest.
   zip.file('library/..\\..\\evil-back.txt', 'PWNED-BACK'); // Windows backslash traversal
   zip.file('library/../../evil-fwd.txt', 'PWNED-FWD'); // POSIX traversal
   zip.file('library/C:\\Windows\\evil-abs.txt', 'PWNED-ABS'); // absolute / drive-letter
+  // Traversal through the sanctioned subpath. Backslash form: JSZip normalizes
+  // forward-slash '..' segments at add time (so 'avatars/../x' can't even be
+  // constructed via zip.file()), but a hand-crafted archive can carry the raw
+  // name — the backslash variant survives JSZip untouched and exercises the guard.
+  zip.file('library/avatars\\..\\evil-av.txt', 'PWNED-AV');
+  zip.file('library/avatars/deep/evil-deep.txt', 'PWNED-DEEP'); // deeper nesting is NOT sanctioned
   const buf = await zip.generateAsync({ type: 'nodebuffer' });
 
   const res = await importCompleteZip(JSZip, dest, buf);
@@ -42,7 +49,8 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   // Legit captures imported.
   assert.ok(fs.existsSync(path.join(dest, 'cap1.jpg')), 'cap1.jpg should import');
   assert.ok(fs.existsSync(path.join(dest, 'cap2.jpg')), 'cap2.jpg should import');
-  assert.strictEqual(res.imported, 2, 'exactly the 2 legit captures imported, got ' + res.imported);
+  assert.ok(fs.existsSync(path.join(dest, 'avatars', 'abcd1234.png')), 'avatars/abcd1234.png should import into the subfolder');
+  assert.strictEqual(res.imported, 3, 'exactly the 3 legit entries imported, got ' + res.imported);
 
   // legacy folders.json folds into collections.json (folders.json is retired).
   const merged = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
@@ -61,10 +69,27 @@ const { importCompleteZip } = require('../app/lib-archive.js');
   for (const p of escapeTargets) {
     assert.ok(!fs.existsSync(p), 'Zip-Slip: must NOT write outside dest: ' + p);
   }
-  // No "evil" file even inside dest.
+  // No "evil" file even inside dest (including the avatars subfolder).
   for (const n of fs.readdirSync(dest)) {
     assert.ok(!/evil/i.test(n), 'Zip-Slip: malicious entry leaked inside dest: ' + n);
   }
+  for (const n of fs.readdirSync(path.join(dest, 'avatars'))) {
+    assert.ok(!/evil|deep/i.test(n), 'Zip-Slip: malicious entry leaked inside dest/avatars: ' + n);
+  }
+
+  // --- Round-trip: buildCompleteZip carries avatars/ and import restores it ---
+  const srcLib = path.join(root, 'src');
+  fs.mkdirSync(path.join(srcLib, 'avatars'), { recursive: true });
+  fs.writeFileSync(path.join(srcLib, 'cap9.jpg'), 'JPEGDATA9');
+  fs.writeFileSync(path.join(srcLib, 'avatars', 'ffff0000.webp'), 'AVDATA');
+  const built = await buildCompleteZip(JSZip, srcLib);
+  assert.strictEqual(built.fileCount, 2, 'export counts the avatar file, got ' + built.fileCount);
+  const dest2 = path.join(root, 'lib2');
+  fs.mkdirSync(dest2, { recursive: true });
+  const res2 = await importCompleteZip(JSZip, dest2, built.buffer);
+  assert.ok(fs.existsSync(path.join(dest2, 'cap9.jpg')), 'round-trip: capture restored');
+  assert.ok(fs.existsSync(path.join(dest2, 'avatars', 'ffff0000.webp')), 'round-trip: avatars/ restored');
+  assert.strictEqual(res2.imported, 2, 'round-trip imports both entries, got ' + res2.imported);
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log('PASS test-archive-zipslip: malicious entries rejected, legit imported (imported=' + res.imported + ', skipped=' + res.skipped + ')');

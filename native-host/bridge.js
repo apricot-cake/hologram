@@ -192,10 +192,12 @@ async function handleSave(msg) {
   }
 
   // Author avatar: same best-effort contract as media — a failure leaves
-  // avatarFile null (the viewer hides it) and never fails the save.
+  // avatarFile null (the viewer hides it) and never fails the save. Shared
+  // store (avatars/<urlhash>.<ext>): a re-save of the same author reuses the
+  // existing file instead of writing another copy.
   let avatarFile = null;
   try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, base);
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
   } catch {
     avatarFile = null;
   }
@@ -234,7 +236,7 @@ async function handleSaveDragged(msg) {
   const meta = msg.metadata || {};
   let avatarFile = null;
   try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, base);
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder);
   } catch {
     avatarFile = null;
   }

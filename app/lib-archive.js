@@ -8,6 +8,7 @@
 //   library/<captureId>.jpg            screenshot
 //   library/<captureId>.json           sidecar (verbatim)
 //   library/<captureId>-media-N.<ext>  original media
+//   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
 //   library/folders.json|tag-groups.json|tag-types.json|ungrouped.json|manual-groups.json
 //   corpus-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
 //
@@ -61,6 +62,14 @@ function isSafeEntryName(name) {
   if (/[\\/]/.test(name)) return false;
   if (path.isAbsolute(name)) return false;
   return name === path.basename(name);
+}
+// Library entries are single-segment EXCEPT the shared avatar store, which is
+// exactly 'avatars/<basename>' (forward slash only — ZIP canonical form; one
+// level, each segment held to the same single-segment rule).
+function isSafeLibraryPath(name) {
+  if (isSafeEntryName(name)) return true;
+  const m = /^avatars\/(.+)$/.exec(name);
+  return !!(m && isSafeEntryName(m[1]));
 }
 // Belt-and-suspenders: the resolved destination must stay inside destFolder.
 function isWithin(parentDir, target) {
@@ -261,6 +270,16 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
       /* skip unreadable */
     }
   }
+  // Shared avatar store rides along as library/avatars/<name> so a restored
+  // library keeps author icons (new-style sidecars point at 'avatars/…').
+  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) {
+    try {
+      lib.file(`avatars/${name}`, await fs.promises.readFile(path.join(srcFolder, 'avatars', name)));
+      fileCount++;
+    } catch {
+      /* skip unreadable */
+    }
+  }
   zip.file(
     'corpus-export.json',
     JSON.stringify(
@@ -365,7 +384,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     const m = /^library\/(.+)$/.exec(relPath);
     if (!m) return;
     const name = m[1];
-    if (!isSafeEntryName(name)) return; // Zip-Slip: reject separators / traversal / absolute
+    if (!isSafeLibraryPath(name)) return; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> allowed)
     if (EXPORT_SKIP.has(name)) return;
     if (MERGERS[name]) orgEntries[name] = entry;
     else captures.push({ name, entry });
@@ -381,6 +400,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
         skipped++;
         continue;
       }
+      if (c.name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destFolder, 'avatars'), { recursive: true });
       const tmp = dest + '.tmp-import';
       // Streamed write with a per-entry byte cap: caps even an entry whose declared
       // size lied past the pre-check above. On abort, drop the partial tmp file.

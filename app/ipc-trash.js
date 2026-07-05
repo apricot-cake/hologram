@@ -28,7 +28,10 @@ function register(ctx) {
         rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
         if (rec.image) targets.add(path.basename(rec.image));
         if (rec.video) targets.add(path.basename(rec.video));
-        if (rec.avatarFile) targets.add(path.basename(rec.avatarFile));
+        // Shared-store avatars (avatars/<urlhash>.<ext>) are referenced by every
+        // capture of that author — deleting one post must not trash the icon.
+        // Only legacy per-capture files (<captureId>-avatar.<ext>) are swept.
+        if (rec.avatarFile && !/^avatars[\\/]/.test(rec.avatarFile)) targets.add(path.basename(rec.avatarFile));
         for (const m of rec.media || []) {
           if (m && m.file) targets.add(path.basename(m.file));
         }
