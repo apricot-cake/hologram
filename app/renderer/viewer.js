@@ -366,18 +366,18 @@
     if (el) el.setAttribute(attr, val);
   };
 
-  setAttr('settingsBtn', 'title', MSG.tabSettings);
+  setAttr('settingsBtn', 'data-tip', MSG.tabSettings); // shared glass tooltip (was native title)
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   setText('sbAuthorTitle', MSG.sidebarAuthors);
   setText('sbClipTitle', MSG.clipTitle);
   const clipClearEl = document.getElementById('clipClear');
   if (clipClearEl) {
     clipClearEl.innerHTML = ICON_TRASH;
-    clipClearEl.title = MSG.clipEmptyTip;
+    clipClearEl.dataset.tip = MSG.clipEmptyTip; // shared glass tooltip (was native title)
     clipClearEl.setAttribute('aria-label', MSG.clipEmpty);
   }
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
-  setAttr('tileSlider', 'title', MSG.tileSizeTip);
+  setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
   setText('postResetBtn', MSG.reset);
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
@@ -433,7 +433,7 @@
   setText('sbCharRowTitle', MSG.kindCharacter);
   setText('sbTagRowTitle', MSG.qfTag);
   setText('sbHashtagRowTitle', MSG.tabTags);
-  byId('sbTop').title = MSG.sbTopTip;
+  byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
 
   // Sort select options
   const sortSelect = selectById('sortSelect');
@@ -769,7 +769,7 @@
 
   // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
   const qbHelpPop = document.createElement('div');
-  qbHelpPop.className = 'qb-help-pop';
+  qbHelpPop.className = 'qb-help-pop glass-lens'; // shared hover-hint material (2026-07-05 共有化)
   document.body.appendChild(qbHelpPop);
   function hideQbHelp() {
     qbHelpPop.classList.remove('show');

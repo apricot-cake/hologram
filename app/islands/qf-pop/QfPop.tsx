@@ -102,7 +102,7 @@ function buildGroups(items: CorpusQfPopItem[]): QfGroup[] {
 function ValueRow({ it, onPick }: { it: CorpusQfPopItem; onPick: (it: CorpusQfPopItem) => void }) {
   return (
     <div className={'fm-row' + (it.sub ? ' fm-sub' : '') + (it.facetDim && it.count === 0 ? ' off' : '')} onClick={() => onPick(it)}>
-      {it.kind && <span className={'tk-dot tk-' + it.kind} title={it.dotTitle} />}
+      {it.kind && <span className={'tk-dot tk-' + it.kind} data-tip={it.dotTitle} />}
       <span className="fm-name">{it.l}</span>
       {it.count != null && <span className="fm-count">{it.count}</span>}
       {it.on && (

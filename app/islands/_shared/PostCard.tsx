@@ -132,15 +132,15 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
             {src && <span className="stack-sheet-img" style={{ backgroundImage: `url("${src}")` }} />}
           </span>
         ))}
-      <div className="select-check" title={L.tipSelect} />
+      <div className="select-check" data-tip={L.tipSelect} aria-label={L.tipSelect} />
       <div className="act-pill" aria-hidden="true" />
-      <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} title={L.tipClip}>
+      <button className={'clip-btn' + (m.clipped ? ' in' : '')} data-clip={m.index} data-tip={L.tipClip} aria-label={L.tipClip}>
         <ClipIcon />
       </button>
-      <button className="info-btn" data-info={m.index} title={L.tipInfo} aria-label={L.tipInfo}>
+      <button className="info-btn" data-info={m.index} data-tip={L.tipInfo} aria-label={L.tipInfo}>
         <InfoIcon />
       </button>
-      <button className="tag-btn" data-tagedit={m.index} title={L.tipTagEdit} aria-label={L.tipTagEdit}>
+      <button className="tag-btn" data-tagedit={m.index} data-tip={L.tipTagEdit} aria-label={L.tipTagEdit}>
         <TagIcon />
       </button>
       {m.hasThumb && (

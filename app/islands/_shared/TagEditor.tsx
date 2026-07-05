@@ -68,7 +68,7 @@ export function TagEditor({ idPrefix, className, tags, vocabGroups, coocGroups, 
       key={t}
       type="button"
       className={'edit-pick-chip' + (selected.has(t) ? ' on' : '')}
-      title={title}
+      data-tip={title}
       onClick={() => onToggle(t)}
       onContextMenu={(e) => {
         e.preventDefault();

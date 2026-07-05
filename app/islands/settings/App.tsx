@@ -87,7 +87,7 @@ export function App({ store }: { store: OpenStore }) {
               </svg>
               <input type="search" className="settings-search" autoComplete="off" placeholder={t('settingsSearch')} value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
-            <button className="icon-btn" type="button" aria-label="閉じる" title="閉じる" onClick={() => store.set(false)}>
+            <button className="icon-btn" type="button" aria-label="閉じる" data-tip="閉じる" onClick={() => store.set(false)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M6 6l12 12M18 6 6 18" />
               </svg>

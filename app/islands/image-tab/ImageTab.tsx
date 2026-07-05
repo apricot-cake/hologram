@@ -91,7 +91,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       )}
       {multi && <div className="itv-counter">{i + 1 + ' / ' + items.length}</div>}
       <div className="itv-tools">
-        <button type="button" className="icon-btn" title={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector && model.onToggleInspector()}>
+        <button type="button" className="icon-btn" data-tip={labels.info} aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector && model.onToggleInspector()}>
           {INFO_ICON}
         </button>
       </div>

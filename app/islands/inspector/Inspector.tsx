@@ -17,7 +17,7 @@ function Row({ k, v }: { k?: string; v?: ReactNode }) {
 function PostInspector({ m }: { m: CorpusInspectorModel }) {
   return (
     <>
-      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>
+      <button type="button" className="iv-insp-close" aria-label="閉じる" data-tip="閉じる" onClick={m.onClose}>
         &times;
       </button>
       {m.heading ? <div className="iv-insp-title">{m.heading}</div> : null}
@@ -28,7 +28,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
           <span className="iv-insp-k">{m.labels.author}</span>
           <span className="iv-insp-v iv-insp-author">
             {m.jumpable ? (
-              <button type="button" className="iv-insp-author-link" title={m.labels.viewPoster} onClick={m.onPosterJump}>
+              <button type="button" className="iv-insp-author-link" data-tip={m.labels.viewPoster} onClick={m.onPosterJump}>
                 {m.avatarSrc ? <img className="iv-insp-avatar" src={m.avatarSrc} alt="" /> : null}
                 <span>{m.authorName}</span>
               </button>
@@ -58,7 +58,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
             <span className="iv-insp-v">
               <div className="iv-insp-tags">
                 {m.srcTagsView.map((t: string) => (
-                  <button key={t} type="button" className="iv-insp-tag iv-insp-tag-src" title={m.labels.tipAdoptTag} onClick={() => m.onAdoptSourceTag(t)}>
+                  <button key={t} type="button" className="iv-insp-tag iv-insp-tag-src" data-tip={m.labels.tipAdoptTag} onClick={() => m.onAdoptSourceTag(t)}>
                     {t}
                   </button>
                 ))}
@@ -97,7 +97,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
 function PosterInspector({ m }: { m: CorpusInspectorModel }) {
   return (
     <>
-      <button type="button" className="iv-insp-close" title="&times;" onClick={m.onClose}>
+      <button type="button" className="iv-insp-close" aria-label="閉じる" data-tip="閉じる" onClick={m.onClose}>
         &times;
       </button>
       <div className="iv-poster-head">
@@ -125,7 +125,7 @@ function PosterInspector({ m }: { m: CorpusInspectorModel }) {
                 {f.name}
               </button>
             ))}
-            <button type="button" className="iv-folder-chip iv-folder-add" title={m.labels.newFolderPlaceholder} onClick={m.onFolderCreate}>
+            <button type="button" className="iv-folder-chip iv-folder-add" aria-label={m.labels.newFolderPlaceholder} data-tip={m.labels.newFolderPlaceholder} onClick={m.onFolderCreate}>
               +
             </button>
           </div>

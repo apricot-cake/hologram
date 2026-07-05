@@ -89,7 +89,7 @@ export function KindMenuHost() {
             <span className="fm-ic">{row.dot && <span className={'tk-dot tk-' + row.kind} />}</span>
             <span className="fm-name">{row.label}</span>
             {row.renameable && (
-              <button type="button" className="fm-rename" title={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
+              <button type="button" className="fm-rename" aria-label={menu.renameTitle} data-tip={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
                 <Pencil />
               </button>
             )}

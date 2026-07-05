@@ -176,7 +176,7 @@
     .kb-hint-wrap { position: relative; display: flex; align-items: center; margin-left: 6px; }
     .kb-hint-pop {
       display: none; position: fixed; bottom: 52px; left: 14px;
-      border-radius: 14px; padding: 10px 12px; z-index: 12000; white-space: nowrap;
+      border-radius: 12px; padding: 10px 12px; z-index: 12000; white-space: nowrap;
     }
     .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
     /* Glass material system (.glass-lens / .glass-frost / .glass-relief) is defined
@@ -1717,8 +1717,7 @@
     .qb-help:hover { color: var(--accent-text); }
     .qb-help-pop {
       position: fixed; z-index: 12000; display: none; max-width: 360px;
-      background: var(--surface); border: 1px solid var(--border-strong);
-      border-radius: 10px; box-shadow: var(--shadow-pop); padding: 12px 14px;
+      border-radius: 12px; padding: 12px 14px;   /* material (bg/border/shadow) = shared glass-lens (+ dense fill) */
       font-size: 12px; line-height: 1.7; color: var(--text);
     }
     .qb-help-pop.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
@@ -1881,8 +1880,8 @@
        starts below it). Always shown (it's also the entry point for filters). -->
   <div id="postActiveBar" class="content-activebar" style="display:none">
     <div class="qb-nav">
-      <button class="icon-btn icon-btn--ghost" id="navBackBtn" type="button" aria-label="戻る" title="戻る (Alt+←)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
-      <button class="icon-btn icon-btn--ghost" id="navFwdBtn" type="button" aria-label="進む" title="進む (Alt+→)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+      <button class="icon-btn icon-btn--ghost" id="navBackBtn" type="button" aria-label="戻る" data-tip="戻る (Alt+←)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button class="icon-btn icon-btn--ghost" id="navFwdBtn" type="button" aria-label="進む" data-tip="進む (Alt+→)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
     </div>
     <div class="qb-body">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
@@ -1949,7 +1948,7 @@
           <div class="view-toggle" id="posterDensityToggle"></div>
           <div class="tile-size" id="posterTileSizeRow" style="display:none">
             <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-            <input type="range" id="posterTileSlider" step="1" title="表示の大きさ">
+            <input type="range" id="posterTileSlider" step="1" aria-label="表示の大きさ" data-tip="表示の大きさ">
             <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           </div>
         </div>
@@ -1961,7 +1960,7 @@
             <div class="view-toggle" id="densityToggle"></div>
             <div class="tile-size" id="tileSizeRow" style="display:none">
               <svg class="ts-ico" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-              <input type="range" id="tileSlider" step="1" title="タイルの大きさ">
+              <input type="range" id="tileSlider" step="1" aria-label="タイルの大きさ" data-tip="タイルの大きさ">
               <svg class="ts-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
             </div>
           </div>
@@ -2030,7 +2029,7 @@
           <!-- Clip: the library-wide ephemeral flag (one-click 📎 on cards). A normal
                filter row at the top — no flyout (2-state toggle), with an inline clear button. -->
           <div class="clip-row-wrap">
-            <button class="sb-row clip-row" id="clipRow" type="button">
+            <button class="sb-row clip-row" id="clipRow" type="button" data-tip="あとで見返したい投稿につける一時的な目印。各カードのクリップボタンで付け外しでき、この行を押すと目印付きの投稿だけに絞り込みます。" data-tip-rich>
               <span class="sb-row-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></span>
               <span class="sb-row-name" id="sbClipTitle">クリップ</span>
             </button>
@@ -2068,14 +2067,14 @@
     <button id="sbTop" class="icon-btn" type="button" style="position:absolute; right:28px; bottom:52px; display:none; z-index:5;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
 
     <div class="sidebar-footer">
-      <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" title="設定">
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定" data-tip="設定">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
       <div class="kb-hint-wrap">
         <button class="icon-btn icon-btn--ghost" type="button" aria-label="キーボードショートカット">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M8 15h8"/></svg>
         </button>
-        <div class="kb-hint-pop glass-frost">
+        <div class="kb-hint-pop glass-lens">
           <div class="kb-hint-head">ショートカット</div>
           <div class="kb-hint-grid">
             <kbd>/</kbd><span>検索</span>
@@ -2356,14 +2355,16 @@
       box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop-sm);
     }
 
-    /* Instant tooltip (.ui-tip + .glass-frost, singleton div owned by
-       islands/_shared/tip.ts): replaces native `title` on custom controls — the
-       OS tooltip is ~1s delayed and OS-styled (user: チープ). Shows immediately
-       on hover/focus with a fast fade+rise; glass-frost supplies the material.
+    /* The single shared hover-hint surface (.ui-tip + .glass-lens, singleton div
+       owned by islands/_shared/tip.ts). EVERY hover hint drives it — React
+       tipProps(), the [data-tip] delegation, and window.corpusTip — so tooltips
+       can't drift apart. Replaces native `title` on custom controls (the OS
+       tooltip is ~1s delayed and OS-styled = チープ). Shows immediately on
+       hover/focus with a fast fade+rise; glass-lens supplies the material.
        Topmost surface (above every fold-menu/popover at ≤13500). */
     .ui-tip {
       position: fixed; z-index: 14000; pointer-events: none;
-      padding: 4px 9px; border-radius: 7px;
+      padding: 4px 9px; border-radius: 8px;
       font-size: 11.5px; font-weight: 500; line-height: 1.35;
       color: var(--text-strong); white-space: nowrap;
       opacity: 0; visibility: hidden; translate: 0 3px;
@@ -2371,6 +2372,21 @@
     }
     .ui-tip.show { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
     @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; translate: 0 0; } }
+    /* Rich variant: a multi-line explanatory hint (clip row etc.) — wraps, wider,
+       left-aligned, roomier corners/padding. */
+    .ui-tip--rich {
+      white-space: normal; max-width: 250px; text-align: left;
+      padding: 8px 11px; border-radius: 12px;
+      font-weight: 400; line-height: 1.5;
+    }
+    /* Dense hover-hint fill (2026-07-05 共有化): bump glass-lens's 14% so multi-line
+       hint text — rich tip, shortcut grid, builder help — stays readable. Placed
+       AFTER the glass utilities so it wins on equal specificity; the compound
+       selectors (.kb-hint-pop.glass-lens etc.) outrank .glass-lens outright. This
+       unifies the whole hover-hint family onto ONE material. */
+    .ui-tip--rich, .kb-hint-pop.glass-lens, .qb-help-pop.glass-lens {
+      background: color-mix(in srgb, var(--surface) 46%, transparent);
+    }
 
     /* a11y escape hatch: solid surfaces when the OS asks for less transparency */
     @media (prefers-reduced-transparency: reduce) {

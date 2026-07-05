@@ -54,7 +54,7 @@ function Tab({ t, editing, closeTitle }: { t: TabModel; editing?: boolean; close
         {editing ? <input className="tab-rename-input" defaultValue={t.title} /> : <span className="tab-title">{t.title}</span>}
       </span>
       {t.showClose && (
-        <button className="tab-close" data-close={t.id} title={closeTitle} aria-label={closeTitle}>
+        <button className="tab-close" data-close={t.id} data-tip={closeTitle} aria-label={closeTitle}>
           <CloseIcon />
         </button>
       )}
@@ -69,7 +69,7 @@ export function Tabs({ model }: { model: TabsModel | null }) {
       {model.tabs.map((t) => (
         <Tab key={t.id} t={t} editing={t.id === model.editingId} closeTitle={model.closeTitle} />
       ))}
-      <button className="tab-new" title={model.newTitle} aria-label={model.newTitle}>
+      <button className="tab-new" data-tip={model.newTitle} aria-label={model.newTitle}>
         <NewIcon />
       </button>
     </>
