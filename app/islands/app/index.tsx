@@ -9,6 +9,11 @@
 // mounts (mounted-guards make re-entry safe), so importing them here mounts them all
 // under one bundle. Dev (vite.config.mjs) serves this same file as a module via the
 // island <script> rewrite (islands/app.js → /islands/app/index.tsx).
+// Unified root (最終形B DoD: 島 root 群の1本統合). Islands migrate under this ONE
+// createRoot in batches — see app/App.tsx for the roster. Batch 1: the four overlay
+// hosts (context-menu / kind-menu / filter-popover / qf-pop) now render under root.tsx
+// instead of each self-mounting, so their index.tsx entries are gone.
+import './root.tsx';
 import '../settings/index.tsx';
 import '../sidebar/index.tsx';
 import '../selection-bar/index.tsx';
@@ -18,10 +23,6 @@ import '../searchbox/index.tsx';
 import '../posters/index.tsx';
 import '../lightbox/index.tsx';
 import '../toolbar/index.tsx';
-import '../context-menu/index.tsx';
-import '../kind-menu/index.tsx';
-import '../filter-popover/index.tsx';
-import '../qf-pop/index.tsx';
 import '../inspector/index.tsx';
 import '../edit-overlay/index.tsx';
 import '../grid/index.tsx';
