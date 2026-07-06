@@ -328,9 +328,6 @@
     tabCloseOthers: _s('tabCloseOthers'),
   };
 
-  // Shared trash glyph (poster-folder delete + clip clear). One source so the
-  // icon can't drift between the JS-rendered button and the static #clipClear button.
-  const ICON_TRASH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
   // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
   // card / 種別) so the clamp formula stays in one place instead of drifting between
@@ -367,14 +364,8 @@
 
   setAttr('settingsBtn', 'data-tip', MSG.tabSettings); // shared glass tooltip (was native title)
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
-  setText('sbAuthorTitle', MSG.sidebarAuthors);
-  setText('sbClipTitle', MSG.clipTitle);
-  const clipClearEl = document.getElementById('clipClear');
-  if (clipClearEl) {
-    clipClearEl.innerHTML = ICON_TRASH;
-    clipClearEl.dataset.tip = MSG.clipEmptyTip; // shared glass tooltip (was native title)
-    clipClearEl.setAttribute('aria-label', MSG.clipEmpty);
-  }
+  // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
+  // rendered by the sidebar island from buildSidebarModel now — no static setText here.
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
   setText('postResetBtn', MSG.reset);
@@ -385,7 +376,6 @@
   // tooltips) are rendered by the toolbar island now. The browse toggle's old
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
-  setText('sbFolderRowName', MSG.qfCatFolder);
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
   // Poster filter rows reuse the post-side row labels (same concepts).
   setText('sbPosterFilterTitle', MSG.sbFilterTitle);
@@ -424,14 +414,11 @@
   // longer writes them (writing here would race the island after a language reload).
   setText('sbSearchTitle', MSG.sbSearchTitle);
   setText('sbSortTitle', MSG.sbSortTitle);
-  setText('sbFilterTitle', MSG.sbFilterTitle);
   setText('activebarLabel', MSG.activebarLabel);
   setText('qbEmptyHint', MSG.qbEmptyHint);
   setText('posterQbEmptyHint', MSG.qbEmptyHint);
-  setText('sbWorkRowTitle', MSG.kindWork);
-  setText('sbCharRowTitle', MSG.kindCharacter);
-  setText('sbTagRowTitle', MSG.qfTag);
-  setText('sbHashtagRowTitle', MSG.tabTags);
+  // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
+  // rendered by the sidebar island from buildSidebarModel — no static setText here.
   byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
 
   // Sort select options
@@ -588,9 +575,10 @@
   // sync with whoever closed it.
   window.corpusQfPop.subscribe(() => {
     if (!window.corpusQfPop.get()) {
-      document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
+      document.querySelectorAll('#posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
       qfCat = null;
       qfAnchor = null;
+      pushSidebar(); // clear the post-side row's openCat highlight
     }
   });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
@@ -754,15 +742,21 @@
   }
   // 行の横にフライアウトを開く（同じアンカー再クリックで閉じる）
   function showQfPopAt(cat, anchorEl) {
-    if (window.corpusQfPop.get() && qfAnchor === anchorEl) {
+    // Re-clicking the open row toggles it closed (cat, not node identity — robust to the
+    // island re-rendering the row on a badge change).
+    if (window.corpusQfPop.get() && qfCat === cat) {
       hideQfPop();
       return;
     }
-    document.querySelectorAll('#filterRows .qf-open, #posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
-    anchorEl.classList.add('qf-open');
+    // Post-side .qf-open is model-driven (React owns #filterRows className, so an
+    // imperative classList.add would be clobbered on the next render + switching rows is
+    // handled by the model). Only the poster rows (static HTML) get the class here.
+    document.querySelectorAll('#posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
+    if (String(cat).startsWith('poster-')) anchorEl.classList.add('qf-open');
     qfCat = cat;
     qfAnchor = anchorEl;
     qfSession++; // fresh open → island remounts (resets group/find); picks keep it
+    pushSidebar(); // light up the post-side row via openCat
     renderQfPop();
   }
 
@@ -909,18 +903,32 @@
   }
 
   // --- Sidebar filter controls ---
-
-  // Sidebar i18n
-  setText('sbPlatformTitle', MSG.qfPlatform);
-  setText('sbPostTypeTitle', MSG.qfPostType);
-  setText('sbMediaTitle', MSG.qfMediaTitle);
-  setText('sbDateTitle', MSG.qfDate);
-  setText('sbEngTitle', MSG.qfEngagement);
+  // (#filterRows row labels are model-driven now — the sidebar island renders them from
+  // buildSidebarModel. No static setText for プラットフォーム / 投稿 / メディア / 日付 /
+  // エンゲージメント here.)
 
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
   byId('filterRows').addEventListener('click', (e) => {
+    // クリップ: 空にする clears every flag (kept before the row check so it doesn't also
+    // toggle the filter — was e.stopPropagation() on the old direct listener).
+    if (closestOf(e, '#clipClear')) {
+      if (!CF()) return;
+      if (!window.confirm(MSG.clipEmptyConfirm)) return;
+      keepCurrentVisible();
+      CF().clearClips();
+      renderPosts(true);
+      return;
+    }
+    // クリップ row: toggle the "show only clipped" filter.
+    if (closestOf(e, '#clipRow')) {
+      const idx = activeFilters.findIndex((f) => f.type === 'clip');
+      if (idx < 0) addFilter({ type: 'clip', value: '*' });
+      else removeFilter(idx);
+      renderClipRow();
+      return;
+    }
     // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
     // delegated listener rather than its own — the row can be (re)built after wiring
     // time, so a listener bound at load could miss it. Flips the group-level flag.
@@ -969,16 +977,20 @@
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
   }
 
-  // Row badges: number of active filters per category. Instance filters live
-  // inside the platform flyout, so they count toward the platform badge.
-  function renderFilterBadges() {
-    const counts: Record<string, any> = {};
-    for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
-    counts.platform = (counts.platform || 0) + (counts.instance || 0);
-    // (複数画像 is no longer folded into the メディア badge — it's its own row now,
-    //  lit via the accent icon in renderMultiRow.)
-    // 用語帳: split the tag badge by 種別 so a 作品/キャラ filter lights its own row's
-    // badge, leaving the タグ row badge for general (未分類) tags only.
+  // Build the whole post-mode filter-row model (#filterRows) from current viewer state
+  // and push it to the sidebar island. Aggregates what used to be scattered imperative
+  // DOM writes across renderFilterBadges / renderClipRow / renderMultiRow / updateKindRows
+  // / applyKindLabels + the boot setText calls: row labels (MSG + custom 種別 labels),
+  // per-category active-filter badge counts, the クリップ/複数画像 toggle states, the
+  // 作品/キャラ progressive-disclosure visibility, and which flyout row wears .qf-open.
+  // Cheap to rebuild; called on every filter/clip/vocab change (React diffs it).
+  function buildSidebarModel(): CorpusSidebarModel {
+    // Per-category active-filter counts. Instance filters live inside the platform
+    // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
+    // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
+    const badges: Record<string, number> = {};
+    for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
+    badges.platform = (badges.platform || 0) + (badges.instance || 0);
     let tagWork = 0,
       tagChar = 0,
       tagGen = 0;
@@ -989,14 +1001,62 @@
         else if (k === 'character') tagChar++;
         else tagGen++;
       }
-    counts.tag = tagGen;
-    counts.work = tagWork;
-    counts.character = tagChar;
-    document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
-      const n = counts[(b as HTMLElement).dataset.badge || ''] || 0;
-      b.textContent = n || '';
-      b.classList.toggle('on', n > 0);
-    });
+    badges.tag = tagGen;
+    badges.work = tagWork;
+    badges.character = tagChar;
+    // 作品/キャラ rows are progressively disclosed — shown only once at least one tag
+    // wears that 種別 (zero trace for people who just save posts).
+    const tagset = _cachedTagSet || new Set<string>();
+    let hasWork = false,
+      hasChar = false;
+    for (const t of tagset) {
+      const k = tagKindOf(t);
+      if (k === 'work') hasWork = true;
+      else if (k === 'character') hasChar = true;
+      if (hasWork && hasChar) break;
+    }
+    // クリップ: count library-wide clipped posts; the row is active when its filter is on.
+    const existing = new Set(allPosts.map((p) => p.captureId));
+    const clipCount = CF() ? CF().clipCount(existing) : 0;
+    return {
+      title: MSG.sbFilterTitle,
+      // Only post-side flyout rows carry .qf-open (poster rows are still static HTML).
+      openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
+      clip: {
+        label: MSG.clipTitle,
+        active: activeFilters.some((f) => f.type === 'clip'),
+        count: clipCount,
+        clearVisible: clipCount > 0,
+        emptyTip: MSG.clipEmptyTip,
+        emptyAria: MSG.clipEmpty,
+      },
+      multi: { label: MSG.qfMultiImage, active: multiOnly },
+      labels: {
+        collection: MSG.qfCatFolder,
+        platform: MSG.qfPlatform,
+        postType: MSG.qfPostType,
+        media: MSG.qfMediaTitle,
+        date: MSG.qfDate,
+        engagement: MSG.qfEngagement,
+        user: MSG.sidebarAuthors,
+        work: kindLabel('work'),
+        character: kindLabel('character'),
+        hashtag: MSG.tabTags,
+        tag: MSG.qfTag,
+      },
+      badges,
+      visible: { work: hasWork, character: hasChar },
+    };
+  }
+  function pushSidebar() {
+    window.corpusSidebar.render(buildSidebarModel());
+  }
+  // Row badges / labels / toggle states are all model-driven now; the island renders
+  // them from buildSidebarModel via window.corpusSidebar. Kept as a thin alias so the
+  // many call sites (updateSidebarState, the #multiRow toggle, afterQueryChange, …) are
+  // unchanged.
+  function renderFilterBadges() {
+    pushSidebar();
   }
 
   // --- Tag area: the タグ row opens ONE flyout listing every general tag,
@@ -1019,10 +1079,11 @@
   // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
   function applyKindLabels() {
-    setText('sbWorkRowTitle', kindLabel('work'));
-    setText('sbCharRowTitle', kindLabel('character'));
+    // Post-side 作品/キャラ row names are model-driven now (buildSidebarModel reads
+    // kindLabel); only the poster-side rows (still static HTML) need setText.
     setText('sbPosterWorkRowName', kindLabel('work'));
     setText('sbPosterCharRowName', kindLabel('character'));
+    pushSidebar();
   }
   // Always send BOTH maps so writing one never drops the other (set-tag-types only
   // keeps the labels it receives).
@@ -1081,19 +1142,8 @@
   // only once at least one tag wears that 種別. No kinds set → no rows → zero trace for
   // people who just save posts (Corpus isn't illustration-only).
   function updateKindRows() {
-    const tags = _cachedTagSet || new Set<string>();
-    let hasWork = false,
-      hasChar = false;
-    for (const t of tags) {
-      const k = tagKindOf(t);
-      if (k === 'work') hasWork = true;
-      else if (k === 'character') hasChar = true;
-      if (hasWork && hasChar) break;
-    }
-    const wr = document.getElementById('sbWorkRow');
-    const cr = document.getElementById('sbCharRow');
-    if (wr) wr.style.display = hasWork ? '' : 'none';
-    if (cr) cr.style.display = hasChar ? '' : 'none';
+    // 作品/キャラ row visibility is derived in buildSidebarModel from _cachedTagSet.
+    pushSidebar();
   }
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
@@ -2715,52 +2765,21 @@
   // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
   // only clipped posts; 空にする clears all flags (the posts themselves are kept).
   function renderClipRow() {
-    const row = document.getElementById('clipRow');
-    const badge = document.getElementById('clipBadge');
-    const clear = document.getElementById('clipClear');
-    if (!row || !CF()) return;
-    const existing = new Set(allPosts.map((p) => p.captureId));
-    const n = CF().clipCount(existing);
-    const active = activeFilters.some((f) => f.type === 'clip');
-    row.classList.toggle('active', active);
-    if (badge) {
-      badge.textContent = String(n);
-      badge.classList.toggle('on', n > 0);
-    }
-    if (clear) clear.style.display = n > 0 ? '' : 'none';
+    // Clip active / count / clear-visibility are model-driven now (buildSidebarModel).
+    pushSidebar();
   }
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
+  // The クリップ row toggle + 空にする clear are handled by the delegated #filterRows
+  // listener now (the rows are React-owned, so a setup-time addEventListener on a
+  // specific node would miss the island's re-renders).
 
-  // Clip row: the row toggles a "show only clipped" filter; 空にする clears all flags
-  // (confirmed — it reads nothing like removing the filter).
-  (function setupClipSidebar() {
-    const row = document.getElementById('clipRow');
-    const clear = document.getElementById('clipClear');
-    if (row)
-      row.addEventListener('click', () => {
-        const idx = activeFilters.findIndex((f) => f.type === 'clip');
-        if (idx < 0) addFilter({ type: 'clip', value: '*' });
-        else removeFilter(idx);
-        renderClipRow();
-      });
-    if (clear)
-      clear.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!CF()) return;
-        if (!window.confirm(MSG.clipEmptyConfirm)) return;
-        keepCurrentVisible();
-        CF().clearClips();
-        renderPosts(true);
-      });
-  })();
-
-  // 複数画像 sidebar row: reflect the group-level multiOnly flag as the row's active
-  // state (accent icon). The click that flips it is handled by the delegated
-  // #filterRows listener above (setup-time binding could miss a rebuilt row).
+  // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
+  // state (accent icon) via the model. The click that flips it is handled by the
+  // delegated #filterRows listener.
   function renderMultiRow() {
-    const row = document.getElementById('multiRow');
-    if (row) row.classList.toggle('active', multiOnly);
+    // 複数画像 active is model-driven now (buildSidebarModel).
+    pushSidebar();
   }
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
@@ -4852,6 +4871,10 @@
   } catch {
     /* default empty */
   }
+  // Seed the sidebar island with labels + initial state before the first loadPosts so the
+  // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
+  // (applyKindLabels above also pushes, but only if getTagTypes resolved).
+  pushSidebar();
   await initTabs();
   appBooted = true; // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();

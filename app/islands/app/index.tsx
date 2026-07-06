@@ -10,6 +10,7 @@
 // under one bundle. Dev (vite.config.mjs) serves this same file as a module via the
 // island <script> rewrite (islands/app.js → /islands/app/index.tsx).
 import '../settings/index.tsx';
+import '../sidebar/index.tsx';
 import '../query-chips/index.tsx';
 import '../tabs/index.tsx';
 import '../searchbox/index.tsx';

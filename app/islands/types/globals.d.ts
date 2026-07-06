@@ -290,6 +290,24 @@ declare global {
     openId: number;
     [extra: string]: any;
   }
+
+  // ---- renderer/sidebar.js — post-mode filter-row column (#filterRows). viewer
+  // builds the whole model in buildSidebarModel(); the island renders it. Clicks
+  // route through viewer's own delegated #filterRows handler, so no callbacks here. ----
+  interface CorpusSidebarModel {
+    title: string;
+    openCat: string | null; // the flyout cat with .qf-open (null = none)
+    clip: { label: string; active: boolean; count: number; clearVisible: boolean; emptyTip: string; emptyAria: string };
+    multi: { label: string; active: boolean };
+    labels: Record<string, string>; // per-row name, keyed by row key
+    badges: Record<string, number>; // per-row active-filter count
+    visible: { work: boolean; character: boolean }; // 種別 progressive disclosure
+  }
+  interface CorpusSidebar {
+    render(model: CorpusSidebarModel | null): void;
+    get(): CorpusSidebarModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
   interface CorpusEditOverlay {
     open(model: Omit<CorpusEditOverlayModel, 'openId'>): void;
     refresh(partial: Record<string, unknown>): void;
@@ -351,6 +369,7 @@ declare global {
     corpusFilterPopover: CorpusFilterPopover;
     corpusInspector: CorpusInspector;
     corpusEditOverlay: CorpusEditOverlay;
+    corpusSidebar: CorpusSidebar;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
     corpusTabs: CorpusTabsIsland;
