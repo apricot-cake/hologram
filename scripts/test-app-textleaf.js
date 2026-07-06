@@ -59,7 +59,12 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
+  // Count only settled text chips, excluding CHIP_OUT_MS (200ms) exit-animation ghosts a
+  // removed/reconfirmed value keeps (pointer-events:none, stale data-nid = not active). A
+  // ghost is marked .leaving at the .qb-val (item removed from a surviving cluster) OR only
+  // at the .qb-cluster (whole attribute removed), so exclude both levels — a second term
+  // reads ~40ms after the first is confirmed, inside the ghost window.
+  const textChips = () => document.querySelectorAll('#queryChips .qb-cluster:not(.leaving) .qb-val.qc-text:not(.leaving)').length;
   const specialChips = () => document.querySelectorAll('#queryChips [data-special="search"]').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);

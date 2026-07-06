@@ -76,13 +76,16 @@ const evalJs = `(async () => {
   await waitFor(() => !!qfRow('X'));
   qfRow('X').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await sleep(120);
-  const pills = document.querySelectorAll('#queryChips .sb-active-chip').length;
+  const pills = document.querySelectorAll('#queryChips .sb-active-chip:not(.leaving)').length;
   const resetShown = reset.style.display !== 'none';
   const cardsFiltered = document.querySelectorAll('#postGrid .post-card').length;
-  // reset clears the pills and hides itself
+  // reset clears the pills and hides itself. Count only settled chips: reset removes the
+  // cluster, which lingers as a .leaving exit-animation ghost (CHIP_OUT_MS=200ms,
+  // pointer-events:none, stale data-nid) — this reads ~80ms in, so :not(.leaving) is what
+  // makes "reset cleared everything" deterministic rather than racing the fade-out.
   reset.click();
   await sleep(80);
-  const pillsAfter = document.querySelectorAll('#queryChips .sb-active-chip').length;
+  const pillsAfter = document.querySelectorAll('#queryChips .sb-active-chip:not(.leaving)').length;
   const resetHiddenAfter = reset.style.display === 'none';
   const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
   // a search term becomes a real text-leaf pill (qc-text), not the legacy 付箋
@@ -91,7 +94,7 @@ const evalJs = `(async () => {
   const searchPill = await waitFor(() => !!document.querySelector('#queryChips .qb-val.qc-text'));
   const noLegacy = !document.querySelector('#queryChips [data-special="search"]');
   // deleting the text leaf via its ✕ clears the search (box empties, reset hides)
-  document.querySelector('#queryChips .qb-val.qc-text .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  document.querySelector('#queryChips .qb-val.qc-text:not(.leaving) .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const searchCleared = await waitFor(() => document.getElementById('searchBox').value === '' && reset.style.display === 'none');
   return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, noLegacy, searchCleared };
 })()`;

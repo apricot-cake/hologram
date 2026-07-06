@@ -59,7 +59,12 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
+  // Count only settled text chips, excluding CHIP_OUT_MS (200ms) exit-animation ghosts a
+  // removed/reconfirmed value keeps (pointer-events:none, stale data-nid = not active). A
+  // ghost is marked .leaving at the .qb-val (item removed from a surviving cluster) OR only
+  // at the .qb-cluster (whole attribute removed), so exclude both levels — this reads ~40ms
+  // after a confirm, well inside the ghost window, so it's what makes the count deterministic.
+  const textChips = () => document.querySelectorAll('#queryChips .qb-cluster:not(.leaving) .qb-val.qc-text:not(.leaving)').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await wait(40); } return null; };
   const valByLabel = (t) => [...document.querySelectorAll('#queryChips .qb-val')].find((p) => (p.querySelector('.qb-val-label') || {}).textContent === t);
   const rclick = (el) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
@@ -82,7 +87,7 @@ const evalJs = `(async () => {
   r.andCards = cards();        // 猫 AND 犬 = 猫と犬 = 1
   enter(); await wait(140);    // confirm 犬 too
   // text は単独型: クラスタ化もトグルも無し（1語1チップのまま）
-  r.textClusters = document.querySelectorAll('#queryChips .qb-cluster.qc-text').length;
+  r.textClusters = document.querySelectorAll('#queryChips .qb-cluster.qc-text:not(.leaving)').length;
   r.noOpt = !document.querySelector('#queryChips .qb-opt');
   // 犬 を右クリック→「除く」へ移す → 猫 ∧ ¬犬 = 猫がすき = 1
   rclick(valByLabel('犬'));

@@ -61,7 +61,13 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  const textChips = () => document.querySelectorAll('#queryChips .qb-val.qc-text').length;
+  // Count only settled text chips, excluding CHIP_OUT_MS (200ms) exit-animation ghosts.
+  // A ghost is marked .leaving at EITHER level: an item-level ghost (a value removed from a
+  // surviving cluster) sets .leaving on the .qb-val; a cluster-level ghost (a whole
+  // attribute removed — e.g. switching tabs drops the entire text cluster) sets .leaving on
+  // the .qb-cluster only, NOT its child .qb-val. So exclude both: values that aren't leaving
+  // AND live inside a cluster that isn't leaving (pointer-events:none ghosts aren't active).
+  const textChips = () => document.querySelectorAll('#queryChips .qb-cluster:not(.leaving) .qb-val.qc-text:not(.leaving)').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
   const sb = document.getElementById('searchBox');
@@ -101,15 +107,12 @@ const evalJs = `(async () => {
   r.confExactCards = cards();      // 0 (ひらがな ≠ カタカナ body)
   document.querySelector('#searchModeSeg .seg-opt[data-mode="fuzzy"]').click(); await wait(260);   // flip to おおまか
   r.afterFuzzyCards = cards();     // 0 — confirmed leaf stays exact, does NOT match ネコかわいい
-  // re-save AFTER the flip and read the persisted leaf mode: still 'exact'
-  const op = window.prompt; window.prompt = () => '凍結確認';
-  document.getElementById('saveSearchBtn').click();
-  window.prompt = op; await wait(300);
-  // allWithActive was retired with the collections view — allCollections() is the raw list
-  const dyn = (window.corpusFolders.allCollections() || []).filter((c) => c.kind === 'dynamic');
-  const c = dyn.find((x) => x.name === '凍結確認');
-  const leaf = c && c.tree && (c.tree.children || []).find((n) => n.type === 'text');
-  r.savedLeafMode = leaf ? leaf.mode : null;   // 'exact'
+  // afterFuzzyCards staying 0 across the flip IS the mode-freeze proof: had the confirmed
+  // leaf followed the toggle to fuzzy it would now match ネコかわいい and cards would be 1.
+  // The old tail also re-saved via the 保存検索 button and read the leaf mode back off a
+  // kind:'dynamic' collection to double-check — but both retired with the collections view
+  // (saveSearchBtn / dynamic collections gone), so that half tested removed UI. Dropped:
+  // the behavioral assertion above already covers "the mode is frozen".
   return r;
 })()`;
 
@@ -132,10 +135,10 @@ child.on('close', () => {
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   const partA = r.aChips === 1 && r.aCards === 1 && r.newChips === 0 && r.newCards === 3 && r.backChips === 1 && r.backCards === 1 && r.backBox === 'いぬ' && r.editChips === 1 && r.editCards === 1 && r.resetChips === 0 && r.resetCards === 3;
-  const partB = r.confChips === 1 && r.confExactCards === 0 && r.afterFuzzyCards === 0 && r.savedLeafMode === 'exact';
+  const partB = r.confChips === 1 && r.confExactCards === 0 && r.afterFuzzyCards === 0;
   const ok = partA && partB;
   console.log(`A: aChips=${r.aChips} aCards=${r.aCards} newChips=${r.newChips} newCards=${r.newCards} backChips=${r.backChips} backCards=${r.backCards} backBox="${r.backBox}" editChips=${r.editChips} editCards=${r.editCards} resetChips=${r.resetChips} resetCards=${r.resetCards}`);
-  console.log(`B: confChips=${r.confChips} confExactCards=${r.confExactCards} afterFuzzyCards=${r.afterFuzzyCards} savedLeafMode=${r.savedLeafMode}`);
+  console.log(`B: confChips=${r.confChips} confExactCards=${r.confExactCards} afterFuzzyCards=${r.afterFuzzyCards}`);
   console.log(ok ? 'TEXTLEAF_STABLE_TEST_PASS' : 'TEXTLEAF_STABLE_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
