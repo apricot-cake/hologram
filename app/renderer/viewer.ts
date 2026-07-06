@@ -377,15 +377,9 @@
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
   setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
-  // Poster filter rows reuse the post-side row labels (same concepts).
-  setText('sbPosterFilterTitle', MSG.sbFilterTitle);
-  setText('sbPosterPlatformRowName', MSG.qfPlatform);
-  setText('sbPosterWorkRowName', MSG.kindWork);
-  setText('sbPosterCharRowName', MSG.kindCharacter);
-  setText('sbPosterTagRowName', MSG.qfTag);
-  setText('sbPosterInstRowName', MSG.qfInstance);
-  setText('sbPosterDateRowName', MSG.qfDate);
-  setText('sbPosterFolderRowName', MSG.qfCatFolder);
+  // #posterFilterRows title + row labels are model-driven now — the poster sidebar island
+  // renders them from buildPosterSidebarModel (window.corpusSidebar poster channel). No
+  // static setText here (mirror of the post-side #filterRows note above).
   {
     const ps = selectById('posterSortSelect');
     if (ps) {
@@ -575,10 +569,12 @@
   // sync with whoever closed it.
   window.corpusQfPop.subscribe(() => {
     if (!window.corpusQfPop.get()) {
-      document.querySelectorAll('#posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
       qfCat = null;
       qfAnchor = null;
-      pushSidebar(); // clear the post-side row's openCat highlight
+      // Both columns own .qf-open through their model (openCat) now, so clearing the
+      // highlight is a re-push, not an imperative classList sweep.
+      pushSidebar();
+      pushPosterSidebar();
     }
   });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
@@ -748,15 +744,15 @@
       hideQfPop();
       return;
     }
-    // Post-side .qf-open is model-driven (React owns #filterRows className, so an
-    // imperative classList.add would be clobbered on the next render + switching rows is
-    // handled by the model). Only the poster rows (static HTML) get the class here.
-    document.querySelectorAll('#posterFilterRows .qf-open').forEach((r) => r.classList.remove('qf-open'));
-    if (String(cat).startsWith('poster-')) anchorEl.classList.add('qf-open');
+    // .qf-open is model-driven on BOTH columns now (React owns each container's className,
+    // so an imperative classList.add would be clobbered on the next render; switching rows
+    // is handled by openCat in the model). A cat is post- or poster-side; the matching
+    // column lights its row, the other clears — both re-push below.
     qfCat = cat;
     qfAnchor = anchorEl;
     qfSession++; // fresh open → island remounts (resets group/find); picks keep it
     pushSidebar(); // light up the post-side row via openCat
+    pushPosterSidebar(); // …or the poster-side row (whichever cat matches)
     renderQfPop();
   }
 
@@ -1076,14 +1072,14 @@
   // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
   let tagLabels = {} as Record<string, string>;
   // tagKindOf / kindLabel moved to tags.js (corpusTags wiring above).
-  // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
+  // Reflect the (possibly custom) 作品/キャラ names onto both sidebar columns' 種別 rows.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
   function applyKindLabels() {
-    // Post-side 作品/キャラ row names are model-driven now (buildSidebarModel reads
-    // kindLabel); only the poster-side rows (still static HTML) need setText.
-    setText('sbPosterWorkRowName', kindLabel('work'));
-    setText('sbPosterCharRowName', kindLabel('character'));
+    // 作品/キャラ row names on BOTH columns are model-driven now — the sidebar islands read
+    // kindLabel() via buildSidebarModel / buildPosterSidebarModel, so a 種別 rename lands by
+    // re-pushing each model (no setText).
     pushSidebar();
+    pushPosterSidebar();
   }
   // Always send BOTH maps so writing one never drops the other (set-tag-types only
   // keeps the labels it receives).
@@ -1566,6 +1562,13 @@
       },
       resetTree: () => {
         tree = emptyTree();
+        // Every tree mutation must resync the flat shadow (the invariant refresh()
+        // documents). resetTree was the lone mutator that skipped it, leaving the
+        // shadow — and its consumers (activeFilters / posterShadow → sidebar row
+        // badges) — stale until the next mutation. Post-side callers were masked by a
+        // following afterQueryChange()→refresh(); the poster reset (renderPosters, no
+        // refresh) exposed it as row badges that stayed lit after リセット.
+        syncShadow();
       },
       addFilter,
       removeFilter,
@@ -3829,39 +3832,22 @@
     standaloneTypes: ['date', 'workspace'],
   });
 
-  // Poster sidebar filter rows (mirror of renderFilterBadges for posters): reveal the
-  // 作品/キャラ/タグ/インスタンス rows only when posters actually carry such values
-  // (段階的開示), prune selections that no longer have a backing value, then refresh
-  // every row badge. The rows themselves are static HTML
-  // in #posterFilterRows (stable flyout anchors); this only mutates text/visibility.
-  function renderPosterFilterRows() {
+  // Build the whole poster-mode filter-row model (#posterFilterRows) from current state
+  // and hand it to the poster sidebar island (twin of buildSidebarModel for the post side).
+  // Aggregates row labels (MSG + custom 種別 labels), per-row active-leaf badge counts
+  // (from the poster query shadow), the 作品/キャラ/タグ/サーバー progressive-disclosure
+  // visibility, and which flyout row wears .qf-open. PURE (no tree mutation — the prune
+  // side-effect lives in renderPosterFilterRows), so it's safe to call on every flyout
+  // open/close for an openCat refresh. Cheap: posterFilterVocab scans the small poster-tag
+  // map and namedPosters is a cached buildUsers().
+  function buildPosterSidebarModel(): CorpusPosterSidebarModel {
     const vocab = posterFilterVocab();
-    const present = new Set(vocab);
-    // Drop tag leaves whose value no longer exists in any poster's tags (poster removed/edited).
-    if (posterQB.removeCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
     const named = namedPosters();
     const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
-    const show = (id, on) => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = on ? '' : 'none';
-    };
-    show(
-      'sbPosterWorkRow',
-      vocab.some((t) => tagKindOf(t) === 'work'),
-    );
-    show(
-      'sbPosterCharRow',
-      vocab.some((t) => tagKindOf(t) === 'character'),
-    );
-    show(
-      'sbPosterTagRow',
-      vocab.some((t) => !tagKindOf(t)),
-    );
-    show('sbPosterInstRow', instPresent.size > 0);
     // Row badges count the matching leaves in the poster query tree (shadow).
     const leaves = posterQB.shadow();
     const tagLeaves = leaves.filter((f) => f.type === 'tag');
-    const counts = {
+    const badges: Record<string, number> = {
       'poster-platform': leaves.filter((f) => f.type === 'platform').length,
       'poster-work': tagLeaves.filter((f) => tagKindOf(f.value) === 'work').length,
       'poster-character': tagLeaves.filter((f) => tagKindOf(f.value) === 'character').length,
@@ -3870,11 +3856,40 @@
       'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
       'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
     };
-    document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
-      const n = counts[(b as HTMLElement).dataset.badge || ''] || 0;
-      b.textContent = n || '';
-      b.classList.toggle('on', n > 0);
-    });
+    return {
+      title: MSG.sbFilterTitle,
+      // Only poster-side flyout rows carry .qf-open here (post rows live in buildSidebarModel).
+      openCat: qfCat && String(qfCat).startsWith('poster-') ? qfCat : null,
+      labels: {
+        'poster-platform': MSG.qfPlatform,
+        'poster-work': kindLabel('work'),
+        'poster-character': kindLabel('character'),
+        'poster-tag': MSG.qfTag,
+        'poster-instance': MSG.qfInstance,
+        'poster-date': MSG.qfDate,
+        'poster-folder': MSG.qfCatFolder,
+      },
+      badges,
+      // 段階的開示: reveal a row only when posters actually carry that kind of value.
+      visible: {
+        work: vocab.some((t) => tagKindOf(t) === 'work'),
+        character: vocab.some((t) => tagKindOf(t) === 'character'),
+        tag: vocab.some((t) => !tagKindOf(t)),
+        instance: instPresent.size > 0,
+      },
+    };
+  }
+  function pushPosterSidebar() {
+    window.corpusSidebar.renderPoster(buildPosterSidebarModel());
+  }
+  // Poster sidebar filter rows (mirror of renderFilterBadges for posters): prune tag
+  // selections that no longer have a backing value (poster removed/edited), then re-push
+  // the model. The rows are React-owned now — this only carries the ONE side effect (the
+  // shadow prune); labels / badges / disclosure ride the model via pushPosterSidebar.
+  function renderPosterFilterRows() {
+    const present = new Set(posterFilterVocab());
+    if (posterQB.removeCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
+    pushPosterSidebar();
   }
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
@@ -4871,10 +4886,11 @@
   } catch {
     /* default empty */
   }
-  // Seed the sidebar island with labels + initial state before the first loadPosts so the
+  // Seed both sidebar columns with labels + initial state before the first loadPosts so the
   // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
   // (applyKindLabels above also pushes, but only if getTagTypes resolved).
   pushSidebar();
+  pushPosterSidebar();
   await initTabs();
   appBooted = true; // saved view is now applied — the first loadPosts render seeds history
   await loadPosts();

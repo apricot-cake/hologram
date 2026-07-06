@@ -291,9 +291,10 @@ declare global {
     [extra: string]: any;
   }
 
-  // ---- renderer/sidebar.js — post-mode filter-row column (#filterRows). viewer
-  // builds the whole model in buildSidebarModel(); the island renders it. Clicks
-  // route through viewer's own delegated #filterRows handler, so no callbacks here. ----
+  // ---- renderer/sidebar.js — the two filter-row columns. viewer builds each model
+  // (buildSidebarModel / buildPosterSidebarModel); the islands render them. Clicks route
+  // through viewer's own delegated #filterRows / #posterFilterRows handlers, so no
+  // callbacks here. Two channels (post / poster) so one column never re-renders the other. ----
   interface CorpusSidebarModel {
     title: string;
     openCat: string | null; // the flyout cat with .qf-open (null = none)
@@ -303,10 +304,23 @@ declare global {
     badges: Record<string, number>; // per-row active-filter count
     visible: { work: boolean; character: boolean }; // 種別 progressive disclosure
   }
+  // Poster column (#posterFilterRows): a leaner twin — no clip/multi toggles, and the
+  // rows are keyed by their full poster-* cat (data-qfrow === data-badge). work / character
+  // / tag / instance are progressively disclosed once posters carry such values.
+  interface CorpusPosterSidebarModel {
+    title: string;
+    openCat: string | null; // the poster-* flyout cat with .qf-open (null = none)
+    labels: Record<string, string>; // per-row name, keyed by poster-* row key
+    badges: Record<string, number>; // per-row active leaf count (poster query shadow)
+    visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
+  }
   interface CorpusSidebar {
     render(model: CorpusSidebarModel | null): void;
     get(): CorpusSidebarModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
+    renderPoster(model: CorpusPosterSidebarModel | null): void;
+    getPoster(): CorpusPosterSidebarModel | null;
+    subscribePoster(cb: () => void): CorpusUnsubscribe;
   }
   interface CorpusEditOverlay {
     open(model: Omit<CorpusEditOverlayModel, 'openId'>): void;
