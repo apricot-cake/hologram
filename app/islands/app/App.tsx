@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
 import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
@@ -68,6 +69,7 @@ export function App() {
       <KindMenuHost />
       <FilterPopoverHost />
       <QfPopHost />
+      <ConfirmHost />
       {/* Container-mounted islands — portaled into their viewer-owned static containers. */}
       <Portal id="filterRows">
         <Sidebar />

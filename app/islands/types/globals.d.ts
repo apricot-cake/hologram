@@ -339,6 +339,28 @@ declare global {
     get(): CorpusSelectionBarModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
+
+  // ---- renderer/confirm.js — shared confirm modal (#confirmOverlay). viewer opens it with
+  // a message + optional skip/keyword gate + callbacks; the island renders it. ----
+  interface CorpusConfirmConfig {
+    message: string;
+    okLabel: string;
+    cancelLabel: string;
+    skipLabel?: string; // present → show the "don't ask again" checkbox
+    keywordPlaceholder?: string; // present → keyword-gated OK (destructive wipe)
+    keywordRequired?: string;
+    onOk(result: { skip: boolean }): void;
+    onCancel?(): void;
+  }
+  interface CorpusConfirmModel extends CorpusConfirmConfig {
+    openId: number;
+  }
+  interface CorpusConfirm {
+    open(config: CorpusConfirmConfig): void;
+    close(): void;
+    get(): CorpusConfirmModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
   interface CorpusEditOverlay {
     open(model: Omit<CorpusEditOverlayModel, 'openId'>): void;
     refresh(partial: Record<string, unknown>): void;
@@ -401,6 +423,7 @@ declare global {
     corpusEditOverlay: CorpusEditOverlay;
     corpusSidebar: CorpusSidebar;
     corpusSelectionBar: CorpusSelectionBar;
+    corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
     corpusTabs: CorpusTabsIsland;

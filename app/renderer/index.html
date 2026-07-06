@@ -2116,20 +2116,12 @@
   </div>
 
   <!-- Delete confirmation -->
-  <div class="confirm-overlay" id="confirmOverlay">
-    <div class="confirm-box">
-      <p id="confirmMsg"></p>
-      <label id="confirmSkipLabel" style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:12px; cursor:pointer; justify-content:center; align-items:center; gap:6px;">
-        <input type="checkbox" id="confirmSkip">
-        <span id="confirmSkipText"></span>
-      </label>
-      <input type="text" id="confirmKeyword" class="search-box" style="display:none; margin-bottom:14px; font-size:13px;" autocomplete="off">
-      <div class="confirm-actions">
-        <button class="btn-outline" id="confirmCancel"></button>
-        <button class="btn-danger" id="confirmOk"></button>
-      </div>
-    </div>
-  </div>
+  <!-- Shared confirm modal — React-owned now: the confirm island (app/islands/confirm)
+       renders the .confirm-box (message + optional skip/keyword + Cancel/OK) into this
+       container from viewer.js's window.corpusConfirm.open(config), and toggles this
+       element's .show class from model presence. The container stays viewer's so
+       setupModalChrome (modal-open body class) keeps observing #confirmOverlay. -->
+  <div class="confirm-overlay" id="confirmOverlay"></div>
 
   <!-- Image lightbox / gallery — React island (window.corpusLightbox) owns the
        overlay contents + show/multi classes; viewer.js feeds it gallery items. -->
@@ -2551,6 +2543,7 @@
        sidebar island renders the rows. Before viewer.js. -->
   <script src="sidebar.js"></script>
   <script src="selection-bar.js"></script>
+  <script src="confirm.js"></script>
   <script src="about-icon.js"></script>
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React

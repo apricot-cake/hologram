@@ -391,11 +391,9 @@
   }
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
   // posterDateClear are the filter-popover React island now — no static labels here.
-  // Settings-modal labels (theme/lang/data/backup/trash/danger/about) now live in
-  // the React island (app/islands/settings); only the shared confirm overlay stays here.
-  setText('confirmCancel', MSG.confirmCancel);
-  setText('confirmOk', MSG.confirmOk);
-  setText('confirmSkipText', MSG.confirmSkip);
+  // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
+  // settings island; the confirm modal is the React confirm island (labels come through
+  // window.corpusConfirm.open's config), so no static confirm setText here either.
 
   // Edit overlay labels are now passed directly in the corpusEditOverlay model (see
   // openTagSelectedOverlay below) — no static DOM to set text on anymore.
@@ -2851,17 +2849,22 @@
   function requestDeleteGroup(g) {
     if (skipDeleteConfirm) {
       executeDeleteGroup(g);
-    } else {
-      pendingDeleteGroup = g;
-      byId('confirmMsg').textContent = g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost;
-      byId('confirmSkipLabel').style.display = 'flex';
-      inputById('confirmSkip').checked = false;
-      setConfirmKeywordMode(false);
-      byId('confirmOverlay').classList.add('show');
+      return;
     }
+    window.corpusConfirm.open({
+      message: g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost,
+      okLabel: MSG.confirmOk,
+      cancelLabel: MSG.confirmCancel,
+      skipLabel: MSG.confirmSkip, // "次回から確認しない"
+      onOk: async ({ skip }) => {
+        if (skip) {
+          skipDeleteConfirm = true;
+          window.corpus.setPref('skipDeleteConfirm', true);
+        }
+        await executeDeleteGroup(g);
+      },
+    });
   }
-
-  let pendingDeleteGroup: CorpusPostGroup | null = null;
 
   // Delete every record of the group (a group IS one post in the UI).
   async function executeDeleteGroup(g) {
@@ -3547,15 +3550,26 @@
 
   function requestDeleteSelected() {
     if (selectedSet.size === 0) return;
-    pendingDeleteGroup = null;
-    byId('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
-    byId('confirmSkipLabel').style.display = 'none';
-    setConfirmKeywordMode(false);
-    byId('confirmOverlay').classList.add('show');
-    pendingBulkDelete = true;
+    window.corpusConfirm.open({
+      message: MSG.confirmDeleteSelected(selectedSet.size),
+      okLabel: MSG.confirmOk,
+      cancelLabel: MSG.confirmCancel,
+      onOk: async () => {
+        // Bulk delete selected groups — every record of each selected group.
+        const toDelete: CorpusPost[] = [];
+        viewGroups.forEach((g) => {
+          if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
+        });
+        const count = toDelete.length;
+        for (const p of toDelete) await window.corpus.deletePost(p.image || p.video);
+        selectedSet.clear();
+        selectionAnchor = null;
+        updateSelectionBar();
+        await loadPosts(true);
+        showToast(MSG.deletedN(count));
+      },
+    });
   }
-
-  let pendingBulkDelete = false;
 
   // View toggle
   // Slide the glass thumb to the active button using its measured geometry
@@ -4746,93 +4760,35 @@
   })();
 
   // --- Clear data ---
-  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword)
-  // to enable the OK button — a stray click can't wipe everything.
-  const confirmKeywordEl = inputById('confirmKeyword');
-  function setConfirmKeywordMode(on) {
-    confirmKeywordEl.style.display = on ? '' : 'none';
-    confirmKeywordEl.value = '';
-    btnById('confirmOk').disabled = on;
-  }
-  confirmKeywordEl.addEventListener('input', () => {
-    btnById('confirmOk').disabled = confirmKeywordEl.value.trim() !== MSG.deleteKeyword;
-  });
-  // Opening the clear-all confirm (the shared keyword-gated overlay) is exposed so
-  // the React Danger section triggers the exact same destructive flow — no second
-  // implementation of a wipe dialog.
+  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
+  // enable the OK button — a stray click can't wipe everything. The confirm modal is
+  // React-owned now (window.corpusConfirm / the confirm island); openClearAllConfirm just
+  // opens it with the keyword gate + the wipe as its onOk. Exposed on corpusViewer so the
+  // React Danger section triggers the exact same destructive flow — no second wipe dialog.
   function openClearAllConfirm() {
-    pendingDeleteGroup = null;
-    byId('confirmMsg').textContent = MSG.confirmClear;
-    byId('confirmSkipLabel').style.display = 'none';
-    confirmKeywordEl.placeholder = MSG.confirmKeywordPh;
-    setConfirmKeywordMode(true);
-    byId('confirmOverlay').classList.add('show');
-    confirmKeywordEl.focus();
+    window.corpusConfirm.open({
+      message: MSG.confirmClear,
+      okLabel: MSG.confirmOk,
+      cancelLabel: MSG.confirmCancel,
+      keywordPlaceholder: MSG.confirmKeywordPh,
+      keywordRequired: MSG.deleteKeyword, // OK stays disabled until this is typed
+      onOk: async () => {
+        // Clear all data (deletes every image + sidecar in the save folder).
+        const res = await window.corpus.clearAll();
+        // Main refuses the wipe if config is degraded — keep the library on screen and
+        // tell the user to restart (initSaveFolderRedundancy repairs on launch).
+        if (res && res.blocked) {
+          showToast(MSG.clearBlocked);
+          return;
+        }
+        _postsById = new Map(); // keep the delta cache in sync with the wipe
+        allPosts = [];
+        renderPosts();
+        showToast(MSG.cleared);
+      },
+    });
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { confirmClearAll: openClearAllConfirm });
-
-  byId('confirmCancel').addEventListener('click', () => {
-    pendingDeleteGroup = null;
-    pendingBulkDelete = false;
-    setConfirmKeywordMode(false);
-    byId('confirmOverlay').classList.remove('show');
-  });
-
-  byId('confirmOk').addEventListener('click', async () => {
-    byId('confirmOverlay').classList.remove('show');
-
-    if (pendingBulkDelete) {
-      // Bulk delete selected groups — every record of each selected group
-      const toDelete: CorpusPost[] = [];
-      viewGroups.forEach((g) => {
-        if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
-      });
-      const count = toDelete.length;
-      for (const p of toDelete) {
-        await window.corpus.deletePost(p.image || p.video);
-      }
-      selectedSet.clear();
-      selectionAnchor = null;
-      pendingBulkDelete = false;
-      updateSelectionBar();
-      await loadPosts(true);
-      showToast(MSG.deletedN(count));
-    } else if (pendingDeleteGroup) {
-      // Individual post (group) delete
-      if (inputById('confirmSkip').checked) {
-        skipDeleteConfirm = true;
-        window.corpus.setPref('skipDeleteConfirm', true);
-      }
-      await executeDeleteGroup(pendingDeleteGroup);
-      pendingDeleteGroup = null;
-    } else {
-      // Clear all data (deletes every image + sidecar in the save folder).
-      // Double-checked: the OK button is disabled until the keyword matches.
-      if (confirmKeywordEl.value.trim() !== MSG.deleteKeyword) return;
-      setConfirmKeywordMode(false);
-      const res = await window.corpus.clearAll();
-      // Main refuses the wipe if config is degraded — keep the library on screen
-      // and tell the user to restart (initSaveFolderRedundancy repairs on launch).
-      if (res && res.blocked) {
-        showToast(MSG.clearBlocked);
-        return;
-      }
-      _postsById = new Map(); // keep the delta cache in sync with the wipe
-      allPosts = [];
-      renderPosts();
-      showToast(MSG.cleared);
-    }
-  });
-
-  // Close overlay on background click
-  byId('confirmOverlay').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) {
-      pendingDeleteGroup = null;
-      pendingBulkDelete = false;
-      setConfirmKeywordMode(false);
-      (e.currentTarget as HTMLElement).classList.remove('show');
-    }
-  });
 
   // --- Utility functions ---
   // Count / date formatters (formatCount / formatDate / compactDate / …) live in
