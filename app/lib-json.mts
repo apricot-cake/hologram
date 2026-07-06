@@ -12,4 +12,4 @@ function parseJsonLoose(text) {
   return JSON.parse(typeof text === 'string' && text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 }
 
-module.exports = { parseJsonLoose };
+export { parseJsonLoose };

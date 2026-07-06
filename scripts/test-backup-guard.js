@@ -6,7 +6,7 @@
 //   node scripts/test-backup-guard.js
 
 const assert = require('node:assert');
-const { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO } = require('../app/backup-guard');
+const { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO } = require('../app/backup-guard.mts');
 
 let pass = 0;
 function check(name, fn) {

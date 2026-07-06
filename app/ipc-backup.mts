@@ -5,7 +5,7 @@
 // validateBackupDir / armBackupSchedule / runBackup), which all stay in main.js and
 // arrive via ctx. pick-backup-dir opens a directory dialog parented to the main window
 // (ctx.getWin()).
-const { ipcMain, dialog } = require('electron');
+import { ipcMain, dialog } from 'electron';
 
 function register(ctx) {
   const { readBackupConfig, writeBackupConfig, validateBackupDir, armBackupSchedule, runBackup, getWin } = ctx;
@@ -34,4 +34,4 @@ function register(ctx) {
   ipcMain.handle('run-backup', () => runBackup('manual'));
 }
 
-module.exports = { register };
+export { register };

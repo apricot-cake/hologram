@@ -1,8 +1,31 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, nativeImage, nativeTheme, screen } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+import { createPostIndex, computeDelta } from './lib-index.mts';
+import { pruneDecision, nextBaseline } from './backup-guard.mts';
+import { parseJsonLoose } from './lib-json.mts';
+// Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
+import { relocateLibrary } from './lib-migrate.mts';
+// IPC handler modules, extracted from this file (mechanical move — logic unchanged).
+// Each exposes register(ctx); ctx is built after the core functions below and passed
+// in at the top-level registration site (see registerExtractedIpc, before whenReady).
+import * as ipcOrganize from './ipc-organize.mts';
+import * as ipcPosts from './ipc-posts.mts';
+import * as ipcConfig from './ipc-config.mts';
+import * as ipcWindow from './ipc-window.mts';
+import * as ipcTrash from './ipc-trash.mts';
+import * as ipcBackup from './ipc-backup.mts';
+import * as ipcTransfer from './ipc-transfer.mts';
+
+// CJS require + __dirname reconstructed for ESM. native-host/ modules are loaded by
+// computed path (dev sibling vs packaged resource), so they stay dynamic CJS requires.
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // native-host/ lives outside app/. In dev it's a sibling dir; when packaged it
 // is bundled as an extraResource under resources/native-host.
@@ -12,21 +35,6 @@ const installer = require(path.join(nativeHostDir, 'install'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
 // same shared avatars/ store — downloadAvatar dedupes by avatar URL).
 const { pixivRefererFor, downloadAvatar } = require(path.join(nativeHostDir, 'media-download'));
-const { createPostIndex, computeDelta } = require('./lib-index');
-const { pruneDecision, nextBaseline } = require('./backup-guard');
-const { parseJsonLoose } = require('./lib-json');
-// Save-folder relocation engine (copy+catch-up → flip → verified cleanup → sweep).
-const { relocateLibrary } = require('./lib-migrate');
-// IPC handler modules, extracted from this file (mechanical move — logic unchanged).
-// Each exposes register(ctx); ctx is built after the core functions below and passed
-// in at the top-level registration site (see registerExtractedIpc, before whenReady).
-const ipcOrganize = require('./ipc-organize');
-const ipcPosts = require('./ipc-posts');
-const ipcConfig = require('./ipc-config');
-const ipcWindow = require('./ipc-window');
-const ipcTrash = require('./ipc-trash');
-const ipcBackup = require('./ipc-backup');
-const ipcTransfer = require('./ipc-transfer');
 // Save-folder resolution + clear-all gating. Shared with the native host (which
 // must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
 const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
@@ -47,14 +55,14 @@ const CONFIG_PATH = path.join(configDir(), 'config.json');
 // loading every image into JS memory.
 protocol.registerSchemesAsPrivileged([{ scheme: 'psimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
-let win = null;
+let win: BrowserWindow | null = null;
 
 // --- Config ---
 // True iff the LAST readConfig() found config.json present-but-unparseable. Lets
 // destructive ops (clear-all) refuse to run on top of a degraded config.
 let configLastCorrupt = false;
 function readConfig() {
-  let raw;
+  let raw: string;
   try {
     raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   } catch {
@@ -217,9 +225,9 @@ const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungroupe
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
 // single capture writes both a .jpg and a .json.
-let folderWatcher = null;
-let watchDebounce = null;
-let watchChanged = new Set(); // changed sidecar (.json) basenames within the debounce window
+let folderWatcher: import('node:fs').FSWatcher | null = null;
+let watchDebounce: any = null;
+let watchChanged = new Set<string>(); // changed sidecar (.json) basenames within the debounce window
 let watchUnknown = false; // a watch event lacked a filename -> can't target, force a full reconcile
 function watchSaveFolder() {
   if (folderWatcher) {
@@ -267,7 +275,7 @@ function watchSaveFolder() {
 // mtime moved and restores the rest from .index.json / memory, so a post-capture
 // refresh no longer freezes the main process (was ~900ms full re-scan on ~9k).
 const postIndex = createPostIndex({ internalFiles: INTERNAL_FILES });
-let snapshotTimer = null;
+let snapshotTimer: any = null;
 function scheduleSnapshot(folder) {
   // Debounced + best-effort. .index.json is in INTERNAL_FILES, so this write does
   // not self-trigger the folder watcher. Atomic (tmp + rename) inside writeSnapshot.
@@ -323,8 +331,8 @@ async function listPostsDelta(haveBaseline, changedNames) {
 
   // Targeted: only the named sidecars moved — no folder-wide stat.
   if (changedNames.length === 0) return { saveFolder: folder, full: false, added: [], removed: [] };
-  const r = await postIndex.applyChanges(folder, changedNames);
-  const added = [];
+  const r: any = await postIndex.applyChanges(folder, changedNames);
+  const added: any[] = [];
   for (const t of r.added) {
     _lastSent.set(t.id, t.mtimeMs);
     added.push(t.record);
@@ -388,7 +396,7 @@ function thumbCacheDir() {
 // coalesce concurrent identical requests so each tile is decoded at most once.
 const THUMB_POOL = 2;
 let _thumbRunning = 0;
-const _thumbQueue = [];
+const _thumbQueue: any[] = [];
 const _thumbInflight = new Map(); // cachePath -> Promise<Buffer|null>
 function _pumpThumbs() {
   while (_thumbRunning < THUMB_POOL && _thumbQueue.length) {
@@ -415,7 +423,7 @@ function runThumbJob(fn) {
 
 async function getThumbnail(resolved, name, w) {
   if (!THUMB_EXT.has(path.extname(name).toLowerCase())) return null;
-  let st;
+  let st: any;
   try {
     st = await fs.promises.stat(resolved);
   } catch {
@@ -576,7 +584,7 @@ const degradedOrgFiles = new Set();
 //   - present but unparseable → { value: null, degraded: true }  (preserve, don't purge)
 //   - parsed                  → { value: <obj>, degraded: false }
 function readOrgJsonSync(filePath) {
-  let raw;
+  let raw: string;
   try {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch {
@@ -634,7 +642,7 @@ function getTrashDir() {
 async function purgeOldTrash() {
   const trashDir = getTrashDir();
   if (!trashDir) return;
-  let names;
+  let names: string[];
   try {
     names = await fs.promises.readdir(trashDir);
   } catch {
@@ -750,21 +758,21 @@ async function runBackup(reason) {
   backupRunning = true;
   if (win && !win.isDestroyed()) win.webContents.send('backup-start'); // sidebar sync icon → syncing
   // written = new files copied; pruned = files deleted (propagated deletions)
-  const result = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
+  const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, pruned: 0 };
   try {
     const dest = backupDest(b.dir);
     await fs.promises.mkdir(dest, { recursive: true });
 
     // Collect source files, skipping app-internal and transient entries. Keep each
     // file's size/mtime so mutable internal files can be re-copied only when changed.
-    let srcFiles;
+    let srcFiles: string[];
     try {
       srcFiles = await fs.promises.readdir(src);
     } catch {
       srcFiles = [];
     }
-    const srcSet = new Set();
-    const srcStat = new Map(); // name -> { size, mtimeMs }
+    const srcSet = new Set<string>();
+    const srcStat = new Map<string, any>(); // name -> { size, mtimeMs }
     for (const f of srcFiles) {
       if (f === '.index.json' || f === TRASH_SUBDIR) continue;
       if (/\.tmp(-\d+)?$/i.test(f)) continue;
@@ -782,7 +790,7 @@ async function runBackup(reason) {
     // mirror it under the same relative names so a restore keeps author icons.
     // Collected as 'avatars/<f>' entries; path.join resolves the '/' on Windows.
     const collectSubdir = async (root, sub, into, stats) => {
-      let names = [];
+      let names: string[] = [];
       try {
         names = await fs.promises.readdir(path.join(root, sub));
       } catch {
@@ -805,13 +813,13 @@ async function runBackup(reason) {
     result.fileCount = srcSet.size;
 
     // Collect destination files
-    let destFiles;
+    let destFiles: string[];
     try {
       destFiles = await fs.promises.readdir(dest);
     } catch {
       destFiles = [];
     }
-    const destSet = new Set(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
+    const destSet = new Set<string>(destFiles.filter((f) => !/\.tmp(-\d+)?$/i.test(f)));
     await collectSubdir(dest, 'avatars', destSet, null);
 
     // Decide whether a destination copy is stale and must be refreshed. Write-once
@@ -917,7 +925,7 @@ async function runBackup(reason) {
   return result;
 }
 
-let backupIntervalTimer = null;
+let backupIntervalTimer: any = null;
 // Node の setInterval は 2^31-1 ms 超の delay を 1ms にクランプするため、
 // 大きな間隔（week×4 以上・year など）を直接渡すと暴走する。
 // 短い heartbeat（1分）で due を判定し、閾値を超えたときだけ実行する方式に変更。
@@ -953,7 +961,7 @@ function armBackupSchedule() {
 // The window was fixed at 1100x820 every launch. Save bounds to config.json
 // (`windowBounds`) and restore them, clamped to a visible display so a
 // disconnected monitor can't reopen the window off-screen.
-let _boundsSaveTimer = null;
+let _boundsSaveTimer: any = null;
 function persistWindowBounds() {
   clearTimeout(_boundsSaveTimer);
   _boundsSaveTimer = setTimeout(saveWindowBoundsNow, 400);
@@ -973,7 +981,6 @@ function savedWindowBounds() {
   const b = readConfig().windowBounds;
   if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height) || b.width < 400 || b.height < 300) return null;
   try {
-    const { screen } = require('electron');
     const onScreen = screen.getAllDisplays().some((d) => {
       const a = d.workArea;
       return b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y;
@@ -1007,7 +1014,7 @@ function installNavigationGuards() {
   const indexFile = path.resolve(__dirname, 'renderer', 'index.html');
   const devOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
   const isAllowedNavigation = (rawUrl) => {
-    let u;
+    let u: URL;
     try {
       u = new URL(rawUrl);
     } catch {
@@ -1209,7 +1216,7 @@ if (!gotSingleInstanceLock) {
     // command from outside. Packaged builds never watch.
     if (!SMOKE && !app.isPackaged) {
       try {
-        let _rendererReloadT = null;
+        let _rendererReloadT: any = null;
         fs.watch(path.join(__dirname, 'renderer'), { recursive: true }, (_e, fn) => {
           if (!fn || !/\.(js|html|css)$/i.test(String(fn))) return;
           clearTimeout(_rendererReloadT);
@@ -1234,7 +1241,7 @@ if (!gotSingleInstanceLock) {
 
     if (SMOKE) {
       const shot = process.env.CORPUS_SMOKE_SHOT;
-      win.webContents.on('console-message', (_e, level, message) => {
+      (win as BrowserWindow).webContents.on('console-message', (_e, level, message) => {
         console.log(`[renderer:${level}] ${message}`);
       });
       let done = false;
@@ -1244,11 +1251,11 @@ if (!gotSingleInstanceLock) {
         console.log(tag);
         app.quit();
       };
-      win.webContents.once('did-finish-load', () =>
+      (win as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
           if (process.env.CORPUS_SMOKE_EVAL) {
             try {
-              const r = await win.webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
+              const r = await (win as BrowserWindow).webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
               console.log('EVAL_RESULT', JSON.stringify(r));
             } catch (e) {
               console.log('EVAL_ERR', e.message);
@@ -1256,7 +1263,7 @@ if (!gotSingleInstanceLock) {
           }
           if (shot) {
             try {
-              const img = await win.webContents.capturePage();
+              const img = await (win as BrowserWindow).webContents.capturePage();
               fs.writeFileSync(shot, img.toPNG());
             } catch (err) {
               console.error('capture failed:', err);
@@ -1275,9 +1282,9 @@ if (!gotSingleInstanceLock) {
     // opens a focused window.)
     if (startMin && win) {
       win.once('ready-to-show', () => {
-        win.showInactive();
-        win.minimize();
-        win.flashFrame(false);
+        (win as BrowserWindow).showInactive();
+        (win as BrowserWindow).minimize();
+        (win as BrowserWindow).flashFrame(false);
       });
     }
 

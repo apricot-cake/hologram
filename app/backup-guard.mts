@@ -32,4 +32,4 @@ function nextBaseline(skipped, srcCount, baseline) {
   return skipped ? Number(baseline) || 0 : Number(srcCount) || 0;
 }
 
-module.exports = { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO };
+export { pruneDecision, nextBaseline, PRUNE_SHRINK_RATIO };

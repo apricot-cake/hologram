@@ -13,9 +13,10 @@
 // Kept Electron-free (fs injected, defaults to node's) so it unit-tests in plain
 // node, mirroring lib-archive.js.
 
-const path = require('node:path');
-const { imageSize } = require('./lib-imgsize.js');
-const { parseJsonLoose } = require('./lib-json.js');
+import nodeFs from 'node:fs';
+import path from 'node:path';
+import { imageSize } from './lib-imgsize.mts';
+import { parseJsonLoose } from './lib-json.mts';
 
 const INDEX_FILE = '.index.json';
 const BATCH = 64; // stat/read this many sidecars concurrently, then yield
@@ -53,17 +54,17 @@ function cardImageChangedFromV1(rec) {
 // posts (config/tabs/folders/…/.index.json). fs: injectable for tests.
 function createPostIndex(opts) {
   const o = opts || {};
-  const fs = o.fs || require('node:fs');
+  const fs = o.fs || nodeFs;
   const internal = o.internalFiles || new Set();
 
   let curFolder = null;
-  let map = new Map(); // filename -> { mtimeMs, record|null }  (null = known non-post)
+  let map = new Map<string, any>(); // filename -> { mtimeMs, record|null }  (null = known non-post)
   let snapshotLoaded = false;
 
   // Read just the image header (no decode) and return { width, height } or null.
   async function readImageDims(folder, file) {
     if (!fs.promises || typeof fs.promises.open !== 'function') return null; // test fs has no open()
-    let fh = null;
+    let fh: any = null;
     try {
       fh = await fs.promises.open(path.join(folder, file), 'r');
       const buf = Buffer.alloc(HEADER_BYTES);
@@ -144,7 +145,7 @@ function createPostIndex(opts) {
   // { posts, changed } — `changed` is true if anything was added/updated/removed
   // (the caller persists the snapshot when so).
   async function list(folder) {
-    let files;
+    let files: string[];
     try {
       files = await fs.promises.readdir(folder);
     } catch {
@@ -160,7 +161,7 @@ function createPostIndex(opts) {
       const slice = sidecars.slice(i, i + BATCH);
       await Promise.all(
         slice.map(async (f) => {
-          let st;
+          let st: any;
           try {
             st = await fs.promises.stat(path.join(folder, f));
           } catch {
@@ -194,8 +195,8 @@ function createPostIndex(opts) {
         changed = true;
       }
 
-    const posts = [];
-    const stamps = new Map(); // captureId -> mtimeMs, for the main process's delta IPC
+    const posts: any[] = [];
+    const stamps = new Map<any, any>(); // captureId -> mtimeMs, for the main process's delta IPC
     for (const f of sidecars) {
       const e = map.get(f);
       if (e && e.record) {
@@ -216,12 +217,12 @@ function createPostIndex(opts) {
   // watch event with no usable filename).
   async function applyChanges(folder, names) {
     await loadSnapshot(folder);
-    const added = [];
-    const removed = [];
+    const added: any[] = [];
+    const removed: any[] = [];
     for (const f of names) {
       if (typeof f !== 'string' || internal.has(f) || !f.toLowerCase().endsWith('.json')) continue;
       const full = path.join(folder, f);
-      let st = null;
+      let st: any = null;
       try {
         st = await fs.promises.stat(full);
       } catch {
@@ -237,7 +238,7 @@ function createPostIndex(opts) {
         continue;
       }
       if (prev && prev.mtimeMs === st.mtimeMs) continue; // spurious event, nothing moved
-      let rec = null;
+      let rec: any = null;
       try {
         rec = parseJsonLoose(await fs.promises.readFile(full, 'utf8'));
       } catch {
@@ -274,13 +275,13 @@ function createPostIndex(opts) {
 // that are new or whose mtime moved; removed = ids no longer present. Pure so it
 // unit-tests directly (the main process owns the lastSent state).
 function computeDelta(lastSent, posts, stamps) {
-  const added = [];
+  const added: any[] = [];
   for (const p of posts) {
     if (lastSent.get(p.captureId) !== stamps.get(p.captureId)) added.push(p);
   }
-  const removed = [];
+  const removed: any[] = [];
   for (const id of lastSent.keys()) if (!stamps.has(id)) removed.push(id);
   return { added, removed };
 }
 
-module.exports = { createPostIndex, computeDelta, INDEX_FILE, isPostRecord };
+export { createPostIndex, computeDelta, INDEX_FILE, isPostRecord };

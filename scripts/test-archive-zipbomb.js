@@ -24,7 +24,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const archive = require('../app/lib-archive.js');
+const archive = require('../app/lib-archive.mts');
 const { importCompleteZip, writeEntryStreamed, ZipLimitError, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES } = archive;
 
 // JSZip ctor wrapper whose loadAsync overrides each non-dir entry's declared

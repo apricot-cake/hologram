@@ -17,9 +17,9 @@
 // (idempotent / non-clobbering) and the organization JSONs are MERGED (union) so
 // importing into a non-empty library never wipes current folders/tags.
 
-const fs = require('node:fs');
-const path = require('node:path');
-const { parseJsonLoose } = require('./lib-json.js');
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseJsonLoose } from './lib-json.mts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
 const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
@@ -110,7 +110,7 @@ function mergeCollections(cur, inc) {
       for (const it of c.items || []) e.items.add(String(it));
       return;
     }
-    const e = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, items: new Set((c.items || []).map(String)) };
+    const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, items: new Set((c.items || []).map(String)) };
     if (c.kind === 'dynamic') {
       // saved-search payload rides along (LOCAL-wins, like name/kind)
       if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
@@ -121,7 +121,7 @@ function mergeCollections(cur, inc) {
   for (const c of (cur && cur.collections) || []) put(c);
   for (const c of (inc && inc.collections) || []) put(c);
   const collections = [...byId.values()].map((c) => {
-    const o = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
+    const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
     if (c.tree) o.tree = c.tree;
     if (c.q) o.q = c.q;
     return o;
@@ -162,7 +162,7 @@ function mergeTagTypes(cur, inc) {
   for (const [t, k] of Object.entries((inc && inc.types) || {})) if (k) types[String(t)] = String(k);
   for (const [t, k] of Object.entries((cur && cur.types) || {})) if (k) types[String(t)] = String(k);
   const labels = { ...((inc && inc.labels) || {}), ...((cur && cur.labels) || {}) };
-  const out = { types };
+  const out: any = { types };
   if (Object.keys(labels).length) out.labels = labels;
   return out;
 }
@@ -180,7 +180,7 @@ function mergeManualGroups(cur, inc) {
     }
     return x;
   };
-  const order = [];
+  const order: any[] = [];
   for (const g of [...(cur.groups || []), ...(inc.groups || [])]) {
     if (!Array.isArray(g) || g.length < 2) continue;
     const arr = g.map(String);
@@ -219,7 +219,7 @@ function mergePosterTags(cur, inc) {
   add(cur);
   add(inc);
   const tags = {};
-  for (const [k, set] of Object.entries(out)) tags[k] = [...set];
+  for (const [k, set] of Object.entries(out)) tags[k] = [...(set as any[])];
   return { tags };
 }
 const MERGERS = {
@@ -237,14 +237,14 @@ const MERGERS = {
 // --- Build ---------------------------------------------------------------------
 // Enumerate the exportable files in a save folder: skip internal/volatile entries
 // and non-files, plus an optional name filter. Shared by both ZIP builders.
-async function collectFiles(srcFolder, nameFilter) {
-  let names = [];
+async function collectFiles(srcFolder, nameFilter?) {
+  let names: any[] = [];
   try {
     names = await fs.promises.readdir(srcFolder);
   } catch {
     names = [];
   }
-  const out = [];
+  const out: any[] = [];
   for (const name of names) {
     if (EXPORT_SKIP.has(name) || isVolatile(name)) continue;
     if (nameFilter && !nameFilter(name)) continue;
@@ -320,7 +320,7 @@ async function buildImagesZip(JSZip, srcFolder) {
 // pays decompression cost up to the cap, then the partial file is discarded).
 /** @returns {Promise<void>} — typed so resolve() takes no argument. */
 function writeEntryStreamed(entry, tmpPath, maxBytes) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(tmpPath);
     const src = entry.nodeStream('nodebuffer');
     let written = 0;
@@ -366,8 +366,8 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   const zip = await JSZip.loadAsync(buffer);
   let imported = 0,
     skipped = 0;
-  const orgEntries = {};
-  const captures = [];
+  const orgEntries: any = {};
+  const captures: any[] = [];
   // Zip-bomb pre-checks: tally entry count + declared uncompressed bytes across the
   // whole archive (not just library/ entries — a bomb can hide anywhere) and reject
   // up front, before extracting anything.
@@ -470,22 +470,4 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
-module.exports = {
-  EXPORT_SKIP,
-  ORG_MERGE,
-  MAX_ZIP_ENTRIES,
-  MAX_ZIP_ENTRY_BYTES,
-  MAX_ZIP_TOTAL_BYTES,
-  ZipLimitError,
-  writeEntryStreamed,
-  buildCompleteZip,
-  buildImagesZip,
-  importCompleteZip,
-  mergeFolders,
-  mergeCollections,
-  foldersToCollections,
-  mergeTagGroups,
-  mergeTagTypes,
-  mergeUngrouped,
-  mergeManualGroups,
-};
+export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, importCompleteZip, mergeFolders, mergeCollections, foldersToCollections, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups };

@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.js');
+const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts');
 
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-zipslip-'));

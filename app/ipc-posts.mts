@@ -4,8 +4,8 @@
 // list-posts / list-posts-delta are thin wrappers over the core index functions
 // (which stay in main.js with the delta bookkeeping); image-data-url reads one file
 // from the save folder as a data: URL. Core helpers arrive via ctx.
-const { ipcMain } = require('electron');
-const fs = require('node:fs');
+import { ipcMain } from 'electron';
+import fs from 'node:fs';
 
 function register(ctx) {
   const { listPosts, listPostsDelta, resolveInFolder, mimeForFile } = ctx;
@@ -25,4 +25,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGroups, mergeFolders, mergeTagGroups } = require('../app/lib-archive.js');
+const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGroups, mergeFolders, mergeTagGroups } = require('../app/lib-archive.mts');
 
 (async () => {
   // --- mergeCollections (pure) ---

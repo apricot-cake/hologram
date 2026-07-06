@@ -10,12 +10,17 @@
 // avatar fetch) stay in main.js and arrive via ctx; mutable state is reached through
 // getWin/send/getConfigLastCorrupt/resetDelta accessors. JSZip stays lazily required
 // via the local getJSZip so a normal launch never pulls it in.
-const { ipcMain, dialog } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
+import { ipcMain, dialog } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-const archive = require('./lib-archive');
-const { parseJsonLoose } = require('./lib-json.js');
+import * as archive from './lib-archive.mts';
+import { parseJsonLoose } from './lib-json.mts';
+
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let _JSZip = null;
 function getJSZip() {
   return _JSZip || (_JSZip = require(path.join(__dirname, 'vendor', 'jszip.min.js')));
@@ -56,7 +61,7 @@ function register(ctx) {
     const existingLegacy = new Set();
     const legacyKeyOf = (name, at, bytes) => `${name}\u0000${at}\u0000${bytes}`;
     const scanExisting = (dir) => {
-      let names = [];
+      let names: string[] = [];
       try {
         names = fs.readdirSync(dir);
       } catch {
@@ -231,9 +236,9 @@ function register(ctx) {
   // (cache). Built in main so both manual export and the scheduled export share it.
   ipcMain.handle('export-complete', async (_e, mode) => {
     const imagesOnly = mode === 'images';
-    let built;
+    let built: any;
     try {
-      built = imagesOnly ? await archive.buildImagesZip(getJSZip(), getSaveFolder()) : await archive.buildCompleteZip(getJSZip(), getSaveFolder());
+      built = imagesOnly ? await archive.buildImagesZip(getJSZip(), getSaveFolder()) : await (archive.buildCompleteZip as any)(getJSZip(), getSaveFolder());
     } catch (err) {
       return { saved: false, error: err.message };
     }
@@ -342,8 +347,8 @@ function register(ctx) {
           tags: [],
           hashtags: [],
         };
-        if (isVid) rec.video = file;
-        else rec.image = file;
+        if (isVid) (rec as any).video = file;
+        else (rec as any).image = file;
         await fs.promises.copyFile(fp, path.join(folder, file));
         await fs.promises.writeFile(path.join(folder, `${captureId}.json`), JSON.stringify(rec, null, 2), 'utf8');
         imported++;
@@ -355,4 +360,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

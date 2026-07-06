@@ -12,7 +12,7 @@ const assert = require('node:assert');
 const realFs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createPostIndex, computeDelta } = require('../app/lib-index.js');
+const { createPostIndex, computeDelta } = require('../app/lib-index.mts');
 
 const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index-'));
 const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json']);

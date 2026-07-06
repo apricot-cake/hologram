@@ -2,7 +2,7 @@
   "name": "corpus-app",
   "version": "1.1.0",
   "description": "Corpus desktop viewer",
-  "main": "main.js",
+  "main": "main.mts",
   "author": "apricot-cake",
   "scripts": {
     "start": "electron .",
@@ -33,10 +33,21 @@
       "output": "dist"
     },
     "files": [
-      "main.js",
+      "main.mts",
       "preload.js",
-      "lib-archive.js",
-      "lib-index.js",
+      "ipc-backup.mts",
+      "ipc-config.mts",
+      "ipc-organize.mts",
+      "ipc-posts.mts",
+      "ipc-transfer.mts",
+      "ipc-trash.mts",
+      "ipc-window.mts",
+      "backup-guard.mts",
+      "lib-archive.mts",
+      "lib-imgsize.mts",
+      "lib-index.mts",
+      "lib-json.mts",
+      "lib-migrate.mts",
       "renderer/**/*",
       "vendor/**/*",
       "assets/**/*"

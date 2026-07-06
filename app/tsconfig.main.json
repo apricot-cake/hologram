@@ -1,45 +1,57 @@
 {
-  // TypeScript stage 2, main-process half (BACKLOG 採用#1「残り②」/ Wave0 の
-  // 「main checkJs 化」): checkJs over the build-less Electron MAIN-process CJS
-  // layer (main.js + ipc-*.js + lib-*.js + preload.js + backup-guard.js).
+  // TypeScript stage 2/3, main-process half (BACKLOG 採用#1「残り②/③」): the
+  // build-less Electron MAIN-process layer (main.mts + ipc-*.mts + lib-*.mts +
+  // backup-guard.mts + preload.js).
   //
-  // Contract-visibility only — no build, no emit. These files run un-built under
-  // Node/Electron, so this project stays checkJs (not .ts). Direct .ts execution
-  // waits for Electron 41+ (Node 24 type stripping); until then checkJs beats a
-  // hand-written .d.ts that silently drifts from the code. This is the cheap
-  // Wave0 win that does NOT need the Electron bump.
+  // These files run un-built under Electron 43 (Node 24) via native type
+  // stripping — no emit, no bundler. They use the .mts extension (unconditionally
+  // ESM) rather than .ts + package.json "type":"module", because "type":"module"
+  // would also flip every OTHER app/*.js (the renderer service layer's dual-export
+  // and vendor/jszip.min.js) to ESM and break the CJS unit-test / bundle consumers.
+  // import { app } from 'electron' resolves Electron's ESM builtin (CJS
+  // require('electron') does NOT resolve under the type-strip loader — proven on
+  // the real binary 2026-07-06). preload stays .js (CJS) because the sandbox
+  // preload loader does NOT type-strip.
   //
-  // Separate project from tsconfig.renderer.json because the runtime is Node/CJS,
-  // not the DOM/global-IIFE renderer: module is CommonJS, the lib is ES2022 with
-  // NO DOM, and only @types/node is auto-included (electron resolves via require).
+  // Separate project from tsconfig.renderer.json because the runtime is
+  // Node/Electron ESM, not the DOM/global-IIFE renderer: nodenext resolution,
+  // ES2022 lib with NO DOM, only @types/node auto-included (electron resolves
+  // via its own types). noEmit + allowImportingTsExtensions because imports name
+  // the real runtime file (./foo.ts), which Node's type-strip loader resolves.
   //
-  // noImplicitAny stays OFF (same rationale as the renderer project): plain JS
-  // where internal lambda params would each need JSDoc noise. The rest of strict
-  // stays on so real contract breaks (null handling, wrong arg counts to the
-  // typed electron/node APIs, missing properties) surface.
+  // noImplicitAny stays OFF (same rationale as the renderer project): plain JS-
+  // shaped code where internal lambda params would each need annotation noise.
+  // The rest of strict stays on so real contract breaks surface.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    // node16 (not the TS7.0-deprecated "node") — app/package.json has no
-    // "type" field, so .js resolves as CommonJS: require/module.exports and
-    // extensionless relative requires stay valid.
-    "module": "node16",
+    // nodenext: .ts under "type":"module" loads as ESM, .cjs stays CJS — matches
+    // how Node 24 actually resolves these files at runtime.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
+    // imports name the real .ts file (no build step rewrites extensions).
+    "allowImportingTsExtensions": true,
+    // default-import CJS builtins (import fs from 'node:fs') and the computed-path
+    // createRequire modules.
+    "esModuleInterop": true,
+    // Enforce the runtime constraint: Node's type stripping only ERASES types, it
+    // cannot transform enums/namespaces/parameter-properties. erasableSyntaxOnly
+    // fails the typecheck if any non-strippable construct sneaks in; isolatedModules
+    // mirrors that each file is stripped independently.
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
     "strict": true,
     "noImplicitAny": false,
     // Caught errors stay `any` (pre-4.4 behavior). The main layer reports errors
-    // to the renderer via `err.message` at ~9 sites; the renderer service layer
-    // never inspects caught errors (it swallows them), so there's no shared
-    // narrowing idiom to match. Leaving these as `any` keeps behavior byte-
-    // identical instead of forcing `instanceof Error` guards that would change
-    // the non-Error error string. Same "don't model internal idiom noise" spirit
-    // as noImplicitAny above; the rest of strict stays on.
+    // to the renderer via `err.message` at ~9 sites; leaving these `any` keeps
+    // behavior byte-identical instead of forcing instanceof Error guards.
     "useUnknownInCatchVariables": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "files": ["main.js", "preload.js", "backup-guard.js", "ipc-backup.js", "ipc-config.js", "ipc-organize.js", "ipc-posts.js", "ipc-transfer.js", "ipc-trash.js", "ipc-window.js", "lib-archive.js", "lib-imgsize.js", "lib-index.js", "lib-json.js", "lib-migrate.js"]
+  "files": ["main.mts", "preload.js", "backup-guard.mts", "ipc-backup.mts", "ipc-config.mts", "ipc-organize.mts", "ipc-posts.mts", "ipc-transfer.mts", "ipc-trash.mts", "ipc-window.mts", "lib-archive.mts", "lib-imgsize.mts", "lib-index.mts", "lib-json.mts", "lib-migrate.mts"]
 }

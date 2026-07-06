@@ -5,9 +5,9 @@
 // set-pref), the tabs.json org file (get/set-tabs), the window title-bar overlay, and
 // static build info (app-info). Core helpers arrive via ctx; the pref key/sort
 // allow-lists live here (used only by these handlers).
-const { ipcMain, app } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
+import { ipcMain, app } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
 const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
@@ -108,4 +108,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

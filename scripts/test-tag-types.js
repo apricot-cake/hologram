@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('../app/vendor/jszip.min.js');
-const { mergeTagTypes, importCompleteZip, ORG_MERGE } = require('../app/lib-archive.js');
+const { mergeTagTypes, importCompleteZip, ORG_MERGE } = require('../app/lib-archive.mts');
 
 // --- mergeTagTypes (pure) -----------------------------------------------------
 {

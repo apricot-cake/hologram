@@ -4,8 +4,8 @@
 // unchanged). open-external opens an https URL in the OS browser; open-image-window
 // pops one library image into its own window via the psimg:// protocol. Electron
 // primitives are re-required here; getSaveFolder + APP_ICON arrive via ctx.
-const { ipcMain, shell, BrowserWindow, nativeImage, screen } = require('electron');
-const path = require('node:path');
+import { ipcMain, shell, BrowserWindow, nativeImage, screen } from 'electron';
+import path from 'node:path';
 
 function register(ctx) {
   const { getSaveFolder, APP_ICON } = ctx;
@@ -55,4 +55,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

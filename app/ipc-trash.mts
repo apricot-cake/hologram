@@ -6,10 +6,10 @@
 // tags. restore-post/update-tags use writeSidecarAtomic (tmp+rename) so the watcher
 // never sees a half-written sidecar — the crash-safety primitive stays in main.js and
 // arrives via ctx along with the other core helpers.
-const { ipcMain } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
-const { parseJsonLoose } = require('./lib-json.js');
+import { ipcMain } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseJsonLoose } from './lib-json.mts';
 
 function register(ctx) {
   const { getSaveFolder, getTrashDir, baseOf, VIEWABLE_EXTS, resolveInFolder, writeSidecarAtomic } = ctx;
@@ -22,7 +22,7 @@ function register(ctx) {
     const targets = new Set([`${base}.json`]);
     for (const e of VIEWABLE_EXTS) targets.add(`${base}.${e}`);
     const jsonPath = resolveInFolder(`${base}.json`);
-    let rec = null;
+    let rec: any = null;
     if (jsonPath) {
       try {
         rec = parseJsonLoose(await fs.promises.readFile(jsonPath, 'utf8'));
@@ -73,13 +73,13 @@ function register(ctx) {
   ipcMain.handle('list-trash', async () => {
     const trashDir = getTrashDir();
     if (!trashDir) return [];
-    let names;
+    let names: string[];
     try {
       names = await fs.promises.readdir(trashDir);
     } catch {
       return [];
     }
-    const records = [];
+    const records: any[] = [];
     for (const f of names) {
       if (!f.toLowerCase().endsWith('.json')) continue;
       try {
@@ -98,7 +98,7 @@ function register(ctx) {
     const folder = getSaveFolder();
     if (!trashDir || !folder) return { ok: false };
     const base = baseOf(image);
-    let names;
+    let names: string[];
     try {
       names = await fs.promises.readdir(trashDir);
     } catch {
@@ -137,7 +137,7 @@ function register(ctx) {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: false };
     const base = baseOf(image);
-    let names;
+    let names: string[];
     try {
       names = await fs.promises.readdir(trashDir);
     } catch {
@@ -179,4 +179,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

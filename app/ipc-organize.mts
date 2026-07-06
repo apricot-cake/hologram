@@ -7,10 +7,10 @@
 // three core helpers — getSaveFolder + readOrgJsonSync + writeOrgJsonSync — which
 // stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
 // (readOrgJsonSync/writeOrgJsonSync refuse to clobber a present-but-corrupt file).
-const { ipcMain } = require('electron');
-const fs = require('node:fs');
-const path = require('node:path');
-const { parseJsonLoose } = require('./lib-json.js');
+import { ipcMain } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseJsonLoose } from './lib-json.mts';
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
@@ -57,7 +57,7 @@ function register(ctx) {
     try {
       fs.mkdirSync(folder, { recursive: true });
       const out = { types };
-      if (labels && typeof labels === 'object') out.labels = labels;
+      if (labels && typeof labels === 'object') (out as any).labels = labels;
       writeOrgJsonSync(path.join(folder, 'tag-types.json'), out);
       return { ok: true };
     } catch {
@@ -199,8 +199,8 @@ function register(ctx) {
               items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
             };
             if (c.kind === 'dynamic') {
-              if (c.tree && typeof c.tree === 'object') out.tree = c.tree; // saved query tree
-              if (typeof c.q === 'string' && c.q) out.q = c.q; // saved free-text search
+              if (c.tree && typeof c.tree === 'object') (out as any).tree = c.tree; // saved query tree
+              if (typeof c.q === 'string' && c.q) (out as any).q = c.q; // saved free-text search
             }
             return out;
           })
@@ -210,7 +210,7 @@ function register(ctx) {
   // collections (ids preserved). The legacy workspace tray is dropped (clip starts
   // empty — no migration, by design). Returns null when there is nothing to migrate.
   function migrateFoldersToCollections(folder) {
-    let j;
+    let j: any;
     try {
       j = parseJsonLoose(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
     } catch {
@@ -273,4 +273,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+export { register };

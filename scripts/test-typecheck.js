@@ -6,9 +6,9 @@
 //   2. app/tsconfig.renderer.json — checkJs over the build-less plain-JS
 //      renderer service layer (viewer.js extraction slices + store, stage 2;
 //      contracts in app/renderer/types/renderer-globals.d.ts)
-//   3. app/tsconfig.main.json     — checkJs over the Electron main-process CJS
-//      layer (main.js + ipc-*.js + lib-*.js + preload.js + backup-guard.js,
-//      stage 2; Node/CJS, no DOM — the cheap Wave0 win, no Electron bump needed)
+//   3. app/tsconfig.main.json     — the Electron main-process ESM layer
+//      (main.mts + ipc-*.mts + lib-*.mts + backup-guard.mts + preload.js, stage
+//      2/3; Node ESM via .mts, no DOM; runs un-built under Electron 43 (type strip))
 
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');

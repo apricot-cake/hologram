@@ -92,4 +92,4 @@ function imageSize(buf) {
   return jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || null;
 }
 
-module.exports = { imageSize, jpegSize, pngSize, gifSize, webpSize };
+export { imageSize, jpegSize, pngSize, gifSize, webpSize };

@@ -16,8 +16,8 @@
 // shrinks that window from "whole copy duration" to "in-flight at flip instant";
 // those last stragglers are handled by the delayed sweep below.
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Transient write artifacts (writeSidecarAtomic tmp names). Never copied; a COLD one
 // in an abandoned src is garbage from an interrupted write and may be swept.
@@ -36,7 +36,7 @@ const MAX_CATCHUP_ROUNDS = 5;
 const SWEEP_MIN_AGE_MS = 15000;
 
 async function listNonTmp(dir) {
-  let names;
+  let names: string[];
   try {
     names = await fs.promises.readdir(dir);
   } catch {
@@ -51,12 +51,10 @@ async function listNonTmp(dir) {
 // finds nothing new. Aborts before copying anything if a name already exists at
 // dest (never clobbers the user's files there); rolls back partial copies on any
 // failure (src untouched). Returns { ok, entries } with entries = every name copied.
-// The explicit @returns makes `ok` a literal discriminant so `if (!cp.ok) return`
-// narrows the success branch (entries defined) at the call site.
-/**
- * @returns {Promise<{ ok: false, error: string, name?: string, detail?: string } | { ok: true, entries: string[] }>}
- */
-async function copyLibraryInto(src, dest, onProgress) {
+// The explicit return type makes `ok` a literal discriminant so `if (!cp.ok) return`
+// narrows the success branch (entries defined) at the call site. (A JSDoc @returns
+// is NOT authoritative under .mts — TS widens `ok` to boolean and narrowing fails.)
+async function copyLibraryInto(src, dest, onProgress): Promise<{ ok: false; error: string; name?: string; detail?: string } | { ok: true; entries: string[] }> {
   let entries = await listNonTmp(src);
   await fs.promises.mkdir(dest, { recursive: true });
   for (const f of entries) {
@@ -64,7 +62,7 @@ async function copyLibraryInto(src, dest, onProgress) {
   }
   let total = entries.length;
   if (onProgress) onProgress(0, total);
-  const copied = [];
+  const copied: string[] = [];
   const copiedSet = new Set();
   try {
     let queue = entries;
@@ -99,13 +97,13 @@ async function copyLibraryInto(src, dest, onProgress) {
 // size and (±2s) mtime. One-directional (src ⊆ dest): extra files at dest cost
 // nothing; the property that matters is "deleting src loses no bytes".
 async function verifyEntry(srcPath, destPath) {
-  let st;
+  let st: any;
   try {
     st = await fs.promises.lstat(srcPath);
   } catch {
     return true; // vanished from src (e.g. already gone) — nothing left to lose
   }
-  let dt;
+  let dt: any;
   try {
     dt = await fs.promises.lstat(destPath);
   } catch {
@@ -177,7 +175,7 @@ async function verifyAndCleanup(src, dest, entries) {
 async function sweepStragglers(src, dest, opts) {
   const minAgeMs = opts && typeof opts.minAgeMs === 'number' ? opts.minAgeMs : SWEEP_MIN_AGE_MS;
   const now = Date.now();
-  let names;
+  let names: string[];
   try {
     names = await fs.promises.readdir(src);
   } catch {
@@ -187,7 +185,7 @@ async function sweepStragglers(src, dest, opts) {
   let left = 0;
   for (const f of names) {
     const s = path.join(src, f);
-    let st;
+    let st: any;
     try {
       st = await fs.promises.lstat(s);
     } catch {
@@ -295,4 +293,4 @@ async function relocateLibrary(src, dest, deps) {
   return { ok: true, saveFolder: dest, moved: cp.entries.length, leftover: cl.leftover.length };
 }
 
-module.exports = { copyLibraryInto, verifyAndCleanup, sweepStragglers, relocateLibrary };
+export { copyLibraryInto, verifyAndCleanup, sweepStragglers, relocateLibrary };
