@@ -24,13 +24,19 @@ import '../inspector/index.tsx';
 import '../edit-overlay/index.tsx';
 import '../grid/index.tsx';
 import '../image-tab/index.tsx';
-// The viewer orchestrator (renderer/viewer.js) folds into this single bundle so
-// it compiles through Vite (enabling checkJs → .ts). It is a plain window-IIFE
-// (no imports/exports); its body `await`s corpusI18n so it stays deferred behind
-// the synchronous island mounts above — the pull→push convergence is unchanged
-// from when it loaded as its own <script> before app.js. Imported LAST so every
-// island bridge/mount is registered first. @ts-ignore: viewer.js is untyped here
-// (it is checkJs'd in the renderer tsconfig project, not this islands project);
-// Vite/rollup resolve the path at build/dev time regardless.
-// @ts-ignore
-import '../../renderer/viewer.js';
+// The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
+// it compiles through Vite. It is a plain window-IIFE (no imports/exports); its
+// body `await`s corpusI18n so it stays deferred behind the synchronous island
+// mounts above — the pull→push convergence is unchanged from when it loaded as
+// its own <script> before app.js. Imported LAST so every island bridge/mount is
+// registered first.
+//
+// It is imported through the bare specifier 'corpus-viewer-bundle', aliased to
+// renderer/viewer.ts by BOTH islands/build.mjs (prod) and vite.config.mjs (dev).
+// The indirection keeps viewer.ts OUT of this strict islands tsc program: tsc
+// can't resolve the bare specifier (so it never pulls viewer.ts in), while Vite's
+// alias resolves it to the exact same file — identical module graph, so the bundle
+// is byte-for-byte the same as a direct import. viewer.ts is type-checked ONLY by
+// tsconfig.renderer.json (loose + renderer-globals), where it lives in `files`.
+// @ts-ignore — resolved by the Vite alias above, not by tsc.
+import 'corpus-viewer-bundle';

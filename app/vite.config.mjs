@@ -59,6 +59,10 @@ export default defineConfig({
       // replaced with a 1-line ESM re-export (React 18+ has the hook natively).
       'use-sync-external-store/shim/index.js': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
       'use-sync-external-store/shim': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
+      // The barrel imports renderer/viewer.ts via this bare specifier so the strict
+      // islands tsc project never type-checks it (checked by tsconfig.renderer.json
+      // instead); dev must resolve the same alias islands/build.mjs uses for prod.
+      'corpus-viewer-bundle': path.join(here, 'renderer', 'viewer.ts'),
     },
   },
   plugins: [react(), corpusDevHtml()],

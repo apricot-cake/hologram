@@ -346,14 +346,13 @@
   // surrounding code already dereferences it directly — and narrow to the concrete
   // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
   // folders.js: casts an event target to the nearest matching element (or null). ---
-  const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
-  const inputById = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id));
-  const selectById = (id) => /** @type {HTMLSelectElement} */ (document.getElementById(id));
-  const btnById = (id) => /** @type {HTMLButtonElement} */ (document.getElementById(id));
-  /** @param {Event} e @param {string} sel */
-  const closestOf = (e, sel) => {
-    const t = /** @type {HTMLElement | null} */ (e.target);
-    return t instanceof Element ? /** @type {HTMLElement | null} */ (t.closest(sel)) : null;
+  const byId = (id) => document.getElementById(id) as HTMLElement;
+  const inputById = (id) => document.getElementById(id) as HTMLInputElement;
+  const selectById = (id) => document.getElementById(id) as HTMLSelectElement;
+  const btnById = (id) => document.getElementById(id) as HTMLButtonElement;
+  const closestOf = (e: Event, sel: string) => {
+    const t = e.target as HTMLElement | null;
+    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
 
   // --- Apply i18n to static elements ---
@@ -519,7 +518,7 @@
     postQB.resetTree();
     editingTextNode = null; // the editing text leaf is gone with the tree
     const set = (id, v) => {
-      const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+      const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.value = v;
     };
     setSearchBoxValue('');
@@ -540,7 +539,7 @@
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const t = /** @type {HTMLElement | null} */ (e.target);
+    const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (!navAllowed()) return;
     e.preventDefault();
@@ -575,8 +574,8 @@
   // find-input's "no re-render, just toggle row visibility" trick from the old
   // implementation is no longer needed: the island keeps its own local filter state,
   // so typing never touches this bridge (only a pick or a fresh open does). ----
-  let qfCat = null;
-  let qfAnchor = null; // 同じ行をもう一度押したら閉じる（トグル）
+  let qfCat: any = null;
+  let qfAnchor: HTMLElement | null = null; // 同じ行をもう一度押したら閉じる（トグル）
   // Bumped only on a FRESH open (showQfPopAt), NOT on the re-render after a pick. The
   // island keys its root on this, so a value pick re-renders in place (preserving the
   // selected tag group + find text) while opening a different row remounts fresh.
@@ -671,7 +670,7 @@
     // rename/delete home now that folders live in a flyout, not a sidebar list.
     const showManage = (cat === 'poster-folder' || cat === 'collection') && !!CF();
     window.corpusQfPop.open({
-      anchorRect: qfAnchor.getBoundingClientRect(),
+      anchorRect: (qfAnchor as HTMLElement).getBoundingClientRect(),
       sessionId: qfSession,
       items,
       showFind,
@@ -807,18 +806,18 @@
   // Date popover. editingDateNode = the date cond being edited (null = new). Rendering
   // is the filter-popover React island now (window.corpusFilterPopover) — this only
   // builds the field model + owns the apply/remove actions.
-  let editingDateNode = null;
+  let editingDateNode: CorpusQueryLeaf | null = null;
   // The single 'text' leaf bound to the search box (post mode only). While typing,
   // the box mirrors its value/mode into this node — a real tree leaf. Enter hands it
   // off (leaf stays, box clears) so the next term is a fresh leaf. null = box empty
   // or term already confirmed.
-  let editingTextNode = null;
+  let editingTextNode: CorpusQueryLeaf | null = null;
 
   function openDatePopover(node) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingDateNode = node || null;
     const existing = editingDateNode;
-    const anchor = /** @type {HTMLElement} */ (document.querySelector('#filterRows [data-qfrow="date"]'));
+    const anchor = document.querySelector('#filterRows [data-qfrow="date"]') as HTMLElement;
     const r = anchor.getBoundingClientRect();
     window.corpusFilterPopover.open({
       kind: 'date',
@@ -848,7 +847,7 @@
     closeAllMenus();
     const editNode = arg && arg.kind === 'cond' ? arg : null;
     editingPosterDateNode = editNode;
-    const anchor = /** @type {HTMLElement} */ (document.querySelector('#posterFilterRows [data-qfrow="poster-date"]'));
+    const anchor = document.querySelector('#posterFilterRows [data-qfrow="poster-date"]') as HTMLElement;
     if (!anchor) return;
     const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
     const r = anchor.getBoundingClientRect();
@@ -877,13 +876,13 @@
   }
 
   // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
-  let editingEngNode = null;
+  let editingEngNode: CorpusQueryLeaf | null = null;
 
   function openEngPopover(node) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingEngNode = node || null;
     const existing = editingEngNode;
-    const anchor = /** @type {HTMLElement} */ (document.querySelector('#filterRows [data-qfrow="engagement"]'));
+    const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]') as HTMLElement;
     const r = anchor.getBoundingClientRect();
     window.corpusFilterPopover.open({
       kind: 'eng',
@@ -973,7 +972,7 @@
   // Row badges: number of active filters per category. Instance filters live
   // inside the platform flyout, so they count toward the platform badge.
   function renderFilterBadges() {
-    const counts = {};
+    const counts: Record<string, any> = {};
     for (const f of activeFilters) counts[f.type] = (counts[f.type] || 0) + 1;
     counts.platform = (counts.platform || 0) + (counts.instance || 0);
     // (複数画像 is no longer folded into the メディア badge — it's its own row now,
@@ -994,7 +993,7 @@
     counts.work = tagWork;
     counts.character = tagChar;
     document.querySelectorAll('#filterRows .sb-row-badge').forEach((b) => {
-      const n = counts[/** @type {HTMLElement} */ (b).dataset.badge || ''] || 0;
+      const n = counts[(b as HTMLElement).dataset.badge || ''] || 0;
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
@@ -1005,17 +1004,17 @@
   // user-created and unbounded, so they live INSIDE the scrollable flyout —
   // permanent sidebar rows for them stretched the column without bound
   // (sub-rows removed 2026-07-03).
-  let tagGroups = []; // {id,name,tags[]} from tag-groups.json (loaded at startup)
+  let tagGroups: any[] = []; // {id,name,tags[]} from tag-groups.json (loaded at startup)
   // 用語帳 (Phase 2 ①): a tag's 種別 is an attribute of the TAG. `tagTypes` maps a
   // tag string → kind ('work' | 'character'); tags absent from it are 一般 (general).
   // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
   // later category sections; here we only assign + reflect the kind on the tag itself.
-  let tagTypes = /** @type {Record<string, string>} */ ({});
+  let tagTypes = {} as Record<string, string>;
   // The work/character pair is renamable (種別ペアのリネーム): tagLabels holds the
   // user's custom names; a kind with no entry falls back to the built-in
   // KIND_LABEL (tags.js).
   // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
-  let tagLabels = /** @type {Record<string, string>} */ ({});
+  let tagLabels = {} as Record<string, string>;
   // tagKindOf / kindLabel moved to tags.js (corpusTags wiring above).
   // Reflect the (possibly custom) 作品/キャラ names onto the static sidebar row titles.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
@@ -1052,10 +1051,10 @@
   const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
   let _sidebarSetsGen = -1;
-  let _cachedTagSet = null,
-    _cachedHtSet = null,
-    _cachedUserSet = null,
-    _cachedInstSet = null;
+  let _cachedTagSet: Set<string> | null = null,
+    _cachedHtSet: Set<string> | null = null,
+    _cachedUserSet: Set<string> | null = null,
+    _cachedInstSet: Set<string> | null = null;
   function _rebuildSidebarSets() {
     if (_sidebarSetsGen === _allPostsGeneration) return;
     const snPosts = allPosts.filter((p) => p.url);
@@ -1082,7 +1081,7 @@
   // only once at least one tag wears that 種別. No kinds set → no rows → zero trace for
   // people who just save posts (Corpus isn't illustration-only).
   function updateKindRows() {
-    const tags = _cachedTagSet || new Set();
+    const tags = _cachedTagSet || new Set<string>();
     let hasWork = false,
       hasChar = false;
     for (const t of tags) {
@@ -1156,7 +1155,7 @@
   });
 
   // --- State ---
-  let allPosts = [];
+  let allPosts: CorpusPost[] = [];
   let _allPostsGeneration = 0; // bumped on every allPosts replacement; invalidates sidebar caches
   // In-place edits (tag add/remove, single delete) mutate allPosts records without
   // replacing the array, so the generation counter won't advance on its own. It gates
@@ -1166,14 +1165,14 @@
   function markPostsMutated() {
     _allPostsGeneration++;
   }
-  let activeFilters = []; // { type, value?, dateField?, from?, to?, engType?, min? }
+  let activeFilters: any[] = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
   // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
   // A query reset bounces back to the poster grid AS LONG AS that user filter is still
   // active (you're still looking at this poster's posts, even with extra library filters
   // added). Removing the user filter or switching mode ends it. null = no pending return.
-  let posterReturn = null;
+  let posterReturn: any = null;
   let multiOnly = false; // show only items with more than one image
   let tileOverlay = true; // tile view: show the author/❤ info overlay (pref)
   let tileSize = 180; // tile view: edge px (pref imageTileSize)
@@ -1201,8 +1200,8 @@
   // the viewGroups ARRAY was rebuilt, so the island knows when to reset its
   // positioner (cached cell heights) vs merely repaint visible cells.
   let _gridItemsKey = 0;
-  let _gridItemsArr = null;
-  let _gridAnimT = null;
+  let _gridItemsArr: any = null;
+  let _gridAnimT: any = null;
   // How long .anim-in stays on a grid after a fresh build. Must outlive the
   // LAST staggered card or its backwards-fill entrance gets cancelled mid-run:
   // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
@@ -1221,12 +1220,12 @@
     if (el) el.scrollTop = y;
   };
   // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
-  let manualGroups = []; // [[captureId,…],…] — user-built groups (win over auto)
-  let ungrouped = new Set(); // post keys opted out of auto-grouping
-  const stickyRecs = new Set(); // captureIds kept visible after a mutation un-matches the filter
-  let inspectedKey = null; // postIdKey of the group shown in the inspector (ring marker)
-  let viewGroups = []; // current render result: [{ key, records, rep, files }]
-  let taggingApi = null; // shared 種別 (kind) menu API; set by showKindMenu() below
+  let manualGroups: string[][] = []; // [[captureId,…],…] — user-built groups (win over auto)
+  let ungrouped = new Set<string>(); // post keys opted out of auto-grouping
+  const stickyRecs = new Set<string>(); // captureIds kept visible after a mutation un-matches the filter
+  let inspectedKey: string | null = null; // postIdKey of the group shown in the inspector (ring marker)
+  let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
+  let taggingApi: any = null; // shared 種別 (kind) menu API; set by showKindMenu() below
   // Column / slider-track / thumbnail-bucket math lives in geometry.js now.
   const { sizeFor, sliderTrack, trackCols, thumbW } = window.corpusGeometry;
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
@@ -1252,8 +1251,8 @@
     if (syncSlider) refreshTileSlider(); // hoisted; keeps the track in sync with the view
   }
   let skipDeleteConfirm = false;
-  const selectedSet = new Set(); // stores post identifiers (url + capturedAt)
-  let selectionAnchor = null; // index in the filtered list, for shift-range select
+  const selectedSet = new Set<string>(); // stores post identifiers (url + capturedAt)
+  let selectionAnchor: number | null = null; // index in the filtered list, for shift-range select
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
@@ -1286,8 +1285,8 @@
   //        standaloneTypes? }
   function createQueryBuilder(ctx) {
     let tree = emptyTree();
-    let qbNodeMap = new Map(); // data-nid → tree node (rebuilt each render)
-    let shadow = []; // last computed flat (deduped) leaf shadow
+    let qbNodeMap = new Map<string, any>(); // data-nid → tree node (rebuilt each render)
+    let shadow: any[] = []; // last computed flat (deduped) leaf shadow
     const chips = ctx.container;
     const nodeById = (id) => qbNodeMap.get(id) || null;
     const editableLeafTypes = ctx.editableLeafTypes || [];
@@ -1330,7 +1329,7 @@
     // --- Render: the tree as attribute clusters (facet chips) on the bar. ---
     function render() {
       const container = chips;
-      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-val-label')).map((el) => el.textContent.trim()));
+      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-val-label')).map((el) => ((el as Element).textContent as string).trim()));
       const bar = ctx.barEl || null;
       const searchVal = ctx.getSearchVal ? (ctx.getSearchVal() || '').trim() : '';
       // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
@@ -1370,9 +1369,9 @@
         const isNew = animate && !(ctx.isEditingLeaf && ctx.isEditingLeaf(leaf)) && !prevLabels.has(label);
         return { id: nid(leaf), label, isNew, editable: editableLeafTypes.includes(leaf.type), glyph: ctx.glyphOf(leaf.type), typeCls: 'qc-' + leaf.type };
       };
-      const clusters = [];
-      let excl = null;
-      let summary = null;
+      const clusters: any[] = [];
+      let excl: any = null;
+      let summary: any = null;
       if (view) {
         for (const cl of view.clusters) {
           // The cluster's group node (2+ values) is what the toggle writes to.
@@ -1672,7 +1671,7 @@
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
-  const fileSrc = (file, w) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
+  const fileSrc = (file, w?) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
@@ -1692,14 +1691,14 @@
   // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
   // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
   // its order is irrelevant since getFilteredPosts() always re-sorts.
-  let _postsById = new Map();
+  let _postsById = new Map<string, CorpusPost>();
   let _haveBaseline = false; // false until we hold a full snapshot (also reset on reload = fresh module state)
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
   // changedNames is the fs-watch hint relayed from main (null | [] | [names…]);
   // it lets the refresh re-stat only the changed sidecars instead of the whole
   // folder. Absent (explicit reloads: sort change, import) -> full reconcile.
-  async function loadPosts(keepLimit, changedNames) {
+  async function loadPosts(keepLimit?, changedNames?) {
     if (_loadPostsInFlight) {
       _loadPostsPending = true;
       return;
@@ -1770,20 +1769,20 @@
     // is never called here. This getter satisfies its contract with the default
     // (alphabetical) sort — never actually invoked in the current build.
     collectionSort: () => 'name',
-    allCollections: () => /** @type {CorpusCollection[]} */ (CF() ? CF().allCollections() : []),
+    allCollections: () => (CF() ? CF().allCollections() : []) as CorpusCollection[],
     filterLabel,
   });
   const { cloneTree } = window.corpusListing;
 
-  let lastRenderedState = null;
+  let lastRenderedState: any = null;
   let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
-  let _lastViewGroups = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
+  let _lastViewGroups: CorpusPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
   let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
   let restoringState = false;
-  let tabs = [];
-  let activeTabId = null;
-  let tabEditingId = null; // id of the tab being inline-renamed (React renders its input)
-  let _tabPersistTimer = null;
+  let tabs: CorpusTab[] = [];
+  let activeTabId: string | null = null;
+  let tabEditingId: string | null = null; // id of the tab being inline-renamed (React renders its input)
+  let _tabPersistTimer: any = null;
   // Image tabs (type:'image') show ONE post's media fit-to-screen with the
   // inspector alongside instead of a filtered grid — they have no filter state.
   const isImageTab = (t) => !!t && t.type === 'image';
@@ -2112,11 +2111,11 @@
   }
   // Open a post group as its own tab. Background by default (browser-like:
   // middle-click / context menu leave you in the grid).
-  function addImageTab(g, opts) {
+  function addImageTab(g, opts?) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
-    const t = /** @type {CorpusTab} */ ({ id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null });
+    const t = { id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
     // Insert next to the current tab (browser-like), never inside the pinned run.
     const ai = tabs.findIndex((tt) => tt.id === activeTabId);
     let pos = ai >= 0 ? ai + 1 : tabs.length;
@@ -2172,7 +2171,7 @@
     function showTabMenu(id, e) {
       const t = tabs.find((t) => t.id === id);
       if (!t) return;
-      const items = [
+      const items: any[] = [
         { label: t.pinned ? MSG.tabUnpin : MSG.tabPin, act: 'pin' },
         { label: MSG.tabRename, act: 'rename' },
         { label: MSG.tabDuplicate, act: 'duplicate' },
@@ -2206,7 +2205,7 @@
       if (!tabs.find((t) => t.id === id)) return;
       tabEditingId = id;
       renderTabs();
-      const input = /** @type {HTMLInputElement | null} */ (bar.querySelector('.tab-rename-input'));
+      const input = bar.querySelector('.tab-rename-input') as HTMLInputElement | null;
       if (input) {
         input.focus();
         input.select();
@@ -2214,7 +2213,7 @@
     }
     function commitTabRename() {
       if (!tabEditingId) return;
-      const input = /** @type {HTMLInputElement | null} */ (bar.querySelector('.tab-rename-input'));
+      const input = bar.querySelector('.tab-rename-input') as HTMLInputElement | null;
       const id = tabEditingId;
       tabEditingId = null;
       if (input) renameTab(id, input.value);
@@ -2321,7 +2320,7 @@
   try {
     imgAspect = JSON.parse(localStorage.getItem('corpus.imgAspect') || '{}') || {};
   } catch (e) {}
-  let _aspectT = null;
+  let _aspectT: any = null;
   function persistAspect() {
     clearTimeout(_aspectT);
     _aspectT = setTimeout(() => {
@@ -2370,7 +2369,7 @@
     // right the first time — pixel size from the index, learned cache fallback.
     const aspRatio = currentView !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && imgAspect[p.captureId] ? imgAspect[p.captureId] : '';
     // Post-type + media flags (grid view only; CSS hides them in compact list).
-    const flags = [];
+    const flags: string[] = [];
     if (p.isThread) flags.push(MSG.qfThread);
     if (p.isReply) flags.push(MSG.qfReply);
     if (p.isQuote) flags.push(MSG.qfQuote);
@@ -2413,7 +2412,7 @@
   // legacy path): true = in-place mutation re-render — reuse the grouped set
   // when possible, keep sticky survivors, no entrance animation, and skip the
   // tab-title/persist sync.
-  function renderPosts(inPlace) {
+  function renderPosts(inPlace?) {
     // View signature (filter/sort/search/view) — stable across this render, so
     // compute once and reuse for the sticky-drop and group-reuse checks.
     const stateSig = JSON.stringify(snapshotState());
@@ -2437,7 +2436,7 @@
     // Any mismatch falls through to a fresh build.
     const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
     if (canReuseGroups) {
-      viewGroups = _lastViewGroups;
+      viewGroups = _lastViewGroups as CorpusPostGroup[];
     } else {
       viewGroups = groupRecords(getFilteredPosts());
       if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
@@ -2514,7 +2513,7 @@
       // inspected rides on the model (live cells re-derive it after a remount —
       // an imperative class would vanish with the recycled cell).
       modelOf: (g, i) => {
-        const m = cardModel(g, i);
+        const m: any = cardModel(g, i);
         m.inspected = inspectedKey !== null && m.postKey === inspectedKey;
         return m;
       },
@@ -2593,7 +2592,7 @@
     const img = closestOf(e, '.card-img');
     if (img) {
       e.stopPropagation();
-      const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
+      const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
       if (!g) return;
       if (!byId('postDetail').hidden) {
         showDetail(g);
@@ -2605,7 +2604,7 @@
   byId('postGrid').addEventListener('dblclick', (e) => {
     const img = closestOf(e, '.card-img');
     if (!img || byId('postDetail').hidden) return;
-    const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
+    const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
     if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
   });
 
@@ -2616,7 +2615,7 @@
     const img = closestOf(e, '.card-img');
     if (!img) return;
     e.preventDefault();
-    const g = viewGroups[Number.parseInt(/** @type {HTMLElement | null} */ (img.closest('.post-card'))?.dataset.index ?? '', 10)];
+    const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
     if (g) addImageTab(g);
   });
   // suppress the middle-click autoscroll on card images
@@ -2654,7 +2653,7 @@
   function foldMenuItems(g) {
     const list = CF() ? CF().all() : [];
     const rep = g.rep.captureId;
-    const items = /** @type {CorpusMenuItem[]} */ (list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })));
+    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
     if (list.length) items.push({ sep: true });
     items.push({ label: MSG.ctxManage, act: 'manage', manage: true });
     return items;
@@ -2703,7 +2702,7 @@
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m) => m && m.url) || {}).url || '';
-    const items = [];
+    const items: any[] = [];
     if (g.rep.url) items.push({ label: MSG.tipOpen, act: 'open', icon: CM_IC.open });
     items.push({ label: MSG.ctxOpenNewTab, act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: MSG.tipFolder, act: 'folder', icon: CM_IC.folder });
@@ -2733,7 +2732,7 @@
       return;
     } // opens the folder picker (bridge keeps it open)
     else if (act === 'clip') {
-      const b = /** @type {HTMLElement | null} */ (document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`));
+      const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`) as HTMLElement | null;
       if (b) b.click();
     } else if (act === 'info') showDetail(g);
     else if (act === 'poster') jumpToPoster(g.rep);
@@ -2889,7 +2888,7 @@
     }
   }
 
-  let pendingDeleteGroup = null;
+  let pendingDeleteGroup: CorpusPostGroup | null = null;
 
   // Delete every record of the group (a group IS one post in the UI).
   async function executeDeleteGroup(g) {
@@ -3010,7 +3009,7 @@
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
     keepCurrentVisible(); // removing a tag can un-match an active tag filter
-    const undoRecords = [];
+    const undoRecords: CorpusUndoRecord[] = [];
     for (const r of recs) {
       const prev = (r.tags || []).slice();
       const next = mutate(prev.slice());
@@ -3057,7 +3056,7 @@
     const cardTags = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => tagKindOf(t) === 'work');
     if (!worksNow.length) return; // no 作品 context to distinguish by
-    const exclude = new Set((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
+    const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
     const past = worksCooccurringWith(addedTag, exclude);
     if (!past.size) return; // no history → stay silent
     if (worksNow.some((w) => past.has(w))) return; // seen with one of these works → same character
@@ -3078,7 +3077,7 @@
   function showDetail(g) {
     if (!g) return;
     const p = g.rep;
-    const eng = [];
+    const eng: string[] = [];
     if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
     if (p.reposts != null) eng.push('⇄ ' + formatCount(p.reposts));
     if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
@@ -3205,7 +3204,7 @@
   async function adoptSourceTag(g, tag) {
     if (!tag) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
-    const undoRecords = [];
+    const undoRecords: CorpusUndoRecord[] = [];
     for (const r of recs) {
       const prev = (r.tags || []).slice();
       if (prev.includes(tag)) continue;
@@ -3236,7 +3235,7 @@
       if (e.key !== 'Escape') return;
       const inImageTab = document.body.classList.contains('image-tab-active');
       if (byId('postDetail').hidden && !inImageTab) return;
-      const t = /** @type {HTMLElement | null} */ (e.target);
+      const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
       if (window.corpusSettings && window.corpusSettings.isOpen()) return;
@@ -3264,7 +3263,7 @@
       const insp = byId('postDetail');
       if (insp.hidden) return;
       if (!matchMedia('(max-width: 1279px)').matches) return;
-      if (insp.contains(/** @type {Node | null} */ (e.target))) return;
+      if (insp.contains(e.target as Node | null)) return;
       if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
       if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
       if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
@@ -3299,8 +3298,8 @@
   // --- Edit overlay logic (bulk "add tags to selection") ---
   // editTags is a STAGING list (nothing persists until Save — see tagSelectedBtn/
   // onSave below); editingRecords holds the selected posts' real records to write to.
-  let editingRecords = [];
-  let editTags = [];
+  let editingRecords: CorpusPost[] = [];
+  let editTags: string[] = [];
   let editAdditive = false; // true = merge into each record's existing tags (always true — no replace UI exists)
 
   // groupedTagVocab moved to tags.js (corpusTags wiring above).
@@ -3369,7 +3368,7 @@
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
-    const records = [];
+    const records: CorpusPost[] = [];
     viewGroups.forEach((g) => {
       if (selectedSet.has(postIdKey(g.rep))) records.push(...g.records);
     });
@@ -3458,7 +3457,7 @@
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;
-    const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
   });
 
@@ -3486,7 +3485,7 @@
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   groupSelectedBtn.addEventListener('click', () => {
-    const members = [];
+    const members: any[] = [];
     viewGroups.forEach((g) => {
       if (selectedSet.has(postIdKey(g.rep))) members.push(...g.records.map((r) => r.captureId).filter(Boolean));
     });
@@ -3519,7 +3518,7 @@
   // typing in a field or when a modal/overlay is open (native select-all there).
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
-    const t = /** @type {HTMLElement | null} */ (e.target);
+    const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
@@ -3539,13 +3538,13 @@
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
     if (!slash && !ctrlK) return;
-    const t = /** @type {HTMLElement | null} */ (e.target);
+    const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     e.preventDefault();
-    const sb = /** @type {HTMLInputElement | null} */ (document.getElementById('searchBox')); // the searchbox island's Input (id preserved)
+    const sb = document.getElementById('searchBox') as HTMLInputElement | null; // the searchbox island's Input (id preserved)
     if (!sb) return; // island not mounted yet (sub-second boot window)
     sb.focus();
     sb.select();
@@ -3569,10 +3568,10 @@
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
   // collapses rapid clicks to a single render.
-  let _browseRenderT = null,
-    _densityRenderT = null,
-    _posterDensityRenderT = null;
-  function positionViewThumb(scope) {
+  let _browseRenderT: any = null,
+    _densityRenderT: any = null,
+    _posterDensityRenderT: any = null;
+  function positionViewThumb(scope?) {
     // #densityToggle, #posterDensityToggle and #browseToggle are React-owned (the
     // toolbar island positions their own thumbs), so the no-scope sweep skips them —
     // never two writers on the same .vt-thumb.
@@ -3614,7 +3613,7 @@
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
-  function setBrowseMode(mode, opts) {
+  function setBrowseMode(mode, opts?) {
     mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
     posterReturn = null; // an explicit mode switch ends any pending poster-return
     browseMode = mode;
@@ -3667,7 +3666,7 @@
   // --- Poster grid (投稿者ビュー) ------------------------------------------
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
-  let posterList = [];
+  let posterList: CorpusUserAgg[] = [];
   let posterSort = 'count'; // 'count' | 'name' | 'date-desc' | 'date-asc'
   // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
   // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
@@ -3774,10 +3773,10 @@
     },
     { passive: true },
   );
-  let posterWorkGroups = []; // recent works shown in the poster inspector
+  let posterWorkGroups: any[] = []; // recent works shown in the poster inspector
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
-  let posterTags = /** @type {Record<string, string[]>} */ ({});
+  let posterTags = {} as Record<string, string[]>;
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() {
@@ -3829,8 +3828,8 @@
     posterTagsOf,
     folderById: posterFolderById,
   });
-  let posterShadow = []; // flat leaf shadow of the poster tree (sidebar badges / rows)
-  let editingPosterDateNode = null; // the date leaf being edited via the popover (null = new)
+  let posterShadow: any[] = []; // flat leaf shadow of the poster tree (sidebar badges / rows)
+  let editingPosterDateNode: CorpusQueryLeaf | null = null; // the date leaf being edited via the popover (null = new)
   // The poster-side builder instance. transient (no tabs / nav history for posters);
   // onChange → renderPosters (which redraws the rows + bar + grid).
   const posterQB = createQueryBuilder({
@@ -3906,7 +3905,7 @@
       'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
     };
     document.querySelectorAll('#posterFilterRows .sb-row-badge').forEach((b) => {
-      const n = counts[/** @type {HTMLElement} */ (b).dataset.badge || ''] || 0;
+      const n = counts[(b as HTMLElement).dataset.badge || ''] || 0;
       b.textContent = n || '';
       b.classList.toggle('on', n > 0);
     });
@@ -3914,7 +3913,7 @@
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
-  function renderPosters(keepLimit) {
+  function renderPosters(keepLimit?) {
     const grid = byId('posterGrid');
     const empty = byId('emptyState');
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数は
@@ -3953,8 +3952,8 @@
     clearTimeout(_posterAnimT);
     if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
   }
-  let _posterAnimT = null;
-  let _posterItemsArr = null; // last posterList pushed — identity change bumps itemsKey
+  let _posterAnimT: any = null;
+  let _posterItemsArr: any = null; // last posterList pushed — identity change bumps itemsKey
   let _posterItemsKey = 0;
   // React owns the poster cells (virtualized — window.corpusPosterGrid bridge);
   // viewer.js keeps posterList, the count badge, the density classes, and
@@ -4007,7 +4006,7 @@
     if (!u) return;
     postQB.resetTree();
     const set = (id, v) => {
-      const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+      const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.value = v;
     };
     setSearchBoxValue('');
@@ -4056,7 +4055,7 @@
     persistPosterTags();
     refreshPosterTagFields(key);
   }
-  function showPosterDetail(u, opts) {
+  function showPosterDetail(u, opts?) {
     if (!u) return;
     const pfName = u.platform ? PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? fileSrc(u.avatarFile) : null;
@@ -4164,7 +4163,7 @@
   // poster-folders (toggle, stays open). React-owned glass popup via
   // window.corpusContextMenu; viewer owns the items + actions here.
   function posterMenuItems(u) {
-    const items = /** @type {CorpusMenuItem[]} */ ([{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }]);
+    const items = [{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }] as CorpusMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
     }
@@ -4334,7 +4333,7 @@
   function sliderCols() {
     return trackCols(Number.parseInt(tileSlider.value, 10), Number.parseInt(tileSlider.min, 10), Number.parseInt(tileSlider.max, 10));
   }
-  let _dragMetrics = null; // grid geometry cached for the duration of one size drag
+  let _dragMetrics: CorpusGridMetrics | null = null; // grid geometry cached for the duration of one size drag
   function onSliderMove(commit) {
     if (!viewSizeState().columns) {
       setViewSize(Number.parseInt(tileSlider.value, 10), commit);
@@ -4355,7 +4354,7 @@
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
-    const t = /** @type {HTMLElement | null} */ (e.target);
+    const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();
     if (tileSlider.disabled) return;
@@ -4445,7 +4444,7 @@
   // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
   // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
   // no args — a truthy arg would be taken as keepLimit and skip the history push.
-  let _searchRenderTimer = null;
+  let _searchRenderTimer: any = null;
   window.corpusStore.subscribe('searchQuery', () => {
     const v = searchQuery();
     if (v === _searchEcho) return; // setSearchBoxValue echo — its caller re-renders itself
@@ -4568,7 +4567,7 @@
   // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
   // レンダラで読んで importPosts。
   byId('importZipInput').addEventListener('change', async (e) => {
-    const file = /** @type {HTMLInputElement} */ (e.target).files?.[0];
+    const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     showToast(MSG.importing);
     try {
@@ -4578,7 +4577,7 @@
       if (isComplete) {
         const res = await window.corpus.importComplete(buf);
         await loadPosts();
-        /** @type {HTMLInputElement} */ (e.target).value = '';
+        (e.target as HTMLInputElement).value = '';
         if (!res || !res.ok) {
           showToast(MSG.importFailed);
           return;
@@ -4590,11 +4589,11 @@
       const metaEntry = zip.file('metadata.json');
       if (!metaEntry) {
         showToast(MSG.importFailed);
-        /** @type {HTMLInputElement} */ (e.target).value = '';
+        (e.target as HTMLInputElement).value = '';
         return;
       }
       const meta = JSON.parse(await metaEntry.async('string'));
-      const posts = [];
+      const posts: CorpusPost[] = [];
       for (const m of Array.isArray(meta) ? meta : []) {
         const f = m.imageFile && zip.file(m.imageFile);
         if (!f) continue;
@@ -4603,12 +4602,12 @@
       }
       const { imported, skipped } = await window.corpus.importPosts(posts);
       await loadPosts();
-      /** @type {HTMLInputElement} */ (e.target).value = '';
+      (e.target as HTMLInputElement).value = '';
       if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
       else showToast(MSG.imported(imported));
     } catch {
       showToast(MSG.importFailed);
-      /** @type {HTMLInputElement} */ (e.target).value = '';
+      (e.target as HTMLInputElement).value = '';
     }
   });
 
@@ -4620,7 +4619,7 @@
   (function setupMirrorStatusRail() {
     const el = byId('mirrorStatus');
     if (!el) return;
-    let cfg = null;
+    let cfg: any = null;
     let mirrorSyncing = false;
 
     // Backup absolute/relative time (format.js). The relative form's 今日/昨日 words
@@ -4777,7 +4776,7 @@
 
     if (pendingBulkDelete) {
       // Bulk delete selected groups — every record of each selected group
-      const toDelete = [];
+      const toDelete: CorpusPost[] = [];
       viewGroups.forEach((g) => {
         if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
       });
@@ -4824,7 +4823,7 @@
       pendingDeleteGroup = null;
       pendingBulkDelete = false;
       setConfirmKeywordMode(false);
-      /** @type {HTMLElement} */ (e.currentTarget).classList.remove('show');
+      (e.currentTarget as HTMLElement).classList.remove('show');
     }
   });
 
@@ -4937,7 +4936,7 @@
   }
   // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
   // remembered position is current at restart. persistTabsDebounced captures scrollY.
-  let _scrollPersistTimer = null;
+  let _scrollPersistTimer: any = null;
   const _contentScroller = contentScrollEl();
   if (_contentScroller)
     _contentScroller.addEventListener(

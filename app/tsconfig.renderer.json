@@ -1,9 +1,10 @@
 {
   // TypeScript stage 2 (BACKLOG 採用#1「残り②」): checkJs over the build-less
-  // plain-JS renderer SERVICE layer (the viewer.js extraction slices + store)
-  // AND viewer.js itself (folded into the app.js Vite bundle 2026-07-05, now
-  // checkJs'd here ahead of the .ts rename). Contract-visibility only — no build,
-  // no emit; files convert to .ts when 単一バンドル化 puts them under Vite. Opt-in
+  // plain-JS renderer SERVICE layer (the viewer.js extraction slices + store),
+  // plus viewer.ts itself (converted from .js 2026-07-06 — it folds into the
+  // app.js Vite bundle, so tsc here is type-check-only: noEmit, Vite strips types
+  // at build). Contract-visibility for the plain-JS files; the remaining .js
+  // service modules convert to .ts as 単一バンドル化 puts them under Vite. Opt-in
   // is by explicit "files" so each module enters checked, not aspirationally.
   //
   // noImplicitAny stays OFF for this project: the modules are written in plain
@@ -50,6 +51,6 @@
     "renderer/undo.js",
     "renderer/store.js",
     "renderer/folders.js",
-    "renderer/viewer.js"
+    "renderer/viewer.ts"
   ]
 }

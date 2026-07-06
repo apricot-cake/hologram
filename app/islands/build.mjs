@@ -70,6 +70,12 @@ const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.t
 const RESOLVE_ALIAS = {
   'use-sync-external-store/shim/index.js': USE_SYNC_SHIM,
   'use-sync-external-store/shim': USE_SYNC_SHIM,
+  // The barrel pulls in renderer/viewer.ts via this bare specifier (see
+  // islands/app/index.tsx). Resolving it here — instead of a direct relative
+  // import in the barrel — keeps viewer.ts out of the strict islands tsc program
+  // (tsc can't resolve the bare specifier) while producing the identical module
+  // graph for rollup. viewer.ts is type-checked by tsconfig.renderer.json only.
+  'corpus-viewer-bundle': path.join(appRoot, 'renderer', 'viewer.ts'),
 };
 
 // Build every island as ONE IIFE bundle via the app/index.tsx barrel.
