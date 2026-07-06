@@ -6,12 +6,14 @@ import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
+import { LightboxHost } from '../lightbox/index.tsx';
 import { QfPopHost } from '../qf-pop/QfPop.tsx';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { SelectionBar } from '../selection-bar/SelectionBar.tsx';
 import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
+import { TabsHost } from '../tabs/index.tsx';
 import { t } from '../_shared/i18n.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
@@ -71,6 +73,15 @@ export function App() {
       </Portal>
       <Portal id="imageTabView">
         <ImageTabHost />
+      </Portal>
+      {/* Tab strip + the gallery lightbox — also imperative render/open before, now
+          store+subscribe. Lightbox toggles #lightbox's show/multi classes imperatively
+          (that element is the portal target, not React-owned content). */}
+      <Portal id="tabBarInner">
+        <TabsHost />
+      </Portal>
+      <Portal id="lightbox">
+        <LightboxHost />
       </Portal>
       <Portal id="searchWrap">
         {/* Leading magnifier icon + the react-aria ComboBox (input + suggest). */}

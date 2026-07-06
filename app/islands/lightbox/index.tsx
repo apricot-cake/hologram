@@ -1,34 +1,36 @@
-import { createRoot } from 'react-dom/client';
-import type { Root } from 'react-dom/client';
+import { useSyncExternalStore } from 'react';
 import type { LightboxItem, LightboxState } from './Lightbox.tsx';
 import { Lightbox } from './Lightbox.tsx';
 
-// React-owned image lightbox / gallery overlay (#lightbox). viewer.js still
-// resolves which images make up a post's gallery (buildGalleryItems) and calls
-// open(items, start); this island owns the open/index state, prev/next, the
-// counter, the slide-in animation, video teardown, and the Esc / Arrow / backdrop
-// close paths. The #lightbox element itself is the React root, so its show/multi
-// classes (which the CSS keys on) are toggled imperatively here rather than in JSX.
+// React-owned image lightbox / gallery overlay (#lightbox) — lives under the single App
+// root now. viewer.js still resolves which images make up a post's gallery
+// (buildGalleryItems) and calls open(items, start); this island owns the open/index state,
+// prev/next, the counter, the slide-in animation, video teardown, and the Esc / Arrow /
+// backdrop close paths. open/close/step store into module state + notify; LightboxHost
+// (portaled into #lightbox by App.tsx) subscribes. #lightbox itself is the portal TARGET
+// (viewer-owned), so its show/multi classes (the CSS keys on them) are toggled
+// imperatively here, not in JSX.
 
-let root: Root | null = null;
 let LABELS: Record<string, string> = {};
 let state: LightboxState = { items: [], index: 0, open: false };
+const subs = new Set<() => void>();
+const subscribe = (cb: () => void) => {
+  subs.add(cb);
+  return () => subs.delete(cb);
+};
+const getSnapshot = () => state;
+function notify() {
+  for (const cb of [...subs]) {
+    try {
+      cb();
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+}
 
 function node() {
   return document.getElementById('lightbox');
-}
-
-function ensureRoot() {
-  if (root) return root;
-  const el = node();
-  if (!el) return null;
-  root = createRoot(el);
-  // Backdrop (and the image itself) closes; nav buttons + video controls don't.
-  el.addEventListener('click', (e) => {
-    if ((e.target as Element).closest('.lb-nav') || (e.target as Element).closest('video')) return;
-    close();
-  });
-  return root;
 }
 
 function paint() {
@@ -37,8 +39,7 @@ function paint() {
     el.classList.toggle('show', state.open);
     el.classList.toggle('multi', state.open && state.items.length > 1);
   }
-  const r = ensureRoot();
-  if (r) r.render(<Lightbox state={state} labels={LABELS} onPrev={() => step(-1)} onNext={() => step(1)} />);
+  notify();
 }
 
 function open(items: LightboxItem[], start?: number) {
@@ -67,15 +68,31 @@ function setLabels(l: Record<string, string> | null | undefined) {
 
 window.corpusLightbox = { open, close, isOpen: () => state.open, setLabels };
 
-// In dev this island loads (as a module) after viewer.js, which may have pushed
-// its nav-button labels before we existed — apply the stashed labels now.
+// viewer.js may have pushed its nav-button labels before this module evaluated — apply the
+// stashed labels now (defensive; the bridge is assigned before viewer.js runs).
 if (window.__corpusLbLabels) setLabels(window.__corpusLbLabels);
 
-// Esc / Arrow keys are document-level, gated on the open state — mirrors the old
-// viewer.js keydown handler this island replaces.
+// Backdrop (and the image itself) closes; nav buttons + video controls don't. Attached
+// once on the static #lightbox element (the portal target, not React-owned content).
+(() => {
+  const el = node();
+  if (el) {
+    el.addEventListener('click', (e) => {
+      if ((e.target as Element).closest('.lb-nav') || (e.target as Element).closest('video')) return;
+      close();
+    });
+  }
+})();
+
+// Esc / Arrow keys are document-level, gated on the open state.
 document.addEventListener('keydown', (e) => {
   if (!state.open) return;
   if (e.key === 'Escape') close();
   else if (e.key === 'ArrowLeft') step(-1);
   else if (e.key === 'ArrowRight') step(1);
 });
+
+export function LightboxHost() {
+  const s = useSyncExternalStore(subscribe, getSnapshot);
+  return <Lightbox state={s} labels={LABELS} onPrev={() => step(-1)} onNext={() => step(1)} />;
+}

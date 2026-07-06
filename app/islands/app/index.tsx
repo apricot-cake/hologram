@@ -14,13 +14,12 @@
 //   Batch 1: the four overlay hosts (context-menu / kind-menu / filter-popover / qf-pop).
 //   Batch 2: sidebar (×2 columns) / selection-bar / inspector / edit-overlay / searchbox.
 //   Batch 3a: query-chips (×2 bars) / image-tab — imperative render(model) → store+subscribe.
+//   Batch 3b: tabs / lightbox — same imperative→subscribe conversion.
 // Those islands render under App (its imports pull their modules in for the bridge assign).
 // The still-self-mounting islands below migrate in later batches.
 import './root.tsx';
 import '../settings/index.tsx';
-import '../tabs/index.tsx';
 import '../posters/index.tsx';
-import '../lightbox/index.tsx';
 import '../toolbar/index.tsx';
 import '../grid/index.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
