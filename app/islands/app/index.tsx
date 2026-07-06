@@ -10,21 +10,18 @@
 // under one bundle. Dev (vite.config.mjs) serves this same file as a module via the
 // island <script> rewrite (islands/app.js → /islands/app/index.tsx).
 // Unified root (最終形B DoD: 島 root 群の1本統合). Islands migrate under this ONE
-// createRoot in batches — see app/App.tsx for the roster. Batch 1: the four overlay
-// hosts (context-menu / kind-menu / filter-popover / qf-pop) now render under root.tsx
-// instead of each self-mounting, so their index.tsx entries are gone.
+// createRoot in batches — see app/App.tsx for the roster. root.tsx mounts it.
+//   Batch 1: the four overlay hosts (context-menu / kind-menu / filter-popover / qf-pop).
+//   Batch 2: sidebar (×2 columns) / selection-bar / inspector / edit-overlay / searchbox.
+// Those islands' index.tsx entries are gone (App renders their components directly). The
+// still-self-mounting islands below migrate in later batches.
 import './root.tsx';
 import '../settings/index.tsx';
-import '../sidebar/index.tsx';
-import '../selection-bar/index.tsx';
 import '../query-chips/index.tsx';
 import '../tabs/index.tsx';
-import '../searchbox/index.tsx';
 import '../posters/index.tsx';
 import '../lightbox/index.tsx';
 import '../toolbar/index.tsx';
-import '../inspector/index.tsx';
-import '../edit-overlay/index.tsx';
 import '../grid/index.tsx';
 import '../image-tab/index.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
