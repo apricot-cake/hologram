@@ -3,13 +3,11 @@
 // badge, the grid density classes, the inspected highlight (model-driven via
 // modelOf), and ALL event delegation on #posterGrid (click → info/tag/open,
 // contextmenu → menu). Host attach/detach + flushSync semantics live in the
-// shared wireGridIsland (_shared/VirtualGrid.tsx).
-import { wireGridIsland } from '../_shared/VirtualGrid.tsx';
+// shared GridMount (_shared/VirtualGrid.tsx). Rendered under the single App root
+// (app/App.tsx renders <PosterGrid/>).
+import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
 
-wireGridIsland({
-  bridge: window.corpusPosterGrid,
-  containerId: 'posterGrid',
-  hostId: 'posterGridReact',
-  renderHost: (model) => <PostersHost model={model} />,
-});
+export function PosterGrid() {
+  return <GridMount bridge={window.corpusPosterGrid} containerId="posterGrid" hostId="posterGridReact" renderHost={(model) => <PostersHost model={model} />} />;
+}

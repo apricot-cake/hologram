@@ -7,7 +7,9 @@ import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
+import { PosterGrid } from '../posters/index.tsx';
 import { QfPopHost } from '../qf-pop/QfPop.tsx';
+import { PostGrid } from '../grid/index.tsx';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { SelectionBar } from '../selection-bar/SelectionBar.tsx';
@@ -100,6 +102,11 @@ export function App() {
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>
+      {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
+          #posterGrid) with flushSync + host-attach preserved (GridMount), because viewer
+          still blanket-clears the container on the empty push. */}
+      <PostGrid />
+      <PosterGrid />
     </>
   );
 }

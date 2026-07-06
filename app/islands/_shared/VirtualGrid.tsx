@@ -10,8 +10,7 @@
 // stale at that moment, the visible window is computed wrong and the grid renders
 // blank. So scroll state is (a) initialized from the real scroller, (b) updated
 // by the scroll listener, and (c) force re-synced on every itemsKey change.
-import { flushSync } from 'react-dom';
-import { createRoot } from 'react-dom/client';
+import { createPortal, flushSync } from 'react-dom';
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
@@ -123,31 +122,55 @@ export function VirtualGridHost({ model, cell }: { model: CorpusGridModel; cell:
   return <ModelCtx.Provider value={model}>{gridEl}</ModelCtx.Provider>;
 }
 
-// Island wiring shared by every virtualized grid: React does NOT root on the
-// container itself — viewer.js may still blanket-clear it (empty state), and
-// React must never watch its managed nodes vanish underneath it. So the island
-// renders into its OWN host <div> and attaches/detaches that host as a whole.
-// Renders are flushed SYNCHRONOUSLY (flushSync): viewer.js relies on a render()
-// having fully committed before its next line runs (e.g. restoring scrollTop
-// right after a push). Bridge pushes always originate outside React (viewer.js),
-// so flushSync is legal here.
-export function wireGridIsland({ bridge, containerId, hostId, renderHost }: { bridge: CorpusGridBridge; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
-  const host = document.createElement('div');
-  host.id = hostId;
-  host.style.width = '100%';
-  const root = createRoot(host);
+// Shared mount for every virtualized grid — a component under the single App root now
+// (app/App.tsx renders <PostGrid/> / <PosterGrid/>). React does NOT portal into the
+// container itself: viewer.js still blanket-clears it (grid.innerHTML='' on the empty
+// push), and React must never watch its managed nodes vanish underneath it. So the grid
+// renders into its OWN host <div>, attached/detached as a whole, and React portals the
+// masonry into that host.
+//
+// Renders are flushed SYNCHRONOUSLY (flushSync): viewer.js (outside React) relies on a
+// push having fully committed before its next line runs (e.g. restoring scrollTop right
+// after a push). flushSync is legal because every bridge push originates outside React.
+// The bridge returns a FRESH model ref on each render/repaint/patch ({...model, paint:++}),
+// so setModel always re-renders — paint bumps make visible cells re-read live viewer state
+// (selection/clip/inspected via modelOf); itemsKey changes reset the positioner.
+export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: CorpusGridBridge; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  if (!hostRef.current) {
+    const h = document.createElement('div');
+    h.id = hostId;
+    h.style.width = '100%';
+    hostRef.current = h;
+  }
+  const host = hostRef.current;
+  const [model, setModel] = useState<CorpusGridModel | null>(null);
 
-  const sync = () => {
-    const model = bridge.get();
-    if (model) {
-      if (!host.isConnected) (document.getElementById(containerId) as HTMLElement).appendChild(host);
-      flushSync(() => root.render(renderHost(model)));
-    } else {
-      flushSync(() => root.render(null));
-      host.remove();
+  useEffect(() => {
+    // Attach the host to the container BEFORE rendering into it — masonic measures
+    // offsetWidth on mount, and a detached host measures 0 (the blank-grid trap).
+    const attach = () => {
+      const c = document.getElementById(containerId);
+      if (c && !host.isConnected) c.appendChild(host);
+    };
+    const sync = () => {
+      const m = bridge.get();
+      if (m) {
+        attach();
+        flushSync(() => setModel(m));
+      } else {
+        flushSync(() => setModel(null));
+        host.remove(); // viewer's following grid.innerHTML='' then has nothing of ours to clear
+      }
+    };
+    const unsub = bridge.subscribe(sync);
+    // Catch a model pushed before this effect ran — plain setState (effect-safe, no flushSync).
+    if (bridge.get()) {
+      attach();
+      setModel(bridge.get());
     }
-  };
-  bridge.subscribe(sync);
-  // Catch a model pushed before this island loaded (dev: deferred ES module).
-  if (bridge.isActive()) sync();
+    return unsub;
+  }, [bridge, containerId, host]);
+
+  return model ? createPortal(renderHost(model), host) : null;
 }

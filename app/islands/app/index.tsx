@@ -4,23 +4,21 @@
 // is bundled ONCE instead of duplicated per island. React stays externalized to
 // vendor-react.js.
 //
-// This file is the source of truth for which islands exist. Each island module is
-// side-effect only: on load it assigns its window.corpus* bridge and idempotently
-// mounts (mounted-guards make re-entry safe), so importing them here mounts them all
-// under one bundle. Dev (vite.config.mjs) serves this same file as a module via the
-// island <script> rewrite (islands/app.js → /islands/app/index.tsx).
-// Unified root (最終形B DoD: 島 root 群の1本統合). Islands migrate under this ONE
-// createRoot in batches — see app/App.tsx for the roster. root.tsx mounts it.
-//   Batch 1: the four overlay hosts (context-menu / kind-menu / filter-popover / qf-pop).
-//   Batch 2: sidebar (×2 columns) / selection-bar / inspector / edit-overlay / searchbox.
-//   Batch 3a: query-chips (×2 bars) / image-tab — imperative render(model) → store+subscribe.
-//   Batch 3b: tabs / lightbox — same imperative→subscribe conversion.
-//   Batch 4: settings (modal) / toolbar (9 controls → portals).
-// Those islands render under App (its imports pull their modules in for the bridge assign).
-// The still-self-mounting islands below (the two virtualized grids) migrate last.
+// The renderer's single React root (最終形B DoD: 島 root 群の1本統合 — COMPLETE). root.tsx
+// creates ONE createRoot(#corpusAppRoot) and renders app/App.tsx, which is the source of
+// truth for the island roster: every island renders under that one root (container-mounted
+// ones via createPortal into their viewer-owned static container; body-level overlays as
+// fixed children). Each island still owns only RENDERING and reads its state from a
+// window.corpus* bridge — viewer.js keeps the logic/state + all event delegation. The
+// window.corpus* bridge assignments happen as a side effect of App.tsx importing each
+// island module, before viewer.js (imported LAST below) runs.
+//
+// Migrated in verifiable batches: 1=overlays, 2=sidebar/selection-bar/inspector/edit-
+// overlay/searchbox, 3a=query-chips/image-tab, 3b=tabs/lightbox, 4=settings/toolbar,
+// 5=the two virtualized grids (GridMount keeps flushSync + host-attach). Dev
+// (vite.config.mjs) serves this same file as a module via the island <script> rewrite
+// (islands/app.js → /islands/app/index.tsx).
 import './root.tsx';
-import '../posters/index.tsx';
-import '../grid/index.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its
 // body `await`s corpusI18n so it stays deferred behind the synchronous island
