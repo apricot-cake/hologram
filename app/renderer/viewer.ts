@@ -398,7 +398,7 @@
   setText('confirmSkipText', MSG.confirmSkip);
 
   // Edit overlay labels are now passed directly in the corpusEditOverlay model (see
-  // tagSelectedBtn below) — no static DOM to set text on anymore.
+  // openTagSelectedOverlay below) — no static DOM to set text on anymore.
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
   // (labels, thumb, on-state) is rendered by the toolbar island; viewer only keeps
@@ -3265,7 +3265,7 @@
   });
 
   // --- Edit overlay logic (bulk "add tags to selection") ---
-  // editTags is a STAGING list (nothing persists until Save — see tagSelectedBtn/
+  // editTags is a STAGING list (nothing persists until Save — see openTagSelectedOverlay/
   // onSave below); editingRecords holds the selected posts' real records to write to.
   let editingRecords: CorpusPost[] = [];
   let editTags: string[] = [];
@@ -3274,8 +3274,8 @@
   // groupedTagVocab moved to tags.js (corpusTags wiring above).
 
   // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
-  // staging-list mutation. Not persisted yet — Save (see tagSelectedBtn below) is the
-  // only thing that writes editTags out to editingRecords.
+  // staging-list mutation. Not persisted yet — Save (see openTagSelectedOverlay below) is
+  // the only thing that writes editTags out to editingRecords.
   function refreshEditOverlayFields() {
     window.corpusEditOverlay.refresh({ tags: editTags, ...inspectorTagPickerData(editTags, editingRecords, 'post') });
   }
@@ -3319,21 +3319,45 @@
   });
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
+  // #selectionBar buttons + count are React-owned now (the selection-bar island renders
+  // them from updateSelectionBar's model via window.corpusSelectionBar). viewer keeps the
+  // container (show/hide) and this ONE delegated click handler that dispatches by data-act
+  // — the island reproduces the button IDs so scripts/_verify-select.js's
+  // getElementById(...).click() still bubbles here.
   const selectionBar = byId('selectionBar');
-  const selectAllBtn = btnById('selectAllBtn');
-  const tagSelectedBtn = btnById('tagSelectedBtn');
-  const folderSelectedBtn = btnById('folderSelectedBtn');
-  const groupSelectedBtn = btnById('groupSelectedBtn');
-  const deleteSelectedBtn = btnById('deleteSelectedBtn');
-  const cancelSelectBtn = btnById('cancelSelectBtn');
-  const selectedCountEl = byId('selectedCount');
-
-  selectAllBtn.textContent = MSG.selectAll;
-  tagSelectedBtn.textContent = MSG.tagSelected;
-  folderSelectedBtn.textContent = MSG.folderSelected;
-  groupSelectedBtn.textContent = MSG.groupSelected;
-  deleteSelectedBtn.textContent = MSG.deleteSelected;
-  cancelSelectBtn.textContent = MSG.cancelSelect;
+  selectionBar.addEventListener('click', (e) => {
+    const btn = closestOf(e, '[data-act]');
+    if (!btn) return;
+    switch (btn.dataset.act) {
+      case 'selectAll':
+        toggleSelectAll();
+        break;
+      case 'tag':
+        openTagSelectedOverlay();
+        break;
+      case 'folder': {
+        // フォルダに追加: open the folder picker for the whole selection (no default
+        // folder anymore — you choose the destination, same as a card's 📁).
+        if (!CF()) return;
+        e.stopPropagation(); // don't let the document outside-click handler close the menu we're opening
+        const recs = selectedRecords();
+        const ids = recs.map((r) => r.captureId).filter(Boolean);
+        if (!ids.length) return;
+        const r = btn.getBoundingClientRect();
+        showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
+        break;
+      }
+      case 'group':
+        groupSelected();
+        break;
+      case 'delete':
+        requestDeleteSelected();
+        break;
+      case 'cancel':
+        clearSelection();
+        break;
+    }
+  });
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
@@ -3346,7 +3370,7 @@
 
   // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
   // merged into each selected record's existing tags (nothing is replaced).
-  tagSelectedBtn.addEventListener('click', () => {
+  function openTagSelectedOverlay() {
     const records = selectedRecords();
     if (!records.length) return;
     editingRecords = records;
@@ -3416,19 +3440,7 @@
       },
     });
     byId('editOverlay').classList.add('show');
-  });
-
-  // フォルダに追加: open the folder picker for the whole selection (no default
-  // folder anymore — you choose the destination, same as a card's 📁).
-  folderSelectedBtn.addEventListener('click', (e) => {
-    if (!CF()) return;
-    e.stopPropagation(); // don't let the document outside-click handler close the menu we're opening
-    const recs = selectedRecords();
-    const ids = recs.map((r) => r.captureId).filter(Boolean);
-    if (!ids.length) return;
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
-  });
+  }
 
   function clearSelection() {
     selectedSet.clear();
@@ -3437,23 +3449,33 @@
     updateSelectionBar();
   }
 
+  // Build the #selectionBar model (labels / count / disabled) and push it to the island.
+  // The container show/hide stays viewer's — React owns only the children.
   function updateSelectionBar() {
     const count = selectedSet.size;
     selectionBar.style.display = count > 0 ? '' : 'none';
-    selectedCountEl.textContent = MSG.selectedCount(count);
-    deleteSelectedBtn.disabled = count === 0;
-    // Manual grouping needs at least two selected cards (groups).
-    groupSelectedBtn.disabled = viewGroups.filter((g) => selectedSet.has(postIdKey(g.rep))).length < 2;
     const allSelected = viewGroups.length > 0 && viewGroups.every((g) => selectedSet.has(postIdKey(g.rep)));
-    selectAllBtn.textContent = allSelected ? MSG.deselectAll : MSG.selectAll;
+    window.corpusSelectionBar.render({
+      count,
+      countLabel: MSG.selectedCount(count),
+      selectAllLabel: allSelected ? MSG.deselectAll : MSG.selectAll,
+      // Manual grouping needs at least two selected cards (groups).
+      groupDisabled: viewGroups.filter((g) => selectedSet.has(postIdKey(g.rep))).length < 2,
+      deleteDisabled: count === 0,
+      labels: {
+        tag: MSG.tagSelected,
+        folder: MSG.folderSelected,
+        group: MSG.groupSelected,
+        delete: MSG.deleteSelected,
+        cancel: MSG.cancelSelect,
+      },
+    });
   }
-
-  cancelSelectBtn.addEventListener('click', clearSelection);
 
   // Manual grouping: merge every record of the selected cards into one persisted
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
-  groupSelectedBtn.addEventListener('click', () => {
+  function groupSelected() {
     const members: any[] = [];
     viewGroups.forEach((g) => {
       if (selectedSet.has(postIdKey(g.rep))) members.push(...g.records.map((r) => r.captureId).filter(Boolean));
@@ -3470,9 +3492,9 @@
     renderPosts(true);
     updateSelectionBar();
     showToast(MSG.grouped);
-  });
+  }
 
-  selectAllBtn.addEventListener('click', () => {
+  function toggleSelectAll() {
     const allSelected = viewGroups.every((g) => selectedSet.has(postIdKey(g.rep)));
     if (allSelected) {
       selectedSet.clear();
@@ -3481,7 +3503,7 @@
     }
     syncSelectionClasses();
     updateSelectionBar();
-  });
+  }
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
@@ -3519,7 +3541,7 @@
     sb.select();
   });
 
-  deleteSelectedBtn.addEventListener('click', () => {
+  function requestDeleteSelected() {
     if (selectedSet.size === 0) return;
     pendingDeleteGroup = null;
     byId('confirmMsg').textContent = MSG.confirmDeleteSelected(selectedSet.size);
@@ -3527,7 +3549,7 @@
     setConfirmKeywordMode(false);
     byId('confirmOverlay').classList.add('show');
     pendingBulkDelete = true;
-  });
+  }
 
   let pendingBulkDelete = false;
 

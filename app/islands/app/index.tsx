@@ -11,6 +11,7 @@
 // island <script> rewrite (islands/app.js → /islands/app/index.tsx).
 import '../settings/index.tsx';
 import '../sidebar/index.tsx';
+import '../selection-bar/index.tsx';
 import '../query-chips/index.tsx';
 import '../tabs/index.tsx';
 import '../searchbox/index.tsx';

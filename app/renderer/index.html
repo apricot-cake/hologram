@@ -1918,16 +1918,14 @@
            sidebar's タグ/作者 sections + search, settings moved to the gear) -->
       <div class="tab-controls active" id="controls-posts">
         <!-- Selection bar: pinned at the very top of the sidebar (outside the
-             scroll area) so the bulk actions stay reachable while scrolling. -->
-        <div class="selection-bar" id="selectionBar" style="display:none;">
-          <span class="post-count" id="selectedCount"></span>
-          <button class="btn-outline" id="selectAllBtn"></button>
-          <button class="btn-outline" id="tagSelectedBtn"></button>
-          <button class="btn-outline" id="folderSelectedBtn"></button>
-          <button class="btn-outline" id="groupSelectedBtn"></button>
-          <button class="btn-danger" id="deleteSelectedBtn"></button>
-          <button class="btn-outline" id="cancelSelectBtn"></button>
-        </div>
+             scroll area) so the bulk actions stay reachable while scrolling.
+             React-owned now: the selection-bar island (app/islands/selection-bar)
+             renders the buttons + count from viewer.js's updateSelectionBar via
+             window.corpusSelectionBar. This container stays viewer's: it owns the
+             show/hide (display) and a delegated click handler that dispatches by
+             data-act; the island reproduces the button IDs so verify scripts that
+             click by id keep working. -->
+        <div class="selection-bar" id="selectionBar" style="display:none;"></div>
         <div class="sb-scroll">
         <!-- Browse-mode switch: ライブラリ（投稿グリッド）↔ 投稿者（投稿者グリッド）。
              サイドバー先頭に常設（両モードで表示・body.browse-posters の非表示対象に入れない）。
@@ -2552,6 +2550,7 @@
        post-mode filter-row column (#filterRows). viewer.js calls render(model); the
        sidebar island renders the rows. Before viewer.js. -->
   <script src="sidebar.js"></script>
+  <script src="selection-bar.js"></script>
   <script src="about-icon.js"></script>
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React

@@ -322,6 +322,23 @@ declare global {
     getPoster(): CorpusPosterSidebarModel | null;
     subscribePoster(cb: () => void): CorpusUnsubscribe;
   }
+
+  // ---- renderer/selection-bar.js — #selectionBar bulk-action bar. viewer builds the
+  // model in updateSelectionBar(); the island renders the buttons + count. Clicks route
+  // through viewer's delegated #selectionBar handler (data-act), so no callbacks here. ----
+  interface CorpusSelectionBarModel {
+    count: number;
+    countLabel: string;
+    selectAllLabel: string; // toggles 全選択 ⇄ 選択解除
+    groupDisabled: boolean;
+    deleteDisabled: boolean;
+    labels: { tag: string; folder: string; group: string; delete: string; cancel: string };
+  }
+  interface CorpusSelectionBar {
+    render(model: CorpusSelectionBarModel | null): void;
+    get(): CorpusSelectionBarModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
   interface CorpusEditOverlay {
     open(model: Omit<CorpusEditOverlayModel, 'openId'>): void;
     refresh(partial: Record<string, unknown>): void;
@@ -384,6 +401,7 @@ declare global {
     corpusInspector: CorpusInspector;
     corpusEditOverlay: CorpusEditOverlay;
     corpusSidebar: CorpusSidebar;
+    corpusSelectionBar: CorpusSelectionBar;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
     corpusTabs: CorpusTabsIsland;
