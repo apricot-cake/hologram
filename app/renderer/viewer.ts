@@ -376,7 +376,7 @@
   // tooltips) are rendered by the toolbar island now. The browse toggle's old
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
-  setText('sbPosterSortTitle', MSG.sbPosterSortTitle);
+  // #sbPosterSortTitle is island-owned now too (toolbar SectionTitle) — no static setText.
   // #posterFilterRows title + row labels are model-driven now — the poster sidebar island
   // renders them from buildPosterSidebarModel (window.corpusSidebar poster channel). No
   // static setText here (mirror of the post-side #filterRows note above).
@@ -406,8 +406,8 @@
   // (#sbViewTitle / #sbLayoutTitle / #sbPosterLayoutTitle) are island-owned too now —
   // they name the current mode/layout from the store (SectionTitle), so viewer no
   // longer writes them (writing here would race the island after a language reload).
-  setText('sbSearchTitle', MSG.sbSearchTitle);
-  setText('sbSortTitle', MSG.sbSortTitle);
+  // #sbSearchTitle / #sbSortTitle are island-owned now too (toolbar SectionTitle) — no
+  // static setText (writing here would race the island after a language reload).
   setText('activebarLabel', MSG.activebarLabel);
   setText('qbEmptyHint', MSG.qbEmptyHint);
   setText('posterQbEmptyHint', MSG.qbEmptyHint);
@@ -2147,19 +2147,23 @@
     window.__corpusImageTabModel = model;
     if (window.corpusImageTab) window.corpusImageTab.render(model);
   }
+  // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
+  // — the class ⟺ an image tab is showing). viewer keeps only this local flag for the
+  // re-entrancy guard + the Esc check, so it no longer touches document.body.classList.
+  let imageTabShowing = false;
   function showImageTab(t) {
-    document.body.classList.add('image-tab-active');
-    renderImageTabView(t);
+    imageTabShowing = true;
+    renderImageTabView(t); // pushes the model → ImageTabHost adds body.image-tab-active
     // The inspector opens with the view (Eagle-style detail screen).
     if (t._g) showDetail(t._g);
     else closeDetail();
     document.title = (t.title || MSG.imgTabFallback) + ' — Corpus';
   }
   function hideImageTabView() {
-    if (!document.body.classList.contains('image-tab-active')) return;
-    document.body.classList.remove('image-tab-active');
+    if (!imageTabShowing) return;
+    imageTabShowing = false;
     window.__corpusImageTabModel = null;
-    if (window.corpusImageTab) window.corpusImageTab.render(null);
+    if (window.corpusImageTab) window.corpusImageTab.render(null); // → ImageTabHost removes the class
     closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
   }
   // Open a post group as its own tab. Background by default (browser-like:
@@ -3202,7 +3206,7 @@
     'keydown',
     (e) => {
       if (e.key !== 'Escape') return;
-      const inImageTab = document.body.classList.contains('image-tab-active');
+      const inImageTab = imageTabShowing;
       if (byId('postDetail').hidden && !inImageTab) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
@@ -3615,12 +3619,12 @@
     // when the click path drove us the value is already equal (no-op); when an internal
     // setter drove us, browseMode === mode by now so the subscribe handler's guard skips.
     window.corpusStore.set('browseMode', mode);
-    // The active state + glass thumb are React-owned (BrowseToggle island, reacting to the
-    // corpusStore 'browseMode' change). We only run the heavy switch below. Toggling the
-    // body class changes which toolbars are visible → the sidebar width (scrollbar) → the
-    // toggle's geometry; the island's ResizeObserver picks that up and re-slides its own
-    // thumb, so there is nothing to measure here.
-    document.body.classList.toggle('browse-posters', mode === 'posters'); // CSS hides the inactive grid
+    // The active state + glass thumb AND body.browse-posters (CSS hides the inactive grid)
+    // are React-owned now — the BrowseToggle island / App's ShellClasses both react to this
+    // corpusStore 'browseMode' change (ShellClasses toggles the body class in a
+    // useLayoutEffect, before paint = no flash). We only run the heavy switch below.
+    // (Changing which toolbars are visible shifts the sidebar width → the toggle's geometry;
+    // the island's ResizeObserver re-slides its own thumb, so there is nothing to measure here.)
     closeDetail(); // a stale post/poster detail shouldn't survive the switch
     if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)

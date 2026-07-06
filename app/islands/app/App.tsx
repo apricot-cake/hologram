@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
@@ -42,9 +43,26 @@ function Portal({ id, children }: { id: string; children: ReactNode }) {
   return el ? createPortal(children, el) : null;
 }
 
+// Shell-level body classes that React owns (viewer no longer touches document.body for
+// these). browse-posters is driven by the corpusStore 'browseMode' key (viewer sets the
+// store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
+// flash. (image-tab-active is owned by ImageTabHost from its model; modal-open stays in
+// viewer — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
+const subBrowseMode = (cb: () => void) => window.corpusStore.subscribe('browseMode', cb);
+const getBrowseMode = () => window.corpusStore.get('browseMode') as string;
+function ShellClasses() {
+  const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
+  useLayoutEffect(() => {
+    document.body.classList.toggle('browse-posters', mode === 'posters');
+  }, [mode]);
+  return null;
+}
+
 export function App() {
   return (
     <>
+      {/* Shell body classes React owns (viewer no longer sets them). */}
+      <ShellClasses />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
       <ContextMenuHost />
       <KindMenuHost />

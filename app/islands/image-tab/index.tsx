@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { ImageTab } from './ImageTab.tsx';
 import type { ImageTabModel } from './ImageTab.tsx';
 
@@ -33,6 +33,12 @@ window.corpusImageTab = { render };
 
 export function ImageTabHost() {
   const m = useSyncExternalStore(subscribe, getSnapshot);
+  // body.image-tab-active ⟺ an image tab is showing. Owned here (from model presence) so
+  // viewer no longer touches document.body.classList. useLayoutEffect = toggled before
+  // paint, in the same commit that renders the view → no flash.
+  useLayoutEffect(() => {
+    document.body.classList.toggle('image-tab-active', !!m);
+  }, [m]);
   return m ? <ImageTab model={m} /> : null;
 }
 

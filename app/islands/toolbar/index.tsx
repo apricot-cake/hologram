@@ -76,10 +76,14 @@ export function Toolbar() {
       <DensityMount id="densityToggle" />
       <DensityMount id="posterDensityToggle" storeKey="posterView" dataAttr="data-pview" defaultView="card" />
       <BrowseMount />
-      {/* Section titles ("ビュー" / "レイアウト") — static; island-rendered so viewer's setText stays dropped. */}
+      {/* Section titles ("ビュー" / "レイアウト" / "検索" / "並び順") — static; island-rendered
+          so viewer's setText stays dropped (no imperative-drawing drift). */}
       {into('sbViewTitle', <SectionTitle baseKey="sbViewTitle" />)}
       {into('sbLayoutTitle', <SectionTitle baseKey="sbLayoutTitle" />)}
       {into('sbPosterLayoutTitle', <SectionTitle baseKey="sbLayoutTitle" />)}
+      {into('sbSearchTitle', <SectionTitle baseKey="sbSearchTitle" />)}
+      {into('sbSortTitle', <SectionTitle baseKey="sbSortTitle" />)}
+      {into('sbPosterSortTitle', <SectionTitle baseKey="sbPosterSortTitle" />)}
       <SortMount id="sortSelect" storeKey="sortPost" options={SORT_POST} />
       <SortMount id="posterSortSelect" storeKey="sortPoster" options={SORT_POSTER} />
     </>
