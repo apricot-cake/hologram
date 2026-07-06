@@ -363,7 +363,6 @@ declare global {
     open(): void;
     close(): void;
     isOpen(): boolean;
-    mount(rootEl?: HTMLElement | null): void;
   }
   interface CorpusTabsIsland {
     render(model?: any): void;

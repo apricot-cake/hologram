@@ -15,12 +15,11 @@
 //   Batch 2: sidebar (×2 columns) / selection-bar / inspector / edit-overlay / searchbox.
 //   Batch 3a: query-chips (×2 bars) / image-tab — imperative render(model) → store+subscribe.
 //   Batch 3b: tabs / lightbox — same imperative→subscribe conversion.
+//   Batch 4: settings (modal) / toolbar (9 controls → portals).
 // Those islands render under App (its imports pull their modules in for the bridge assign).
-// The still-self-mounting islands below migrate in later batches.
+// The still-self-mounting islands below (the two virtualized grids) migrate last.
 import './root.tsx';
-import '../settings/index.tsx';
 import '../posters/index.tsx';
-import '../toolbar/index.tsx';
 import '../grid/index.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

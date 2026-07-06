@@ -11,9 +11,11 @@ import { QfPopHost } from '../qf-pop/QfPop.tsx';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { SelectionBar } from '../selection-bar/SelectionBar.tsx';
+import { SettingsHost } from '../settings/index.tsx';
 import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+import { Toolbar } from '../toolbar/index.tsx';
 import { t } from '../_shared/i18n.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
@@ -90,6 +92,13 @@ export function App() {
           <line x1="16.5" y1="16.5" x2="21" y2="21" />
         </svg>
         <SearchBox placeholder={t('searchPlaceholder')} />
+      </Portal>
+      {/* Toolbar controls (search mode / density / browse / section titles / sort selects)
+          — Toolbar portals each into its own container. */}
+      <Toolbar />
+      {/* Settings modal (open/closed via window.corpusSettings; the gear in viewer opens it). */}
+      <Portal id="settingsRoot">
+        <SettingsHost />
       </Portal>
     </>
   );
