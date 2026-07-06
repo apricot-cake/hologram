@@ -1,34 +1,40 @@
-import { createRoot } from 'react-dom/client';
-import type { Root } from 'react-dom/client';
+import { useSyncExternalStore } from 'react';
 import { ImageTab } from './ImageTab.tsx';
 import type { ImageTabModel } from './ImageTab.tsx';
 
 // React-owned image-tab detail view (#imageTabView). viewer.js owns the tab
 // object (type:'image'), resolves its records into gallery items and calls
 // render(model); this island owns zoom/pan (react-zoom-pan-pinch), prev/next
-// painting, and the ←/→ keys while an image tab is the active view.
+// painting, and the ←/→ keys while an image tab is the active view. It lives under
+// the single App root now: render() stores the model + notifies, and ImageTabHost
+// (portaled into #imageTabView by App.tsx) subscribes. The bridge is assigned when
+// this module loads (before viewer.js runs), so the old stash-replay is gone.
 
-let root: Root | null = null;
 let model: ImageTabModel | null = null;
-
-function ensureRoot() {
-  if (root) return root;
-  const el = document.getElementById('imageTabView');
-  if (!el) return null;
-  root = createRoot(el);
-  return root;
-}
+const subs = new Set<() => void>();
+const subscribe = (cb: () => void) => {
+  subs.add(cb);
+  return () => subs.delete(cb);
+};
+const getSnapshot = () => model;
 
 function render(m: ImageTabModel | null | undefined) {
   model = m || null;
-  const r = ensureRoot();
-  if (r) r.render(model ? <ImageTab model={model} /> : null);
+  for (const cb of [...subs]) {
+    try {
+      cb();
+    } catch (_e) {
+      /* ignore */
+    }
+  }
 }
 
 window.corpusImageTab = { render };
 
-// Script order is viewer.js → islands: replay a model pushed before we loaded.
-if (window.__corpusImageTabModel !== undefined) render(window.__corpusImageTabModel);
+export function ImageTabHost() {
+  const m = useSyncExternalStore(subscribe, getSnapshot);
+  return m ? <ImageTab model={m} /> : null;
+}
 
 // ←/→ step through the group's images while an image tab is the active view.
 // Yields to typing, overlays and the lightbox (mirrors the viewer's guards).

@@ -13,17 +13,16 @@
 // createRoot in batches — see app/App.tsx for the roster. root.tsx mounts it.
 //   Batch 1: the four overlay hosts (context-menu / kind-menu / filter-popover / qf-pop).
 //   Batch 2: sidebar (×2 columns) / selection-bar / inspector / edit-overlay / searchbox.
-// Those islands' index.tsx entries are gone (App renders their components directly). The
-// still-self-mounting islands below migrate in later batches.
+//   Batch 3a: query-chips (×2 bars) / image-tab — imperative render(model) → store+subscribe.
+// Those islands render under App (its imports pull their modules in for the bridge assign).
+// The still-self-mounting islands below migrate in later batches.
 import './root.tsx';
 import '../settings/index.tsx';
-import '../query-chips/index.tsx';
 import '../tabs/index.tsx';
 import '../posters/index.tsx';
 import '../lightbox/index.tsx';
 import '../toolbar/index.tsx';
 import '../grid/index.tsx';
-import '../image-tab/index.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its
 // body `await`s corpusI18n so it stays deferred behind the synchronous island

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Chips } from './Chips.tsx';
 import type { ChipsModel, QbCluster, QbItem } from './Chips.tsx';
 
@@ -100,27 +99,50 @@ function AnimatedChips({ model }: { model: ChipsModel | null | undefined }) {
   return <Chips model={display} />;
 }
 
-const roots = new Map(); // container id → React root
-
-function rootFor(id: string) {
-  let r = roots.get(id);
-  if (r) return r;
-  const el = document.getElementById(id);
-  if (!el) return null;
-  r = createRoot(el);
-  roots.set(id, r);
-  return r;
+// ── per-container store (viewer pushes via render(id, model); the host subscribes) ──
+// Both bars (#queryChips / #posterQueryChips) live under the single App root now, each
+// portaled by a ChipsHost keyed by container id. viewer.js's createQueryBuilder still
+// owns state/data + all delegation; render() just stores the model and notifies. The
+// bridge is assigned when this module loads (before viewer.js runs), so the old
+// __corpusQueryChips stash-replay is gone — render() always reaches a live subscriber.
+const models = new Map<string, ChipsModel>();
+type Channel = { get: () => ChipsModel | null; subscribe: (cb: () => void) => () => void; notify: () => void };
+const channels = new Map<string, Channel>();
+function channel(id: string): Channel {
+  let c = channels.get(id);
+  if (!c) {
+    const subs = new Set<() => void>();
+    c = {
+      get: () => models.get(id) ?? null,
+      subscribe: (cb) => {
+        subs.add(cb);
+        return () => subs.delete(cb);
+      },
+      notify: () => {
+        for (const cb of [...subs]) {
+          try {
+            cb();
+          } catch (_e) {
+            /* ignore */
+          }
+        }
+      },
+    };
+    channels.set(id, c);
+  }
+  return c;
 }
 
 function render(id: string, model: ChipsModel) {
-  const r = rootFor(id);
-  if (r) r.render(<AnimatedChips model={model} />);
+  models.set(id, model);
+  channel(id).notify();
 }
 
 window.corpusQueryChips = { render };
 
-// Script order is viewer.js → islands, so viewer.js may have run render() (and
-// stashed the latest model per container in window.__corpusQueryChips) before
-// this bundle finished loading. Replay whatever is pending.
-const pending = window.__corpusQueryChips;
-if (pending) for (const id of Object.keys(pending)) render(id, pending[id]);
+// One host per container id — portaled into #queryChips / #posterQueryChips by App.tsx.
+export function ChipsHost({ id }: { id: string }) {
+  const ch = channel(id); // cached per id → stable subscribe/get refs for useSyncExternalStore
+  const model = useSyncExternalStore(ch.subscribe, ch.get);
+  return model ? <AnimatedChips model={model} /> : null;
+}

@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
 import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
+import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { QfPopHost } from '../qf-pop/QfPop.tsx';
+import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { SelectionBar } from '../selection-bar/SelectionBar.tsx';
 import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
@@ -57,6 +59,18 @@ export function App() {
       </Portal>
       <Portal id="editOverlayBox">
         <EditOverlay />
+      </Portal>
+      {/* Query-builder active bars (post / poster) + the image-tab detail view — each
+          was its own createRoot with an imperative render(model); now they store+notify
+          and their hosts subscribe here. */}
+      <Portal id="queryChips">
+        <ChipsHost id="queryChips" />
+      </Portal>
+      <Portal id="posterQueryChips">
+        <ChipsHost id="posterQueryChips" />
+      </Portal>
+      <Portal id="imageTabView">
+        <ImageTabHost />
       </Portal>
       <Portal id="searchWrap">
         {/* Leading magnifier icon + the react-aria ComboBox (input + suggest). */}
