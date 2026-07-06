@@ -166,8 +166,100 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
   assert('group 複数＝src 去重（shot.jpg は1回）', gi.map((i) => i.src).join() === 'stub://shot.jpg,stub://c.png');
 }
 
+// --- makeCardModel: per-card view model（濃度/学習アスペクト/選択/クリップ/フラグ/両日付） ---
+{
+  const MSG = {
+    postedOn: (d) => 'posted ' + d,
+    captured: (d) => 'cap ' + d,
+    qfThread: 'THREAD',
+    qfReply: 'REPLY',
+    qfQuote: 'QUOTE',
+    qfImage: 'IMG',
+    qfVideo: 'VID',
+    qfGif: 'GIF',
+    likes: (n) => n + ' likes',
+  };
+  const selectedSet = new Set(['sel-key']);
+  let view = 'card';
+  const aspect = { capX: '4/3' };
+  const cardModel = R.makeCardModel({
+    MSG,
+    PF_NAME: { x: 'X' },
+    formatCount: (n) => 'N' + n,
+    formatDate: (d) => 'D' + d,
+    compactDate: (d) => d.slice(0, 10),
+    fileSrc: (f, w) => f + '@' + (w || 0),
+    selectedSet,
+    isClipped: (id) => id === 'clip-cap',
+    smokeCapture: false,
+    currentView: () => view,
+    imgAspect: () => aspect,
+    tileThumbW: () => 100,
+    cardThumbW: () => 200,
+    listThumbW: () => 50,
+  });
+
+  // Base: card view, screenshot (jpeg) image, multi-image group, mixed engagement,
+  // both dates on the same calendar day, thread+quote flags.
+  const p = {
+    url: 'https://x.com/u/status/1',
+    captureId: 'capX',
+    platform: 'x',
+    displayName: 'Alice',
+    screenName: 'alice',
+    title: '',
+    text: 'hello',
+    likes: 12,
+    reposts: 0,
+    replies: 3,
+    bookmarks: 0,
+    date: '2026-04-01T10:00:00Z',
+    capturedAt: '2026-04-01T20:00:00Z',
+    isThread: true,
+    isReply: false,
+    isQuote: true,
+    mediaType: 'image',
+    shotW: 800,
+    shotH: 600,
+    tags: ['t1'],
+    image: 'shot.jpg',
+  };
+  const m = cardModel({ rep: p, records: [p], files: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'] }, 5);
+  assert('cardModel index/url/postKey', m.index === 5 && m.url === 'https://x.com/u/status/1' && m.postKey === 'capX');
+  assert('cardModel selected=false（capX は selectedSet 外）', m.selected === false && m.noUrl === false);
+  assert('cardModel engagement は非ゼロのみ（0 は null）', m.stats.likes === 'N12' && m.stats.replies === 'N3' && m.stats.reposts === null && m.stats.bookmarks === null);
+  assert('cardModel 同日は cap 日付を去重（post のみ残る）', m.footDates.post && m.footDates.post.label === '2026-04-01' && m.footDates.cap === null);
+  assert('cardModel pfName/userName/handle', m.pfName === 'X' && m.userName === 'Alice' && m.handle === '@alice');
+  assert('cardModel flags（thread/quote のみ・reply は false）', m.flags.join() === 'THREAD,QUOTE');
+  assert('cardModel mediaLabel=IMG / likesOv=MSG.likes', m.mediaLabel === 'IMG' && m.likesOv === '12 likes');
+  assert('cardModel aspRatio=shotW/shotH（card・masonry 高さ予約）', m.aspRatio === '800/600');
+  assert('cardModel nImg=4 / stackSrcs は2・3枚目のみ（幅=cardThumbW）', m.nImg === 4 && m.stackSrcs.join() === 'b.jpg@200,c.jpg@200');
+  assert('cardModel imgSrc=fileSrc(shot.jpg, cardThumbW) / hasThumb', m.imgSrc === 'shot.jpg@200' && m.hasThumb === true);
+  assert('cardModel tags 引き継ぎ', m.tags.join() === 't1');
+
+  // Body text that equals the author line is dropped (library-image dedup).
+  const p2 = { ...p, text: 'Alice' };
+  assert('cardModel body が author 名と一致→空', cardModel({ rep: p2, records: [p2], files: ['a.jpg'] }, 0).text === '');
+
+  // GIF stays full-size (w=0, no thumb) so it keeps animating.
+  const pgif = { ...p, image: 'anim.gif' };
+  assert('cardModel GIF は原寸（w=0）', cardModel({ rep: pgif, records: [pgif], files: ['anim.gif'] }, 0).imgSrc === 'anim.gif@0');
+
+  // No shotW/H → fall back to the learned aspect cache (card only).
+  const pnoshot = { ...p, shotW: 0, shotH: 0 };
+  assert('cardModel aspRatio 学習キャッシュ fallback（capX→4/3）', cardModel({ rep: pnoshot, records: [pnoshot], files: ['a.jpg'] }, 0).aspRatio === '4/3');
+
+  // Tile density: no aspect reservation; clip + selection reflected from deps.
+  view = 'tile';
+  const pclip = { ...p, captureId: 'clip-cap' };
+  const mt = cardModel({ rep: pclip, records: [pclip], files: ['a.jpg'] }, 0);
+  assert('cardModel tile は aspRatio 空・clip 反映（isClipped）', mt.aspRatio === '' && mt.clipped === true);
+  const psel = { ...p, captureId: 'sel-key' };
+  assert('cardModel selected（selectedSet 参照・live view=tile）', cardModel({ rep: psel, records: [psel], files: ['a.jpg'] }, 0).selected === true);
+}
+
 if (failed) {
   console.error(`FAIL test-records-unit: ${failed} assertion(s) red`);
   process.exit(1);
 }
-console.log('PASS test-records-unit: postKeyOf / stampPost / shape helpers / grouping / gallery / percentile all green');
+console.log('PASS test-records-unit: postKeyOf / stampPost / shape helpers / grouping / gallery / cardModel / percentile all green');

@@ -2334,79 +2334,26 @@
   // needs as primitives. The grid island renders it with the shared PostCard
   // component (live React cells via window.corpusGrid). Raw text/names are
   // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
-  function cardModel(g, i) {
-    const p = g.rep;
-    // Engagement: nonzero only (zeros are noise). Formatted here; the island
-    // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
-    const stats = {
-      likes: p.likes > 0 ? formatCount(p.likes) : null,
-      reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
-      replies: p.replies > 0 ? formatCount(p.replies) : null,
-      bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
-    };
-    // Both dates: post date bare (primary) + capture date with a 📷 mark
-    // (secondary). Deduped when they land on the same day.
-    const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
-    const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
-    const postCompact = p.date ? compactDate(p.date) : '';
-    const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
-    const footDates = {
-      post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
-      cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
-    };
-    const pfName = p.platform ? PF_NAME[p.platform] || p.platform : '';
-    const userName = p.displayName || p.screenName || p.title || '';
-    const handle = p.screenName ? `@${p.screenName}` : '';
-    // Library images carry the filename as BOTH title and text — drop the
-    // duplicate body when they match the user line.
-    const textRaw = p.text || p.title || '';
-    const text = textRaw === userName ? '' : textRaw;
-    const imgFile = densityImage(p, currentView); // tile: artwork→capture; card/list: capture→artwork
-    // GIFs stay full-size in card/list so they keep animating (thumbnailer
-    // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
-    const imgW = currentView === 'tile' ? tileThumbW() : /\.gif$/i.test(imgFile || '') ? 0 : currentView === 'list' ? listThumbW() : cardThumbW();
-    // Reserve the card image's height up front (card masonry) so columns pack
-    // right the first time — pixel size from the index, learned cache fallback.
-    const aspRatio = currentView !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && imgAspect[p.captureId] ? imgAspect[p.captureId] : '';
-    // Post-type + media flags (grid view only; CSS hides them in compact list).
-    const flags: string[] = [];
-    if (p.isThread) flags.push(MSG.qfThread);
-    if (p.isReply) flags.push(MSG.qfReply);
-    if (p.isQuote) flags.push(MSG.qfQuote);
-    const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
-    const postKey = postIdKey(p);
-    // Multi-image stack: the 2nd/3rd images ride the back sheets (real
-    // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
-    // image (GIFs too: a static flattened thumb is right for a back sheet).
-    const stackW = currentView === 'tile' ? tileThumbW() : currentView === 'list' ? listThumbW() : cardThumbW();
-    const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, stackW)) : [];
-    return {
-      index: i,
-      url: p.url || '',
-      postKey,
-      selected: selectedSet.has(postKey),
-      noUrl: !p.url,
-      clipped: !!(CF() && CF().isClipped(p.captureId)),
-      hasThumb: !!(imgFile || p.video),
-      imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
-      captureId: p.captureId || '',
-      aspRatio,
-      eager: !!SMOKE_CAPTURE,
-      platform: p.platform || '',
-      pfName,
-      nImg: g.files.length,
-      stackSrcs,
-      userName,
-      likesOv: p.likes != null ? MSG.likes(p.likes) : null,
-      handle,
-      flags,
-      mediaLabel,
-      text,
-      stats,
-      footDates,
-      tags: p.tags || [],
-    };
-  }
+  // Per-card view model (records.js makeCardModel) — the model the grid island
+  // renders. Extracted 1:1 from the old inline cardModel; runtime couplings are
+  // injected (density/aspect cache/selection as getters/refs; the psimg scheme
+  // and folder-clip flag stay viewer-owned via fileSrc / isClipped).
+  const cardModel = window.corpusRecords.makeCardModel({
+    MSG,
+    PF_NAME,
+    formatCount,
+    formatDate,
+    compactDate,
+    fileSrc,
+    selectedSet,
+    isClipped: (id) => !!(CF() && CF().isClipped(id)),
+    smokeCapture: SMOKE_CAPTURE,
+    currentView: () => currentView,
+    imgAspect: () => imgAspect,
+    tileThumbW,
+    cardThumbW,
+    listThumbW,
+  });
 
   // inPlace (was keepLimit — the renderLimit it kept is gone with the windowed
   // legacy path): true = in-place mutation re-render — reuse the grouped set

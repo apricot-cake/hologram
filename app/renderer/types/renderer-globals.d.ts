@@ -130,6 +130,27 @@ interface CorpusRecordsApi {
     buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[];
     buildGroupGalleryItems(g: CorpusPostGroup): { src: string; alt: string; video: boolean }[];
   };
+  /** Per-card view-model factory (the model PostCard.tsx renders as the grid's modelOf).
+      Runtime couplings are injected: currentView/imgAspect are getters (viewer reassigns
+      the lets), selectedSet is a live ref, isClipped/fileSrc keep folder + psimg viewer-owned.
+      Returns the PostCardModel shape (see PostCard.tsx); typed loosely here to avoid a
+      parallel interface — the island re-validates on consumption. */
+  makeCardModel(deps: {
+    MSG: any;
+    PF_NAME: Record<string, string>;
+    formatCount(n: number): string;
+    formatDate(d: string): string;
+    compactDate(d: string): string;
+    fileSrc(file: string, w?: number): string;
+    selectedSet: Set<string>;
+    isClipped(captureId: string): boolean;
+    smokeCapture: boolean;
+    currentView(): string;
+    imgAspect(): Record<string, string>;
+    tileThumbW(): number;
+    cardThumbW(): number;
+    listThumbW(): number;
+  }): (g: CorpusPostGroup, i: number) => Record<string, any>;
   /** Per-platform likes percentile (0..1) over the given population. */
   percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
   /** Pre-computes _dateMs/_capturedMs/_postKey/_quotedKey on arrival. */

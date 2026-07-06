@@ -210,6 +210,98 @@
     return { buildGalleryItems, buildGroupGalleryItems };
   }
 
+  // --- Card view model (per-card presentation derivation) ---------------------
+  // The model PostCard.tsx renders (grid modelOf). Pure field-mapping over a
+  // group + the live view density; every runtime coupling (current density,
+  // learned-aspect cache, selection set, clip flag, thumb widths, i18n messages,
+  // psimg URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
+  // rules that used to live inside renderPosts are locked here: engagement
+  // zero-suppression, both-date same-day dedup, body-text dedup vs the author
+  // line, GIF full-size (no thumb) in card/list, card-masonry height reservation
+  // (shotW/H → learned cache), and the multi-image back-stack sheets.
+  //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
+  //   selectedSet is passed by reference (const Set, mutated in place);
+  //   isClipped/fileSrc keep folder + psimg knowledge viewer-owned.
+  function makeCardModel(deps) {
+    const { MSG, PF_NAME, formatCount, formatDate, compactDate, fileSrc, selectedSet, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+    return function cardModel(g, i) {
+      const p = g.rep;
+      const view = currentView();
+      const aspectCache = imgAspect();
+      // Engagement: nonzero only (zeros are noise). Formatted here; the island
+      // owns the outline TEXT glyphs (♡ ⇄ 🗨 🔖).
+      const stats = {
+        likes: p.likes > 0 ? formatCount(p.likes) : null,
+        reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
+        replies: p.replies > 0 ? formatCount(p.replies) : null,
+        bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+      };
+      // Both dates: post date bare (primary) + capture date with a 📷 mark
+      // (secondary). Deduped when they land on the same day.
+      const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
+      const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
+      const postCompact = p.date ? compactDate(p.date) : '';
+      const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
+      const footDates = {
+        post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
+        cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
+      };
+      const pfName = p.platform ? PF_NAME[p.platform] || p.platform : '';
+      const userName = p.displayName || p.screenName || p.title || '';
+      const handle = p.screenName ? `@${p.screenName}` : '';
+      // Library images carry the filename as BOTH title and text — drop the
+      // duplicate body when they match the user line.
+      const textRaw = p.text || p.title || '';
+      const text = textRaw === userName ? '' : textRaw;
+      const imgFile = densityImage(p, view); // tile: artwork→capture; card/list: capture→artwork
+      // GIFs stay full-size in card/list so they keep animating (thumbnailer
+      // flattens GIF to a static JPEG); tile already used a thumb, so unchanged.
+      const imgW = view === 'tile' ? tileThumbW() : /\.gif$/i.test(imgFile || '') ? 0 : view === 'list' ? listThumbW() : cardThumbW();
+      // Reserve the card image's height up front (card masonry) so columns pack
+      // right the first time — pixel size from the index, learned cache fallback.
+      const aspRatio = view !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
+      // Post-type + media flags (grid view only; CSS hides them in compact list).
+      /** @type {string[]} */
+      const flags = [];
+      if (p.isThread) flags.push(MSG.qfThread);
+      if (p.isReply) flags.push(MSG.qfReply);
+      if (p.isQuote) flags.push(MSG.qfQuote);
+      const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
+      const postKey = postIdKey(p);
+      // Multi-image stack: the 2nd/3rd images ride the back sheets (real
+      // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
+      // image (GIFs too: a static flattened thumb is right for a back sheet).
+      const stackW = view === 'tile' ? tileThumbW() : view === 'list' ? listThumbW() : cardThumbW();
+      const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, stackW)) : [];
+      return {
+        index: i,
+        url: p.url || '',
+        postKey,
+        selected: selectedSet.has(postKey),
+        noUrl: !p.url,
+        clipped: isClipped(p.captureId),
+        hasThumb: !!(imgFile || p.video),
+        imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
+        captureId: p.captureId || '',
+        aspRatio,
+        eager: !!smokeCapture,
+        platform: p.platform || '',
+        pfName,
+        nImg: g.files.length,
+        stackSrcs,
+        userName,
+        likesOv: p.likes != null ? MSG.likes(p.likes) : null,
+        handle,
+        flags,
+        mediaLabel,
+        text,
+        stats,
+        footDates,
+        tags: p.tags || [],
+      };
+    };
+  }
+
   // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
   // comparison (done once per record on arrival, not per render).
   function stampPost(p) {
@@ -220,7 +312,7 @@
     return p;
   }
 
-  const api = { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, makeGroupRecords, makeGallery, percentileFn, stampPost };
+  const api = { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, makeGroupRecords, makeGallery, makeCardModel, percentileFn, stampPost };
   if (typeof window !== 'undefined') window.corpusRecords = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
