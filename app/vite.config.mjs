@@ -54,16 +54,18 @@ export default defineConfig({
   root: here,
   server: { port: 5173, strictPort: true },
   resolve: {
-    alias: {
-      // Same alias as islands/build.mjs: the CJS use-sync-external-store shim is
-      // replaced with a 1-line ESM re-export (React 18+ has the hook natively).
-      'use-sync-external-store/shim/index.js': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
-      'use-sync-external-store/shim': path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts'),
-      // The barrel imports renderer/viewer.ts via this bare specifier so the strict
-      // islands tsc project never type-checks it (checked by tsconfig.renderer.json
-      // instead); dev must resolve the same alias islands/build.mjs uses for prod.
-      'corpus-viewer-bundle': path.join(here, 'renderer', 'viewer.ts'),
-    },
+    // Array form, mirroring islands/build.mjs (dev must resolve the same specifiers the
+    // prod build does). Order matters: shim/index.js before shim.
+    alias: [
+      // The CJS use-sync-external-store shim → a 1-line ESM re-export (React 18+ has the hook).
+      { find: 'use-sync-external-store/shim/index.js', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
+      { find: 'use-sync-external-store/shim', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
+      // viewer.ts via a bare specifier so the strict islands tsc never type-checks it
+      // (tsconfig.renderer.json does); dev resolves the same alias prod uses.
+      { find: 'corpus-viewer-bundle', replacement: path.join(here, 'renderer', 'viewer.ts') },
+      // The renderer service layer, folded into the bundle: `corpus-svc:NAME` → renderer/NAME.ts.
+      { find: /^corpus-svc:(.+)$/, replacement: path.join(here, 'renderer').replace(/\\/g, '/') + '/$1.ts' },
+    ],
   },
   plugins: [react(), corpusDevHtml()],
 });

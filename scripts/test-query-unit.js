@@ -8,8 +8,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const stripTS = require('./strip-ts.js');
 
-const code = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'query.js'), 'utf8');
+const code = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'query.ts'), 'utf8'));
 global.window = {};
 // 間接 eval でグローバルスコープ実行（query.js は window.corpusQuery を生やす）。
 // biome-ignore lint/security/noGlobalEval: intentional indirect eval to load a plain window-IIFE script into the Node test scope
@@ -112,7 +113,7 @@ tFuzzy._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ�
 assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tFuzzy)(post({ text: 'ネコ' })) && fuzzyCalls.length === 2);
 
 // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・fuzzy 不適用）---
-const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.js'));
+const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.ts'));
 const predOfU = Q.makePostPredOf({
   isInCollection: () => false,
   isClipped: () => false,

@@ -37,7 +37,7 @@
     // NOTE: self-category exclusion is intentionally NOT done — picking within the same
     // category narrows the base, so those zeros sink. Values absent from the current
     // results stay listed (greyed but clickable) so you can still pick one.
-    function facetCounts(keyFn, pool) {
+    function facetCounts(keyFn, pool?) {
       const m = new Map();
       for (const p of pool || getFilteredPosts()) {
         const k = keyFn(p);
@@ -61,7 +61,7 @@
         case 'platform': {
           // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
           const hostsOf = (plat) => {
-            const set = new Set();
+            const set = new Set<string>();
             for (const p of allPosts())
               if (p.platform === plat) {
                 const h = hostOf(p.url);
@@ -71,7 +71,7 @@
           };
           const pcnt = facetCounts((p) => p.platform || '__none');
           const icnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
-          const out = [];
+          const out: any[] = [];
           for (const v of PF_ORDER) {
             out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
             if (v === 'misskey' || v === 'mastodon') {
@@ -85,7 +85,7 @@
         }
         case 'postType': {
           const cnt = facetCounts((p) => {
-            const a = [];
+            const a: any[] = [];
             if (!p.isReply && !p.isQuote && !p.isThread) a.push('post');
             if (p.isReply) a.push('reply');
             if (p.isQuote) a.push('quote');
@@ -134,7 +134,7 @@
             .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja'));
         }
         case 'poster-platform': {
-          const present = new Set(
+          const present = new Set<string>(
             namedPosters()
               .map((u) => u.platform)
               .filter(Boolean),
@@ -149,7 +149,7 @@
             .map((v) => ({ v, l: PF_NAME[v] || v, on: posterQHasValue('platform', v), count: cnt.get(v) || 0 }));
         }
         case 'poster-instance': {
-          const hosts = new Set();
+          const hosts = new Set<string>();
           for (const u of namedPosters()) if (u.instance) hosts.add(u.instance);
           const cnt = facetCounts((u) => u.instance, filteredPosters());
           return [...hosts].map((h) => ({ v: h, l: h, on: posterQHasValue('instance', h), count: cnt.get(h) || 0, facetDim: true })).sort((a, b) => b.count - a.count || a.l.localeCompare(b.l));
@@ -166,7 +166,7 @@
           // the kind only scopes which tags this flyout offers.
           const cnt = facetCounts((p) => p.tags);
           return (
-            [...new Set(allPosts().flatMap((p) => p.tags || []))]
+            [...new Set<string>(allPosts().flatMap((p) => p.tags || []))]
               .filter((t) => tagKindOf(t) === cat)
               .map((t) => ({ v: t, l: t, on: act('tag', t), type: 'tag', count: cnt.get(t) || 0, facetDim: true }))
               // Facet order: values present in the current results first (count desc),
@@ -181,11 +181,11 @@
           const item = (t) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
           // Within a list/group, present values (count desc) precede absent ones.
           const byCount = (a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
-          const allTags = [...new Set(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
+          const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
           const groups = tagGroups();
           if (!groups.length) return allTags.map(item).sort(byCount);
-          const grouped = new Set();
-          const out = [];
+          const grouped = new Set<string>();
+          const out: any[] = [];
           for (const g of groups) {
             const own = (g.tags || []).filter((t) => allTags.includes(t));
             if (!own.length) continue;
@@ -215,7 +215,7 @@
         }
         case 'hashtag': {
           const cnt = facetCounts((p) => p.hashtags);
-          const counts = {};
+          const counts: Record<string, number> = {};
           allPosts().forEach((p) =>
             (p.hashtags || []).forEach((h) => {
               counts[h] = (counts[h] || 0) + 1;

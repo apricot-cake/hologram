@@ -2457,46 +2457,9 @@
   <script src="i18n.js"></script>
   <script src="ui.js"></script>
   <script src="folders.js"></script>
-  <script src="search.js"></script>
-  <!-- Query engine (window.corpusQuery): the boolean condition-tree core (tree
-       machinery + post-side predicates) extracted from viewer.js — pure logic,
-       no DOM; runtime deps (collections/clips/fuzzy) are injected by viewer.js.
-       Node-tested by scripts/test-query-unit.js. Before viewer.js. -->
-  <script src="query.js"></script>
-  <script src="records.js"></script>
-  <script src="facets.js"></script>
-  <script src="cooc.js"></script>
-  <!-- Tag vocabulary / 種別 domain service (window.corpusTags): kind lookup,
-       picker vocabularies (post/poster scopes) and the tag-editor data bundle —
-       pure read-side logic extracted from viewer.js; runtime deps injected there.
-       Node-tested by scripts/test-tags-unit.js. Before viewer.js. -->
-  <script src="tags.js"></script>
-  <script src="users.js"></script>
-  <!-- Tab-state service (window.corpusTabState): tab titles (filterLabel/tabTitleOf),
-       the back/forward nav-history state machine, and the tabs.json (de)serialization
-       pair — pure logic extracted from viewer.js; runtime deps injected there.
-       Node-tested by scripts/test-tabstate-unit.js. Before viewer.js. -->
-  <script src="tab-state.js"></script>
-  <!-- Listing pipeline service (window.corpusListing): what each browse mode shows,
-       in what order — getFilteredPosts / filteredPosters / collection derivations —
-       pure logic extracted from viewer.js; runtime deps injected there.
-       Node-tested by scripts/test-listing-unit.js. Before viewer.js. -->
-  <script src="listing.js"></script>
-  <!-- Grid geometry service (window.corpusGeometry): pure column / slider-track /
-       thumbnail-bucket math shared by the post tile slider and the poster size
-       slider — no DOM (viewer.js measures the containers and passes metrics in).
-       Node-tested by scripts/test-geometry-unit.js. Before viewer.js. -->
-  <script src="geometry.js"></script>
-  <!-- Display formatting service (window.corpusFormat): pure count/date presentation
-       formatters (engagement counts, card/inspector dates, backup rail relative time)
-       with cached Intl formatters — no DOM, no i18n state (relative-time labels are
-       passed in). Node-tested by scripts/test-format-unit.js. Before viewer.js. -->
-  <script src="format.js"></script>
-  <!-- Undo/redo service (window.corpusUndo): the linear tag-edit history stack
-       (push cap / redo discard / prev-next direction). Re-apply side effects are
-       injected by viewer.js. Node-tested by scripts/test-undo-unit.js. Before
-       viewer.js. -->
-  <script src="undo.js"></script>
+  <!-- search / query / records / facets / cooc / tags / users / tab-state / listing /
+       geometry / format / undo are folded into the app.js bundle (P2 — the logic-service
+       wave): see the `corpus-svc:*` imports in app/islands/app/index.tsx. -->
   <!-- Shared renderer state store (window.corpusStore): one source of truth shared
        by viewer.js and the React islands during the migration. Before viewer.js. -->
   <script src="store.js"></script>

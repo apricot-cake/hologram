@@ -9,7 +9,7 @@
 
 const path = require('node:path');
 
-const C = require(path.join(__dirname, '..', 'app', 'renderer', 'cooc.js'));
+const C = require(path.join(__dirname, '..', 'app', 'renderer', 'cooc.ts'));
 
 let failed = 0;
 function assert(name, cond) {

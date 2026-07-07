@@ -41,7 +41,7 @@
   // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
   function postKeyOf(url) {
     if (!url) return null;
-    let u;
+    let u: any;
     try {
       u = new URL(url);
     } catch {
@@ -49,7 +49,7 @@
     }
     const host = u.hostname,
       pa = u.pathname;
-    let m;
+    let m: any;
     if (host === 'bsky.app' && (m = pa.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) return 'bluesky:' + m[1] + '/' + m[2];
     if ((host === 'x.com' || host === 'twitter.com') && (m = pa.match(/\/status\/(\d+)/))) return 'x:' + m[1];
     if ((m = pa.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/))) return 'mastodon:' + host + ':' + m[1];
@@ -81,7 +81,7 @@
       manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
       let solo = 0;
       const base = list.map((p) => {
-        let key;
+        let key: any;
         const mg = manualOf.get(p.captureId);
         if (mg) key = mg;
         else {
@@ -127,11 +127,11 @@
         }
         return k;
       };
-      const map = new Map();
-      const order = [];
+      const map = new Map<string, any>();
+      const order: CorpusPostGroup[] = [];
       for (const e of base) {
         const key = resolveKey(e.key);
-        let g = map.get(key);
+        let g: any = map.get(key);
         if (!g) {
           g = { key, records: [] };
           map.set(key, g);
@@ -153,7 +153,7 @@
   // Likes percentile within each platform — ranks "did well for its SNS" so X's
   // raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
   function percentileFn(list) {
-    const byPlat = {};
+    const byPlat: Record<string, number[]> = {};
     list.forEach((p) => {
       const k = p.platform || '';
       (byPlat[k] || (byPlat[k] = [])).push(p.likes || 0);
@@ -183,7 +183,7 @@
     const { fileSrc } = deps;
     // Gallery items for a post: the screenshot first, then each original image.
     function buildGalleryItems(p) {
-      const items = [];
+      const items: { src: string; alt: string; video: boolean }[] = [];
       if (p.image) items.push({ src: fileSrc(p.image), alt: '', video: false });
       if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
       if (Array.isArray(p.media)) {
@@ -196,8 +196,8 @@
     // Gallery for a whole group: every record's items in captureId order, deduped by src.
     function buildGroupGalleryItems(g) {
       if (g.records.length === 1) return buildGalleryItems(g.rep);
-      const seen = new Set();
-      const items = [];
+      const seen = new Set<string>();
+      const items: { src: string; alt: string; video: boolean }[] = [];
       for (const r of g.records) {
         for (const it of buildGalleryItems(r)) {
           if (seen.has(it.src)) continue;
@@ -261,8 +261,7 @@
       // right the first time — pixel size from the index, learned cache fallback.
       const aspRatio = view !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
       // Post-type + media flags (grid view only; CSS hides them in compact list).
-      /** @type {string[]} */
-      const flags = [];
+      const flags: string[] = [];
       if (p.isThread) flags.push(MSG.qfThread);
       if (p.isReply) flags.push(MSG.qfReply);
       if (p.isQuote) flags.push(MSG.qfQuote);

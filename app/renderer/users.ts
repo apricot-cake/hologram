@@ -26,10 +26,10 @@
     // buildUsers scans all ~9000 posts, and it was being re-run on every search
     // keystroke via buildSuggest. Rebuild only when the library changes.
     let _buildUsersGen = -1,
-      _cachedUsers = null;
+      _cachedUsers: CorpusUserAgg[] | null = null;
     function buildUsers() {
       if (_buildUsersGen === generation() && _cachedUsers) return _cachedUsers;
-      const map = new Map();
+      const map = new Map<string, any>();
       for (const p of allPosts()) {
         if (!p.url) continue; // SNS posts only — match the post-view dataset
         const key = userKey(p);
@@ -72,8 +72,8 @@
       const fuzzyOn = cs && cs.isFuzzy();
       const matcher = fuzzyOn ? cs.compile(q) : null;
       const hit = (s) => (fuzzyOn ? matcher(String(s || '')) : norm(s).includes(norm(q)));
-      const items = [];
-      const counts = new Map();
+      const items: any[] = [];
+      const counts = new Map<string, any>();
       for (const p of allPosts()) if (p.url) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
       [...counts.keys()]
         .filter(hit)

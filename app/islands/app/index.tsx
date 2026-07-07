@@ -18,6 +18,27 @@
 // 5=the two virtualized grids (GridMount keeps flushSync + host-attach). Dev
 // (vite.config.mjs) serves this same file as a module via the island <script> rewrite
 // (islands/app.js → /islands/app/index.tsx).
+//
+// --- renderer service layer (formerly individual <script> tags in index.html; folded
+//     into this one bundle so they compile through Vite → .ts). Each is a window-IIFE
+//     assigning window.corpusX; viewer + islands read those globals (the bridge
+//     dissolution is P4). Imported via `corpus-svc:NAME` bare specifiers (aliased to
+//     renderer/NAME.ts by build.mjs / vite.config.mjs) so the strict islands tsc leaves
+//     them to tsconfig.renderer.json — the same isolation corpus-viewer-bundle uses.
+//     Order mirrors the old index.html scripts; these precede root.tsx (islands read the
+//     globals at render) and viewer (last). Wave 1 = the logic services. ---
+import 'corpus-svc:search';
+import 'corpus-svc:query';
+import 'corpus-svc:records';
+import 'corpus-svc:facets';
+import 'corpus-svc:cooc';
+import 'corpus-svc:tags';
+import 'corpus-svc:users';
+import 'corpus-svc:tab-state';
+import 'corpus-svc:listing';
+import 'corpus-svc:geometry';
+import 'corpus-svc:format';
+import 'corpus-svc:undo';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

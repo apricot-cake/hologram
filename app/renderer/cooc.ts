@@ -22,7 +22,7 @@
     function charCandidatesFor(workTags) {
       if (!workTags || !workTags.length) return [];
       const works = new Set(workTags);
-      const counts = new Map();
+      const counts = new Map<string, number>();
       for (const p of allPosts()) {
         const tags = Array.isArray(p.tags) ? p.tags : [];
         if (!tags.some((t) => works.has(t))) continue;
@@ -34,8 +34,8 @@
     // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
     // elsewhere in the library (the current group excluded, so a just-added tag never
     // counts itself as history).
-    function worksCooccurringWith(charTag, excludeIds) {
-      const works = new Set();
+    function worksCooccurringWith(charTag, excludeIds?) {
+      const works = new Set<string>();
       for (const p of allPosts()) {
         if (excludeIds && excludeIds.has(p.captureId)) continue;
         const tags = Array.isArray(p.tags) ? p.tags : [];
@@ -54,14 +54,14 @@
     // limit — withTag+count feed the "X と N 件で一緒" tooltip, so every suggestion
     // stays explainable. opts.exclude: extra tags to never suggest (e.g. ones the
     // strong tier already offers).
-    function relatedTagCandidates(selectedTags, opts) {
+    function relatedTagCandidates(selectedTags, opts?) {
       const sel = new Set((selectedTags || []).filter(Boolean));
       if (!sel.size) return [];
       const o = opts || {};
       const minCount = o.minCount != null ? o.minCount : 3;
       const limit = o.limit != null ? o.limit : 8;
       const exclude = o.exclude || null;
-      const pair = new Map(); // candidate Y -> Map(selected X -> shared-post count)
+      const pair = new Map<string, Map<string, number>>(); // candidate Y -> Map(selected X -> shared-post count)
       for (const p of allPosts()) {
         const tags = Array.isArray(p.tags) ? p.tags : [];
         if (tags.length < 2) continue;
@@ -74,9 +74,9 @@
           for (const x of present) m.set(x, (m.get(x) || 0) + 1);
         }
       }
-      const out = [];
+      const out: Array<{ tag: string; withTag: string | null; count: number }> = [];
       for (const [tag, m] of pair) {
-        let withTag = null;
+        let withTag: string | null = null;
         let count = 0;
         for (const [x, n] of m)
           if (n > count) {

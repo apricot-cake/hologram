@@ -129,7 +129,7 @@
     // (existing ones only); dynamic = posts matching the saved search (tree + q)
     // against the CURRENT library (= 開けば最新). Memoized per renderCollections pass
     // (resetCollectionCache) so the sort + the card map don't each re-scan allPosts.
-    let _collRecCache = null;
+    let _collRecCache: Map<string, any> | null = null;
     function resetCollectionCache() {
       _collRecCache = new Map();
     }
@@ -143,7 +143,7 @@
     }
     function dynamicMatches(coll) {
       const tree = treeWithLegacyQ(coll.tree, coll.q); // text term lives in the tree now (q = legacy only)
-      const out = [];
+      const out: any[] = [];
       for (const p of allPosts()) {
         if (!hasContent(p)) continue; // mirror getFilteredPosts' content gate
         if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
@@ -153,7 +153,7 @@
     }
     function collectionRecords(coll) {
       if (_collRecCache && _collRecCache.has(coll.id)) return _collRecCache.get(coll.id);
-      let recs;
+      let recs: any;
       if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
       else {
         recs = [];
@@ -166,7 +166,7 @@
       return recs;
     }
     function collectionThumbsFrom(recs) {
-      const files = [];
+      const files: string[] = [];
       for (const rec of recs) {
         const f = densityImage(rec, 'card');
         if (f) files.push(f);
@@ -180,7 +180,7 @@
     // Small condition chips under a dynamic card's name (saved tree leaves + the
     // free-text q). Capped; purely informational (the mock's optional 条件チップ).
     function collCondLabels(coll) {
-      const chips = [];
+      const chips: string[] = [];
       try {
         for (const leaf of treeLeaves(coll.tree)) {
           chips.push(filterLabel(leaf));

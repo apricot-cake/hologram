@@ -77,14 +77,14 @@
         return { text: MSG.filterAll + '(' + formatCount(allCount) + ')', iconType: 'all' };
       }
 
-      const parts = [];
-      let primaryIconType = null;
+      const parts: string[] = [];
+      let primaryIconType: string | null = null;
       const add = (label, iconType) => {
         parts.push(label);
         if (!primaryIconType) primaryIconType = iconType;
       };
 
-      const byType = {};
+      const byType: Record<string, any[]> = {};
       filters.forEach((f) => {
         (byType[f.type] = byType[f.type] || []).push(f);
       });
@@ -145,7 +145,7 @@
   //   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
   function makeNavHistory(deps) {
     const { cap, enabled, snapshot, apply, onChange } = deps;
-    let hist = [];
+    let hist: string[] = [];
     let idx = -1;
 
     // Record a fresh view. No-op when the state equals the current entry, so

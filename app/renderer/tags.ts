@@ -38,7 +38,7 @@
     // Kinded (作品/キャラ) tags stay in (種別 dots distinguish them); order is by 種別
     // (作品 → キャラ → 一般) then ja-collation so the flyout reads like the palette.
     function posterFilterVocab() {
-      const set = new Set();
+      const set = new Set<string>();
       for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) set.add(t);
       const rank = (t) => {
         const k = tagKindOf(t);
@@ -57,11 +57,11 @@
       const byJa = (a, b) => a.localeCompare(b, 'ja');
       const groups = tagGroups();
       const grouped = new Set(groups.flatMap((g) => g.tags || []));
-      const out = [];
+      const out: Array<{ name: string; tags: string[] }> = [];
       // 用語帳: 作品/キャラ are first-class categories — surface them as their own
       // sections ahead of the freeform groups, and pull kinded tags OUT of their
       // group / 未分類 so each tag shows once (種別 takes precedence, danbooru-style).
-      const kindSec = { work: [], character: [] };
+      const kindSec: Record<string, string[]> = { work: [], character: [] };
       for (const [t, k] of Object.entries(tagTypes())) if (k === 'work' || k === 'character') kindSec[k].push(t);
       for (const [k, name] of [
         ['work', kindLabel('work')],
@@ -76,7 +76,7 @@
       // meaningless for a person. The poster general pool grows from poster-applied
       // tags instead (posterTags), so people get their own vocabulary.
       if (scope === 'poster') {
-        const applied = new Set();
+        const applied = new Set<string>();
         for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
         const general = [...applied].filter(ok).sort(byJa);
         if (general.length) out.push({ name: MSG.tagGroupOther, tags: general });
@@ -89,7 +89,7 @@
           .sort(byJa);
         if (tags.length) out.push({ name: g.name, tags });
       }
-      const applied = new Set();
+      const applied = new Set<string>();
       for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!grouped.has(t) && !tagKindOf(t)) applied.add(t);
       const ungrouped = [...applied].filter(ok).sort(byJa);
       if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
@@ -106,7 +106,7 @@
         name: g.name,
         items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
       }));
-      const srcSet = new Set();
+      const srcSet = new Set<string>();
       for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
       const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagKindOf(t) || null }));
       // Suggestion groups, strongest first. Tier 1 (kind-scoped): 作品 on the card →
@@ -115,8 +115,8 @@
       // dedupes against it, and stays silent until pairs have real support (minCount
       // lives in cooc.js). Poster tagging keeps tier 1 only: its general vocabulary is
       // deliberately separate from post-content descriptors (see groupedTagVocab).
-      const coocGroups = [];
-      const strong = new Set();
+      const coocGroups: any[] = [];
+      const strong = new Set<string>();
       const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
       if (workTags.length) {
         const cands = charCandidatesFor(workTags)

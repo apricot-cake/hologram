@@ -15,8 +15,8 @@
   //   applyTags(records)       — records = [{captureId, image, tags}] (post sidecars)
   //   applyPosterTags(records) — records = [{key, tags}] (poster-tags.json)
   function makeUndo(deps) {
-    const undoStack = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
-    let redoStack = [];
+    const undoStack: any[] = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
+    let redoStack: any[] = [];
 
     function push(type, records) {
       if (!records || !records.length) return;

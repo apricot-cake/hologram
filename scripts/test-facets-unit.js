@@ -8,7 +8,7 @@
 
 const path = require('node:path');
 
-const F = require(path.join(__dirname, '..', 'app', 'renderer', 'facets.js'));
+const F = require(path.join(__dirname, '..', 'app', 'renderer', 'facets.ts'));
 
 let failed = 0;
 function assert(name, cond) {

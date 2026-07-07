@@ -13,9 +13,9 @@
   // and an optional neg. Shared by BOTH query builders (posts / posters). ---
   /** @returns {CorpusQueryGroup} */
   function emptyTree() {
-    return { kind: 'group', op: 'and', neg: false, children: [] };
+    return { kind: 'group', op: 'and', neg: false, children: [] } as CorpusQueryGroup;
   }
-  function treeLeaves(n, out) {
+  function treeLeaves(n, out?) {
     out = out || [];
     if (!n) return out;
     if (n.kind === 'cond') out.push(n);
@@ -41,7 +41,7 @@
         continue;
       }
       const op = (ops || {})[type] || 'or';
-      root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves });
+      root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves } as CorpusQueryGroup);
     }
     return root;
   }
@@ -89,7 +89,7 @@
   function cleanupTree(tree) {
     (function rec(node) {
       if (node.kind !== 'group') return;
-      const out = [];
+      const out: any[] = [];
       for (const c of node.children) {
         rec(c);
         if (c.kind === 'group') {
@@ -133,8 +133,8 @@
   // tab title consume. date/engagement pass through whole (minus tree-only
   // fields); other types dedupe on type+value.
   function buildShadow(tree) {
-    const seen = new Set();
-    const out = [];
+    const seen = new Set<string>();
+    const out: any[] = [];
     for (const c of treeLeaves(tree)) {
       if (c.type === 'date' || c.type === 'engagement') {
         const f = Object.assign({}, c);
@@ -146,7 +146,7 @@
       const k = c.type + ' ' + c.value;
       if (seen.has(k)) continue;
       seen.add(k);
-      const f = { type: c.type, value: c.value };
+      const f: any = { type: c.type, value: c.value };
       if (c.label) f.label = c.label;
       out.push(f);
     }
@@ -185,10 +185,8 @@
    */
   function wrapAllInGroup(tree) {
     if (!tree.children.length) return null;
-    /** @type {CorpusQueryGroup} */
-    const g = { kind: 'group', op: tree.op, neg: false, children: tree.children };
-    /** @type {CorpusQueryGroup} */
-    const root = { kind: 'group', op: 'and', neg: false, children: [g] };
+    const g = { kind: 'group', op: tree.op, neg: false, children: tree.children } as CorpusQueryGroup;
+    const root = { kind: 'group', op: 'and', neg: false, children: [g] } as CorpusQueryGroup;
     cleanupTree(root);
     return root;
   }
@@ -213,11 +211,11 @@
   // was the 改訂③ two-platform always-false trap).
   function facetViewOf(tree, opts) {
     if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
-    const standalone = new Set(opts.standaloneTypes || []);
-    const multi = new Set(opts.multiValueTypes || []);
-    const clusters = new Map(); // type → cluster (insertion order = display order)
-    const singles = [];
-    const excl = [];
+    const standalone = new Set<string>(opts.standaloneTypes || []);
+    const multi = new Set<string>(opts.multiValueTypes || []);
+    const clusters = new Map<string, any>(); // type → cluster (insertion order = display order)
+    const singles: any[] = [];
+    const excl: any[] = [];
     for (const c of tree.children) {
       if (c.kind === 'cond') {
         if (c.neg) {
@@ -252,7 +250,7 @@
   function canonicalizeFacet(tree, opts) {
     const v = facetViewOf(tree, opts);
     if (!v) return false;
-    const out = [];
+    const out: any[] = [];
     for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : { kind: 'group', op: cl.op, neg: false, children: cl.leaves });
     out.push(...v.singles, ...v.excl);
     tree.children = out;

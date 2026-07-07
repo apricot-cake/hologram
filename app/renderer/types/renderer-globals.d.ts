@@ -16,6 +16,13 @@
 // viewer.js references it as a bare global for library import/export.
 declare const JSZip: any;
 
+// The dual-export services (records/tags/users/tab-state/undo/…) also expose their api
+// via CommonJS — `if (typeof module !== 'undefined' && module.exports) module.exports =
+// api` — so the pure-unit tests can require() them. The reference is runtime-guarded;
+// declare the ambient so strict .ts (no @types/node in this project) accepts it. Undefined
+// in the browser bundle, where only the window.* assignment runs.
+declare const module: any;
+
 // ---- Sidecar post record (open shape — fields land from capture JSON) ----
 type CorpusPost = { [k: string]: any };
 

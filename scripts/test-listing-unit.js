@@ -11,7 +11,7 @@
 
 const path = require('node:path');
 
-const L = require(path.join(__dirname, '..', 'app', 'renderer', 'listing.js'));
+const L = require(path.join(__dirname, '..', 'app', 'renderer', 'listing.ts'));
 
 let failed = 0;
 function assert(name, cond) {

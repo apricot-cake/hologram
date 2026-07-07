@@ -9,7 +9,7 @@
 
 const path = require('node:path');
 
-const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.js'));
+const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.ts'));
 
 let failed = 0;
 function assert(name, cond) {

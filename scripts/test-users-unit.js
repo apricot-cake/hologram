@@ -8,7 +8,7 @@
 
 const path = require('node:path');
 
-const U = require(path.join(__dirname, '..', 'app', 'renderer', 'users.js'));
+const U = require(path.join(__dirname, '..', 'app', 'renderer', 'users.ts'));
 
 let failed = 0;
 function assert(name, cond) {

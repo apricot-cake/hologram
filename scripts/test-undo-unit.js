@@ -10,7 +10,7 @@
 
 const path = require('node:path');
 
-const U = require(path.join(__dirname, '..', 'app', 'renderer', 'undo.js'));
+const U = require(path.join(__dirname, '..', 'app', 'renderer', 'undo.ts'));
 
 let failed = 0;
 function assert(name, cond) {

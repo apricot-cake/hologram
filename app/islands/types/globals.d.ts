@@ -12,6 +12,14 @@ export {};
 // only modules (settings imports './styles.css').
 declare module '*.css' {}
 
+// The barrel (app/index.tsx) folds the renderer service layer into this bundle via
+// `import 'corpus-svc:NAME'` specifiers, aliased to renderer/NAME.ts by build.mjs /
+// vite.config.mjs. This ambient declaration lets the STRICT islands tsc treat those
+// side-effect imports as resolved (empty module) so it never pulls the plain-JS-style
+// service .ts files into this program — they are type-checked by tsconfig.renderer.json
+// (the same isolation the @ts-ignore'd corpus-viewer-bundle import relies on).
+declare module 'corpus-svc:*';
+
 declare global {
   type CorpusUnsubscribe = () => void;
 

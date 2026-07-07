@@ -10,7 +10,7 @@
 
 const path = require('node:path');
 
-const G = require(path.join(__dirname, '..', 'app', 'renderer', 'geometry.js'));
+const G = require(path.join(__dirname, '..', 'app', 'renderer', 'geometry.ts'));
 
 let failed = 0;
 function assert(name, cond) {

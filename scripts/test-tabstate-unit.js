@@ -9,7 +9,7 @@
 
 const path = require('node:path');
 
-const T = require(path.join(__dirname, '..', 'app', 'renderer', 'tab-state.js'));
+const T = require(path.join(__dirname, '..', 'app', 'renderer', 'tab-state.ts'));
 
 let failed = 0;
 function assert(name, cond) {

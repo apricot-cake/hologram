@@ -7,8 +7,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const stripTS = require('./strip-ts.js');
 
-const code = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'search.js'), 'utf8');
+const code = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'search.ts'), 'utf8'));
 global.window = {};
 // 間接 eval でグローバルスコープ実行（search.js は window.corpusSearch を生やす）。
 // biome-ignore lint/security/noGlobalEval: intentional indirect eval to load a plain window-IIFE script into the Node test scope

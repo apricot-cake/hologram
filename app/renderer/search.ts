@@ -13,12 +13,11 @@
   // matching flips to ぴったり and that choice is persisted (pref 'searchMode') and
   // restored by applyMode below (2026-07-04). Only an explicit 'normal' pref maps to
   // exact — an unset pref keeps the fuzzy default.
-  /** @type {'normal' | 'fuzzy'} */
-  let mode = 'fuzzy';
+  let mode: 'normal' | 'fuzzy' = 'fuzzy';
   // Set (not array) so subscribe can return an unsubscribe that actually removes the
   // listener — React islands subscribe via useSyncExternalStore and must detach on
   // unmount (and to avoid duplicate registrations across HMR reloads in dev).
-  const listeners = new Set();
+  const listeners = new Set<(m: string) => void>();
   const notify = () => {
     for (const fn of [...listeners]) {
       try {

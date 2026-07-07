@@ -12,7 +12,7 @@
 
 const path = require('node:path');
 
-const F = require(path.join(__dirname, '..', 'app', 'renderer', 'format.js'));
+const F = require(path.join(__dirname, '..', 'app', 'renderer', 'format.ts'));
 
 let failed = 0;
 function assert(name, cond) {

@@ -67,16 +67,21 @@ await build({
 // global-mapped only for ESM imports — and throws at load. React 18+ has the
 // hook natively; point both import specifiers at a 1-line ESM re-export.
 const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.ts');
-const RESOLVE_ALIAS = {
-  'use-sync-external-store/shim/index.js': USE_SYNC_SHIM,
-  'use-sync-external-store/shim': USE_SYNC_SHIM,
-  // The barrel pulls in renderer/viewer.ts via this bare specifier (see
-  // islands/app/index.tsx). Resolving it here — instead of a direct relative
-  // import in the barrel — keeps viewer.ts out of the strict islands tsc program
-  // (tsc can't resolve the bare specifier) while producing the identical module
-  // graph for rollup. viewer.ts is type-checked by tsconfig.renderer.json only.
-  'corpus-viewer-bundle': path.join(appRoot, 'renderer', 'viewer.ts'),
-};
+// Forward slashes so the regex-alias replacement below (which substitutes $1 into a
+// path string) doesn't inject backslash escapes on Windows.
+const RENDERER_DIR = path.join(appRoot, 'renderer').replace(/\\/g, '/');
+// Array form (order matters: the more specific shim/index.js must precede shim). The
+// `corpus-svc:NAME` regex folds the renderer SERVICE layer into this one bundle — each
+// former <script src="NAME.js"> is now `import 'corpus-svc:NAME'` from app/index.tsx,
+// resolved here to renderer/NAME.ts. Bare specifiers (not relative paths) so the strict
+// islands tsc can't resolve them → the services stay OUT of that program and are
+// type-checked ONLY by tsconfig.renderer.json (same isolation as corpus-viewer-bundle).
+const RESOLVE_ALIAS = [
+  { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
+  { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },
+  { find: 'corpus-viewer-bundle', replacement: path.join(appRoot, 'renderer', 'viewer.ts') },
+  { find: /^corpus-svc:(.+)$/, replacement: `${RENDERER_DIR}/$1.ts` },
+];
 
 // Build every island as ONE IIFE bundle via the app/index.tsx barrel.
 await build({
