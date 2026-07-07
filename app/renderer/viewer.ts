@@ -134,26 +134,12 @@
     tileSizeTip: _s('tileSizeTip'),
     postCount: _f1('postCount'),
 
-    // ライブラリ/投稿者/コレクション モード切替・投稿者ビュー
+    // ライブラリ/投稿者 モード切替・投稿者ビュー
     browsePosts: _s('browsePosts'),
     browsePosters: _s('browsePosters'),
-    browseCollections: _s('browseCollections'),
-    // コレクションビュー（第3モード）
-    collectionCount: _f1('collectionCount'),
-    collItemCount: _f1('collItemCount'),
-    collNew: _s('collNew'),
-    collNewPrompt: _s('collNewPrompt'),
-    collOpen: _s('collOpen'),
-    collRename: _s('collRename'),
-    collRenamePrompt: _s('collRenamePrompt'),
-    collDelete: _s('collDelete'),
-    collDeleteConfirm: _f1('collDeleteConfirm'),
-    sbCollectionSortTitle: _s('sbCollectionSortTitle'),
-    collSortName: _s('collSortName'),
-    collSortRecent: _s('collSortRecent'),
-    collSortCount: _s('collSortCount'),
-    collEmptyTitle: _s('collEmptyTitle'),
-    collEmptyDesc: _s('collEmptyDesc'),
+    // Smart-collection foundation (保存した検索/動的コレクション再導入用・BACKLOG「スマート
+    // コレクション」の土台＝現状未使用だが意図的に保持・dead ではない)。第3ビューのコレクション
+    // UI 文字列（browseCollections/collNew/coll*Sort/collEmpty* 等）は撤去済み（2026-07-07）。
     collSavePrompt: _s('collSavePrompt'),
     collSaved: _s('collSaved'),
     collSaveEmpty: _s('collSaveEmpty'),
