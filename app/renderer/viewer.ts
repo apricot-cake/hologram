@@ -1243,7 +1243,10 @@
     if (syncSlider) refreshTileSlider(); // hoisted; keeps the track in sync with the view
   }
   let skipDeleteConfirm = false;
-  const selectedSet = new Set<string>(); // stores post identifiers (url + capturedAt)
+  // Post identifiers (url + capturedAt) currently selected. Mutated in place by
+  // the functions below; updateSelectionBar() snapshots it into corpusStore's
+  // 'selectedSet' so the grid island's cells can read it reactively.
+  const selectedSet = new Set<string>();
   let selectionAnchor: number | null = null; // index in the filtered list, for shift-range select
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
@@ -2375,8 +2378,9 @@
   // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
   // Per-card view model (records.js makeCardModel) — the model the grid island
   // renders. Extracted 1:1 from the old inline cardModel; runtime couplings are
-  // injected (density/aspect cache/selection as getters/refs; the psimg scheme
-  // and folder-clip flag stay viewer-owned via fileSrc / isClipped).
+  // injected (density/aspect cache as getters; the psimg scheme and folder-clip
+  // flag stay viewer-owned via fileSrc / isClipped). Selection is NOT injected —
+  // the grid island's Cell derives .selected from corpusStore's 'selectedSet'.
   const cardModel = window.corpusRecords.makeCardModel({
     MSG,
     PF_NAME,
@@ -2384,7 +2388,6 @@
     formatDate,
     compactDate,
     fileSrc,
-    selectedSet,
     isClipped: (id) => !!(CF() && CF().isClipped(id)),
     smokeCapture: SMOKE_CAPTURE,
     currentView: () => currentView,
@@ -2786,14 +2789,12 @@
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
   }
-  // Reflect selectedSet onto the DOM without a full re-render: toggle .selecting on
-  // the grid + .selected per card. data-key round-trips to the template's postKey, so
-  // this matches the template's own isSelected logic exactly.
+  // Toggle .selecting on the grid container (viewer-owned, static). Per-card
+  // .selected is no longer pushed through here — the grid island's Cell reads
+  // corpusStore's 'selectedSet' directly (updateSelectionBar pushes the
+  // snapshot), so it re-renders on its own the moment the store changes.
   function syncSelectionClasses() {
     byId('postGrid').classList.toggle('selecting', selectedSet.size > 0);
-    // Virtualized cells re-read selectedSet through modelOf on repaint — an
-    // imperative class here would be lost the moment a cell remounts on scroll.
-    window.corpusGrid.repaint();
   }
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -3420,8 +3421,14 @@
   }
 
   // Build the #selectionBar model (labels / count / disabled) and push it to the island.
-  // The container show/hide stays viewer's — React owns only the children.
+  // The container show/hide stays viewer's — React owns only the children. Every
+  // selectedSet mutation site ends by calling this, so it's also the single choke
+  // point for snapshotting selectedSet into corpusStore (grid island Cells read
+  // 'selectedSet' directly — see Grid.tsx). A fresh Set is required on every push:
+  // selectedSet is mutated in place (same reference each time), and corpusStore's
+  // set() no-ops on `===` identity, so reusing the reference would never notify.
   function updateSelectionBar() {
+    window.corpusStore.set('selectedSet', new Set(selectedSet));
     const count = selectedSet.size;
     selectionBar.style.display = count > 0 ? '' : 'none';
     const allSelected = viewGroups.length > 0 && viewGroups.every((g) => selectedSet.has(postIdKey(g.rep)));

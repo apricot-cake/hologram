@@ -10,9 +10,11 @@
 //  - itemsKey bumps ONLY when viewer rebuilt the items array (filter / sort /
 //    search / data change). The island resets its positioner (cached cell
 //    heights) on it — and re-syncs scrollTop, per the PoC blank-grid trap.
-//  - paint (internal, bumps on every render/repaint) makes the island re-render
-//    the VISIBLE cells so modelOf re-reads live viewer state (selection, clip,
-//    inspected) without touching the positioner or scroll.
+//  - paint (internal, bumps on every render/patch) makes the island re-render
+//    the VISIBLE cells without touching the positioner or scroll. Selection and
+//    inspected are corpusStore subscriptions inside Cell now (not live reads
+//    driven by paint), so there is no repaint()-for-a-class-change primitive
+//    anymore — a full render() is the only way to bump paint.
 // render(null) hands the container back to the legacy path: the island unmounts
 // its cells synchronously (flushSync) before the caller's next line runs.
 (function () {
@@ -39,11 +41,6 @@
       current = model ? ({ ...model, paint: ++seq } as CorpusGridModel) : null;
       notify();
     }
-    function repaint() {
-      if (!current) return;
-      current = { ...current, paint: ++seq };
-      notify();
-    }
     // Merge a partial model update into the current one (live size-slider drags:
     // viewer patches columnWidth per input instead of a full re-render).
     function patch(partial: Partial<CorpusGridModel>) {
@@ -59,7 +56,7 @@
       subs.add(cb);
       return () => subs.delete(cb);
     }
-    return { render, repaint, patch, isActive, get, subscribe };
+    return { render, patch, isActive, get, subscribe };
   }
 
   window.corpusGrid = makeGridBridge(); // posts (#postGrid)

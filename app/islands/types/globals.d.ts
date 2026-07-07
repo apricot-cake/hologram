@@ -138,8 +138,10 @@ declare global {
 
   // ---- renderer/grid.js — one bridge per virtualized grid ----
   // viewer.js builds the model; the islands consume it. `paint` is internal
-  // (bumped by the bridge on every render/repaint/patch so visible cells
-  // re-render and modelOf re-reads live viewer state).
+  // (bumped by the bridge on every render/patch so visible cells re-render).
+  // Selection/inspected are NOT live-read state anymore — Cell derives both
+  // from corpusStore subscriptions (see Grid.tsx) — so a per-cell repaint()
+  // with no items/paint change is no longer needed and was removed.
   interface CorpusGridModel {
     items: any[];
     itemsKey: string | number;
@@ -157,7 +159,6 @@ declare global {
   }
   interface CorpusGridBridge {
     render(model: Omit<CorpusGridModel, 'paint'> | null): void;
-    repaint(): void;
     patch(partial: Partial<CorpusGridModel>): void;
     isActive(): boolean;
     get(): CorpusGridModel | null;

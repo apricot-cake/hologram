@@ -224,10 +224,11 @@
   // line, GIF full-size (no thumb) in card/list, card-masonry height reservation
   // (shotW/H → learned cache), and the multi-image back-stack sheets.
   //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
-  //   selectedSet is passed by reference (const Set, mutated in place);
-  //   isClipped/fileSrc keep folder + psimg knowledge viewer-owned.
+  //   isClipped/fileSrc keep folder + psimg knowledge viewer-owned. Selection is
+  //   NOT here — the grid island derives .selected straight from corpusStore's
+  //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
   function makeCardModel(deps) {
-    const { MSG, PF_NAME, formatCount, formatDate, compactDate, fileSrc, selectedSet, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+    const { MSG, PF_NAME, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
     return function cardModel(g, i) {
       const p = g.rep;
       const view = currentView();
@@ -280,7 +281,6 @@
         index: i,
         url: p.url || '',
         postKey,
-        selected: selectedSet.has(postKey),
         noUrl: !p.url,
         clipped: isClipped(p.captureId),
         hasThumb: !!(imgFile || p.video),

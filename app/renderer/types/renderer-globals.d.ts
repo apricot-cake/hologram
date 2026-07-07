@@ -139,7 +139,8 @@ interface CorpusRecordsApi {
   };
   /** Per-card view-model factory (the model PostCard.tsx renders as the grid's modelOf).
       Runtime couplings are injected: currentView/imgAspect are getters (viewer reassigns
-      the lets), selectedSet is a live ref, isClipped/fileSrc keep folder + psimg viewer-owned.
+      the lets), isClipped/fileSrc keep folder + psimg viewer-owned. Selection is NOT
+      injected here — the grid island derives .selected from corpusStore's 'selectedSet'.
       Returns the PostCardModel shape (see PostCard.tsx); typed loosely here to avoid a
       parallel interface — the island re-validates on consumption. */
   makeCardModel(deps: {
@@ -149,7 +150,6 @@ interface CorpusRecordsApi {
     formatDate(d: string): string;
     compactDate(d: string): string;
     fileSrc(file: string, w?: number): string;
-    selectedSet: Set<string>;
     isClipped(captureId: string): boolean;
     smokeCapture: boolean;
     currentView(): string;

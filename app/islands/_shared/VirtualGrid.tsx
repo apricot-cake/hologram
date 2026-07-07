@@ -23,8 +23,9 @@ export interface GridCellProps {
 }
 
 const ModelCtx = createContext<CorpusGridModel | null>(null);
-// Cells read the live model through context so a bridge repaint() (paint bump →
-// re-render) lets modelOf re-derive selection / clip / inspected state.
+// Cells read the live model through context so a bridge render()/patch() (paint
+// bump → re-render) lets modelOf re-derive clip state (selection/inspected are
+// corpusStore subscriptions inside Cell, not part of this closure-read model).
 // Cells mount only inside the provider, so the null default never escapes.
 export const useGridModel = () => useContext(ModelCtx) as CorpusGridModel;
 
@@ -132,9 +133,10 @@ export function VirtualGridHost({ model, cell }: { model: CorpusGridModel; cell:
 // Renders are flushed SYNCHRONOUSLY (flushSync): viewer.js (outside React) relies on a
 // push having fully committed before its next line runs (e.g. restoring scrollTop right
 // after a push). flushSync is legal because every bridge push originates outside React.
-// The bridge returns a FRESH model ref on each render/repaint/patch ({...model, paint:++}),
+// The bridge returns a FRESH model ref on each render/patch ({...model, paint:++}),
 // so setModel always re-renders — paint bumps make visible cells re-read live viewer state
-// (selection/clip/inspected via modelOf); itemsKey changes reset the positioner.
+// (clip via modelOf; selection/inspected are separate corpusStore subscriptions inside
+// Cell); itemsKey changes reset the positioner.
 export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: CorpusGridBridge; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {

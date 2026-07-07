@@ -179,7 +179,6 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
     qfGif: 'GIF',
     likes: (n) => n + ' likes',
   };
-  const selectedSet = new Set(['sel-key']);
   let view = 'card';
   const aspect = { capX: '4/3' };
   const cardModel = R.makeCardModel({
@@ -189,7 +188,6 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
     formatDate: (d) => 'D' + d,
     compactDate: (d) => d.slice(0, 10),
     fileSrc: (f, w) => f + '@' + (w || 0),
-    selectedSet,
     isClipped: (id) => id === 'clip-cap',
     smokeCapture: false,
     currentView: () => view,
@@ -226,7 +224,7 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
   };
   const m = cardModel({ rep: p, records: [p], files: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'] }, 5);
   assert('cardModel index/url/postKey', m.index === 5 && m.url === 'https://x.com/u/status/1' && m.postKey === 'capX');
-  assert('cardModel selected=false（capX は selectedSet 外）', m.selected === false && m.noUrl === false);
+  assert('cardModel noUrl=false', m.noUrl === false);
   assert('cardModel engagement は非ゼロのみ（0 は null）', m.stats.likes === 'N12' && m.stats.replies === 'N3' && m.stats.reposts === null && m.stats.bookmarks === null);
   assert('cardModel 同日は cap 日付を去重（post のみ残る）', m.footDates.post && m.footDates.post.label === '2026-04-01' && m.footDates.cap === null);
   assert('cardModel pfName/userName/handle', m.pfName === 'X' && m.userName === 'Alice' && m.handle === '@alice');
@@ -249,13 +247,11 @@ assert('postKeyOf 非対応パス → null', R.postKeyOf('https://x.com/some_use
   const pnoshot = { ...p, shotW: 0, shotH: 0 };
   assert('cardModel aspRatio 学習キャッシュ fallback（capX→4/3）', cardModel({ rep: pnoshot, records: [pnoshot], files: ['a.jpg'] }, 0).aspRatio === '4/3');
 
-  // Tile density: no aspect reservation; clip + selection reflected from deps.
+  // Tile density: no aspect reservation; clip reflected from deps.
   view = 'tile';
   const pclip = { ...p, captureId: 'clip-cap' };
   const mt = cardModel({ rep: pclip, records: [pclip], files: ['a.jpg'] }, 0);
   assert('cardModel tile は aspRatio 空・clip 反映（isClipped）', mt.aspRatio === '' && mt.clipped === true);
-  const psel = { ...p, captureId: 'sel-key' };
-  assert('cardModel selected（selectedSet 参照・live view=tile）', cardModel({ rep: psel, records: [psel], files: ['a.jpg'] }, 0).selected === true);
 }
 
 if (failed) {
