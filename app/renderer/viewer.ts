@@ -338,10 +338,6 @@
   };
 
   // --- Apply i18n to static elements ---
-  const setText = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  };
   const setAttr = (id, attr, val) => {
     const el = document.getElementById(id);
     if (el) el.setAttribute(attr, val);
@@ -366,15 +362,9 @@
   // #posterFilterRows title + row labels are model-driven now — the poster sidebar island
   // renders them from buildPosterSidebarModel (window.corpusSidebar poster channel). No
   // static setText here (mirror of the post-side #filterRows note above).
-  {
-    const ps = selectById('posterSortSelect');
-    if (ps) {
-      ps.options[0].textContent = MSG.posterSortCount;
-      ps.options[1].textContent = MSG.posterSortName;
-      if (ps.options[2]) ps.options[2].textContent = MSG.posterSortNewest;
-      if (ps.options[3]) ps.options[3].textContent = MSG.posterSortOldest;
-    }
-  }
+  // #posterSortSelect option labels are the GlassSelect island now (rendered from i18n
+  // keys) — the native <select> stays hidden (.cs-host) as the value source, so writing
+  // its option textContent here was dead (never shown). No static setText.
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
   // posterDateClear are the filter-popover React island now — no static labels here.
   // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
@@ -398,15 +388,9 @@
   // rendered by the sidebar island from buildSidebarModel — no static setText here.
   byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
 
-  // Sort select options
+  // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
+  // by the GlassSelect island from i18n keys, so writing option textContent here was dead.
   const sortSelect = selectById('sortSelect');
-  sortSelect.options[0].textContent = MSG.sortDateDesc;
-  sortSelect.options[1].textContent = MSG.sortDateAsc;
-  sortSelect.options[2].textContent = MSG.sortLikes;
-  sortSelect.options[3].textContent = MSG.sortReposts;
-  sortSelect.options[4].textContent = MSG.sortReplies;
-  sortSelect.options[5].textContent = MSG.sortCaptured;
-  sortSelect.options[6].textContent = MSG.sortLikesPct;
 
   // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
   // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
@@ -2453,14 +2437,11 @@
         empty.classList.add('anim-in');
         setTimeout(() => empty.classList.remove('anim-in'), 400);
       }
-      // Empty states carry a "what to do next" affordance: the capture
-      // shortcut + ZIP restore on first run, a one-click reset when filters
-      // ate everything. Buttons are re-created each render → delegated below.
-      if (allPosts.length === 0 && !query) {
-        empty.innerHTML = `<p><strong>${MSG.emptyTitle}</strong></p><p>${MSG.emptyDesc}</p>` + `<p>${MSG.emptyCaptureHint}</p>` + `<button type="button" class="empty-cta" id="emptyImportBtn">${MSG.importZip}</button>`;
-      } else {
-        empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` + `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
-      }
+      // Empty states carry a "what to do next" affordance: the capture shortcut + ZIP
+      // restore on first run, a one-click reset when filters ate everything. The EmptyState
+      // island renders the message + button; its IDs (emptyImportBtn / emptyResetBtn) match
+      // so the delegated #emptyState click handler below fires unchanged.
+      window.corpusEmpty.render(allPosts.length === 0 && !query ? 'firstRun' : 'filtered');
       if (!inPlace) syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
       return;
     }
@@ -3956,11 +3937,7 @@
     if (posterList.length === 0) {
       empty.style.display = 'block';
       const q = searchQuery().trim();
-      if (buildUsers().length === 0 && !q) {
-        empty.innerHTML = `<p><strong>${MSG.posterEmptyTitle}</strong></p><p>${MSG.posterEmptyDesc}</p>`;
-      } else {
-        empty.innerHTML = `<p><strong>${MSG.emptySearchTitle}</strong></p><p>${MSG.emptySearchDesc}</p>` + `<button type="button" class="empty-cta" id="emptyResetBtn">${MSG.emptyResetBtn}</button>`;
-      }
+      window.corpusEmpty.render(buildUsers().length === 0 && !q ? 'posterFirstRun' : 'filtered');
       pushPosterModel(); // React renders an empty grid (no cards)
       return;
     }
@@ -4630,21 +4607,14 @@
   // It reflects the auto-backup config + last result, refreshing on launch, when
   // settings opens, and on each backup start/finish.
   (function setupMirrorStatusRail() {
-    const el = byId('mirrorStatus');
-    if (!el) return;
+    // #mirrorStatus is rendered by the MirrorStatus island (window.corpusMirror); viewer
+    // keeps the state derivation below and pushes the model (glyphs live in the island).
     let cfg: any = null;
     let mirrorSyncing = false;
 
     // Backup absolute/relative time (format.js). The relative form's 今日/昨日 words
     // are i18n-owned here and passed in as labels.
     const backupLabels = { today: MSG.timeToday, yesterday: MSG.timeYesterday };
-    // Status glyphs: spinning circular-arrows (syncing), a check (done) and a warning
-    // triangle (error). Paired with an explicit word so the rail says WHAT it is.
-    const MS_ICON_SYNC =
-      '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
-    const MS_ICON_DONE = '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
-    const MS_ICON_WARN =
-      '<svg class="ms-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
     function pruneSkipTip(r) {
       if (r.pruneSkipped === 'shrink') {
@@ -4656,49 +4626,37 @@
     function updateMirrorStatus() {
       // No backup folder configured → nothing in the rail (progressive disclosure).
       if (!cfg || !cfg.dir) {
-        el.innerHTML = '';
-        el.className = 'mirror-status';
-        el.title = '';
+        window.corpusMirror.render(null);
         return;
       }
       // Syncing now: spinning glyph + "バックアップ中…".
       if (mirrorSyncing) {
-        el.innerHTML = MS_ICON_SYNC + `<span class="ms-t">${escapeHtml(MSG.mirrorSyncingShort)}</span>`;
-        el.className = 'mirror-status is-syncing';
-        el.title = MSG.backupSyncing;
+        window.corpusMirror.render({ kind: 'syncing', text: MSG.mirrorSyncingShort, title: MSG.backupSyncing });
         return;
       }
       const r = cfg.lastResult;
       if (!r) {
-        el.innerHTML = '';
-        el.className = 'mirror-status';
-        el.title = '';
+        window.corpusMirror.render(null);
         return;
       }
       // Last run failed: warning glyph + "バックアップ失敗", the error as the hint.
       if (r.ok === false && r.error) {
-        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorFailed)}</span>`;
-        el.className = 'mirror-status is-error';
-        el.title = r.error;
+        window.corpusMirror.render({ kind: 'error', text: MSG.mirrorFailed, title: r.error });
         return;
       }
       // Copy ran but the prune was held back (src looked empty/decimated) — warn
       // loudly so a wrong save-folder can't silently leave the mirror unpruned.
       if (r.pruneSkipped) {
-        el.innerHTML = MS_ICON_WARN + `<span class="ms-t">${escapeHtml(MSG.mirrorGuarded)}</span>`;
-        el.className = 'mirror-status is-error';
-        el.title = pruneSkipTip(r);
+        window.corpusMirror.render({ kind: 'error', text: MSG.mirrorGuarded, title: pruneSkipTip(r) });
         return;
       }
       // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
       // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
-      el.className = 'mirror-status is-done';
       const ts = fmtBackupTime(r.at, backupLabels);
-      el.innerHTML = MS_ICON_DONE + `<span class="ms-body"><span class="ms-t">${escapeHtml(MSG.mirrorDone)}</span>${ts ? `<span class="ms-time">${escapeHtml(ts)}</span>` : ''}</span>`;
       let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
       if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
       else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
-      el.title = tip;
+      window.corpusMirror.render({ kind: 'done', text: MSG.mirrorDone, time: ts, title: tip });
     }
 
     async function load() {

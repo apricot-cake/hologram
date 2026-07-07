@@ -340,6 +340,31 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
+  // ---- renderer/empty.js — the #emptyState placeholder. viewer keeps the container's
+  // show/hide + the delegated CTA click handler; the island renders the message + button
+  // from the variant (it owns the i18n labels). ----
+  type CorpusEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
+  interface CorpusEmpty {
+    render(model: CorpusEmptyVariant | null): void;
+    get(): CorpusEmptyVariant | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
+  // ---- renderer/mirror.js — the #mirrorStatus backup rail. viewer derives the model
+  // (config + last result + syncing → kind/text/title/time); the island renders the glyph
+  // + text and owns the host className/title. ----
+  interface CorpusMirrorModel {
+    kind: 'syncing' | 'error' | 'done';
+    text: string;
+    title?: string;
+    time?: string;
+  }
+  interface CorpusMirror {
+    render(model: CorpusMirrorModel | null): void;
+    get(): CorpusMirrorModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
   // ---- renderer/activebar.js — the query-builder FRAME (#postActiveBar / #posterActiveBar):
   // nav 戻る/進む, フィルター title, empty hint, result count, リセット, and the ⓘ help
   // popover. viewer builds the model in buildActivebarModel(); the island renders the frame
@@ -455,6 +480,8 @@ declare global {
     corpusEditOverlay: CorpusEditOverlay;
     corpusSidebar: CorpusSidebar;
     corpusSelectionBar: CorpusSelectionBar;
+    corpusEmpty: CorpusEmpty;
+    corpusMirror: CorpusMirror;
     corpusActivebar: CorpusActivebar;
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;

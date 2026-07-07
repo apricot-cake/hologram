@@ -5,8 +5,10 @@ import { ActivebarHost } from '../activebar/Activebar.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
+import { EmptyState } from '../empty/EmptyState.tsx';
 import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
+import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
@@ -126,6 +128,14 @@ export function App() {
       {/* Settings modal (open/closed via window.corpusSettings; the gear in viewer opens it). */}
       <Portal id="settingsRoot">
         <SettingsHost />
+      </Portal>
+      {/* Empty-state placeholder (grid is empty) + the backup status rail — viewer keeps
+          each container's show/hide + state derivation; these render the content. */}
+      <Portal id="emptyState">
+        <EmptyState />
+      </Portal>
+      <Portal id="mirrorStatus">
+        <MirrorStatus />
       </Portal>
       {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
           #posterGrid) with flushSync + host-attach preserved (GridMount), because viewer
