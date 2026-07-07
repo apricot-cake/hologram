@@ -1,0 +1,20 @@
+<!--
+  Hand-authored reproduction of a pixiv artwork page (not a literal scraped
+  capture). See scripts/fixtures/content/pixiv.html and
+  scripts/test-content-fixtures.js for context.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- A-5a: clicking the surrounding <figure> (not directly on the <img>)
+       falls back to the nearest figure's own main image. -->
+  <main>
+    <figure id="mainFigure">
+      <img src="https://i.pximg.net/img-original/img/2024/02/02/00/00/00/2001_p0.png">
+    </figure>
+  </main>
+
+</body>
+</html>

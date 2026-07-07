@@ -32,5 +32,5 @@
     "skipLibCheck": true,
     "types": ["chrome"]
   },
-  "files": ["background.ts", "content.ts", "diag.ts", "drag.ts", "i18n.ts", "metadata.ts", "types/globals.d.ts"]
+  "files": ["background.ts", "content.ts", "diag.ts", "drag.ts", "i18n.ts", "metadata.ts", "site-detect.ts", "types/globals.d.ts"]
 }

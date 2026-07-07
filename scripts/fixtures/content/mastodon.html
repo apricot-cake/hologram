@@ -1,0 +1,38 @@
+<!--
+  Hand-authored reproduction of a Mastodon instance's status DOM shape (not a
+  literal scraped capture — any instance requires a live session). Covers
+  what extension/site-detect.ts's Mastodon branch depends on:
+  meta[name="application-name"]=Mastodon (looksLikeMastodon's detection
+  marker) and the .status / detailed-status__datetime / .status__quote
+  (4.4+ quote preview) shape. See scripts/test-content-fixtures.js.
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="application-name" content="Mastodon">
+</head>
+<body>
+
+  <!-- A-4a/A-4b: plain status, same-instance permalink -->
+  <div class="status" id="statusNormal">
+    <a href="/@alice/109252111" class="detailed-status__datetime">10h</a>
+    <div class="status__content">Hello world</div>
+  </div>
+
+  <!-- A-4f (4.4+ quote): a full nested .status renders inside .status__quote
+       for the QUOTED post. Clicking inside it must resolve to the QUOTING
+       status (this outer one), and its permalink must be its own — not the
+       quoted post's. -->
+  <div class="status" id="statusQuote">
+    <a href="/@bob/2001" class="detailed-status__datetime">2h</a>
+    <div class="status__content">check this quote</div>
+    <div class="status__quote">
+      <div class="status" id="statusQuoteInner">
+        <a href="/@carol/3002" class="detailed-status__datetime">5h</a>
+        <div class="status__content">quoted content</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

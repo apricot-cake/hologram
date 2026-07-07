@@ -18,7 +18,7 @@
 
 ### キャプチャ／メタデータ検証
 
-- 半自動フローの土台＝`test-select-posts.js`（対象投稿の自動選別）→ `test-watch-verify.js`（保存先監視＋API再照合・`--recent N` で一括点検）。`e2e-capture-test.js` は puppeteer で拡張入りChromeを一時起動し全自動（ユーザーChrome・Alt+S 不要）。API取得の単体は `test-metadata*.js`／`test-mastodon-url.js`
+- 半自動フローの土台＝`test-select-posts.js`（対象投稿の自動選別）→ `test-watch-verify.js`（保存先監視＋API再照合・`--recent N` で一括点検）。`e2e-capture-test.js` は puppeteer で拡張入りChromeを一時起動し全自動（ユーザーChrome・Alt+S 不要）。API取得の単体は `test-metadata*.js`／`test-mastodon-url.js`。`extension/content.ts` の DOM 抽出（プラットフォーム検出・投稿要素特定・permalink抽出＝`extension/site-detect.ts`）の単体は `test-content-fixtures.js`（fixture=`scripts/fixtures/content/`・jsdom・`npm test` 常時）＝コード変更のたび自動で回る。この単体を含む `npm test` 全体が緑ならDOM抽出ロジックの回帰は無い＝`e2e-capture-test.js` の役割は「サイト側DOM変化の定期カナリア」（`extension/` 変更のたびの再走は不要）
 
 ### スモーク／退行・セキュリティ・正しさ
 

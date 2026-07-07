@@ -1,0 +1,25 @@
+<!--
+  Hand-authored reproduction of a pixiv artwork page with a comment section
+  (not a literal scraped capture). See scripts/fixtures/content/pixiv.html and
+  scripts/test-content-fixtures.js for context.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- A-5e: clicking a commenter's avatar must resolve to the ARTWORK's
+       figure, not the avatar (the avatar's filename doesn't match the pximg
+       <id>_p<N> pattern, so it's naturally excluded; the location.pathname
+       /artworks/<id> fallback anchors to the main figure instead). -->
+  <main>
+    <figure id="mainFigure2">
+      <img src="https://i.pximg.net/img-original/img/2024/03/03/00/00/00/3001_p0.png">
+    </figure>
+  </main>
+  <section class="comments">
+    <img id="avatarImg" class="comment-avatar" src="https://i.pximg.net/user-profile/img/2020/01/01/00/00/00/999999_abc.jpg">
+  </section>
+
+</body>
+</html>

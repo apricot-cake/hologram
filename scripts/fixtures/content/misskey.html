@@ -1,0 +1,48 @@
+<!--
+  Hand-authored reproduction of a Misskey instance's note DOM shape (not a
+  literal scraped capture — any instance requires a live session). Covers
+  what extension/site-detect.ts's Misskey branch depends on: the
+  --MI_THEME-accent CSS custom property (Misskey's theme marker, set here as
+  an inline style — real pages set it via injected <style>, but jsdom does
+  not compute getComputedStyle from stylesheets, only from an element's own
+  inline style, so this is the offline-safe equivalent) and the
+  div[tabindex="0"] > article note shape. See scripts/test-content-fixtures.js.
+-->
+<!DOCTYPE html>
+<html style="--MI_THEME-accent: #86b300;">
+<head></head>
+<body>
+
+  <!-- A-3a: plain note -->
+  <div tabindex="0" id="noteNormal">
+    <article>
+      <a href="/notes/9normal"><time datetime="2026-01-01T00:00:00Z">3m</time></a>
+      <div class="text">Hello</div>
+    </article>
+  </div>
+
+  <!-- A-3e: reply with a parent-note preview (MkNoteSub) rendered BEFORE the
+       reply's own <article>. Clicking inside the parent preview must resolve
+       to the REPLY note (this outer div), not the preview, and the permalink
+       must be the reply's own — not the parent's. -->
+  <div tabindex="0" id="noteReply">
+    <div class="reply-parent-preview" tabindex="0">
+      <a href="/notes/9parent"><time datetime="2026-01-01T00:00:00Z">1h</time></a>
+      <div class="text">Parent note text</div>
+    </div>
+    <article>
+      <a href="/notes/9reply"><time datetime="2026-01-01T00:00:00Z">2m</time></a>
+      <div class="text">Reply note text</div>
+    </article>
+  </div>
+
+  <!-- A-3b: individual note page, article has no resolvable link at all —
+       must fall back to location.href. -->
+  <div tabindex="0" id="noteFallback">
+    <article>
+      <div class="text">No link rendered here</div>
+    </article>
+  </div>
+
+</body>
+</html>

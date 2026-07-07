@@ -1,0 +1,39 @@
+<!--
+  Hand-authored reproduction of Bluesky's post DOM shape (not a literal
+  scraped capture — bsky.app requires an authenticated live session). Covers
+  the data-testid conventions extension/site-detect.ts's Bluesky branch
+  depends on: feedItem-by-{handle} / postThreadItem-by-{handle}, postText
+  scoping, and role="link" quote-embed nesting. See
+  scripts/test-content-fixtures.js.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- A-2a: own permalink must win even when the post body links to another
+       post by the SAME author (a decoy that appears earlier in DOM order) —
+       regression test for the postText-scope exclusion. -->
+  <div data-testid="feedItem-by-alice.bsky.social" id="bskyNormal">
+    <div data-testid="postText">As I said in <a href="/profile/alice.bsky.social/post/decoy999">my other post</a></div>
+    <a href="/profile/alice.bsky.social/post/3kabc">timestamp</a>
+  </div>
+
+  <!-- A-2f: quote detail page — the anchor post has NO self-permalink anchor,
+       only an embedded quote card (role="link") pointing at the QUOTED post.
+       Must not pick the quoted post's link; must fall back to location.href
+       (the quoting post's own detail-page URL). -->
+  <div data-testid="postThreadItem-by-mallory.bsky.social" id="bskyQuote">
+    <div data-testid="postText">Look at this!</div>
+    <div role="link" data-testid="quoteEmbed">
+      <a href="/profile/victim.bsky.social/post/quoted1">quoted post preview</a>
+    </div>
+  </div>
+
+  <!-- A-2b: individual thread-item page, own permalink present -->
+  <div data-testid="postThreadItem-by-bob.bsky.social" id="bskyIndividual">
+    <a href="/profile/bob.bsky.social/post/xyz789">timestamp</a>
+  </div>
+
+</body>
+</html>

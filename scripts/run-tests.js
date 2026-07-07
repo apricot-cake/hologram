@@ -38,6 +38,7 @@ const TESTS = [
   'test-contrast-parity',
   'test-i18n-parity',
   'test-parse-url',
+  'test-content-fixtures',
   'test-bridge-ssrf',
   'test-archive-zipslip',
   'test-archive-zipbomb',

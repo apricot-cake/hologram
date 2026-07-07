@@ -1,0 +1,20 @@
+<!--
+  Hand-authored reproduction of a pixiv search/ranking grid page (not a
+  literal scraped capture). Covers what extension/site-detect.ts's pixiv
+  branch depends on: the pximg filename id pattern (<id>_p<N>_...) and
+  /artworks/<id> links. See scripts/test-content-fixtures.js.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- A-5c: search/ranking grid — clicking one artwork's own image must
+       resolve ITS id, never a neighbor's (the "wrong-neighbor" bug). -->
+  <div class="grid">
+    <a href="/artworks/1001"><img id="pxImgA" src="https://i.pximg.net/c/250x250/img-master/img/2024/01/01/00/00/00/1001_p0_master1200.jpg"></a>
+    <a href="/artworks/1002"><img id="pxImgB" src="https://i.pximg.net/c/250x250/img-master/img/2024/01/01/00/00/00/1002_p0_master1200.jpg"></a>
+  </div>
+
+</body>
+</html>

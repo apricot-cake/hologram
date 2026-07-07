@@ -432,7 +432,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
             try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'content.js'] });
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'site-detect.js', 'content.js'] });
               return { ok: true, url: tab.url };
             } catch (e) {
               return { ok: false, url: tab.url, err: String(e) };

@@ -1,0 +1,49 @@
+<!--
+  Hand-authored reproduction of X/Twitter's tweet DOM shape (not a literal
+  scraped capture — X requires an authenticated live session, which this
+  offline fixture deliberately doesn't need). Covers the selectors/testids
+  extension/site-detect.ts's X branch depends on: article[data-testid="tweet"],
+  a[href*="/status/"], a nested <time>. See scripts/test-content-fixtures.js.
+-->
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+  <!-- A-1b/A-1c/A-1h: plain post, own timestamp permalink -->
+  <div data-testid="cellInnerDiv">
+    <article data-testid="tweet" id="tweetNormal">
+      <div><a href="/alice/status/111"><time datetime="2026-01-01T00:00:00Z">10h</time></a></div>
+      <div data-testid="tweetText">Hello world</div>
+    </article>
+  </div>
+
+  <!-- A-1e: quote tweet — the quoting article's own time-link precedes the
+       embedded quote card's in DOM order, so it must win. -->
+  <article data-testid="tweet" id="tweetQuote">
+    <a href="/bob/status/222"><time datetime="2026-01-01T00:00:00Z">2h</time></a>
+    <div data-testid="tweetText">Check this out</div>
+    <div role="link" data-testid="quoteTweet">
+      <a href="/carol/status/333"><time datetime="2026-01-01T00:00:00Z">5h</time></a>
+      <div data-testid="tweetText">Original content</div>
+    </div>
+  </article>
+
+  <!-- A-1d: retweet — the "Dave Retweeted" social-context link lives OUTSIDE
+       the article (sibling), so it must not leak into the permalink scan. -->
+  <div data-testid="cellInnerDiv">
+    <div class="social-context"><a href="/dave">Dave</a> Retweeted</div>
+    <article data-testid="tweet" id="tweetRetweet">
+      <a href="/erin/status/444"><time datetime="2026-01-01T00:00:00Z">1d</time></a>
+      <div data-testid="tweetText">Original erin tweet</div>
+    </article>
+  </div>
+
+  <!-- A-1b/A-1c: no in-article status link at all (e.g. a truncated render) —
+       must fall back to location.href. -->
+  <article data-testid="tweet" id="tweetNoLink">
+    <div data-testid="tweetText">No permalink anchor rendered</div>
+  </article>
+
+</body>
+</html>
