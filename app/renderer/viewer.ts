@@ -346,7 +346,6 @@
   const byId = (id) => document.getElementById(id) as HTMLElement;
   const inputById = (id) => document.getElementById(id) as HTMLInputElement;
   const selectById = (id) => document.getElementById(id) as HTMLSelectElement;
-  const btnById = (id) => document.getElementById(id) as HTMLButtonElement;
   const closestOf = (e: Event, sel: string) => {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
@@ -368,7 +367,8 @@
   // rendered by the sidebar island from buildSidebarModel now — no static setText here.
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
-  setText('postResetBtn', MSG.reset);
+  // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
+  // ⓘ help) are the activebar island now (window.corpusActivebar) — no static setText here.
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
@@ -406,9 +406,8 @@
   // longer writes them (writing here would race the island after a language reload).
   // #sbSearchTitle / #sbSortTitle are island-owned now too (toolbar SectionTitle) — no
   // static setText (writing here would race the island after a language reload).
-  setText('activebarLabel', MSG.activebarLabel);
-  setText('qbEmptyHint', MSG.qbEmptyHint);
-  setText('posterQbEmptyHint', MSG.qbEmptyHint);
+  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now
+  // (rendered from buildActivebarModel) — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar island from buildSidebarModel — no static setText here.
   byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
@@ -508,13 +507,12 @@
     posterReturn = null;
     if (bounce) setBrowseMode('posters');
   }
-  byId('postResetBtn').addEventListener('click', resetAllFilters);
+  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island
+  // (onReset / onNavBack / onNavFwd callbacks in the model) — the buttons are React-owned.
 
-  // Back/forward through the per-tab view history: buttons + Alt+←/→ + mouse
-  // side buttons. Guarded so they never fire while typing, with an overlay open,
-  // or in poster mode (mirrors the Ctrl+A guard convention).
-  byId('navBackBtn').addEventListener('click', navBack);
-  byId('navFwdBtn').addEventListener('click', navForward);
+  // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
+  // buttons themselves route through the island callbacks above). Guarded so they never fire
+  // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -754,33 +752,8 @@
     renderQfPop();
   }
 
-  // --- ⓘ クエリビルダの使い方（初見向けの説明ポップオーバー） ---------------
-  const qbHelpPop = document.createElement('div');
-  qbHelpPop.className = 'qb-help-pop glass-lens'; // shared hover-hint material (2026-07-05 共有化)
-  document.body.appendChild(qbHelpPop);
-  function hideQbHelp() {
-    qbHelpPop.classList.remove('show');
-  }
-  function showQbHelp() {
-    const btn = document.getElementById('qbHelpBtn');
-    if (!btn) return;
-    qbHelpPop.innerHTML = `<div class="qh-title">${escapeHtml(MSG.qbHelpTitle)}</div>` + [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5].map((t) => `<div class="qh-row">${escapeHtml(t)}</div>`).join('');
-    const r = btn.getBoundingClientRect();
-    qbHelpPop.style.left = r.left + 'px';
-    qbHelpPop.style.top = r.bottom + 6 + 'px';
-    qbHelpPop.classList.add('show');
-    const pr = qbHelpPop.getBoundingClientRect();
-    if (pr.right > innerWidth - 8) qbHelpPop.style.left = Math.max(8, innerWidth - pr.width - 8) + 'px';
-  }
-  // Hover (and keyboard focus) to reveal — it's a passive hint, no click needed.
-  const qbHelpBtn = byId('qbHelpBtn');
-  qbHelpBtn.addEventListener('mouseenter', showQbHelp);
-  qbHelpBtn.addEventListener('mouseleave', hideQbHelp);
-  qbHelpBtn.addEventListener('focus', showQbHelp);
-  qbHelpBtn.addEventListener('blur', hideQbHelp);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hideQbHelp();
-  });
+  // The ⓘ クエリビルダの使い方 hover popover is the activebar island now (HelpPop) — its
+  // content (title + 5 rows) rides the model's `help` field; hover/positioning live there.
 
   // 日付/エンゲージのポップオーバーは値フライアウト(qfPop)と同じ「行クリックで開閉・
   // 外側クリックで閉じる」挙動に統一する。旧実装は全画面 .qf-backdrop(z999) が
@@ -1323,10 +1296,11 @@
   // behaviour from one codebase. The bar shows NO boolean vocabulary: values
   // cluster by attribute, the only operator surface is the すべて/どれか toggle
   // on multi-value clusters, and exclusions live in the 除く cluster.
-  // ctx: { container, barEl?, emptyEl?, resetBtn?, predOf, labelOf, glyphOf,
+  // ctx: { container, barEl?, predOf, labelOf, glyphOf,
   //        getSearchVal?, onClearSearch?, onChange, onShadow?, openLeafEditor?,
   //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
-  //        standaloneTypes? }
+  //        standaloneTypes? }  (barEl = the bar's static container: reveal +
+  //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
   function createQueryBuilder(ctx) {
     let tree = emptyTree();
     let qbNodeMap = new Map<string, any>(); // data-nid → tree node (rebuilt each render)
@@ -1385,11 +1359,11 @@
           const h = bar.offsetHeight;
           if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px');
         });
-      const resetBtn = ctx.resetBtn || null;
       const hasQuery = tree.children.length > 0;
-      if (resetBtn) resetBtn.style.display = hasQuery || searchVal ? '' : 'none';
-      // Empty bar → hint at the entry point (the bar displays filters; it takes none).
-      if (ctx.emptyEl) ctx.emptyEl.style.display = hasQuery || searchVal ? 'none' : '';
+      // The リセット button + empty-bar hint visibility is the activebar island now (from
+      // buildActivebarModel, pushed by renderPosts/renderPosters after this render). This
+      // render only owns the bar reveal + --activebar-h measurement above (side effects on
+      // viewer's static container) and the chips model below.
       // Re-assert the canonical facet shape before reading it (mutations keep it,
       // but a freshly loaded compatible tree may still carry bare 2+-value runs;
       // the すべて/どれか toggle needs real group nodes to write to).
@@ -1592,9 +1566,7 @@
   // refreshed from the tree shadow (onShadow) so the sidebar / tab title keep working.
   const postQB = createQueryBuilder({
     container: document.getElementById('queryChips'),
-    barEl: document.getElementById('postActiveBar'),
-    emptyEl: document.getElementById('qbEmptyHint'),
-    resetBtn: document.getElementById('postResetBtn'),
+    barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: postPredOf,
     labelOf: filterLabel,
     glyphOf: qcGlyph,
@@ -1891,17 +1863,55 @@
     apply: applyState,
     onChange: updateNavButtons,
   });
+  // The nav 戻る/進む disabled state is part of the activebar model now — a nav change just
+  // re-pushes it (the island reads navBackDisabled/navFwdDisabled).
   function updateNavButtons() {
-    const b = btnById('navBackBtn'),
-      f = btnById('navFwdBtn');
-    if (b) b.disabled = !nav.canBack();
-    if (f) f.disabled = !nav.canForward();
+    pushActivebar();
   }
   function navBack() {
     if (nav.back()) persistTabsDebounced();
   }
   function navForward() {
     if (nav.forward()) persistTabsDebounced();
+  }
+
+  // --- Active-bar frame model (window.corpusActivebar) ---
+  // The query-builder FRAME (nav / フィルター title / empty hint / result count / リセット /
+  // ⓘ help) around #queryChips / #posterQueryChips is a React island now. viewer keeps all
+  // the state; buildActivebarModel() aggregates it and pushActivebar() renders it. Called
+  // from renderPosts / renderPosters (after the counts are known), updateNavButtons, and
+  // boot. The chips themselves stay their own island (createQueryBuilder.render()).
+  function buildActivebarModel() {
+    const search = searchQuery().trim();
+    const postActive = postQB.hasQuery() || !!search;
+    const posterActive = posterQB.hasQuery() || !!search;
+    return {
+      post: {
+        label: MSG.activebarLabel,
+        emptyHint: MSG.qbEmptyHint,
+        emptyVisible: !postActive,
+        countLabel: MSG.postCount(viewGroups.length),
+        resetLabel: MSG.reset,
+        resetVisible: postActive,
+        navBackDisabled: !nav.canBack(),
+        navFwdDisabled: !nav.canForward(),
+      },
+      poster: {
+        emptyHint: MSG.qbEmptyHint,
+        emptyVisible: !posterActive,
+        countLabel: MSG.posterCount(posterList.length),
+        resetLabel: MSG.reset,
+        resetVisible: posterActive,
+      },
+      help: { title: MSG.qbHelpTitle, rows: [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5] },
+      onNavBack: navBack,
+      onNavFwd: navForward,
+      onReset: resetAllFilters,
+      onPosterReset: resetPosterFilters,
+    };
+  }
+  function pushActivebar() {
+    window.corpusActivebar.render(buildActivebarModel());
   }
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
@@ -2427,7 +2437,6 @@
     syncBrowseBar(); // keep the ライブラリ/投稿者 toggle's glass thumb measured
     const grid = byId('postGrid');
     const empty = byId('emptyState');
-    const countEl = byId('postCount');
     // Group the filtered records (auto by post URL + manual groups); each group
     // renders as ONE card. multiOnly now means "groups with more than one image".
     // Reuse the previous build's groups on an in-place re-render: re-filtering +
@@ -2445,7 +2454,8 @@
     }
     const query = searchQuery().trim();
 
-    countEl.textContent = MSG.postCount(viewGroups.length);
+    // Post count + reset/empty/nav frame → the activebar island (viewGroups is now final).
+    pushActivebar();
 
     if (viewGroups.length === 0) {
       window.corpusGrid.render(null); // virtualized cells unmount before the blanket clear
@@ -3843,9 +3853,7 @@
   // onChange → renderPosters (which redraws the rows + bar + grid).
   const posterQB = createQueryBuilder({
     container: document.getElementById('posterQueryChips'),
-    barEl: document.getElementById('posterActiveBar'),
-    emptyEl: document.getElementById('posterQbEmptyHint'),
-    resetBtn: document.getElementById('posterResetBtn'),
+    barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: posterPredOf,
     labelOf: posterFilterLabel,
     glyphOf: qcGlyph,
@@ -3934,16 +3942,22 @@
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
+  // Poster query reset — the activebar island's #posterResetBtn onClick (onPosterReset).
+  function resetPosterFilters() {
+    posterQB.resetTree();
+    setSearchBoxValue('');
+    renderPosters();
+  }
   function renderPosters(keepLimit?) {
     const grid = byId('posterGrid');
     const empty = byId('emptyState');
-    // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数は
-    // ポスターコントロール側の posterCount に出す（バー右端の件数と役割分担）。
-    const countEl = byId('posterCount');
     renderPosterFilterRows();
     posterQB.render(); // draw the query bar (pills / groups) for the poster tree
     posterList = filteredPosters();
-    countEl.textContent = MSG.posterCount(posterList.length);
+    // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
+    // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
+    // frame は activebar 島が描画する（posterList が確定した後に push）。
+    pushActivebar();
     syncBrowseBar();
     // Density: the classes style the CELLS (descendant selectors); the column
     // layout itself lives in the masonic model (pushPosterModel).
@@ -4229,15 +4243,7 @@
       });
   }
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
-  {
-    const pr = document.getElementById('posterResetBtn');
-    if (pr)
-      pr.addEventListener('click', () => {
-        posterQB.resetTree();
-        setSearchBoxValue('');
-        renderPosters();
-      });
-  }
+  // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
   // flyout (poster-* categories); the date row opens the date popover.
   // Selections live in the transient posterXxx state.
@@ -4828,6 +4834,7 @@
     });
   }
   renderQueryChips();
+  pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
   if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try {

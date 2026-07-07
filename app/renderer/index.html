@@ -1878,38 +1878,35 @@
   </header>
   <!-- Query builder: full-width top bar that spans above the sidebar (the sidebar
        starts below it). Always shown (it's also the entry point for filters). -->
+  <!-- The FRAME (nav / title / empty hint / count / reset / ⓘ help) is the activebar
+       island (window.corpusActivebar): it portals into the static sub-mounts below
+       (#postNavMount / #postFrameLead / #postTrailMount) which sit BESIDE #queryChips so
+       that chips container keeps viewer's delegated click/contextmenu handlers untouched.
+       viewer still reveals the bar (display) + measures --activebar-h; the qb-lead glyph
+       stays static. -->
   <div id="postActiveBar" class="content-activebar" style="display:none">
-    <div class="qb-nav">
-      <button class="icon-btn icon-btn--ghost" id="navBackBtn" type="button" aria-label="戻る" data-tip="戻る (Alt+←)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
-      <button class="icon-btn icon-btn--ghost" id="navFwdBtn" type="button" aria-label="進む" data-tip="進む (Alt+→)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
-    </div>
+    <div class="qb-nav" id="postNavMount"></div>
     <div class="qb-body">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
       <div class="qb-main">
-        <span class="sb-activebar-title" id="activebarLabel"></span>
-        <span class="qb-empty" id="qbEmptyHint" style="display:none"></span>
+        <span id="postFrameLead" style="display:contents"></span>
         <div class="sb-chips" id="queryChips"></div>
       </div>
     </div>
-    <div class="qb-trail">
-      <span class="post-count" id="postCount"></span>
-      <button class="sb-reset" id="postResetBtn" type="button">リセット</button>
-      <button class="qb-help" id="qbHelpBtn" type="button"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
-    </div>
+    <div class="qb-trail" id="postTrailMount"></div>
   </div>
   <!-- Poster-view query bar (mirrors #postActiveBar; shown only in poster mode).
-       Same facet-chip query builder, rendered by the posterQB instance. -->
+       Same facet-chip query builder, rendered by the posterQB instance. No nav / title /
+       ⓘ; the count lives in the sidebar (#posterCount). -->
   <div id="posterActiveBar" class="content-activebar" style="display:none">
     <div class="qb-body">
       <span class="qb-lead" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
       <div class="qb-main">
-        <span class="qb-empty" id="posterQbEmptyHint" style="display:none"></span>
+        <span id="posterFrameLead" style="display:contents"></span>
         <div class="sb-chips" id="posterQueryChips"></div>
       </div>
     </div>
-    <div class="qb-trail">
-      <button class="sb-reset" id="posterResetBtn" type="button">リセット</button>
-    </div>
+    <div class="qb-trail" id="posterTrailMount"></div>
   </div>
   <div id="appBody">
   <aside id="sidebar">
@@ -2544,6 +2541,10 @@
   <script src="sidebar.js"></script>
   <script src="selection-bar.js"></script>
   <script src="confirm.js"></script>
+  <!-- Active-bar bridge (window.corpusActivebar): the query-builder FRAME (nav / title /
+       count / reset / ⓘ help) around the chips. viewer.js calls render(model); the
+       activebar island renders the frame. Before viewer.js. -->
+  <script src="activebar.js"></script>
   <script src="about-icon.js"></script>
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React

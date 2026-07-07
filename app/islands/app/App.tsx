@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { ActivebarHost } from '../activebar/Activebar.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
@@ -95,6 +96,10 @@ export function App() {
       <Portal id="posterQueryChips">
         <ChipsHost id="posterQueryChips" />
       </Portal>
+      {/* Query-builder frame (nav / title / count / reset / ⓘ help) around each chips
+          container — portals into static sub-mounts BESIDE the chips, so those keep
+          viewer's delegated handlers. */}
+      <ActivebarHost />
       <Portal id="imageTabView">
         <ImageTabHost />
       </Portal>

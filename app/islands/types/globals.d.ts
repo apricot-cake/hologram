@@ -340,6 +340,38 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
+  // ---- renderer/activebar.js — the query-builder FRAME (#postActiveBar / #posterActiveBar):
+  // nav 戻る/進む, フィルター title, empty hint, result count, リセット, and the ⓘ help
+  // popover. viewer builds the model in buildActivebarModel(); the island renders the frame
+  // (portaled into sub-mounts BESIDE the chips containers, which stay their own island). The
+  // count/reset/empty/nav are data; nav/reset/help must call back, so the model carries
+  // callbacks (like confirm.js). Post + poster in one model (one bar shown at a time). ----
+  interface CorpusActivebarSide {
+    emptyHint: string;
+    emptyVisible: boolean; // the empty-bar hint shows while nothing is filtered
+    countLabel: string;
+    resetLabel: string;
+    resetVisible: boolean; // リセット shows only once something is filtered/searched
+  }
+  interface CorpusActivebarModel {
+    post: CorpusActivebarSide & {
+      label: string; // the フィルター section title (post bar only)
+      navBackDisabled: boolean;
+      navFwdDisabled: boolean;
+    };
+    poster: CorpusActivebarSide; // no nav / no title on the poster bar
+    help: { title: string; rows: string[] };
+    onNavBack(): void;
+    onNavFwd(): void;
+    onReset(): void;
+    onPosterReset(): void;
+  }
+  interface CorpusActivebar {
+    render(model: CorpusActivebarModel | null): void;
+    get(): CorpusActivebarModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
   // ---- renderer/confirm.js — shared confirm modal (#confirmOverlay). viewer opens it with
   // a message + optional skip/keyword gate + callbacks; the island renders it. ----
   interface CorpusConfirmConfig {
@@ -423,6 +455,7 @@ declare global {
     corpusEditOverlay: CorpusEditOverlay;
     corpusSidebar: CorpusSidebar;
     corpusSelectionBar: CorpusSelectionBar;
+    corpusActivebar: CorpusActivebar;
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
