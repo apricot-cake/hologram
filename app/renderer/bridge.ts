@@ -13,11 +13,10 @@
 // store.js); loaded BEFORE its consumers.
 (function () {
   'use strict';
-  /** @param {string} [name] @returns {CorpusCallbackBridge} */
-  function makeCallbackBridge(name) {
-    let current = null;
+  function makeCallbackBridge(name?: string): CorpusCallbackBridge {
+    let current: { openId: number; [k: string]: any } | null = null;
     let seq = 0;
-    const subs = new Set();
+    const subs = new Set<() => void>();
     const notify = () => {
       for (const cb of [...subs]) {
         try {
@@ -28,7 +27,7 @@
       }
     };
     const api = {
-      open(model) {
+      open(model: { [k: string]: any }) {
         current = { ...model, openId: ++seq };
         notify();
       },
@@ -41,12 +40,12 @@
       get() {
         return current;
       }, // stable ref between changes (useSyncExternalStore)
-      subscribe(cb) {
+      subscribe(cb: () => void) {
         subs.add(cb);
         return () => subs.delete(cb);
       },
     };
-    if (name) window[name] = api;
+    if (name) (window as any)[name] = api;
     return api;
   }
   window.corpusMakeBridge = makeCallbackBridge;

@@ -12,13 +12,12 @@
 //     reconcile, openManager, closeManager, isManagerOpen, toast, onChange, isLoaded }
 (function () {
   'use strict';
-  const $ = (id) => document.getElementById(id);
+  const $ = (id: string) => document.getElementById(id);
   // event.target → nearest matching ancestor as an HTMLElement (null when the
   // target is not an Element or no match) — keeps the DOM casts in one place.
-  /** @param {Event} e @param {string} sel @returns {HTMLElement | null} */
-  const closestOf = (e, sel) => {
+  const closestOf = (e: Event, sel: string): HTMLElement | null => {
     const t = e.target;
-    return t instanceof Element ? /** @type {HTMLElement | null} */ (t.closest(sel)) : null;
+    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
 
   // Folder-list store shared by the library collections (below, isCollections) and the
@@ -29,25 +28,24 @@
   // isCollections (library only) generalizes folders into "collections": each carries
   // kind/created, and dynamic collections carry a saved-search payload (tree + q). The
   // poster store omits isCollections, so its surface/behavior is exactly as before.
-  /** @param {{ idPrefix: string; persist: () => void; isCollections?: boolean }} opts */
-  function createFolderStore({ idPrefix, persist, isCollections }) {
-    let folders = [];
+  function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: string; persist: () => void; isCollections?: boolean }): CorpusFolderStore {
+    let folders: CorpusFolder[] = [];
     const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     const allRaw = () => folders;
     const all = () => folders;
-    function setAll(list) {
-      folders = Array.isArray(list) ? list : [];
+    function setAll(list: unknown) {
+      folders = Array.isArray(list) ? (list as CorpusFolder[]) : [];
       if (isCollections) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
     }
-    const byId = (id) => folders.find((f) => f.id === id) || null;
-    const has = (id, key) => {
+    const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
+    const has = (id: string | null | undefined, key: string) => {
       const f = byId(id);
       return !!(f && f.items.includes(key));
     };
-    function create(name, opts) {
+    function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) {
       const nm = (name || '').trim();
       if (!nm) return null;
-      const f = { id: genId(), name: nm, items: [] };
+      const f: CorpusFolder = { id: genId(), name: nm, items: [] };
       if (isCollections) {
         f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
         f.created = Date.now();
@@ -59,25 +57,25 @@
     }
     // Copy a saved-search condition (boolean tree + free-text q) onto a dynamic
     // collection; clears either when absent. Static collections never carry these.
-    function setQuery(f, src) {
+    function setQuery(f: CorpusFolder, src?: { tree?: unknown; q?: string } | null) {
       if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree));
       else delete f.tree;
       if (src && typeof src.q === 'string' && src.q) f.q = src.q;
       else delete f.q;
     }
     // Update a dynamic collection's saved condition in place (= re-save the search).
-    function update(id, patch) {
+    function update(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
       const f = byId(id);
       if (!f || f.kind !== 'dynamic') return false;
       setQuery(f, patch);
       persist();
       return true;
     }
-    function remove(id) {
+    function remove(id: string | null | undefined) {
       folders = folders.filter((f) => f.id !== id);
       persist();
     }
-    function rename(id, name) {
+    function rename(id: string | null | undefined, name: string | null | undefined) {
       const f = byId(id);
       const nm = (name || '').trim();
       if (!f || !nm) return false;
@@ -87,10 +85,10 @@
     }
     // Toggle one key or a whole group of keys in folder id; anchorKey decides the
     // resulting state (a tile's representative id). Returns 'added' | 'removed' | null.
-    function toggleIn(id, keys, anchorKey) {
+    function toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null) {
       const f = byId(id);
       if (!f) return null;
-      const ids = (Array.isArray(keys) ? keys : [keys]).filter((k) => k != null);
+      const ids = (Array.isArray(keys) ? keys : [keys]).filter((k): k is string => k != null);
       if (!ids.length) return null;
       const anchor = anchorKey != null ? anchorKey : ids[0];
       const wasIn = f.items.includes(anchor);
@@ -103,7 +101,7 @@
       return wasIn ? 'removed' : 'added';
     }
     // Drop keys no longer present (deleted items). Returns true if anything changed.
-    function reconcile(existing) {
+    function reconcile(existing: Set<string>) {
       let changed = false;
       folders.forEach((f) => {
         const n = f.items.length;
@@ -114,7 +112,7 @@
     }
     // Reorder: place draggedId before/after targetId (drag-and-drop). Returns true
     // if the order changed.
-    function move(draggedId, targetId, before) {
+    function move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean) {
       if (draggedId === targetId) return false;
       const from = folders.findIndex((f) => f.id === draggedId);
       if (from < 0) return false;
@@ -147,7 +145,7 @@
   const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isCollections: true });
   // Clip = a library-wide ephemeral flag set (captureId Set), separate from collections.
   // Persisted alongside the collections in collections.json (the `clip` array).
-  let clipSet = new Set();
+  let clipSet = new Set<string>();
   // The management modal (#ivFolderModal) is shared: by default it edits the library
   // store, but openManager({store,onChange}) re-points it at the poster folder store
   // (viewer.js pfStore) so both views get the same CRUD + drag-reorder UI. Each store
@@ -156,16 +154,15 @@
   let mgrStore = store;
   let mgrAfter = () => notify('list');
   let loaded = false;
-  /** @type {Promise<void> | null} */
-  let loadPromise = null;
-  const subs = [];
+  let loadPromise: Promise<void> | null = null;
+  const subs: Array<(kind?: string) => void> = [];
 
   // i18n: this module owns the folder modal + its toasts. window.corpusI18n is a
   // promise set by i18n.js (loaded before this script). Resolve once and cache
   // getMessage as t(); until then t() echoes the key. Static modal labels are
   // applied on resolve (and re-applied if the modal is open). Dynamic strings
   // (toasts, row buttons, prompts, confirms) call t() at use time.
-  let t = (key, subs2) => key;
+  let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
   if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
     window.corpusI18n.then((api) => {
       if (api && api.getMessage) {
@@ -179,14 +176,14 @@
     if (!modal) return;
     const title = modal.querySelector('.iv-insp-title');
     if (title) title.textContent = t('foldManageTitle');
-    const inp = /** @type {HTMLInputElement | null} */ ($('ivFolderNewName'));
+    const inp = $('ivFolderNewName') as HTMLInputElement | null;
     if (inp) inp.placeholder = t('foldNewPlaceholder');
     const createBtn = $('ivFolderCreate');
     if (createBtn) createBtn.textContent = t('foldCreate');
     if (isManagerOpen()) renderModal(); // refresh empty-state / row labels if already shown
   }
 
-  function escapeHtml(s) {
+  function escapeHtml(s: unknown) {
     return window.corpusUI.escapeHtml(s);
   }
   function persist() {
@@ -196,7 +193,7 @@
         /* best-effort */
       });
   }
-  function notify(kind) {
+  function notify(kind?: string) {
     subs.forEach((cb) => {
       try {
         cb(kind);
@@ -216,7 +213,7 @@
       clipSet = new Set(r && Array.isArray(r.clip) ? r.clip.map(String) : []);
     } catch {
       store.setAll([]);
-      clipSet = new Set();
+      clipSet = new Set<string>();
     }
     loaded = true;
   }
@@ -231,13 +228,13 @@
   // --- Clip = a library-wide ephemeral flag set (a captureId Set), separate from
   // collections. One-click 📎 on a card flags it; the sidebar clip row filters by it;
   // flags persist until explicitly cleared. ---
-  function isClipped(cid) {
+  function isClipped(cid: string) {
     return clipSet.has(cid);
   }
   function clippedItems() {
     return [...clipSet];
   }
-  function clipCount(existing) {
+  function clipCount(existing?: Set<string> | null) {
     if (!existing) return clipSet.size;
     let n = 0;
     for (const c of clipSet) if (existing.has(c)) n++;
@@ -245,7 +242,7 @@
   }
   // Toggle captureIds[] (a whole group) in the clip set; anchor decides the resulting
   // state (a tile's representative id). Returns 'added' | 'removed' | null.
-  function toggleClip(captureIds, anchorCid) {
+  function toggleClip(captureIds: string[] | null | undefined, anchorCid?: string | null) {
     const ids = (captureIds || []).filter(Boolean);
     if (!ids.length) return null;
     const anchor = anchorCid != null ? anchorCid : ids[0];
@@ -269,7 +266,7 @@
 
   // Drop captureIds no longer present (deleted items), persisting + notifying once.
   // store.reconcile cleans every collection; the clip set is swept separately.
-  function reconcile(existing) {
+  function reconcile(existing: Set<string>) {
     let changed = store.reconcile(existing);
     for (const c of clipSet)
       if (!existing.has(c)) {
@@ -284,7 +281,7 @@
 
   // Toggle membership of captureIds[] in folder fid. anchorCid decides the
   // current state (the tile's representative id). Returns 'added' | 'removed' | null.
-  function toggleIn(fid, captureIds, anchorCid) {
+  function toggleIn(fid: string | null | undefined, captureIds: string[] | null | undefined, anchorCid?: string | null) {
     const f = byId(fid);
     if (!f) return null; // capture the name before toggling for the toast
     const res = store.toggleIn(fid, captureIds, anchorCid);
@@ -295,7 +292,7 @@
   }
 
   // --- toast (shared, top-level #ivToast) ---
-  function toast(msg) {
+  function toast(msg: unknown) {
     return window.corpusUI.notify(msg);
   }
 
@@ -304,7 +301,7 @@
     const m = $('ivFolderModal');
     return !!(m && !m.hidden);
   }
-  function openManager(opts) {
+  function openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null) {
     mgrStore = (opts && opts.store) || store;
     mgrAfter = (opts && opts.onChange) || (() => notify('list'));
     renderModal();
@@ -344,7 +341,7 @@
       : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
   }
   function create() {
-    const inp = /** @type {HTMLInputElement | null} */ ($('ivFolderNewName'));
+    const inp = $('ivFolderNewName') as HTMLInputElement | null;
     if (!inp) return;
     if (!mgrStore.create(inp.value)) return; // store mints the id + persists
     inp.value = '';
@@ -384,11 +381,9 @@
     });
     // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
     // notify so the sidebar chips re-render in the new order.
-    /** @type {string | null | undefined} */
-    let dragId = null;
+    let dragId: string | null | undefined = null;
     const clearMarks = () => flist.querySelectorAll('.iv-drop-before, .iv-drop-after').forEach((el) => el.classList.remove('iv-drop-before', 'iv-drop-after'));
-    /** @param {HTMLElement} row @param {number} clientY */
-    const dropBefore = (row, clientY) => {
+    const dropBefore = (row: HTMLElement, clientY: number) => {
       const r = row.getBoundingClientRect();
       return clientY < r.top + r.height / 2;
     };
@@ -452,27 +447,27 @@
     // collection and create/rename/delete from cards. Thin wrappers persist + notify so
     // all views refresh (store.create/remove/rename persist).
     allCollections: () => store.allRaw(),
-    createCollection: (name, opts) => {
+    createCollection: (name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) => {
       const f = store.create(name, opts);
       if (f) notify('list');
       return f;
     },
-    updateCollection: (id, patch) => {
+    updateCollection: (id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) => {
       const ok = store.update ? store.update(id, patch) : false; // update exists only on the collections store (isCollections)
       if (ok) notify('list');
       return ok;
     },
-    renameCollection: (id, name) => {
+    renameCollection: (id: string | null | undefined, name: string | null | undefined) => {
       const ok = store.rename(id, name);
       if (ok) notify('list');
       return ok;
     },
-    removeCollection: (id) => {
+    removeCollection: (id: string | null | undefined) => {
       store.remove(id);
       notify('list');
     },
     toast,
-    onChange: (cb) => subs.push(cb),
+    onChange: (cb: (kind?: string) => void) => subs.push(cb),
     isLoaded: () => loaded,
   };
 })();

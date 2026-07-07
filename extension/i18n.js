@@ -9,7 +9,7 @@
 // Note: this file may be re-executed by chrome.scripting.executeScript on every
 // Alt+S press, so window.corpusI18n is reassigned each time. The banner language
 // follows the browser locale (navigator.language); the desktop app (the former
-// in-extension viewer) now owns all viewer/settings strings in app/renderer/i18n.js.
+// in-extension viewer) now owns all viewer/settings strings in app/renderer/i18n.ts.
 (function () {
   const MESSAGES = {
     ja: {

@@ -9,8 +9,8 @@
 // Plain IIFE on window (like store.js); loaded BEFORE viewer.js.
 (function () {
   'use strict';
-  let current = null;
-  const subs = new Set();
+  let current: CorpusMirrorModel | null = null;
+  const subs = new Set<() => void>();
   window.corpusMirror = {
     render(model) {
       current = model || null;

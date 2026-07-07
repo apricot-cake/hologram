@@ -11,9 +11,9 @@
 //           onOk(result:{skip}), onCancel? }  — see viewer.js's three open sites.
 (function () {
   'use strict';
-  let current = null;
+  let current: CorpusConfirmModel | null = null;
   let seq = 0;
-  const subs = new Set();
+  const subs = new Set<() => void>();
   const notify = () => {
     for (const cb of [...subs]) {
       try {
@@ -23,7 +23,7 @@
       }
     }
   };
-  function open(config) {
+  function open(config: CorpusConfirmConfig) {
     current = Object.assign({ openId: ++seq }, config);
     notify();
   }
@@ -35,7 +35,7 @@
     open,
     close,
     get: () => current,
-    subscribe(cb) {
+    subscribe(cb: () => void) {
       subs.add(cb);
       return () => subs.delete(cb);
     },

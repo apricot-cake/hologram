@@ -10,8 +10,8 @@
 // re-renders (toggle rows — e.g. assign-to-folder), otherwise the menu closes.
 (function () {
   'use strict';
-  let current = null; // { items, x, y, onPick } | null
-  const subs = new Set();
+  let current: CorpusContextMenuModel | null = null; // { items, x, y, onPick } | null
+  const subs = new Set<() => void>();
   const notify = () => {
     for (const cb of [...subs]) {
       try {
@@ -22,7 +22,8 @@
     }
   };
 
-  function open(model, onPick) {
+  // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as CorpusContextMenu in globals.d.ts)
+  function open(model: { items?: CorpusMenuItem[]; x?: number; y?: number } | null, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | void) {
     current = { items: (model && model.items) || [], x: (model && model.x) || 0, y: (model && model.y) || 0, onPick: onPick || null };
     notify();
   }
@@ -32,7 +33,7 @@
       notify();
     }
   }
-  function pick(item) {
+  function pick(item: CorpusMenuItem) {
     if (!current || !current.onPick) {
       close();
       return;
@@ -49,7 +50,7 @@
   function get() {
     return current;
   } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
+  function subscribe(cb: () => void) {
     subs.add(cb);
     return () => subs.delete(cb);
   }

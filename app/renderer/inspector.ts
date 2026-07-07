@@ -16,9 +16,9 @@
 // full showDetail()/showPosterDetail() rebuild (e.g. adopting a source tag) reset them.
 (function () {
   'use strict';
-  let current = null;
+  let current: CorpusInspectorModel | null = null;
   let seq = 0;
-  const subs = new Set();
+  const subs = new Set<() => void>();
   const notify = () => {
     for (const cb of [...subs]) {
       try {
@@ -29,11 +29,14 @@
     }
   };
 
-  function open(model) {
-    current = { ...model, openId: ++seq };
+  function open(model: Omit<CorpusInspectorModel, 'openId'>) {
+    // Omit<> collapses onto CorpusInspectorModel's `[extra: string]: any` index
+    // signature (Pick/Omit over an indexed type loses the named required
+    // properties), so the cast restores what's structurally true at runtime.
+    current = { ...model, openId: ++seq } as CorpusInspectorModel;
     notify();
   }
-  function refresh(partial) {
+  function refresh(partial: Record<string, unknown>) {
     if (!current) return;
     current = { ...current, ...partial };
     notify();
@@ -47,7 +50,7 @@
   function get() {
     return current;
   } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
+  function subscribe(cb: () => void) {
     subs.add(cb);
     return () => subs.delete(cb);
   }

@@ -2454,77 +2454,28 @@
   <div id="settingsRoot"></div>
 
   <script src="../vendor/jszip.min.js"></script>
-  <script src="i18n.js"></script>
-  <script src="ui.js"></script>
-  <script src="folders.js"></script>
-  <!-- search / query / records / facets / cooc / tags / users / tab-state / listing /
-       geometry / format / undo are folded into the app.js bundle (P2 — the logic-service
-       wave): see the `corpus-svc:*` imports in app/islands/app/index.tsx. -->
-  <!-- Shared renderer state store (window.corpusStore): one source of truth shared
-       by viewer.js and the React islands during the migration. Before viewer.js. -->
-  <script src="store.js"></script>
-  <!-- Shared callback-bridge factory (window.corpusMakeBridge): the subscribe/notify/
-       openId machinery behind qf-pop / filter-popover. Before those consumers. -->
-  <script src="bridge.js"></script>
-  <!-- Context-menu controller (window.corpusContextMenu): the imperative→declarative
-       bridge for right-click menus. viewer.js calls open(); the context-menu island
-       renders. Before viewer.js. -->
-  <script src="menu.js"></script>
-  <!-- Kind-menu controller (window.corpusKindMenu): the imperative→declarative bridge
-       for the 種別 (work/character/general) tag-kind menu. viewer.js calls open();
-       the kind-menu island renders. Before viewer.js. -->
-  <script src="kind-menu.js"></script>
-  <!-- Filter-popover controller (window.corpusFilterPopover): the imperative→
-       declarative bridge for the date/engagement/poster-date-range flyout forms.
-       viewer.js calls open(); the filter-popover island renders. Before viewer.js. -->
-  <script src="filter-popover.js"></script>
-  <!-- Value-flyout controller (window.corpusQfPop): the imperative→declarative bridge
-       for the sidebar filter value flyout (qf-pop). viewer.js calls open(); the qf-pop
-       island renders. Before viewer.js. -->
-  <script src="qf-pop.js"></script>
-  <!-- Inspector controller (window.corpusInspector): the imperative→declarative bridge
-       for the persistent right-column post/poster detail panel + its inline tag editor.
-       viewer.js calls open()/refresh(); the inspector island renders. Before viewer.js. -->
-  <script src="inspector.js"></script>
-  <!-- Edit-overlay controller (window.corpusEditOverlay): the imperative→declarative
-       bridge for the bulk "add tags to selection" modal. viewer.js calls open()/
-       refresh(); the edit-overlay island renders. Before viewer.js. -->
-  <script src="edit-overlay.js"></script>
-  <!-- Searchbox bridge (window.corpusSearchBox): viewer.js registers suggestion
-       data + pick/confirm actions; the searchbox island pulls them lazily. The
-       value itself lives in corpusStore 'searchQuery'. Before viewer.js. -->
-  <script src="searchbox.js"></script>
-  <!-- Post-grid bridge (window.corpusGrid): the imperative→declarative bridge for
-       the VIRTUALIZED post grid (list view). viewer.js calls render(model); the
-       grid island windows + renders the cells. Before viewer.js. -->
-  <script src="grid.js"></script>
-  <!-- Sidebar bridge (window.corpusSidebar): the imperative→declarative bridge for the
-       post-mode filter-row column (#filterRows). viewer.js calls render(model); the
-       sidebar island renders the rows. Before viewer.js. -->
-  <script src="sidebar.js"></script>
-  <script src="selection-bar.js"></script>
-  <script src="empty.js"></script>
-  <script src="mirror.js"></script>
-  <script src="confirm.js"></script>
-  <!-- Active-bar bridge (window.corpusActivebar): the query-builder FRAME (nav / title /
-       count / reset / ⓘ help) around the chips. viewer.js calls render(model); the
-       activebar island renders the frame. Before viewer.js. -->
-  <script src="activebar.js"></script>
-  <script src="about-icon.js"></script>
+  <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
+       filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/selection-bar/
+       empty/mirror/confirm/activebar/about-icon/shell, plus the logic-service wave —
+       search/query/records/facets/cooc/tags/users/tab-state/listing/geometry/format/
+       undo) is folded into the app.js bundle (P2): see the `corpus-svc:*` imports in
+       app/islands/app/index.tsx, in the same order these used to load in. theme.js stays
+       its own pre-paint <script> (head, above) — it must run before first paint, which
+       app.js (loaded at the end of body) cannot guarantee. -->
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React
        externalized) reach window.React/ReactDOM/… instead of each inlining its
        own ~186KB copy. Must precede the first island script. -->
   <script src="islands/vendor-react.js"></script>
-  <!-- All React islands AND the viewer orchestrator in ONE IIFE bundle:
-       islands/build.mjs builds the app/index.tsx barrel, which side-effect-imports
-       every island and (last) renderer/viewer.js. viewer owns data/state/event-
-       delegation + the window.corpus* bridges; each island subscribes and renders.
-       Ordering is robust — viewer's body awaits corpusI18n so it stays deferred
-       behind the synchronous island mounts, and islands pull current state / replay
-       stashed models (e.g. lightbox nav labels fall back to window.__corpusLbLabels).
-       Shared code (masonic / react-aria / _shared/*) is bundled once. -->
+  <!-- All React islands, the renderer service layer, AND the viewer orchestrator in ONE
+       IIFE bundle: islands/build.mjs builds the app/index.tsx barrel, which side-effect-
+       imports every service, every island, then (last) renderer/viewer.ts + shell.ts.
+       viewer owns data/state/event-delegation + the window.corpus* bridges; each island
+       subscribes and renders. Ordering is robust — viewer's body awaits corpusI18n so it
+       stays deferred behind the synchronous island mounts, and islands pull current
+       state / replay stashed models (e.g. lightbox nav labels fall back to
+       window.__corpusLbLabels). Shared code (masonic / react-aria / _shared/*) is
+       bundled once. -->
   <script src="islands/app.js"></script>
-  <script src="shell.js"></script>
 </body>
 </html>

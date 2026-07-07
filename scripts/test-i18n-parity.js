@@ -1,6 +1,6 @@
 'use strict';
 // Parity guard for the app's TWO i18n string tables:
-//   1) app/renderer/i18n.js — MESSAGES.ja / MESSAGES.en (viewer strings)
+//   1) app/renderer/i18n.ts — MESSAGES.ja / MESSAGES.en (viewer strings)
 //   2) extension/_locales/{ja,en}/messages.json — Chrome i18n (extension strings)
 // A key added to one language and forgotten in the other fails SILENTLY at
 // runtime (the lookup falls back or shows the raw key), so drift ships unnoticed —
@@ -47,10 +47,10 @@ function diffValues(name, a, b) {
 
 // ---- 1) renderer MESSAGES (closure-private → expose via a guarded source patch)
 {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.js'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8');
   const HOOK = 'const MESSAGES = {';
   if (!src.includes(HOOK)) {
-    fail("renderer/i18n.js: expected `const MESSAGES = {` not found — update this test's HOOK");
+    fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");
   } else {
     // Shims so the IIFE runs under Node: corpus.getPrefs resolves, navigator exists.
     global.window = { corpus: { getPrefs: async () => ({}) } };
@@ -63,7 +63,7 @@ function diffValues(name, a, b) {
     }
     const M = globalThis.__corpusMessages;
     if (!M || !M.ja || !M.en) {
-      fail('renderer/i18n.js: MESSAGES.ja / MESSAGES.en not captured');
+      fail('renderer/i18n.ts: MESSAGES.ja / MESSAGES.en not captured');
     } else {
       diffKeys('renderer', M.ja, M.en);
       diffValues('renderer', M.ja, M.en);

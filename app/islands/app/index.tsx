@@ -39,6 +39,30 @@ import 'corpus-svc:listing';
 import 'corpus-svc:geometry';
 import 'corpus-svc:format';
 import 'corpus-svc:undo';
+// Wave 2 = infra + UI bridges (store/bridge before their consumers menu/kind-menu/
+// filter-popover/qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-
+// popover module-load time, so it must precede them; order below mirrors the old
+// index.html <script> order, which already satisfied this).
+import 'corpus-svc:i18n';
+import 'corpus-svc:ui';
+import 'corpus-svc:folders';
+import 'corpus-svc:store';
+import 'corpus-svc:bridge';
+import 'corpus-svc:menu';
+import 'corpus-svc:kind-menu';
+import 'corpus-svc:filter-popover';
+import 'corpus-svc:qf-pop';
+import 'corpus-svc:inspector';
+import 'corpus-svc:edit-overlay';
+import 'corpus-svc:searchbox';
+import 'corpus-svc:grid';
+import 'corpus-svc:sidebar';
+import 'corpus-svc:selection-bar';
+import 'corpus-svc:empty';
+import 'corpus-svc:mirror';
+import 'corpus-svc:confirm';
+import 'corpus-svc:activebar';
+import 'corpus-svc:about-icon';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its
@@ -56,3 +80,8 @@ import './root.tsx';
 // tsconfig.renderer.json (loose + renderer-globals), where it lives in `files`.
 // @ts-ignore — resolved by the Vite alias above, not by tsc.
 import 'corpus-viewer-bundle';
+// shell.ts was index.html's LAST <script> (after islands/app.js, so after viewer too) —
+// kept last here to preserve that ordering. Its only load-time work is an async IIFE
+// that awaits window.corpus.getPrefs() then calls window.corpusSearch.applyMode(...);
+// corpusSearch is already assigned synchronously by the Wave 1 import above.
+import 'corpus-svc:shell';

@@ -8,15 +8,15 @@
 // Pass a function as the first arg to subscribe to ALL changes.
 (function () {
   'use strict';
-  const state = Object.create(null);
-  const keySubs = new Map(); // key -> Set<cb>
-  const allSubs = new Set();
+  const state: Record<string, any> = Object.create(null);
+  const keySubs = new Map<string, Set<() => void>>(); // key -> Set<cb>
+  const allSubs = new Set<() => void>();
 
-  function get(key) {
+  function get(key: string) {
     return state[key];
   }
 
-  function set(key, val) {
+  function set(key: string, val: unknown) {
     if (state[key] === val) return; // idempotent: same value => no notify (the loop guard)
     state[key] = val;
     const s = keySubs.get(key);
@@ -37,16 +37,16 @@
     }
   }
 
-  function subscribe(key, cb) {
+  function subscribe(key: string | (() => void), cb?: () => void): CorpusUnsubscribe {
     if (typeof key === 'function') {
       cb = key;
       allSubs.add(cb);
-      return () => allSubs.delete(cb);
+      return () => allSubs.delete(cb as () => void);
     }
     let s = keySubs.get(key);
     if (!s) keySubs.set(key, (s = new Set()));
-    s.add(cb);
-    return () => s.delete(cb);
+    s.add(cb as () => void);
+    return () => s.delete(cb as () => void);
   }
 
   window.corpusStore = { get, set, subscribe };

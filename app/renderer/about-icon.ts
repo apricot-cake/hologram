@@ -80,12 +80,20 @@
     '}',
   ].join('\n');
 
-  function mount(canvas) {
+  function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
     if (!canvas) return { destroy() {} };
+    // Narrowed once here: nested function declarations below capture `canvas` by
+    // reference, so TS can't see the guard above through those closures.
+    const cv: HTMLCanvasElement = canvas;
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let gl = null,
-      prog = null,
-      uniforms = null;
+    // The WebGL context/program/uniform-location bundle is private to this closure
+    // (never exposed past CorpusAboutIcon.mount()'s destroy() surface), so `any`
+    // is the pragmatic type — see main.mts's timer-variable precedent in
+    // corpus-typescript-stage1: threading real null-narrowing through every one
+    // of these mutually-recursive closures would be pure ceremony for no callers.
+    let gl: any = null,
+      prog: any = null,
+      uniforms: any = null;
     let raf = 0,
       start = 0,
       running = false,
@@ -93,7 +101,7 @@
       sized = false,
       dead = false;
 
-    function compile(type, src) {
+    function compile(type: number, src: string) {
       const s = gl.createShader(type);
       gl.shaderSource(s, src);
       gl.compileShader(s);
@@ -102,7 +110,7 @@
     }
 
     function initGL() {
-      gl = canvas.getContext('webgl', { premultipliedAlpha: false, antialias: true });
+      gl = cv.getContext('webgl', { premultipliedAlpha: false, antialias: true });
       if (!gl || gl.isContextLost()) {
         gl = null;
         return false;
@@ -140,19 +148,19 @@
     function resize() {
       if (!gl) return;
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      const css = canvas.clientWidth || canvas.offsetWidth || 0;
+      const css = cv.clientWidth || cv.offsetWidth || 0;
       if (!css) return; // still hidden / zero-size — wait for a visible tick
       const px = Math.max(1, Math.round(css * dpr));
-      if (canvas.width !== px || canvas.height !== px) {
-        canvas.width = px;
-        canvas.height = px;
+      if (cv.width !== px || cv.height !== px) {
+        cv.width = px;
+        cv.height = px;
       }
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.res, canvas.width, canvas.height);
+      gl.viewport(0, 0, cv.width, cv.height);
+      gl.uniform2f(uniforms.res, cv.width, cv.height);
       sized = true;
     }
 
-    function drawAt(tSeconds) {
+    function drawAt(tSeconds: number) {
       if (!gl || gl.isContextLost()) return;
       if (!sized) {
         resize();
@@ -162,7 +170,7 @@
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
-    function frame(now) {
+    function frame(now: number) {
       if (!running) return;
       if (!start) start = now;
       drawAt((now - start) / 1000);
@@ -204,7 +212,7 @@
       },
       { threshold: 0.01 },
     );
-    io.observe(canvas);
+    io.observe(cv);
 
     // Pause when the whole window is hidden (minimize): backgroundThrottling is off
     // in main, so rAF keeps firing otherwise.
@@ -224,9 +232,9 @@
             }
           })
         : null;
-    if (ro) ro.observe(canvas);
+    if (ro) ro.observe(cv);
 
-    const onLost = (ev) => {
+    const onLost = (ev: Event) => {
       ev.preventDefault();
       pause();
       gl = null;
@@ -240,8 +248,8 @@
         } else play();
       }
     };
-    canvas.addEventListener('webglcontextlost', onLost, false);
-    canvas.addEventListener('webglcontextrestored', onRestored, false);
+    cv.addEventListener('webglcontextlost', onLost, false);
+    cv.addEventListener('webglcontextrestored', onRestored, false);
 
     return {
       destroy() {
@@ -254,8 +262,8 @@
           ro && ro.disconnect();
         } catch (_) {}
         document.removeEventListener('visibilitychange', onVis);
-        canvas.removeEventListener('webglcontextlost', onLost);
-        canvas.removeEventListener('webglcontextrestored', onRestored);
+        cv.removeEventListener('webglcontextlost', onLost);
+        cv.removeEventListener('webglcontextrestored', onRestored);
         if (gl) {
           const e = gl.getExtension('WEBGL_lose_context');
           if (e) e.loseContext();

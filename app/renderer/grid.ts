@@ -17,10 +17,10 @@
 // its cells synchronously (flushSync) before the caller's next line runs.
 (function () {
   'use strict';
-  function makeGridBridge() {
-    let current = null;
+  function makeGridBridge(): CorpusGridBridge {
+    let current: CorpusGridModel | null = null;
     let seq = 0;
-    const subs = new Set();
+    const subs = new Set<() => void>();
     const notify = () => {
       for (const cb of [...subs]) {
         try {
@@ -31,8 +31,12 @@
       }
     };
 
-    function render(model) {
-      current = model ? { ...model, paint: ++seq } : null;
+    function render(model: Omit<CorpusGridModel, 'paint'> | null) {
+      // Omit<> collapses onto CorpusGridModel's `[extra: string]: any` index signature
+      // (a known TS limitation — Pick/Omit over an indexed type loses the named
+      // required properties), so the spread's inferred type undercounts; the cast
+      // just restores what's structurally true at runtime.
+      current = model ? ({ ...model, paint: ++seq } as CorpusGridModel) : null;
       notify();
     }
     function repaint() {
@@ -42,7 +46,7 @@
     }
     // Merge a partial model update into the current one (live size-slider drags:
     // viewer patches columnWidth per input instead of a full re-render).
-    function patch(partial) {
+    function patch(partial: Partial<CorpusGridModel>) {
       if (!current) return;
       current = { ...current, ...partial, paint: ++seq };
       notify();
@@ -51,7 +55,7 @@
     function get() {
       return current;
     } // stable ref between changes (prop-driven root render in the island)
-    function subscribe(cb) {
+    function subscribe(cb: () => void) {
       subs.add(cb);
       return () => subs.delete(cb);
     }

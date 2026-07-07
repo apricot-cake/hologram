@@ -15,9 +15,9 @@
 // current openId so add/remove/toggle re-render in place without losing that text.
 (function () {
   'use strict';
-  let current = null;
+  let current: CorpusEditOverlayModel | null = null;
   let seq = 0;
-  const subs = new Set();
+  const subs = new Set<() => void>();
   const notify = () => {
     for (const cb of [...subs]) {
       try {
@@ -28,11 +28,11 @@
     }
   };
 
-  function open(model) {
+  function open(model: Omit<CorpusEditOverlayModel, 'openId'>) {
     current = { ...model, openId: ++seq };
     notify();
   }
-  function refresh(partial) {
+  function refresh(partial: Record<string, unknown>) {
     if (!current) return;
     current = { ...current, ...partial };
     notify();
@@ -46,7 +46,7 @@
   function get() {
     return current;
   } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
+  function subscribe(cb: () => void) {
     subs.add(cb);
     return () => subs.delete(cb);
   }

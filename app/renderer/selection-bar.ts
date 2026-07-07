@@ -14,8 +14,8 @@
 // Plain IIFE on window (like store.js); loaded BEFORE viewer.js.
 (function () {
   'use strict';
-  let current = null;
-  const subs = new Set();
+  let current: CorpusSelectionBarModel | null = null;
+  const subs = new Set<() => void>();
   window.corpusSelectionBar = {
     render(model) {
       current = model || null;

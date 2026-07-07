@@ -8,9 +8,9 @@
 // that's corpusStore 'searchQuery'.
 (function () {
   'use strict';
-  let handlers = null; // { getSuggestions(q), onPick(item), onConfirmText() }
+  let handlers: CorpusSearchBoxHandlers | null = null; // { getSuggestions(q), onPick(item), onConfirmText() }
   window.corpusSearchBox = {
-    init(h) {
+    init(h: CorpusSearchBoxHandlers) {
       handlers = h;
     }, // viewer.js registers its callbacks
     handlers() {

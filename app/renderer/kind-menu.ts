@@ -11,8 +11,8 @@
 // row shape: { kind, label, dot?, renameable?, checked? } | { sep: true }.
 (function () {
   'use strict';
-  let current = null; // model | null
-  const subs = new Set();
+  let current: CorpusKindMenuModel | null = null; // model | null
+  const subs = new Set<() => void>();
   const notify = () => {
     for (const cb of [...subs]) {
       try {
@@ -23,7 +23,7 @@
     }
   };
 
-  function open(model) {
+  function open(model: CorpusKindMenuModel) {
     current = model;
     notify();
   }
@@ -36,7 +36,7 @@
   function get() {
     return current;
   } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb) {
+  function subscribe(cb: () => void) {
     subs.add(cb);
     return () => subs.delete(cb);
   }

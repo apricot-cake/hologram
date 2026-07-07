@@ -19,8 +19,8 @@
 // viewer.js.
 (function () {
   'use strict';
-  let current = null;
-  const subs = new Set();
+  let current: CorpusActivebarModel | null = null;
+  const subs = new Set<() => void>();
   window.corpusActivebar = {
     render(model) {
       current = model || null;

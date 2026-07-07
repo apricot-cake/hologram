@@ -23,11 +23,11 @@
   'use strict';
   // One render channel = a current model + its subscriber set. useSyncExternalStore reads
   // get() (stable ref between changes) and subscribe() (returns an unsubscribe).
-  function channel() {
-    let current = null;
-    const subs = new Set();
+  function channel<T>() {
+    let current: T | null = null;
+    const subs = new Set<() => void>();
     return {
-      render(model) {
+      render(model: T | null) {
         current = model || null;
         for (const cb of [...subs]) {
           try {
@@ -40,15 +40,15 @@
       get() {
         return current;
       },
-      subscribe(cb) {
+      subscribe(cb: () => void) {
         subs.add(cb);
         return () => subs.delete(cb);
       },
     };
   }
 
-  const post = channel();
-  const poster = channel();
+  const post = channel<CorpusSidebarModel>();
+  const poster = channel<CorpusPosterSidebarModel>();
   window.corpusSidebar = {
     render: post.render,
     get: post.get,

@@ -10,8 +10,8 @@
 // store.js); loaded BEFORE viewer.js.
 (function () {
   'use strict';
-  let current = null;
-  const subs = new Set();
+  let current: CorpusEmptyVariant | null = null;
+  const subs = new Set<() => void>();
   window.corpusEmpty = {
     render(model) {
       current = model || null;
