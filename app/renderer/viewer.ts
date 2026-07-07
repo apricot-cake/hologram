@@ -4641,7 +4641,7 @@
 
     async function load() {
       try {
-        cfg = await window.corpusIpc.getBackup();
+        cfg = await window.corpusBackup.getBackup();
       } catch {
         cfg = null;
       }
@@ -4650,12 +4650,12 @@
 
     // A run started: show the spinner. Make sure cfg is loaded first so a backup
     // configured mid-session still lights the rail (cfg may have been null at boot).
-    if (window.corpusIpc.onBackupStart) {
-      window.corpusIpc.onBackupStart(async () => {
+    if (window.corpusBackup.onBackupStart) {
+      window.corpusBackup.onBackupStart(async () => {
         mirrorSyncing = true;
         if (!cfg || !cfg.dir) {
           try {
-            cfg = await window.corpusIpc.getBackup();
+            cfg = await window.corpusBackup.getBackup();
           } catch {
             /* ignore */
           }
@@ -4665,12 +4665,12 @@
     }
     // A run finished: carry over the fresh result (and pull cfg if it was empty
     // when the run began) so the rail is correct without a manual refresh.
-    if (window.corpusIpc.onBackupDone) {
-      window.corpusIpc.onBackupDone(async (_e, r) => {
+    if (window.corpusBackup.onBackupDone) {
+      window.corpusBackup.onBackupDone(async (_e, r) => {
         mirrorSyncing = false;
         if (!cfg) {
           try {
-            cfg = await window.corpusIpc.getBackup();
+            cfg = await window.corpusBackup.getBackup();
           } catch {
             /* ignore */
           }

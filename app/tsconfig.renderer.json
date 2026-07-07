@@ -61,6 +61,7 @@
     "renderer/confirm.ts",
     "renderer/activebar.ts",
     "renderer/trash.ts",
+    "renderer/backup.ts",
     "renderer/viewer.ts"
   ]
 }

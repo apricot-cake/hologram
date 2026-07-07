@@ -52,7 +52,11 @@ function wireIpcOnce() {
   if (ipcWired) return;
   ipcWired = true;
   if (corpus().onSaveFolderProgress) corpus().onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
-  if (corpus().onBackupDone) corpus().onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+  try {
+    window.corpusBackup.onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+  } catch {
+    /* bare dev server: no preload bridge behind corpusBackup */
+  }
 }
 
 // Migration error code → message key, faithful to viewer.js setupSaveFolder.errMsg.
@@ -105,7 +109,7 @@ export function Data() {
     Promise.resolve(corpus().getConfig ? corpus().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
       .catch(() => {});
-    Promise.resolve(corpus().getBackup ? corpus().getBackup() : null)
+    Promise.resolve(window.corpusBackup.getBackup())
       .then((b) => setBackup(b || null))
       .catch(() => {});
   }, []);
@@ -258,7 +262,7 @@ export function Data() {
 
   const saveBackup = async (patch: Partial<BackupState>) => {
     try {
-      const res = await corpus().setBackup(patch);
+      const res = await window.corpusBackup.setBackup(patch);
       if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));
       if (res && res.backup) setBackup(res.backup);
     } catch {
@@ -267,7 +271,7 @@ export function Data() {
   };
   const chooseBackupDir = async () => {
     try {
-      const res = await corpus().pickBackupDir();
+      const res = await window.corpusBackup.pickBackupDir();
       if (res && res.error === 'overlap') {
         notify(t('backupOverlap'));
         return;

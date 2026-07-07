@@ -480,12 +480,25 @@ declare global {
     emptyTrash(): Promise<any>;
   }
 
+  // ---- renderer/backup.ts — auto-backup domain, read by both viewer.ts's project
+  // (the #mirrorStatus rail) and this strict islands project (the Settings > データ
+  // island calls it directly) ----
+  interface CorpusBackupApi {
+    getBackup(): Promise<any>;
+    setBackup(patch: unknown): Promise<any>;
+    pickBackupDir(): Promise<any>;
+    runBackup(): Promise<any>;
+    onBackupStart(cb: (...args: any[]) => void): void;
+    onBackupDone(cb: (...args: any[]) => void): void;
+  }
+
   interface Window {
     corpus: CorpusPreload;
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
     corpusTrash: CorpusTrashApi;
+    corpusBackup: CorpusBackupApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
