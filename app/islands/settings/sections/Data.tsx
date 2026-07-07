@@ -51,7 +51,11 @@ let ipcWired = false;
 function wireIpcOnce() {
   if (ipcWired) return;
   ipcWired = true;
-  if (corpus().onSaveFolderProgress) corpus().onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
+  try {
+    window.corpusPosts.onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
+  } catch {
+    /* bare dev server: no preload bridge behind corpusPosts */
+  }
   try {
     window.corpusBackup.onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
@@ -153,7 +157,7 @@ export function Data() {
     setMigrating(true);
     setProgress(null); // box appears on the first progress event (after a folder is picked)
     try {
-      const res = await corpus().pickSaveFolder();
+      const res = await window.corpusPosts.pickSaveFolder();
       if (!res || res.canceled) {
         setProgress(null);
         return;
@@ -177,7 +181,7 @@ export function Data() {
   const exportZip = async () => {
     notify(t('exporting'));
     try {
-      const res = await corpus().exportComplete(exportMode);
+      const res = await window.corpusPosts.exportComplete(exportMode);
       if (res && res.saved) notify(t('exported'));
       else if (res && res.empty) notify(t('noData'));
       else if (res && res.error) notify(t('exportFailed'));
@@ -197,7 +201,7 @@ export function Data() {
       const zip = await window.JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
-        const res = await corpus().importComplete(buf);
+        const res = await window.corpusPosts.importComplete(buf);
         reloadPosts();
         input.value = '';
         if (!res || !res.ok) {
@@ -222,7 +226,7 @@ export function Data() {
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await corpus().importPosts(posts);
+      const { imported, skipped } = await window.corpusPosts.importPosts(posts);
       reloadPosts();
       input.value = '';
       if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
@@ -236,7 +240,7 @@ export function Data() {
   // --- import media (arbitrary local image/video files) ---
   const importMedia = async () => {
     try {
-      const res = await corpus().importImages();
+      const res = await window.corpusPosts.importImages();
       if (!res || res.canceled) return;
       reloadPosts();
       if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));

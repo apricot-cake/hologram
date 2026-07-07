@@ -62,6 +62,7 @@
     "renderer/activebar.ts",
     "renderer/trash.ts",
     "renderer/backup.ts",
+    "renderer/posts.ts",
     "renderer/viewer.ts"
   ]
 }

@@ -9,12 +9,14 @@
 // persistTagGroups, loadTagTypes/persistTagTypes, loadPosterTags/persistPosterTags), and
 // grouping opt-outs (records.js: loadManualGroups/persistManualGroups, loadUngrouped/
 // persistUngrouped), poster-folders (folders.js: createPersistedFolderStore), trash
-// (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), and backup (backup.ts:
-// getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone) — those
-// domain services call this module rather than window.corpus directly, same as
-// viewer.js. Still flat here (no clear existing/new home decided yet): records
-// import/export and cross-cutting prefs/config/window-chrome. Plain IIFE on window
-// (like the sibling renderer/*.ts services), loaded before viewer.js.
+// (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), backup (backup.ts:
+// getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone), and posts
+// (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importPosts/
+// importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
+// onSaveFolderProgress/onPostsChanged) — those domain services call this module
+// rather than window.corpus directly, same as viewer.js. Still flat here (no clear
+// existing/new home decided yet): cross-cutting prefs/config/window-chrome. Plain
+// IIFE on window (like the sibling renderer/*.ts services), loaded before viewer.js.
 (function () {
   'use strict';
 

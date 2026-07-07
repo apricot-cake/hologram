@@ -1092,7 +1092,7 @@
   async function applyTagUndo(records) {
     for (const r of records) {
       try {
-        await window.corpusIpc.updateTags(r.image, r.tags);
+        await window.corpusPosts.updateTags(r.image, r.tags);
       } catch {}
       const rec = _postsById.get(r.captureId); // O(1) via the delta-cache map (allPosts holds the same record refs)
       if (rec) rec.tags = r.tags.slice();
@@ -1694,7 +1694,7 @@
     }
     _loadPostsInFlight = true;
     try {
-      const res = await window.corpusIpc.listPostsDelta(_haveBaseline, changedNames);
+      const res = await window.corpusPosts.listPostsDelta(_haveBaseline, changedNames);
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
@@ -2843,7 +2843,7 @@
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try {
-        await window.corpusIpc.deletePost(r.image || r.video);
+        await window.corpusPosts.deletePost(r.image || r.video);
       } catch {
         /* keep going */
       }
@@ -2957,7 +2957,7 @@
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try {
-        await window.corpusIpc.updateTags(r.image || r.video, next);
+        await window.corpusPosts.updateTags(r.image || r.video, next);
       } catch {
         /* keep going */
       }
@@ -3152,7 +3152,7 @@
       if (prev.includes(tag)) continue;
       const newTags = [...prev, tag];
       try {
-        await window.corpusIpc.updateTags(r.image || r.video, newTags);
+        await window.corpusPosts.updateTags(r.image || r.video, newTags);
       } catch {
         /* keep going */
       }
@@ -3397,7 +3397,7 @@
         });
         for (const u of undoRecords) {
           try {
-            await window.corpusIpc.updateTags(u.image, u.newTags);
+            await window.corpusPosts.updateTags(u.image, u.newTags);
           } catch {
             /* keep going */
           }
@@ -3527,7 +3527,7 @@
           if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
         });
         const count = toDelete.length;
-        for (const p of toDelete) await window.corpusIpc.deletePost(p.image || p.video);
+        for (const p of toDelete) await window.corpusPosts.deletePost(p.image || p.video);
         selectedSet.clear();
         selectionAnchor = null;
         updateSelectionBar();
@@ -4545,7 +4545,7 @@
       const zip = await JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
-        const res = await window.corpusIpc.importComplete(buf);
+        const res = await window.corpusPosts.importComplete(buf);
         await loadPosts();
         (e.target as HTMLInputElement).value = '';
         if (!res || !res.ok) {
@@ -4570,7 +4570,7 @@
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await window.corpusIpc.importPosts(posts);
+      const { imported, skipped } = await window.corpusPosts.importPosts(posts);
       await loadPosts();
       (e.target as HTMLInputElement).value = '';
       if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
@@ -4704,7 +4704,7 @@
       keywordRequired: MSG.deleteKeyword, // OK stays disabled until this is typed
       onOk: async () => {
         // Clear all data (deletes every image + sidecar in the save folder).
-        const res = await window.corpusIpc.clearAll();
+        const res = await window.corpusPosts.clearAll();
         // Main refuses the wipe if config is degraded — keep the library on screen and
         // tell the user to restart (initSaveFolderRedundancy repairs on launch).
         if (res && res.blocked) {
@@ -4752,8 +4752,8 @@
       renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
       if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
     });
-  if (window.corpusIpc.onPostsChanged) {
-    window.corpusIpc.onPostsChanged(async (names) => {
+  if (window.corpusPosts.onPostsChanged) {
+    window.corpusPosts.onPostsChanged(async (names) => {
       await loadPosts(true, names); // background fs-watch refresh — targeted via the changed-file hint
     });
   }

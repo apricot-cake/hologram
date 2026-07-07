@@ -492,6 +492,27 @@ declare global {
     onBackupDone(cb: (...args: any[]) => void): void;
   }
 
+  // ---- renderer/posts.ts — post-record CRUD/import/export + save-folder move
+  // domain, read by both viewer.ts's project (list/delete/tags/import/clearAll/
+  // change-watch) and this strict islands project (the Settings > データ island
+  // calls the save-folder/export/import/import-media methods directly) ----
+  interface CorpusPostsApi {
+    listPosts(): Promise<any[]>;
+    listPostsDelta(haveBaseline: boolean, changedNames?: string[] | null): Promise<any>;
+    imageDataUrl(image: string): Promise<string | null>;
+    deletePost(image: string): Promise<any>;
+    updateTags(image: string, tags: unknown, patch?: unknown): Promise<any>;
+    importPosts(posts: unknown): Promise<any>;
+    importImages(): Promise<any>;
+    clearAll(): Promise<any>;
+    exportSave(filename: string, bytes: Uint8Array | ArrayBuffer): Promise<any>;
+    exportComplete(mode?: string): Promise<any>;
+    importComplete(bytes: Uint8Array | ArrayBuffer): Promise<any>;
+    pickSaveFolder(): Promise<any>;
+    onSaveFolderProgress(cb: (p: any) => void): void;
+    onPostsChanged(cb: (names: string[] | null) => void): void;
+  }
+
   interface Window {
     corpus: CorpusPreload;
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
@@ -499,6 +520,7 @@ declare global {
     corpusIpc: CorpusPreload;
     corpusTrash: CorpusTrashApi;
     corpusBackup: CorpusBackupApi;
+    corpusPosts: CorpusPostsApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
