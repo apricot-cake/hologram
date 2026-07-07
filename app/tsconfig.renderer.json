@@ -27,6 +27,7 @@
     "islands/types/globals.d.ts",
     "renderer/i18n.ts",
     "renderer/ui.ts",
+    "renderer/ipc.ts",
     "renderer/theme.js",
     "renderer/bridge.ts",
     "renderer/search.ts",

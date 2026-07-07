@@ -1026,7 +1026,7 @@
   // keeps the labels it receives).
   async function persistTagTypes() {
     try {
-      if (window.corpus.setTagTypes) await window.corpus.setTagTypes(tagTypes, tagLabels);
+      if (window.corpusIpc.setTagTypes) await window.corpusIpc.setTagTypes(tagTypes, tagLabels);
     } catch {
       /* best-effort */
     }
@@ -1096,7 +1096,7 @@
   async function applyTagUndo(records) {
     for (const r of records) {
       try {
-        await window.corpus.updateTags(r.image, r.tags);
+        await window.corpusIpc.updateTags(r.image, r.tags);
       } catch {}
       const rec = _postsById.get(r.captureId); // O(1) via the delta-cache map (allPosts holds the same record refs)
       if (rec) rec.tags = r.tags.slice();
@@ -1698,7 +1698,7 @@
     }
     _loadPostsInFlight = true;
     try {
-      const res = await window.corpus.listPostsDelta(_haveBaseline, changedNames);
+      const res = await window.corpusIpc.listPostsDelta(_haveBaseline, changedNames);
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
@@ -1916,13 +1916,13 @@
   const { genTabId, serializeTabs, sanitizeSavedTabs } = window.corpusTabState;
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
-    if (!window.corpus.setTabs) return;
+    if (!window.corpusIpc.setTabs) return;
     const at = tabs.find((t) => t.id === activeTabId);
     if (at && !isImageTab(at)) {
       at.state = snapshotState();
       at._scrollTop = contentScrollTop();
     }
-    window.corpus.setTabs(serializeTabs(tabs, activeTabId));
+    window.corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
   }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
@@ -2169,7 +2169,7 @@
 
   async function initTabs() {
     try {
-      const saved = window.corpus.getTabs ? await window.corpus.getTabs() : null;
+      const saved = window.corpusIpc.getTabs ? await window.corpusIpc.getTabs() : null;
       const st = sanitizeSavedTabs(saved, genTabId); // null when nothing usable was saved
       if (st) {
         tabs = st.tabs;
@@ -2703,7 +2703,7 @@
   function onCardMenuPick(g, x, y, srcUrl, item) {
     const act = item.act;
     if (act === 'open') {
-      if (g.rep.url) window.corpus.openExternal(g.rep.url);
+      if (g.rep.url) window.corpusIpc.openExternal(g.rep.url);
     } else if (act === 'newtab') {
       addImageTab(g); // background, browser-like
     } else if (act === 'folder') {
@@ -2715,11 +2715,11 @@
       if (b) b.click();
     } else if (act === 'info') showDetail(g);
     else if (act === 'poster') jumpToPoster(g.rep);
-    else if (act === 'sauce') window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
-    else if (act === 'ascii') window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
+    else if (act === 'sauce') window.corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
+    else if (act === 'ascii') window.corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
       const file = densityImage(g.rep, currentView) || g.rep.image;
-      if (file && window.corpus.showInFolder) window.corpus.showInFolder(file);
+      if (file && window.corpusIpc.showInFolder) window.corpusIpc.showInFolder(file);
     } else if (act === 'delete') requestDeleteGroup(g);
   }
   function showCardMenu(g, x, y) {
@@ -2836,7 +2836,7 @@
       onOk: async ({ skip }) => {
         if (skip) {
           skipDeleteConfirm = true;
-          window.corpus.setPref('skipDeleteConfirm', true);
+          window.corpusIpc.setPref('skipDeleteConfirm', true);
         }
         await executeDeleteGroup(g);
       },
@@ -2848,7 +2848,7 @@
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try {
-        await window.corpus.deletePost(r.image || r.video);
+        await window.corpusIpc.deletePost(r.image || r.video);
       } catch {
         /* keep going */
       }
@@ -2909,8 +2909,8 @@
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
   function persistManual() {
-    if (window.corpus.setManualGroups)
-      window.corpus.setManualGroups(manualGroups).catch(() => {
+    if (window.corpusIpc.setManualGroups)
+      window.corpusIpc.setManualGroups(manualGroups).catch(() => {
         /* best-effort */
       });
   }
@@ -2920,8 +2920,8 @@
     keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
-    if (window.corpus.setUngrouped)
-      window.corpus.setUngrouped([...ungrouped]).catch(() => {
+    if (window.corpusIpc.setUngrouped)
+      window.corpusIpc.setUngrouped([...ungrouped]).catch(() => {
         /* best-effort */
       });
     closeDetail();
@@ -2968,7 +2968,7 @@
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try {
-        await window.corpus.updateTags(r.image || r.video, next);
+        await window.corpusIpc.updateTags(r.image || r.video, next);
       } catch {
         /* keep going */
       }
@@ -3120,9 +3120,9 @@
         adoptSource: MSG.editAdoptSource,
       },
       onClose: closeDetail,
-      onOpenExternal: p.url ? () => window.corpus.openExternal(p.url) : null,
-      onSauce: srcImageUrl ? () => window.corpus.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
-      onAscii: srcImageUrl ? () => window.corpus.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
+      onOpenExternal: p.url ? () => window.corpusIpc.openExternal(p.url) : null,
+      onSauce: srcImageUrl ? () => window.corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
+      onAscii: srcImageUrl ? () => window.corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => jumpToPoster(p) : null,
       onAdoptSourceTag: (tag) => adoptSourceTag(g, tag),
       onTagAdd: (tag) => addInspectorTag(g, tag),
@@ -3163,7 +3163,7 @@
       if (prev.includes(tag)) continue;
       const newTags = [...prev, tag];
       try {
-        await window.corpus.updateTags(r.image || r.video, newTags);
+        await window.corpusIpc.updateTags(r.image || r.video, newTags);
       } catch {
         /* keep going */
       }
@@ -3408,7 +3408,7 @@
         });
         for (const u of undoRecords) {
           try {
-            await window.corpus.updateTags(u.image, u.newTags);
+            await window.corpusIpc.updateTags(u.image, u.newTags);
           } catch {
             /* keep going */
           }
@@ -3538,7 +3538,7 @@
           if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
         });
         const count = toDelete.length;
-        for (const p of toDelete) await window.corpus.deletePost(p.image || p.video);
+        for (const p of toDelete) await window.corpusIpc.deletePost(p.image || p.video);
         selectedSet.clear();
         selectionAnchor = null;
         updateSelectionBar();
@@ -3588,7 +3588,7 @@
     const v = window.corpusStore.get('view');
     if (v === currentView) return;
     currentView = v;
-    window.corpus.setPref('viewMode', currentView);
+    window.corpusIpc.setPref('viewMode', currentView);
     clearTimeout(_densityRenderT);
     _densityRenderT = setTimeout(() => {
       if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
@@ -3617,7 +3617,7 @@
     // (Changing which toolbars are visible shifts the sidebar width → the toggle's geometry;
     // the island's ResizeObserver re-slides its own thumb, so there is nothing to measure here.)
     closeDetail(); // a stale post/poster detail shouldn't survive the switch
-    if (!(opts && opts.silent)) window.corpus.setPref('browseMode', mode);
+    if (!(opts && opts.silent)) window.corpusIpc.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
     // was updated synchronously above; defer the heavy grid render past a paint so the
     // switch shows INSTANTLY instead of blocking on renderPosts/Posters/Collections.
@@ -3731,7 +3731,7 @@
     const v = window.corpusStore.get('posterView');
     if (v === posterView) return;
     posterView = v;
-    window.corpus.setPref('posterViewMode', posterView);
+    window.corpusIpc.setPref('posterViewMode', posterView);
     clearTimeout(_posterDensityRenderT);
     _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
   });
@@ -3748,7 +3748,7 @@
       // Live re-flow while dragging: masonic recreates its positioner on a
       // columnWidth change (same wiring as the post tile slider).
       window.corpusPosterGrid.patch({ columnWidth: size });
-      window.corpus.setPref(st.pref, size);
+      window.corpusIpc.setPref(st.pref, size);
     });
   })();
   // The column counts depend on the grid width — re-derive the track on resize.
@@ -3766,8 +3766,8 @@
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() {
-    if (window.corpus.setPosterTags)
-      window.corpus.setPosterTags({ tags: posterTags }).catch(() => {
+    if (window.corpusIpc.setPosterTags)
+      window.corpusIpc.setPosterTags({ tags: posterTags }).catch(() => {
         /* best-effort */
       });
   }
@@ -3778,8 +3778,8 @@
   // CRUD/id-minting/toggle logic isn't reimplemented; only the persist target
   // (poster-folders.json) and the view-specific toast/re-render live here.
   function persistPosterFolders() {
-    if (window.corpus.setPosterFolders)
-      window.corpus.setPosterFolders({ folders: pfStore.all() }).catch(() => {
+    if (window.corpusIpc.setPosterFolders)
+      window.corpusIpc.setPosterFolders({ folders: pfStore.all() }).catch(() => {
         /* best-effort */
       });
   }
@@ -4279,7 +4279,7 @@
       if (gridIslandActive() && st.columns) window.corpusGrid.patch({ columnWidth: st.get() }); // live re-flow while dragging (masonic recreates its positioner on columnWidth change)
       return;
     }
-    window.corpus.setPref(st.pref, st.get());
+    window.corpusIpc.setPref(st.pref, st.get());
     renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
@@ -4363,7 +4363,7 @@
   // persist bridge it can call so the post grid updates immediately.
   function applyTileOverlay(v) {
     tileOverlay = v;
-    window.corpus.setPref('tileOverlay', tileOverlay);
+    window.corpusIpc.setPref('tileOverlay', tileOverlay);
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
     // via CSS), so flip the class directly instead of re-grouping + rebuilding the
     // grid (a full renderPosts reloaded every tile image = flicker).
@@ -4377,12 +4377,12 @@
     reloadPosts: () => loadPosts(),
     setSkipDeleteConfirm: (v) => {
       skipDeleteConfirm = v;
-      window.corpus.setPref('skipDeleteConfirm', v);
+      window.corpusIpc.setPref('skipDeleteConfirm', v);
     },
   });
 
   // Load saved view mode and skipDeleteConfirm
-  window.corpus.getPrefs().then((prefs) => {
+  window.corpusIpc.getPrefs().then((prefs) => {
     if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
       currentView = prefs.viewMode;
       // Push the restored view into the store so the toolbar island renders the right
@@ -4565,7 +4565,7 @@
       const zip = await JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
-        const res = await window.corpus.importComplete(buf);
+        const res = await window.corpusIpc.importComplete(buf);
         await loadPosts();
         (e.target as HTMLInputElement).value = '';
         if (!res || !res.ok) {
@@ -4590,7 +4590,7 @@
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await window.corpus.importPosts(posts);
+      const { imported, skipped } = await window.corpusIpc.importPosts(posts);
       await loadPosts();
       (e.target as HTMLInputElement).value = '';
       if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
@@ -4661,7 +4661,7 @@
 
     async function load() {
       try {
-        cfg = await window.corpus.getBackup();
+        cfg = await window.corpusIpc.getBackup();
       } catch {
         cfg = null;
       }
@@ -4670,12 +4670,12 @@
 
     // A run started: show the spinner. Make sure cfg is loaded first so a backup
     // configured mid-session still lights the rail (cfg may have been null at boot).
-    if (window.corpus.onBackupStart) {
-      window.corpus.onBackupStart(async () => {
+    if (window.corpusIpc.onBackupStart) {
+      window.corpusIpc.onBackupStart(async () => {
         mirrorSyncing = true;
         if (!cfg || !cfg.dir) {
           try {
-            cfg = await window.corpus.getBackup();
+            cfg = await window.corpusIpc.getBackup();
           } catch {
             /* ignore */
           }
@@ -4685,12 +4685,12 @@
     }
     // A run finished: carry over the fresh result (and pull cfg if it was empty
     // when the run began) so the rail is correct without a manual refresh.
-    if (window.corpus.onBackupDone) {
-      window.corpus.onBackupDone(async (_e, r) => {
+    if (window.corpusIpc.onBackupDone) {
+      window.corpusIpc.onBackupDone(async (_e, r) => {
         mirrorSyncing = false;
         if (!cfg) {
           try {
-            cfg = await window.corpus.getBackup();
+            cfg = await window.corpusIpc.getBackup();
           } catch {
             /* ignore */
           }
@@ -4724,7 +4724,7 @@
       keywordRequired: MSG.deleteKeyword, // OK stays disabled until this is typed
       onOk: async () => {
         // Clear all data (deletes every image + sidecar in the save folder).
-        const res = await window.corpus.clearAll();
+        const res = await window.corpusIpc.clearAll();
         // Main refuses the wipe if config is degraded — keep the library on screen and
         // tell the user to restart (initSaveFolderRedundancy repairs on launch).
         if (res && res.blocked) {
@@ -4772,8 +4772,8 @@
       renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
       if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
     });
-  if (window.corpus.onPostsChanged) {
-    window.corpus.onPostsChanged(async (names) => {
+  if (window.corpusIpc.onPostsChanged) {
+    window.corpusIpc.onPostsChanged(async (names) => {
       await loadPosts(true, names); // background fs-watch refresh — targeted via the changed-file hint
     });
   }
@@ -4782,37 +4782,37 @@
   if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   try {
-    const r = window.corpus.getUngrouped ? await window.corpus.getUngrouped() : null;
+    const r = window.corpusIpc.getUngrouped ? await window.corpusIpc.getUngrouped() : null;
     ungrouped = new Set((r && r.keys) || []);
   } catch {
     /* default empty */
   }
   try {
-    const r = window.corpus.getPosterFolders ? await window.corpus.getPosterFolders() : null;
+    const r = window.corpusIpc.getPosterFolders ? await window.corpusIpc.getPosterFolders() : null;
     pfStore.setAll((r && r.folders) || []);
   } catch {
     /* default empty */
   }
   try {
-    const r = window.corpus.getPosterTags ? await window.corpus.getPosterTags() : null;
+    const r = window.corpusIpc.getPosterTags ? await window.corpusIpc.getPosterTags() : null;
     posterTags = (r && r.tags) || {};
   } catch {
     /* default empty */
   }
   try {
-    const r = window.corpus.getManualGroups ? await window.corpus.getManualGroups() : null;
+    const r = window.corpusIpc.getManualGroups ? await window.corpusIpc.getManualGroups() : null;
     manualGroups = (r && r.groups) || [];
   } catch {
     /* default empty */
   }
   try {
-    const r = window.corpus.getTagGroups ? await window.corpus.getTagGroups() : null;
+    const r = window.corpusIpc.getTagGroups ? await window.corpusIpc.getTagGroups() : null;
     tagGroups = (r && r.groups) || [];
   } catch {
     /* default empty */
   }
   try {
-    const r = window.corpus.getTagTypes ? await window.corpus.getTagTypes() : null;
+    const r = window.corpusIpc.getTagTypes ? await window.corpusIpc.getTagTypes() : null;
     tagTypes = (r && r.types) || {};
     tagLabels = (r && r.labels) || {};
     applyKindLabels();
@@ -4830,7 +4830,7 @@
   // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
   // buildUsers has data for the poster grid. silent = no history/pref echo.
   try {
-    const prefs = await window.corpus.getPrefs();
+    const prefs = await window.corpusIpc.getPrefs();
     // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
     const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
     // Run the heavy restore synchronously (silent = no history/pref echo, no animation),

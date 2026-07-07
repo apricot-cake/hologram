@@ -27,6 +27,7 @@
 //     them to tsconfig.renderer.json — the same isolation corpus-viewer-bundle uses.
 //     Order mirrors the old index.html scripts; these precede root.tsx (islands read the
 //     globals at render) and viewer (last). Wave 1 = the logic services. ---
+import 'corpus-svc:ipc';
 import 'corpus-svc:search';
 import 'corpus-svc:query';
 import 'corpus-svc:records';

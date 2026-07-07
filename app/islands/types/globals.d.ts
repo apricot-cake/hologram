@@ -472,6 +472,9 @@ declare global {
 
   interface Window {
     corpus: CorpusPreload;
+    // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
+    // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
+    corpusIpc: CorpusPreload;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
