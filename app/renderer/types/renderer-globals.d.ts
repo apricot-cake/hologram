@@ -427,9 +427,10 @@ interface CorpusUndoApi {
 }
 
 // ---- renderer/folders.js — library collections store + management modal +
-// library-wide clip set. The factory (window.corpusFolderStore) is shared by the
-// library collections store (isCollections) and the poster folder store
-// (viewer.js pfStore, no isCollections). A folder always has an id/name/items;
+// library-wide clip set. The raw createFolderStore factory is shared internally by the
+// library collections store (isCollections) and, via createPersistedFolderStore's
+// persist/load wiring, the poster folder store (window.corpusPosterFolderStore, used by
+// viewer.js pfStore, no isCollections). A folder always has an id/name/items;
 // collections additionally carry kind/created and a dynamic saved-search (tree+q). ----
 interface CorpusFolder {
   id: string;
@@ -459,7 +460,8 @@ interface CorpusFolderStore {
   /** Present only on the collections store (isCollections): re-save a dynamic collection's search. */
   update?(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
 }
-type CorpusFolderStoreFactory = (opts: { idPrefix: string; persist: () => void; isCollections?: boolean }) => CorpusFolderStore;
+/** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
+type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
 interface CorpusFoldersApi {
   load(): Promise<void>;
   all(): CorpusFolder[];
@@ -513,7 +515,7 @@ interface Window {
   corpusGeometry: CorpusGeometryApi;
   corpusFormat: CorpusFormatApi;
   corpusUndo: CorpusUndoApi;
-  corpusFolderStore: CorpusFolderStoreFactory;
+  corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
   corpusMakeBridge: CorpusMakeBridge;
 }

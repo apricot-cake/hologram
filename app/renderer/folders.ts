@@ -138,7 +138,50 @@
       ...(isCollections ? { update } : {}),
     };
   }
-  window.corpusFolderStore = createFolderStore;
+
+  // Persist/load-wired variant of createFolderStore, for callers that just want a ready
+  // store backed by a get/set IPC pair (the same load-caching idiom as the collections
+  // store's own load()/persist() below, generalized). Currently used for the poster
+  // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
+  // closure + a manual getPosterFolders/setAll block in boot — both now live here,
+  // the one place besides ipc.ts that still touches window.corpusIpc for folders).
+  function createPersistedFolderStore({
+    idPrefix,
+    get,
+    set,
+  }: {
+    idPrefix: string;
+    get: () => Promise<{ folders?: unknown[] } | null>;
+    set: (data: { folders: CorpusFolder[] }) => Promise<unknown>;
+  }): CorpusFolderStore & { load: () => Promise<void> } {
+    let loadPromise: Promise<void> | null = null;
+    function doPersist() {
+      loadPromise = null; // invalidate the load cache so a later load() re-reads disk
+      set({ folders: store.allRaw() }).catch(() => {
+        /* best-effort */
+      });
+    }
+    const store = createFolderStore({ idPrefix, persist: doPersist });
+    async function doLoad() {
+      try {
+        const r = await get();
+        store.setAll((r && r.folders) || []);
+      } catch {
+        store.setAll([]);
+      }
+    }
+    function load() {
+      if (!loadPromise) loadPromise = doLoad();
+      return loadPromise;
+    }
+    return { ...store, load };
+  }
+  window.corpusPosterFolderStore = () =>
+    createPersistedFolderStore({
+      idPrefix: 'pf',
+      get: () => window.corpusIpc.getPosterFolders(),
+      set: (data) => window.corpusIpc.setPosterFolders(data),
+    });
 
   // Library collections [{ id, name, kind, created, items:[captureId] }] — the unified
   // folders container. isCollections enables kind/created + dynamic saved-search.

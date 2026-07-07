@@ -3760,16 +3760,10 @@
   // posterTagsOf / posterFilterVocab moved to tags.js (corpusTags wiring above).
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
-  // Reuses the shared folder-list store (folders.js createFolderStore) so the
-  // CRUD/id-minting/toggle logic isn't reimplemented; only the persist target
-  // (poster-folders.json) and the view-specific toast/re-render live here.
-  function persistPosterFolders() {
-    if (window.corpusIpc.setPosterFolders)
-      window.corpusIpc.setPosterFolders({ folders: pfStore.all() }).catch(() => {
-        /* best-effort */
-      });
-  }
-  const pfStore = window.corpusFolderStore({ idPrefix: 'pf', persist: persistPosterFolders });
+  // Reuses the shared folder-list store (folders.js createPersistedFolderStore) so the
+  // CRUD/id-minting/toggle/persist/load logic isn't reimplemented; only the
+  // view-specific toast/re-render live here.
+  const pfStore = window.corpusPosterFolderStore();
   const posterFolderById = pfStore.byId;
   const posterFolderHas = pfStore.has;
   function createPosterFolder(name) {
@@ -4768,12 +4762,7 @@
   if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
   ungrouped = await window.corpusRecords.loadUngrouped();
-  try {
-    const r = window.corpusIpc.getPosterFolders ? await window.corpusIpc.getPosterFolders() : null;
-    pfStore.setAll((r && r.folders) || []);
-  } catch {
-    /* default empty */
-  }
+  await pfStore.load();
   posterTags = await window.corpusTags.loadPosterTags();
   manualGroups = await window.corpusRecords.loadManualGroups();
   tagGroups = await window.corpusTags.loadTagGroups();
