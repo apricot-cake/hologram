@@ -1,13 +1,16 @@
 // Tab-state service — tab title derivation (filterLabel / tabTitleOf), the
 // per-tab browser-style back/forward history state machine (makeNavHistory),
-// and the tabs.json (de)serialization pair (serializeTabs / sanitizeSavedTabs),
-// extracted 1:1 from viewer.js as the sixth "pure logic → service" slice of the
-// viewer decomposition (最終形B). Plain IIFE on window (like query.js /
-// records.js / users.js); loaded BEFORE viewer.js; touches no DOM. Runtime
-// couplings are injected — reassigned viewer lets (appBooted) come in as getter
-// functions and later-declared consts (PF_NAME / CF) as deferred arrows — so
-// this file loads under Node (scripts/test-tabstate-unit.js). CommonJS-exported
-// like records.js.
+// the tabs.json (de)serialization pair (serializeTabs / sanitizeSavedTabs), and
+// the tabs.json load/persist calls (loadTabs / persistTabs), extracted 1:1 from
+// viewer.js as the sixth "pure logic → service" slice of the viewer
+// decomposition (最終形B) plus the P4 "IPC→service" domain-grouping follow-up.
+// Plain IIFE on window (like query.js / records.js / users.js); loaded BEFORE
+// viewer.js; touches no DOM. Runtime couplings are injected — reassigned
+// viewer lets (appBooted) come in as getter functions and later-declared
+// consts (PF_NAME / CF) as deferred arrows — so this file loads under Node
+// (scripts/test-tabstate-unit.js): loadTabs/persistTabs read window.corpusIpc
+// directly rather than via deps since only the browser ever calls them, never
+// the Node unit test. CommonJS-exported like records.js.
 (function () {
   'use strict';
 
@@ -219,7 +222,27 @@
     return { tabs, activeTabId: sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id };
   }
 
-  const api = { genTabId, makeTabLabels, makeNavHistory, serializeTabs, sanitizeSavedTabs };
+  // tabs.json load/persist (P4 "IPC→service" domain-grouping slice — the raw
+  // corpusIpc.getTabs/setTabs calls move here from viewer.js, next to the
+  // (de)serialization pair they wrap). Only called from the browser (viewer.js);
+  // never invoked by the Node unit test, so window.corpusIpc's absence under
+  // Node is harmless.
+  async function loadTabs() {
+    try {
+      return await window.corpusIpc.getTabs();
+    } catch {
+      return null;
+    }
+  }
+  async function persistTabs(tabs, activeTabId) {
+    try {
+      await window.corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const api = { genTabId, makeTabLabels, makeNavHistory, serializeTabs, sanitizeSavedTabs, loadTabs, persistTabs };
   if (typeof window !== 'undefined') window.corpusTabState = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

@@ -162,6 +162,12 @@ interface CorpusRecordsApi {
   percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
   /** Pre-computes _dateMs/_capturedMs/_postKey/_quotedKey on arrival. */
   stampPost(p: CorpusPost): CorpusPost;
+  /** manual-groups.json load; [] on failure. */
+  loadManualGroups(): Promise<string[][]>;
+  persistManualGroups(groups: string[][]): Promise<void>;
+  /** ungrouped.json load; empty Set on failure. */
+  loadUngrouped(): Promise<Set<string>>;
+  persistUngrouped(keys: Set<string> | string[]): Promise<void>;
 }
 
 // ---- renderer/facets.js — facet counts + value-flyout row models ----
@@ -192,8 +198,10 @@ interface CorpusCoocApi {
   };
 }
 
-// ---- renderer/tags.js — tag vocabulary / 種別 (kind) domain (read-side only;
-// mutations stay in viewer.js, so every store dep is a getter) ----
+// ---- renderer/tags.js — tag vocabulary / 種別 (kind) domain (read-side
+// derivations take every store as a getter dep; loadTagGroups/persistTagGroups/
+// loadTagTypes/persistTagTypes/loadPosterTags/persistPosterTags own the disk
+// round-trip for those same three stores) ----
 interface CorpusTagPickerItem {
   tag: string;
   kind?: string | null;
@@ -221,6 +229,15 @@ interface CorpusTagsApi {
   };
   /** Set-equality on tag arrays (order-insensitive). */
   sameTags(a: string[], b: string[]): boolean;
+  /** tag-groups.json load; [] on failure. */
+  loadTagGroups(): Promise<Array<{ id: string; name: string; tags?: string[] }>>;
+  persistTagGroups(groups: Array<{ id: string; name: string; tags?: string[] }>): Promise<void>;
+  /** tag-types.json load; {} on failure. */
+  loadTagTypes(): Promise<{ types: Record<string, string>; labels: Record<string, string> }>;
+  persistTagTypes(types: Record<string, string>, labels: Record<string, string>): Promise<void>;
+  /** poster-tags.json load; {} on failure. */
+  loadPosterTags(): Promise<Record<string, string[]>>;
+  persistPosterTags(tags: Record<string, string[]>): Promise<void>;
 }
 
 // ---- renderer/users.js — poster roll-up + search-box suggestions ----
@@ -292,6 +309,10 @@ interface CorpusTabStateApi {
   makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusTabSnapshot; apply(s: CorpusTabSnapshot): void; onChange(): void }): CorpusNavHistory;
   serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> };
   sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null;
+  /** tabs.json load (raw shape — pass through sanitizeSavedTabs); null on failure. */
+  loadTabs(): Promise<unknown>;
+  /** Serializes + persists tabs.json. */
+  persistTabs(tabs: CorpusTab[], activeTabId: string | null): Promise<void>;
 }
 
 // ---- renderer/listing.js — the "what is visible, in what order" pipeline for

@@ -1,12 +1,16 @@
 // Record service — record-shape helpers (media/screenshot/artwork/density image),
 // normalization (postKeyOf / stampPost), grouping (groupRecords) and the per-platform
 // likes percentile, extracted 1:1 from viewer.js as the second "pure logic → service"
-// slice of the viewer decomposition (最終形B). Plain IIFE on window (like query.js /
+// slice of the viewer decomposition (最終形B), plus (P4 "IPC→service" domain-grouping
+// follow-up) the manual-groups.json / ungrouped.json load/persist pairs for the two
+// stores makeGroupRecords already consumes. Plain IIFE on window (like query.js /
 // store.js); loaded BEFORE viewer.js; touches no DOM. Runtime couplings (manual
 // groups / ungrouped opt-outs — live viewer state) are INJECTED via
-// makeGroupRecords(deps), so this file loads under Node too (scripts/test-records-unit.js).
-// Also exported via CommonJS so the main process can share postKeyOf (the duplicate-save
-// detection planned in BACKLOG needs the same URL→key normalization on both sides).
+// makeGroupRecords(deps), so this file loads under Node too (scripts/test-records-unit.js);
+// the load/persist pair below reads window.corpusIpc directly instead, since only the
+// browser ever calls them, never the Node unit test. Also exported via CommonJS so the
+// main process can share postKeyOf (the duplicate-save detection planned in BACKLOG
+// needs the same URL→key normalization on both sides).
 (function () {
   'use strict';
 
@@ -311,7 +315,61 @@
     return p;
   }
 
-  const api = { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, makeGroupRecords, makeGallery, makeCardModel, percentileFn, stampPost };
+  // manual-groups.json / ungrouped.json load/persist (P4 "IPC→service" domain-
+  // grouping slice — the raw corpusIpc calls move here from viewer.js, next to
+  // makeGroupRecords/makeGallery which already consume these two stores as
+  // injected deps). Only called from the browser (viewer.js); never invoked by
+  // the Node unit test, so window.corpusIpc's absence under Node is harmless.
+  async function loadManualGroups() {
+    try {
+      const r = await window.corpusIpc.getManualGroups();
+      return (r && r.groups) || [];
+    } catch {
+      return [];
+    }
+  }
+  async function persistManualGroups(groups) {
+    try {
+      await window.corpusIpc.setManualGroups(groups);
+    } catch {
+      /* best-effort */
+    }
+  }
+  async function loadUngrouped() {
+    try {
+      const r = await window.corpusIpc.getUngrouped();
+      return new Set<string>((r && r.keys) || []);
+    } catch {
+      return new Set<string>();
+    }
+  }
+  async function persistUngrouped(keys) {
+    try {
+      await window.corpusIpc.setUngrouped([...keys]);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const api = {
+    mediaFilesOf,
+    isScreenshot,
+    captureFile,
+    artworkFile,
+    densityImage,
+    postIdKey,
+    postKeyOf,
+    groupFilesOf,
+    makeGroupRecords,
+    makeGallery,
+    makeCardModel,
+    percentileFn,
+    stampPost,
+    loadManualGroups,
+    persistManualGroups,
+    loadUngrouped,
+    persistUngrouped,
+  };
   if (typeof window !== 'undefined') window.corpusRecords = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

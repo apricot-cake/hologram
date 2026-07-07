@@ -1025,11 +1025,7 @@
   // Always send BOTH maps so writing one never drops the other (set-tag-types only
   // keeps the labels it receives).
   async function persistTagTypes() {
-    try {
-      if (window.corpusIpc.setTagTypes) await window.corpusIpc.setTagTypes(tagTypes, tagLabels);
-    } catch {
-      /* best-effort */
-    }
+    await window.corpusTags.persistTagTypes(tagTypes, tagLabels);
   }
   async function setTagKind(tag, kind) {
     if (kind) tagTypes[tag] = kind;
@@ -1911,18 +1907,17 @@
     clip: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
   };
-  // genTabId + the tabs.json payload/restore shape live in tab-state.js (6th
-  // extraction slice) — serializeTabs documents the persisted field set.
-  const { genTabId, serializeTabs, sanitizeSavedTabs } = window.corpusTabState;
+  // genTabId + the tabs.json payload/restore shape + its load/persist live in
+  // tab-state.js (6th extraction slice + P4 domain-grouping follow-up).
+  const { genTabId, sanitizeSavedTabs, loadTabs, persistTabs } = window.corpusTabState;
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
-    if (!window.corpusIpc.setTabs) return;
     const at = tabs.find((t) => t.id === activeTabId);
     if (at && !isImageTab(at)) {
       at.state = snapshotState();
       at._scrollTop = contentScrollTop();
     }
-    window.corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
+    persistTabs(tabs, activeTabId);
   }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
@@ -2169,7 +2164,7 @@
 
   async function initTabs() {
     try {
-      const saved = window.corpusIpc.getTabs ? await window.corpusIpc.getTabs() : null;
+      const saved = await loadTabs();
       const st = sanitizeSavedTabs(saved, genTabId); // null when nothing usable was saved
       if (st) {
         tabs = st.tabs;
@@ -2909,10 +2904,7 @@
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
   function persistManual() {
-    if (window.corpusIpc.setManualGroups)
-      window.corpusIpc.setManualGroups(manualGroups).catch(() => {
-        /* best-effort */
-      });
+    window.corpusRecords.persistManualGroups(manualGroups);
   }
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
   function setGroupKey(key, ungroup) {
@@ -2920,10 +2912,7 @@
     keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
-    if (window.corpusIpc.setUngrouped)
-      window.corpusIpc.setUngrouped([...ungrouped]).catch(() => {
-        /* best-effort */
-      });
+    window.corpusRecords.persistUngrouped(ungrouped);
     closeDetail();
     renderPosts(true);
     if (ungroup) showToast(MSG.ungroupDone);
@@ -3766,10 +3755,7 @@
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
   function persistPosterTags() {
-    if (window.corpusIpc.setPosterTags)
-      window.corpusIpc.setPosterTags({ tags: posterTags }).catch(() => {
-        /* best-effort */
-      });
+    window.corpusTags.persistPosterTags(posterTags);
   }
   // posterTagsOf / posterFilterVocab moved to tags.js (corpusTags wiring above).
 
@@ -4781,44 +4767,18 @@
   pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
   if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
   // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
-  try {
-    const r = window.corpusIpc.getUngrouped ? await window.corpusIpc.getUngrouped() : null;
-    ungrouped = new Set((r && r.keys) || []);
-  } catch {
-    /* default empty */
-  }
+  ungrouped = await window.corpusRecords.loadUngrouped();
   try {
     const r = window.corpusIpc.getPosterFolders ? await window.corpusIpc.getPosterFolders() : null;
     pfStore.setAll((r && r.folders) || []);
   } catch {
     /* default empty */
   }
-  try {
-    const r = window.corpusIpc.getPosterTags ? await window.corpusIpc.getPosterTags() : null;
-    posterTags = (r && r.tags) || {};
-  } catch {
-    /* default empty */
-  }
-  try {
-    const r = window.corpusIpc.getManualGroups ? await window.corpusIpc.getManualGroups() : null;
-    manualGroups = (r && r.groups) || [];
-  } catch {
-    /* default empty */
-  }
-  try {
-    const r = window.corpusIpc.getTagGroups ? await window.corpusIpc.getTagGroups() : null;
-    tagGroups = (r && r.groups) || [];
-  } catch {
-    /* default empty */
-  }
-  try {
-    const r = window.corpusIpc.getTagTypes ? await window.corpusIpc.getTagTypes() : null;
-    tagTypes = (r && r.types) || {};
-    tagLabels = (r && r.labels) || {};
-    applyKindLabels();
-  } catch {
-    /* default empty */
-  }
+  posterTags = await window.corpusTags.loadPosterTags();
+  manualGroups = await window.corpusRecords.loadManualGroups();
+  tagGroups = await window.corpusTags.loadTagGroups();
+  ({ types: tagTypes, labels: tagLabels } = await window.corpusTags.loadTagTypes());
+  applyKindLabels();
   // Seed both sidebar columns with labels + initial state before the first loadPosts so the
   // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
   // (applyKindLabels above also pushes, but only if getTagTypes resolved).

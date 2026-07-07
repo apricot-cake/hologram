@@ -2,10 +2,18 @@
 // viewer.js is being decomposed away from touching window.corpus directly (最終形B P4
 // 「IPC→service」・BACKLOG「手書き .jsゼロ ＋ React 実プロダクト化」) — this module is
 // the one place that still calls the raw bridge; every other caller goes through here.
-// Each export just forwards to window.corpus, so this slice is a pure rename with zero
-// behavior change; grouping the calls by domain (backup/tabs/tags/...) into the sibling
-// services that already own that logic is a follow-up slice, not this one. Plain IIFE on
-// window (like the sibling renderer/*.ts services), loaded before viewer.js.
+// Each export just forwards to window.corpus, so this slice was a pure rename with zero
+// behavior change. Grouping the calls by domain into the sibling services that already
+// own that logic is the follow-up slice — done so far for tabs (tab-state.js:
+// loadTabs/persistTabs), tags/tag-types/poster-tags (tags.js: loadTagGroups/
+// persistTagGroups, loadTagTypes/persistTagTypes, loadPosterTags/persistPosterTags), and
+// grouping opt-outs (records.js: loadManualGroups/persistManualGroups, loadUngrouped/
+// persistUngrouped) — those domain services call this module rather than window.corpus
+// directly, same as viewer.js. Still flat here (no clear existing/new home decided yet):
+// poster-folders (needs a folders.js persistence-factory redesign — see its own
+// createFolderStore comment), backup, trash, records import/export, and cross-cutting
+// prefs/config/window-chrome. Plain IIFE on window (like the sibling renderer/*.ts
+// services), loaded before viewer.js.
 (function () {
   'use strict';
 

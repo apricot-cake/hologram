@@ -3,12 +3,17 @@
 // groupedTagVocab (the picker's sectioned vocabulary for post/poster scopes),
 // inspectorTagPickerData (the React tag editor's full data bundle incl. cooc
 // suggestion tiers), posterTagsOf/posterFilterVocab (poster-applied tags), and
-// sameTags. Extracted 1:1 from viewer.js as the eighth "pure logic → service"
-// slice of the viewer decomposition (最終形B). Plain IIFE on window (like
-// query.js / listing.js); loaded BEFORE viewer.js; touches no DOM. Mutations
-// (setTagKind / persistTagTypes / posterTags writes) stay in viewer.js — this
-// module only reads, so every store comes in as a getter. CommonJS-exported
-// like records.js / listing.js for the Node unit test.
+// sameTags — extracted 1:1 from viewer.js as the eighth "pure logic → service"
+// slice of the viewer decomposition (最終形B) — plus, as the P4 "IPC→service"
+// domain-grouping follow-up, the load/persist pairs for the three stores this
+// module already reads (loadTagGroups/persistTagGroups, loadTagTypes/
+// persistTagTypes, loadPosterTags/persistPosterTags). Plain IIFE on window
+// (like query.js / listing.js); loaded BEFORE viewer.js; touches no DOM.
+// setTagKind (the in-memory tagTypes mutation) stays in viewer.js — only the
+// disk round-trip moved here; makeTags' pure derivations still take every
+// store as an injected getter, and the load/persist pair below reads
+// window.corpusIpc directly since only the browser ever calls them, never the
+// Node unit test. CommonJS-exported like records.js / listing.js.
 (function () {
   'use strict';
 
@@ -152,7 +157,58 @@
     return b.every((t) => s.has(t));
   }
 
-  const api = { makeTags, sameTags };
+  // tag-groups.json / tag-types.json / poster-tags.json load/persist (P4
+  // "IPC→service" domain-grouping slice — the raw corpusIpc calls move here
+  // from viewer.js, next to the read-side logic that already owns these
+  // stores). Only called from the browser (viewer.js); never invoked by the
+  // Node unit test, so window.corpusIpc's absence under Node is harmless.
+  async function loadTagGroups() {
+    try {
+      const r = await window.corpusIpc.getTagGroups();
+      return (r && r.groups) || [];
+    } catch {
+      return [];
+    }
+  }
+  async function persistTagGroups(groups) {
+    try {
+      await window.corpusIpc.setTagGroups(groups);
+    } catch {
+      /* best-effort */
+    }
+  }
+  async function loadTagTypes() {
+    try {
+      const r = await window.corpusIpc.getTagTypes();
+      return { types: (r && r.types) || {}, labels: (r && r.labels) || {} };
+    } catch {
+      return { types: {}, labels: {} };
+    }
+  }
+  async function persistTagTypes(types, labels) {
+    try {
+      await window.corpusIpc.setTagTypes(types, labels);
+    } catch {
+      /* best-effort */
+    }
+  }
+  async function loadPosterTags() {
+    try {
+      const r = await window.corpusIpc.getPosterTags();
+      return (r && r.tags) || {};
+    } catch {
+      return {};
+    }
+  }
+  async function persistPosterTags(tags) {
+    try {
+      await window.corpusIpc.setPosterTags({ tags });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const api = { makeTags, sameTags, loadTagGroups, persistTagGroups, loadTagTypes, persistTagTypes, loadPosterTags, persistPosterTags };
   if (typeof window !== 'undefined') window.corpusTags = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
