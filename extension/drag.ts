@@ -6,13 +6,32 @@
 // illustration itself (no screenshot) via the native host. Identity extraction is
 // self-contained per platform (no external coupling).
 (() => {
+  interface Identity {
+    postId: string;
+    link: string;
+  }
+  interface SiteConfig {
+    platform: string;
+    extractIdentity(img: HTMLImageElement): Identity | null;
+  }
+  interface PendingDrag {
+    type: string;
+    platform: string;
+    postUrl: string;
+    imageUrls: string[];
+  }
+  interface ParsedPath {
+    match: RegExpMatchArray;
+    url: string;
+  }
+
   const siteConfig = getDragSiteConfig();
   if (!siteConfig) return;
   if (window.__corpusDragActive) return; // avoid double-binding on re-injection
   window.__corpusDragActive = true;
 
-  let pending = null; // {platform, postUrl, imageUrls} captured at dragstart
-  let overlay = null;
+  let pending: PendingDrag | null = null;
+  let overlay: HTMLDivElement | null = null;
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
   // i18n: drag toasts share the banner strings. window.corpusI18n is set by the
@@ -20,7 +39,7 @@
   // (same isolated world, runs first). Resolve once; until then t() echoes the
   // key — overlay text is only set at drag time, long after page load, so the
   // table is populated by the time it's read in practice.
-  let t = (key) => key;
+  let t: (key: string, subs?: ReadonlyArray<unknown>) => string = (key) => key;
   if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
     window.corpusI18n.then((api) => {
       if (api && api.getMessage) t = api.getMessage;
@@ -33,11 +52,16 @@
   const BG_FAIL = 'rgba(244,33,46,0.96)';
   const BG_PARTIAL = 'rgba(245,158,11,0.96)'; // saved, but post metadata was unavailable
 
-  function ensureOverlay() {
+  function ensureOverlay(): HTMLDivElement {
     if (overlay) return overlay;
-    overlay = document.createElement('div');
-    overlay.id = '__corpusDropZone';
-    overlay.style.cssText = [
+    // A local const (never reassigned) instead of reading the outer `overlay`
+    // let from inside these nested closures — TS's null-narrowing on a
+    // closure-captured outer variable doesn't cross a function boundary, but a
+    // const captured by the same closures narrows fine.
+    const el = document.createElement('div');
+    overlay = el;
+    el.id = '__corpusDropZone';
+    el.style.cssText = [
       'position:fixed',
       'right:24px',
       'bottom:24px',
@@ -59,31 +83,31 @@
       'pointer-events:auto',
       'transition:transform .12s, background .12s',
     ].join(';');
-    overlay.textContent = t('dragDropHint');
-    overlay.addEventListener('dragenter', (e) => {
+    el.textContent = t('dragDropHint');
+    el.addEventListener('dragenter', (e) => {
       e.preventDefault();
-      overlay.style.transform = 'scale(1.05)';
-      overlay.style.background = BG_OVER;
+      el.style.transform = 'scale(1.05)';
+      el.style.background = BG_OVER;
     });
-    overlay.addEventListener('dragover', (e) => {
+    el.addEventListener('dragover', (e) => {
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
     });
-    overlay.addEventListener('dragleave', () => {
-      overlay.style.transform = '';
-      overlay.style.background = BG_IDLE;
+    el.addEventListener('dragleave', () => {
+      el.style.transform = '';
+      el.style.background = BG_IDLE;
     });
-    overlay.addEventListener('drop', onDrop, true);
-    document.body.appendChild(overlay);
-    return overlay;
+    el.addEventListener('drop', onDrop, true);
+    document.body.appendChild(el);
+    return el;
   }
 
   function showOverlay() {
-    ensureOverlay();
-    overlay.textContent = t('dragDropHint');
-    overlay.style.background = BG_IDLE;
-    overlay.style.transform = '';
-    overlay.style.display = 'flex';
+    const el = ensureOverlay();
+    el.textContent = t('dragDropHint');
+    el.style.background = BG_IDLE;
+    el.style.transform = '';
+    el.style.display = 'flex';
   }
   function hideOverlay() {
     if (overlay) overlay.style.display = 'none';
@@ -93,7 +117,8 @@
     'dragstart',
     (e) => {
       if (!chrome.runtime?.id) return;
-      const img = e.target.closest?.('img') || (e.target.tagName === 'IMG' ? e.target : null);
+      const target = e.target as Element | null;
+      const img = (target?.closest?.('img') as HTMLImageElement | null) || (target?.tagName === 'IMG' ? (target as HTMLImageElement) : null);
       if (!img) return;
       const identity = siteConfig.extractIdentity(img);
       if (!identity || !identity.link) return;
@@ -114,7 +139,7 @@
     true,
   );
 
-  function onDrop(e) {
+  function onDrop(e: Event) {
     e.preventDefault();
     e.stopPropagation();
     const p = pending;
@@ -124,14 +149,15 @@
       return;
     }
     savingViaDrop = true;
-    overlay.textContent = t('bannerSaving');
-    overlay.style.background = BG_BUSY;
-    overlay.style.transform = '';
-    chrome.runtime.sendMessage(p, (res) => {
+    const el = ensureOverlay();
+    el.textContent = t('bannerSaving');
+    el.style.background = BG_BUSY;
+    el.style.transform = '';
+    chrome.runtime.sendMessage(p, (res: any) => {
       const ok = res && res.ok;
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
-      overlay.textContent = partial
+      el.textContent = partial
         ? t('bannerSavedNoMeta')
         : grouped
           ? t('bannerSavedGrouped', [res.grouped + 1])
@@ -140,7 +166,7 @@
             : res && res.hostMissing
               ? t('bannerHostMissing') // missing native host → "restart Chrome"
               : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
-      overlay.style.background = partial ? BG_PARTIAL : ok ? BG_OVER : BG_FAIL;
+      el.style.background = partial ? BG_PARTIAL : ok ? BG_OVER : BG_FAIL;
       setTimeout(
         () => {
           hideOverlay();
@@ -154,8 +180,8 @@
 
   // === identity (per platform) ===
 
-  function collectImageUrls(img, platform) {
-    const urls = new Set();
+  function collectImageUrls(img: HTMLImageElement, platform: string): string[] {
+    const urls = new Set<string>();
     if (img.src) urls.add(img.src);
     if (img.currentSrc) urls.add(img.currentSrc);
     const highRes = getHighResImageUrl(img, platform);
@@ -170,7 +196,7 @@
     return [...urls];
   }
 
-  function getHighResImageUrl(img, platform) {
+  function getHighResImageUrl(img: HTMLImageElement, platform: string): string | null {
     const src = img.src || '';
     if (platform === 'x' && src.includes('pbs.twimg.com/media/')) {
       try {
@@ -185,35 +211,35 @@
     return null;
   }
 
-  function getDragSiteConfig() {
+  function getDragSiteConfig(): SiteConfig | null {
     if (hostnameMatches('x.com') || hostnameMatches('twitter.com')) return xConfig();
     if (hostnameMatches('bsky.app')) return blueskyConfig();
     if (hostnameMatches('pixiv.net')) return pixivConfig();
     return null;
   }
 
-  function hostnameMatches(host) {
+  function hostnameMatches(host: string): boolean {
     return location.hostname === host || location.hostname.endsWith(`.${host}`);
   }
 
-  function xConfig() {
+  function xConfig(): SiteConfig {
     return {
       platform: 'x',
-      extractIdentity(img) {
+      extractIdentity(img: HTMLImageElement): Identity | null {
         // The image's own enclosing /status/ anchor is ground truth. The URL
         // bar (photo viewer / detail page) only identifies anchor-less images
         // OUTSIDE any post container — with the lightbox open, every image on
         // the page (replies, recommendations) would otherwise be attributed
         // to the lightbox post. (audit 2026-06-11)
-        const link = img.closest('a[href*="/status/"]') || findAncestorContainerLink(img, 'a[href*="/status/"]', 'article');
+        const link = (img.closest('a[href*="/status/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/status/"]', 'article') as HTMLAnchorElement | null);
         const parsedAnchor = link ? parseUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
         const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
         const parsedLoc = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
-        let screenName, postId;
+        let screenName: string, postId: string;
         if (parsedAnchor) {
           [, screenName, postId] = parsedAnchor.match;
         } else if ((viewer || parsedLoc) && !img.closest('article')) {
-          [, screenName, postId] = viewer || parsedLoc;
+          [, screenName, postId] = (viewer || parsedLoc) as RegExpMatchArray;
         } else return null;
         const sn = decodeURIComponent(screenName);
         const pid = decodeURIComponent(postId);
@@ -222,14 +248,14 @@
     };
   }
 
-  function blueskyConfig() {
+  function blueskyConfig(): SiteConfig {
     const POST_CONTAINER = '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"]';
     return {
       platform: 'bluesky',
-      extractIdentity(img) {
-        const link = img.closest('a[href*="/post/"]') || findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER);
+      extractIdentity(img: HTMLImageElement): Identity | null {
+        const link = (img.closest('a[href*="/post/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/post/"]', POST_CONTAINER) as HTMLAnchorElement | null);
         const parsed = link ? parseUrlPath(link.href, /^\/profile\/([^/]+)\/post\/([^/?#]+)/) : null;
-        let handle, postId;
+        let handle: string, postId: string;
         if (parsed) {
           [, handle, postId] = parsed.match;
         } else {
@@ -246,13 +272,13 @@
     };
   }
 
-  function pixivConfig() {
+  function pixivConfig(): SiteConfig {
     const ARTWORK_PATH = /^\/(?:[a-z]+\/)?artworks\/(\d+)/;
     const PXIMG_FILENAME = /\/(\d+)_p\d+(?:_|\.)/;
     return {
       platform: 'pixiv',
-      extractIdentity(img) {
-        let postId = null;
+      extractIdentity(img: HTMLImageElement): Identity | null {
+        let postId: string | null = null;
         for (const src of [img.src, img.currentSrc]) {
           if (!src) continue;
           const m = src.match(PXIMG_FILENAME);
@@ -262,7 +288,7 @@
           }
         }
         if (!postId) {
-          const link = img.closest('a[href*="/artworks/"]') || findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure');
+          const link = (img.closest('a[href*="/artworks/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(img, 'a[href*="/artworks/"]', 'li, figure') as HTMLAnchorElement | null);
           if (link) {
             const parsed = parseUrlPath(link.href, ARTWORK_PATH);
             if (parsed) postId = parsed.match[1];
@@ -284,7 +310,7 @@
   // the image to whatever unrelated post is DOM-nearest — avatars, banners and
   // sidebar images must yield no identity instead of a fabricated record.
   // (audit 2026-06-11)
-  function findAncestorContainerLink(img, selector, boundarySel) {
+  function findAncestorContainerLink(img: Element, selector: string, boundarySel: string): Element | null {
     let el = img.parentElement;
     while (el && el !== document.body) {
       const candidates = el.querySelectorAll(selector);
@@ -294,8 +320,8 @@
         // the nearest match belongs to some unrelated post — give up instead.
         if (boundarySel && !el.closest(boundarySel)) return null;
         if (candidates.length === 1) return candidates[0];
-        let best = null,
-          bestDist = Number.POSITIVE_INFINITY;
+        let best: Element | null = null;
+        let bestDist = Number.POSITIVE_INFINITY;
         for (const link of candidates) {
           const d = treeDistance(img, link);
           if (d < bestDist) {
@@ -311,19 +337,20 @@
     return null;
   }
 
-  function treeDistance(a, b) {
-    const ancestorsA = [];
-    for (let n = a; n; n = n.parentElement) ancestorsA.push(n);
+  function treeDistance(a: Element, b: Element): number {
+    const ancestorsA: Element[] = [];
+    for (let n: Element | null = a; n; n = n.parentElement) ancestorsA.push(n);
     const indexInA = new Map(ancestorsA.map((n, i) => [n, i]));
     let depthB = 0;
-    for (let n = b; n; n = n.parentElement) {
-      if (indexInA.has(n)) return indexInA.get(n) + depthB;
+    for (let n: Element | null = b; n; n = n.parentElement) {
+      const idx = indexInA.get(n);
+      if (idx !== undefined) return idx + depthB;
       depthB++;
     }
     return Number.POSITIVE_INFINITY;
   }
 
-  function parseUrlPath(href, pathRegex) {
+  function parseUrlPath(href: string, pathRegex: RegExp): ParsedPath | null {
     try {
       const url = new URL(href, location.origin);
       const match = url.pathname.match(pathRegex);

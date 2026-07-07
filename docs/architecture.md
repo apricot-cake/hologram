@@ -10,12 +10,14 @@
 
 ### `extension/` — Chrome拡張一式（MV3）
 
+TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行できない唯一のレイヤーなので、`npm run build`（`extension/build.mjs`＝tsc コンパイル＋静的資産コピー）で `extension/dist/` へビルドし、**`extension/dist/` を Load unpacked する**（`extension/` 直下ではない）。`manifest.json` に固定 `key` があるため拡張機能IDはロード元フォルダに依存しない（メモリ `ext-signing-key`）。
+
 - `manifest.json` — 権限（`nativeMessaging` / host_permissions: `cdn.syndication.twimg.com` ＋ pixiv）、ショートカット `Alt+S`、`default_locale`/`_locales`
-- `background.js` — Service Worker。タブキャプチャ → クロップ → `metadata.js` でAPI取得 → Native Messaging 送信。**クリック保存** と **画像ドラッグ保存**(`drag.js`) の2経路（`pickPrimaryImage` で原寸を選択）。
-- `content.js` — 投稿選択UI・要素特定・パーマリンク抽出・クロップ
-- `drag.js` — 画像のドラッグ保存（投稿の原寸画像を直接保存）
-- `metadata.js` — 投稿URLから X（syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）/ **pixiv** でメタ取得・正規化。**失敗時は空レコードを返す（throwしない）**。node でもテスト可。Xはリポスト/ブックマーク/閲覧数を含まない。`fetchPostMetadata(url, {expectedHost})` で Misskey/Mastodon（hostが投稿URL由来＝任意）の API fetch を sender tab の host に固定（SSRF防御。X/Bluesky/pixiv は固定hostなので無関係）
-- `i18n.js` — content.js のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.js`）
+- `background.ts` — Service Worker。タブキャプチャ → クロップ → `metadata.ts` でAPI取得 → Native Messaging 送信。**クリック保存** と **画像ドラッグ保存**(`drag.ts`) の2経路（`pickPrimaryImage` で原寸を選択）。
+- `content.ts` — 投稿選択UI・要素特定・パーマリンク抽出・クロップ
+- `drag.ts` — 画像のドラッグ保存（投稿の原寸画像を直接保存）
+- `metadata.ts` — 投稿URLから X（syndication JSON・非公式）/ Bluesky（`public.api.bsky.app`）/ Misskey（`/api/notes/show`）/ Mastodon（`/api/v1/statuses/:id`）/ **pixiv** でメタ取得・正規化。**失敗時は空レコードを返す（throwしない）**。dual export（`module.exports`）＝ビルド後の `dist/metadata.js` を node からも require 可（`scripts/backfill-metadata.js` 等）。Xはリポスト/ブックマーク/閲覧数を含まない。`fetchPostMetadata(url, {expectedHost})` で Misskey/Mastodon（hostが投稿URL由来＝任意）の API fetch を sender tab の host に固定（SSRF防御。X/Bluesky/pixiv は固定hostなので無関係）
+- `i18n.ts` — content.ts のバナー用 i18n（拡張側のみ。アプリは `app/renderer/i18n.ts`）
 - `_locales/`（en/ja）、`icons/`
 
 ### `native-host/` — Native Messaging ブリッジ

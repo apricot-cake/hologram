@@ -1,0 +1,10 @@
+{
+  // Emitting variant of tsconfig.json — used only by build.mjs. Kept separate
+  // so `tsc --noEmit -p tsconfig.json` (the type-check invoked from
+  // scripts/test-typecheck.js) never accidentally writes files.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist"
+  }
+}

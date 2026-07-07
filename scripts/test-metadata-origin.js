@@ -10,7 +10,7 @@
 //   node scripts/test-metadata-origin.js
 
 const assert = require('node:assert');
-const { fetchPostMetadata } = require('../extension/metadata.js');
+const { fetchPostMetadata } = require('../extension/dist/metadata.js');
 
 const calls = [];
 global.fetch = async (url) => {

@@ -14,14 +14,14 @@
 
 function parsePostUrl(url) {
   if (!url) return null;
-  let u;
+  let u: URL;
   try {
     u = new URL(url);
   } catch {
     return null;
   }
   const host = u.hostname;
-  let m;
+  let m: RegExpMatchArray | null;
   if (host === 'bsky.app' && (m = u.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/))) {
     return { platform: 'bluesky', handle: m[1], rkey: m[2] };
   }
@@ -46,7 +46,53 @@ function parsePostUrl(url) {
   return null;
 }
 
-function emptyRecord(url, platform) {
+interface MediaItem {
+  url: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  referer?: string;
+}
+
+// The normalized sidecar record shape. Declared here (not just inferred from
+// the emptyRecord() literal below) because every field initializes to `null`
+// — under TS strict mode a `return { text: null, ... }` with no explicit
+// return type infers each such field as the literal type `null`, not
+// `string | null`, so every later `rec.text = j.text || null` (a real value)
+// would be a type error. Same pitfall as `let x = null` (see
+// corpus-typescript-stage1 memory), just at a return-position object literal
+// instead of a variable declaration.
+interface PostRecord {
+  url: string | null;
+  platform: string | null;
+  text: string | null;
+  title: string | null;
+  displayName: string | null;
+  screenName: string | null;
+  userId: string | null;
+  avatar: string | null;
+  avatarReferer: string | null;
+  followers: number | null;
+  authorCreatedAt: string | null;
+  likes: number | null;
+  reposts: number | null;
+  replies: number | null;
+  bookmarks: number | null;
+  views: number | null;
+  date: string | null;
+  mediaType: string | null;
+  media: MediaItem[];
+  lang: string | null;
+  isReply: boolean | null;
+  isQuote: boolean | null;
+  isThread: boolean | null;
+  quotedUrl: string | null;
+  replyToId: string | null;
+  hashtags: string[];
+  tags: string[];
+}
+
+function emptyRecord(url: string | null | undefined, platform: string | null | undefined): PostRecord {
   return {
     url: url || null,
     platform: platform || null,
@@ -206,7 +252,7 @@ function bskyMedia(post) {
   const e = post.embed || (post.record && post.record.embed);
   if (!e) return [];
   const type = e.$type || '';
-  let images = null;
+  let images: any = null;
   if (type.includes('app.bsky.embed.images')) images = e.images;
   else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('images')) images = e.media.images;
   if (!Array.isArray(images)) return [];
@@ -369,7 +415,7 @@ async function fetchMisskeyNote(parsed, url) {
       }
     }
     if (note.reactions) {
-      const total = Object.values(note.reactions).reduce((s, n) => s + n, 0);
+      const total: number = Object.values(note.reactions as Record<string, number>).reduce((s: number, n: number) => s + n, 0);
       rec.likes = total > 0 ? total : 0;
     }
     rec.reposts = note.renoteCount ?? null;
@@ -513,7 +559,7 @@ function pixivMedia(il) {
   const original = il && il.urls && il.urls.original;
   if (!original) return [];
   const pageCount = il.pageCount || 1;
-  const out = [];
+  const out: MediaItem[] = [];
   for (let i = 0; i < pageCount; i++) {
     const url = i === 0 ? original : original.replace(/_p0(\.[a-z]+)$/i, `_p${i}$1`);
     out.push({
@@ -620,6 +666,13 @@ async function fetchPostMetadata(url, opts) {
   if (parsed.platform === 'pixiv') return fetchPixivIllust(parsed, url);
   return emptyRecord(url, parsed.platform);
 }
+
+// Dual browser-global / Node module: background.ts loads this file via
+// importScripts (plain global, no `module`); scripts/backfill-metadata.js and
+// friends require() the compiled dist/metadata.js directly as a Node module.
+// `module` isn't declared anywhere in this browser-lib project (deliberately
+// no @types/node here — see tsconfig.json), so declare it minimally ourselves.
+declare const module: { exports: any } | undefined;
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

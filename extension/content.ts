@@ -1,3 +1,25 @@
+interface PostRect {
+  x: number;
+  y: number;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+}
+
+interface SiteConfig {
+  platform: string;
+  postSelector?: string;
+  captureStyleText?: string;
+  findPostElement?(target: EventTarget | null): Element | null;
+  isPostElement?(el: Element): boolean;
+  getPermalink(post: Element): string;
+  getCaptureRect?(post: Element): PostRect;
+  prepareForCapture?(post: Element): (() => void) | null;
+}
+
 (async () => {
   // --- i18n ---
   // i18n.js is injected alongside this script (see background.js → executeScript).
@@ -14,6 +36,12 @@
   if (!siteConfig) {
     return;
   }
+  // Re-bind to a plain (never-reassigned) const: TS's null-narrowing on
+  // `siteConfig` from the guard above doesn't cross into the nested `function`
+  // declarations below (findPostElement, capturePost, onMouseMove, …) — the
+  // same pitfall as a closure reading an outer `let`. `site` carries the
+  // narrowed (non-null) type into every one of them.
+  const site: SiteConfig = siteConfig;
 
   // Prevent double injection
   if (typeof window.__snsPostSaveCleanup === 'function') {
@@ -23,9 +51,9 @@
   window.__snsPostSaveActive = true;
 
   let isCleanedUp = false;
-  let restoreCaptureState = null;
-  let savedScrollPosition = null;
-  let lastCapturedPost = null; // re-measured at crop time (scroll/layout drift)
+  let restoreCaptureState: (() => void) | null = null;
+  let savedScrollPosition: { x: number; y: number } | null = null;
+  let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
 
   // === UI elements ===
 
@@ -53,24 +81,24 @@
   `;
   document.body.appendChild(highlight);
 
-  let captureStyle = null;
-  if (siteConfig.captureStyleText) {
+  let captureStyle: HTMLStyleElement | null = null;
+  if (site.captureStyleText) {
     captureStyle = document.createElement('style');
-    captureStyle.textContent = siteConfig.captureStyleText;
+    captureStyle.textContent = site.captureStyleText;
     document.head.appendChild(captureStyle);
   }
 
   // === Post detection ===
 
-  function findPostElement(target) {
-    if (typeof siteConfig.findPostElement === 'function') {
-      return siteConfig.findPostElement(target);
+  function findPostElement(target: EventTarget | null): Element | null {
+    if (typeof site.findPostElement === 'function') {
+      return site.findPostElement(target);
     }
 
-    let el = target instanceof Element ? target : target?.parentElement;
+    let el: Element | null = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
     while (el) {
-      if (el.matches?.(siteConfig.postSelector)) {
-        if (!siteConfig.isPostElement || siteConfig.isPostElement(el)) {
+      if (site.postSelector && el.matches?.(site.postSelector)) {
+        if (!site.isPostElement || site.isPostElement(el)) {
           return el;
         }
       }
@@ -79,8 +107,8 @@
     return null;
   }
 
-  function getPostRect(post) {
-    return normalizeRect(siteConfig.getCaptureRect?.(post) || post.getBoundingClientRect());
+  function getPostRect(post: Element): PostRect {
+    return normalizeRect(site.getCaptureRect?.(post) || post.getBoundingClientRect());
   }
 
   // === Diagnostic logging ===
@@ -88,7 +116,7 @@
   // A small, PII-light snapshot of the clicked element so a broken selector can
   // be diagnosed from capture.log without a repro. outerHTML is truncated (the
   // tag / data-testid / nearest anchor href is what identifies a selector break).
-  function snapEl(el) {
+  function snapEl(el: unknown) {
     if (!(el instanceof Element)) return null;
     const anchor = el.closest('a[href]') || (el.querySelector ? el.querySelector('a[href]') : null);
     return {
@@ -102,11 +130,11 @@
 
   // Report a pre-bridge failure (no post element / no permalink) to the
   // background, which relays it to the host's capture.log. Best-effort.
-  function logCaptureFailure(stage, el) {
+  function logCaptureFailure(stage: string, el: unknown) {
     try {
       chrome.runtime.sendMessage({
         type: 'logCapture',
-        entry: { stage, phase: 'fail', platform: siteConfig.platform, locationHref: location.href, clickedSnap: snapEl(el) },
+        entry: { stage, phase: 'fail', platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) },
       });
     } catch {
       /* ignore — diagnostics are non-essential */
@@ -115,7 +143,7 @@
 
   // === Event handlers ===
 
-  function onMouseMove(e) {
+  function onMouseMove(e: MouseEvent) {
     const post = findPostElement(e.target);
     if (post) {
       const rect = getPostRect(post);
@@ -129,10 +157,10 @@
     }
   }
 
-  function capturePost(post) {
+  function capturePost(post: Element) {
     // Metadata is fetched from the platform API in the background from this URL.
     // The page is only used to identify the clicked post and its permalink.
-    const postUrl = siteConfig.getPermalink(post);
+    const postUrl = site.getPermalink(post);
 
     // Without a permalink the API metadata can't be fetched either — the save
     // would produce a platform:null record the viewer never shows. Abort here,
@@ -154,7 +182,7 @@
     // Hide the highlight and banner before capturing
     highlight.style.display = 'none';
     banner.style.display = 'none';
-    restoreCaptureState = siteConfig.prepareForCapture?.(post) || null;
+    restoreCaptureState = site.prepareForCapture?.(post) || null;
 
     // If the post is cut off, scroll it fully into the viewport
     const preRect = getPostRect(post);
@@ -180,13 +208,13 @@
           type: 'captureAndSend',
           rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           postUrl,
-          platform: siteConfig.platform,
+          platform: site.platform,
         });
       });
     });
   }
 
-  function onClick(e) {
+  function onClick(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -202,14 +230,14 @@
     capturePost(post);
   }
 
-  function onContextMenu(e) {
+  function onContextMenu(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
     cleanup();
   }
 
-  function onKeyDown(e) {
+  function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') cleanup();
   }
 
@@ -250,7 +278,7 @@
 
   // === Message listener ===
 
-  function onRuntimeMessage(msg, _sender, sendResponse) {
+  function onRuntimeMessage(msg: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
     // Crop request
     if (msg.type === 'cropImage') {
       const { dataUrl } = msg;
@@ -280,7 +308,7 @@
         const h = Math.round(ch * dpr);
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
         ctx.drawImage(img, Math.round(cx * dpr), Math.round(cy * dpr), w, h, 0, 0, w, h);
         sendResponse({ croppedDataUrl: canvas.toDataURL('image/jpeg', 0.92) });
         restoreScroll();
@@ -313,6 +341,7 @@
       // Hold failures (and partials) longer so the reason is readable.
       setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
     }
+    return undefined;
   }
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
@@ -324,7 +353,7 @@
   document.addEventListener('keydown', onKeyDown, true);
 })();
 
-function getSiteConfig() {
+function getSiteConfig(): SiteConfig | null {
   if (hostnameMatches('x.com') || hostnameMatches('twitter.com')) {
     return {
       platform: 'x',
@@ -345,13 +374,13 @@ function getSiteConfig() {
           background-color: transparent !important;
         }
       `,
-      getPermalink(post) {
+      getPermalink(post: Element): string {
         // Fall back to the URL bar on a single-status page (parity with Bluesky/
         // Mastodon/Misskey), so an article whose own permalink anchor isn't
         // rendered still yields a usable URL.
         return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
       },
-      prepareForCapture(post) {
+      prepareForCapture(post: Element) {
         return prepareScopedCaptureState('__snsCaptureXNoHover', [post, post.parentElement, post.closest('[data-testid="cellInnerDiv"]')]);
       },
     };
@@ -361,7 +390,7 @@ function getSiteConfig() {
     return {
       platform: 'bluesky',
       postSelector: '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"], [role="link"]',
-      isPostElement(el) {
+      isPostElement(el: Element): boolean {
         if (el.getAttribute('data-testid')) return true;
         return el.getAttribute('role') === 'link' && !!el.querySelector('[data-testid="postText"], [data-testid="repostBtn"]');
       },
@@ -382,10 +411,10 @@ function getSiteConfig() {
           filter: none !important;
         }
       `,
-      getPermalink(post) {
+      getPermalink(post: Element): string {
         return getBlueskyPostLink(post)?.url || parseBlueskyPostLink(location.href)?.url || '';
       },
-      prepareForCapture(post) {
+      prepareForCapture(post: Element) {
         return prepareScopedCaptureState('__snsCaptureBskyNoHover', [post, post.parentElement, post.parentElement?.parentElement, post.closest('[data-testid^="feedItem-by-"]')?.parentElement, post.closest('[data-testid^="postThreadItem-by-"]')?.parentElement]);
       },
     };
@@ -409,16 +438,16 @@ function getSiteConfig() {
           text-decoration: none !important;
         }
       `,
-      findPostElement(target) {
+      findPostElement(target: EventTarget | null) {
         return findMisskeyPostElement(target);
       },
-      getPermalink(post) {
+      getPermalink(post: Element): string {
         return getMisskeyPermalink(post);
       },
-      getCaptureRect(post) {
+      getCaptureRect(post: Element): PostRect {
         return getMisskeyCaptureRect(post);
       },
-      prepareForCapture(post) {
+      prepareForCapture(post: Element) {
         return prepareScopedCaptureState('__snsCaptureMisskeyNoHover', [post, getMisskeyPrimaryArticle(post)]);
       },
     };
@@ -441,13 +470,13 @@ function getSiteConfig() {
           background-color: transparent !important;
         }
       `,
-      findPostElement(target) {
+      findPostElement(target: EventTarget | null) {
         return findMastodonPostElement(target);
       },
-      getPermalink(post) {
+      getPermalink(post: Element): string {
         return getMastodonStatusLink(post)?.url || parseMastodonStatusLink(location.href)?.url || '';
       },
-      prepareForCapture(post) {
+      prepareForCapture(post: Element) {
         return prepareScopedCaptureState('__snsCaptureMastodonNoHover', [post, post.parentElement]);
       },
     };
@@ -463,16 +492,16 @@ function getSiteConfig() {
           transition: none !important;
         }
       `,
-      findPostElement(target) {
+      findPostElement(target: EventTarget | null) {
         return findPixivPostElement(target);
       },
-      getPermalink(post) {
+      getPermalink(post: Element): string {
         return getPixivPermalink(post);
       },
-      getCaptureRect(post) {
+      getCaptureRect(post: Element): PostRect {
         return getPixivCaptureRect(post);
       },
-      prepareForCapture(post) {
+      prepareForCapture(post: Element) {
         return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
       },
     };
@@ -483,8 +512,8 @@ function getSiteConfig() {
 
 // === pixiv helpers ===
 
-function pixivIdFromImg(img) {
-  if (!(img instanceof Element)) return null;
+function pixivIdFromImg(img: Element | null): string | null {
+  if (!(img instanceof HTMLImageElement)) return null;
   // pximg URL filename embeds the artwork id: <id>_p<N>_<size>.<ext>.
   // Declared INSIDE the function (not as a top-level `const`) on purpose: this
   // content script is re-injected on every Alt+S, and a top-level lexical
@@ -498,7 +527,7 @@ function pixivIdFromImg(img) {
   return null;
 }
 
-function pixivIdFromArtworkLink(link) {
+function pixivIdFromArtworkLink(link: Element | null): string | null {
   if (!(link instanceof Element)) return null;
   const m = (link.getAttribute('href') || '').match(/\/artworks\/(\d+)/);
   return m ? m[1] : null;
@@ -511,17 +540,17 @@ function pixivIdFromArtworkLink(link) {
 // target with closest() avoids it by construction.)
 // Priority: the target's own pximg image (unambiguous) → nearest enclosing
 // /artworks/ link → the nearest <figure>'s main image → the /artworks/ URL bar.
-function resolvePixivTarget(target) {
-  const el = target instanceof Element ? target : target?.parentElement;
+function resolvePixivTarget(target: EventTarget | null): { id: string; el: Element } | null {
+  const el = target instanceof Element ? target : (target as Node | null)?.parentElement;
   if (!el) return null;
 
   const img = el.matches('img') ? el : el.closest('img');
   const idFromImg = pixivIdFromImg(img);
-  if (idFromImg) return { id: idFromImg, el: img };
+  if (idFromImg && img) return { id: idFromImg, el: img };
 
   const link = el.closest('a[href*="/artworks/"]');
   const idFromLink = pixivIdFromArtworkLink(link);
-  if (idFromLink) return { id: idFromLink, el: link };
+  if (idFromLink && link) return { id: idFromLink, el: link };
 
   const fig = el.closest('figure');
   if (fig) {
@@ -541,27 +570,33 @@ function resolvePixivTarget(target) {
   return null;
 }
 
-function findPixivPostElement(target) {
+function findPixivPostElement(target: EventTarget | null): Element | null {
   return resolvePixivTarget(target)?.el || null;
 }
 
 // post is the element findPixivPostElement returned; re-resolving from it yields
 // the same id (consistent with what was highlighted/clicked).
-function getPixivPermalink(post) {
+function getPixivPermalink(post: Element): string {
   const r = resolvePixivTarget(post);
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
 }
 
 // Capture the artwork image itself, not an oversized enclosing <figure>.
-function getPixivCaptureRect(post) {
-  let img = null;
-  if (post && post.matches && post.matches('img')) img = post;
-  else if (post && post.querySelector) img = post.querySelector('img');
+function getPixivCaptureRect(post: Element): PostRect {
+  let img: Element | null = null;
+  if (post?.matches?.('img')) img = post;
+  else if (post?.querySelector) img = post.querySelector('img');
   return normalizeRect((img || post).getBoundingClientRect());
 }
 
-function getXPostLink(post) {
-  const links = post instanceof Element ? Array.from(post.querySelectorAll('a[href*="/status/"]')) : [];
+interface XPostLink {
+  url: string;
+  screenName: string | null;
+  postId: string;
+}
+
+function getXPostLink(post: Element): XPostLink | null {
+  const links = post instanceof Element ? Array.from(post.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')) : [];
 
   // Prefer the timestamp anchor; failing that, a bare /user/status/<id> anchor
   // — the article's first /status/ link can be a /photo/N or /analytics one.
@@ -578,7 +613,7 @@ function getXPostLink(post) {
   return preferredLink ? parseXPostLink(preferredLink.href) : null;
 }
 
-function parseXPostLink(href) {
+function parseXPostLink(href: string): XPostLink | null {
   try {
     const url = new URL(href, location.origin);
     let match = url.pathname.match(/^\/([^/]+)\/status\/([^/?#]+)/);
@@ -607,17 +642,23 @@ function parseXPostLink(href) {
   }
 }
 
-function hostnameMatches(host) {
+function hostnameMatches(host: string): boolean {
   return location.hostname === host || location.hostname.endsWith(`.${host}`);
 }
 
-function getBlueskyAuthorHandle(post) {
+function getBlueskyAuthorHandle(post: Element): string {
   const testId = post.getAttribute('data-testid') || '';
   const match = testId.match(/-by-(.+)$/);
   return match?.[1] || '';
 }
 
-function getBlueskyPostLink(post) {
+interface BlueskyPostLink {
+  url: string;
+  handle: string;
+  postId: string;
+}
+
+function getBlueskyPostLink(post: Element): BlueskyPostLink | null {
   const authorHandle = getBlueskyAuthorHandle(post);
   // Exclude anchors that belong to an embedded quote card (a nested
   // [role="link"]) or to rich-text links in the post body — on a thread's
@@ -625,9 +666,9 @@ function getBlueskyPostLink(post) {
   // candidates left and the QUOTED post's URL got saved. With them excluded,
   // returning null lets getPermalink fall back to location.href, which on a
   // detail page IS the clicked post. (audit 2026-06-11)
-  const links =
+  const links: BlueskyPostLink[] =
     post instanceof Element
-      ? Array.from(post.querySelectorAll('a[href]'))
+      ? Array.from(post.querySelectorAll<HTMLAnchorElement>('a[href]'))
           .filter((link) => {
             // Start from the parent: the anchor itself may carry role="link"
             // (react-native-web) and closest() would match it, excluding everything.
@@ -637,7 +678,7 @@ function getBlueskyPostLink(post) {
             return true;
           })
           .map((link) => parseBlueskyPostLink(link.href))
-          .filter(Boolean)
+          .filter((v): v is BlueskyPostLink => Boolean(v))
       : [];
 
   if (!links.length) {
@@ -647,7 +688,7 @@ function getBlueskyPostLink(post) {
   return links.find((link) => !authorHandle || link.handle === authorHandle) || links[0];
 }
 
-function parseBlueskyPostLink(href) {
+function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
   try {
     const url = new URL(href, location.origin);
     const match = url.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)\/?$/);
@@ -665,7 +706,7 @@ function parseBlueskyPostLink(href) {
   }
 }
 
-function looksLikeMisskey() {
+function looksLikeMisskey(): boolean {
   const misskeyAccent = getComputedStyle(document.documentElement).getPropertyValue('--MI_THEME-accent').trim();
 
   if (!misskeyAccent) {
@@ -675,8 +716,8 @@ function looksLikeMisskey() {
   return Boolean(document.querySelector('div[tabindex="0"] a[href] time'));
 }
 
-function findMisskeyPostElement(target) {
-  let el = target instanceof Element ? target : target?.parentElement;
+function findMisskeyPostElement(target: EventTarget | null): Element | null {
+  let el: Element | null = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
   while (el) {
     if (isMisskeyNoteElement(el)) {
       return el;
@@ -688,11 +729,11 @@ function findMisskeyPostElement(target) {
   return null;
 }
 
-function isMisskeyNoteElement(element) {
+function isMisskeyNoteElement(element: Element): boolean {
   return element instanceof HTMLElement && element.matches('div[tabindex="0"]') && Boolean(getMisskeyPrimaryArticle(element)) && Boolean(getMisskeyPermalink(element));
 }
 
-function getMisskeyPrimaryArticle(post) {
+function getMisskeyPrimaryArticle(post: Element | null): Element | null {
   if (!(post instanceof Element)) {
     return null;
   }
@@ -700,7 +741,7 @@ function getMisskeyPrimaryArticle(post) {
   return post.querySelector('article');
 }
 
-function getMisskeyCaptureRect(post) {
+function getMisskeyCaptureRect(post: Element): PostRect {
   const rootRect = normalizeRect(post.getBoundingClientRect());
   const article = getMisskeyPrimaryArticle(post);
   if (!article) {
@@ -720,7 +761,7 @@ function getMisskeyCaptureRect(post) {
   };
 }
 
-function getMisskeyPermalink(post) {
+function getMisskeyPermalink(post: Element): string {
   // Scope the link scan to the note's own <article>: the reply-parent preview
   // (MkNoteSub) and a detail page's ancestor chain render BEFORE the article,
   // so a document-order scan over the whole root returned the PARENT note's
@@ -732,7 +773,7 @@ function getMisskeyPermalink(post) {
     return timeLink.url;
   }
 
-  const links = scope instanceof Element ? Array.from(scope.querySelectorAll('a[href]')) : [];
+  const links = scope instanceof Element ? Array.from(scope.querySelectorAll<HTMLAnchorElement>('a[href]')) : [];
 
   for (const link of links) {
     const parsed = parseMisskeyNoteLink(link.href);
@@ -745,12 +786,17 @@ function getMisskeyPermalink(post) {
   return currentPageNote?.url || '';
 }
 
-function getMisskeyTimeLink(scope) {
+interface MisskeyNoteLink {
+  id: string;
+  url: string;
+}
+
+function getMisskeyTimeLink(scope: Element): MisskeyNoteLink | null {
   if (!(scope instanceof Element)) {
     return null;
   }
 
-  const links = Array.from(scope.querySelectorAll('a[href]'));
+  const links = Array.from(scope.querySelectorAll<HTMLAnchorElement>('a[href]'));
   for (const link of links) {
     if (!link.querySelector('time')) {
       continue;
@@ -765,7 +811,7 @@ function getMisskeyTimeLink(scope) {
   return null;
 }
 
-function parseMisskeyNoteLink(href) {
+function parseMisskeyNoteLink(href: string): MisskeyNoteLink | null {
   try {
     const url = new URL(href, location.origin);
     const match = url.pathname.match(/^\/notes\/([^/?#]+)\/?$/);
@@ -782,7 +828,7 @@ function parseMisskeyNoteLink(href) {
   }
 }
 
-function normalizeRect(rect) {
+function normalizeRect(rect: { x?: number; y?: number; top?: number; left?: number; width?: number; height?: number; right?: number; bottom?: number } | DOMRect): PostRect {
   const x = rect?.x ?? rect?.left ?? 0;
   const y = rect?.y ?? rect?.top ?? 0;
   const width = rect?.width ?? (rect?.right ?? x) - (rect?.left ?? x);
@@ -800,11 +846,16 @@ function normalizeRect(rect) {
   };
 }
 
-function looksLikeMastodon() {
+function looksLikeMastodon(): boolean {
   return Boolean(document.querySelector('#mastodon')) || document.querySelector('meta[name="application-name"]')?.getAttribute('content') === 'Mastodon';
 }
 
-function parseMastodonStatusLink(href) {
+interface MastodonStatusLink {
+  id: string;
+  url: string;
+}
+
+function parseMastodonStatusLink(href: string): MastodonStatusLink | null {
   try {
     const url = new URL(href, location.origin);
     if (url.hostname !== location.hostname) return null; // only this instance's statuses
@@ -816,7 +867,7 @@ function parseMastodonStatusLink(href) {
   }
 }
 
-function getMastodonStatusLink(post) {
+function getMastodonStatusLink(post: Element): MastodonStatusLink | null {
   if (!(post instanceof Element)) return null;
   const timeLink = post.querySelector('a[class*="relative-time"], a[class*="detailed-status__datetime"]');
   let parsed = timeLink ? parseMastodonStatusLink(timeLink.getAttribute('href') || '') : null;
@@ -831,8 +882,8 @@ function getMastodonStatusLink(post) {
   return null;
 }
 
-function findMastodonPostElement(target) {
-  let el = target instanceof Element ? target : target?.parentElement;
+function findMastodonPostElement(target: EventTarget | null): Element | null {
+  let el: Element | null = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
   while (el) {
     // Skip status elements nested inside a quote preview (Mastodon 4.4+ quotes
     // render a full StatusContainer inside .status__quote) — keep walking so a
@@ -845,8 +896,8 @@ function findMastodonPostElement(target) {
   return null;
 }
 
-function prepareScopedCaptureState(className, elements) {
-  const captureTargets = [...new Set(elements.filter(Boolean))];
+function prepareScopedCaptureState(className: string, elements: ReadonlyArray<Element | null | undefined>): () => void {
+  const captureTargets = [...new Set(elements.filter((e): e is Element => Boolean(e)))];
 
   captureTargets.forEach((element) => {
     element.classList.add(className);

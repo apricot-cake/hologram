@@ -18,7 +18,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { configDir } = require('../native-host/paths.cts');
-const { fetchPostMetadata } = require('../extension/metadata');
+// extension/ is TypeScript source; `npm run build` (extension/) compiles it to
+// extension/dist/, which this requires directly (extension/metadata.ts has no
+// build-less runtime — see extension/tsconfig.json's header comment).
+const { fetchPostMetadata } = require('../extension/dist/metadata');
 const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download.cts');
 
 // Crash-safe sidecar write: tmp + rename, so a reader (or the app's fs.watch in

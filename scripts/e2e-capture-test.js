@@ -9,9 +9,10 @@
 //   node scripts/e2e-capture-test.js              # pixiv cells (MVP)
 //
 // Why this works without touching the user's Chrome:
-//   - the extension dir is loaded from the same absolute path as the user's
-//     unpacked install → same extension ID → the registered native-messaging
-//     host (com.corpus.host) accepts the connection
+//   - manifest.json carries a fixed `key` (see memory ext-signing-key), so the
+//     extension ID is pinned to that key regardless of which folder it's
+//     loaded from → same extension ID → the registered native-messaging host
+//     (com.corpus.host) accepts the connection
 //   - Alt+S (chrome.commands) can't be synthesized via CDP, but activateOnTab()
 //     is a top-level function in the service worker — we attach to the SW
 //     target and call it directly
@@ -25,10 +26,14 @@ const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
 const puppeteer = require('puppeteer');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
-const { fetchXTweet } = require('../extension/metadata');
+const { fetchXTweet } = require('../extension/dist/metadata');
 
-const SRC_EXT_DIR = path.join(__dirname, '..', 'extension');
-const EXPECTED_ID = 'abmipnnhieahemoninjnhgoofahhhjjc'; // allowed_origins of com.corpus.host
+// extension/ is now TypeScript source; `npm run build` (extension/) compiles
+// it to extension/dist/, which is what Chrome actually loads (see
+// extension/tsconfig.json's header comment for why the browser layer needs a
+// real build step unlike main/native-host).
+const SRC_EXT_DIR = path.join(__dirname, '..', 'extension', 'dist');
+const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key — allowed_origins of com.corpus.host
 
 // Stage a copy of the extension with <all_urls> host permission added, so
 // captureVisibleTab works WITHOUT a user gesture (in production the Alt+S
@@ -247,6 +252,10 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
 }
 
 (async () => {
+  // Always rebuild first so dist/ (SRC_EXT_DIR, staged below) reflects the
+  // current .ts sources — a stale dist/ would silently test yesterday's code.
+  execFileSync(process.execPath, [path.join(__dirname, '..', 'extension', 'build.mjs')], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
+
   const dir = saveFolder();
   console.log(`保存先: ${dir}`);
 

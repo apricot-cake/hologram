@@ -25,11 +25,15 @@ function getHostname(url) {
 const DIAG_PREFIX = 'diaglog_';
 const DIAG_KEEP = 50;
 
+interface StageError extends Error {
+  stage: string;
+}
+
 // Tag an error with the pipeline stage it failed at, so the single catch in the
 // message handler can log WHICH stage broke. select/permalink are reported by
 // content.js; capture/crop/metadata/bridge are tagged here.
-function stageError(stage, message) {
-  const err = new Error(message);
+function stageError(stage: string, message: string): StageError {
+  const err = new Error(message) as StageError;
   err.stage = stage;
   return err;
 }
@@ -88,7 +92,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab.id;
   const senderHost = getHostname(sender.tab.url);
   captureAndSave(sender.tab, message.rect, message.postUrl, message.platform)
-    .then((result) => sendResponse({ ok: true, ...result }))
+    // captureAndSave has no return value (it notifies the content script
+    // directly via notify() instead) — content.js's capturePost() never reads
+    // this sendResponse either, so `ok:true` is the whole payload.
+    .then(() => sendResponse({ ok: true }))
     .catch((error) => {
       console.error(error);
       void logCapture({ stage: error?.stage || 'unknown', phase: 'fail', platform: message.platform, host: senderHost, url: message.postUrl, error: error?.message });
@@ -109,7 +116,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
   if (!active || active.id !== tab.id) throw stageError('capture', 'Tab changed before capture');
 
-  let dataUrl;
+  let dataUrl: any;
   try {
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
   } catch (err) {
@@ -124,7 +131,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   // fetchPostMetadata is defined in metadata.js (imported at the top).
   // expectedHost pins the Misskey/Mastodon instance fetch to the sender tab's
   // host (SSRF guard — a hostile page can't aim the fetch at another host).
-  let meta;
+  let meta: any;
   try {
     meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
   } catch (err) {
@@ -204,13 +211,13 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra
 // into the user's save folder) and resolve with its ack. The host is short-lived:
 // Chrome spawns it per connection, so this works even when the desktop app is not
 // running.
-function bridgeSend(message) {
+function bridgeSend(message: unknown): Promise<any> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let timer = null;
-    let port = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let port: chrome.runtime.Port | null = null;
 
-    function finish(error, result) {
+    function finish(error: Error | null, result?: any) {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
@@ -225,7 +232,7 @@ function bridgeSend(message) {
 
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST);
-    } catch (error) {
+    } catch (error: any) {
       reject(new Error(`Native host unavailable: ${error?.message || error}`));
       return;
     }
@@ -296,13 +303,13 @@ async function bumpRecentSave(url) {
 // at all. NEVER throws and never blocks the save: if the host can't be reached
 // (e.g. it isn't registered — itself worth recording) the entry falls back to a
 // chrome.storage ring buffer that {type:'dumpLogs'} can read back.
-function logCapture(entry) {
+function logCapture(entry: unknown): Promise<void> {
   const full = Object.assign({ ts: new Date().toISOString() }, entry);
   return new Promise((resolve) => {
     let settled = false;
-    let port = null;
-    let timer = null;
-    const done = (viaHost) => {
+    let port: chrome.runtime.Port | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const done = (viaHost: boolean) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
@@ -420,7 +427,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
 
   // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
   // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
-  let meta;
+  let meta: any;
   try {
     meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
   } catch (err) {
@@ -445,7 +452,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   });
 
   const metaOk = metaFetched(meta);
-  let ack;
+  let ack: any;
   try {
     ack = await sendDraggedToBridge(captureId, primary.url, primary.referer, record, metaOk);
   } catch (err) {

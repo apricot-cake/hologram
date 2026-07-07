@@ -18,7 +18,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { fetchPostMetadata } = require('../extension/metadata');
+// extension/ is TypeScript source; `npm run build` (extension/) compiles it to
+// extension/dist/, which this requires directly.
+const { fetchPostMetadata } = require('../extension/dist/metadata');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 function saveFolder() {

@@ -11,7 +11,7 @@
 //   node scripts/test-metadata-correctness.js
 
 const assert = require('node:assert');
-const { fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, fetchPostMetadata } = require('../extension/metadata.js');
+const { fetchXTweet, fetchBlueskyPost, fetchMisskeyNote, fetchPixivIllust, fetchPostMetadata } = require('../extension/dist/metadata.js');
 
 function mockFetch(routes) {
   global.fetch = async (url) => {

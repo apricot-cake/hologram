@@ -8,7 +8,7 @@
 //   node scripts/test-parse-url.js
 
 const assert = require('node:assert');
-const { parsePostUrl } = require('../extension/metadata.js');
+const { parsePostUrl } = require('../extension/dist/metadata.js');
 
 const cases = [
   // X / Twitter, incl. the subdomains content.js accepts (pro./mobile.).

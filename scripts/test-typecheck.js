@@ -1,7 +1,6 @@
 'use strict';
-// TypeScript contract checks. Four tsc projects (all --noEmit, run via the
-// app's local typescript install — pure-JS binary, no app-control-policy
-// issue) so type rot can't accumulate silently between sessions:
+// TypeScript contract checks. Five tsc projects (all --noEmit) so type rot
+// can't accumulate silently between sessions:
 //   1. app/tsconfig.json          — React islands + _shared (.tsx, stage 1)
 //   2. app/tsconfig.renderer.json — checkJs over the build-less plain-JS
 //      renderer service layer (viewer.js extraction slices + store, stage 2;
@@ -13,27 +12,35 @@
 //      (bridge.cts + install.cts + paths.cts + media-download.cts +
 //      config-recovery.cts, stage 2/3; a THIRD standalone-Node runtime, .cts,
 //      no DOM; runs un-built via the same Node type-stripping)
+//   5. extension/tsconfig.json    — the Chrome extension (MV3) browser layer,
+//      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
+//      layer with a real tsc emit step (extension/build.mjs), so it uses its
+//      own local typescript + @types/chrome install (extension/package.json)
+//      rather than app/'s.
 
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const appDir = path.join(__dirname, '..', 'app');
-const tsc = path.join(appDir, 'node_modules', 'typescript', 'bin', 'tsc');
+const appTsc = path.join(appDir, 'node_modules', 'typescript', 'bin', 'tsc');
+const extDir = path.join(__dirname, '..', 'extension');
+const extTsc = path.join(extDir, 'node_modules', 'typescript', 'bin', 'tsc');
 
 const PROJECTS = [
-  { p: appDir, label: 'islands' },
-  { p: path.join(appDir, 'tsconfig.renderer.json'), label: 'renderer services (checkJs)' },
-  { p: path.join(appDir, 'tsconfig.main.json'), label: 'main process (checkJs)' },
-  { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host' },
+  { p: appDir, label: 'islands', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.renderer.json'), label: 'renderer services (checkJs)', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.main.json'), label: 'main process (checkJs)', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
+  { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, cwd: extDir },
 ];
 
 let failed = 0;
-for (const { p, label } of PROJECTS) {
-  const r = spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd: appDir });
+for (const { p, label, tsc, cwd } of PROJECTS) {
+  const r = spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd });
   if (r.status !== 0) {
     console.error(`FAIL test-typecheck: ${label} reported errors`);
     failed++;
   }
 }
 if (failed) process.exit(1);
-console.log('PASS test-typecheck: islands + renderer services + main process + native-host type-check clean');
+console.log('PASS test-typecheck: islands + renderer services + main process + native-host + extension type-check clean');
