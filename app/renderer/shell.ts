@@ -12,7 +12,7 @@
   // Restore the saved search mode (通常/あいまい) into the viewer.
   (async () => {
     try {
-      const prefs = window.corpus.getPrefs ? await window.corpus.getPrefs() : null;
+      const prefs = window.corpusIpc.getPrefs ? await window.corpusIpc.getPrefs() : null;
       if (prefs && window.corpusSearch) window.corpusSearch.applyMode(prefs.searchMode);
     } catch {
       /* ignore */

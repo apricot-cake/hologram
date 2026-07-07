@@ -1,6 +1,6 @@
 // i18n helper for the Electron viewer (renderer) only.
 // Language resolves from the app's saved preference (config.json `language`, via
-// window.corpus.getPrefs); 'auto' follows navigator.language (the OS/app
+// window.corpusIpc.getPrefs); 'auto' follows navigator.language (the OS/app
 // locale). The viewer reloads on change so the new language takes effect.
 //
 // Consumers do: const { getMessage, lang, resolved } = await window.corpusI18n;
@@ -732,7 +732,7 @@
   window.corpusI18n = (async () => {
     let lang = 'auto';
     try {
-      const prefs = await window.corpus.getPrefs();
+      const prefs = await window.corpusIpc.getPrefs();
       lang = prefs.language || 'auto';
     } catch {
       // prefs unavailable — fall back to auto

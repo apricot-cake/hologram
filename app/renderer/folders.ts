@@ -188,8 +188,8 @@
   }
   function persist() {
     loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-    if (window.corpus && window.corpus.setCollections)
-      window.corpus.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
+    if (window.corpusIpc && window.corpusIpc.setCollections)
+      window.corpusIpc.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
         /* best-effort */
       });
   }
@@ -206,7 +206,7 @@
   async function doLoad() {
     try {
       // getCollections migrates a legacy folders.json on first read (main.js).
-      const r = window.corpus && window.corpus.getCollections ? await window.corpus.getCollections() : null;
+      const r = window.corpusIpc && window.corpusIpc.getCollections ? await window.corpusIpc.getCollections() : null;
       store.setAll((r && r.collections) || []);
       // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
       // just stays as a normal collection. Clip loads from the persisted `clip` array.

@@ -145,8 +145,8 @@
       const next = m === 'fuzzy' ? 'fuzzy' : 'normal';
       const changed = next !== mode;
       mode = next;
-      if (changed && window.corpus && window.corpus.setPref) {
-        window.corpus.setPref('searchMode', mode).catch(() => {
+      if (changed && window.corpusIpc && window.corpusIpc.setPref) {
+        window.corpusIpc.setPref('searchMode', mode).catch(() => {
           /* best-effort */
         });
       }
