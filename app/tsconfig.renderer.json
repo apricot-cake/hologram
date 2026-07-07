@@ -60,6 +60,7 @@
     "renderer/mirror.ts",
     "renderer/confirm.ts",
     "renderer/activebar.ts",
+    "renderer/trash.ts",
     "renderer/viewer.ts"
   ]
 }

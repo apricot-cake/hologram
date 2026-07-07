@@ -3,9 +3,6 @@ import type { CSSProperties } from 'react';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
 
-// Missing-bridge calls throw into the callers' try/catch (same as untyped).
-const corpus = (): CorpusPreload => window.corpus || ({} as CorpusPreload);
-
 // Soft-deleted record as returned by the list-trash IPC — only the fields used here.
 interface TrashRecord {
   captureId?: string;
@@ -32,7 +29,7 @@ export function Trash() {
 
   const load = async () => {
     try {
-      setRecords((await corpus().listTrash()) || []);
+      setRecords((await window.corpusTrash.listTrash()) || []);
     } catch {
       setRecords([]);
     }
@@ -44,7 +41,7 @@ export function Trash() {
 
   const restore = async (r: TrashRecord) => {
     try {
-      await corpus().restorePost((r.image || r.video || r.captureId) as string);
+      await window.corpusTrash.restorePost((r.image || r.video || r.captureId) as string);
     } catch {
       /* ignore */
     }
@@ -52,7 +49,7 @@ export function Trash() {
   };
   const perma = async (r: TrashRecord) => {
     try {
-      await corpus().deleteFromTrash(r.captureId as string);
+      await window.corpusTrash.deleteFromTrash(r.captureId as string);
     } catch {
       /* ignore */
     }
@@ -60,7 +57,7 @@ export function Trash() {
   };
   const emptyAll = async () => {
     try {
-      await corpus().emptyTrash();
+      await window.corpusTrash.emptyTrash();
     } catch {
       /* ignore */
     }

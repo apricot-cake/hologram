@@ -40,6 +40,7 @@ import 'corpus-svc:listing';
 import 'corpus-svc:geometry';
 import 'corpus-svc:format';
 import 'corpus-svc:undo';
+import 'corpus-svc:trash';
 // Wave 2 = infra + UI bridges (store/bridge before their consumers menu/kind-menu/
 // filter-popover/qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-
 // popover module-load time, so it must precede them; order below mirrors the old

@@ -470,11 +470,22 @@ declare global {
     mount(el: HTMLCanvasElement | null): { destroy(): void };
   }
 
+  // ---- renderer/trash.ts — trash domain, read by both viewer.ts's project (via
+  // tsconfig.renderer.json's shared "files") and this strict islands project (the
+  // Settings > Trash island calls it directly) ----
+  interface CorpusTrashApi {
+    listTrash(): Promise<any[]>;
+    restorePost(image: string): Promise<any>;
+    deleteFromTrash(image: string): Promise<any>;
+    emptyTrash(): Promise<any>;
+  }
+
   interface Window {
     corpus: CorpusPreload;
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
+    corpusTrash: CorpusTrashApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
