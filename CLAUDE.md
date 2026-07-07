@@ -14,6 +14,4 @@ Corpus = SNS投稿を画像・メタデータごとローカル保存し検索�
 - UI変更はデザイン規約＝メモリ`corpus-design`（旧DESIGN.md・repo外）準拠
 - lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
 - 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
-- テスト済みケースは再テストしない（`scripts/test-progress.md`確認必須／手順docs/testing.md）
-- commit/pushはユーザーに確認せず自由に行ってよい
 - 私個人ライブラリの事情に合わせた機能開発はしない。一般ユーザーにも有用な機能、もしくは単なるライブラリの整理や修正ならOK。
