@@ -20,7 +20,7 @@ const crypto = require('node:crypto');
 // --- Original-media download (best-effort, still images only) ---
 // Supported still-image content types -> file extension. Anything else (video,
 // svg, avif, html error pages, ...) is skipped rather than saved.
-const MEDIA_MIME_EXT = {
+const MEDIA_MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
@@ -31,6 +31,25 @@ const MAX_MEDIA = 12; // cap attachments per post
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger
 const MEDIA_TIMEOUT_MS = 12000; // per-image abort
 const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
+
+interface MediaEntry {
+  url: string;
+  referer?: string;
+  alt?: string | null;
+  width?: number | null;
+  height?: number | null;
+}
+interface MediaDescriptor {
+  url: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  file: string;
+}
+interface StillImage {
+  buf: Buffer;
+  ext: string;
+}
 
 // --- SSRF guard ----------------------------------------------------------------
 // The media URLs come from the page / a (possibly hostile) Misskey/Mastodon
@@ -44,7 +63,7 @@ const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
 // would add per-fetch DNS latency and a rebinding TOCTOU gap (fetch re-resolves)
 // without closing it, and the residual "attacker domain → private IP" path is a
 // far higher bar for a blind, best-effort downloader.
-function isPrivateIPv4(ip) {
+function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.');
   if (parts.length !== 4) return false;
   const o = parts.map(Number);
@@ -59,7 +78,7 @@ function isPrivateIPv4(ip) {
   if (a >= 224) return true; // multicast + reserved (224-255)
   return false;
 }
-function isPrivateIp(ip) {
+function isPrivateIp(ip: string): boolean {
   const fam = net.isIP(ip);
   if (fam === 4) return isPrivateIPv4(ip);
   if (fam === 6) {
@@ -88,8 +107,8 @@ function isPrivateIp(ip) {
 }
 // Validate one URL: https + (if an IP literal) a public range + not an obvious
 // local hostname. Returns the parsed URL on success, or null.
-function checkMediaUrl(urlStr) {
-  let u;
+function checkMediaUrl(urlStr: string): URL | null {
+  let u: URL;
   try {
     u = new URL(urlStr);
   } catch {
@@ -105,11 +124,11 @@ function checkMediaUrl(urlStr) {
 
 // Read a response body with a hard byte cap, streaming so an over-cap or
 // content-length-lying body is aborted mid-flight instead of buffered whole.
-async function readCappedBody(res, cap, ctrl) {
+async function readCappedBody(res: Response, cap: number, ctrl: AbortController): Promise<Buffer | null> {
   const body = res.body;
   if (body && typeof body.getReader === 'function') {
     const reader = body.getReader();
-    const chunks = [];
+    const chunks: Buffer[] = [];
     let total = 0;
     for (;;) {
       const { done, value } = await reader.read();
@@ -141,7 +160,7 @@ async function readCappedBody(res, cap, ctrl) {
 // failure. pixiv originals on i.pximg.net 403 without a pixiv Referer; callers
 // pass a referer for those. Other hosts omit it. Redirects are followed manually
 // so every hop is re-validated against the SSRF guard.
-async function fetchStillImage(url, referer) {
+async function fetchStillImage(url: unknown, referer?: unknown): Promise<StillImage | null> {
   if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return null;
   if (typeof fetch !== 'function' || typeof AbortController !== 'function') return null;
   const ctrl = new AbortController();
@@ -149,7 +168,7 @@ async function fetchStillImage(url, referer) {
   try {
     const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
     let current = url;
-    let res = null;
+    let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
       if (!checkMediaUrl(current)) return null; // SSRF guard, every hop
       res = await fetch(current, { signal: ctrl.signal, redirect: 'manual', headers });
@@ -183,7 +202,7 @@ async function fetchStillImage(url, referer) {
 
 // Download one still image to <base>-media-<i>.<ext>. Returns the post-download
 // descriptor (with `file`) on success, or null on any failure (caller drops it).
-async function downloadOneMedia(entry, dir, base, i) {
+async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number): Promise<MediaDescriptor | null> {
   if (!entry) return null;
   const got = await fetchStillImage(entry.url, entry.referer);
   if (!got) return null;
@@ -192,17 +211,17 @@ async function downloadOneMedia(entry, dir, base, i) {
   return {
     url: entry.url,
     alt: entry.alt != null ? String(entry.alt) : null,
-    width: Number.isFinite(entry.width) ? entry.width : null,
-    height: Number.isFinite(entry.height) ? entry.height : null,
+    width: typeof entry.width === 'number' && Number.isFinite(entry.width) ? entry.width : null,
+    height: typeof entry.height === 'number' && Number.isFinite(entry.height) ? entry.height : null,
     file,
   };
 }
 
-async function downloadMedia(mediaList, dir, base) {
+async function downloadMedia(mediaList: unknown, dir: string, base: string): Promise<MediaDescriptor[]> {
   if (!Array.isArray(mediaList) || !mediaList.length) return [];
-  const list = mediaList.slice(0, MAX_MEDIA);
+  const list: MediaEntry[] = mediaList.slice(0, MAX_MEDIA);
   const settled = await Promise.allSettled(list.map((m, i) => downloadOneMedia(m, dir, base, i)));
-  return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
+  return settled.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter((v): v is MediaDescriptor => Boolean(v));
 }
 
 // Download the author avatar into the shared store <dir>/avatars/ so the viewer
@@ -219,7 +238,7 @@ async function downloadMedia(mediaList, dir, base) {
 // canonical sidecar form) or null; like media, a failure never fails the save.
 // Legacy sidecars keep their <captureId>-avatar.<ext> files untouched.
 const AVATAR_SUBDIR = 'avatars';
-async function downloadAvatar(avatar, referer, dir) {
+async function downloadAvatar(avatar: unknown, referer: unknown, dir: string): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;
   const hash = crypto.createHash('sha1').update(avatar).digest('hex').slice(0, 16);
   const sub = path.join(dir, AVATAR_SUBDIR);
@@ -238,9 +257,9 @@ async function downloadAvatar(avatar, referer, dir) {
 // pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
 // avatar URL but no stored referer (legacy import data predates avatarReferer),
 // derive it from the host so the download isn't rejected.
-function pixivRefererFor(url) {
+function pixivRefererFor(url: unknown): string | undefined {
   try {
-    const h = new URL(url).hostname.toLowerCase();
+    const h = new URL(url as string).hostname.toLowerCase();
     if (h === 'pximg.net' || h.endsWith('.pximg.net')) return 'https://www.pixiv.net/';
   } catch {
     /* not a parseable URL */

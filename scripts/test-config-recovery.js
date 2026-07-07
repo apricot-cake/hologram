@@ -7,7 +7,7 @@
 //   node scripts/test-config-recovery.js
 
 const assert = require('node:assert');
-const { resolveSaveFolder, clearAllBlockReason } = require('../native-host/config-recovery');
+const { resolveSaveFolder, clearAllBlockReason } = require('../native-host/config-recovery.cts');
 
 let pass = 0;
 function check(name, fn) {

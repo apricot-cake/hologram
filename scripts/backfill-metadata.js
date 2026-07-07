@@ -17,9 +17,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configDir } = require('../native-host/paths');
+const { configDir } = require('../native-host/paths.cts');
 const { fetchPostMetadata } = require('../extension/metadata');
-const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download');
+const { downloadAvatar, pixivRefererFor } = require('../native-host/media-download.cts');
 
 // Crash-safe sidecar write: tmp + rename, so a reader (or the app's fs.watch in
 // the save folder) only ever sees the complete old or complete new file, never a

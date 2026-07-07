@@ -7,8 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "npm run build:islands && electron-builder",
-    "register-host": "node ../native-host/install.js",
-    "unregister-host": "node ../native-host/install.js uninstall",
+    "register-host": "node ../native-host/install.cts",
+    "unregister-host": "node ../native-host/install.cts uninstall",
     "build:islands": "node islands/build.mjs",
     "dev:renderer": "vite",
     "typecheck": "tsc --noEmit"

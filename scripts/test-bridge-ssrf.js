@@ -1,6 +1,6 @@
 'use strict';
 
-// SSRF / size-cap guard test for native-host/bridge.js#fetchStillImage.
+// SSRF / size-cap guard test for native-host/bridge.cts#fetchStillImage.
 // Runs in-process with a stubbed global.fetch (no network). Asserts that:
 //   - IP-literal private/reserved targets (loopback, link-local/cloud-metadata,
 //     RFC1918, ULA, IPv6 ::1, and IPv4-mapped IPv6 in both dotted and hex form)
@@ -13,7 +13,7 @@
 //   node scripts/test-bridge-ssrf.js
 
 const assert = require('node:assert');
-const { fetchStillImage } = require('../native-host/bridge');
+const { fetchStillImage } = require('../native-host/bridge.cts');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 

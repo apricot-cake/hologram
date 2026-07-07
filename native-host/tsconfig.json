@@ -1,0 +1,57 @@
+{
+  // TypeScript stage 2, native-host half (BACKLOG 採用#1「残り②」= P3): the
+  // build-less native-messaging-host layer (bridge.cts + install.cts +
+  // paths.cts + media-download.cts + config-recovery.cts).
+  //
+  // Separate project from tsconfig.main.json / tsconfig.renderer.json because
+  // this is a THIRD runtime: a standalone Node process (spawned by Chrome via
+  // native messaging, or via the Electron binary in ELECTRON_RUN_AS_NODE mode),
+  // never bundled, never imported by ESM import — only by CommonJS require()
+  // (computed-path from app/main.mts, or a relative require() between these
+  // files themselves). These files stay .cts (not .mts) — bridge.cts is
+  // deployed by copying the RAW SOURCE into ~/.corpus and executed there by a
+  // generated launcher (.bat/.sh), so it must keep working as a plain
+  // require()/module.exports CommonJS file with no build step, exactly like it
+  // did as bridge.js. Node's type-stripping erases the annotations at runtime
+  // whether invoked as `node bridge.cts` (dev CLI / Chrome launcher) or via the
+  // Electron binary in RunAsNode mode — proven identical on this machine
+  // (system Node and Electron 43 are both Node 24).
+  //
+  // Sibling requires use the explicit .cts extension (require('./paths.cts'),
+  // not require('./paths')) because the deployed copy in ~/.corpus has no
+  // build step to rewrite specifiers — the extension in the source IS the
+  // extension Node resolves at runtime. Plain require() calls aren't
+  // cross-file type-checked by tsc (require() types as NodeRequire → any);
+  // that already matches how app/main.mts's own dynamic computed-path
+  // require() of this directory works (see tsconfig.main.json) — each file's
+  // OWN logic is still checked, just not the require() contract between them.
+  //
+  // noImplicitAny stays OFF (same rationale as main/renderer): plain JS-shaped
+  // code where internal lambda params would each need annotation noise.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "esModuleInterop": true,
+    // Enforce the runtime constraint: Node's type stripping only ERASES types,
+    // it cannot transform enums/namespaces/parameter-properties.
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noImplicitAny": false,
+    // Caught errors stay `any` — bridge.cts/install.cts report `err.message` at
+    // several sites; leaving these `any` keeps behavior byte-identical instead
+    // of forcing instanceof Error guards.
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // native-host/ has no node_modules of its own (it's a plain deployed dir,
+    // not an npm package) — point at the app/ install (shared with
+    // tsconfig.main.json) instead of duplicating an @types/node install here.
+    "typeRoots": ["../app/node_modules/@types"],
+    "types": ["node"]
+  },
+  "files": ["bridge.cts", "install.cts", "paths.cts", "media-download.cts", "config-recovery.cts"]
+}

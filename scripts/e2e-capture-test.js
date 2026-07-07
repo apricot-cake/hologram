@@ -24,7 +24,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
 const puppeteer = require('puppeteer');
-const { configDir, defaultLibraryDir } = require('../native-host/paths');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 const { fetchXTweet } = require('../extension/metadata');
 
 const SRC_EXT_DIR = path.join(__dirname, '..', 'extension');

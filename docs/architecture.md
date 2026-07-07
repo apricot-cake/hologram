@@ -20,10 +20,13 @@
 
 ### `native-host/` — Native Messaging ブリッジ
 
-- `bridge.js` — 保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存
-- `media-download.js` — **静止画DLの共有モジュール**（SSRFガード・25MB/12s/12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。`fetchStillImage`/`downloadMedia`/`downloadAvatar`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.js` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
-- `install.js` — ホスト登録
-- `paths.js` — 共有configパス
+全ファイル `.cts`（Node 型消去で無ビルド実行・CJS維持＝`bridge.cts` は生ソースを `~/.corpus` へコピー実行するため）。
+
+- `bridge.cts` — 保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存
+- `media-download.cts` — **静止画DLの共有モジュール**（SSRFガード・25MB/12s/12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。`fetchStillImage`/`downloadMedia`/`downloadAvatar`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.js` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
+- `install.cts` — ホスト登録
+- `paths.cts` — 共有configパス
+- `config-recovery.cts` — 保存先復旧・破壊操作ゲート判定（純関数）
 
 ### `app/` — Electron デスクトップアプリ
 

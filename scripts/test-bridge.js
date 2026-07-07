@@ -34,7 +34,7 @@ const header = Buffer.alloc(4);
 header.writeUInt32LE(msg.length, 0);
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
-const child = spawn(process.execPath, [path.join(__dirname, '..', 'native-host', 'bridge.js')], {
+const child = spawn(process.execPath, [path.join(__dirname, '..', 'native-host', 'bridge.cts')], {
   env,
   stdio: ['pipe', 'pipe', 'inherit'],
 });

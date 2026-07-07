@@ -16,14 +16,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { configDir, defaultLibraryDir } = require('./paths');
+const { configDir, defaultLibraryDir } = require('./paths.cts');
 // Best-effort remote-image download (original media + avatars) lives in a shared
 // module so the SSRF guard / size caps are identical across capture, import and
-// backfill. See media-download.js.
-const { downloadMedia, downloadAvatar, fetchStillImage } = require('./media-download');
+// backfill. See media-download.cts.
+const { downloadMedia, downloadAvatar, fetchStillImage } = require('./media-download.cts');
 // Same pure resolver the desktop app uses, so the bridge and app pick the SAME
 // save folder — including recovering from the redundant pointer. See readSaveFolder.
-const { resolveSaveFolder } = require('./config-recovery');
+const { resolveSaveFolder } = require('./config-recovery.cts');
 
 // --- Diagnostic log -----------------------------------------------------------
 // Chrome spawns this process once per native-messaging connection, so a line
@@ -31,7 +31,7 @@ const { resolveSaveFolder } = require('./config-recovery');
 // "native messaging host not found" and this log gets NO new lines, the failure
 // is in Chrome's manifest lookup (before launch), not in the bridge. Best-effort;
 // must never throw (a logging error must not break a capture).
-function logLine(msg) {
+function logLine(msg: string): void {
   try {
     fs.appendFileSync(path.join(configDir(), 'bridge.log'), `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`);
   } catch {
@@ -48,7 +48,7 @@ function logLine(msg) {
 // generation (capture.log.1) at ~2MB so it can't grow unbounded.
 const CAPTURE_LOG_MAX = 2 * 1024 * 1024;
 
-function appendLog(entry) {
+function appendLog(entry: Record<string, unknown>): void {
   try {
     const file = path.join(configDir(), 'capture.log');
     try {
@@ -64,7 +64,7 @@ function appendLog(entry) {
 
 // One capture.log line for a bridge-side save result (the final stage). The
 // extension logs the earlier stages; this ties the outcome to the same url.
-function logSaveOutcome(type, msg, res, err) {
+function logSaveOutcome(type: string, msg: any, res: any, err: Error | null): void {
   const meta = (msg && msg.metadata) || {};
   appendLog({
     stage: 'bridge',
@@ -92,7 +92,7 @@ function logSaveOutcome(type, msg, res, err) {
 // spawned per-capture by Chrome with the app possibly closed, so without reading
 // the pointer itself it would silently save into defaultLibraryDir() while the
 // app still points at the chosen library = the two going out of sync.
-function readSaveFolder() {
+function readSaveFolder(): string {
   let configSaveFolder = null;
   try {
     // README documents hand-editing config.json — strip the UTF-8 BOM Windows
@@ -125,7 +125,7 @@ function readSaveFolder() {
 }
 
 // --- Native messaging framing (4-byte LE length prefix + UTF-8 JSON) ---
-function sendMessage(obj) {
+function sendMessage(obj: unknown): void {
   const json = Buffer.from(JSON.stringify(obj), 'utf8');
   const header = Buffer.alloc(4);
   header.writeUInt32LE(json.length, 0);
@@ -140,11 +140,11 @@ function sendMessage(obj) {
 // escape the save folder via path separators or "..".
 const SAFE_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
-function sanitizeCaptureId(id) {
+function sanitizeCaptureId(id: unknown): string | null {
   return typeof id === 'string' && SAFE_ID.test(id) ? id : null;
 }
 
-function uniqueBase(dir, captureId) {
+function uniqueBase(dir: string, captureId: string): string {
   if (!fs.existsSync(path.join(dir, `${captureId}.jpg`)) && !fs.existsSync(path.join(dir, `${captureId}.json`))) {
     return captureId;
   }
@@ -157,7 +157,7 @@ function uniqueBase(dir, captureId) {
   return `${captureId}-${n}`;
 }
 
-async function handleSave(msg) {
+async function handleSave(msg: any) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
   if (typeof msg.image !== 'string' || !msg.image) throw new Error('Missing image data');
@@ -219,7 +219,7 @@ async function handleSave(msg) {
 // duplicating it in media[] would double it in the viewer's lightbox). This is the
 // same "illustration record" shape an imported library item produces. captureId is the
 // normal epochMillis-hex form, so it passes SAFE_ID.
-async function handleSaveDragged(msg) {
+async function handleSaveDragged(msg: any) {
   const captureId = sanitizeCaptureId(msg.captureId);
   if (!captureId) throw new Error('Invalid captureId');
   if (typeof msg.imageUrl !== 'string' || !msg.imageUrl) throw new Error('Missing image URL');
@@ -263,7 +263,7 @@ if (require.main === module) {
       const body = buffer.subarray(4, 4 + len);
       buffer = buffer.subarray(4 + len);
 
-      let msg;
+      let msg: any;
       try {
         msg = JSON.parse(body.toString('utf8'));
       } catch {

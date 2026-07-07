@@ -19,7 +19,7 @@ fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-const { handleSaveDragged } = require('../native-host/bridge.js');
+const { handleSaveDragged } = require('../native-host/bridge.cts');
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 let sentHeaders = null;

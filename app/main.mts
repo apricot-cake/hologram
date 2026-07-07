@@ -30,14 +30,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // native-host/ lives outside app/. In dev it's a sibling dir; when packaged it
 // is bundled as an extraResource under resources/native-host.
 const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', 'native-host');
-const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths'));
-const installer = require(path.join(nativeHostDir, 'install'));
+const { configDir, defaultLibraryDir } = require(path.join(nativeHostDir, 'paths.cts'));
+const installer = require(path.join(nativeHostDir, 'install.cts'));
 // Best-effort avatar download for import-posts (same SSRF guard/caps as capture,
 // same shared avatars/ store — downloadAvatar dedupes by avatar URL).
-const { pixivRefererFor, downloadAvatar } = require(path.join(nativeHostDir, 'media-download'));
+const { pixivRefererFor, downloadAvatar } = require(path.join(nativeHostDir, 'media-download.cts'));
 // Save-folder resolution + clear-all gating. Shared with the native host (which
-// must resolve the SAME save folder), so it lives alongside paths.js in native-host/.
-const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery'));
+// must resolve the SAME save folder), so it lives alongside paths.cts in native-host/.
+const { resolveSaveFolder, clearAllBlockReason } = require(path.join(nativeHostDir, 'config-recovery.cts'));
 
 // Holographic app icon (iridescent square). Used for the taskbar/window icon at
 // runtime; electron-builder converts the same PNG to .ico for the installed exe.

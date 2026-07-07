@@ -25,7 +25,7 @@ const os = require('node:os');
 
 const APP_NAME = 'Corpus';
 
-function configDir() {
+function configDir(): string {
   if (process.env.CORPUS_CONFIG_DIR) return process.env.CORPUS_CONFIG_DIR;
   if (process.platform === 'win32') {
     return path.join(os.homedir(), '.corpus');
@@ -47,7 +47,7 @@ function configDir() {
 //   Windows : ~/Corpus/library
 //   macOS   : ~/Library/Application Support/Corpus/library
 //   Linux   : $XDG_DATA_HOME/Corpus/library (or ~/.local/share/Corpus/library)
-function defaultLibraryDir() {
+function defaultLibraryDir(): string {
   if (process.platform === 'win32') {
     return path.join(os.homedir(), APP_NAME, 'library');
   }

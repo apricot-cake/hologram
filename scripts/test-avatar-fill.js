@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { pixivRefererFor } = require('../native-host/media-download');
+const { pixivRefererFor } = require('../native-host/media-download.cts');
 
 let ok = true;
 const check = (label, cond) => {

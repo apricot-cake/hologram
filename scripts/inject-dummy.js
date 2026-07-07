@@ -13,7 +13,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { configDir, defaultLibraryDir } = require('../native-host/paths');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 function resolveFolder() {
   const arg = process.argv.find((a, i) => i >= 2 && !a.startsWith('--') && !a.endsWith('.js'));

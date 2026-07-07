@@ -4,9 +4,9 @@
 // can launch the bridge.
 //
 // Used two ways:
-//   - dev CLI:        node native-host/install.js  [uninstall]
+//   - dev CLI:        node native-host/install.cts  [uninstall]
 //                     (launcher runs the bridge with this Node binary)
-//   - Electron app:   require('.../native-host/install').install({ exe, runAsNode:true })
+//   - Electron app:   require('.../native-host/install.cts').install({ exe, runAsNode:true })
 //                     (launcher runs the bridge with the Electron binary in
 //                      ELECTRON_RUN_AS_NODE mode, so no system Node is needed)
 
@@ -15,34 +15,34 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const { configDir } = require('./paths');
+const { configDir } = require('./paths.cts');
 
 const HOST_NAME = 'com.corpus.host';
-const BRIDGE_PATH = path.join(__dirname, 'bridge.js');
-const PATHS_PATH = path.join(__dirname, 'paths.js');
-const MEDIA_DOWNLOAD_PATH = path.join(__dirname, 'media-download.js');
+const BRIDGE_PATH = path.join(__dirname, 'bridge.cts');
+const PATHS_PATH = path.join(__dirname, 'paths.cts');
+const MEDIA_DOWNLOAD_PATH = path.join(__dirname, 'media-download.cts');
 // Shared save-folder resolution (config → redundant pointer → default), required
-// by bridge.js so the host and app resolve the save folder identically. Deployed
+// by bridge.cts so the host and app resolve the save folder identically. Deployed
 // alongside the bridge — see deployBridge().
-const CONFIG_RECOVERY_PATH = path.join(__dirname, 'config-recovery.js');
+const CONFIG_RECOVERY_PATH = path.join(__dirname, 'config-recovery.cts');
 
 // Copy the bridge into the (ASCII) config dir and run it from there. The repo
 // may live under a non-ASCII path (e.g. Japanese folders); cmd.exe reads .bat
 // files in the OEM code page and would mangle a non-ASCII path, so the launcher
-// must reference an ASCII location only. Re-run install after editing bridge.js.
-function deployBridge() {
+// must reference an ASCII location only. Re-run install after editing bridge.cts.
+function deployBridge(): string {
   fs.mkdirSync(configDir(), { recursive: true });
-  const destBridge = path.join(configDir(), 'bridge.js');
+  const destBridge = path.join(configDir(), 'bridge.cts');
   fs.copyFileSync(BRIDGE_PATH, destBridge);
-  fs.copyFileSync(PATHS_PATH, path.join(configDir(), 'paths.js'));
-  // bridge.js runs from the ASCII config dir, so EVERY local module it require()s
+  fs.copyFileSync(PATHS_PATH, path.join(configDir(), 'paths.cts'));
+  // bridge.cts runs from the ASCII config dir, so EVERY local module it require()s
   // must be deployed alongside it — a missing one makes the spawned host crash on
   // startup ("Error when communicating with the native messaging host"), with no
-  // hint. Keep this in lockstep with bridge.js's require()s: paths, media-download,
+  // hint. Keep this in lockstep with bridge.cts's require()s: paths, media-download,
   // config-recovery (the last lets the bridge recover the save folder from the
   // redundant pointer exactly like the app, instead of silently defaulting).
-  fs.copyFileSync(MEDIA_DOWNLOAD_PATH, path.join(configDir(), 'media-download.js'));
-  fs.copyFileSync(CONFIG_RECOVERY_PATH, path.join(configDir(), 'config-recovery.js'));
+  fs.copyFileSync(MEDIA_DOWNLOAD_PATH, path.join(configDir(), 'media-download.cts'));
+  fs.copyFileSync(CONFIG_RECOVERY_PATH, path.join(configDir(), 'config-recovery.cts'));
   return destBridge;
 }
 
@@ -51,14 +51,14 @@ function deployBridge() {
 // invalid ids degrade to null, which writeManifest/updateAllowedOrigin already
 // handle (preserve or clear origins \u2014 never emit a malformed origin).
 const VALID_EXT_ID = /^[a-p]{32}$/;
-function sanitizeExtensionId(id) {
+function sanitizeExtensionId(id: unknown): string | null {
   const trimmed = typeof id === 'string' ? id.trim() : '';
   return VALID_EXT_ID.test(trimmed) ? trimmed : null;
 }
 
 // The unpacked extension's ID (path-derived, shown in chrome://extensions).
 // Stored in config.json by the app so we never commit a key to the repo.
-function readExtensionId() {
+function readExtensionId(): string | null {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg) return sanitizeExtensionId(cfg.extensionId);
@@ -68,23 +68,23 @@ function readExtensionId() {
   return null;
 }
 
-function launcherPath() {
+function launcherPath(): string {
   return path.join(configDir(), process.platform === 'win32' ? 'corpus-host.bat' : 'corpus-host.sh');
 }
 
-function manifestPath() {
+function manifestPath(): string {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: \x00-\x7F is the deliberate full-ASCII range check
-const isAscii = (s) => /^[\x00-\x7F]*$/.test(s);
+const isAscii = (s: string): boolean => /^[\x00-\x7F]*$/.test(s);
 
 // cmd.exe reads a .bat in the console's OEM code page, so a launcher that
 // references a non-ASCII path (e.g. a repo under C:\…\ローカル\開発\) gets the
 // path mangled and the host fails to start with "Error when communicating with
 // the native messaging host" — capture silently never works. Point the .bat at
 // an ASCII-only directory junction (no admin needed) instead of the raw exe.
-function asciiExeRef(exe) {
+function asciiExeRef(exe: string): string {
   if (isAscii(exe)) return exe;
   const exeDir = path.dirname(exe);
   const link = path.join(configDir(), 'runtime'); // configDir is ASCII
@@ -107,7 +107,13 @@ function asciiExeRef(exe) {
   }
 }
 
-function writeLauncher({ exe, runAsNode, bridgePath }) {
+interface WriteLauncherArgs {
+  exe: string;
+  runAsNode: boolean;
+  bridgePath: string;
+}
+
+function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): string {
   fs.mkdirSync(configDir(), { recursive: true });
   const p = launcherPath();
 
@@ -126,13 +132,13 @@ function writeLauncher({ exe, runAsNode, bridgePath }) {
   return p;
 }
 
-function writeManifest(launcher, extensionId) {
+function writeManifest(launcher: string, extensionId: string | null): string {
   // When no extensionId is known (e.g. the app re-registers on every launch but
   // config has none yet), PRESERVE any existing allowed_origins instead of wiping
   // it to []. An empty allowed_origins silently forbids the extension and breaks
   // every save until the id is re-set — the exact failure this whole episode was.
   // Self-healing: a launch without an id never downgrades a working manifest.
-  let allowedOrigins = extensionId ? [`chrome-extension://${extensionId}/`] : [];
+  let allowedOrigins: string[] = extensionId ? [`chrome-extension://${extensionId}/`] : [];
   if (!extensionId) {
     try {
       const prev = JSON.parse(fs.readFileSync(manifestPath(), 'utf8'));
@@ -156,12 +162,12 @@ function writeManifest(launcher, extensionId) {
 // Persist an explicitly-provided extension id into config.json (preserving the
 // app's other settings), so a later app launch — which reads the id from config
 // to register allowed_origins — keeps the correct origin instead of wiping it.
-function persistExtensionId(id) {
+function persistExtensionId(id: string | null): void {
   if (!id) return;
   try {
     const p = path.join(configDir(), 'config.json');
-    let cfg = {};
-    let raw = null;
+    let cfg: Record<string, unknown> = {};
+    let raw: string | null = null;
     try {
       raw = fs.readFileSync(p, 'utf8');
     } catch {
@@ -188,11 +194,11 @@ function persistExtensionId(id) {
 }
 
 // Browsers that read native messaging host manifests.
-function windowsRegistryKeys() {
+function windowsRegistryKeys(): string[] {
   return [`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
 }
 
-function unixManifestDirs() {
+function unixManifestDirs(): string[] {
   const home = os.homedir();
   if (process.platform === 'darwin') {
     return [path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'), path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts')];
@@ -200,10 +206,16 @@ function unixManifestDirs() {
   return [path.join(home, '.config/google-chrome/NativeMessagingHosts'), path.join(home, '.config/microsoft-edge/NativeMessagingHosts'), path.join(home, '.config/chromium/NativeMessagingHosts')];
 }
 
-function install({ exe = process.execPath, runAsNode = false, extensionId } = {}) {
-  extensionId = sanitizeExtensionId(extensionId);
-  if (extensionId) persistExtensionId(extensionId); // explicit id (CLI/app) → make it durable
-  const id = extensionId || readExtensionId();
+interface InstallOptions {
+  exe?: string;
+  runAsNode?: boolean;
+  extensionId?: unknown;
+}
+
+function install({ exe = process.execPath, runAsNode = false, extensionId }: InstallOptions = {}) {
+  const extId = sanitizeExtensionId(extensionId);
+  if (extId) persistExtensionId(extId); // explicit id (CLI/app) → make it durable
+  const id = extId || readExtensionId();
   const bridgePath = deployBridge();
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
   const manifest = writeManifest(launcher, id);
@@ -229,21 +241,21 @@ function install({ exe = process.execPath, runAsNode = false, extensionId } = {}
 // Rewrite only the manifest's allowed_origins, preserving the existing launcher
 // (so we never clobber a working launcher with one that points at a non-ASCII
 // exe path). Falls back to a full install if no manifest exists yet.
-function updateAllowedOrigin(extensionId) {
-  extensionId = sanitizeExtensionId(extensionId);
+function updateAllowedOrigin(extensionId: unknown) {
+  const extId = sanitizeExtensionId(extensionId);
   const mp = manifestPath();
-  let manifest;
+  let manifest: any;
   try {
     manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
   } catch {
-    return install({ extensionId });
+    return install({ extensionId: extId });
   }
-  manifest.allowed_origins = extensionId ? [`chrome-extension://${extensionId}/`] : [];
+  manifest.allowed_origins = extId ? [`chrome-extension://${extId}/`] : [];
   fs.writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf8');
-  return { manifest: mp, extensionId };
+  return { manifest: mp, extensionId: extId };
 }
 
-function uninstall() {
+function uninstall(): void {
   if (process.platform === 'win32') {
     for (const key of windowsRegistryKeys()) {
       try {
@@ -264,10 +276,10 @@ function uninstall() {
 
   // Remove the deployed bridge, the launcher, and the generated host manifest.
   // Leave config.json (extensionId / saveFolder) so user settings survive an
-  // uninstall. Clearing the stale manifest also matters because app/main.js
+  // uninstall. Clearing the stale manifest also matters because app/main.mts
   // gates registration on existsSync(manifestPath()); a leftover manifest would
   // make a later launch skip re-registering with stale allowed_origins.
-  const leftovers = [path.join(configDir(), 'bridge.js'), path.join(configDir(), 'paths.js'), path.join(configDir(), 'media-download.js'), path.join(configDir(), 'config-recovery.js'), launcherPath(), manifestPath()];
+  const leftovers = [path.join(configDir(), 'bridge.cts'), path.join(configDir(), 'paths.cts'), path.join(configDir(), 'media-download.cts'), path.join(configDir(), 'config-recovery.cts'), launcherPath(), manifestPath()];
   for (const f of leftovers) {
     try {
       fs.unlinkSync(f);
@@ -284,7 +296,7 @@ if (require.main === module) {
     uninstall();
     console.log(`Removed native messaging host "${HOST_NAME}".`);
   } else {
-    // Optional: `node install.js <extensionId>` to set the allowed extension.
+    // Optional: `node install.cts <extensionId>` to set the allowed extension.
     const argId = process.argv[2];
     const result = install(argId ? { extensionId: argId } : {});
     console.log(`Installed native messaging host "${HOST_NAME}".`);

@@ -19,7 +19,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { fetchPostMetadata } = require('../extension/metadata');
-const { configDir, defaultLibraryDir } = require('../native-host/paths');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 
 function saveFolder() {
   try {

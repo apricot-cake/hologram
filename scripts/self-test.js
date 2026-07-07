@@ -13,8 +13,8 @@
 //   4. (win32) the native-host MANIFEST under ~/.corpus resolves (launcher exists,
 //      allows an extension origin). The HKCU pointer is reported as INFO only — an
 //      in-container `reg query` reads the virtual hive and can't be trusted.
-//   5. the DEPLOYED bridge (configDir/bridge.js) matches the repo bridge —
-//      install COPIES bridge.js into the ASCII config dir, so a bridge edit does
+//   5. the DEPLOYED bridge (configDir/bridge.cts) matches the repo bridge —
+//      install COPIES bridge.cts into the ASCII config dir, so a bridge edit does
 //      nothing until you re-run install. A stale copy is the #1 "my fix didn't
 //      take" trap.
 //
@@ -25,10 +25,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { configDir, defaultLibraryDir } = require('../native-host/paths');
-const install = require('../native-host/install');
+const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
+const install = require('../native-host/install.cts');
 
-const REPO_BRIDGE = path.join(__dirname, '..', 'native-host', 'bridge.js');
+const REPO_BRIDGE = path.join(__dirname, '..', 'native-host', 'bridge.cts');
 
 // Minimal valid 1x1 JPEG (shared with test-bridge.js).
 const JPEG_B64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
@@ -142,7 +142,7 @@ function checkRegistration() {
   if (process.platform !== 'win32') return { name: 'host registration', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const manifestPath = path.join(configDir(), `${install.HOST_NAME}.json`);
   if (!fs.existsSync(manifestPath)) {
-    return { name: 'host registration', ok: false, detail: `manifest missing (${manifestPath}) — run: node native-host/install.js` };
+    return { name: 'host registration', ok: false, detail: `manifest missing (${manifestPath}) — run: node native-host/install.cts` };
   }
   try {
     const man = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -174,24 +174,24 @@ function checkRegistryPointer() {
 
 // --- check 5: deployed bridge freshness ---
 function checkDeployedBridge() {
-  const deployed = path.join(configDir(), 'bridge.js');
+  const deployed = path.join(configDir(), 'bridge.cts');
   if (!fs.existsSync(deployed)) {
-    return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.js` };
+    return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` };
   }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
-  return same ? { name: 'deployed bridge', ok: true, detail: 'matches repo' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.js. Re-run: node native-host/install.js' };
+  return same ? { name: 'deployed bridge', ok: true, detail: 'matches repo' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.cts. Re-run: node native-host/install.cts' };
 }
 
 // --- check: the DEPLOYED bridge actually runs (not just matches by content) ---
-// Spawns configDir/bridge.js exactly as Chrome's launcher would and pings it.
+// Spawns configDir/bridge.cts exactly as Chrome's launcher would and pings it.
 // Catches a deployed copy that crashes on startup — e.g. a local require()
-// (./media-download) whose file wasn't deployed alongside bridge.js. A content
-// match can't catch this; only running it can.
+// (./media-download.cts) whose file wasn't deployed alongside bridge.cts. A
+// content match can't catch this; only running it can.
 function deployedBridgePing() {
   return new Promise((resolve) => {
-    const deployed = path.join(configDir(), 'bridge.js');
+    const deployed = path.join(configDir(), 'bridge.cts');
     if (!fs.existsSync(deployed)) {
-      resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.js` });
+      resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` });
       return;
     }
     const child = spawn(process.execPath, [deployed], { stdio: ['pipe', 'pipe', 'pipe'] });

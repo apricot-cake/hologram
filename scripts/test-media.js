@@ -19,7 +19,7 @@ const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(saveFolder, { recursive: true }); // handleSave mkdir's this; the direct downloadMedia call needs it too
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-const { handleSave, downloadMedia, downloadAvatar } = require('../native-host/bridge');
+const { handleSave, downloadMedia, downloadAvatar } = require('../native-host/bridge.cts');
 
 // A valid 1x1 PNG (only the content-type matters to the bridge).
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
