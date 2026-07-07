@@ -4,11 +4,18 @@
 // .poster-foot), and the `.poster-tag[data-ptag]` / `.poster-info[data-pinfo]`
 // hover buttons — so the delegated click/contextmenu on #posterGrid keeps
 // firing. React renders + windows; viewer.js owns posterList, the count badge,
-// the density classes on the container, and every event. modelOf() re-reads the
-// inspected highlight live, so a bridge repaint() refreshes visible cells.
+// the density classes on the container, and every event. The inspected
+// highlight is derived from corpusStore, not modelOf (see below).
 import type { CSSProperties } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+
+// The inspected ring is derived straight from corpusStore's 'inspectedKey'
+// (a real subscription) rather than riding on modelOf's closure-read model —
+// see grid/Grid.tsx's Cell for the post-side twin of this.
+const subInspected = (cb: () => void) => window.corpusStore.subscribe('inspectedKey', cb);
+const getInspected = () => (window.corpusStore.get('inspectedKey') as string | null | undefined) ?? null;
 
 // The poster cell model viewer.js resolves per card — only the fields laid out here.
 interface PosterCardModel {
@@ -81,7 +88,10 @@ function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?:
 // One windowed cell: build the card model lazily (only visible cells pay).
 function PosterCell({ index, data }: GridCellProps) {
   const model = useGridModel();
-  return <PosterCard c={model.modelOf(data, index)} tagTitle={model.tagTitle} infoTitle={model.infoTitle} />;
+  const inspectedKey = useSyncExternalStore(subInspected, getInspected);
+  const c = model.modelOf(data, index);
+  c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
+  return <PosterCard c={c} tagTitle={model.tagTitle} infoTitle={model.infoTitle} />;
 }
 
 export function PostersHost({ model }: { model: CorpusGridModel }) {

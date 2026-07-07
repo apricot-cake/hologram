@@ -1206,7 +1206,16 @@
   let manualGroups: string[][] = []; // [[captureId,…],…] — user-built groups (win over auto)
   let ungrouped = new Set<string>(); // post keys opted out of auto-grouping
   const stickyRecs = new Set<string>(); // captureIds kept visible after a mutation un-matches the filter
-  let inspectedKey: string | null = null; // postIdKey of the group shown in the inspector (ring marker)
+  // postIdKey of the group shown in the inspector (ring marker). Mirrored into
+  // corpusStore so the grid/poster cells derive their own '.inspected' ring via
+  // useSyncExternalStore — no more manual repaint()/pushPosterModel() calls to
+  // refresh the ring on open/close (the store notify does that reactively).
+  let inspectedKey: string | null = null;
+  function setInspectedKey(key: string | null) {
+    inspectedKey = key;
+    window.corpusStore.set('inspectedKey', key);
+  }
+  window.corpusStore.set('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
   let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
   let taggingApi: any = null; // shared 種別 (kind) menu API; set by showKindMenu() below
   // Column / slider-track / thumbnail-bucket math lives in geometry.js now.
@@ -2484,13 +2493,9 @@
       view: currentView,
       items: viewGroups,
       itemsKey: _gridItemsKey,
-      // inspected rides on the model (live cells re-derive it after a remount —
-      // an imperative class would vanish with the recycled cell).
-      modelOf: (g, i) => {
-        const m: any = cardModel(g, i);
-        m.inspected = inspectedKey !== null && m.postKey === inspectedKey;
-        return m;
-      },
+      // inspected is NOT set here — the grid island derives its own ring from
+      // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed by keyOf below.
+      modelOf: (g, i) => cardModel(g, i),
       keyOf: (g) => postIdKey(g.rep),
       labels: cardLabels,
       // list: one full-width column, gap 14 — kept wide (from 4) for scanning
@@ -2896,10 +2901,7 @@
   function closeDetail() {
     byId('postDetail').hidden = true;
     window.corpusInspector.close();
-    inspectedKey = null;
-    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected')); // post + poster cards
-    if (gridIslandActive()) window.corpusGrid.repaint(); // clear the virtualized cells' model-driven ring too
-    if (browseMode === 'posters') pushPosterModel(); // clear the React poster highlight too
+    setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
     byId('postGrid').classList.remove('insp-open');
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
@@ -3129,15 +3131,10 @@
     byId('postDetail').hidden = false;
     // While open, a card click swaps the panel (not zoom) → plain pointer.
     byId('postGrid').classList.add('insp-open');
-    // Ring-mark the inspected card so swapping content stays traceable.
-    inspectedKey = postIdKey(p);
-    document.querySelectorAll('.post-card.inspected').forEach((el) => el.classList.remove('inspected'));
-    const gi = viewGroups.indexOf(g);
-    if (gi >= 0) {
-      const card = document.querySelector('.post-card[data-index="' + gi + '"]');
-      if (card) card.classList.add('inspected');
-    }
-    if (gridIslandActive()) window.corpusGrid.repaint(); // virtualized cells re-derive .inspected from the model (survives remounts)
+    // Ring-mark the inspected card so swapping content stays traceable — the grid
+    // cell derives its own ring reactively (corpusStore subscribe), so no manual
+    // DOM classList reach-in / repaint() is needed here.
+    setInspectedKey(postIdKey(p));
     refreshTileSlider(); // inline column narrows the grid — re-derive the track
   }
 
@@ -3935,9 +3932,9 @@
   let _posterItemsKey = 0;
   // React owns the poster cells (virtualized — window.corpusPosterGrid bridge);
   // viewer.js keeps posterList, the count badge, the density classes, and
-  // #posterGrid's click/contextmenu delegation. The inspected highlight is
-  // model-driven: modelOf re-reads inspectedKey live, so showPosterDetail /
-  // closeDetail re-push (paint bump) instead of toggling a class.
+  // #posterGrid's click/contextmenu delegation. The inspected highlight is NOT
+  // set here — the island derives its own ring from corpusStore's 'inspectedKey'
+  // (useSyncExternalStore), keyed off the raw item's `.key`.
   function pushPosterModel() {
     if (posterList !== _posterItemsArr) {
       _posterItemsArr = posterList;
@@ -3951,7 +3948,6 @@
         const s = (u.displayName || u.screenName || '').trim();
         return {
           index: i,
-          inspected: inspectedKey === 'poster:' + u.key,
           avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
           monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
           name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
@@ -4107,9 +4103,7 @@
       },
     });
     byId('postDetail').hidden = false;
-    inspectedKey = 'poster:' + u.key;
-    document.querySelectorAll('.inspected').forEach((el) => el.classList.remove('inspected')); // post cards (poster cards are model-driven)
-    pushPosterModel(); // React re-highlights the inspected poster card from inspectedKey
+    setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (corpusStore subscribe)
   }
   byId('posterGrid').addEventListener('click', (e) => {
     const card = closestOf(e, '.poster-card');

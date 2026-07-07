@@ -5,16 +5,23 @@
 // (model.items = viewGroups), the container classes, and every delegated
 // #postGrid handler. Cells emit the long-standing .post-card DOM contract
 // (shared PostCard component), so delegation + CSS work unchanged.
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import type { SyntheticEvent } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 
-// One grid cell. modelOf() re-reads live viewer state (selection / clip /
-// inspected) on every render, so a bridge repaint() refreshes visible cells.
+// One grid cell. modelOf() re-reads live viewer state (selection / clip) on
+// every render, so a bridge repaint() refreshes visible cells. The inspected
+// ring is NOT part of that closure-read model — it's derived straight from
+// corpusStore's 'inspectedKey' (a real subscription), so opening/closing the
+// inspector re-rings the right cell with no bridge repaint() needed.
+const subInspected = (cb: () => void) => window.corpusStore.subscribe('inspectedKey', cb);
+const getInspected = () => (window.corpusStore.get('inspectedKey') as string | null | undefined) ?? null;
+
 function Cell({ index, data }: GridCellProps) {
   const model = useGridModel();
+  const inspectedKey = useSyncExternalStore(subInspected, getInspected);
   const ref = useRef<HTMLDivElement | null>(null);
   // Cells (re)mount as the window scrolls; whether .text overflows is only
   // knowable from layout, so re-check on every commit (the old path did this
@@ -37,7 +44,9 @@ function Cell({ index, data }: GridCellProps) {
         if (cap && img.naturalWidth && img.naturalHeight) (model.onAspect as (cap: string, ar: string) => void)(cap, img.naturalWidth + '/' + img.naturalHeight);
       }
     : undefined;
-  return <PostCard m={model.modelOf(data, index)} L={model.labels} cellRef={ref} onImgLoad={onImgLoad} />;
+  const m = model.modelOf(data, index);
+  m.inspected = inspectedKey != null && !!model.keyOf && model.keyOf(data, index) === inspectedKey;
+  return <PostCard m={m} L={model.labels} cellRef={ref} onImgLoad={onImgLoad} />;
 }
 
 export function GridHost({ model }: { model: CorpusGridModel }) {
