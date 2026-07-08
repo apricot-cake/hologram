@@ -234,15 +234,23 @@ interface CorpusTagsApi {
   };
   /** Set-equality on tag arrays (order-insensitive). */
   sameTags(a: string[], b: string[]): boolean;
-  /** tag-groups.json load; [] on failure. */
-  loadTagGroups(): Promise<Array<{ id: string; name: string; tags?: string[] }>>;
-  persistTagGroups(groups: Array<{ id: string; name: string; tags?: string[] }>): Promise<void>;
-  /** tag-types.json load; {} on failure. */
-  loadTagTypes(): Promise<{ types: Record<string, string>; labels: Record<string, string> }>;
-  persistTagTypes(types: Record<string, string>, labels: Record<string, string>): Promise<void>;
-  /** poster-tags.json load; {} on failure. */
-  loadPosterTags(): Promise<Record<string, string[]>>;
-  persistPosterTags(tags: Record<string, string[]>): Promise<void>;
+  /** Loads tag-groups.json / tag-types.json / poster-tags.json into this service's own state (idempotent — safe to call once at boot). */
+  load(): Promise<void>;
+  getTagTypes(): Record<string, string>;
+  getTagLabels(): Record<string, string>;
+  getTagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
+  getPosterTags(): Record<string, string[]>;
+  /** Set (or clear, kind=null) a tag's 種別; persists both maps and notifies subscribers. */
+  setTagKind(tag: string, kind: string | null): Promise<void>;
+  /** Rename (or reset, label falsy) a 種別's custom label; persists both maps and notifies subscribers. */
+  setKindLabel(kind: string, label: string | null | undefined): Promise<void>;
+  setTagGroups(groups: Array<{ id: string; name: string; tags?: string[] }>): Promise<void>;
+  /** Set (or clear, tags=null) one poster's tag list; persists and notifies subscribers. */
+  setPosterTags(key: string, tags: string[] | null): void;
+  /** Bulk-apply poster tag records (undo/redo); persists once and notifies subscribers. */
+  applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>): void;
+  /** Subscribe to any mutator above; returns an unsubscribe function. */
+  onChange(cb: (kind?: string) => void): () => void;
 }
 
 // ---- renderer/users.js — poster roll-up + search-box suggestions ----

@@ -4,16 +4,23 @@
 // inspectorTagPickerData (the React tag editor's full data bundle incl. cooc
 // suggestion tiers), posterTagsOf/posterFilterVocab (poster-applied tags), and
 // sameTags — extracted 1:1 from viewer.js as the eighth "pure logic → service"
-// slice of the viewer decomposition (最終形B) — plus, as the P4 "IPC→service"
-// domain-grouping follow-up, the load/persist pairs for the three stores this
-// module already reads (loadTagGroups/persistTagGroups, loadTagTypes/
-// persistTagTypes, loadPosterTags/persistPosterTags). Plain IIFE on window
-// (like query.js / listing.js); loaded BEFORE viewer.js; touches no DOM.
-// setTagKind (the in-memory tagTypes mutation) stays in viewer.js — only the
-// disk round-trip moved here; makeTags' pure derivations still take every
-// store as an injected getter, and the load/persist pair below reads
-// window.corpusIpc directly since only the browser ever calls them, never the
-// Node unit test. CommonJS-exported like records.js / listing.js.
+// slice of the viewer decomposition (最終形B). makeTags' pure derivations
+// still take every store as an injected getter (unchanged signature — the
+// Node unit test stubs these directly), but the getters passed in by
+// viewer.js now point at THIS module's own state instead of viewer.js's own
+// `let`s (P4 "状態→store" tags slice, 2026-07-08): tagTypes/tagLabels/
+// tagGroups/posterTags moved here as the service's single source of truth,
+// with mutators (setTagKind/setKindLabel/setTagGroups/setPosterTags/
+// applyPosterTagRecords) that persist to disk and notify subscribers via
+// onChange — the "subscribable tags service" named in the P4-B roadmap.
+// viewer.js keeps the surrounding business logic (undo recording, inspector
+// refresh, confirm-gated homonym distinction) and calls these mutators
+// instead of mutating the maps itself. Nobody subscribes via onChange yet
+// (viewer.js still re-pushes the sidebar models explicitly after each
+// mutation) — it exists so a later slice (sidebar self-deriving from
+// services) has something to subscribe to. Plain IIFE on window (like
+// query.js / listing.js); loaded BEFORE viewer.js; touches no DOM.
+// CommonJS-exported like records.js / listing.js.
 (function () {
   'use strict';
 
@@ -157,12 +164,41 @@
     return b.every((t) => s.has(t));
   }
 
-  // tag-groups.json / tag-types.json / poster-tags.json load/persist (P4
-  // "IPC→service" domain-grouping slice — the raw corpusIpc calls move here
-  // from viewer.js, next to the read-side logic that already owns these
-  // stores). Only called from the browser (viewer.js); never invoked by the
-  // Node unit test, so window.corpusIpc's absence under Node is harmless.
-  async function loadTagGroups() {
+  // --- state (the 4 maps, owned here now — see header comment) ---
+  let tagTypes = {} as Record<string, string>;
+  let tagLabels = {} as Record<string, string>;
+  let tagGroups: any[] = [];
+  let posterTags = {} as Record<string, string[]>;
+  const getTagTypes = () => tagTypes;
+  const getTagLabels = () => tagLabels;
+  const getTagGroups = () => tagGroups;
+  const getPosterTags = () => posterTags;
+
+  // --- subscribers (notified after any mutator below runs; nobody listens
+  // yet — see header comment) ---
+  const subs: Array<(kind?: string) => void> = [];
+  function notify(kind?: string) {
+    for (const cb of [...subs]) {
+      try {
+        cb(kind);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  function onChange(cb: (kind?: string) => void) {
+    subs.push(cb);
+    return () => {
+      const i = subs.indexOf(cb);
+      if (i >= 0) subs.splice(i, 1);
+    };
+  }
+
+  // tag-groups.json / tag-types.json / poster-tags.json disk round-trip.
+  // Private — only load() and the mutators below call these. Only called
+  // from the browser (viewer.js); never invoked by the Node unit test, so
+  // window.corpusIpc's absence under Node is harmless.
+  async function readTagGroups() {
     try {
       const r = await window.corpusIpc.getTagGroups();
       return (r && r.groups) || [];
@@ -170,14 +206,14 @@
       return [];
     }
   }
-  async function persistTagGroups(groups) {
+  async function writeTagGroups() {
     try {
-      await window.corpusIpc.setTagGroups(groups);
+      await window.corpusIpc.setTagGroups(tagGroups);
     } catch {
       /* best-effort */
     }
   }
-  async function loadTagTypes() {
+  async function readTagTypes() {
     try {
       const r = await window.corpusIpc.getTagTypes();
       return { types: (r && r.types) || {}, labels: (r && r.labels) || {} };
@@ -185,14 +221,16 @@
       return { types: {}, labels: {} };
     }
   }
-  async function persistTagTypes(types, labels) {
+  // Always writes BOTH maps so writing one never drops the other (set-tag-types
+  // only keeps the labels it receives).
+  async function writeTagTypes() {
     try {
-      await window.corpusIpc.setTagTypes(types, labels);
+      await window.corpusIpc.setTagTypes(tagTypes, tagLabels);
     } catch {
       /* best-effort */
     }
   }
-  async function loadPosterTags() {
+  async function readPosterTags() {
     try {
       const r = await window.corpusIpc.getPosterTags();
       return (r && r.tags) || {};
@@ -200,15 +238,83 @@
       return {};
     }
   }
-  async function persistPosterTags(tags) {
+  async function writePosterTags() {
     try {
-      await window.corpusIpc.setPosterTags({ tags });
+      await window.corpusIpc.setPosterTags({ tags: posterTags });
     } catch {
       /* best-effort */
     }
   }
 
-  const api = { makeTags, sameTags, loadTagGroups, persistTagGroups, loadTagTypes, persistTagTypes, loadPosterTags, persistPosterTags };
+  // Boot-time load into this service's own state (idempotent — safe to call
+  // once from viewer.js's bootApp; a later call reuses the same promise).
+  let loadPromise: Promise<void> | null = null;
+  async function doLoad() {
+    const [pt, tg, tt] = await Promise.all([readPosterTags(), readTagGroups(), readTagTypes()]);
+    posterTags = pt;
+    tagGroups = tg;
+    tagTypes = tt.types;
+    tagLabels = tt.labels;
+  }
+  function load() {
+    if (!loadPromise) loadPromise = doLoad();
+    return loadPromise;
+  }
+
+  // --- mutators: persist + notify (viewer.js calls these instead of
+  // mutating the maps itself; the surrounding business logic — undo
+  // recording, inspector refresh, confirm dialogs — stays in viewer.js) ---
+  async function setTagKind(tag: string, kind: string | null) {
+    if (kind) tagTypes[tag] = kind;
+    else delete tagTypes[tag];
+    await writeTagTypes();
+    notify('kind');
+  }
+  async function setKindLabel(kind: string, label: string | null | undefined) {
+    const v = (label || '').trim();
+    if (v) tagLabels[kind] = v;
+    else delete tagLabels[kind];
+    await writeTagTypes();
+    notify('kind');
+  }
+  async function setTagGroups(groups: unknown) {
+    tagGroups = Array.isArray(groups) ? groups : [];
+    await writeTagGroups();
+    notify('groups');
+  }
+  // Single poster's tag list (applyPosterTagChange in viewer.js); tags===null
+  // clears the entry. Fire-and-forget persist, matching the pre-move behavior.
+  function setPosterTags(key: string, tags: string[] | null) {
+    if (tags && tags.length) posterTags[key] = tags;
+    else delete posterTags[key];
+    writePosterTags();
+    notify('poster');
+  }
+  // Bulk apply (undo/redo): records = [{key, tags}], persisted once.
+  function applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>) {
+    for (const r of records) {
+      if (r.tags && r.tags.length) posterTags[r.key] = r.tags.slice();
+      else delete posterTags[r.key];
+    }
+    writePosterTags();
+    notify('poster');
+  }
+
+  const api = {
+    makeTags,
+    sameTags,
+    load,
+    getTagTypes,
+    getTagLabels,
+    getTagGroups,
+    getPosterTags,
+    setTagKind,
+    setKindLabel,
+    setTagGroups,
+    setPosterTags,
+    applyPosterTagRecords,
+    onChange,
+  };
   if (typeof window !== 'undefined') window.corpusTags = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

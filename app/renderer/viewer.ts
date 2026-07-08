@@ -559,16 +559,18 @@
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.js
-  // (window.corpusTags) — 8th extraction slice. Wired BEFORE the facets/cooc
-  // wiring below, which passes tagKindOf/posterTagsOf/posterFilterVocab as
-  // direct refs. The tag stores are reassigned lets (declared later — the
-  // getters only run at call time); charCandidatesFor/relatedTagCandidates are
-  // consts from the cooc destructure below, so they enter as deferred arrows.
+  // (window.corpusTags) — 8th extraction slice. The 4 tag stores themselves
+  // (tagTypes/tagLabels/tagGroups/posterTags) also live in tags.js now (P4
+  // "状態→store" tags slice) — its own getters go in where viewer.js's local
+  // `let`s used to. Wired BEFORE the facets/cooc wiring below, which passes
+  // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
+  // charCandidatesFor/relatedTagCandidates are consts from the cooc
+  // destructure below, so they enter as deferred arrows.
   const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = window.corpusTags.makeTags({
-    tagTypes: () => tagTypes,
-    tagLabels: () => tagLabels,
-    tagGroups: () => tagGroups,
-    posterTags: () => posterTags,
+    tagTypes: window.corpusTags.getTagTypes,
+    tagLabels: window.corpusTags.getTagLabels,
+    tagGroups: window.corpusTags.getTagGroups,
+    posterTags: window.corpusTags.getPosterTags,
     allPosts: () => allPosts,
     MSG,
     charCandidatesFor: (w) => charCandidatesFor(w),
@@ -577,10 +579,11 @@
   const { sameTags } = window.corpusTags;
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
-  // injected: reassigned lets (allPosts/tagGroups/multiOnly) as getters,
-  // and consts declared after this point (posterQB / pfStore / the corpusQuery
-  // destructure / the listing.js products) as deferred arrow wrappers — a direct
-  // ref here would hit TDZ at wiring time; the wrappers only run when a flyout opens.
+  // injected: reassigned lets (allPosts/multiOnly) + tags.js's own getter
+  // (tagGroups) as getters, and consts declared after this point (posterQB /
+  // pfStore / the corpusQuery destructure / the listing.js products) as
+  // deferred arrow wrappers — a direct ref here would hit TDZ at wiring time;
+  // the wrappers only run when a flyout opens.
   const { qfValues } = window.corpusFacets.makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
@@ -591,7 +594,7 @@
     MSG,
     PF_NAME,
     tagKindOf,
-    tagGroups: () => tagGroups,
+    tagGroups: window.corpusTags.getTagGroups,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -1015,18 +1018,8 @@
   // user-created and unbounded, so they live INSIDE the scrollable flyout —
   // permanent sidebar rows for them stretched the column without bound
   // (sub-rows removed 2026-07-03).
-  let tagGroups: any[] = []; // {id,name,tags[]} from tag-groups.json (loaded at startup)
-  // 用語帳 (Phase 2 ①): a tag's 種別 is an attribute of the TAG. `tagTypes` maps a
-  // tag string → kind ('work' | 'character'); tags absent from it are 一般 (general).
-  // Flat, so no post migration. The renamable work⊃character pair (B=裏方) drives the
-  // later category sections; here we only assign + reflect the kind on the tag itself.
-  let tagTypes = {} as Record<string, string>;
-  // The work/character pair is renamable (種別ペアのリネーム): tagLabels holds the
-  // user's custom names; a kind with no entry falls back to the built-in
-  // KIND_LABEL (tags.js).
-  // Persisted alongside tagTypes as tag-types.json's `labels` (merged on import).
-  let tagLabels = {} as Record<string, string>;
-  // tagKindOf / kindLabel moved to tags.js (corpusTags wiring above).
+  // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
+  // to tags.js (corpusTags wiring above) — the P4 "状態→store" tags slice.
   // Reflect the (possibly custom) 作品/キャラ names onto both sidebar columns' 種別 rows.
   // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
   function applyKindLabels() {
@@ -1036,23 +1029,15 @@
     pushSidebar();
     pushPosterSidebar();
   }
-  // Always send BOTH maps so writing one never drops the other (set-tag-types only
-  // keeps the labels it receives).
-  async function persistTagTypes() {
-    await window.corpusTags.persistTagTypes(tagTypes, tagLabels);
-  }
+  // Mutation + persistence now live in tags.js (setTagKind/setKindLabel); these
+  // wrappers keep the view-specific side effects (sidebar re-derive/re-push).
   async function setTagKind(tag, kind) {
-    if (kind) tagTypes[tag] = kind;
-    else delete tagTypes[tag];
-    await persistTagTypes();
+    await window.corpusTags.setTagKind(tag, kind);
     updateSidebarTags(); // a newly classified tag may reveal/hide its 作品/キャラ section
   }
   // Rename a 種別 (work/character) globally; blank resets to the built-in label.
   async function setKindLabel(kind, label) {
-    const v = (label || '').trim();
-    if (v) tagLabels[kind] = v;
-    else delete tagLabels[kind];
-    await persistTagTypes();
+    await window.corpusTags.setKindLabel(kind, label);
     applyKindLabels();
     updateSidebarTags(); // section header names + counts re-read kindLabel
   }
@@ -1121,15 +1106,12 @@
     }
   }
 
-  // Poster-tag variant: posterTags[key] is the source of truth (NOT a post record),
-  // so undo/redo re-applies the captured tag list per poster key and keeps an open
-  // poster inspector in sync (mirrors applyTagUndo's inspector refresh).
+  // Poster-tag variant: posterTags[key] (tags.js) is the source of truth (NOT a
+  // post record), so undo/redo re-applies the captured tag list per poster key
+  // and keeps an open poster inspector in sync (mirrors applyTagUndo's inspector
+  // refresh). The bulk mutation + persist now live in tags.js.
   async function applyPosterTagUndo(records) {
-    for (const r of records) {
-      if (r.tags && r.tags.length) posterTags[r.key] = r.tags.slice();
-      else delete posterTags[r.key];
-    }
-    persistPosterTags();
+    window.corpusTags.applyPosterTagRecords(records);
     if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
@@ -3025,8 +3007,7 @@
     if (!window.confirm(MSG.homonymConfirm(addedTag, work))) return;
     // The distinguished string stays a character (danbooru-style); record its 種別.
     if (!tagKindOf(distinguished)) {
-      tagTypes[distinguished] = 'character';
-      await persistTagTypes();
+      await window.corpusTags.setTagKind(distinguished, 'character');
     }
     await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
     updateSidebarTags();
@@ -3736,13 +3717,11 @@
   let posterWorkGroups: any[] = []; // recent works shown in the poster inspector
   // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
   // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
-  let posterTags = {} as Record<string, string[]>;
+  // Owned by tags.js now (P4 "状態→store" tags slice) — posterTagsOf/
+  // posterFilterVocab/setPosterTags/applyPosterTagRecords moved to tags.js
+  // (corpusTags wiring above).
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
-  function persistPosterTags() {
-    window.corpusTags.persistPosterTags(posterTags);
-  }
-  // posterTagsOf / posterFilterVocab moved to tags.js (corpusTags wiring above).
 
   // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
   // Reuses the shared folder-list store (folders.js createPersistedFolderStore) so the
@@ -4012,9 +3991,7 @@
     const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
     if (!changed) return;
     pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
-    if (next.length) posterTags[key] = next;
-    else delete posterTags[key];
-    persistPosterTags();
+    window.corpusTags.setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
   }
   function showPosterDetail(u, opts?) {
@@ -4654,10 +4631,8 @@
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
     ungrouped = await window.corpusRecords.loadUngrouped();
     await pfStore.load();
-    posterTags = await window.corpusTags.loadPosterTags();
     manualGroups = await window.corpusRecords.loadManualGroups();
-    tagGroups = await window.corpusTags.loadTagGroups();
-    ({ types: tagTypes, labels: tagLabels } = await window.corpusTags.loadTagTypes());
+    await window.corpusTags.load();
     applyKindLabels();
     // Seed both sidebar columns with labels + initial state before the first loadPosts so the
     // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
