@@ -604,11 +604,9 @@ declare global {
     ReactDOM: typeof import('react-dom');
     ReactDOMClient: typeof import('react-dom/client');
     ReactJsxRuntime: typeof import('react/jsx-runtime');
-    // Pre-island stashes: viewer.js may push before an island bundle loads.
-    __corpusTabsModel?: any;
-    __corpusQueryChips?: Record<string, any>;
+    // Pre-island stash (only the lightbox still replays one — the others load in the
+    // single bundle before viewer runs, so render() always reaches a live subscriber).
     __corpusLbLabels?: Record<string, string>;
-    __corpusImageTabModel?: any;
     JSZip?: any;
   }
 }

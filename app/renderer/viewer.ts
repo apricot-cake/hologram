@@ -1427,10 +1427,9 @@
         optAllTip: MSG.qbOptAllTip,
         optAnyTip: MSG.qbOptAnyTip,
       };
-      // Stash the latest model per container (script order is viewer.js → islands,
-      // so the bundle may not be loaded yet; index.tsx replays the stash on load).
+      // The chips island loads before viewer runs (single bundle), so render()
+      // always reaches a live subscriber — no stash-replay needed.
       const key = container.id;
-      (window.__corpusQueryChips || (window.__corpusQueryChips = {}))[key] = model;
       if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
     }
 
@@ -2000,8 +1999,6 @@
       return { id: t.id, title: renderTabTitle(t), icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && tabs.length > 1 };
     });
     const model = { tabs: tabModels, editingId: tabEditingId, closeTitle: MSG.tabClose, newTitle: MSG.tabNew };
-    // Stash for the island bundle (script order is viewer.js → islands); index.tsx replays it.
-    window.__corpusTabsModel = model;
     if (window.corpusTabs) window.corpusTabs.render(model);
   }
   function switchTab(id) {
@@ -2154,7 +2151,6 @@
           },
           onCloseTab: () => closeTab(t.id),
         };
-    window.__corpusImageTabModel = model;
     if (window.corpusImageTab) window.corpusImageTab.render(model);
   }
   // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
@@ -2172,7 +2168,6 @@
   function hideImageTabView() {
     if (!imageTabShowing) return;
     imageTabShowing = false;
-    window.__corpusImageTabModel = null;
     if (window.corpusImageTab) window.corpusImageTab.render(null); // → ImageTabHost removes the class
     closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
   }
