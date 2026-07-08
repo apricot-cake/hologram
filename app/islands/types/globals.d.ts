@@ -212,6 +212,21 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
+  // ---- renderer/grid.ts — P4-B slice⑩: the post grid PULLS its model instead of
+  // being pushed one. items (postGroups) + layout inputs (view/cardSize/tileSize/
+  // listThumb) live in corpusStore already (slice④); configure() sets the
+  // invariant callbacks ONCE (modelOf/keyOf/labels/onAspect never change identity
+  // meaningfully across renders — only items+layout do). setLiveColumnWidth is the
+  // one exception: a size-slider drag reflow that deliberately stays OUT of the
+  // store (mid-drag store writes would be wasteful — slice④'s reasoning) — it's a
+  // thin ephemeral override read by get(), cleared on commit.
+  interface CorpusPostGridSource {
+    configure(cfg: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void }): void;
+    setLiveColumnWidth(px: number | null): void;
+    get(): CorpusGridModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
   interface CorpusAnchorRect {
     left: number;
@@ -570,7 +585,7 @@ declare global {
     corpusUI: CorpusUI;
     corpusTheme?: CorpusTheme;
     corpusViewer?: CorpusViewer;
-    corpusGrid: CorpusGridBridge;
+    corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGrid: CorpusGridBridge;
     corpusQfPop: CorpusQfPop;
     corpusContextMenu: CorpusContextMenu;

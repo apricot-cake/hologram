@@ -59,6 +59,79 @@
     return { render, patch, isActive, get, subscribe };
   }
 
-  window.corpusGrid = makeGridBridge(); // posts (#postGrid)
-  window.corpusPosterGrid = makeGridBridge(); // posters (#posterGrid)
+  window.corpusPosterGrid = makeGridBridge(); // posters (#posterGrid) — still pushed; posts moved to a pulled source below (P4-B slice⑩)
+
+  // Post grid model source (P4-B slice⑩): unlike the pushed bridges above, this is
+  // PULLED — items come from corpusStore('postGroups'), layout is derived from
+  // corpusStore('view'/'cardSize'/'tileSize'/'listThumb') using the same formulas
+  // renderPosts() used to compute inline. configure() sets the invariant callbacks
+  // once; get()/subscribe() satisfy the same shape GridMount already consumes
+  // (_shared/VirtualGrid.tsx only ever calls .get()/.subscribe() on its bridge
+  // prop, never .render()/.patch()/.isActive() — those were viewer-only, so a
+  // pulled source is a drop-in swap with zero changes to GridMount itself).
+  function makePostGridSource(): CorpusPostGridSource {
+    let config: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void } | null = null;
+    let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in corpusStore (see the type's doc comment)
+    let lastItems: any = undefined;
+    let itemsKeySeq = 0; // bumps only when the items reference actually changes — mirrors the old push-time itemsKey bump
+    let paintSeq = 0;
+    const subs = new Set<() => void>();
+    const notify = () => {
+      for (const cb of [...subs]) {
+        try {
+          cb();
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    };
+    // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
+    // single consumer (GridMount) in practice, but this avoids stacking duplicate
+    // corpusStore subscriptions (and duplicate notify() fan-out) if that changes.
+    for (const k of ['postGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) window.corpusStore.subscribe(k, notify);
+    function computeModel(): CorpusGridModel | null {
+      if (!config) return null;
+      const items = window.corpusStore.get('postGroups');
+      if (items == null) return null; // undefined (nothing rendered yet) or explicit null (grid empty)
+      if (items !== lastItems) {
+        lastItems = items;
+        itemsKeySeq++;
+      }
+      const view = window.corpusStore.get('view') || 'card';
+      const cardSize = window.corpusStore.get('cardSize');
+      const tileSize = window.corpusStore.get('tileSize');
+      const listThumb = window.corpusStore.get('listThumb');
+      const computedColumnWidth = view === 'tile' ? tileSize : view === 'card' ? cardSize : undefined;
+      return {
+        view,
+        items,
+        itemsKey: itemsKeySeq,
+        modelOf: config.modelOf,
+        keyOf: config.keyOf,
+        labels: config.labels,
+        columnCount: view === 'list' ? 1 : undefined,
+        columnWidth: liveColumnWidth ?? computedColumnWidth,
+        square: view === 'tile',
+        rowGutter: view === 'list' ? 14 : view === 'tile' ? 8 : 16,
+        itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
+        onAspect: config.onAspect,
+        paint: ++paintSeq,
+      } as CorpusGridModel;
+    }
+    return {
+      configure(cfg) {
+        config = cfg;
+      },
+      setLiveColumnWidth(px) {
+        liveColumnWidth = px;
+        notify();
+      },
+      get: computeModel,
+      subscribe(cb) {
+        subs.add(cb);
+        return () => subs.delete(cb);
+      },
+    };
+  }
+  window.corpusPostGridSource = makePostGridSource();
 })();

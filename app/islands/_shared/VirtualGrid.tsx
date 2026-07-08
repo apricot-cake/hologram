@@ -137,7 +137,10 @@ export function VirtualGridHost({ model, cell }: { model: CorpusGridModel; cell:
 // so setModel always re-renders — paint bumps make visible cells re-read live viewer state
 // (clip via modelOf; selection/inspected are separate corpusStore subscriptions inside
 // Cell); itemsKey changes reset the positioner.
-export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: CorpusGridBridge; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
+// bridge only needs get()/subscribe() — render()/patch()/isActive() are viewer-only
+// APIs some bridges (posters, still pushed) happen to also have; a pulled source
+// (posts, P4-B slice⑩) satisfies this narrower shape without them.
+export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: Pick<CorpusGridBridge, 'get' | 'subscribe'>; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {
     const h = document.createElement('div');

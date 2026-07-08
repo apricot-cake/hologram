@@ -1175,17 +1175,14 @@
     }
   })();
   if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
-  // Virtualized grid (window.corpusGrid → islands/grid): itemsKey bumps only when
-  // the viewGroups ARRAY was rebuilt, so the island knows when to reset its
-  // positioner (cached cell heights) vs merely repaint visible cells.
-  let _gridItemsKey = 0;
-  let _gridItemsArr: any = null;
+  // Virtualized grid (window.corpusPostGridSource → islands/grid, P4-B slice⑩): items
+  // + layout are now pulled from corpusStore by the source itself (renderer/grid.ts) —
+  // viewer just pushes 'postGroups' and no longer tracks an itemsKey/isActive here.
   let _gridAnimT: any = null;
   // How long .anim-in stays on a grid after a fresh build. Must outlive the
   // LAST staggered card or its backwards-fill entrance gets cancelled mid-run:
   // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
   const GRID_ANIM_MS = 950;
-  const gridIslandActive = () => !!(window.corpusGrid && window.corpusGrid.isActive());
 
   // #mode-post is the scroll container (the page itself never scrolls), so scroll
   // position is read/written there, not on window.
@@ -1727,6 +1724,7 @@
       _haveBaseline = true;
       allPosts = [..._postsById.values()];
       _allPostsGeneration++;
+      window.corpusStore.set('allPostsCount', allPosts.length); // P4-B slice⑩: the post-empty-state selector's "is the library really empty" input
       stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理
       if (browseMode === 'posters') renderPosters(keepLimit);
       else renderPosts(keepLimit);
@@ -2383,7 +2381,7 @@
   // Resolve ONE group into a plain, fully-formatted card model: image src,
   // formatted counts/dates, selection, clip, aspect — everything the markup
   // needs as primitives. The grid island renders it with the shared PostCard
-  // component (live React cells via window.corpusGrid). Raw text/names are
+  // component (live React cells via window.corpusPostGridSource). Raw text/names are
   // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
   // Per-card view model (records.js makeCardModel) — the model the grid island
   // renders. Extracted 1:1 from the old inline cardModel; runtime couplings are
@@ -2404,6 +2402,33 @@
     tileThumbW,
     cardThumbW,
     listThumbW,
+  });
+  // i18n labels are identical for every card — set up once (also keeps them in sync
+  // after a language change, which always full-reloads the app).
+  const cardLabels = {
+    tipSelect: MSG.tipSelect,
+    tipClip: MSG.tipClip,
+    tipInfo: MSG.tipInfo,
+    tipTagEdit: MSG.tipTagEdit,
+    clickToExpand: MSG.clickToExpand,
+  };
+  // Cards whose image has NO reserved height (no shotW/H in the index, no cached
+  // aspect — rare: video poster / unreadable header) report their real aspect on
+  // load; the cache reserves the height on the NEXT render.
+  function onCardAspect(cap, ar) {
+    if (imgAspect[cap] !== ar) {
+      imgAspect[cap] = ar;
+      persistAspect();
+    }
+  }
+  // P4-B slice⑩: modelOf/keyOf/labels/onAspect never change identity meaningfully
+  // between renders (only items/layout do, and those are corpusStore-derived by the
+  // source itself) — configure once instead of rebuilding + pushing every renderPosts().
+  window.corpusPostGridSource.configure({
+    modelOf: (g, i) => cardModel(g, i),
+    keyOf: (g) => postIdKey(g.rep),
+    labels: cardLabels,
+    onAspect: onCardAspect,
   });
 
   // inPlace (was keepLimit — the renderLimit it kept is gone with the windowed
@@ -2438,13 +2463,19 @@
       viewGroups = groupRecords(getFilteredPosts());
       if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
     }
-    const query = searchQuery().trim();
 
     // Post count + reset/empty/nav frame → the activebar island (viewGroups is now final).
     pushActivebar();
 
     if (viewGroups.length === 0) {
-      window.corpusGrid.render(null); // virtualized cells unmount before the blanket clear
+      // P4-B slice⑩: pushing 'postGroups'=null (not just an empty array — see
+      // renderer/grid.ts's computeModel) unmounts the grid island's cells
+      // SYNCHRONOUSLY (corpusStore.set's notify loop is synchronous, and the
+      // island's subscriber flushSync's the unmount — same guarantee the old
+      // window.corpusGrid.render(null) call gave) BEFORE the innerHTML clear
+      // below runs. The EmptyState island derives 'firstRun'/'filtered' itself
+      // from this same key + 'allPostsCount' + 'searchQuery' — one less push.
+      window.corpusStore.set('postGroups', null);
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
@@ -2453,11 +2484,6 @@
         empty.classList.add('anim-in');
         setTimeout(() => empty.classList.remove('anim-in'), 400);
       }
-      // Empty states carry a "what to do next" affordance: the capture shortcut + ZIP
-      // restore on first run, a one-click reset when filters ate everything. The EmptyState
-      // island renders the message + button; its IDs (emptyImportBtn / emptyResetBtn) match
-      // so the delegated #emptyState click handler below fires unchanged.
-      window.corpusEmpty.render(allPosts.length === 0 && !query ? 'firstRun' : 'filtered');
       if (!inPlace) syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
       return;
     }
@@ -2483,57 +2509,16 @@
     grid.classList.toggle('no-overlay', !tileOverlay);
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f) => f.type === 'engagement'));
 
-    // i18n labels are identical for every card — pushed once per render (also
-    // keeps them in sync after a language change).
-    const cardLabels = {
-      tipSelect: MSG.tipSelect,
-      tipClip: MSG.tipClip,
-      tipInfo: MSG.tipInfo,
-      tipTagEdit: MSG.tipTagEdit,
-      clickToExpand: MSG.clickToExpand,
-    };
-
-    // THE GRID — fully React-owned (grid island via window.corpusGrid): masonic
-    // windowing + live cell rendering for all three views. viewer.js keeps the
-    // data pipeline (viewGroups above), the container's classes/CSS vars, and
-    // every delegated #postGrid handler.
-    if (viewGroups !== _gridItemsArr) {
-      _gridItemsArr = viewGroups;
-      _gridItemsKey++; // rebuilt array → island resets its positioner + re-syncs scroll
-    }
-    window.corpusGrid.render({
-      view: currentView,
-      items: viewGroups,
-      itemsKey: _gridItemsKey,
-      // inspected is NOT set here — the grid island derives its own ring from
-      // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed by keyOf below.
-      modelOf: (g, i) => cardModel(g, i),
-      keyOf: (g) => postIdKey(g.rep),
-      labels: cardLabels,
-      // list: one full-width column, gap 14 — kept wide (from 4) for scanning
-      // rhythm; the grouped-row stack no longer needs clearance (its rest deck
-      // stays inside the row and the hover fan raises z-index). tile: squares
-      // packed by minimum width tileSize, gap 8 (.post-grid.tile-view). card:
-      // masonry columns of minimum width cardSize, gap 16 (.post-grid.masonry's
-      // old column gap) — masonic stretches columns to fill, the same math as
-      // the old CSS auto-fill minmax / hand-rolled masonryColCount.
-      columnCount: currentView === 'list' ? 1 : undefined,
-      columnWidth: currentView === 'tile' ? tileSize : currentView === 'card' ? cardSize : undefined,
-      square: currentView === 'tile', // aspect-ratio:1 cells → island uses the real column width as its height estimate
-      rowGutter: currentView === 'list' ? 14 : currentView === 'tile' ? 8 : 16,
-      itemHeightEstimate: currentView === 'list' ? Math.round(listThumb * 1.25) : currentView === 'tile' ? tileSize : Math.round(cardSize * 1.2),
-      // Cards whose image has NO reserved height (no shotW/H in the index, no
-      // cached aspect — rare: video poster / unreadable header) report their real
-      // aspect on load. The cache reserves the height on the NEXT render; the
-      // cell's own resize is re-flowed by the island's ResizeObserver (replaces
-      // the old learnCardAspects + debounced full re-pack).
-      onAspect: (cap, ar) => {
-        if (imgAspect[cap] !== ar) {
-          imgAspect[cap] = ar;
-          persistAspect();
-        }
-      },
-    });
+    // THE GRID — fully React-owned (grid island via window.corpusPostGridSource):
+    // masonic windowing + live cell rendering for all three views. viewer.js keeps
+    // the data pipeline (viewGroups above), the container's classes/CSS vars, and
+    // every delegated #postGrid handler. P4-B slice⑩: layout (view/columnWidth/
+    // rowGutter/itemHeightEstimate/…) is no longer pushed — the source derives it
+    // itself from corpusStore's 'view'/'cardSize'/'tileSize'/'listThumb' (already
+    // there since slice④); modelOf/keyOf/labels/onAspect were configured once,
+    // above. Pushing the SAME array reference (in-place reuse) is a no-op via the
+    // store's identity guard, matching the old itemsKey-doesn't-bump behavior.
+    window.corpusStore.set('postGroups', viewGroups);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll.
@@ -2865,6 +2850,7 @@
       _postsById.delete(r.captureId); // optimistic removal from the delta cache
     }
     allPosts = [..._postsById.values()]; // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
+    window.corpusStore.set('allPostsCount', allPosts.length); // P4-B slice⑩
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders(); // 削除した captureId をフォルダから即時掃除
@@ -4231,16 +4217,20 @@
     st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
     if (!commit) {
-      if (gridIslandActive() && st.columns) window.corpusGrid.patch({ columnWidth: st.get() }); // live re-flow while dragging (masonic recreates its positioner on columnWidth change)
+      // Live re-flow while dragging (masonic recreates its positioner on columnWidth
+      // change) via a deliberate side channel, NOT corpusStore — writing every drag
+      // input to the store would recompute+notify on every pointermove for no
+      // benefit (P4-B slice④'s reasoning, carried into slice⑩'s pulled source).
+      if (st.columns) window.corpusPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
     window.corpusIpc.setPref(st.pref, st.get());
-    // P4-B slice④: mirror the settled size into corpusStore alongside 'view' (below),
-    // so the post-grid's layout inputs are ALL in the store — a prerequisite for a
-    // later slice (grid island self-deriving layout instead of receiving a push).
-    // Commit-only (not mid-drag): nothing subscribes yet, and the drag path is
-    // deliberately reflow-conscious (see the comment above).
+    // The settled size mirrors into corpusStore (P4-B slice④) — the post-grid
+    // source (slice⑩) derives columnWidth/itemHeightEstimate from it. Clear the
+    // live-drag override so a later VIEW change (which reads a different
+    // storeKey) can't see a stale value from this one.
     window.corpusStore.set(st.storeKey, st.get());
+    window.corpusPostGridSource.setLiveColumnWidth(null);
     renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
@@ -4575,6 +4565,7 @@
         }
         _postsById = new Map(); // keep the delta cache in sync with the wipe
         allPosts = [];
+        window.corpusStore.set('allPostsCount', 0); // P4-B slice⑩
         renderPosts();
         showToast(MSG.cleared);
       },
