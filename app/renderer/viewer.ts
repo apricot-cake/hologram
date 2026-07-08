@@ -705,7 +705,7 @@
       return;
     }
     const vtype = it.type || cat; // sub-rows (instances) override the type
-    const i = activeFilters.findIndex((f) => f.type === vtype && f.value === v);
+    const i = postQB.shadow().findIndex((f) => f.type === vtype && f.value === v);
     if (i >= 0) {
       removeFilter(i);
     } else if (vtype === 'tag' || vtype === 'hashtag') {
@@ -877,7 +877,7 @@
     }
     // クリップ row: toggle the "show only clipped" filter.
     if (closestOf(e, '#clipRow')) {
-      const idx = activeFilters.findIndex((f) => f.type === 'clip');
+      const idx = postQB.shadow().findIndex((f) => f.type === 'clip');
       if (idx < 0) addFilter({ type: 'clip', value: '*' });
       else removeFilter(idx);
       renderClipRow();
@@ -942,6 +942,7 @@
     // Per-category active-filter counts. Instance filters live inside the platform
     // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
     // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
+    const activeFilters = postQB.shadow();
     const badges: Record<string, number> = {};
     for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
     badges.platform = (badges.platform || 0) + (badges.instance || 0);
@@ -1146,7 +1147,6 @@
   function markPostsMutated() {
     _allPostsGeneration++;
   }
-  let activeFilters: any[] = []; // { type, value?, dateField?, from?, to?, engType?, min? }
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
   // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
@@ -1251,8 +1251,11 @@
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
   // implementation via the createQueryBuilder(ctx) factory below; ctx carries the
   // per-view differences (container, leaf predicate, label, callbacks). The tree is
-  // ALWAYS a root group (op 'and' by default). For posts, activeFilters is a derived
-  // flat shadow of the leaves (sidebar highlight / row badges / tab title / counts).
+  // ALWAYS a root group (op 'and' by default). Each instance's `.shadow()` is a
+  // derived flat shadow of the leaves (sidebar highlight / row badges / tab
+  // title / counts) — postQB.shadow()/posterQB.shadow(), read fresh at each
+  // call site rather than mirrored into a separate module-level global (P4-B
+  // slice⑧; see the syncShadow comment below).
   // The tree machinery + post-side predicates live in query.js (window.corpusQuery)
   // — the first "pure logic → service" extraction of the viewer decomposition.
   // Runtime couplings are injected here: collections/clips resolve through CF()
@@ -1272,8 +1275,8 @@
   // behaviour from one codebase. The bar shows NO boolean vocabulary: values
   // cluster by attribute, the only operator surface is the すべて/どれか toggle
   // on multi-value clusters, and exclusions live in the 除く cluster.
-  // ctx: { container, barEl?, predOf, labelOf, glyphOf,
-  //        getSearchVal?, onClearSearch?, onChange, onShadow?, openLeafEditor?,
+  // ctx: { container, storeKey?, barEl?, predOf, labelOf, glyphOf,
+  //        getSearchVal?, onClearSearch?, onChange, openLeafEditor?,
   //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
   //        standaloneTypes? }  (barEl = the bar's static container: reveal +
   //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
@@ -1299,7 +1302,7 @@
     const Q = window.corpusQuery;
     const qHasValue = (type, value) => Q.hasLeafValue(tree, type, value);
     const removeCondsMatching = (pred) => Q.removeCondsMatching(tree, pred);
-    // Rebuild the flat (deduped) leaf shadow and hand it to the view (onShadow).
+    // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
     // P4-B slice⑦ (state half only — event/render ownership stays in viewer.js
     // for now, see the roadmap's "Q2" split note): also mirror the tree into
     // corpusStore under ctx.storeKey, a fresh deep clone each time (tree is
@@ -1308,12 +1311,10 @@
     // selectedSet slice, same fix). This is THE single choke point for "the
     // tree changed" (every mutation path — addFilter/removeNode/showQbMenu's
     // refresh(), plus setTree/resetTree — calls syncShadow), so one push here
-    // covers all of them. Nobody subscribes yet; this lays the groundwork for
-    // ⑧ (activeFilters/posterShadow as store-derived selectors).
+    // covers all of them. Nobody subscribes to the store key yet.
     const syncShadow = () => {
       shadow = Q.buildShadow(tree);
       if (ctx.storeKey) window.corpusStore.set(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
-      if (ctx.onShadow) ctx.onShadow(shadow);
     };
     // One canonical refresh after any tree mutation: rebuild the shadow, then let
     // the view re-render (which itself re-renders this bar via render()).
@@ -1522,8 +1523,8 @@
         tree = emptyTree();
         // Every tree mutation must resync the flat shadow (the invariant refresh()
         // documents). resetTree was the lone mutator that skipped it, leaving the
-        // shadow — and its consumers (activeFilters / posterShadow → sidebar row
-        // badges) — stale until the next mutation. Post-side callers were masked by a
+        // shadow — and its consumers (.shadow() readers → sidebar row badges) —
+        // stale until the next mutation. Post-side callers were masked by a
         // following afterQueryChange()→refresh(); the poster reset (renderPosters, no
         // refresh) exposed it as row badges that stayed lit after リセット.
         syncShadow();
@@ -1548,8 +1549,11 @@
     };
   }
 
-  // The post-side builder instance. activeFilters stays a module-level global,
-  // refreshed from the tree shadow (onShadow) so the sidebar / tab title keep working.
+  // The post-side builder instance. P4-B slice⑧: badge/tab-title/etc. reads used
+  // to mirror the tree shadow into a module-level `activeFilters` global via an
+  // onShadow callback; that global was a pure duplicate of postQB.shadow() (the
+  // instance already exposes the same cached array) — every read site now calls
+  // postQB.shadow() directly instead of maintaining a second copy.
   const postQB = createQueryBuilder({
     container: document.getElementById('queryChips'),
     storeKey: 'postQueryTree',
@@ -1565,9 +1569,6 @@
     onChange: () => {
       renderPostFolders();
       renderPosts();
-    },
-    onShadow: (leaves) => {
-      activeFilters = leaves;
     },
     openLeafEditor: (n) => {
       if (n.type === 'date') openDatePopover(n);
@@ -1810,7 +1811,7 @@
     return {
       // queryTree is the source of truth; f (the shadow) is kept for the tab title
       // (tabTitleOf reads state.f) and for migrating older persisted states.
-      f: JSON.parse(JSON.stringify(activeFilters)),
+      f: JSON.parse(JSON.stringify(postQB.shadow())),
       tree: cloneTree(postQB.getTree()),
       search: searchQuery(),
       sort: sortSelect.value,
@@ -2484,7 +2485,7 @@
     // Tile overlay (author/❤) is optional; the ❤ count only shows while an
     // engagement sort or filter is active (otherwise it's noise).
     grid.classList.toggle('no-overlay', !tileOverlay);
-    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || activeFilters.some((f) => f.type === 'engagement'));
+    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f) => f.type === 'engagement'));
 
     // i18n labels are identical for every card — pushed once per render (also
     // keeps them in sync after a language change).
@@ -2635,7 +2636,7 @@
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
     renderClipRow();
-    if (activeFilters.some((f) => f.type === 'clip')) renderPosts(true);
+    if (postQB.shadow().some((f) => f.type === 'clip')) renderPosts(true);
   });
 
   // Folder picker flyout (destinations) — opened from the card context menu
@@ -2666,7 +2667,7 @@
         g.rep.captureId,
       );
       // re-render only if a collection filter could change the visible set
-      if (activeFilters.some((f) => f.type === 'collection')) renderPosts(true);
+      if (postQB.shadow().some((f) => f.type === 'collection')) renderPosts(true);
     }
   }
   function showFoldMenu(g, x, y) {
@@ -3774,10 +3775,13 @@
     posterTagsOf,
     folderById: posterFolderById,
   });
-  let posterShadow: any[] = []; // flat leaf shadow of the poster tree (sidebar badges / rows)
   let editingPosterDateNode: CorpusQueryLeaf | null = null; // the date leaf being edited via the popover (null = new)
   // The poster-side builder instance. transient (no tabs / nav history for posters);
-  // onChange → renderPosters (which redraws the rows + bar + grid).
+  // onChange → renderPosters (which redraws the rows + bar + grid). P4-B slice⑧:
+  // this used to also mirror the tree shadow into a module-level `posterShadow`
+  // global via onShadow — that global had zero readers (buildPosterSidebarModel
+  // already called posterQB.shadow() directly), so it's removed outright rather
+  // than converted to a read site.
   const posterQB = createQueryBuilder({
     container: document.getElementById('posterQueryChips'),
     storeKey: 'posterQueryTree',
@@ -3792,9 +3796,6 @@
     },
     onChange: () => {
       renderPosters();
-    },
-    onShadow: (leaves) => {
-      posterShadow = leaves;
     },
     openLeafEditor: (n) => {
       if (n.type === 'date') openPosterDatePopover(n);
