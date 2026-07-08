@@ -483,7 +483,9 @@
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
   // buttons themselves route through the island callbacks above). Guarded so they never fire
   // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
-  document.addEventListener('keydown', (e) => {
+  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx); this stays
+  // the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
+  function handleShortcutNavKey(e) {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const t = e.target as HTMLElement | null;
@@ -492,16 +494,17 @@
     e.preventDefault();
     if (e.key === 'ArrowLeft') navBack();
     else navForward();
-  });
+  }
   // Mouse back/forward (buttons 3/4). DOM events fire in the renderer on most
   // platforms; preventDefault stops any stray in-page navigation.
-  window.addEventListener('mouseup', (e) => {
+  function handleShortcutMouseNav(e) {
     if (e.button !== 3 && e.button !== 4) return;
     if (!navAllowed()) return;
     e.preventDefault();
     if (e.button === 3) navBack();
     else navForward();
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutNavKey, handleShortcutMouseNav });
 
   // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
   byId('emptyState').addEventListener('click', (e) => {
@@ -1129,13 +1132,15 @@
     if (await _undo.redo()) showToast('Redo');
   }
 
-  document.addEventListener('keydown', (e) => {
+  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  function handleShortcutUndoKey(e) {
     if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
     if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
     e.preventDefault();
     if (e.shiftKey) doRedo();
     else doUndo();
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutUndoKey });
 
   // --- State ---
   let allPosts: CorpusPost[] = [];
@@ -3484,7 +3489,8 @@
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
-  document.addEventListener('keydown', (e) => {
+  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  function handleShortcutSelectAllKey(e) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
@@ -3498,11 +3504,11 @@
     selectionAnchor = null;
     renderPosts(true);
     updateSelectionBar();
-  });
+  }
 
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A: never steal keys from fields or open overlays.
-  document.addEventListener('keydown', (e) => {
+  function handleShortcutSearchFocusKey(e) {
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
     if (!slash && !ctrlK) return;
@@ -3516,7 +3522,8 @@
     if (!sb) return; // island not mounted yet (sub-second boot window)
     sb.focus();
     sb.select();
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey, handleShortcutSearchFocusKey });
 
   function requestDeleteSelected() {
     if (selectedSet.size === 0) return;
@@ -3541,37 +3548,12 @@
     });
   }
 
-  // View toggle
-  // Slide the glass thumb to the active button using its measured geometry
-  // (inline on the real .vt-thumb element — reliable + transitions).
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
   // collapses rapid clicks to a single render.
   let _browseRenderT: any = null,
     _densityRenderT: any = null,
     _posterDensityRenderT: any = null;
-  function positionViewThumb(scope?) {
-    // #densityToggle, #posterDensityToggle and #browseToggle are React-owned (the
-    // toolbar island positions their own thumbs), so the no-scope sweep skips them —
-    // never two writers on the same .vt-thumb.
-    const containers = scope instanceof Element ? [scope] : document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle):not(#browseToggle)');
-    containers.forEach((vt) => {
-      const btn = vt.querySelector('button.active');
-      const thumb = vt.querySelector('.vt-thumb');
-      if (!btn || !thumb || !btn.offsetWidth) return;
-      thumb.style.width = btn.offsetWidth + 'px';
-      thumb.style.left = btn.offsetLeft + 'px';
-    });
-  }
-  window.addEventListener('resize', positionViewThumb, { passive: true });
-  // The sidebar gains/loses a scrollbar as content grows, which changes the
-  // view-toggle's width WITHOUT a window resize — the thumb's measured px then
-  // overran the now-narrower track (user: list switch "はみ出てる"). Re-measure
-  // whenever the control's own box changes.
-  if (window.ResizeObserver) {
-    const ro = new ResizeObserver(() => positionViewThumb());
-    document.querySelectorAll('.view-toggle:not(#densityToggle):not(#posterDensityToggle):not(#browseToggle)').forEach((vt) => ro.observe(vt));
-  }
   // #densityToggle is rendered by the toolbar island (window.corpusStore 'view').
   // React owns the active state + glass thumb; viewer reacts to a view change:
   // mirror it into currentView, persist it, and re-render the grid (deferred past a
@@ -4322,7 +4304,8 @@
   tileSlider.addEventListener('input', () => onSliderMove(false));
   tileSlider.addEventListener('change', () => onSliderMove(true));
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
-  document.addEventListener('keydown', (e) => {
+  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  function handleShortcutSizeKey(e) {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
     const t = e.target as HTMLElement | null;
@@ -4332,7 +4315,8 @@
     const step = Number.parseInt(tileSlider.step, 10) || 1;
     tileSlider.value = String(Math.max(Number.parseInt(tileSlider.min, 10), Math.min(Number.parseInt(tileSlider.max, 10), Number.parseInt(tileSlider.value, 10) + (e.key === '-' ? -step : step))));
     onSliderMove(true);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey });
   // Window resizes change how many columns fit → re-derive the track range.
   let tileResizeT = 0;
   window.addEventListener('resize', () => {
@@ -4379,7 +4363,6 @@
     }
     if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
     if (Number.isFinite(prefs.posterCardSize)) posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
-    positionViewThumb(); // place the glass thumb on the restored active button
     if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
     if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
     if (Number.isFinite(prefs.listThumb)) listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));

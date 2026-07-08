@@ -79,6 +79,15 @@ declare global {
     confirmClearAll?(): void;
     setSkipDeleteConfirm?(v: boolean): void;
     refreshMirrorStatus?(): void;
+    // Global keyboard/mouse shortcut handlers, wired by useGlobalShortcuts (App.tsx).
+    // Each is a full guard+action handler (viewer keeps the logic); the hook just
+    // registers the raw DOM listener and forwards the event.
+    handleShortcutNavKey?(e: KeyboardEvent): void;
+    handleShortcutMouseNav?(e: MouseEvent): void;
+    handleShortcutUndoKey?(e: KeyboardEvent): void;
+    handleShortcutSelectAllKey?(e: KeyboardEvent): void;
+    handleShortcutSearchFocusKey?(e: KeyboardEvent): void;
+    handleShortcutSizeKey?(e: KeyboardEvent): void;
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useLayoutEffect, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { ActivebarHost } from '../activebar/Activebar.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
@@ -62,11 +62,40 @@ function ShellClasses() {
   return null;
 }
 
+// Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
+// focus, content-size step). React now owns the DOM listener registration (mounted
+// once for the app's lifetime); each handler's guard + action logic is unchanged and
+// stays in viewer.ts, reached through window.corpusViewer — "cut out and rewire", not
+// reimplemented. If viewer hasn't finished booting yet, the optional chain no-ops,
+// same as before this slice (the old listeners lived past viewer's own await gate too).
+function GlobalShortcuts() {
+  useEffect(() => {
+    const onKeydown = (e: KeyboardEvent) => {
+      const v = window.corpusViewer;
+      v?.handleShortcutNavKey?.(e);
+      v?.handleShortcutUndoKey?.(e);
+      v?.handleShortcutSelectAllKey?.(e);
+      v?.handleShortcutSearchFocusKey?.(e);
+      v?.handleShortcutSizeKey?.(e);
+    };
+    const onMouseup = (e: MouseEvent) => window.corpusViewer?.handleShortcutMouseNav?.(e);
+    document.addEventListener('keydown', onKeydown);
+    window.addEventListener('mouseup', onMouseup);
+    return () => {
+      document.removeEventListener('keydown', onKeydown);
+      window.removeEventListener('mouseup', onMouseup);
+    };
+  }, []);
+  return null;
+}
+
 export function App() {
   return (
     <>
       {/* Shell body classes React owns (viewer no longer sets them). */}
       <ShellClasses />
+      {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
+      <GlobalShortcuts />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
       <ContextMenuHost />
       <KindMenuHost />
