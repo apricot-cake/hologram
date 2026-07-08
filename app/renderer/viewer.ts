@@ -3174,50 +3174,46 @@
   // Esc closes the inspector — registered in CAPTURE phase so it can check
   // what else is open BEFORE those handlers dismiss themselves on the same
   // press (lightbox/popovers/modals win the first Esc, the panel the next).
-  document.addEventListener(
-    'keydown',
-    (e) => {
-      if (e.key !== 'Escape') return;
-      const inImageTab = imageTabShowing;
-      if (byId('postDetail').hidden && !inImageTab) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
-      if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-      if (!byId('ivFolderModal').hidden) return;
-      if (document.querySelector('.confirm-overlay.show')) return;
-      if (document.querySelector('.fold-menu.show')) return;
-      if (window.corpusFilterPopover.get()) return;
-      if (inImageTab) {
-        closeTab(activeTabId); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
-        return;
-      }
-      closeDetail();
-    },
-    true,
-  );
+  // Registration lives in the DetailDismiss component (app/islands/app/App.tsx);
+  // this stays the handler + guard logic (viewer keeps the orchestration).
+  function handleEscDismissDetail(e) {
+    if (e.key !== 'Escape') return;
+    const inImageTab = imageTabShowing;
+    if (byId('postDetail').hidden && !inImageTab) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    if (document.querySelector('.confirm-overlay.show')) return;
+    if (document.querySelector('.fold-menu.show')) return;
+    if (window.corpusFilterPopover.get()) return;
+    if (inImageTab) {
+      closeTab(activeTabId); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
+      return;
+    }
+    closeDetail();
+  }
   // Slide-over mode (narrow window): the panel covers the grid, so it acts
   // like a scrim-less drawer — ANY click outside it inside the content area
   // (cards and grid included) dismisses it, and the click is consumed so the
   // card doesn't also react on the same press. ℹ buttons stay live as the
   // explicit "show this one instead" entry. Inline mode (wide) keeps clicks:
-  // cards swap the content there since the panel covers nothing.
-  document.addEventListener(
-    'click',
-    (e) => {
-      const insp = byId('postDetail');
-      if (insp.hidden) return;
-      if (!matchMedia('(max-width: 1279px)').matches) return;
-      if (insp.contains(e.target as Node | null)) return;
-      if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-      if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
-      if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
-      e.preventDefault();
-      e.stopPropagation();
-      closeDetail();
-    },
-    true,
-  );
+  // cards swap the content there since the panel covers nothing. Also
+  // registered from DetailDismiss, in CAPTURE phase like the Esc handler above.
+  function handleOutsideClickDismissDetail(e) {
+    const insp = byId('postDetail');
+    if (insp.hidden) return;
+    if (!matchMedia('(max-width: 1279px)').matches) return;
+    if (insp.contains(e.target as Node | null)) return;
+    if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
+    if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
+    if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
+    e.preventDefault();
+    e.stopPropagation();
+    closeDetail();
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleEscDismissDetail, handleOutsideClickDismissDetail });
   // ℹ button on card → detail popup (re-click same card toggles close)
   byId('postGrid').addEventListener('click', (e) => {
     const btn = closestOf(e, '.info-btn');

@@ -119,6 +119,25 @@ function GlobalShortcuts() {
   return null;
 }
 
+// Esc-priority inspector close + outside-click slide-over dismiss. Both must run in the
+// CAPTURE phase (ahead of the overlays/popovers they check for) — a different phase than
+// GlobalShortcuts' bubble-phase keydown, so this stays a separate effect/component rather
+// than merging into it. Handler + guard logic is unchanged and stays in viewer.ts, reached
+// through window.corpusViewer, same "cut out and rewire" as GlobalShortcuts.
+function DetailDismiss() {
+  useEffect(() => {
+    const onKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleEscDismissDetail?.(e);
+    const onClick = (e: MouseEvent) => window.corpusViewer?.handleOutsideClickDismissDetail?.(e);
+    document.addEventListener('keydown', onKeydown, true);
+    document.addEventListener('click', onClick, true);
+    return () => {
+      document.removeEventListener('keydown', onKeydown, true);
+      document.removeEventListener('click', onClick, true);
+    };
+  }, []);
+  return null;
+}
+
 export function App() {
   return (
     <>
@@ -129,6 +148,8 @@ export function App() {
       <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
+      {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
+      <DetailDismiss />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
       <ContextMenuHost />
       <KindMenuHost />

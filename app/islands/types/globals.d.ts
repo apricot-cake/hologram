@@ -88,6 +88,9 @@ declare global {
     handleShortcutSelectAllKey?(e: KeyboardEvent): void;
     handleShortcutSearchFocusKey?(e: KeyboardEvent): void;
     handleShortcutSizeKey?(e: KeyboardEvent): void;
+    // Capture-phase inspector dismiss handlers, wired by DetailDismiss (App.tsx).
+    handleEscDismissDetail?(e: KeyboardEvent): void;
+    handleOutsideClickDismissDetail?(e: MouseEvent): void;
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
