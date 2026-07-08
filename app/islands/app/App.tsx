@@ -62,6 +62,36 @@ function ShellClasses() {
   return null;
 }
 
+// Modal chrome: lock background scroll + darken the native titlebar while any full-
+// screen overlay is up (the scrim can't cover the OS window controls or the page
+// scrollbar, so they'd otherwise stay bright). Observes each overlay's visibility so no
+// open/close site can be missed — self-contained (no viewer state), so this is a byte-
+// faithful move of the old setupModalChrome IIFE into a React effect. The inspector
+// (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
+function ModalChrome() {
+  useEffect(() => {
+    const ids = ['editOverlay', 'confirmOverlay', 'ivFolderModal', 'lightbox'];
+    const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
+    const sync = () => {
+      const open = ids.some((id) => visible(document.getElementById(id)));
+      document.documentElement.classList.toggle('modal-open', open);
+      document.body.classList.toggle('modal-open', open);
+      window.corpusTheme?.applyTitleBar?.(open);
+    };
+    const observers = ids
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => !!el)
+      .map((el) => {
+        const mo = new MutationObserver(sync);
+        mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
+        return mo;
+      });
+    sync();
+    return () => observers.forEach((mo) => mo.disconnect());
+  }, []);
+  return null;
+}
+
 // Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
 // focus, content-size step). React now owns the DOM listener registration (mounted
 // once for the app's lifetime); each handler's guard + action logic is unchanged and
@@ -94,6 +124,9 @@ export function App() {
     <>
       {/* Shell body classes React owns (viewer no longer sets them). */}
       <ShellClasses />
+      {/* Modal chrome (body/html .modal-open + native titlebar tint) — observes the
+          overlay containers below; must precede them only for readability, not order. */}
+      <ModalChrome />
       {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
       <GlobalShortcuts />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}

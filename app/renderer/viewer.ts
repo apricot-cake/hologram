@@ -3263,26 +3263,9 @@
     window.corpusEditOverlay.close();
   }
 
-  // Modal chrome: lock background scroll + darken the native titlebar while any
-  // full-screen overlay is up (the scrim can't cover the OS window controls or the
-  // page scrollbar, so they'd otherwise stay bright). Driven by observing each
-  // overlay's visibility so no open/close site can be missed. The inspector
-  // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
-  (function setupModalChrome() {
-    const ids = ['editOverlay', 'confirmOverlay', 'ivFolderModal', 'lightbox'];
-    const visible = (el) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
-    const sync = () => {
-      const open = ids.some((id) => visible(document.getElementById(id)));
-      document.documentElement.classList.toggle('modal-open', open);
-      document.body.classList.toggle('modal-open', open);
-      if (window.corpusTheme && window.corpusTheme.applyTitleBar) window.corpusTheme.applyTitleBar(open);
-    };
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
-    }
-    sync();
-  })();
+  // Modal chrome (lock background scroll + darken the native titlebar while any
+  // full-screen overlay is up) moved to the ModalChrome hook in app/islands/app/App.tsx
+  // — same observe-each-overlay logic, just registered by React instead of this IIFE.
 
   // Inspector inline tag editors (post ivTag* / poster pdTag*) are now the React
   // TagEditor component inside the corpusInspector island — it owns its own input/
