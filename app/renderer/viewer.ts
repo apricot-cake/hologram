@@ -886,6 +886,7 @@
     // time, so a listener bound at load could miss it. Flips the group-level flag.
     if (closestOf(e, '#multiRow')) {
       multiOnly = !multiOnly;
+      window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
       renderMultiRow();
       renderFilterBadges();
       renderPosts();
@@ -1542,14 +1543,31 @@
   let _lastViewGroups: CorpusPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
   let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
   let restoringState = false;
-  let tabs: CorpusTab[] = [];
-  let activeTabId: string | null = null;
-  let tabEditingId: string | null = null; // id of the tab being inline-renamed (React renders its input)
+  // tabs/activeTabId/tabEditingId moved into corpusStore (P4-B slice⑯) — the SAME
+  // "single source of truth" move as selectedSet (⑬): these accessors are the only
+  // read/write path from here on, so every mutation below stays a plain function
+  // call. mutateTabs always hands the mutator a FRESH copy (never the live store
+  // array) — a same-reference push would skip corpusStore's identity-equality
+  // guard, the same trap as the query-tree shadow / selectedSet slices. The Tabs
+  // island's pull source (renderer/tabs.ts) subscribes to these same keys, so
+  // nothing here pushes a model anymore — every call site that used to end in
+  // renderTabs() is just gone (the reactivity is automatic now).
+  const getTabs = (): CorpusTab[] => window.corpusStore.get('tabs') || [];
+  const setTabs = (arr: CorpusTab[]) => window.corpusStore.set('tabs', arr);
+  function mutateTabs(fn: (arr: CorpusTab[]) => CorpusTab[] | undefined) {
+    const copy = getTabs().slice();
+    const result = fn(copy);
+    setTabs(result || copy);
+  }
+  const getActiveTabId = (): string | null => window.corpusStore.get('activeTabId') ?? null;
+  const setActiveTabId = (id: string | null) => window.corpusStore.set('activeTabId', id);
+  const getTabEditingId = (): string | null => window.corpusStore.get('tabEditingId') ?? null; // id of the tab being inline-renamed (React renders its input)
+  const setTabEditingId = (id: string | null) => window.corpusStore.set('tabEditingId', id);
   let _tabPersistTimer: any = null;
   // Image tabs (type:'image') show ONE post's media fit-to-screen with the
   // inspector alongside instead of a filtered grid — they have no filter state.
   const isImageTab = (t) => !!t && t.type === 'image';
-  const activeTab = () => tabs.find((t) => t.id === activeTabId);
+  const activeTab = () => getTabs().find((t) => t.id === getActiveTabId());
   let appBooted = false; // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
   const NAV_CAP = 60;
   function snapshotState() {
@@ -1573,7 +1591,10 @@
     if (restoringState) return;
     nav.push(snap); // record this view for back/forward (skipped while restoring)
     document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
-    updateActiveTabTitle();
+    // The active tab's derived title used to need an explicit updateActiveTabTitle()
+    // push here — now automatic: renderer/tabs.ts subscribes to postQueryTree/
+    // searchQuery/sortPost/multiOnly/allPostsCount directly (P4-B slice⑯), and this
+    // function runs after all of those are already current.
     persistTabsDebounced();
   }
   function applyState(s) {
@@ -1585,6 +1606,7 @@
     sortSelect.value = s.sort;
     window.corpusStore.set('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
     multiOnly = !!s.multi;
+    window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
     renderPostFolders();
     renderQueryChips();
     renderPosts();
@@ -1686,19 +1708,19 @@
   const { genTabId, sanitizeSavedTabs, loadTabs, persistTabs } = window.corpusTabState;
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
-    const at = tabs.find((t) => t.id === activeTabId);
+    const at = getTabs().find((t) => t.id === getActiveTabId());
     if (at && !isImageTab(at)) {
       at.state = snapshotState();
       at._scrollTop = contentScrollTop();
     }
-    persistTabs(tabs, activeTabId);
+    persistTabs(getTabs(), getActiveTabId());
   }
   function persistTabsDebounced() {
     clearTimeout(_tabPersistTimer);
     _tabPersistTimer = setTimeout(persistTabsNow, 800);
   }
   function saveActiveTabState() {
-    const t = tabs.find((t) => t.id === activeTabId);
+    const t = getTabs().find((t) => t.id === getActiveTabId());
     if (!t) return;
     if (isImageTab(t)) return; // img.idx is kept live by the island callback; there is no filter state to snapshot
     t.state = snapshotState();
@@ -1713,37 +1735,19 @@
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
   }
-  function updateActiveTabTitle() {
-    if (!activeTabId) return;
-    const t = tabs.find((t) => t.id === activeTabId);
-    if (!t || t.title) return; // custom-named tab: nothing derives, skip the re-render
-    renderTabs(); // React diffs the strip; only the active tab's derived title actually changes
-  }
-  function renderTabTitle(t) {
-    if (t.title) return t.title;
-    const s = t.id === activeTabId ? snapshotState() : t.state || {};
-    return tabTitleOf(s, { allCount: allPosts.length }).text;
-  }
-  function renderTabs() {
-    if (!document.getElementById('tabBarInner')) return;
-    const pinSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-    // React owns the strip now: build a plain model (titles/icons/flags) and push
-    // it to the island. viewer.js keeps the tabs array, activeTabId, editing state,
-    // and all #tabBarInner event delegation.
-    const tabModels = tabs.map((t) => {
-      const isActive = t.id === activeTabId;
-      const s = isImageTab(t) ? {} : isActive ? snapshotState() : t.state || {};
-      const icon = t.pinned ? pinSvg : isImageTab(t) ? TAB_ICONS.media : TAB_ICONS[tabTitleOf(s, { allCount: allPosts.length }).iconType] || TAB_ICONS.all;
-      return { id: t.id, title: renderTabTitle(t), icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && tabs.length > 1 };
-    });
-    const model = { tabs: tabModels, editingId: tabEditingId, closeTitle: MSG.tabClose, newTitle: MSG.tabNew };
-    if (window.corpusTabs) window.corpusTabs.render(model);
-  }
+  // Model derivation (title/icon/editing state) moved to renderer/tabs.ts
+  // (window.corpusTabsSource, P4-B slice⑯) — it pulls from the SAME corpusStore
+  // keys every mutation below already writes (tabs/activeTabId/tabEditingId, plus
+  // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
+  // tab's derived title), so nothing here builds a model or pushes one anymore.
+  // The pin glyph + close/new i18n strings it needs are handed over once below.
+  const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
+  window.corpusTabsSource.configure({ tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: MSG.tabClose, newTitle: MSG.tabNew });
   function switchTab(id) {
-    if (id === activeTabId) return;
+    if (id === getActiveTabId()) return;
     saveActiveTabState();
-    activeTabId = id;
-    const t = tabs.find((t) => t.id === id);
+    setActiveTabId(id);
+    const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     if (isImageTab(t)) {
       showImageTab(t);
@@ -1754,84 +1758,89 @@
     }
     nav.adopt(t);
     restoreTabView(t);
-    renderTabs();
     persistTabsDebounced();
   }
   function addTab() {
     saveActiveTabState();
     hideImageTabView(); // Ctrl+T from an image tab lands on a fresh grid tab
     const id = genTabId();
-    tabs.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
-    activeTabId = id;
+    mutateTabs((arr) => {
+      arr.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
+    });
+    setActiveTabId(id);
     applyState({ f: [], ops: {}, search: '', sort: sortSelect.value, multi: false });
-    nav.adopt(tabs.find((t) => t.id === id)); // fresh tab → fresh history (seeded with the empty view)
+    nav.adopt(getTabs().find((t) => t.id === id)); // fresh tab → fresh history (seeded with the empty view)
     requestAnimationFrame(() => scrollContentTo(0)); // new tab starts at the top
-    renderTabs();
     persistTabsDebounced();
   }
   function closeTab(id) {
-    if (tabs.length <= 1) {
-      if (isImageTab(tabs[0])) {
+    if (getTabs().length <= 1) {
+      if (isImageTab(getTabs()[0])) {
         // Last tab: a window always keeps one grid tab, so the image tab
         // becomes a fresh filter tab instead of just resetting.
         hideImageTabView();
         const nid = genTabId();
-        tabs = [{ id: nid, pinned: false, title: null, state: null }];
-        activeTabId = nid;
+        mutateTabs(() => [{ id: nid, pinned: false, title: null, state: null }]);
+        setActiveTabId(nid);
         resetAllFilters();
-        nav.adopt(tabs[0]);
-        renderTabs();
+        nav.adopt(getTabs()[0]);
         persistTabsDebounced();
         return;
       }
       resetAllFilters();
-      updateActiveTabTitle();
       persistTabsDebounced();
       return;
     }
-    const idx = tabs.findIndex((t) => t.id === id);
+    const idx = getTabs().findIndex((t) => t.id === id);
     if (idx < 0) return;
-    tabs.splice(idx, 1);
-    if (activeTabId === id) {
-      const ni = Math.min(idx, tabs.length - 1);
-      activeTabId = tabs[ni].id;
-      const t = tabs[ni];
-      if (isImageTab(t)) {
-        showImageTab(t);
+    const wasActive = getActiveTabId() === id;
+    mutateTabs((arr) => {
+      arr.splice(idx, 1);
+    });
+    const nextActive = wasActive ? getTabs()[Math.min(idx, getTabs().length - 1)] : null;
+    if (nextActive) {
+      setActiveTabId(nextActive.id);
+      if (isImageTab(nextActive)) {
+        showImageTab(nextActive);
       } else {
         hideImageTabView();
-        if (t.state) applyState(t.state);
+        if (nextActive.state) applyState(nextActive.state);
         else renderPosts();
       }
-      nav.adopt(t);
-      restoreTabView(t);
+      nav.adopt(nextActive);
+      restoreTabView(nextActive);
     }
-    renderTabs();
     persistTabsDebounced();
   }
   function pinTab(id) {
-    const t = tabs.find((t) => t.id === id);
+    const t = getTabs().find((t) => t.id === id);
     if (!t) return;
-    t.pinned = !t.pinned;
-    tabs = [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)];
-    renderTabs();
+    mutateTabs((arr) => {
+      const tt = arr.find((x) => x.id === id);
+      if (tt) tt.pinned = !tt.pinned;
+      return [...arr.filter((x) => x.pinned), ...arr.filter((x) => !x.pinned)];
+    });
     persistTabsDebounced();
   }
   function renameTab(id, name) {
-    const t = tabs.find((t) => t.id === id);
+    const t = getTabs().find((t) => t.id === id);
     if (!t) return;
-    t.title = name.trim() || null;
-    renderTabs();
+    mutateTabs((arr) => {
+      const tt = arr.find((x) => x.id === id);
+      if (tt) tt.title = name.trim() || null;
+    });
     persistTabsDebounced();
   }
   function duplicateTab(id) {
     saveActiveTabState();
-    const src = tabs.find((t) => t.id === id);
+    const src = getTabs().find((t) => t.id === id);
     if (!src) return;
-    const idx = tabs.indexOf(src);
+    const idx = getTabs().indexOf(src);
     const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, type: src.type, img: src.img ? JSON.parse(JSON.stringify(src.img)) : undefined, state: JSON.parse(JSON.stringify(src.state || {})) };
-    tabs.splice(idx + 1, 0, nt);
-    activeTabId = nt.id;
+    mutateTabs((arr) => {
+      arr.splice(idx + 1, 0, nt);
+    });
+    setActiveTabId(nt.id);
     if (isImageTab(nt)) {
       showImageTab(nt);
     } else {
@@ -1840,7 +1849,6 @@
       else renderPosts();
     }
     nav.adopt(nt); // duplicate starts its own history at the copied view
-    renderTabs();
     persistTabsDebounced();
   }
 
@@ -1906,18 +1914,19 @@
     const id = genTabId();
     const t = { id, pinned: false, title: imageTabTitleOf(g, MSG.imgTabFallback), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
     // Insert next to the current tab (browser-like), never inside the pinned run.
-    const ai = tabs.findIndex((tt) => tt.id === activeTabId);
-    let pos = ai >= 0 ? ai + 1 : tabs.length;
-    const lastPinned = tabs.reduce((acc, tt, i) => (tt.pinned ? i : acc), -1);
-    if (pos <= lastPinned) pos = lastPinned + 1;
-    tabs.splice(pos, 0, t);
+    mutateTabs((arr) => {
+      const ai = arr.findIndex((tt) => tt.id === getActiveTabId());
+      let pos = ai >= 0 ? ai + 1 : arr.length;
+      const lastPinned = arr.reduce((acc, tt, i) => (tt.pinned ? i : acc), -1);
+      if (pos <= lastPinned) pos = lastPinned + 1;
+      arr.splice(pos, 0, t);
+    });
     if (opts && opts.activate) {
       saveActiveTabState();
-      activeTabId = id;
+      setActiveTabId(id);
       showImageTab(t);
       nav.adopt(t);
     }
-    renderTabs();
     persistTabsDebounced();
   }
 
@@ -1926,14 +1935,14 @@
       const saved = await loadTabs();
       const st = sanitizeSavedTabs(saved, genTabId); // null when nothing usable was saved
       if (st) {
-        tabs = st.tabs;
-        activeTabId = st.activeTabId;
+        setTabs(st.tabs);
+        setActiveTabId(st.activeTabId);
       } else {
         const id = genTabId();
-        tabs = [{ id, pinned: false, title: null, state: null }];
-        activeTabId = id;
+        setTabs([{ id, pinned: false, title: null, state: null }]);
+        setActiveTabId(id);
       }
-      const at = tabs.find((t) => t.id === activeTabId);
+      const at = getTabs().find((t) => t.id === getActiveTabId());
       if (at && at.state && !isImageTab(at)) {
         // queryTree is the truth; migrate older states (f + ops, no tree).
         postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
@@ -1942,14 +1951,14 @@
         sortSelect.value = at.state.sort || 'date-desc';
         window.corpusStore.set('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
         multiOnly = !!at.state.multi;
+        window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
       }
     } catch (err) {
       console.error('initTabs error:', err);
       const id = genTabId();
-      tabs = [{ id, pinned: false, title: null, state: null }];
-      activeTabId = id;
+      setTabs([{ id, pinned: false, title: null, state: null }]);
+      setActiveTabId(id);
     }
-    renderTabs();
   }
   // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
   // autoscroll suppression, right-click context menu, double-click rename, and the
@@ -1961,14 +1970,14 @@
   // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
   // items + actions.
   function showTabMenu(id, e) {
-    const t = tabs.find((t) => t.id === id);
+    const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     const items: any[] = [
       { label: t.pinned ? MSG.tabUnpin : MSG.tabPin, act: 'pin' },
       { label: MSG.tabRename, act: 'rename' },
       { label: MSG.tabDuplicate, act: 'duplicate' },
     ];
-    if (tabs.length > 1) {
+    if (getTabs().length > 1) {
       items.push({ label: MSG.tabClose, act: 'close' });
       items.push({ label: MSG.tabCloseOthers, act: 'close-others', danger: true });
     }
@@ -1980,12 +1989,11 @@
       else if (act === 'duplicate') duplicateTab(tid);
       else if (act === 'close') closeTab(tid);
       else if (act === 'close-others') {
-        tabs = tabs.filter((t) => t.id === tid);
-        const tt = tabs[0];
-        activeTabId = tid;
+        mutateTabs((arr) => arr.filter((t) => t.id === tid));
+        setActiveTabId(tid);
+        const tt = getTabs()[0];
         if (tt.state) applyState(tt.state);
         else renderPosts();
-        renderTabs();
         persistTabsDebounced();
       }
     });
@@ -1993,33 +2001,36 @@
   // Inline rename: flag the tab as editing → React renders a .tab-rename-input in
   // place of its title span (it survives re-renders, unlike the old imperative
   // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
+  // The store notify that follows setTabEditingId() may land the re-render either
+  // synchronously or on the next frame (renderer/tabs.ts's pull source isn't
+  // useSyncExternalStore-backed — see its island's comment) — rAF is the same
+  // "wait for React to have painted" trick restoreTabView already relies on.
   function startTabRename(id) {
-    if (!tabs.find((t) => t.id === id)) return;
-    tabEditingId = id;
-    renderTabs();
-    const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
-    if (input) {
-      input.focus();
-      input.select();
-    }
+    if (!getTabs().find((t) => t.id === id)) return;
+    setTabEditingId(id);
+    requestAnimationFrame(() => {
+      const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
   }
   function commitTabRename() {
-    if (!tabEditingId) return;
+    if (!getTabEditingId()) return;
     const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
-    const id = tabEditingId;
-    tabEditingId = null;
+    const id = getTabEditingId() as string;
+    setTabEditingId(null);
     if (input) renameTab(id, input.value);
-    else renderTabs(); // renameTab re-renders
   }
   function cancelTabRename() {
-    if (!tabEditingId) return;
-    tabEditingId = null;
-    renderTabs(); // discard the edit, restore the title
+    if (!getTabEditingId()) return;
+    setTabEditingId(null); // discard the edit, restore the title
   }
   // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
   // they keep working across React re-renders of the strip.
   function handleTabBarKeydown(e) {
-    if (!tabEditingId || !closestOf(e, '.tab-rename-input')) return;
+    if (!getTabEditingId() || !closestOf(e, '.tab-rename-input')) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       commitTabRename();
@@ -2029,7 +2040,7 @@
     }
   }
   function handleTabBarFocusout(e) {
-    if (tabEditingId && closestOf(e, '.tab-rename-input')) commitTabRename();
+    if (getTabEditingId() && closestOf(e, '.tab-rename-input')) commitTabRename();
   }
   function handleTabBarClick(e) {
     const closeBtn = closestOf(e, '[data-close]');
@@ -2056,8 +2067,8 @@
     const tabBtn = closestOf(e, '.tab-item[data-tab]');
     if (!tabBtn) return;
     e.preventDefault();
-    const t = tabs.find((x) => x.id === tabBtn.dataset.tab);
-    if (t && !t.pinned && tabs.length > 1) closeTab(t.id);
+    const t = getTabs().find((x) => x.id === tabBtn.dataset.tab);
+    if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
   }
   // Suppress the middle-click autoscroll cursor over the tab strip.
   function handleTabBarMousedown(e) {
@@ -2081,13 +2092,14 @@
       addTab();
     } else if (e.key === 'w') {
       e.preventDefault();
-      closeTab(activeTabId);
+      closeTab(getActiveTabId());
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      const idx = tabs.findIndex((t) => t.id === activeTabId);
+      const tabsNow = getTabs();
+      const idx = tabsNow.findIndex((t) => t.id === getActiveTabId());
       if (idx < 0) return;
-      const n = e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
-      switchTab(tabs[n].id);
+      const n = e.shiftKey ? (idx - 1 + tabsNow.length) % tabsNow.length : (idx + 1) % tabsNow.length;
+      switchTab(tabsNow[n].id);
     }
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, {
@@ -2922,7 +2934,7 @@
     if (document.querySelector('.fold-menu.show')) return;
     if (window.corpusFilterPopover.get()) return;
     if (inImageTab) {
-      closeTab(activeTabId); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
+      closeTab(getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
       return;
     }
     closeDetail();
@@ -4381,15 +4393,14 @@
       /* stay in library mode */
     }
     // First paint done — restore the active tab's scroll (survives restart).
-    restoreTabView(tabs.find((t) => t.id === activeTabId));
+    restoreTabView(getTabs().find((t) => t.id === getActiveTabId()));
     // A restored image tab could only resolve its captureIds now that the
     // library is loaded — enter the detail view here, after the grid restore.
     {
-      const bootTab = tabs.find((t) => t.id === activeTabId);
-      if (isImageTab(bootTab)) {
-        showImageTab(bootTab);
-        renderTabs(); // grid-tab titles derive live counts — the load render skipped syncTitle under the image tab
-      }
+      const bootTab = getTabs().find((t) => t.id === getActiveTabId());
+      if (isImageTab(bootTab)) showImageTab(bootTab);
+      // grid-tab titles deriving live counts (allPostsCount, just set above by the
+      // library load) reach the Tabs source automatically — no push needed here.
     }
     // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
     // remembered position is current at restart. persistTabsDebounced captures scrollY.

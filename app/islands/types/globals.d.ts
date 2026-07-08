@@ -277,6 +277,35 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
+  // ---- renderer/tabs.ts — P4-B slice⑯: converts the tab strip (#tabBarInner) off
+  // the old push (viewer.js built a TabsModel via renderTabs() and called
+  // window.corpusTabs.render(model) from ~15 call sites) to a PULLED source, same
+  // shape as the grid/image-tab sources. viewer.js no longer owns tabs/
+  // activeTabId/tabEditingId as closure state — corpusStore's keys of the same
+  // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…)
+  // and all #tabBarInner event delegation (TabBarEvents, App.tsx, unchanged).
+  // tabTitleOf/tabIcons/pinSvg are viewer-built invariants handed over once
+  // (configure), the same "configure once" shape as the grid sources.
+  interface CorpusTabModel {
+    id: string;
+    title: string;
+    icon: string;
+    active?: boolean;
+    pinned?: boolean;
+    showClose?: boolean;
+  }
+  interface CorpusTabsModel {
+    tabs: CorpusTabModel[];
+    editingId?: string | null;
+    closeTitle?: string;
+    newTitle?: string;
+  }
+  interface CorpusTabsSource {
+    configure(cfg: { tabTitleOf: (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string }; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string }): void;
+    get(): CorpusTabsModel | null;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
   interface CorpusAnchorRect {
     left: number;
@@ -554,9 +583,6 @@ declare global {
     close(): void;
     isOpen(): boolean;
   }
-  interface CorpusTabsIsland {
-    render(model?: any): void;
-  }
   // Renderer-registered now (renderer/query-chips.ts) — P4-B スライス⑦ event半分
   // moved the tree state, qbNodeMap, and click/contextmenu dispatch out of
   // viewer.js's createQueryBuilder into this dedicated service. `create` builds
@@ -655,10 +681,10 @@ declare global {
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
-    corpusTabs: CorpusTabsIsland;
     corpusQueryChips: CorpusQueryChipsIsland;
     corpusLightbox: CorpusLightbox;
     corpusImageTabSource: CorpusImageTabSource;
+    corpusTabsSource: CorpusTabsSource;
     corpusAboutIcon?: CorpusAboutIcon;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.

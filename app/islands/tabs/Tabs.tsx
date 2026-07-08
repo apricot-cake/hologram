@@ -2,11 +2,12 @@
 // `.tab-item[data-tab]` (+active/+pinned), `.tab-body > .tab-icon + .tab-title`,
 // optional `.tab-close[data-close]`, and a trailing `.tab-new` — so the delegated
 // handlers on #tabBarInner (click/auxclick/contextmenu/keydown/focusout) keep
-// firing. React renders; viewer.js owns the tabs array, activeTabId, the editing
-// state, and every event. (React also dodges the old "a <button> can't contain the
-// .tab-close button" HTML-parser hazard — it builds the DOM via createElement.)
+// firing. React renders; corpusStore owns tabs/activeTabId/editingId (P4-B
+// slice⑯), viewer.js owns their mutation + every event. (React also dodges the
+// old "a <button> can't contain the .tab-close button" HTML-parser hazard — it
+// builds the DOM via createElement.)
 
-// The strip model viewer.js's renderTabs() pushes.
+// The strip model TabsHost pulls from renderer/tabs.ts (window.corpusTabsSource).
 export interface TabModel {
   id: string;
   title: string;
