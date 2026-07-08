@@ -47,6 +47,22 @@ function Portal({ id, children }: { id: string; children: ReactNode }) {
   return el ? createPortal(children, el) : null;
 }
 
+// App bootstrap: the single React root (this component) is the app's one entry point,
+// so it also owns triggering the initial data load — rather than viewer.ts self-booting
+// in parallel with React's mount. Awaits window.corpusViewer.ready (assigned as
+// viewer.ts's very first synchronous statement, so it's already there by the time this
+// effect runs) before calling bootApp() once; bootApp itself is only assigned once
+// viewer.ts has finished defining everything it closes over, and ready only resolves
+// after that assignment — so by the time the promise settles, bootApp is guaranteed to
+// exist. No cleanup: boot runs exactly once for the app's lifetime, like the other
+// App.tsx-level effects that never actually unmount in this single-page app.
+function AppBoot() {
+  useEffect(() => {
+    window.corpusViewer?.ready?.then(() => window.corpusViewer?.bootApp?.());
+  }, []);
+  return null;
+}
+
 // Shell-level body classes that React owns (viewer no longer touches document.body for
 // these). browse-posters is driven by the corpusStore 'browseMode' key (viewer sets the
 // store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
@@ -214,6 +230,8 @@ function StoreSubscriptions() {
 export function App() {
   return (
     <>
+      {/* Triggers the app's initial data load once, on mount. */}
+      <AppBoot />
       {/* Shell body classes React owns (viewer no longer sets them). */}
       <ShellClasses />
       {/* Modal chrome (body/html .modal-open + native titlebar tint) — observes the

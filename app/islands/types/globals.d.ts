@@ -83,6 +83,15 @@ declare global {
   // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
   // several places, so every method is optional. Only what islands call. ----
   interface CorpusViewer {
+    // Resolves once bootApp is defined below (right after the i18n load) — assigned
+    // as the module's very first synchronous statement so it exists before React can
+    // possibly read it. AppBoot (App.tsx) awaits it, then calls bootApp() once.
+    ready?: Promise<void>;
+    // The app's initial data load + first render (folders/tags/tabs/posts, browse-mode
+    // restore, tab-scroll restore). React triggers it once on mount via AppBoot
+    // (App.tsx) instead of viewer self-invoking — same "React owns WHEN, viewer.ts
+    // keeps WHAT" shape as the other control→hooks handlers below.
+    bootApp?(): Promise<void>;
     setTileOverlay?(v: boolean): void;
     reloadPosts?(): void | Promise<void>;
     confirmClearAll?(): void;

@@ -1,4 +1,21 @@
 (async () => {
+  // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
+  // bootApp() below, instead of viewer self-invoking its own init sequence — the
+  // app's single entry point (React mount) now also owns triggering data load,
+  // matching how a real app's root component drives its own bootstrap. Assigned as
+  // the very first synchronous statement (before the i18n await) so it exists
+  // before any microtask — including root.tsx's initI18n().then(mount) — can run;
+  // resolved once bootApp is defined at the tail, so by the time React can act on
+  // it, the function it calls already exists. See docs at the bootApp definition.
+  // The Promise executor runs synchronously, so this is assigned before any other
+  // code executes — the `!` tells tsc what the executor already guarantees.
+  let resolveViewerReady!: () => void;
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
+    ready: new Promise<void>((r) => {
+      resolveViewerReady = r;
+    }),
+  });
+
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
@@ -4753,70 +4770,79 @@
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleFolderChange, handlePostsChanged });
 
-  // --- Init ---
-  renderQueryChips();
-  pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
-  if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
-  // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
-  ungrouped = await window.corpusRecords.loadUngrouped();
-  await pfStore.load();
-  posterTags = await window.corpusTags.loadPosterTags();
-  manualGroups = await window.corpusRecords.loadManualGroups();
-  tagGroups = await window.corpusTags.loadTagGroups();
-  ({ types: tagTypes, labels: tagLabels } = await window.corpusTags.loadTagTypes());
-  applyKindLabels();
-  // Seed both sidebar columns with labels + initial state before the first loadPosts so the
-  // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
-  // (applyKindLabels above also pushes, but only if getTagTypes resolved).
-  pushSidebar();
-  pushPosterSidebar();
-  await initTabs();
-  appBooted = true; // saved view is now applied — the first loadPosts render seeds history
-  await loadPosts();
-  // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
-  // buildUsers has data for the poster grid. silent = no history/pref echo.
-  try {
-    const prefs = await window.corpusIpc.getPrefs();
-    // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
-    const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
-    // Run the heavy restore synchronously (silent = no history/pref echo, no animation),
-    // THEN push the mode into the store so the island reflects active + thumb. browseMode
-    // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the
-    // same shape as the density toggle's pref restore.)
-    if (bm !== 'posts') setBrowseMode(bm, { silent: true });
-    window.corpusStore.set('browseMode', bm);
-  } catch {
-    /* stay in library mode */
-  }
-  // First paint done — restore the active tab's scroll (survives restart).
-  restoreTabView(tabs.find((t) => t.id === activeTabId));
-  // A restored image tab could only resolve its captureIds now that the
-  // library is loaded — enter the detail view here, after the grid restore.
-  {
-    const bootTab = tabs.find((t) => t.id === activeTabId);
-    if (isImageTab(bootTab)) {
-      showImageTab(bootTab);
-      renderTabs(); // grid-tab titles derive live counts — the load render skipped syncTitle under the image tab
+  // --- Boot: the app's initial data load + first render. Defined here (needs every
+  // function/state above in closure) but NOT self-invoked — React's AppBoot (App.tsx)
+  // calls it once on mount, after awaiting window.corpusViewer.ready above. This makes
+  // the React root the single trigger for app startup (the "cut out and rewire" shape
+  // used for the control→hooks phase: React owns WHEN, viewer.ts keeps the orchestration
+  // logic of WHAT), rather than viewer.ts self-booting in parallel with React's mount.
+  async function bootApp() {
+    renderQueryChips();
+    pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
+    if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
+    // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
+    ungrouped = await window.corpusRecords.loadUngrouped();
+    await pfStore.load();
+    posterTags = await window.corpusTags.loadPosterTags();
+    manualGroups = await window.corpusRecords.loadManualGroups();
+    tagGroups = await window.corpusTags.loadTagGroups();
+    ({ types: tagTypes, labels: tagLabels } = await window.corpusTags.loadTagTypes());
+    applyKindLabels();
+    // Seed both sidebar columns with labels + initial state before the first loadPosts so the
+    // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
+    // (applyKindLabels above also pushes, but only if getTagTypes resolved).
+    pushSidebar();
+    pushPosterSidebar();
+    await initTabs();
+    appBooted = true; // saved view is now applied — the first loadPosts render seeds history
+    await loadPosts();
+    // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
+    // buildUsers has data for the poster grid. silent = no history/pref echo.
+    try {
+      const prefs = await window.corpusIpc.getPrefs();
+      // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
+      const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
+      // Run the heavy restore synchronously (silent = no history/pref echo, no animation),
+      // THEN push the mode into the store so the island reflects active + thumb. browseMode
+      // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the
+      // same shape as the density toggle's pref restore.)
+      if (bm !== 'posts') setBrowseMode(bm, { silent: true });
+      window.corpusStore.set('browseMode', bm);
+    } catch {
+      /* stay in library mode */
     }
+    // First paint done — restore the active tab's scroll (survives restart).
+    restoreTabView(tabs.find((t) => t.id === activeTabId));
+    // A restored image tab could only resolve its captureIds now that the
+    // library is loaded — enter the detail view here, after the grid restore.
+    {
+      const bootTab = tabs.find((t) => t.id === activeTabId);
+      if (isImageTab(bootTab)) {
+        showImageTab(bootTab);
+        renderTabs(); // grid-tab titles derive live counts — the load render skipped syncTitle under the image tab
+      }
+    }
+    // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
+    // remembered position is current at restart. persistTabsDebounced captures scrollY.
+    let _scrollPersistTimer: any = null;
+    const _contentScroller = contentScrollEl();
+    if (_contentScroller)
+      _contentScroller.addEventListener(
+        'scroll',
+        () => {
+          clearTimeout(_scrollPersistTimer);
+          _scrollPersistTimer = setTimeout(persistTabsDebounced, 400);
+        },
+        { passive: true },
+      );
+    // Flush the debounced tab state as the window goes away: the 800ms persist
+    // debounce (plus the 400ms scroll pre-debounce above) would otherwise drop
+    // any change made within ~1.2s of quitting. Registered HERE — after the tabs
+    // restore above — so an early close can't overwrite tabs.json with defaults.
+    // set-tabs writes synchronously in main, so the payload only has to reach the
+    // IPC queue before renderer teardown.
+    window.addEventListener('pagehide', persistTabsNow);
   }
-  // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
-  // remembered position is current at restart. persistTabsDebounced captures scrollY.
-  let _scrollPersistTimer: any = null;
-  const _contentScroller = contentScrollEl();
-  if (_contentScroller)
-    _contentScroller.addEventListener(
-      'scroll',
-      () => {
-        clearTimeout(_scrollPersistTimer);
-        _scrollPersistTimer = setTimeout(persistTabsDebounced, 400);
-      },
-      { passive: true },
-    );
-  // Flush the debounced tab state as the window goes away: the 800ms persist
-  // debounce (plus the 400ms scroll pre-debounce above) would otherwise drop
-  // any change made within ~1.2s of quitting. Registered HERE — after the tabs
-  // restore above — so an early close can't overwrite tabs.json with defaults.
-  // set-tabs writes synchronously in main, so the payload only has to reach the
-  // IPC queue before renderer teardown.
-  window.addEventListener('pagehide', persistTabsNow);
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { bootApp });
+  resolveViewerReady();
 })();
