@@ -2962,24 +2962,22 @@
   });
 
   // --- Edit overlay logic (bulk "add tags to selection") ---
-  // editTags is a STAGING list (nothing persists until Save — see openTagSelectedOverlay/
-  // onSave below); editingRecords holds the selected posts' real records to write to.
-  let editingRecords: CorpusPost[] = [];
-  let editTags: string[] = [];
-  let editAdditive = false; // true = merge into each record's existing tags (always true — no replace UI exists)
+  // The staging list itself (selected records / tags-in-progress / additive flag)
+  // lives in corpusBulkEdit (renderer/bulk-edit.ts) — nothing persists until Save
+  // (see openTagSelectedOverlay/onSave below) writes it out.
 
   // groupedTagVocab moved to tags.js (corpusTags wiring above).
 
   // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
   // staging-list mutation. Not persisted yet — Save (see openTagSelectedOverlay below) is
-  // the only thing that writes editTags out to editingRecords.
+  // the only thing that writes the staged tags out to the records.
   function refreshEditOverlayFields() {
-    window.corpusEditOverlay.refresh({ tags: editTags, ...inspectorTagPickerData(editTags, editingRecords, 'post') });
+    const tags = window.corpusBulkEdit.getTags();
+    window.corpusEditOverlay.refresh({ tags, ...inspectorTagPickerData(tags, window.corpusBulkEdit.getRecords(), 'post') });
   }
 
   function closeEditOverlay() {
-    editingRecords = [];
-    editAdditive = false;
+    window.corpusBulkEdit.close();
     byId('editOverlay').classList.remove('show');
     window.corpusEditOverlay.close();
   }
@@ -3049,13 +3047,12 @@
   function openTagSelectedOverlay() {
     const records = selectedRecords();
     if (!records.length) return;
-    editingRecords = records;
-    editTags = [];
-    editAdditive = true;
+    window.corpusBulkEdit.open(records);
+    const tags = window.corpusBulkEdit.getTags();
     window.corpusEditOverlay.open({
       titleLabel: MSG.tagSelectedTitle,
-      tags: editTags,
-      ...inspectorTagPickerData(editTags, editingRecords, 'post'),
+      tags,
+      ...inspectorTagPickerData(tags, records, 'post'),
       tagLabels: {
         tagsLabel: MSG.detailTags,
         newTagPlaceholder: MSG.tagNewName,
@@ -3069,30 +3066,29 @@
       saveLabel: MSG.save,
       onCancel: closeEditOverlay,
       onTagAdd: (tag) => {
-        if (!editTags.includes(tag)) editTags.push(tag);
+        window.corpusBulkEdit.add(tag);
         refreshEditOverlayFields();
       },
       onTagRemove: (tag) => {
-        const i = editTags.indexOf(tag);
-        if (i >= 0) editTags.splice(i, 1);
+        window.corpusBulkEdit.remove(tag);
         refreshEditOverlayFields();
       },
       onTagToggle: (tag) => {
-        const i = editTags.indexOf(tag);
-        if (i >= 0) editTags.splice(i, 1);
-        else editTags.push(tag);
+        window.corpusBulkEdit.toggle(tag);
         refreshEditOverlayFields();
       },
       onTagContextMenu: (tag, x, y) => {
         if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, refreshEditOverlayFields);
       },
       onSave: async () => {
+        const editingRecords = window.corpusBulkEdit.getRecords();
         if (!editingRecords.length) {
           closeEditOverlay();
           return;
         }
         keepCurrentVisible(); // removing a tag can un-match an active tag filter
-        const tags = [...editTags];
+        const tags = [...window.corpusBulkEdit.getTags()];
+        const editAdditive = window.corpusBulkEdit.isAdditive();
         // Capture before-state for undo, then persist.
         const undoRecords = editingRecords.map((r) => {
           const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();

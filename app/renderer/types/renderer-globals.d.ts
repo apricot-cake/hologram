@@ -193,6 +193,19 @@ interface CorpusSelectionApi {
   selectedRecords(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): CorpusPost[];
 }
 
+// ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
+// (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭). ----
+interface CorpusBulkEditApi {
+  open(records: CorpusPost[]): void;
+  close(): void;
+  getRecords(): CorpusPost[];
+  getTags(): string[];
+  isAdditive(): boolean;
+  add(tag: string): void;
+  remove(tag: string): void;
+  toggle(tag: string): void;
+}
+
 // ---- renderer/facets.js — facet counts + value-flyout row models ----
 interface CorpusQfRow {
   v?: string;
@@ -579,4 +592,5 @@ interface Window {
   corpusFolders: CorpusFoldersApi;
   corpusMakeBridge: CorpusMakeBridge;
   corpusSelection: CorpusSelectionApi;
+  corpusBulkEdit: CorpusBulkEditApi;
 }

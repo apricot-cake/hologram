@@ -58,6 +58,7 @@
     "renderer/edit-overlay.ts",
     "renderer/sidebar.ts",
     "renderer/selection.ts",
+    "renderer/bulk-edit.ts",
     "renderer/selection-bar.ts",
     "renderer/confirm.ts",
     "renderer/activebar.ts",
