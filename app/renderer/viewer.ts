@@ -2209,143 +2209,155 @@
     }
     renderTabs();
   }
-  (function setupTabBar() {
-    const bar = byId('tabBarInner');
-    if (!bar) return;
-    // Tab context menu (right-click a tab): pin / rename / duplicate / close /
-    // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
-    // items + actions.
-    function showTabMenu(id, e) {
-      const t = tabs.find((t) => t.id === id);
-      if (!t) return;
-      const items: any[] = [
-        { label: t.pinned ? MSG.tabUnpin : MSG.tabPin, act: 'pin' },
-        { label: MSG.tabRename, act: 'rename' },
-        { label: MSG.tabDuplicate, act: 'duplicate' },
-      ];
-      if (tabs.length > 1) {
-        items.push({ label: MSG.tabClose, act: 'close' });
-        items.push({ label: MSG.tabCloseOthers, act: 'close-others', danger: true });
-      }
-      window.corpusContextMenu.open({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
-        const tid = id;
-        const act = item.act;
-        if (act === 'pin') pinTab(tid);
-        else if (act === 'rename') startTabRename(tid);
-        else if (act === 'duplicate') duplicateTab(tid);
-        else if (act === 'close') closeTab(tid);
-        else if (act === 'close-others') {
-          tabs = tabs.filter((t) => t.id === tid);
-          const tt = tabs[0];
-          activeTabId = tid;
-          if (tt.state) applyState(tt.state);
-          else renderPosts();
-          renderTabs();
-          persistTabsDebounced();
-        }
-      });
+  // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
+  // autoscroll suppression, right-click context menu, double-click rename, and the
+  // Ctrl+T/W/Tab document shortcuts. Registration lives in React (TabBarEvents,
+  // app/islands/app/App.tsx) via window.corpusViewer below; this stays the guard +
+  // action logic (viewer keeps the orchestration, React owns the wiring) — same
+  // "cut out and rewire" as the global shortcuts / detail-dismiss slices.
+  // Tab context menu (right-click a tab): pin / rename / duplicate / close /
+  // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
+  // items + actions.
+  function showTabMenu(id, e) {
+    const t = tabs.find((t) => t.id === id);
+    if (!t) return;
+    const items: any[] = [
+      { label: t.pinned ? MSG.tabUnpin : MSG.tabPin, act: 'pin' },
+      { label: MSG.tabRename, act: 'rename' },
+      { label: MSG.tabDuplicate, act: 'duplicate' },
+    ];
+    if (tabs.length > 1) {
+      items.push({ label: MSG.tabClose, act: 'close' });
+      items.push({ label: MSG.tabCloseOthers, act: 'close-others', danger: true });
     }
-    // Inline rename: flag the tab as editing → React renders a .tab-rename-input in
-    // place of its title span (it survives re-renders, unlike the old imperative
-    // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
-    function startTabRename(id) {
-      if (!tabs.find((t) => t.id === id)) return;
-      tabEditingId = id;
-      renderTabs();
-      const input = bar.querySelector('.tab-rename-input') as HTMLInputElement | null;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    }
-    function commitTabRename() {
-      if (!tabEditingId) return;
-      const input = bar.querySelector('.tab-rename-input') as HTMLInputElement | null;
-      const id = tabEditingId;
-      tabEditingId = null;
-      if (input) renameTab(id, input.value);
-      else renderTabs(); // renameTab re-renders
-    }
-    function cancelTabRename() {
-      if (!tabEditingId) return;
-      tabEditingId = null;
-      renderTabs(); // discard the edit, restore the title
-    }
-    // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
-    // they keep working across React re-renders of the strip.
-    bar.addEventListener('keydown', (e) => {
-      if (!tabEditingId || !closestOf(e, '.tab-rename-input')) return;
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        commitTabRename();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelTabRename();
+    window.corpusContextMenu.open({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
+      const tid = id;
+      const act = item.act;
+      if (act === 'pin') pinTab(tid);
+      else if (act === 'rename') startTabRename(tid);
+      else if (act === 'duplicate') duplicateTab(tid);
+      else if (act === 'close') closeTab(tid);
+      else if (act === 'close-others') {
+        tabs = tabs.filter((t) => t.id === tid);
+        const tt = tabs[0];
+        activeTabId = tid;
+        if (tt.state) applyState(tt.state);
+        else renderPosts();
+        renderTabs();
+        persistTabsDebounced();
       }
     });
-    bar.addEventListener('focusout', (e) => {
-      if (tabEditingId && closestOf(e, '.tab-rename-input')) commitTabRename();
-    });
-    bar.addEventListener('click', (e) => {
-      const closeBtn = closestOf(e, '[data-close]');
-      if (closeBtn) {
-        e.stopPropagation();
-        closeTab(closeBtn.dataset.close);
-        return;
-      }
-      const newBtn = closestOf(e, '.tab-new');
-      if (newBtn) {
-        addTab();
-        return;
-      }
-      const tabBtn = closestOf(e, '.tab-item[data-tab]');
-      if (tabBtn && !closestOf(e, '.tab-rename-input')) {
-        switchTab(tabBtn.dataset.tab);
-        return;
-      }
-    });
-    // Middle-click (wheel) a tab to close it — matches the close-button rule
-    // (pinned tabs and the last remaining tab stay protected).
-    bar.addEventListener('auxclick', (e) => {
-      if (e.button !== 1) return;
-      const tabBtn = closestOf(e, '.tab-item[data-tab]');
-      if (!tabBtn) return;
+  }
+  // Inline rename: flag the tab as editing → React renders a .tab-rename-input in
+  // place of its title span (it survives re-renders, unlike the old imperative
+  // replaceWith on React-owned DOM). Commit/cancel are delegated on the bar below.
+  function startTabRename(id) {
+    if (!tabs.find((t) => t.id === id)) return;
+    tabEditingId = id;
+    renderTabs();
+    const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+  function commitTabRename() {
+    if (!tabEditingId) return;
+    const input = byId('tabBarInner')?.querySelector('.tab-rename-input') as HTMLInputElement | null;
+    const id = tabEditingId;
+    tabEditingId = null;
+    if (input) renameTab(id, input.value);
+    else renderTabs(); // renameTab re-renders
+  }
+  function cancelTabRename() {
+    if (!tabEditingId) return;
+    tabEditingId = null;
+    renderTabs(); // discard the edit, restore the title
+  }
+  // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
+  // they keep working across React re-renders of the strip.
+  function handleTabBarKeydown(e) {
+    if (!tabEditingId || !closestOf(e, '.tab-rename-input')) return;
+    if (e.key === 'Enter') {
       e.preventDefault();
-      const t = tabs.find((x) => x.id === tabBtn.dataset.tab);
-      if (t && !t.pinned && tabs.length > 1) closeTab(t.id);
-    });
-    // Suppress the middle-click autoscroll cursor over the tab strip.
-    bar.addEventListener('mousedown', (e) => {
-      if (e.button === 1 && closestOf(e, '.tab-item[data-tab]')) e.preventDefault();
-    });
-    bar.addEventListener('contextmenu', (e) => {
-      const tabBtn = closestOf(e, '.tab-item[data-tab]');
-      if (!tabBtn) return;
+      commitTabRename();
+    } else if (e.key === 'Escape') {
       e.preventDefault();
-      showTabMenu(tabBtn.dataset.tab, e);
-    });
-    bar.addEventListener('dblclick', (e) => {
-      const tabBtn = closestOf(e, '.tab-item[data-tab]');
-      if (!tabBtn || closestOf(e, '[data-close]')) return;
-      startTabRename(tabBtn.dataset.tab);
-    });
-    document.addEventListener('keydown', (e) => {
-      if (!e.ctrlKey || e.altKey) return;
-      if (e.key === 't') {
-        e.preventDefault();
-        addTab();
-      } else if (e.key === 'w') {
-        e.preventDefault();
-        closeTab(activeTabId);
-      } else if (e.key === 'Tab') {
-        e.preventDefault();
-        const idx = tabs.findIndex((t) => t.id === activeTabId);
-        if (idx < 0) return;
-        const n = e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
-        switchTab(tabs[n].id);
-      }
-    });
-  })();
+      cancelTabRename();
+    }
+  }
+  function handleTabBarFocusout(e) {
+    if (tabEditingId && closestOf(e, '.tab-rename-input')) commitTabRename();
+  }
+  function handleTabBarClick(e) {
+    const closeBtn = closestOf(e, '[data-close]');
+    if (closeBtn) {
+      e.stopPropagation();
+      closeTab(closeBtn.dataset.close);
+      return;
+    }
+    const newBtn = closestOf(e, '.tab-new');
+    if (newBtn) {
+      addTab();
+      return;
+    }
+    const tabBtn = closestOf(e, '.tab-item[data-tab]');
+    if (tabBtn && !closestOf(e, '.tab-rename-input')) {
+      switchTab(tabBtn.dataset.tab);
+      return;
+    }
+  }
+  // Middle-click (wheel) a tab to close it — matches the close-button rule
+  // (pinned tabs and the last remaining tab stay protected).
+  function handleTabBarAuxclick(e) {
+    if (e.button !== 1) return;
+    const tabBtn = closestOf(e, '.tab-item[data-tab]');
+    if (!tabBtn) return;
+    e.preventDefault();
+    const t = tabs.find((x) => x.id === tabBtn.dataset.tab);
+    if (t && !t.pinned && tabs.length > 1) closeTab(t.id);
+  }
+  // Suppress the middle-click autoscroll cursor over the tab strip.
+  function handleTabBarMousedown(e) {
+    if (e.button === 1 && closestOf(e, '.tab-item[data-tab]')) e.preventDefault();
+  }
+  function handleTabBarContextmenu(e) {
+    const tabBtn = closestOf(e, '.tab-item[data-tab]');
+    if (!tabBtn) return;
+    e.preventDefault();
+    showTabMenu(tabBtn.dataset.tab, e);
+  }
+  function handleTabBarDblclick(e) {
+    const tabBtn = closestOf(e, '.tab-item[data-tab]');
+    if (!tabBtn || closestOf(e, '[data-close]')) return;
+    startTabRename(tabBtn.dataset.tab);
+  }
+  function handleGlobalTabShortcut(e) {
+    if (!e.ctrlKey || e.altKey) return;
+    if (e.key === 't') {
+      e.preventDefault();
+      addTab();
+    } else if (e.key === 'w') {
+      e.preventDefault();
+      closeTab(activeTabId);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const idx = tabs.findIndex((t) => t.id === activeTabId);
+      if (idx < 0) return;
+      const n = e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
+      switchTab(tabs[n].id);
+    }
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
+    handleTabBarKeydown,
+    handleTabBarFocusout,
+    handleTabBarClick,
+    handleTabBarAuxclick,
+    handleTabBarMousedown,
+    handleTabBarContextmenu,
+    handleTabBarDblclick,
+    handleGlobalTabShortcut,
+  });
 
   // Mutations (untag, unfold, ungroup) can make a visible card stop matching the
   // active filter. Instead of vanishing instantly, the card stays until the next

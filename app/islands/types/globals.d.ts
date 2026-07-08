@@ -91,6 +91,15 @@ declare global {
     // Capture-phase inspector dismiss handlers, wired by DetailDismiss (App.tsx).
     handleEscDismissDetail?(e: KeyboardEvent): void;
     handleOutsideClickDismissDetail?(e: MouseEvent): void;
+    // Tab bar event handlers, wired by TabBarEvents (App.tsx).
+    handleTabBarKeydown?(e: KeyboardEvent): void;
+    handleTabBarFocusout?(e: FocusEvent): void;
+    handleTabBarClick?(e: MouseEvent): void;
+    handleTabBarAuxclick?(e: MouseEvent): void;
+    handleTabBarMousedown?(e: MouseEvent): void;
+    handleTabBarContextmenu?(e: MouseEvent): void;
+    handleTabBarDblclick?(e: MouseEvent): void;
+    handleGlobalTabShortcut?(e: KeyboardEvent): void;
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----

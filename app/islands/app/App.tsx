@@ -138,6 +138,47 @@ function DetailDismiss() {
   return null;
 }
 
+// Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
+// autoscroll suppression, right-click context menu, double-click rename, and the
+// Ctrl+T/W/Tab document shortcuts. React owns the listener registration (mounted once
+// for the app's lifetime); guard + action logic is unchanged and stays in viewer.ts,
+// reached through window.corpusViewer — same "cut out and rewire" as GlobalShortcuts.
+// #tabBarInner is TabsHost's static portal container (present before app.js runs), so
+// getElementById resolves synchronously, same as the Portal() containers below.
+function TabBarEvents() {
+  useEffect(() => {
+    const bar = document.getElementById('tabBarInner');
+    if (!bar) return;
+    const onKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleTabBarKeydown?.(e);
+    const onFocusout = (e: FocusEvent) => window.corpusViewer?.handleTabBarFocusout?.(e);
+    const onClick = (e: MouseEvent) => window.corpusViewer?.handleTabBarClick?.(e);
+    const onAuxclick = (e: MouseEvent) => window.corpusViewer?.handleTabBarAuxclick?.(e);
+    const onMousedown = (e: MouseEvent) => window.corpusViewer?.handleTabBarMousedown?.(e);
+    const onContextmenu = (e: MouseEvent) => window.corpusViewer?.handleTabBarContextmenu?.(e);
+    const onDblclick = (e: MouseEvent) => window.corpusViewer?.handleTabBarDblclick?.(e);
+    const onDocKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleGlobalTabShortcut?.(e);
+    bar.addEventListener('keydown', onKeydown);
+    bar.addEventListener('focusout', onFocusout);
+    bar.addEventListener('click', onClick);
+    bar.addEventListener('auxclick', onAuxclick);
+    bar.addEventListener('mousedown', onMousedown);
+    bar.addEventListener('contextmenu', onContextmenu);
+    bar.addEventListener('dblclick', onDblclick);
+    document.addEventListener('keydown', onDocKeydown);
+    return () => {
+      bar.removeEventListener('keydown', onKeydown);
+      bar.removeEventListener('focusout', onFocusout);
+      bar.removeEventListener('click', onClick);
+      bar.removeEventListener('auxclick', onAuxclick);
+      bar.removeEventListener('mousedown', onMousedown);
+      bar.removeEventListener('contextmenu', onContextmenu);
+      bar.removeEventListener('dblclick', onDblclick);
+      document.removeEventListener('keydown', onDocKeydown);
+    };
+  }, []);
+  return null;
+}
+
 export function App() {
   return (
     <>
@@ -150,6 +191,8 @@ export function App() {
       <GlobalShortcuts />
       {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
       <DetailDismiss />
+      {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
+      <TabBarEvents />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
       <ContextMenuHost />
       <KindMenuHost />
