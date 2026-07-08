@@ -44,15 +44,60 @@ const evalJs = `(async () => {
   const bar = document.getElementById('selectionBar');
   const card = (i) => grid.querySelector('.post-card[data-index="' + i + '"]');
   const ring = (i) => card(i).querySelector('.select-check');
-  const click = (el, opts) => el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, opts)));
+  const click = (el, opts, tag) => { if (!el) { console.log('DBG NULL-DISPATCH ' + tag); return; } el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, opts))); };
+  const safeClick = (id) => { const el = document.getElementById(id); if (!el) { console.log('DBG NULL-CLICK ' + id); return false; } el.click(); return true; };
   const selCount = () => grid.querySelectorAll('.post-card.selected').length;
   // Folders moved from inline #postFolderChips to the sidebar flyout (data-qfrow="folder"
   // → .qf-pop values). Counts come from the CF() API now (no inline count chips).
-  const folderId = (name) => (window.corpusFolders.all().find((f) => f.name === name) || {}).id;
   const folderCount = (name) => (window.corpusFolders.all().find((f) => f.name === name) || { items: [] }).items.length;
-  const openFolderFlyout = async () => { document.querySelector('#filterRows [data-qfrow="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(70); };
-  const flyoutFolderRow = (name) => { const id = folderId(name); return [...document.querySelectorAll('.qf-pop.show [data-qfval]')].find((r) => r.dataset.qfval === id); };
+  // The row's data-qfrow is still the internal legacy value 'collection' (the UI
+  // label reads "フォルダ" but the collection→folder identifier rename is a tracked,
+  // not-yet-done backlog item — [[feedback-migration-full-consistency]]).
+  const openFolderFlyout = async () => { document.querySelector('#filterRows [data-qfrow="collection"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(70); };
+  // qf-pop rows carry no data-qfval anymore (island genericized — same drift as the
+  // ContextMenu rows below); match by the rendered .fm-name text instead.
+  const flyoutFolderRow = (name) => [...document.querySelectorAll('.qf-pop.show .fm-row')].find((r) => (r.querySelector('.fm-name') || {}).textContent === name);
   const escKey = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  // ContextMenu.tsx (the generic glass-menu component, slice g/g-2) renders NO
+  // data-act/data-fid on rows and no per-menu-type class (old .card-menu etc. are
+  // gone) — every menu (card/fold/qb/tab/...) is just ".fold-menu.show > .fm-row".
+  // Identify + click a row via the bridge's live item model instead of the DOM
+  // (same fix as qf-pop's .fm-name-based lookup, [[corpus-typescript-stage1]] notes
+  // this exact class of drift for qf-pop; ContextMenu never got the same pass).
+  const menuItems = () => (window.corpusContextMenu.get() || { items: [] }).items.filter((it) => !it.sep);
+  const menuHasAct = (act) => menuItems().some((it) => it.act === act);
+  const pickMenuItem = (predicate) => {
+    const items = menuItems();
+    const idx = items.findIndex(predicate);
+    if (idx < 0) { console.log('DBG menu-item-not-found ' + JSON.stringify(items.map((it) => it.act || it.label))); return false; }
+    const rows = [...document.querySelectorAll('.fold-menu.show .fm-row')];
+    if (!rows[idx]) { console.log('DBG menu-row-missing idx=' + idx + ' rows=' + rows.length); return false; }
+    rows[idx].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  };
+  // #queryChips redesign (改訂④/⑤, docs/design-query-builder.md): values cluster by
+  // attribute (.qb-cluster > .qb-val[data-nid] > .qb-val-label + .qb-del-btn) — the
+  // OLD single-condition ".qb-pill" concept is gone, and so is any root-level AND/OR
+  // toggle (attributes are always AND; the only user-facing op toggle is the per-
+  // cluster すべて/どれか .qb-opt-btn[data-op], shown once a cluster has 2+ values).
+  // Folder conditions still use the internal type 'collection' (rename tracked,
+  // not done — [[feedback-migration-full-consistency]]), so typeCls is 'qc-collection'.
+  const chipValueByLabel = (label) => [...document.querySelectorAll('#queryChips .qb-val')].find((v) => (v.querySelector('.qb-val-label') || {}).textContent === label);
+  const removeChipValue = (label) => {
+    const v = chipValueByLabel(label);
+    const btn = v && v.querySelector('.qb-del-btn');
+    if (!btn) { console.log('DBG chip-del-not-found ' + label); return false; }
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  };
+  const setFolderClusterOp = (op) => {
+    const v = chipValueByLabel('F') || chipValueByLabel('G');
+    const cluster = v && v.closest('.qb-cluster');
+    const btn = cluster && cluster.querySelector('.qb-opt-btn[data-op="' + op + '"]');
+    if (!btn) { console.log('DBG opt-btn-not-found ' + op); return false; }
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  };
 
   // card BODY click must NOT select (entry path removed)
   click(card(0).querySelector('.post-meta') || card(0));
@@ -82,7 +127,7 @@ const evalJs = `(async () => {
   // Ctrl+A while typing in the search box must NOT change the selection;
   // clear first via the bar's cancel, then type-target the input.
   console.log('CHK sec-folders');
-  document.getElementById('cancelSelectBtn').click();
+  safeClick('cancelSelectBtn');
   await wait(40);
   const cleared = selCount() === 0;
   const sb = document.getElementById('searchBox');
@@ -130,12 +175,23 @@ const evalJs = `(async () => {
     document.getElementById('folderSelectedBtn').offsetParent !== null;
 
   // bulk タグを追加: additive — 'bulk-t' is merged, 'base' survives
-  document.getElementById('tagSelectedBtn').click();
+  safeClick('tagSelectedBtn');
   await wait(40);
   const bulkOverlayOpen = document.getElementById('editOverlay').classList.contains('show');
-  document.getElementById('editTagInput').value = 'bulk-t';
-  document.getElementById('editTagAdd').click();
-  document.getElementById('editSave').click();
+  // editTagInput is a React-controlled input (TagEditor's submit() reads its OWN
+  // query state, not the DOM value) — plain "el.value = x" hits React's own
+  // tracked-value setter (which updates the tracker to 'x' too), so a subsequent
+  // 'input' event would look like "no change" and never fire onChange. Go through
+  // the native prototype setter so the tracker still holds the old value.
+  const editTagInputEl = document.getElementById('editTagInput');
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(editTagInputEl, 'bulk-t');
+  editTagInputEl.dispatchEvent(new Event('input', { bubbles: true }));
+  safeClick('editTagAdd');
+  // EditOverlay.tsx's confirm-actions buttons (cancel/save) lost their old
+  // #editCancel/#editSave ids when the modal went React (slice l, 2026-07-01) —
+  // they're plain buttons now, distinguished only by position (cancel first, save second).
+  const editSaveBtn = document.querySelector('#editOverlay .confirm-actions button:nth-child(2)');
+  if (editSaveBtn) editSaveBtn.click(); else console.log('DBG NULL-CLICK editSave(structural)');
   await wait(250);
   const lp = await window.corpus.listPosts();
   const tagged = lp.posts.filter((p) => (p.tags || []).includes('bulk-t'));
@@ -147,77 +203,95 @@ const evalJs = `(async () => {
   window.corpusFolders.openManager();
   await wait(30);
   document.getElementById('ivFolderNewName').value = 'F';
-  document.getElementById('ivFolderCreate').click();
+  safeClick('ivFolderCreate');
   await wait(50);
-  document.getElementById('ivFolderClose').click();
-  document.getElementById('folderSelectedBtn').click();   // opens the picker now
+  safeClick('ivFolderClose');
+  safeClick('folderSelectedBtn');   // opens the picker now
   await wait(50);
-  document.querySelector('.fold-menu.show .fm-row[data-fid]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  pickMenuItem((it) => it.label === 'F');
   await wait(120);
   const bulkFolderAdds = folderCount('F') === 2;          // 2 selected cards joined folder F
 
   // the active-bar folder pill is a styled rounded-rect chip (改訂③: フォルダはフライアウトから追加)
-  document.getElementById('cancelSelectBtn').click();
+  safeClick('cancelSelectBtn');
   await wait(60);
   await openFolderFlyout();
-  flyoutFolderRow('F').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  { const r = flyoutFolderRow('F'); if (!r) console.log('DBG NULL-DISPATCH flyoutFolderRow-F'); else r.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   await wait(80);
   escKey(); await wait(40);                               // close the flyout
-  const fp = document.querySelector('#queryChips .sb-active-chip.qc-folder');
+  const fp = document.querySelector('#queryChips .sb-active-chip.qc-collection');
   const fpCs = fp ? getComputedStyle(fp) : null;
-  const folderPillChip = !!fpCs && fpCs.borderRadius === '6px' && fpCs.backgroundColor !== 'rgba(0, 0, 0, 0)';
+  // Chips are fully-rounded glass pills now (改訂④/⑤), not the old 6px rounded-rect —
+  // 999px is the actual current shape (real capsule ends), not a magic tolerance.
+  const folderPillChip = !!fpCs && fpCs.borderRadius === '999px' && fpCs.backgroundColor !== 'rgba(0, 0, 0, 0)';
 
   console.log('CHK sec-ctx');
   // --- card context menu → フォルダに追加 → picker (no ★/default) ---
   // create a 2nd folder G, clear the folder filter, then right-click a card
   window.corpusFolders.openManager(); await wait(30);
   document.getElementById('ivFolderNewName').value = 'G';
-  document.getElementById('ivFolderCreate').click(); await wait(50);
-  document.getElementById('ivFolderClose').click();
-  // clear the F filter: click its bar pill (改訂③: ピルのクリックで条件解除)
-  const fPill = document.querySelector('#queryChips .qb-pill.qc-folder');
-  if (fPill) fPill.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  safeClick('ivFolderCreate'); await wait(50);
+  safeClick('ivFolderClose');
+  // clear the F condition: remove that VALUE specifically (✕ on the .qb-val, not a
+  // whole-pill click — clusters/removal redesigned in 改訂④, docs/design-query-builder.md).
+  removeChipValue('F');
   await wait(80);
   console.log('CHK pre-ctx cards=' + grid.querySelectorAll('.post-card').length);
   grid.querySelector('.post-card').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
   await wait(40);
-  const cm = document.querySelector('.card-menu');
+  // cardMenuItems() (viewer.ts) dropped 'edit'/'ws' long ago — ℹ opens the inspector
+  // inline now, act 'info' — so check the CURRENT action set instead of the retired one.
+  const cm = document.querySelector('.fold-menu.show');
   const ctxShown = !!cm && cm.classList.contains('show') &&
-    !!cm.querySelector('.fm-row[data-act="open"]') && !!cm.querySelector('.fm-row[data-act="edit"]') &&
-    !!cm.querySelector('.fm-row[data-act="ws"]') && !!cm.querySelector('.fm-row[data-act="delete"].fm-danger');
-  cm.querySelector('.fm-row[data-act="folder"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    menuHasAct('open') && menuHasAct('folder') && menuHasAct('info') &&
+    menuItems().some((it) => it.act === 'delete' && it.danger);
+  pickMenuItem((it) => it.act === 'folder');
   await wait(40);
-  const menu = document.querySelector('.fold-menu:not(.qf-pop):not(.card-menu):not(.cs-pop)');
+  // the transition guard (menu.js) keeps the SAME bridge instance open across this
+  // pick, just with new items (fold-menu picker replaces the card menu in place).
+  const menu = document.querySelector('.fold-menu.show');
+  // foldMenuItems() (viewer.ts) always appends a trailing "管理…" row after a sep —
+  // menuItems() strips seps but not that row, so count only the actual folder rows.
   const menuShown = !!menu && menu.classList.contains('show') &&
-    menu.querySelectorAll('.fm-row[data-fid]').length === 2 &&
-    !menu.querySelector('.fm-star');   // ★ default removed
+    menuItems().filter((it) => it.act === 'fold').length === 2;   // F, G — no ★ default (removed feature, nothing to assert)
   // click the G row → that card joins G (chip count 1)
-  const gRow = [...menu.querySelectorAll('.fm-row[data-fid]')].find((r) => r.querySelector('.fm-name').textContent === 'G');
-  gRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  pickMenuItem((it) => it.label === 'G');
   await wait(100);
   const addedToG = folderCount('G') === 1;               // the right-clicked card joined G
   // folders.json persists { folders, workspace } and NO defaultId
   const rb2 = await window.corpus.getFolders();
   const noDefaultId = !('defaultId' in rb2);
-  const menuClosed = !menu.classList.contains('show');
+  // ContextMenuHost unmounts (returns null) when the bridge closes — a captured DOM
+  // ref's classList never updates after that, so check the bridge model, not the node.
+  const menuClosed = !window.corpusContextMenu.get();
 
   console.log('CHK sec-mix');
-  // --- Folders join the boolean query like any condition: F={c0,c1}, G={c0}.
-  //     改訂③: top level = AND by default; the AND/OR between them toggles on click.
-  //     Folder conditions are added from the sidebar flyout (no inline chips). ---
+  // --- Folders join the query as a single 'collection'-type cluster. There is NO
+  //     root-level AND/OR anymore (改訂④ made attribute-vs-attribute always AND,
+  //     non-negotiable) — F and G land in the SAME cluster (same attribute), and
+  //     the cluster's own すべて/どれか (.qb-opt-btn[data-op]) toggle is what used
+  //     to be tested via a since-removed ".qb-op-root". Expected AND/OR counts are
+  //     derived from ACTUAL folder membership rather than a hardcoded "c0 is in
+  //     both" assumption — which card ends up in G depends on sort order after all
+  //     the preceding mutations (tag add, filter clear, etc.), so a fixed overlap
+  //     guess would be as fragile as the DOM selectors this pass just fixed. ---
   const cardCount = () => grid.querySelectorAll('.post-card').length;
+  const fItems = new Set((window.corpusFolders.all().find((f) => f.name === 'F') || { items: [] }).items);
+  const gItems = new Set((window.corpusFolders.all().find((f) => f.name === 'G') || { items: [] }).items);
+  const fgOverlap = [...fItems].filter((x) => gItems.has(x)).length;
+  const fgUnion = new Set([...fItems, ...gItems]).size;
   await openFolderFlyout();
-  flyoutFolderRow('F').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
-  const fOr = cardCount() === 2;                       // F alone → 2
-  flyoutFolderRow('G').dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
+  { const r = flyoutFolderRow('F'); if (!r) console.log('DBG NULL-DISPATCH flyoutFolderRow-F'); else r.dispatchEvent(new MouseEvent('click', { bubbles: true })); } await wait(60);
+  const fOr = cardCount() === fItems.size;             // F alone → |F|
+  { const r = flyoutFolderRow('G'); if (!r) console.log('DBG NULL-DISPATCH flyoutFolderRow-G'); else r.dispatchEvent(new MouseEvent('click', { bubbles: true })); } await wait(60);
   escKey(); await wait(40);                            // close the flyout
-  const gAndF = cardCount() === 1;                     // F∧G (top-level AND default) → c0 = 1
-  // click the AND/OR connector to flip the top-level operator to または(OR)
-  const opBtn = () => document.querySelector('#queryChips .qb-op-root');
-  opBtn().dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(80);
-  const gOrF = cardCount() === 2;                      // F∨G → 2
-  opBtn().dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(60);
-  const fgOr = cardCount() === 1;                      // back to F∧G → 1
+  const gAndF = cardCount() === fgOverlap;             // cluster default op = すべて(AND) → F∩G
+  setFolderClusterOp('or');
+  await wait(80);
+  const gOrF = cardCount() === fgUnion;                // どれか(OR) → F∪G
+  setFolderClusterOp('and');
+  await wait(60);
+  const fgOr = cardCount() === fgOverlap;              // back to すべて(AND) → F∩G
 
   return { bodyNoSelect, ringSelects, shiftRange, ringDeselects, ctrlA, cleared, inputGuard, ringHollow,
     modeOn, bodyTogglesInMode, imgTogglesInMode, ringAlwaysOn, btnsHidden, imgCursorPointer, modeExits,
