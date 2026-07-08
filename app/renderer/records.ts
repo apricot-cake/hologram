@@ -69,6 +69,27 @@
     return a ? [a] : [];
   };
 
+  // Image-tab (type:'image') record resolution. The tab persists { img:{ recs:[captureId…],
+  // idx } }; recs resolve against the live library on every activation via the injected byId
+  // lookup, so deletions degrade to a "missing" empty state instead of a broken image. Same
+  // rep pick as groupRecords (capture first, then any record with text). Pure — byId is
+  // injected (so this loads under Node too).
+  function imageTabGroup(t, byId) {
+    const ids = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
+    const records = ids.map((id) => byId(id)).filter(Boolean);
+    if (!records.length) return null;
+    const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
+    return { key: 'imgtab:' + t.id, records, rep, files: records.flatMap(groupFilesOf) };
+  }
+  // Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
+  // caller-supplied 無題 fallback (i18n-owned by the caller).
+  function imageTabTitleOf(g, fallback) {
+    const p = g.rep;
+    const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
+    const base = raw || p.displayName || fallback;
+    return base.length > 24 ? base.slice(0, 24) + '…' : base;
+  }
+
   // deps carry the live viewer state the grouping must not own:
   //   manualGroups() → [[captureId,…],…] — user-built groups (win over auto)
   //   ungrouped()    → Set of post keys opted out of auto-grouping
@@ -360,6 +381,8 @@
     postIdKey,
     postKeyOf,
     groupFilesOf,
+    imageTabGroup,
+    imageTabTitleOf,
     makeGroupRecords,
     makeGallery,
     makeCardModel,

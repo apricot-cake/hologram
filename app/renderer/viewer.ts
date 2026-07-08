@@ -1694,7 +1694,7 @@
   // and percentileFn moved to records.js (window.corpusRecords) — 2nd extraction
   // slice. groupRecords is rebuilt here with the live manualGroups/ungrouped
   // bindings injected as getters (viewer reassigns them on load/edit).
-  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, stampPost, percentileFn } = window.corpusRecords;
+  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn } = window.corpusRecords;
   const groupRecords = window.corpusRecords.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
 
   // hostOf / userKey moved to query.js (destructured from window.corpusQuery above).
@@ -1779,7 +1779,10 @@
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
-    posterSort: () => posterSort,
+    // Poster sort's single source is corpusStore 'sortPoster' (the GlassSelect writes it);
+    // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
+    // as the old closure default).
+    posterSort: () => (window.corpusStore.get('sortPoster') as string) || 'count',
     // Collections migrated to sidebar folders; the collection-sort UI is gone, so
     // listing.js's filteredCollections() is dormant smart-collection foundation and
     // is never called here. This getter satisfies its contract with the default
@@ -2099,26 +2102,14 @@
 
   // --- Image tabs (type:'image') — fit-to-screen detail view (Eagle 風) ---
   // Persisted as { type:'image', img:{ recs:[captureId…], idx } }; recs resolve
-  // against the live library on every activation, so deletions degrade to a
-  // "missing" empty state instead of a broken image.
-  function imageTabGroup(t) {
-    const ids = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
-    const records = ids.map((id) => _postsById.get(id)).filter(Boolean);
-    if (!records.length) return null;
-    // Same rep pick as groupRecords: capture first, then any record with text.
-    const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
-    return { key: 'imgtab:' + t.id, records, rep, files: records.flatMap(groupFilesOf) };
-  }
-  function imageTabTitleOf(g) {
-    const p = g.rep;
-    const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
-    const base = raw || p.displayName || MSG.imgTabFallback;
-    return base.length > 24 ? base.slice(0, 24) + '…' : base;
-  }
+  // against the live library on every activation (imageTabGroup, records.ts — the
+  // _postsById lookup is injected), so deletions degrade to a "missing" empty state
+  // instead of a broken image.
+  const resolveImageTabGroup = (t) => imageTabGroup(t, (id) => _postsById.get(id));
   // (Re)build the island model for an image tab and push it. Also called on
   // library refreshes so a deleted post degrades to the missing state live.
   function renderImageTabView(t) {
-    const g = imageTabGroup(t);
+    const g = resolveImageTabGroup(t);
     t._g = g; // runtime resolution (inspector toggle re-uses it; never persisted)
     const items = g ? buildGroupGalleryItems(g) : [];
     const labels = { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo };
@@ -2168,7 +2159,7 @@
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
-    const t = { id, pinned: false, title: imageTabTitleOf(g), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
+    const t = { id, pinned: false, title: imageTabTitleOf(g, MSG.imgTabFallback), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
     // Insert next to the current tab (browser-like), never inside the pinned run.
     const ai = tabs.findIndex((tt) => tt.id === activeTabId);
     let pos = ai >= 0 ? ai + 1 : tabs.length;
@@ -3631,7 +3622,9 @@
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   let posterList: CorpusUserAgg[] = [];
-  let posterSort = 'count'; // 'count' | 'name' | 'date-desc' | 'date-asc'
+  // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in corpusStore
+  // 'sortPoster' now (read via the listing dep getter above); a subscription below
+  // re-renders on change, replacing the old #posterSortSelect DOM-'change' listener.
   // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
   // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
   let posterView = 'card'; // 'card' | 'tile' | 'list'
@@ -4165,15 +4158,10 @@
     const u = posterList[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
-  // Poster-mode sort (sidebar). The remaining poster filters are rows → flyouts.
-  {
-    const ps = selectById('posterSortSelect');
-    if (ps)
-      ps.addEventListener('change', () => {
-        posterSort = ps.value; // 'count' | 'name' | 'date-desc' | 'date-asc'
-        renderPosters();
-      });
-  }
+  // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the GlassSelect
+  // writes it on pick); re-render when it changes. This replaces the old #posterSortSelect
+  // DOM-'change' listener — the store is now the one trigger (no dual source).
+  window.corpusStore.subscribe('sortPoster', () => renderPosters());
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
   // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its

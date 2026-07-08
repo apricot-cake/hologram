@@ -130,6 +130,11 @@ interface CorpusRecordsApi {
   /** Normalized url-derived group key (x.com⇄twitter.com folded); null for no-url records. */
   postKeyOf(url: string | null | undefined): string | null;
   groupFilesOf(p: CorpusPost): string[];
+  /** Image-tab record resolution: resolve the tab's persisted captureIds against the live
+      library via the injected byId lookup; null when none resolve (→ the missing state). */
+  imageTabGroup(t: CorpusTab, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null;
+  /** Image-tab title from the group's rep (≤24 chars), else the injected 無題 fallback string. */
+  imageTabTitleOf(g: CorpusPostGroup, fallback: string): string;
   /** Grouping factory; manualGroups/ungrouped are getters (viewer reassigns them; ungrouped is a Set of opted-out post keys). */
   makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }): (list: CorpusPost[]) => CorpusPostGroup[];
   /** Lightbox gallery-item factory; fileSrc keeps the psimg URL scheme viewer-owned. */
