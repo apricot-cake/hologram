@@ -4181,6 +4181,7 @@
         min: CARD_MIN,
         max: CARD_MAX,
         pref: 'cardSize',
+        storeKey: 'cardSize',
         columns: true,
       };
     if (currentView === 'list')
@@ -4192,6 +4193,7 @@
         min: LIST_MIN,
         max: LIST_MAX,
         pref: 'listThumb',
+        storeKey: 'listThumb',
         columns: false,
       };
     return {
@@ -4202,6 +4204,7 @@
       min: TILE_MIN,
       max: TILE_MAX,
       pref: 'imageTileSize',
+      storeKey: 'tileSize',
       columns: true,
     };
   }
@@ -4214,6 +4217,12 @@
       return;
     }
     window.corpusIpc.setPref(st.pref, st.get());
+    // P4-B slice④: mirror the settled size into corpusStore alongside 'view' (below),
+    // so the post-grid's layout inputs are ALL in the store — a prerequisite for a
+    // later slice (grid island self-deriving layout instead of receiving a push).
+    // Commit-only (not mid-drag): nothing subscribes yet, and the drag path is
+    // deliberately reflow-conscious (see the comment above).
+    window.corpusStore.set(st.storeKey, st.get());
     renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {
@@ -4334,9 +4343,19 @@
     }
     if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
     if (Number.isFinite(prefs.posterCardSize)) posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
-    if (Number.isFinite(prefs.imageTileSize)) tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
-    if (Number.isFinite(prefs.cardSize)) cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
-    if (Number.isFinite(prefs.listThumb)) listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
+    // Post-grid view sizes also mirror into corpusStore (P4-B slice④ — see setViewSize).
+    if (Number.isFinite(prefs.imageTileSize)) {
+      tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
+      window.corpusStore.set('tileSize', tileSize);
+    }
+    if (Number.isFinite(prefs.cardSize)) {
+      cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
+      window.corpusStore.set('cardSize', cardSize);
+    }
+    if (Number.isFinite(prefs.listThumb)) {
+      listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
+      window.corpusStore.set('listThumb', listThumb);
+    }
     if (prefs.tileOverlay === false) {
       tileOverlay = false;
     }
