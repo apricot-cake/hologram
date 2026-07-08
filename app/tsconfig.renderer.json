@@ -57,12 +57,12 @@
     "renderer/edit-overlay.ts",
     "renderer/sidebar.ts",
     "renderer/selection-bar.ts",
-    "renderer/empty.ts",
     "renderer/confirm.ts",
     "renderer/activebar.ts",
     "renderer/trash.ts",
     "renderer/backup.ts",
     "renderer/posts.ts",
+    "renderer/posts-data.ts",
     "renderer/viewer.ts"
   ]
 }

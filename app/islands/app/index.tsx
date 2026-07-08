@@ -64,7 +64,6 @@ import 'corpus-svc:searchbox';
 import 'corpus-svc:grid';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection-bar';
-import 'corpus-svc:empty';
 import 'corpus-svc:confirm';
 import 'corpus-svc:activebar';
 import 'corpus-svc:about-icon';

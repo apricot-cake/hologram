@@ -1,74 +1,35 @@
-// Grid bridges — the imperative→declarative bridge for every VIRTUALIZED grid
-// (#postGrid / #posterGrid / #collectionGrid). viewer.js owns the data pipeline,
-// the container's classes/CSS vars, and every delegated container event handler;
+// Grid model sources — the imperative→declarative bridge for every VIRTUALIZED
+// grid (#postGrid / #posterGrid). viewer.js owns the data pipeline, the
+// container's classes/CSS vars, and every delegated container event handler;
 // the grid islands own cell rendering + windowing (masonic). Kept SEPARATE from
-// window.corpusStore for the same reason as menu.js/qf-pop.js: modelOf/keyOf
-// carry CALLBACKS. Plain IIFE on window; loaded BEFORE viewer.js.
+// window.corpusStore for modelOf/keyOf specifically, which carry CALLBACKS (same
+// reason as menu.js/qf-pop.js) — everything else (items, layout inputs) DOES live
+// in corpusStore; these sources derive the rest of the model from it. Plain IIFE
+// on window; loaded BEFORE viewer.js.
+//
+// P4-B slice⑩ (post) and slice⑫ (poster) converted both grids from a PUSHED
+// bridge (viewer calls render()/patch() with a full model) to a PULLED source
+// (viewer only writes items/layout into corpusStore; the source derives the rest
+// on get()). GridMount (_shared/VirtualGrid.tsx) only ever calls .get()/.subscribe()
+// on its bridge prop — it never called render()/patch()/isActive(), those were
+// viewer-only APIs — so this was a drop-in swap with zero changes to GridMount.
 //
 // model shape: { items, itemsKey, modelOf(item,i)→cell model, keyOf(item,i)→
 // stable key, columnCount?, columnWidth?, rowGutter, itemHeightEstimate, … }.
-//  - itemsKey bumps ONLY when viewer rebuilt the items array (filter / sort /
-//    search / data change). The island resets its positioner (cached cell
+//  - itemsKey bumps ONLY when the items array reference actually changed (filter /
+//    sort / search / data change). The island resets its positioner (cached cell
 //    heights) on it — and re-syncs scrollTop, per the PoC blank-grid trap.
-//  - paint (internal, bumps on every render/patch) makes the island re-render
-//    the VISIBLE cells without touching the positioner or scroll. Selection and
-//    inspected are corpusStore subscriptions inside Cell now (not live reads
-//    driven by paint), so there is no repaint()-for-a-class-change primitive
-//    anymore — a full render() is the only way to bump paint.
-// render(null) hands the container back to the legacy path: the island unmounts
-// its cells synchronously (flushSync) before the caller's next line runs.
+//  - paint (internal, bumped on every get()) makes the island re-render even when
+//    field VALUES repeat, since a fresh object ref is what React's bridge-driven
+//    setState in GridMount keys off.
 (function () {
   'use strict';
-  function makeGridBridge(): CorpusGridBridge {
-    let current: CorpusGridModel | null = null;
-    let seq = 0;
-    const subs = new Set<() => void>();
-    const notify = () => {
-      for (const cb of [...subs]) {
-        try {
-          cb();
-        } catch (_e) {
-          /* ignore */
-        }
-      }
-    };
 
-    function render(model: Omit<CorpusGridModel, 'paint'> | null) {
-      // Omit<> collapses onto CorpusGridModel's `[extra: string]: any` index signature
-      // (a known TS limitation — Pick/Omit over an indexed type loses the named
-      // required properties), so the spread's inferred type undercounts; the cast
-      // just restores what's structurally true at runtime.
-      current = model ? ({ ...model, paint: ++seq } as CorpusGridModel) : null;
-      notify();
-    }
-    // Merge a partial model update into the current one (live size-slider drags:
-    // viewer patches columnWidth per input instead of a full re-render).
-    function patch(partial: Partial<CorpusGridModel>) {
-      if (!current) return;
-      current = { ...current, ...partial, paint: ++seq };
-      notify();
-    }
-    const isActive = () => current !== null;
-    function get() {
-      return current;
-    } // stable ref between changes (prop-driven root render in the island)
-    function subscribe(cb: () => void) {
-      subs.add(cb);
-      return () => subs.delete(cb);
-    }
-    return { render, patch, isActive, get, subscribe };
-  }
-
-  window.corpusPosterGrid = makeGridBridge(); // posters (#posterGrid) — still pushed; posts moved to a pulled source below (P4-B slice⑩)
-
-  // Post grid model source (P4-B slice⑩): unlike the pushed bridges above, this is
-  // PULLED — items come from corpusStore('postGroups'), layout is derived from
-  // corpusStore('view'/'cardSize'/'tileSize'/'listThumb') using the same formulas
-  // renderPosts() used to compute inline. configure() sets the invariant callbacks
-  // once; get()/subscribe() satisfy the same shape GridMount already consumes
-  // (_shared/VirtualGrid.tsx only ever calls .get()/.subscribe() on its bridge
-  // prop, never .render()/.patch()/.isActive() — those were viewer-only, so a
-  // pulled source is a drop-in swap with zero changes to GridMount itself).
+  // Post grid model source (P4-B slice⑩): items come from corpusStore('postGroups'),
+  // layout is derived from corpusStore('view'/'cardSize'/'tileSize'/'listThumb')
+  // using the same formulas renderPosts() used to compute inline. configure() sets
+  // the invariant callbacks once (modelOf/keyOf/labels/onAspect never change
+  // identity meaningfully across renders — only items+layout do).
   function makePostGridSource(): CorpusPostGridSource {
     let config: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void } | null = null;
     let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in corpusStore (see the type's doc comment)
@@ -134,4 +95,71 @@
     };
   }
   window.corpusPostGridSource = makePostGridSource();
+
+  // Poster grid model source (P4-B slice⑫): same shape as the post source, minus
+  // onAspect (poster avatars don't report a learned aspect ratio) and minus a
+  // live-drag override — the poster size slider already commits corpusIpc.setPref
+  // on every 'input' tick (renderer/viewer.ts's setupPosterSizeSlider has no
+  // separate mid-drag/commit split like the post slider), so writing corpusStore
+  // on every tick too is no NEW cost; get() just reads the settled value straight
+  // from the store like every other layout input.
+  function makePosterGridSource(): CorpusPosterGridSource {
+    let config: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string; infoTitle: string } | null = null;
+    let lastItems: any = undefined;
+    let itemsKeySeq = 0;
+    let paintSeq = 0;
+    const subs = new Set<() => void>();
+    const notify = () => {
+      for (const cb of [...subs]) {
+        try {
+          cb();
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    };
+    for (const k of ['posterGroups', 'posterView', 'posterTileSize', 'posterCardSize']) window.corpusStore.subscribe(k, notify);
+    function computeModel(): CorpusGridModel | null {
+      if (!config) return null;
+      const items = window.corpusStore.get('posterGroups');
+      if (items == null) return null; // undefined until the first renderPosters() — after that it's always an array (possibly empty), never explicitly cleared to null (unlike posts, poster has no innerHTML-clear ordering constraint to preserve)
+      if (items !== lastItems) {
+        lastItems = items;
+        itemsKeySeq++;
+      }
+      const view = window.corpusStore.get('posterView') || 'card';
+      const posterTileSize = window.corpusStore.get('posterTileSize');
+      const posterCardSize = window.corpusStore.get('posterCardSize');
+      return {
+        items,
+        itemsKey: itemsKeySeq,
+        modelOf: config.modelOf,
+        keyOf: config.keyOf,
+        tagTitle: config.tagTitle,
+        infoTitle: config.infoTitle,
+        // list: one full-width row column, gap 4. tile: squares packed by minimum
+        // width posterTileSize, gap 10. card: avatar-led columns of minimum width
+        // posterCardSize, gap 14 — masonic stretches columns to fill, the same
+        // math as the old CSS auto-fill minmax (mirrors the post source's formula
+        // shape with poster's own numbers — see the old pushPosterModel()).
+        columnCount: view === 'list' ? 1 : undefined,
+        columnWidth: view === 'tile' ? posterTileSize : view === 'card' ? posterCardSize : undefined,
+        square: view === 'tile', // meta overlays the square avatar → cell height = column width
+        rowGutter: view === 'list' ? 4 : view === 'tile' ? 10 : 14,
+        itemHeightEstimate: view === 'list' ? 52 : Math.round(posterCardSize * 1.35),
+        paint: ++paintSeq,
+      } as CorpusGridModel;
+    }
+    return {
+      configure(cfg) {
+        config = cfg;
+      },
+      get: computeModel,
+      subscribe(cb) {
+        subs.add(cb);
+        return () => subs.delete(cb);
+      },
+    };
+  }
+  window.corpusPosterGridSource = makePosterGridSource();
 })();

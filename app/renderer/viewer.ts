@@ -3704,9 +3704,13 @@
       const n = trackCols(Number.parseInt(sl.value, 10), Number.parseInt(sl.min, 10), Number.parseInt(sl.max, 10)); // un-invert → target column count
       const size = Math.max(st.min, Math.min(st.max, sizeFor(n, m)));
       st.set(size);
-      // Live re-flow while dragging: masonic recreates its positioner on a
-      // columnWidth change (same wiring as the post tile slider).
-      window.corpusPosterGrid.patch({ columnWidth: size });
+      // Mirror into corpusStore (P4-B slice⑫) — the poster grid source derives
+      // columnWidth from it, same as the post grid does with cardSize/tileSize.
+      // Unlike the post slider there's no separate mid-drag/commit split here (this
+      // handler already commits corpusIpc.setPref on every 'input' tick below), so
+      // writing the store on every tick too costs nothing extra — masonic still
+      // recreates its positioner on the resulting columnWidth change either way.
+      window.corpusStore.set(st.pref, size);
       window.corpusIpc.setPref(st.pref, size);
     });
   })();
@@ -3889,14 +3893,18 @@
     refreshPosterSlider();
     if (posterList.length === 0) {
       empty.style.display = 'block';
-      const q = searchQuery().trim();
-      window.corpusEmpty.render(buildUsers().length === 0 && !q ? 'posterFirstRun' : 'filtered');
-      pushPosterModel(); // React renders an empty grid (no cards)
+      // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'
+      // vs 'filtered' choice (P4-B slice⑫ — mirrors slice⑩'s allPostsCount). Only
+      // computed here (buildUsers() is the generation-cached poster roll-up — the
+      // OLD code only ever called it in this branch too, so this preserves the
+      // same laziness, not a new cost).
+      window.corpusStore.set('allUsersCount', buildUsers().length);
+      window.corpusStore.set('posterGroups', posterList); // [] — React renders an empty grid (no cards)
       return;
     }
     empty.style.display = 'none';
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
-    pushPosterModel();
+    window.corpusStore.set('posterGroups', posterList);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll (same wiring as the post grid).
@@ -3904,49 +3912,33 @@
     if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
   }
   let _posterAnimT: any = null;
-  let _posterItemsArr: any = null; // last posterList pushed — identity change bumps itemsKey
-  let _posterItemsKey = 0;
-  // React owns the poster cells (virtualized — window.corpusPosterGrid bridge);
-  // viewer.js keeps posterList, the count badge, the density classes, and
-  // #posterGrid's click/contextmenu delegation. The inspected highlight is NOT
-  // set here — the island derives its own ring from corpusStore's 'inspectedKey'
-  // (useSyncExternalStore), keyed off the raw item's `.key`.
-  function pushPosterModel() {
-    if (posterList !== _posterItemsArr) {
-      _posterItemsArr = posterList;
-      _posterItemsKey++; // rebuilt list → island resets its positioner + re-syncs scroll
-    }
-    window.corpusPosterGrid.render({
-      items: posterList,
-      itemsKey: _posterItemsKey,
-      modelOf: (u, i) => {
-        const hasName = !!u.displayName;
-        const s = (u.displayName || u.screenName || '').trim();
-        return {
-          index: i,
-          avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
-          monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
-          name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
-          handle: hasName && u.screenName ? u.screenName : null,
-          platform: u.platform || null,
-          pfName: u.platform ? PF_NAME[u.platform] || u.platform : null,
-          countLabel: MSG.posterPosts(formatCount(u.count)),
-        };
-      },
-      keyOf: (u, i) => (u && u.key != null ? 'p:' + u.key : i),
-      tagTitle: MSG.tipTagEdit,
-      infoTitle: MSG.tipInfo,
-      // list: one full-width row column, gap 4. tile: squares packed by minimum
-      // width posterTileSize, gap 10. card: avatar-led columns of minimum width
-      // posterCardSize, gap 14 — masonic stretches columns to fill, the same
-      // math as the old CSS auto-fill minmax.
-      columnCount: posterView === 'list' ? 1 : undefined,
-      columnWidth: posterView === 'tile' ? posterTileSize : posterView === 'card' ? posterCardSize : undefined,
-      square: posterView === 'tile', // meta overlays the square avatar → cell height = column width
-      rowGutter: posterView === 'list' ? 4 : posterView === 'tile' ? 10 : 14,
-      itemHeightEstimate: posterView === 'list' ? 52 : Math.round(posterCardSize * 1.35),
-    });
-  }
+  // React owns the poster cells (virtualized — window.corpusPosterGridSource,
+  // P4-B slice⑫); viewer.js keeps posterList, the count badge, the density
+  // classes, and #posterGrid's click/contextmenu delegation. The inspected
+  // highlight is NOT part of this model — the island derives its own ring from
+  // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
+  // item's `.key`. modelOf/keyOf/tagTitle/infoTitle never change identity
+  // meaningfully between renders, so they're configured ONCE (mirrors the post
+  // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
+  window.corpusPosterGridSource.configure({
+    modelOf: (u, i) => {
+      const hasName = !!u.displayName;
+      const s = (u.displayName || u.screenName || '').trim();
+      return {
+        index: i,
+        avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
+        monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
+        name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
+        handle: hasName && u.screenName ? u.screenName : null,
+        platform: u.platform || null,
+        pfName: u.platform ? PF_NAME[u.platform] || u.platform : null,
+        countLabel: MSG.posterPosts(formatCount(u.count)),
+      };
+    },
+    keyOf: (u, i) => (u && u.key != null ? 'p:' + u.key : i),
+    tagTitle: MSG.tipTagEdit,
+    infoTitle: MSG.tipInfo,
+  });
   // Jump from a poster to its posts: posts mode + a single user filter for it.
   // We want ONLY this poster's posts, so drop every post filter carried over from
   // the prior posts view (tags/date/media/search/engagement) — not just a previous
@@ -4354,8 +4346,15 @@
       // is already set, so the subscribe above no-ops (idempotent guard).
       window.corpusStore.set('posterView', posterView);
     }
-    if (Number.isFinite(prefs.posterTileSize)) posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
-    if (Number.isFinite(prefs.posterCardSize)) posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
+    // Poster-grid view sizes mirror into corpusStore (P4-B slice⑫, mirrors slice④'s post-side treatment below).
+    if (Number.isFinite(prefs.posterTileSize)) {
+      posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
+      window.corpusStore.set('posterTileSize', posterTileSize);
+    }
+    if (Number.isFinite(prefs.posterCardSize)) {
+      posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
+      window.corpusStore.set('posterCardSize', posterCardSize);
+    }
     // Post-grid view sizes also mirror into corpusStore (P4-B slice④ — see setViewSize).
     if (Number.isFinite(prefs.imageTileSize)) {
       tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));

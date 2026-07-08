@@ -183,12 +183,14 @@ declare global {
     setTitleBarOverlay(opts: unknown): Promise<any>;
   }
 
-  // ---- renderer/grid.js — one bridge per virtualized grid ----
-  // viewer.js builds the model; the islands consume it. `paint` is internal
-  // (bumped by the bridge on every render/patch so visible cells re-render).
-  // Selection/inspected are NOT live-read state anymore — Cell derives both
-  // from corpusStore subscriptions (see Grid.tsx) — so a per-cell repaint()
-  // with no items/paint change is no longer needed and was removed.
+  // ---- renderer/grid.ts — a PULLED model source per virtualized grid (P4-B
+  // slice⑩ post, slice⑫ poster — both converted off the old push bridge; nothing
+  // instantiates a push bridge anymore). viewer.js still builds items/layout
+  // inputs, but writes them to corpusStore instead of calling a render()/patch()
+  // method — the source derives the model itself. `paint` is internal (bumped on
+  // every get() so a fresh object ref reaches React even when field VALUES repeat).
+  // Selection/inspected are NOT part of this model — Cell derives both from
+  // corpusStore subscriptions directly (see Grid.tsx / PosterGrid.tsx).
   interface CorpusGridModel {
     items: any[];
     itemsKey: string | number;
@@ -204,27 +206,31 @@ declare global {
     paint: number;
     [extra: string]: any;
   }
-  interface CorpusGridBridge {
-    render(model: Omit<CorpusGridModel, 'paint'> | null): void;
-    patch(partial: Partial<CorpusGridModel>): void;
-    isActive(): boolean;
+  // The shape GridMount (_shared/VirtualGrid.tsx) actually consumes — it only
+  // ever calls get()/subscribe(), so this is the minimal contract both sources
+  // below satisfy (plus their own configure()/etc., which GridMount never touches).
+  interface CorpusGridSource {
     get(): CorpusGridModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
-
-  // ---- renderer/grid.ts — P4-B slice⑩: the post grid PULLS its model instead of
-  // being pushed one. items (postGroups) + layout inputs (view/cardSize/tileSize/
-  // listThumb) live in corpusStore already (slice④); configure() sets the
-  // invariant callbacks ONCE (modelOf/keyOf/labels/onAspect never change identity
-  // meaningfully across renders — only items+layout do). setLiveColumnWidth is the
-  // one exception: a size-slider drag reflow that deliberately stays OUT of the
-  // store (mid-drag store writes would be wasteful — slice④'s reasoning) — it's a
-  // thin ephemeral override read by get(), cleared on commit.
-  interface CorpusPostGridSource {
+  // items (postGroups) + layout inputs (view/cardSize/tileSize/listThumb) live in
+  // corpusStore already (slice④); configure() sets the invariant callbacks ONCE
+  // (modelOf/keyOf/labels/onAspect never change identity meaningfully across
+  // renders — only items+layout do). setLiveColumnWidth is the one exception: a
+  // size-slider drag reflow that deliberately stays OUT of the store (mid-drag
+  // store writes would be wasteful — slice④'s reasoning) — a thin ephemeral
+  // override read by get(), cleared on commit.
+  interface CorpusPostGridSource extends CorpusGridSource {
     configure(cfg: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void }): void;
     setLiveColumnWidth(px: number | null): void;
-    get(): CorpusGridModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+  // Poster grid (P4-B slice⑫): same shape, minus onAspect (poster avatars don't
+  // report a learned aspect ratio) and minus setLiveColumnWidth — the poster size
+  // slider already commits corpusIpc.setPref on every 'input' tick (no separate
+  // mid-drag/commit split like the post slider), so writing corpusStore on every
+  // tick too is no NEW cost, and a live-override side channel isn't needed.
+  interface CorpusPosterGridSource extends CorpusGridSource {
+    configure(cfg: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string; infoTitle: string }): void;
   }
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
@@ -424,15 +430,11 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
-  // ---- renderer/empty.js — the #emptyState placeholder. viewer keeps the container's
-  // show/hide + the delegated CTA click handler; the island renders the message + button
-  // from the variant (it owns the i18n labels). ----
+  // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
+  // delegated CTA click handler; EmptyState.tsx (P4-B slice⑩/⑫) derives the
+  // variant itself from corpusStore instead of a pushed bridge (the old
+  // renderer/empty.js bridge was deleted — no callers left). ----
   type CorpusEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
-  interface CorpusEmpty {
-    render(model: CorpusEmptyVariant | null): void;
-    get(): CorpusEmptyVariant | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
 
   // ---- renderer/format.ts — the MirrorStatus island derives the
   // backup rail's relative/absolute time itself now, so it needs these two formatters
@@ -599,7 +601,7 @@ declare global {
     corpusTheme?: CorpusTheme;
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
-    corpusPosterGrid: CorpusGridBridge;
+    corpusPosterGridSource: CorpusPosterGridSource;
     corpusPostsData: CorpusPostsDataService;
     corpusQfPop: CorpusQfPop;
     corpusContextMenu: CorpusContextMenu;
@@ -609,7 +611,6 @@ declare global {
     corpusEditOverlay: CorpusEditOverlay;
     corpusSidebar: CorpusSidebar;
     corpusSelectionBar: CorpusSelectionBar;
-    corpusEmpty: CorpusEmpty;
     corpusFormat: CorpusFormat;
     corpusActivebar: CorpusActivebar;
     corpusConfirm: CorpusConfirm;
