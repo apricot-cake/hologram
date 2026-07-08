@@ -534,9 +534,11 @@
     window.corpusQfPop.close();
   }
   // The island may close itself (outside-click / Escape) without going through
-  // hideQfPop() — subscribe once so the anchor highlight + bookkeeping always stay in
-  // sync with whoever closed it.
-  window.corpusQfPop.subscribe(() => {
+  // hideQfPop() — this handler keeps the anchor highlight + bookkeeping in sync with
+  // whoever closed it. Registration lives in React (StoreSubscriptions, App.tsx) via
+  // window.corpusViewer below; this stays the guard + action logic (viewer keeps the
+  // orchestration, React owns the wiring) — same "cut out and rewire" as the tab bar.
+  function handleQfPopChange() {
     if (!window.corpusQfPop.get()) {
       qfCat = null;
       qfAnchor = null;
@@ -545,7 +547,8 @@
       pushSidebar();
       pushPosterSidebar();
     }
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.js
   // (window.corpusTags) — 8th extraction slice. Wired BEFORE the facets/cooc
@@ -3550,7 +3553,9 @@
   // mirror it into currentView, persist it, and re-render the grid (deferred past a
   // paint with a view transition, like the old optimistic handler). The idempotent
   // guard skips the no-op set from pref restore below, so the loop stays one-way.
-  window.corpusStore.subscribe('view', () => {
+  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
+  // window.corpusViewer below; this stays the guard + action logic.
+  function handleViewStoreChange() {
     const v = window.corpusStore.get('view');
     if (v === currentView) return;
     currentView = v;
@@ -3560,7 +3565,8 @@
       if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
       else renderPosts();
     }, 0);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleViewStoreChange });
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
   // Switches the content area between the post grid and the poster grid (same tab).
@@ -3602,12 +3608,15 @@
   // #browseToggle is rendered by the toolbar island (window.corpusStore 'browseMode').
   // React owns the active state + glass thumb; viewer reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
-  // below, so the loop stays one-way (island → store → viewer, never back).
-  window.corpusStore.subscribe('browseMode', () => {
+  // below, so the loop stays one-way (island → store → viewer, never back). Subscribe
+  // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
+  // below; this stays the guard + action logic.
+  function handleBrowseModeStoreChange() {
     const m = window.corpusStore.get('browseMode');
     if (m === browseMode) return;
     setBrowseMode(m);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleBrowseModeStoreChange });
 
   // The browse toggle is React-owned now (BrowseToggle island); it measures its own glass
   // thumb via a ResizeObserver on its container, so the sidebar-width changes that grid
@@ -3692,15 +3701,18 @@
   // viewer reacts to a change: mirror it into posterView, persist it, and re-render
   // the poster grid (deferred past a paint, like the old optimistic handler).
   // renderPosters re-applies the layout classes and refreshes the size slider. The
-  // idempotent guard skips the no-op set from pref restore below.
-  window.corpusStore.subscribe('posterView', () => {
+  // idempotent guard skips the no-op set from pref restore below. Subscribe
+  // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
+  // below; this stays the guard + action logic.
+  function handlePosterViewStoreChange() {
     const v = window.corpusStore.get('posterView');
     if (v === posterView) return;
     posterView = v;
     window.corpusIpc.setPref('posterViewMode', posterView);
     clearTimeout(_posterDensityRenderT);
     _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handlePosterViewStoreChange });
   (function setupPosterSizeSlider() {
     const sl = inputById('posterTileSlider');
     if (!sl) return;
@@ -4389,8 +4401,10 @@
   // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
   // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
   // no args — a truthy arg would be taken as keepLimit and skip the history push.
+  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
+  // window.corpusViewer below; this stays the guard + action logic.
   let _searchRenderTimer: any = null;
-  window.corpusStore.subscribe('searchQuery', () => {
+  function handleSearchQueryStoreChange() {
     const v = searchQuery();
     if (v === _searchEcho) return; // setSearchBoxValue echo — its caller re-renders itself
     _searchEcho = v;
@@ -4402,7 +4416,8 @@
       }
       syncEditingTextLeaf(); // posts: the box edits a 'text' leaf in the query tree
     }, 150);
-  });
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
   // Mirror the search box into its bound 'text' leaf (post mode). Empty clears it;
   // otherwise update the editing leaf in place, or create one and bind to it.
   function syncEditingTextLeaf() {
@@ -4494,18 +4509,19 @@
     const sms = document.getElementById('searchModeSeg');
     if (sms) sms.setAttribute('aria-label', MSG.searchModeTitle);
   }
-  if (window.corpusSearch) {
-    window.corpusSearch.subscribe(() => {
-      // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
-      // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads f.mode).
-      if (browseMode === 'posts' && editingTextNode) {
-        editingTextNode.mode = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'exact';
-        afterQueryChange();
-      } else {
-        renderPosts();
-      }
-    });
+  // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
+  // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads
+  // f.mode). Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
+  // window.corpusViewer below; this stays the guard + action logic.
+  function handleSearchModeChange() {
+    if (browseMode === 'posts' && editingTextNode) {
+      editingTextNode.mode = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'exact';
+      afterQueryChange();
+    } else {
+      renderPosts();
+    }
   }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchModeChange });
 
   // --- Import from ZIP ---
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して
@@ -4714,24 +4730,30 @@
     return window.corpusUI.notify(msg);
   }
 
-  // --- Init ---
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)
-  // when the folder list/default changes.
-  if (CF())
-    CF().onChange((kind) => {
-      // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-      if (postQB.removeCondsMatching((c) => c.type === 'collection' && !CF().byId(c.value))) {
-        postQB.syncShadow();
-        postQB.render();
-      }
-      renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
-      if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
-    });
-  if (window.corpusPosts.onPostsChanged) {
-    window.corpusPosts.onPostsChanged(async (names) => {
-      await loadPosts(true, names); // background fs-watch refresh — targeted via the changed-file hint
-    });
+  // when the folder list/default changes. Registration lives in React
+  // (StoreSubscriptions, App.tsx) via window.corpusViewer below (CF().onChange has no
+  // unsubscribe — subs.push — so the effect there has no cleanup, harmless since it
+  // mounts once for the app's lifetime like every other App.tsx-level effect); this
+  // stays the guard + action logic.
+  function handleFolderChange(kind) {
+    // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
+    if (postQB.removeCondsMatching((c) => c.type === 'collection' && !CF().byId(c.value))) {
+      postQB.syncShadow();
+      postQB.render();
+    }
+    renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
+    if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   }
+  // Background fs-watch refresh (targeted via the changed-file hint). Registration
+  // lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer below
+  // (window.corpusPosts.onPostsChanged has no unsubscribe either — same reasoning).
+  async function handlePostsChanged(names) {
+    await loadPosts(true, names);
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleFolderChange, handlePostsChanged });
+
+  // --- Init ---
   renderQueryChips();
   pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
   if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct

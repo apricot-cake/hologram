@@ -179,6 +179,38 @@ function TabBarEvents() {
   return null;
 }
 
+// External-store / IPC subscriptions: window.corpusStore keys (view / browseMode /
+// posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
+// folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
+// registration (mounted once for the app's lifetime); each handler's guard + action
+// logic is unchanged and stays in viewer.ts, reached through window.corpusViewer —
+// same "cut out and rewire" as the other App.tsx-level effects. corpusStore/qf-pop/
+// search all return an unsubscribe (useSyncExternalStore-compatible) and get one on
+// cleanup; corpusFolders.onChange and corpusPosts.onPostsChanged don't (subs.push /
+// raw ipcRenderer.on) — harmless, since this effect never actually unmounts in this
+// single-page app.
+function StoreSubscriptions() {
+  useEffect(() => {
+    const unsubView = window.corpusStore.subscribe('view', () => window.corpusViewer?.handleViewStoreChange?.());
+    const unsubBrowseMode = window.corpusStore.subscribe('browseMode', () => window.corpusViewer?.handleBrowseModeStoreChange?.());
+    const unsubPosterView = window.corpusStore.subscribe('posterView', () => window.corpusViewer?.handlePosterViewStoreChange?.());
+    const unsubSearchQuery = window.corpusStore.subscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
+    const unsubQfPop = window.corpusQfPop.subscribe(() => window.corpusViewer?.handleQfPopChange?.());
+    const unsubSearchMode = window.corpusSearch?.subscribe(() => window.corpusViewer?.handleSearchModeChange?.());
+    window.corpusFolders?.onChange((kind) => window.corpusViewer?.handleFolderChange?.(kind));
+    window.corpusPosts.onPostsChanged?.((names) => window.corpusViewer?.handlePostsChanged?.(names));
+    return () => {
+      unsubView();
+      unsubBrowseMode();
+      unsubPosterView();
+      unsubSearchQuery();
+      unsubQfPop();
+      unsubSearchMode?.();
+    };
+  }, []);
+  return null;
+}
+
 export function App() {
   return (
     <>
@@ -193,6 +225,9 @@ export function App() {
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
       <TabBarEvents />
+      {/* External-store / IPC subscriptions (corpusStore keys, qf-pop, search mode,
+          folder changes, posts-changed fs-watch hint). */}
+      <StoreSubscriptions />
       {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
       <ContextMenuHost />
       <KindMenuHost />

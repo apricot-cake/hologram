@@ -71,6 +71,15 @@ declare global {
     applyTitleBar(open?: boolean): void;
   }
 
+  // ---- renderer/folders.js — shared post-folder domain. The full CorpusFoldersApi
+  // shape (18 methods) lives in renderer/types/renderer-globals.d.ts; only onChange
+  // is needed from the islands side (StoreSubscriptions, App.tsx), declared here as
+  // a partial merge (TS unions same-named interface members across files sharing a
+  // tsconfig — both declarations of onChange must stay identical).
+  interface CorpusFoldersApi {
+    onChange(cb: (kind?: string) => void): void;
+  }
+
   // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
   // several places, so every method is optional. Only what islands call. ----
   interface CorpusViewer {
@@ -100,6 +109,15 @@ declare global {
     handleTabBarContextmenu?(e: MouseEvent): void;
     handleTabBarDblclick?(e: MouseEvent): void;
     handleGlobalTabShortcut?(e: KeyboardEvent): void;
+    // External-store / IPC subscription handlers, wired by StoreSubscriptions (App.tsx).
+    handleQfPopChange?(): void;
+    handleViewStoreChange?(): void;
+    handleBrowseModeStoreChange?(): void;
+    handlePosterViewStoreChange?(): void;
+    handleSearchQueryStoreChange?(): void;
+    handleSearchModeChange?(): void;
+    handleFolderChange?(kind?: string): void;
+    handlePostsChanged?(names: string[] | null): void | Promise<void>;
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
@@ -543,6 +561,7 @@ declare global {
     corpusTrash: CorpusTrashApi;
     corpusBackup: CorpusBackupApi;
     corpusPosts: CorpusPostsApi;
+    corpusFolders: CorpusFoldersApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
