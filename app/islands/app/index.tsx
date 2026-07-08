@@ -63,6 +63,7 @@ import 'corpus-svc:edit-overlay';
 import 'corpus-svc:searchbox';
 import 'corpus-svc:grid';
 import 'corpus-svc:sidebar';
+import 'corpus-svc:selection';
 import 'corpus-svc:selection-bar';
 import 'corpus-svc:confirm';
 import 'corpus-svc:activebar';

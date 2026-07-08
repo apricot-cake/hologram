@@ -175,6 +175,24 @@ interface CorpusRecordsApi {
   persistUngrouped(keys: Set<string> | string[]): Promise<void>;
 }
 
+// ---- renderer/selection.ts — the post-grid multi-select Set + shift-range
+// anchor (P4-B スライス⑬). corpusStore's 'selectedSet' key IS the state (no
+// closure copy); the anchor is a private module variable (no subscribers). ----
+interface CorpusSelectionApi {
+  has(key: string): boolean;
+  size(): number;
+  anchorIndex(): number | null;
+  toggle(idx: number, key: string, shiftKey: boolean, groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): void;
+  clear(): void;
+  /** Unconditional select-all (Ctrl/Cmd+A): every group in, regardless of the current selection. */
+  selectAll(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): void;
+  /** 全選択/全解除 button: flips between everything selected and nothing selected. */
+  toggleAll(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): void;
+  isAllSelected(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): boolean;
+  selectedGroups(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): CorpusPostGroup[];
+  selectedRecords(groups: CorpusPostGroup[], postIdKey: (p: CorpusPost) => string): CorpusPost[];
+}
+
 // ---- renderer/facets.js — facet counts + value-flyout row models ----
 interface CorpusQfRow {
   v?: string;
@@ -560,4 +578,5 @@ interface Window {
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
   corpusMakeBridge: CorpusMakeBridge;
+  corpusSelection: CorpusSelectionApi;
 }

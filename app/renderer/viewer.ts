@@ -1243,11 +1243,9 @@
     if (syncSlider) refreshTileSlider(); // hoisted; keeps the track in sync with the view
   }
   let skipDeleteConfirm = false;
-  // Post identifiers (url + capturedAt) currently selected. Mutated in place by
-  // the functions below; updateSelectionBar() snapshots it into corpusStore's
-  // 'selectedSet' so the grid island's cells can read it reactively.
-  const selectedSet = new Set<string>();
-  let selectionAnchor: number | null = null; // index in the filtered list, for shift-range select
+  // Post-grid selection state (Set + shift-range anchor) lives in
+  // window.corpusSelection (renderer/selection.ts, P4-B slice⑬) — corpusStore's
+  // 'selectedSet' key IS the state; the grid island's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
@@ -2509,7 +2507,7 @@
     grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion());
     grid.classList.toggle('masonry', currentView === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
-    grid.classList.toggle('selecting', selectedSet.size > 0);
+    grid.classList.toggle('selecting', window.corpusSelection.size() > 0);
     // Tile overlay (author/❤) is optional; the ❤ count only shows while an
     // engagement sort or filter is active (otherwise it's noise).
     grid.classList.toggle('no-overlay', !tileOverlay);
@@ -2772,29 +2770,16 @@
   function toggleCardSelection(card, shiftKey) {
     const idx = Number.parseInt(card.dataset.index ?? '', 10);
     const key = card.dataset.key;
-    if (shiftKey && selectionAnchor !== null) {
-      const lo = Math.min(selectionAnchor, idx);
-      const hi = Math.max(selectionAnchor, idx);
-      for (let i = lo; i <= hi; i++) {
-        if (viewGroups[i]) selectedSet.add(postIdKey(viewGroups[i].rep));
-      }
-      selectionAnchor = idx;
-    } else if (selectedSet.has(key)) {
-      selectedSet.delete(key);
-      selectionAnchor = null;
-    } else {
-      selectedSet.add(key);
-      selectionAnchor = idx;
-    }
+    window.corpusSelection.toggle(idx, key, shiftKey, viewGroups, postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
   }
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
-  // corpusStore's 'selectedSet' directly (updateSelectionBar pushes the
-  // snapshot), so it re-renders on its own the moment the store changes.
+  // corpusStore's 'selectedSet' directly (window.corpusSelection.toggle already
+  // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
   function syncSelectionClasses() {
-    byId('postGrid').classList.toggle('selecting', selectedSet.size > 0);
+    byId('postGrid').classList.toggle('selecting', window.corpusSelection.size() > 0);
   }
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -2813,7 +2798,7 @@
   byId('postGrid').addEventListener(
     'click',
     (e) => {
-      if (selectedSet.size === 0) return;
+      if (window.corpusSelection.size() === 0) return;
       const card = closestOf(e, '.post-card');
       if (!card) return;
       e.preventDefault();
@@ -3310,11 +3295,7 @@
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
-    const records: CorpusPost[] = [];
-    viewGroups.forEach((g) => {
-      if (selectedSet.has(postIdKey(g.rep))) records.push(...g.records);
-    });
-    return records;
+    return window.corpusSelection.selectedRecords(viewGroups, postIdKey);
   }
 
   // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
@@ -3392,30 +3373,26 @@
   }
 
   function clearSelection() {
-    selectedSet.clear();
-    selectionAnchor = null;
+    window.corpusSelection.clear();
     syncSelectionClasses(); // class-only (callers that change content re-render themselves)
     updateSelectionBar();
   }
 
   // Build the #selectionBar model (labels / count / disabled) and push it to the island.
   // The container show/hide stays viewer's — React owns only the children. Every
-  // selectedSet mutation site ends by calling this, so it's also the single choke
-  // point for snapshotting selectedSet into corpusStore (grid island Cells read
-  // 'selectedSet' directly — see Grid.tsx). A fresh Set is required on every push:
-  // selectedSet is mutated in place (same reference each time), and corpusStore's
-  // set() no-ops on `===` identity, so reusing the reference would never notify.
+  // window.corpusSelection mutation site ends by calling this to keep the bar's
+  // labels/counts in sync (the 'selectedSet' corpusStore key itself is already
+  // fresh by the time this runs — corpusSelection's mutators write it directly).
   function updateSelectionBar() {
-    window.corpusStore.set('selectedSet', new Set(selectedSet));
-    const count = selectedSet.size;
+    const count = window.corpusSelection.size();
     selectionBar.style.display = count > 0 ? '' : 'none';
-    const allSelected = viewGroups.length > 0 && viewGroups.every((g) => selectedSet.has(postIdKey(g.rep)));
+    const allSelected = window.corpusSelection.isAllSelected(viewGroups, postIdKey);
     window.corpusSelectionBar.render({
       count,
       countLabel: MSG.selectedCount(count),
       selectAllLabel: allSelected ? MSG.deselectAll : MSG.selectAll,
       // Manual grouping needs at least two selected cards (groups).
-      groupDisabled: viewGroups.filter((g) => selectedSet.has(postIdKey(g.rep))).length < 2,
+      groupDisabled: window.corpusSelection.selectedGroups(viewGroups, postIdKey).length < 2,
       deleteDisabled: count === 0,
       labels: {
         tag: MSG.tagSelected,
@@ -3431,10 +3408,7 @@
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   function groupSelected() {
-    const members: any[] = [];
-    viewGroups.forEach((g) => {
-      if (selectedSet.has(postIdKey(g.rep))) members.push(...g.records.map((r) => r.captureId).filter(Boolean));
-    });
+    const members = window.corpusSelection.selectedGroups(viewGroups, postIdKey).flatMap((g) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
@@ -3442,20 +3416,14 @@
     markPostsMutated(); // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
     // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
     // class-only). Clear first so the rebuild shows no stale selection.
-    selectedSet.clear();
-    selectionAnchor = null;
+    window.corpusSelection.clear();
     renderPosts(true);
     updateSelectionBar();
     showToast(MSG.grouped);
   }
 
   function toggleSelectAll() {
-    const allSelected = viewGroups.every((g) => selectedSet.has(postIdKey(g.rep)));
-    if (allSelected) {
-      selectedSet.clear();
-    } else {
-      viewGroups.forEach((g) => selectedSet.add(postIdKey(g.rep)));
-    }
+    window.corpusSelection.toggleAll(viewGroups, postIdKey);
     syncSelectionClasses();
     updateSelectionBar();
   }
@@ -3473,8 +3441,7 @@
     if (browseMode !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
     e.preventDefault();
-    viewGroups.forEach((g) => selectedSet.add(postIdKey(g.rep)));
-    selectionAnchor = null;
+    window.corpusSelection.selectAll(viewGroups, postIdKey);
     renderPosts(true);
     updateSelectionBar();
   }
@@ -3499,21 +3466,17 @@
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey, handleShortcutSearchFocusKey });
 
   function requestDeleteSelected() {
-    if (selectedSet.size === 0) return;
+    if (window.corpusSelection.size() === 0) return;
     window.corpusConfirm.open({
-      message: MSG.confirmDeleteSelected(selectedSet.size),
+      message: MSG.confirmDeleteSelected(window.corpusSelection.size()),
       okLabel: MSG.confirmOk,
       cancelLabel: MSG.confirmCancel,
       onOk: async () => {
         // Bulk delete selected groups — every record of each selected group.
-        const toDelete: CorpusPost[] = [];
-        viewGroups.forEach((g) => {
-          if (selectedSet.has(postIdKey(g.rep))) toDelete.push(...g.records);
-        });
+        const toDelete = window.corpusSelection.selectedRecords(viewGroups, postIdKey);
         const count = toDelete.length;
         for (const p of toDelete) await window.corpusPosts.deletePost(p.image || p.video);
-        selectedSet.clear();
-        selectionAnchor = null;
+        window.corpusSelection.clear();
         updateSelectionBar();
         await loadPosts(true);
         showToast(MSG.deletedN(count));
