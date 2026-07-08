@@ -227,6 +227,19 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
+  // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
+  // allPosts itself stays a viewer.js `let` (its real shape, CorpusPost, is a
+  // renderer-only type — this project doesn't need it; `any[]` is the deliberate
+  // pass-through, same reasoning as CorpusGridModel's items). Nobody subscribes
+  // from an island yet — this exists so a later slice (⑫/⑮/⑯/⑰, all of which read
+  // allPosts today only via a viewer push) has something to pull from.
+  interface CorpusPostsDataService {
+    get(): any[];
+    sync(next: any[]): void;
+    generation(): number;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
   interface CorpusAnchorRect {
     left: number;
@@ -587,6 +600,7 @@ declare global {
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGrid: CorpusGridBridge;
+    corpusPostsData: CorpusPostsDataService;
     corpusQfPop: CorpusQfPop;
     corpusContextMenu: CorpusContextMenu;
     corpusKindMenu: CorpusKindMenu;

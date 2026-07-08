@@ -1142,8 +1142,15 @@
   // the sidebar tag/author/instance caches and buildUsers, so mutators must call this —
   // otherwise a newly-added tag never reaches the sidebar rows (and a removed author /
   // instance lingers) even though renderPosts redraws the grid and flyouts.
+  // P4-B slice⑪: the SAME choke point now also mirrors allPosts.length into
+  // corpusStore (the post-empty-state selector's input, slice⑩) and syncs the
+  // subscribable posts-data service (renderer/posts-data.ts) — every allPosts
+  // mutation (replace OR in-place edit) is reachable from ONE place instead of
+  // scattered pushes at each call site.
   function markPostsMutated() {
     _allPostsGeneration++;
+    window.corpusStore.set('allPostsCount', allPosts.length);
+    window.corpusPostsData.sync(allPosts);
   }
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
@@ -1723,8 +1730,7 @@
       }
       _haveBaseline = true;
       allPosts = [..._postsById.values()];
-      _allPostsGeneration++;
-      window.corpusStore.set('allPostsCount', allPosts.length); // P4-B slice⑩: the post-empty-state selector's "is the library really empty" input
+      markPostsMutated();
       stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理
       if (browseMode === 'posters') renderPosters(keepLimit);
       else renderPosts(keepLimit);
@@ -2850,7 +2856,6 @@
       _postsById.delete(r.captureId); // optimistic removal from the delta cache
     }
     allPosts = [..._postsById.values()]; // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
-    window.corpusStore.set('allPostsCount', allPosts.length); // P4-B slice⑩
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders(); // 削除した captureId をフォルダから即時掃除
@@ -4565,7 +4570,15 @@
         }
         _postsById = new Map(); // keep the delta cache in sync with the wipe
         allPosts = [];
-        window.corpusStore.set('allPostsCount', 0); // P4-B slice⑩
+        // P4-B slice⑪: this call was missing before (only the two other allPosts
+        // reassignment sites called it) — clear-all never bumped _allPostsGeneration,
+        // so updateSidebarState()'s `_sidebarSetsGen === _allPostsGeneration` cache
+        // guard stayed "fresh" and could leave stale tag/author/instance facets in
+        // the sidebar after a wipe. Harmless for THIS render (renderPosts() below is
+        // never inPlace, so the separate viewGroups-reuse guard was never at risk),
+        // but the sidebar cache guard has no such protection — worth fixing here
+        // since it's exactly the choke point this slice is unifying.
+        markPostsMutated();
         renderPosts();
         showToast(MSG.cleared);
       },

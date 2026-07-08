@@ -31,6 +31,7 @@ import 'corpus-svc:ipc';
 import 'corpus-svc:search';
 import 'corpus-svc:query';
 import 'corpus-svc:records';
+import 'corpus-svc:posts-data';
 import 'corpus-svc:facets';
 import 'corpus-svc:cooc';
 import 'corpus-svc:tags';
