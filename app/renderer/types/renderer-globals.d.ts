@@ -439,6 +439,34 @@ interface CorpusUndoApi {
   };
 }
 
+// ---- renderer/search-editing.js — search box ↔ query-tree text-leaf state
+// machine + suggestion-pick handling (P4-B slice⑨). Encapsulates which leaf (if
+// any) is being typed; rendering/persistence side effects stay injected callbacks.
+interface CorpusSearchEditingApi {
+  makeSearchEditing(deps: {
+    getTree(): CorpusQueryGroup;
+    addFilter(leaf: { type: string; [k: string]: any }): CorpusQueryLeaf | null;
+    removeNode(node: CorpusQueryLeaf): void;
+    treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
+    searchQuery(): string;
+    setSearchBoxValue(v: string): void;
+    isFuzzy(): boolean;
+    isPostsMode(): boolean;
+    afterQueryChange(): void;
+    renderPosts(): void;
+    updateSidebarState(): void;
+  }): {
+    isEditingLeaf(node: unknown): boolean;
+    onLeafMutated(node: unknown): void;
+    clear(): void;
+    sync(): void;
+    confirm(): void;
+    rebind(): void;
+    pick(it: { kind: string; value: string; label?: string } | null | undefined): void;
+    onSearchModeChange(): void;
+  };
+}
+
 // ---- renderer/folders.js — library collections store + management modal +
 // library-wide clip set. The raw createFolderStore factory is shared internally by the
 // library collections store (isCollections) and, via createPersistedFolderStore's
@@ -528,6 +556,7 @@ interface Window {
   corpusGeometry: CorpusGeometryApi;
   corpusFormat: CorpusFormatApi;
   corpusUndo: CorpusUndoApi;
+  corpusSearchEditing: CorpusSearchEditingApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
   corpusMakeBridge: CorpusMakeBridge;

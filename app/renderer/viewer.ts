@@ -472,7 +472,7 @@
     // poster's user filter is still active (check before emptying the tree).
     const bounce = posterReturn && qHasValue('user', posterReturn);
     postQB.resetTree();
-    editingTextNode = null; // the editing text leaf is gone with the tree
+    searchEditing.clear(); // the editing text leaf is gone with the tree
     const set = (id, v) => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.value = v;
@@ -755,11 +755,9 @@
   // is the filter-popover React island now (window.corpusFilterPopover) — this only
   // builds the field model + owns the apply/remove actions.
   let editingDateNode: CorpusQueryLeaf | null = null;
-  // The single 'text' leaf bound to the search box (post mode only). While typing,
-  // the box mirrors its value/mode into this node — a real tree leaf. Enter hands it
-  // off (leaf stays, box clears) so the next term is a fresh leaf. null = box empty
-  // or term already confirmed.
-  let editingTextNode: CorpusQueryLeaf | null = null;
+  // The single 'text' leaf bound to the search box (post mode only) is owned by
+  // search-editing.ts now (P4-B slice⑨) — see the searchEditing construction
+  // near syncEditingTextLeaf/confirmEditingTextLeaf/rebindEditingTextLeaf below.
 
   function openDatePopover(node) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
@@ -1576,13 +1574,11 @@
     },
     // When the editing text leaf is removed or dragged on the bar, detach it from
     // the box. textInTree suppresses the legacy echo chip (the term is a real leaf).
-    onLeafMutated: (node) => {
-      if (node === editingTextNode) {
-        editingTextNode = null;
-        setSearchBoxValue('');
-      }
-    },
-    isEditingLeaf: (node) => node === editingTextNode,
+    // Deferred arrows: searchEditing is constructed later in this closure (near
+    // syncEditingTextLeaf below), same forward-reference pattern as postQB/posterQB
+    // being referenced from functions defined above their own declarations.
+    onLeafMutated: (node) => searchEditing.onLeafMutated(node),
+    isEditingLeaf: (node) => searchEditing.isEditingLeaf(node),
     textInTree: true,
     editableLeafTypes: ['date', 'engagement'],
     singleValueTypes: ['date', 'kind'],
@@ -4427,45 +4423,34 @@
     }, 150);
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
-  // Mirror the search box into its bound 'text' leaf (post mode). Empty clears it;
-  // otherwise update the editing leaf in place, or create one and bind to it.
+  // Search box ↔ query-tree text-leaf state machine + suggestion-pick handling —
+  // extracted to search-editing.ts (P4-B slice⑨; window.corpusSearchEditing).
+  // The functions below are thin wrappers keeping the existing call-site names
+  // (handleSearchQueryStoreChange/onConfirmText/postQB ctx/window.corpusViewer
+  // all reference these by name) — same "wrapper preserves names" shape as the
+  // postQB.addFilter/removeFilter/removeNode module-level wrappers above.
+  const searchEditing = window.corpusSearchEditing.makeSearchEditing({
+    getTree: () => postQB.getTree(),
+    addFilter: (f) => postQB.addFilter(f),
+    removeNode: (n) => postQB.removeNode(n),
+    treeLeaves,
+    searchQuery: () => searchQuery(),
+    setSearchBoxValue: (v) => setSearchBoxValue(v),
+    isFuzzy: () => !!(window.corpusSearch && window.corpusSearch.isFuzzy()),
+    isPostsMode: () => browseMode === 'posts',
+    afterQueryChange: () => afterQueryChange(),
+    renderPosts: () => renderPosts(),
+    updateSidebarState: () => updateSidebarState(),
+  });
   function syncEditingTextLeaf() {
-    // self-heal: if the bound leaf was reset / replaced out of the tree, forget it
-    // (otherwise Object.assign below would mutate an orphan node).
-    if (editingTextNode && !treeLeaves(postQB.getTree()).includes(editingTextNode)) editingTextNode = null;
-    const val = searchQuery().trim();
-    const mode = window.corpusSearch && window.corpusSearch.isFuzzy() ? 'fuzzy' : 'exact';
-    if (!val) {
-      if (editingTextNode) {
-        const n = editingTextNode;
-        editingTextNode = null;
-        postQB.removeNode(n);
-      } else renderPosts();
-      return;
-    }
-    if (editingTextNode) {
-      Object.assign(editingTextNode, { value: val, mode });
-      afterQueryChange();
-    } else {
-      editingTextNode = postQB.addFilter({ type: 'text', value: val, mode }) || treeLeaves(postQB.getTree()).find((c) => c.type === 'text' && c.value === val) || null;
-      if (!editingTextNode) renderPosts();
-    }
+    searchEditing.sync();
   }
-  // Enter confirms the editing leaf: flush the current box value into it, then hand
-  // it off — the leaf stays in the tree, the box clears, the next term starts fresh.
   function confirmEditingTextLeaf() {
     clearTimeout(_searchRenderTimer); // beat the debounce so the leaf holds the latest value
-    syncEditingTextLeaf();
-    editingTextNode = null;
-    setSearchBoxValue('');
-    afterQueryChange();
+    searchEditing.confirm();
   }
-  // After restoring a tab / history state, re-bind the editing leaf to the tree leaf
-  // matching the restored box value, so resuming typing edits it instead of duplicating.
   function rebindEditingTextLeaf() {
-    editingTextNode = null;
-    const val = searchQuery().trim();
-    if (val) editingTextNode = treeLeaves(postQB.getTree()).find((c) => c.type === 'text' && c.value === val) || null;
+    searchEditing.rebind();
   }
 
   // --- リアルタイム検索サジェスト -------------------------------------------
@@ -4473,25 +4458,10 @@
   // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
   // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
   // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
-  // from buildSuggest (users.js — wired above with buildUsers); viewer.js keeps
-  // what a pick DOES (applySuggest), wired through the corpusSearchBox bridge
-  // registered below.
+  // from buildSuggest (users.js — wired above with buildUsers); what a pick DOES
+  // is searchEditing.pick (wired through the corpusSearchBox bridge registered below).
   function applySuggest(it) {
-    if (!it) return;
-    setSearchBoxValue(''); // the typed text was for FINDING the filter — don't keep it as a body search
-    // The user picked a concrete filter instead of a free-text term — drop the
-    // in-progress text leaf the box was building.
-    if (editingTextNode) {
-      const n = editingTextNode;
-      editingTextNode = null;
-      postQB.removeNode(n);
-    }
-    if (it.kind === 'tag') {
-      addFilter({ type: 'tag', value: it.value });
-    } else if (it.kind === 'user') {
-      addFilter({ type: 'user', value: it.value, label: it.label });
-    }
-    updateSidebarState();
+    searchEditing.pick(it);
   }
   // Register the island's data callbacks. onConfirmText replicates the old bare-
   // Enter behavior: only posts mode confirms a text leaf (posters/collections
@@ -4523,12 +4493,7 @@
   // f.mode). Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
   // window.corpusViewer below; this stays the guard + action logic.
   function handleSearchModeChange() {
-    if (browseMode === 'posts' && editingTextNode) {
-      editingTextNode.mode = window.corpusSearch.isFuzzy() ? 'fuzzy' : 'exact';
-      afterQueryChange();
-    } else {
-      renderPosts();
-    }
+    searchEditing.onSearchModeChange();
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchModeChange });
 
