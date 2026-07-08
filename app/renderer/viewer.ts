@@ -1480,10 +1480,11 @@
       else renderPosts(keepLimit);
       reconcileFolders();
       renderPostFolders();
-      // An active image tab shows library records — re-resolve it against the
-      // fresh set so deletions degrade to the missing state live.
+      // An active image tab shows library records — re-resolve it against the fresh
+      // set so t._g stays current (inspector re-open); the React model itself
+      // re-derives live via renderer/image-tab.ts's corpusPostsData subscription.
       const it = activeTab();
-      if (isImageTab(it)) renderImageTabView(it);
+      if (it && isImageTab(it)) it._g = resolveImageTabGroup(it);
     } finally {
       _loadPostsInFlight = false;
       if (_loadPostsPending) {
@@ -1849,34 +1850,11 @@
   // _postsById lookup is injected), so deletions degrade to a "missing" empty state
   // instead of a broken image.
   const resolveImageTabGroup = (t) => imageTabGroup(t, (id) => _postsById.get(id));
-  // (Re)build the island model for an image tab and push it. Also called on
-  // library refreshes so a deleted post degrades to the missing state live.
-  function renderImageTabView(t) {
-    const g = resolveImageTabGroup(t);
-    t._g = g; // runtime resolution (inspector toggle re-uses it; never persisted)
-    const items = g ? buildGroupGalleryItems(g) : [];
-    const labels = { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo };
-    const model = !items.length
-      ? { items: [], idx: 0, missing: true, labels, onCloseTab: () => closeTab(t.id) }
-      : {
-          items,
-          idx: Math.max(0, Math.min((t.img && t.img.idx) || 0, items.length - 1)),
-          inspectorOpen: !byId('postDetail').hidden,
-          labels,
-          onIndexChange: (i) => {
-            if (t.img) t.img.idx = i;
-            persistTabsDebounced();
-            renderImageTabView(t); // controlled index — repaint with the new slide
-          },
-          onToggleInspector: () => {
-            if (byId('postDetail').hidden) {
-              if (t._g) showDetail(t._g);
-            } else closeDetail();
-            renderImageTabView(t); // reflect the pressed state on the ℹ button
-          },
-          onCloseTab: () => closeTab(t.id),
-        };
-    if (window.corpusImageTab) window.corpusImageTab.render(model);
+  // Publish the tab's identity to corpusStore — renderer/image-tab.ts (P4-B slice⑮)
+  // derives the whole React model from this (crossed with corpusPostsData for library
+  // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
+  function publishActiveImageTab(t) {
+    window.corpusStore.set('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
   }
   // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
   // — the class ⟺ an image tab is showing). viewer keeps only this local flag for the
@@ -1884,7 +1862,8 @@
   let imageTabShowing = false;
   function showImageTab(t) {
     imageTabShowing = true;
-    renderImageTabView(t); // pushes the model → ImageTabHost adds body.image-tab-active
+    t._g = resolveImageTabGroup(t); // runtime resolution (inspector toggle re-uses it; never persisted)
+    publishActiveImageTab(t); // → ImageTabHost derives the model, adds body.image-tab-active
     // The inspector opens with the view (Eagle-style detail screen).
     if (t._g) showDetail(t._g);
     else closeDetail();
@@ -1893,9 +1872,32 @@
   function hideImageTabView() {
     if (!imageTabShowing) return;
     imageTabShowing = false;
-    if (window.corpusImageTab) window.corpusImageTab.render(null); // → ImageTabHost removes the class
+    publishActiveImageTab(null); // → ImageTabHost removes the class
     closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
   }
+  // Index step / inspector toggle / close-tab commands, dispatched FROM
+  // renderer/image-tab.ts via window.corpusViewer — same event-half shape as
+  // query-chips / TabBarEvents (this file computes the model, viewer keeps the logic).
+  function setImageTabIndex(i) {
+    const t = activeTab();
+    if (!t || !isImageTab(t) || !t.img) return;
+    t.img.idx = i;
+    persistTabsDebounced();
+    publishActiveImageTab(t);
+  }
+  function toggleImageTabInspector() {
+    const t = activeTab();
+    if (!t || !isImageTab(t)) return;
+    if (byId('postDetail').hidden) {
+      if (t._g) showDetail(t._g);
+    } else closeDetail();
+    // inspectorOpen derives from corpusStore's 'inspectedKey' reactively — no repaint call needed.
+  }
+  function closeImageTab() {
+    const t = activeTab();
+    if (t) closeTab(t.id);
+  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { setImageTabIndex, toggleImageTabInspector, closeImageTab });
   // Open a post group as its own tab. Background by default (browser-like:
   // middle-click / context menu leave you in the grid).
   function addImageTab(g, opts?) {
@@ -2310,6 +2312,12 @@
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
   // scheme stays viewer-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = window.corpusRecords.makeGallery({ fileSrc });
+  // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
+  // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
+  window.corpusImageTabSource.configure({
+    gallery: { buildGroupGalleryItems },
+    labels: { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo },
+  });
 
   byId('postGrid').addEventListener('click', (e) => {
     // Image -> open the gallery (screenshot + originals, whole group).

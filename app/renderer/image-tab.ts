@@ -1,0 +1,85 @@
+// Image-tab model source (P4-B slice⑮) — converts #imageTabView off the old push
+// (viewer.js built the React model and called window.corpusImageTab.render(model)
+// from ~8 call sites: showImageTab / hideImageTabView / index step / inspector
+// toggle / library refresh) to a PULLED source, the same shape as the grid sources
+// (renderer/grid.ts, ⑩/⑫). viewer.js writes only the tab IDENTITY into corpusStore's
+// 'activeImageTab' (id/recs/idx — the one slice of tab state migrated ahead of the
+// full tabs→store move in ⑯); get() derives everything else: the gallery items (via
+// corpusRecords.imageTabGroup, crossed with corpusPostsData so a deleted post
+// degrades to the missing state live with no viewer push — exactly what
+// posts-data.ts's doc comment anticipated) and inspectorOpen (corpusStore's
+// 'inspectedKey', already the single source for "is the inspector open" since the
+// state→store phase). Commands (index step / inspector toggle / close tab) dispatch
+// back through window.corpusViewer, mirroring the query-chips / TabBarEvents
+// event-half pattern — this file only computes, it never mutates tab state.
+// Plain IIFE on window (like grid.ts / posts-data.ts); loaded BEFORE viewer.js.
+(function () {
+  'use strict';
+
+  type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean }[] };
+  let gallery: Gallery | null = null;
+  let labels: Record<string, string> | null = null;
+
+  const subs = new Set<() => void>();
+  const notify = () => {
+    for (const cb of [...subs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+  };
+
+  function byIdMap() {
+    const m = new Map<string, any>();
+    for (const p of window.corpusPostsData.get()) m.set(p.captureId, p);
+    return m;
+  }
+
+  function dispatchIndex(i: number) {
+    if (window.corpusViewer && window.corpusViewer.setImageTabIndex) window.corpusViewer.setImageTabIndex(i);
+  }
+  function dispatchToggleInspector() {
+    if (window.corpusViewer && window.corpusViewer.toggleImageTabInspector) window.corpusViewer.toggleImageTabInspector();
+  }
+  function dispatchClose() {
+    if (window.corpusViewer && window.corpusViewer.closeImageTab) window.corpusViewer.closeImageTab();
+  }
+
+  function get(): CorpusImageTabModel | null {
+    const active = window.corpusStore.get('activeImageTab');
+    if (!active || !gallery || !labels) return null;
+    const byId = byIdMap();
+    // Only id + img matter to imageTabGroup (records.ts) — the rest of CorpusTab is
+    // full tab state that hasn't migrated to corpusStore yet (that's slice⑯).
+    const stub = { id: active.id, img: { recs: active.recs, idx: active.idx } } as CorpusTab;
+    const g = window.corpusRecords.imageTabGroup(stub, (id) => byId.get(id));
+    if (!g) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
+    const items = gallery.buildGroupGalleryItems(g);
+    if (!items.length) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
+    return {
+      items,
+      idx: Math.max(0, Math.min(active.idx, items.length - 1)),
+      inspectorOpen: window.corpusStore.get('inspectedKey') != null,
+      labels,
+      onIndexChange: dispatchIndex,
+      onToggleInspector: dispatchToggleInspector,
+      onCloseTab: dispatchClose,
+    };
+  }
+
+  window.corpusImageTabSource = {
+    configure(cfg) {
+      gallery = cfg.gallery;
+      labels = cfg.labels;
+    },
+    get,
+    subscribe(cb) {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+  };
+  for (const k of ['activeImageTab', 'inspectedKey']) window.corpusStore.subscribe(k, notify);
+  window.corpusPostsData.subscribe(notify);
+})();

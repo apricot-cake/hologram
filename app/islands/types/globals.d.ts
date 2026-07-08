@@ -126,6 +126,10 @@ declare global {
     handleSearchModeChange?(): void;
     handleFolderChange?(kind?: string): void;
     handlePostsChanged?(names: string[] | null): void | Promise<void>;
+    // Image-tab commands (renderer/image-tab.ts dispatches these — P4-B slice⑮).
+    setImageTabIndex?(i: number): void;
+    toggleImageTabInspector?(): void;
+    closeImageTab?(): void;
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
@@ -243,6 +247,33 @@ declare global {
     get(): any[];
     sync(next: any[]): void;
     generation(): number;
+    subscribe(cb: () => void): CorpusUnsubscribe;
+  }
+
+  // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
+  // (#imageTabView) off the old push (viewer.js built a full model and called
+  // window.corpusImageTab.render(model) from ~8 call sites) to a PULLED source,
+  // same shape as the grid sources (⑩/⑫). viewer.js writes only the tab identity
+  // (corpusStore's 'activeImageTab' — id/recs/idx, the one slice of tab state
+  // migrated ahead of the full tabs→store move in ⑯) + still owns 'inspectedKey'
+  // (state→store phase); get() crosses both with corpusPostsData (library
+  // changes — a deleted post degrades to the missing state live with no viewer
+  // push, exactly what the posts-data.ts comment above anticipated). Commands
+  // (index step / inspector toggle / close tab) dispatch back through
+  // window.corpusViewer — this file only computes, it never mutates tab state.
+  interface CorpusImageTabModel {
+    items: { src: string; alt?: string; video?: boolean }[];
+    idx: number;
+    missing?: boolean;
+    inspectorOpen?: boolean;
+    labels: Record<string, string>;
+    onIndexChange?(i: number): void;
+    onToggleInspector?(): void;
+    onCloseTab?(): void;
+  }
+  interface CorpusImageTabSource {
+    configure(cfg: { gallery: { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean }[] }; labels: Record<string, string> }): void;
+    get(): CorpusImageTabModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
@@ -540,9 +571,6 @@ declare global {
     subscribe(id: string, cb: () => void): () => void;
     dispatch(id: string, action: any): void;
   }
-  interface CorpusImageTabIsland {
-    render(model?: any): void;
-  }
   interface CorpusLightbox {
     open(items: any[], start?: number): void;
     close(): void;
@@ -630,7 +658,7 @@ declare global {
     corpusTabs: CorpusTabsIsland;
     corpusQueryChips: CorpusQueryChipsIsland;
     corpusLightbox: CorpusLightbox;
-    corpusImageTab: CorpusImageTabIsland;
+    corpusImageTabSource: CorpusImageTabSource;
     corpusAboutIcon?: CorpusAboutIcon;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.

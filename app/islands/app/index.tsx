@@ -63,6 +63,7 @@ import 'corpus-svc:inspector';
 import 'corpus-svc:edit-overlay';
 import 'corpus-svc:searchbox';
 import 'corpus-svc:grid';
+import 'corpus-svc:image-tab';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection';
 import 'corpus-svc:bulk-edit';

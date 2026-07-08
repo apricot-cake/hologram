@@ -66,6 +66,7 @@
     "renderer/backup.ts",
     "renderer/posts.ts",
     "renderer/posts-data.ts",
+    "renderer/image-tab.ts",
     "renderer/viewer.ts"
   ]
 }

@@ -1,53 +1,39 @@
-import { useLayoutEffect, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { ImageTab } from './ImageTab.tsx';
-import type { ImageTabModel } from './ImageTab.tsx';
 
-// React-owned image-tab detail view (#imageTabView). viewer.js owns the tab
-// object (type:'image'), resolves its records into gallery items and calls
-// render(model); this island owns zoom/pan (react-zoom-pan-pinch), prev/next
-// painting, and the ←/→ keys while an image tab is the active view. It lives under
-// the single App root now: render() stores the model + notifies, and ImageTabHost
-// (portaled into #imageTabView by App.tsx) subscribes. The bridge is assigned when
-// this module loads (before viewer.js runs), so the old stash-replay is gone.
+// React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object
+// (type:'image') and its recs/idx; this island PULLS its model from renderer/image-tab.ts
+// (window.corpusImageTabSource) instead of being pushed one — P4-B slice⑮ converted this
+// off the old render(model) push (viewer called it from ~8 call sites), the same shape as
+// the grid sources (⑩/⑫). This island still owns zoom/pan (react-zoom-pan-pinch), prev/next
+// painting, and the ←/→ keys while an image tab is the active view.
 
-let model: ImageTabModel | null = null;
-const subs = new Set<() => void>();
-const subscribe = (cb: () => void) => {
-  subs.add(cb);
-  return () => subs.delete(cb);
-};
-const getSnapshot = () => model;
-
-function render(m: ImageTabModel | null | undefined) {
-  model = m || null;
-  for (const cb of [...subs]) {
-    try {
-      cb();
-    } catch (_e) {
-      /* ignore */
-    }
-  }
-}
-
-window.corpusImageTab = { render };
-
+// Not useSyncExternalStore: get() recomputes a fresh object on every notify (like the grid
+// sources), which would trip React's "cached snapshot" tearing check — a plain subscribe→
+// setState effect (same shape as GridMount's sync()) sidesteps that.
 export function ImageTabHost() {
-  const m = useSyncExternalStore(subscribe, getSnapshot);
-  // body.image-tab-active ⟺ an image tab is showing. Owned here (from model presence) so
-  // viewer no longer touches document.body.classList. useLayoutEffect = toggled before
+  const [model, setModel] = useState(() => window.corpusImageTabSource.get());
+  useEffect(() => {
+    const sync = () => setModel(window.corpusImageTabSource.get());
+    const unsub = window.corpusImageTabSource.subscribe(sync);
+    sync(); // catch anything that changed before this effect ran
+    return unsub;
+  }, []);
+  // body.image-tab-active ⟺ an image tab is showing. useLayoutEffect = toggled before
   // paint, in the same commit that renders the view → no flash.
   useLayoutEffect(() => {
-    document.body.classList.toggle('image-tab-active', !!m);
-  }, [m]);
-  return m ? <ImageTab model={m} /> : null;
+    document.body.classList.toggle('image-tab-active', !!model);
+  }, [model]);
+  return model ? <ImageTab model={model} /> : null;
 }
 
 // ←/→ step through the group's images while an image tab is the active view.
 // Yields to typing, overlays and the lightbox (mirrors the viewer's guards).
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  if (!model || !model.onIndexChange || model.items.length < 2) return;
   if (!document.body.classList.contains('image-tab-active')) return;
+  const model = window.corpusImageTabSource.get();
+  if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
   if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
