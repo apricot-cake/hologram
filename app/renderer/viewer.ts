@@ -24,8 +24,9 @@
   const _f1 = (key) => (a) => getMessage(key, [a]);
   const _f2 = (key) => (a, b) => getMessage(key, [a, b]);
   // Count / date display formatters live in format.js now (loaded before this
-  // script). Relative backup-time labels (今日/昨日) are injected at the call site.
-  const { formatCount, formatShortDate, compactDate, formatDate, fmtTime, fmtBackupTime, localeDate, localeDateTime } = window.corpusFormat;
+  // script). (The backup-rail time formatters fmtTime/fmtBackupTime are used only
+  // by the MirrorStatus island now, which reads window.corpusFormat directly.)
+  const { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } = window.corpusFormat;
   // Back-compat shim so existing call sites (MSG.key / MSG.key(args)) keep working.
   // Static keys are pre-resolved strings; interpolated keys are bound functions.
   const MSG = {
@@ -231,17 +232,7 @@
     // settings > backup（指定フォルダへの増分エクスポート）
     backupDirNone: _s('backupDirNone'),
     backupOverlap: _s('backupOverlap'),
-    backupLastLabel: _s('backupLastLabel'),
-    mirrorDone: _s('mirrorDone'),
-    mirrorSyncingShort: _s('mirrorSyncingShort'),
-    mirrorFailed: _s('mirrorFailed'),
-    mirrorGuarded: _s('mirrorGuarded'),
-    backupPruneEmpty: _s('backupPruneEmpty'),
-    backupPruneShrink: _s('backupPruneShrink'),
-    timeToday: _s('timeToday'),
-    timeYesterday: _s('timeYesterday'),
-    backupItemsUnit: _s('backupItemsUnit'),
-    backupSyncing: _s('backupSyncing'),
+    // (backup-rail strings moved to the MirrorStatus island, which reads them via t())
 
     // settings > trash
     trashEmpty: _s('trashEmpty'),
@@ -4584,113 +4575,10 @@
     }
   });
 
-  // --- Backup status rail (always-visible sidebar footer #mirrorStatus) ---
-  // The settings *modal* moved to the React island (Data.tsx); this is only the
-  // at-a-glance rail, which lives outside the modal and so stays in viewer.js.
-  // It reflects the auto-backup config + last result, refreshing on launch, when
-  // settings opens, and on each backup start/finish.
-  (function setupMirrorStatusRail() {
-    // #mirrorStatus is rendered by the MirrorStatus island (window.corpusMirror); viewer
-    // keeps the state derivation below and pushes the model (glyphs live in the island).
-    let cfg: any = null;
-    let mirrorSyncing = false;
-
-    // Backup absolute/relative time (format.js). The relative form's 今日/昨日 words
-    // are i18n-owned here and passed in as labels.
-    const backupLabels = { today: MSG.timeToday, yesterday: MSG.timeYesterday };
-    // Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
-    function pruneSkipTip(r) {
-      if (r.pruneSkipped === 'shrink') {
-        const span = r.baselineCount && r.fileCount != null ? `（${r.baselineCount}→${r.fileCount}${MSG.backupItemsUnit}）` : '';
-        return MSG.backupPruneShrink + span;
-      }
-      return MSG.backupPruneEmpty;
-    }
-    function updateMirrorStatus() {
-      // No backup folder configured → nothing in the rail (progressive disclosure).
-      if (!cfg || !cfg.dir) {
-        window.corpusMirror.render(null);
-        return;
-      }
-      // Syncing now: spinning glyph + "バックアップ中…".
-      if (mirrorSyncing) {
-        window.corpusMirror.render({ kind: 'syncing', text: MSG.mirrorSyncingShort, title: MSG.backupSyncing });
-        return;
-      }
-      const r = cfg.lastResult;
-      if (!r) {
-        window.corpusMirror.render(null);
-        return;
-      }
-      // Last run failed: warning glyph + "バックアップ失敗", the error as the hint.
-      if (r.ok === false && r.error) {
-        window.corpusMirror.render({ kind: 'error', text: MSG.mirrorFailed, title: r.error });
-        return;
-      }
-      // Copy ran but the prune was held back (src looked empty/decimated) — warn
-      // loudly so a wrong save-folder can't silently leave the mirror unpruned.
-      if (r.pruneSkipped) {
-        window.corpusMirror.render({ kind: 'error', text: MSG.mirrorGuarded, title: pruneSkipTip(r) });
-        return;
-      }
-      // Synced OK: check glyph + "バックアップ済み" with the last-run time always shown
-      // on a second line (今日/昨日 20:49). The precise timestamp + count stay in the tooltip.
-      const ts = fmtBackupTime(r.at, backupLabels);
-      let tip = `${MSG.backupLastLabel} ${fmtTime(r.at)}`;
-      if (r.written) tip += `（+${r.written}${MSG.backupItemsUnit}）`;
-      else if (r.fileCount) tip += `（${r.fileCount}${MSG.backupItemsUnit}）`;
-      window.corpusMirror.render({ kind: 'done', text: MSG.mirrorDone, time: ts, title: tip });
-    }
-
-    async function load() {
-      try {
-        cfg = await window.corpusBackup.getBackup();
-      } catch {
-        cfg = null;
-      }
-      updateMirrorStatus();
-    }
-
-    // A run started: show the spinner. Make sure cfg is loaded first so a backup
-    // configured mid-session still lights the rail (cfg may have been null at boot).
-    if (window.corpusBackup.onBackupStart) {
-      window.corpusBackup.onBackupStart(async () => {
-        mirrorSyncing = true;
-        if (!cfg || !cfg.dir) {
-          try {
-            cfg = await window.corpusBackup.getBackup();
-          } catch {
-            /* ignore */
-          }
-        }
-        updateMirrorStatus();
-      });
-    }
-    // A run finished: carry over the fresh result (and pull cfg if it was empty
-    // when the run began) so the rail is correct without a manual refresh.
-    if (window.corpusBackup.onBackupDone) {
-      window.corpusBackup.onBackupDone(async (_e, r) => {
-        mirrorSyncing = false;
-        if (!cfg) {
-          try {
-            cfg = await window.corpusBackup.getBackup();
-          } catch {
-            /* ignore */
-          }
-        }
-        if (cfg && r) cfg.lastResult = r;
-        updateMirrorStatus();
-      });
-    }
-
-    // Refresh when the settings modal opens — the React island may have changed
-    // the backup folder. Also exposed as a bridge so the island can refresh on demand.
-    const settingsBtn = document.getElementById('settingsBtn');
-    if (settingsBtn) settingsBtn.addEventListener('click', load);
-    window.corpusViewer = Object.assign(window.corpusViewer || {}, { refreshMirrorStatus: load });
-
-    load();
-  })();
+  // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus island now — it
+  // reads window.corpusBackup (getBackup + onBackupStart/Done) and derives the rail model
+  // itself. viewer no longer holds any of that state (the old setupMirrorStatusRail +
+  // window.corpusMirror bridge are gone).
 
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to

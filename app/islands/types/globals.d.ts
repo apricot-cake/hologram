@@ -96,7 +96,6 @@ declare global {
     reloadPosts?(): void | Promise<void>;
     confirmClearAll?(): void;
     setSkipDeleteConfirm?(v: boolean): void;
-    refreshMirrorStatus?(): void;
     // Global keyboard/mouse shortcut handlers, wired by useGlobalShortcuts (App.tsx).
     // Each is a full guard+action handler (viewer keeps the logic); the hook just
     // registers the raw DOM listener and forwards the event.
@@ -407,19 +406,13 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
-  // ---- renderer/mirror.js — the #mirrorStatus backup rail. viewer derives the model
-  // (config + last result + syncing → kind/text/title/time); the island renders the glyph
-  // + text and owns the host className/title. ----
-  interface CorpusMirrorModel {
-    kind: 'syncing' | 'error' | 'done';
-    text: string;
-    title?: string;
-    time?: string;
-  }
-  interface CorpusMirror {
-    render(model: CorpusMirrorModel | null): void;
-    get(): CorpusMirrorModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
+  // ---- renderer/format.ts — the MirrorStatus island derives the
+  // backup rail's relative/absolute time itself now, so it needs these two formatters
+  // (partial: only what the island calls; viewer.ts sees the full CorpusFormatApi via its
+  // own renderer-globals.d.ts).
+  interface CorpusFormat {
+    fmtBackupTime(iso: string | null, labels: { today: string; yesterday: string }): string;
+    fmtTime(iso: string | null): string;
   }
 
   // ---- renderer/activebar.js — the query-builder FRAME (#postActiveBar / #posterActiveBar):
@@ -588,7 +581,7 @@ declare global {
     corpusSidebar: CorpusSidebar;
     corpusSelectionBar: CorpusSelectionBar;
     corpusEmpty: CorpusEmpty;
-    corpusMirror: CorpusMirror;
+    corpusFormat: CorpusFormat;
     corpusActivebar: CorpusActivebar;
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;

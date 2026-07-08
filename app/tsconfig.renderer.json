@@ -57,7 +57,6 @@
     "renderer/sidebar.ts",
     "renderer/selection-bar.ts",
     "renderer/empty.ts",
-    "renderer/mirror.ts",
     "renderer/confirm.ts",
     "renderer/activebar.ts",
     "renderer/trash.ts",
