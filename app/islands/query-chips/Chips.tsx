@@ -2,9 +2,11 @@
 // チップ, docs/design-query-builder.md). Values cluster by attribute inside one
 // glass pill; the only operator surface is the すべて/どれか toggle (.qb-opt) on
 // multi-value clusters; exclusions render in the 除く cluster; a non-facet
-// persisted tree renders as a read-only summary. Emits `data-nid` ids so the
-// delegated handlers (click/contextmenu) on the container keep resolving nodes
-// via viewer.js's qbNodeMap. React renders; the builder owns state + events.
+// persisted tree renders as a read-only summary. Each interactive element calls
+// `dispatch()` directly (P4-B スライス⑦ event半分 — no more DOM delegation);
+// query-chips.ts resolves the `nid` against its qbNodeMap and mutates the tree.
+// `data-nid`/`data-op` stay on the DOM (test scripts + manual introspection
+// query them), they just aren't read back by any handler anymore.
 
 import { Fragment } from 'react';
 
@@ -50,6 +52,12 @@ export interface ChipsModel {
   optAnyTip?: string;
 }
 
+// Actions routed to query-chips.ts's per-instance dispatch(). `nid` is a
+// qbNodeMap id from the model just rendered (rebuilt fresh each render(), so
+// it's always in sync with what dispatch() resolves against).
+export type ChipsAction = { act: 'opt'; nid: string; op: 'and' | 'or' } | { act: 'del'; nid: string } | { act: 'clearSearch' } | { act: 'edit'; nid: string } | { act: 'menu'; nid: string; x: number; y: number };
+type Dispatch = (action: ChipsAction) => void;
+
 // In-value delete ✕ — ported 1:1 from the 改訂③ pill.
 function DelIc() {
   return (
@@ -69,14 +77,35 @@ function Glyph({ html }: { html: string }) {
 }
 
 // One value inside a cluster: label + hover ✕; date/engagement values open
-// their editor on click (data-edit); right-click → 除外/削除 menu (viewer.js).
-function Val({ it, delTitle, withGlyph }: { it: QbItem; delTitle?: string; withGlyph?: boolean }) {
+// their editor on click (data-edit); right-click → 除外/削除 menu (query-chips.ts).
+function Val({ it, delTitle, withGlyph, dispatch }: { it: QbItem; delTitle?: string; withGlyph?: boolean; dispatch: Dispatch }) {
   const cls = 'qb-val ' + it.typeCls + (it.isNew ? ' chip-new' : '') + (it.leaving ? ' leaving' : '') + (it.editable ? ' qb-val-edit' : '');
   return (
-    <span className={cls} data-nid={it.id} data-edit={it.editable ? '1' : undefined}>
+    <span
+      className={cls}
+      data-nid={it.id}
+      data-edit={it.editable ? '1' : undefined}
+      onClick={it.editable ? () => dispatch({ act: 'edit', nid: it.id }) : undefined}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        dispatch({ act: 'menu', nid: it.id, x: e.clientX, y: e.clientY });
+      }}
+    >
       {withGlyph && <Glyph html={it.glyph} />}
       <span className="qb-val-label">{it.label}</span>
-      <button type="button" className="qb-del-btn" data-act="del" data-nid={it.id} title={delTitle} aria-label={delTitle} tabIndex={-1}>
+      <button
+        type="button"
+        className="qb-del-btn"
+        data-act="del"
+        data-nid={it.id}
+        title={delTitle}
+        aria-label={delTitle}
+        tabIndex={-1}
+        onClick={(e) => {
+          e.stopPropagation(); // don't also fire the outer Val's edit onClick
+          dispatch({ act: 'del', nid: it.id });
+        }}
+      >
         <DelIc />
       </button>
     </span>
@@ -89,9 +118,9 @@ function Val({ it, delTitle, withGlyph }: { it: QbItem; delTitle?: string; withG
 // The segment shows BOTH options (mini scope-bar) so it reads as a pressable
 // two-way switch, not a status badge — the ぴったり/おおまか precedent, which
 // replaced a lone word chip for exactly this discoverability failure.
-function OptSeg({ c, shared }: { c: QbCluster; shared: QbShared }) {
+function OptSeg({ c, shared, dispatch }: { c: QbCluster; shared: QbShared; dispatch: Dispatch }) {
   const seg = (op: 'and' | 'or', word?: string, tip?: string) => (
-    <button type="button" className={'qb-opt-btn' + (c.op === op ? ' is-on' : '')} data-act="opt" data-op={op} data-nid={c.id} title={tip}>
+    <button type="button" className={'qb-opt-btn' + (c.op === op ? ' is-on' : '')} data-act="opt" data-op={op} data-nid={c.id} title={tip} onClick={() => c.id && dispatch({ act: 'opt', nid: c.id, op })}>
       {word}
     </button>
   );
@@ -102,17 +131,17 @@ function OptSeg({ c, shared }: { c: QbCluster; shared: QbShared }) {
     </span>
   );
 }
-function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
+function Cluster({ c, shared, dispatch }: { c: QbCluster; shared: QbShared; dispatch: Dispatch }) {
   return (
     <span className={'qb-cluster sb-active-chip ' + c.typeCls + (c.leaving ? ' leaving' : '')}>
       <Glyph html={c.glyph} />
       {c.items.map((it, i) => (
         <Fragment key={it.id}>
           {i > 0 && <span className="qb-sep">・</span>}
-          <Val it={it} delTitle={shared.delTitle} />
+          <Val it={it} delTitle={shared.delTitle} dispatch={dispatch} />
         </Fragment>
       ))}
-      {c.op && c.id && <OptSeg c={c} shared={shared} />}
+      {c.op && c.id && <OptSeg c={c} shared={shared} dispatch={dispatch} />}
     </span>
   );
 }
@@ -120,14 +149,14 @@ function Cluster({ c, shared }: { c: QbCluster; shared: QbShared }) {
 // The 除く cluster: a leading word instead of a type glyph (its values can mix
 // types, so each value carries its own glyph). Root-AND semantics make it read
 // "none of these" — no operator ambiguity, nothing to toggle.
-function Excl({ e, shared }: { e: { label: string; items: QbItem[]; leaving?: boolean }; shared: QbShared }) {
+function Excl({ e, shared, dispatch }: { e: { label: string; items: QbItem[]; leaving?: boolean }; shared: QbShared; dispatch: Dispatch }) {
   return (
     <span className={'qb-cluster qb-cluster-excl sb-active-chip' + (e.leaving ? ' leaving' : '')}>
       <span className="qb-excl-label">{e.label}</span>
       {e.items.map((it, i) => (
         <Fragment key={it.id}>
           {i > 0 && <span className="qb-sep">・</span>}
-          <Val it={it} delTitle={shared.delTitle} withGlyph />
+          <Val it={it} delTitle={shared.delTitle} withGlyph dispatch={dispatch} />
         </Fragment>
       ))}
     </span>
@@ -137,14 +166,14 @@ function Excl({ e, shared }: { e: { label: string; items: QbItem[]; leaving?: bo
 // The whole bar's chips: optional search echo segment (posters only — posts fold
 // the term into the tree as a real leaf), the attribute clusters, the 除く
 // cluster, or the read-only summary of a non-facet persisted tree.
-export function Chips({ model }: { model?: ChipsModel | null }) {
+export function Chips({ model, dispatch }: { model?: ChipsModel | null; dispatch: Dispatch }) {
   if (!model) return null;
   const shared = { delTitle: model.delTitle, optAll: model.optAll, optAny: model.optAny, optAllTip: model.optAllTip, optAnyTip: model.optAnyTip };
   return (
     <>
       {model.searchSeg && (
         <>
-          <span className="sb-active-chip qc-search" data-special="search">
+          <span className="sb-active-chip qc-search" data-special="search" onClick={() => dispatch({ act: 'clearSearch' })}>
             <Glyph html={model.searchSeg.glyph} />
             {model.searchSeg.text}
           </span>
@@ -158,9 +187,9 @@ export function Chips({ model }: { model?: ChipsModel | null }) {
       ) : (
         <>
           {model.clusters.map((c, i) => (
-            <Cluster key={c.typeCls + i} c={c} shared={shared} />
+            <Cluster key={c.typeCls + i} c={c} shared={shared} dispatch={dispatch} />
           ))}
-          {model.excl && <Excl e={model.excl} shared={shared} />}
+          {model.excl && <Excl e={model.excl} shared={shared} dispatch={dispatch} />}
         </>
       )}
     </>

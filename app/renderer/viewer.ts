@@ -1261,7 +1261,7 @@
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through corpusSearch.
-  const { emptyTree, treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } = window.corpusQuery;
+  const { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } = window.corpusQuery;
   const postPredOf = window.corpusQuery.makePostPredOf({
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
@@ -1269,285 +1269,30 @@
     postKeyOf: window.corpusRecords.postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
-  // The shared facet-chip builder (改訂④, docs/design-query-builder.md). One
-  // instance per view. Encapsulates the tree state, the cluster view-model, and
-  // the mutation helpers so two independent bars (posts / posters) get identical
-  // behaviour from one codebase. The bar shows NO boolean vocabulary: values
-  // cluster by attribute, the only operator surface is the すべて/どれか toggle
-  // on multi-value clusters, and exclusions live in the 除く cluster.
-  // ctx: { container, storeKey?, barEl?, predOf, labelOf, glyphOf,
-  //        getSearchVal?, onClearSearch?, onChange, openLeafEditor?,
-  //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
-  //        standaloneTypes? }  (barEl = the bar's static container: reveal +
-  //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
-  function createQueryBuilder(ctx) {
-    let tree = emptyTree();
-    let qbNodeMap = new Map<string, any>(); // data-nid → tree node (rebuilt each render)
-    let shadow: any[] = []; // last computed flat (deduped) leaf shadow
-    const chips = ctx.container;
-    const nodeById = (id) => qbNodeMap.get(id) || null;
-    const editableLeafTypes = ctx.editableLeafTypes || [];
-    const singleValueTypes = ctx.singleValueTypes || [];
-    const noDupTypes = ctx.noDupTypes || [];
-    // Facet schema: which types may hold 2+ values with an すべて/どれか choice
-    // (multi-value attributes), and which stay standalone chips. Every other
-    // type clusters as a silent どれか — the schema answers the operator
-    // question, so the UI never has to ask.
-    const facetOpts = { multiValueTypes: ctx.multiValueTypes || [], standaloneTypes: ctx.standaloneTypes || [] };
-
-    // --- Tree mutation domain lives in query.js (9th extraction slice); the
-    // bindings below close over THIS instance's tree. Q is referenced directly
-    // (not destructured at module level) because the instance methods reuse the
-    // service names — removeCondsMatching etc. — with the tree pre-bound.
-    const Q = window.corpusQuery;
-    const qHasValue = (type, value) => Q.hasLeafValue(tree, type, value);
-    const removeCondsMatching = (pred) => Q.removeCondsMatching(tree, pred);
-    // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
-    // P4-B slice⑦ (state half only — event/render ownership stays in viewer.js
-    // for now, see the roadmap's "Q2" split note): also mirror the tree into
-    // corpusStore under ctx.storeKey, a fresh deep clone each time (tree is
-    // mutated in-place by the Q.* calls below, so a same-reference push would
-    // never pass the store's identity-equality guard — same issue as the
-    // selectedSet slice, same fix). This is THE single choke point for "the
-    // tree changed" (every mutation path — addFilter/removeNode/showQbMenu's
-    // refresh(), plus setTree/resetTree — calls syncShadow), so one push here
-    // covers all of them. Nobody subscribes to the store key yet.
-    const syncShadow = () => {
-      shadow = Q.buildShadow(tree);
-      if (ctx.storeKey) window.corpusStore.set(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
-    };
-    // One canonical refresh after any tree mutation: rebuild the shadow, then let
-    // the view re-render (which itself re-renders this bar via render()).
-    const refresh = () => {
-      syncShadow();
-      ctx.onChange();
-    };
-
-    // Read-only text for a NON-facet tree (persisted 改訂③ nesting the ④ UI
-    // cannot edit): honest parenthesised form; the existing リセット button is
-    // the rebuild path.
-    function summaryOf(node, isRoot) {
-      if (node.kind === 'cond') return (node.neg ? '≠' : '') + ctx.labelOf(node);
-      const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${MSG.qcJoinOr} ` : ` ${MSG.qcJoinAnd} `);
-      return isRoot ? inner : `${node.neg ? '≠' : ''}(${inner})`;
-    }
-
-    // --- Render: the tree as attribute clusters (facet chips) on the bar. ---
-    function render() {
-      const container = chips;
-      const prevLabels = new Set(Array.from(container.querySelectorAll('.qb-val-label')).map((el) => ((el as Element).textContent as string).trim()));
-      const bar = ctx.barEl || null;
-      const searchVal = ctx.getSearchVal ? (ctx.getSearchVal() || '').trim() : '';
-      // ビルダは常時表示（空でもバーは出す＝リセット/ⓘ の置き場）。
-      if (bar) bar.style.display = '';
-      // The bar is a full-width top bar; the floating sidebar offsets its sticky top
-      // by this height. Measure after layout, and only when the bar is actually shown.
-      if (bar)
-        requestAnimationFrame(() => {
-          const h = bar.offsetHeight;
-          if (h) document.documentElement.style.setProperty('--activebar-h', h + 'px');
-        });
-      const hasQuery = tree.children.length > 0;
-      // The リセット button + empty-bar hint visibility is the activebar island now (from
-      // buildActivebarModel, pushed by renderPosts/renderPosters after this render). This
-      // render only owns the bar reveal + --activebar-h measurement above (side effects on
-      // viewer's static container) and the chips model below.
-      // Re-assert the canonical facet shape before reading it (mutations keep it,
-      // but a freshly loaded compatible tree may still carry bare 2+-value runs;
-      // the すべて/どれか toggle needs real group nodes to write to).
-      const isFacet = Q.canonicalizeFacet(tree, facetOpts);
-      const view = isFacet ? Q.facetViewOf(tree, facetOpts) : null;
-      // Rebuild qbNodeMap (data-nid → node) in the same pre-order the DOM carries,
-      // so the delegated handlers' nodeById() keeps resolving. The React island only
-      // RENDERS this model; viewer.js keeps the ids, the state, and the events.
-      qbNodeMap = new Map();
-      let idc = 0;
-      const nid = (node) => {
-        const id = 'n' + idc++;
-        qbNodeMap.set(id, node);
-        return id;
-      };
-      const animate = !prefersReducedMotion();
-      const itemModel = (leaf) => {
-        const label = ctx.labelOf(leaf);
-        // chip-new entrance: flag leaves whose label wasn't on the bar last render
-        // (skip the live-updating editing chip — it would flicker per keystroke).
-        const isNew = animate && !(ctx.isEditingLeaf && ctx.isEditingLeaf(leaf)) && !prevLabels.has(label);
-        return { id: nid(leaf), label, isNew, editable: editableLeafTypes.includes(leaf.type), glyph: ctx.glyphOf(leaf.type), typeCls: 'qc-' + leaf.type };
-      };
-      const clusters: any[] = [];
-      let excl: any = null;
-      let summary: any = null;
-      if (view) {
-        for (const cl of view.clusters) {
-          // The cluster's group node (2+ values) is what the toggle writes to.
-          const grpNode = cl.leaves.length > 1 ? tree.children.find((c) => c.kind === 'group' && c.children.includes(cl.leaves[0])) : null;
-          clusters.push({
-            id: grpNode ? nid(grpNode) : null,
-            typeCls: 'qc-' + cl.type,
-            glyph: ctx.glyphOf(cl.type),
-            items: cl.leaves.map(itemModel),
-            // The one remaining operator surface: multi-value clusters with 2+
-            // values. Single-value types stay a silent どれか (schema-forced).
-            op: grpNode && facetOpts.multiValueTypes.includes(cl.type) ? cl.op : null,
-          });
-        }
-        for (const l of view.singles) clusters.push({ id: null, typeCls: 'qc-' + l.type, glyph: ctx.glyphOf(l.type), items: [itemModel(l)], op: null });
-        if (view.excl.length) excl = { label: MSG.qbExclLabel, items: view.excl.map(itemModel) };
-      } else {
-        summary = { text: summaryOf(tree, true), tip: MSG.qbSummaryTip };
-      }
-      // Posts fold the search term into the tree as a real 'text' leaf (textInTree),
-      // so suppress the echo chip there. Posters still echo their box term.
-      const model = {
-        searchSeg: searchVal && !ctx.textInTree ? { glyph: ctx.glyphOf('search'), text: searchVal } : null,
-        searchJoin: hasQuery,
-        joinAndWord: MSG.qcJoinAnd,
-        clusters,
-        excl,
-        summary,
-        delTitle: MSG.qfDelete,
-        optAll: MSG.qbOptAll,
-        optAny: MSG.qbOptAny,
-        optAllTip: MSG.qbOptAllTip,
-        optAnyTip: MSG.qbOptAnyTip,
-      };
-      // The chips island loads before viewer runs (single bundle), so render()
-      // always reaches a live subscriber — no stash-replay needed.
-      const key = container.id;
-      if (window.corpusQueryChips) window.corpusQueryChips.render(key, model);
-    }
-
-    // Sidebar entry points add a condition into its attribute cluster (改訂④):
-    // the newcomer joins its type's group, or pairs with the existing bare leaf
-    // (structure is DERIVED — the user never builds it). On a non-facet tree
-    // (persisted 改訂③ nesting) it lands at the top level (AND) instead.
-    function addFilter(filter) {
-      // Single-valued types (択一): a new one replaces the existing anywhere.
-      if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
-      // Prevent exact duplicates (anywhere in the tree), except for multi types.
-      else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
-      const node = Object.assign({ kind: 'cond' }, filter);
-      if (Q.facetViewOf(tree, facetOpts)) Q.facetAdd(tree, node, facetOpts);
-      else tree.children.push(node);
-      Q.cleanupTree(tree);
-      refresh();
-      return node; // callers binding to the new leaf (e.g. the editing text leaf) need it
-    }
-    // Remove the condition(s) matching the shadow filter at `index` (sidebar toggle
-    // handlers findIndex into the shadow). Bar-pill removal targets a node by id.
-    function removeFilter(index) {
-      const f = shadow[index];
-      if (!f) return;
-      removeCondsMatching((c) => Q.sameLeaf(c, f));
-      refresh();
-    }
-    function removeNode(node) {
-      if (ctx.onLeafMutated) ctx.onLeafMutated(node); // let the view reconcile (e.g. unbind the editing text leaf)
-      Q.detachNode(node, Q.treeParentMap(tree));
-      Q.cleanupTree(tree);
-      refresh();
-    }
-    // Bar interaction (click): the すべて/どれか segment, delete a value (✕),
-    // clear the search echo, or open a leaf editor (date/engagement). The
-    // exclusion move lives in the right-click menu.
-    chips.addEventListener('click', (e) => {
-      const optBtn = closestOf(e, '.qb-opt-btn[data-act="opt"]');
-      if (optBtn) {
-        const n = nodeById(optBtn.dataset.nid);
-        // Segment semantics: clicking a side SELECTS it (the active side is inert).
-        if (n && n.kind === 'group' && n.op !== optBtn.dataset.op) {
-          n.op = optBtn.dataset.op;
-          refresh();
-        }
-        return;
-      }
-      const delBtn = closestOf(e, '.qb-del-btn[data-act="del"]');
-      if (delBtn) {
-        const n = nodeById(delBtn.dataset.nid);
-        if (n) removeNode(n);
-        return;
-      }
-      // 検索の特殊ピルは検索を解除。
-      if (closestOf(e, '[data-special="search"]')) {
-        if (ctx.onClearSearch) ctx.onClearSearch();
-        return;
-      }
-      const val = closestOf(e, '.qb-val');
-      if (!val) return;
-      const node = nodeById(val.dataset.nid);
-      if (!node || node.kind !== 'cond') return;
-      // 編集可能な葉（日付・反応）は左クリックで編集ポップへ。それ以外は何もしない。
-      if (editableLeafTypes.includes(node.type) && ctx.openLeafEditor) ctx.openLeafEditor(node);
-    });
-
-    // Right-click a value → 「除外へ移す／含む条件に戻す」＋削除 (fold-menu 様式,
-    // right-click = the menu of actions per DESIGN). React-owned glass menu
-    // (window.corpusContextMenu); one bridge serves BOTH builder instances.
-    function showQbMenu(node, x, y) {
-      const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
-      const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-      const items = [{ label: node.neg ? MSG.qbMenuInclude : MSG.qbMenuExclude, act: 'neg', icon: NEG }, { sep: true }, { label: MSG.qfDelete, act: 'del', icon: DEL, danger: true }];
-      window.corpusContextMenu.open({ items, x, y }, (item) => {
-        if (item.act === 'neg') {
-          if (ctx.onLeafMutated) ctx.onLeafMutated(node); // an editing text leaf moving to 除く is confirmed
-          Q.facetSetNeg(tree, node, !node.neg, facetOpts);
-          refresh();
-        } else if (item.act === 'del') {
-          removeNode(node);
-        }
-      });
-    }
-    chips.addEventListener('contextmenu', (e) => {
-      const val = closestOf(e, '.qb-val');
-      if (!val) return;
-      const n = nodeById(val.dataset.nid);
-      if (n && n.kind === 'cond') {
-        e.preventDefault();
-        showQbMenu(n, e.clientX, e.clientY);
-      }
-    });
-
-    return {
-      getTree: () => tree,
-      // Replace the tree (clone + self-heal singleton groups + recompute shadow).
-      // Facet-compatible persisted trees normalize into the canonical shape;
-      // anything else stays intact and renders as the read-only summary.
-      setTree: (t) => {
-        tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
-        Q.cleanupTree(tree);
-        Q.canonicalizeFacet(tree, facetOpts);
-        syncShadow();
-      },
-      resetTree: () => {
-        tree = emptyTree();
-        // Every tree mutation must resync the flat shadow (the invariant refresh()
-        // documents). resetTree was the lone mutator that skipped it, leaving the
-        // shadow — and its consumers (.shadow() readers → sidebar row badges) —
-        // stale until the next mutation. Post-side callers were masked by a
-        // following afterQueryChange()→refresh(); the poster reset (renderPosters, no
-        // refresh) exposed it as row badges that stayed lit after リセット.
-        syncShadow();
-      },
-      addFilter,
-      removeFilter,
-      removeNode,
-      removeByLeaf: (type, value) => {
-        if (removeCondsMatching((c) => c.type === type && c.value === value)) refresh();
-      },
-      removeByType: (type) => {
-        if (removeCondsMatching((c) => c.type === type)) refresh();
-      },
-      removeCondsMatching,
-      qHasValue,
-      render,
-      refresh,
-      syncShadow,
-      eval: (item) => evalNode(tree, item, ctx.predOf),
-      hasQuery: () => tree.children.length > 0,
-      shadow: () => shadow,
-    };
-  }
+  // The shared facet-chip builder (改訂④, docs/design-query-builder.md) now
+  // lives in query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster
+  // view-model derivation, qbNodeMap, and click/contextmenu dispatch all moved
+  // there — the query-chips island reads a cached model + calls dispatch()
+  // directly instead of viewer.js pushing a model and delegating raw DOM
+  // events. viewer.js keeps constructing instances (below) and the
+  // orchestration around a change (onChange/openLeafEditor/onClearSearch).
+  const createQueryBuilder = window.corpusQueryChips.create;
+  // i18n strings the builder needs for labels/menus — resolved once here (MSG
+  // is a viewer.js-local construct) and passed in via ctx.msg since
+  // query-chips.ts has no access to viewer.js's i18n binding.
+  const qbMsg = {
+    qcJoinAnd: MSG.qcJoinAnd,
+    qcJoinOr: MSG.qcJoinOr,
+    qbExclLabel: MSG.qbExclLabel,
+    qbSummaryTip: MSG.qbSummaryTip,
+    qfDelete: MSG.qfDelete,
+    qbOptAll: MSG.qbOptAll,
+    qbOptAny: MSG.qbOptAny,
+    qbOptAllTip: MSG.qbOptAllTip,
+    qbOptAnyTip: MSG.qbOptAnyTip,
+    qbMenuInclude: MSG.qbMenuInclude,
+    qbMenuExclude: MSG.qbMenuExclude,
+  };
 
   // The post-side builder instance. P4-B slice⑧: badge/tab-title/etc. reads used
   // to mirror the tree shadow into a module-level `activeFilters` global via an
@@ -1555,6 +1300,7 @@
   // instance already exposes the same cached array) — every read site now calls
   // postQB.shadow() directly instead of maintaining a second copy.
   const postQB = createQueryBuilder({
+    msg: qbMsg,
     container: document.getElementById('queryChips'),
     storeKey: 'postQueryTree',
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
@@ -3737,6 +3483,7 @@
   // already called posterQB.shadow() directly), so it's removed outright rather
   // than converted to a read site.
   const posterQB = createQueryBuilder({
+    msg: qbMsg,
     container: document.getElementById('posterQueryChips'),
     storeKey: 'posterQueryTree',
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)

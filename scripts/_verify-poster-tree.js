@@ -54,7 +54,10 @@ const evalJs = `(async () => {
     click(await waitFor(() => qfVal('X'))); await wait(120);
     const pX = cards();                                        // [X] → Alice,Carol = 2
     // platform=bluesky from the same open flyout → クラスタに合流して自動どれか(OR)
-    click(await waitFor(() => qfVal('Bluesky'))); await wait(120);
+    // X was a bare leaf becoming a 2-value group bumps every id after it (the group
+    // itself now claims one), so the old X chip ghosts at its stale id for CHIP_OUT_MS
+    // (200ms, query-chips/index.tsx) — wait past that before counting .qb-val.
+    click(await waitFor(() => qfVal('Bluesky'))); await wait(260);
     const orAuto = cards();                                    // (X ∨ Bluesky) → 3
     const clusters = document.querySelectorAll('#posterQueryChips .qb-cluster').length;
     const vals = document.querySelectorAll('#posterQueryChips .qb-cluster .qb-val').length;

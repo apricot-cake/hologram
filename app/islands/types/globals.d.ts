@@ -526,8 +526,19 @@ declare global {
   interface CorpusTabsIsland {
     render(model?: any): void;
   }
+  // Renderer-registered now (renderer/query-chips.ts) — P4-B スライス⑦ event半分
+  // moved the tree state, qbNodeMap, and click/contextmenu dispatch out of
+  // viewer.js's createQueryBuilder into this dedicated service. `create` builds
+  // one builder instance (loosely typed — CorpusQueryGroup/Leaf live only in
+  // renderer-globals.d.ts, which the islands project doesn't see); `getModel`/
+  // `subscribe` back the query-chips island's useSyncExternalStore, `dispatch`
+  // routes a click/contextmenu action (see Chips.tsx's ChipsAction) to the
+  // instance owning that container id.
   interface CorpusQueryChipsIsland {
-    render(id: string, model: any): void;
+    create(ctx: any): any;
+    getModel(id: string): any;
+    subscribe(id: string, cb: () => void): () => void;
+    dispatch(id: string, action: any): void;
   }
   interface CorpusImageTabIsland {
     render(model?: any): void;

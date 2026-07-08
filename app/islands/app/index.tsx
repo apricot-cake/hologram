@@ -42,6 +42,7 @@ import 'corpus-svc:geometry';
 import 'corpus-svc:format';
 import 'corpus-svc:undo';
 import 'corpus-svc:search-editing';
+import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';
 import 'corpus-svc:backup';
 import 'corpus-svc:posts';

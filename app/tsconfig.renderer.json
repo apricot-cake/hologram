@@ -51,6 +51,7 @@
     "renderer/format.ts",
     "renderer/undo.ts",
     "renderer/search-editing.ts",
+    "renderer/query-chips.ts",
     "renderer/store.ts",
     "renderer/folders.ts",
     "renderer/inspector.ts",

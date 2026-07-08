@@ -67,14 +67,19 @@ const evalJs = `(async () => {
     rclick(valByLabel('B'));
     const exclRow = await waitFor(() => menuRow('移す'));
     log.push('exclRow=' + !!exclRow);
-    click(exclRow); await wait(120);
+    // B moving out of the tag cluster leaves a .leaving ghost at B's old position for
+    // CHIP_OUT_MS (200ms, query-chips/index.tsx) with a stale data-nid; valByLabel's
+    // querySelectorAll('.qb-val') would find that ghost (still earlier in DOM order
+    // than the real chip) before it's pruned, so the wait must clear 200ms, not just
+    // outlast the tree mutation itself.
+    click(exclRow); await wait(260);
     const andNotB = cards();
     const exclHasB = !![...document.querySelectorAll('#queryChips .qb-cluster-excl .qb-val-label')].find((l) => l.textContent === 'B');
     // 右クリック→戻す → A・B(すべて) → 1
     rclick(valByLabel('B'));
     const backRow = await waitFor(() => menuRow('戻す'));
     log.push('backRow=' + !!backRow);
-    click(backRow); await wait(120);
+    click(backRow); await wait(260);
     const restored = cards();
     const optRestored = optOn() ? optOn().textContent.trim() : '';
     // 構造: 式の語彙・ドラッグ・読み下し文の不在＋セグメントは常に両選択肢を見せる

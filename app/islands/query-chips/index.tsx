@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Chips } from './Chips.tsx';
-import type { ChipsModel, QbCluster, QbItem } from './Chips.tsx';
+import type { ChipsAction, ChipsModel, QbCluster, QbItem } from './Chips.tsx';
 
 // Presentational island for the query-builder active bars — post (#queryChips)
-// and poster (#posterQueryChips). React owns RENDERING the chips; viewer.js's
-// createQueryBuilder keeps owning STATE/DATA, the qbNodeMap (id→node), and ALL
-// event delegation on the container (click/dragstart/dragover/drop/contextmenu).
-//
-// render() builds a plain view-model and pushes it here; we emit the SAME DOM
-// (.qb-pill/.qb-grp/.qb-op + data-nid) the old innerHTML did, so every delegated
-// handler keeps firing — no click bridge, no state moved out of viewer.js.
+// and poster (#posterQueryChips). query-chips.ts (renderer service) owns the
+// tree STATE/DATA, the qbNodeMap (id→node), and the mutation/dispatch logic;
+// this island reads the cached model it maintains via useSyncExternalStore and
+// renders it, emitting onClick/onContextMenu handlers that call dispatch()
+// directly (P4-B スライス⑦ event半分 — no more DOM delegation, no more push).
 //
 // Both bars share this one bundle, keyed by container id (one React root each).
 
@@ -73,7 +71,7 @@ function mergeGhosts(prev: ChipsModel, next: ChipsModel): ChipsModel | null {
   return ghosted ? { ...next, clusters, excl } : null;
 }
 
-function AnimatedChips({ model }: { model: ChipsModel | null | undefined }) {
+function AnimatedChips({ model, dispatch }: { model: ChipsModel | null | undefined; dispatch: (action: ChipsAction) => void }) {
   const [display, setDisplay] = useState(model);
   const prevRef = useRef(model);
   const timerRef = useRef<number | null>(null);
@@ -96,53 +94,17 @@ function AnimatedChips({ model }: { model: ChipsModel | null | undefined }) {
       setDisplay(model);
     }
   }, [model]);
-  return <Chips model={display} />;
+  return <Chips model={display} dispatch={dispatch} />;
 }
-
-// ── per-container store (viewer pushes via render(id, model); the host subscribes) ──
-// Both bars (#queryChips / #posterQueryChips) live under the single App root now, each
-// portaled by a ChipsHost keyed by container id. viewer.js's createQueryBuilder still
-// owns state/data + all delegation; render() just stores the model and notifies. The
-// bridge is assigned when this module loads (before viewer.js runs), so the old
-// __corpusQueryChips stash-replay is gone — render() always reaches a live subscriber.
-const models = new Map<string, ChipsModel>();
-type Channel = { get: () => ChipsModel | null; subscribe: (cb: () => void) => () => void; notify: () => void };
-const channels = new Map<string, Channel>();
-function channel(id: string): Channel {
-  let c = channels.get(id);
-  if (!c) {
-    const subs = new Set<() => void>();
-    c = {
-      get: () => models.get(id) ?? null,
-      subscribe: (cb) => {
-        subs.add(cb);
-        return () => subs.delete(cb);
-      },
-      notify: () => {
-        for (const cb of [...subs]) {
-          try {
-            cb();
-          } catch (_e) {
-            /* ignore */
-          }
-        }
-      },
-    };
-    channels.set(id, c);
-  }
-  return c;
-}
-
-function render(id: string, model: ChipsModel) {
-  models.set(id, model);
-  channel(id).notify();
-}
-
-window.corpusQueryChips = { render };
 
 // One host per container id — portaled into #queryChips / #posterQueryChips by App.tsx.
+// The cached model + subscription live in query-chips.ts (renderer service) now,
+// keyed by container id; this just reads through useSyncExternalStore and binds
+// dispatch to the same key so clicks route back to the owning builder instance.
 export function ChipsHost({ id }: { id: string }) {
-  const ch = channel(id); // cached per id → stable subscribe/get refs for useSyncExternalStore
-  const model = useSyncExternalStore(ch.subscribe, ch.get);
-  return model ? <AnimatedChips model={model} /> : null;
+  const subscribe = (cb: () => void) => window.corpusQueryChips.subscribe(id, cb);
+  const getSnapshot = () => window.corpusQueryChips.getModel(id) as ChipsModel | null;
+  const model = useSyncExternalStore(subscribe, getSnapshot);
+  const dispatch = (action: ChipsAction) => window.corpusQueryChips.dispatch(id, action);
+  return model ? <AnimatedChips model={model} dispatch={dispatch} /> : null;
 }
