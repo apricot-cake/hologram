@@ -1300,8 +1300,19 @@
     const qHasValue = (type, value) => Q.hasLeafValue(tree, type, value);
     const removeCondsMatching = (pred) => Q.removeCondsMatching(tree, pred);
     // Rebuild the flat (deduped) leaf shadow and hand it to the view (onShadow).
+    // P4-B slice⑦ (state half only — event/render ownership stays in viewer.js
+    // for now, see the roadmap's "Q2" split note): also mirror the tree into
+    // corpusStore under ctx.storeKey, a fresh deep clone each time (tree is
+    // mutated in-place by the Q.* calls below, so a same-reference push would
+    // never pass the store's identity-equality guard — same issue as the
+    // selectedSet slice, same fix). This is THE single choke point for "the
+    // tree changed" (every mutation path — addFilter/removeNode/showQbMenu's
+    // refresh(), plus setTree/resetTree — calls syncShadow), so one push here
+    // covers all of them. Nobody subscribes yet; this lays the groundwork for
+    // ⑧ (activeFilters/posterShadow as store-derived selectors).
     const syncShadow = () => {
       shadow = Q.buildShadow(tree);
+      if (ctx.storeKey) window.corpusStore.set(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
       if (ctx.onShadow) ctx.onShadow(shadow);
     };
     // One canonical refresh after any tree mutation: rebuild the shadow, then let
@@ -1541,6 +1552,7 @@
   // refreshed from the tree shadow (onShadow) so the sidebar / tab title keep working.
   const postQB = createQueryBuilder({
     container: document.getElementById('queryChips'),
+    storeKey: 'postQueryTree',
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: postPredOf,
     labelOf: filterLabel,
@@ -1581,6 +1593,10 @@
     multiValueTypes: ['tag', 'hashtag', 'collection'],
     standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'],
   });
+  // Establish an initial value (emptyTree()) before any mutation, so a future
+  // reader never sees undefined — setTree only runs on tab restore, which may
+  // not happen before the first render of a brand-new tab.
+  window.corpusStore.set('postQueryTree', JSON.parse(JSON.stringify(postQB.getTree())));
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
     return postQB.getTree();
@@ -3764,6 +3780,7 @@
   // onChange → renderPosters (which redraws the rows + bar + grid).
   const posterQB = createQueryBuilder({
     container: document.getElementById('posterQueryChips'),
+    storeKey: 'posterQueryTree',
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: posterPredOf,
     labelOf: posterFilterLabel,
@@ -3790,6 +3807,10 @@
     multiValueTypes: ['tag'],
     standaloneTypes: ['date', 'workspace'],
   });
+  // Establish an initial value (emptyTree()) before any mutation — posters have
+  // no tabs/setTree restore path, so this is the ONLY populator until the first
+  // filter interaction.
+  window.corpusStore.set('posterQueryTree', JSON.parse(JSON.stringify(posterQB.getTree())));
 
   // Build the whole poster-mode filter-row model (#posterFilterRows) from current state
   // and hand it to the poster sidebar island (twin of buildSidebarModel for the post side).
