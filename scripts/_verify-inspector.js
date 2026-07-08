@@ -6,7 +6,7 @@
 //  - clicking another card's image SWAPS the content (no lightbox)
 //  - double-click opens the gallery on top; Esc closes gallery only,
 //    the next Esc closes the panel
-//  - タグを編集 opens the existing tag editor overlay
+//  - タグ編集はパネル内インライン（#editOverlay は一括編集専用・単一投稿では使わない）
 //  - re-render keeps the ring on the inspected card
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -40,10 +40,13 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   const grid = document.getElementById('postGrid');
   const cards = () => grid.querySelectorAll('.post-card').length;
-  await waitFor(() => cards() >= 4);
+  // Bail with a clear reason instead of ploughing into null derefs below if the
+  // SMOKE grid never reaches 4 cards (was previously unchecked — a timeout here
+  // used to surface as an opaque "Cannot read properties of null" deep in the flow).
+  if (!(await waitFor(() => cards() >= 4))) return { error: 'grid never reached 4 cards (cards=' + cards() + ')' };
   const insp = document.getElementById('postDetail');
   const lightbox = document.getElementById('lightbox');
-  const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const click = (el, tag) => { if (!el) { console.log('DBG NULL-CLICK ' + tag); return; } el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); };
   const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   const title = () => ((insp.querySelector('.iv-insp-title') || {}).textContent || '').trim();
   const cardText = (c) => ((c.querySelector('.text') || {}).textContent || '').trim();
@@ -54,7 +57,7 @@ const evalJs = `(async () => {
 
   // ℹ opens; content matches the card; ring marks it
   const card0 = grid.querySelector('.post-card[data-index="0"]');
-  click(card0.querySelector('.info-btn')); await wait(100);
+  click(card0.querySelector('.info-btn'), 'card0-info'); await wait(100);
   const opened = !insp.hidden;
   const t0 = title();
   // card .text carries an extra "クリックで全文表示" hint → prefix match
@@ -63,9 +66,15 @@ const evalJs = `(async () => {
   // open = click swaps, so images must show a plain pointer (not zoom-in)
   const cursorSwap = grid.classList.contains('insp-open') &&
     getComputedStyle(card0.querySelector('img.card-img')).cursor === 'pointer';
-  const hasActions = !!document.getElementById('pdEdit') && !!document.getElementById('pdOpen') && !!document.getElementById('pdClose');
-  // card 0 has a public original → both keyless reverse-image-search links present
-  const sauceShown = !!document.getElementById('pdSauce') && !!document.getElementById('pdAscii');
+  // Action buttons are class-based now, not id-based (Inspector.tsx: .iv-insp-close /
+  // .iv-insp-open per <a>, no #pdEdit/#pdOpen/#pdClose/#pdSauce/#pdAscii — those ids
+  // were retired when the panel went full-React (slice k, 2026-07-01); single-post
+  // tag editing also moved inline (TagEditor idPrefix="iv"), so there's no separate
+  // "edit" button anymore either.
+  const openLinks = () => insp.querySelectorAll('.iv-insp-actions a.iv-insp-open').length;
+  const hasActions = !!insp.querySelector('.iv-insp-close') && openLinks() >= 1;
+  // card 0 has a public original → open + sauce + ascii = 3 links
+  const sauceShown = openLinks() === 3;
   const posMode = getComputedStyle(insp).position;
   const layoutOk = matchMedia('(max-width: 1279px)').matches ? posMode === 'fixed' : posMode === 'sticky';
 
@@ -78,29 +87,37 @@ const evalJs = `(async () => {
 
   // ℹ on another card swaps the content (stays live in slide-over mode)
   const card2 = grid.querySelector('.post-card[data-index="2"]');
-  click(card2.querySelector('.info-btn')); await wait(100);
+  click(card2.querySelector('.info-btn'), 'card2-info'); await wait(100);
   const t2 = title();
   const swapped = !insp.hidden && t2 !== '' && cardText(card2).startsWith(t2) && t2 !== t0;
   const ringMoved = card2.classList.contains('inspected') && !card0.classList.contains('inspected');
-  // card 2 has no public original → reverse-search links must be absent
-  const sauceHiddenNoMedia = !document.getElementById('pdSauce') && !document.getElementById('pdAscii');
+  // card 2 has no public original → only the plain "open" link remains
+  const sauceHiddenNoMedia = openLinks() === 1;
 
   // slide-over (the 1100px default window is below the 1280 breakpoint):
   // clicking the grid/cards outside the panel closes it, and the click is
   // consumed — no gallery on the same press. Inline (wide) keeps it open.
   const narrowMode = matchMedia('(max-width: 1279px)').matches;
-  click(card2.querySelector('.card-img')); await wait(120);
+  click(card2.querySelector('.card-img'), 'card2-img'); await wait(120);
   const outsideCloses = narrowMode
     ? (insp.hidden && !lightbox.classList.contains('show'))
     : !insp.hidden;
   // reopen for the remaining checks
-  click(card2.querySelector('.info-btn')); await wait(80);
+  click(card2.querySelector('.info-btn'), 'card2-info-reopen'); await wait(80);
 
-  // タグを編集 opens the tag editor; cancel returns to the open panel
-  click(document.getElementById('pdEdit')); await wait(80);
-  const editOpens = document.getElementById('editOverlay').classList.contains('show');
-  click(document.getElementById('editCancel')); await wait(80);
-  const editBack = !document.getElementById('editOverlay').classList.contains('show') && !insp.hidden;
+  // Tag editing is inline in the panel (TagEditor idPrefix="iv") — no #editOverlay
+  // for a single post anymore (that's bulk-only now, via the selection bar).
+  const tagInput = document.getElementById('ivTagInput');
+  // Plain "el.value = x" hits React's own tracked-value setter (installed on the
+  // node instance), which updates its internal tracker to 'x' too — so the
+  // subsequent native 'input' event sees "no change from tracked value" and
+  // React's onChange never fires. Go through the ORIGINAL prototype setter so
+  // the tracker still holds the old value and the dispatched event registers.
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(tagInput, 'inline-tag');
+  tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+  click(document.getElementById('ivTagAdd'), 'ivTagAdd'); await wait(120);
+  const tagAddedInline = [...document.querySelectorAll('#ivTagChips .tag-chip')].some((c) => c.textContent.trim().startsWith('inline-tag'));
+  const editOverlayUnused = !document.getElementById('editOverlay').classList.contains('show') && !insp.hidden;
 
   // a fresh re-render keeps the ring on the inspected card
   sb.value = ''; sb.dispatchEvent(new Event('input', { bubbles: true })); await wait(150);
@@ -115,12 +132,12 @@ const evalJs = `(async () => {
   // with the panel closed, clicking an image opens the gallery as before
   // (re-query: the search re-render replaced the card nodes)
   const card2b = grid.querySelector('.post-card[data-index="2"]');
-  click(card2b.querySelector('.card-img')); await wait(100);
+  click(card2b.querySelector('.card-img'), 'card2b-img'); await wait(100);
   const galleryNormal = lightbox.classList.contains('show');
   esc(); await wait(60);
 
   return { isAside, opened, contentOk, ring0, cursorSwap, hasActions, sauceShown, sauceHiddenNoMedia, layoutOk, slashWorks,
-    swapped, ringMoved, outsideCloses, editOpens, editBack, ringKept, escCloses, cursorBack, galleryNormal,
+    swapped, ringMoved, outsideCloses, tagAddedInline, editOverlayUnused, ringKept, escCloses, cursorBack, galleryNormal,
     dbg: JSON.stringify({ t0, c0: cardText(card0), t2, c2: cardText(card2), narrowMode }) };
 })()`;
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -133,7 +150,7 @@ child.on('close', () => {
   if (m) { try { r = JSON.parse(m[1]); } catch { /* ignore */ } }
   fs.rmSync(tmp, { recursive: true, force: true });
   const keys = ['isAside', 'opened', 'contentOk', 'ring0', 'cursorSwap', 'hasActions', 'sauceShown', 'sauceHiddenNoMedia', 'layoutOk', 'slashWorks',
-    'swapped', 'ringMoved', 'outsideCloses', 'editOpens', 'editBack', 'ringKept', 'escCloses', 'cursorBack', 'galleryNormal'];
+    'swapped', 'ringMoved', 'outsideCloses', 'tagAddedInline', 'editOverlayUnused', 'ringKept', 'escCloses', 'cursorBack', 'galleryNormal'];
   const ok = keys.every((k) => r[k] === true);
   console.log(keys.map((k) => k + '=' + r[k]).join(' '));
   console.log(ok ? 'INSPECTOR_VERIFY_PASS' : 'INSPECTOR_VERIFY_FAIL');
