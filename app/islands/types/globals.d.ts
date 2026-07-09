@@ -59,11 +59,8 @@ declare global {
     fuzzy(hay: string, query: string): boolean;
   }
 
-  // ---- renderer/ui.js ----
-  interface CorpusUI {
-    notify(msg: unknown): void;
-    escapeHtml(s: unknown): string;
-  }
+  // ---- renderer/ui.ts — notify/escapeHtml. A real ES module (named exports)
+  // now — no ambient Window-shaped interface needed.
 
   // ---- renderer/theme.js ----
   interface CorpusTheme {
@@ -689,7 +686,6 @@ declare global {
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
-    corpusUI: CorpusUI;
     corpusTheme?: CorpusTheme;
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;

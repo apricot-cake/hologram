@@ -1,7 +1,7 @@
-// query.ts and listing.ts are real ES modules (the first two renderer
-// services converted off the window.corpusX bridge — see backlog memory
-// 「window.corpusXxx → export/import」); every other service below is still a
-// window-IIFE read via window.corpusX at call time.
+// Renderer services are migrating off the window.corpusX bridge to real ES
+// modules one wave at a time (see memory corpus-react-purity-execution-map);
+// the ones imported below are converted, the rest are still read via
+// window.corpusX at call time.
 import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf, makePostPredOf, makePosterPredOf } from './query.ts';
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } from './format.ts';
@@ -9,6 +9,9 @@ import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndo } from './undo.ts';
 import { makeUsers } from './users.ts';
+import { notify } from './ui.ts';
+import { makeSearchEditing } from './search-editing.ts';
+import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -2835,12 +2838,12 @@ import { makeUsers } from './users.ts';
   // staging-list mutation. Not persisted yet — Save (see openTagSelectedOverlay below) is
   // the only thing that writes the staged tags out to the records.
   function refreshEditOverlayFields() {
-    const tags = window.corpusBulkEdit.getTags();
-    window.corpusEditOverlay.refresh({ tags, ...inspectorTagPickerData(tags, window.corpusBulkEdit.getRecords(), 'post') });
+    const tags = getTags();
+    window.corpusEditOverlay.refresh({ tags, ...inspectorTagPickerData(tags, getRecords(), 'post') });
   }
 
   function closeEditOverlay() {
-    window.corpusBulkEdit.close();
+    close();
     byId('editOverlay').classList.remove('show');
     window.corpusEditOverlay.close();
   }
@@ -2913,8 +2916,8 @@ import { makeUsers } from './users.ts';
   function openTagSelectedOverlay() {
     const records = selectedRecords();
     if (!records.length) return;
-    window.corpusBulkEdit.open(records);
-    const tags = window.corpusBulkEdit.getTags();
+    open(records);
+    const tags = getTags();
     window.corpusEditOverlay.open({
       titleLabel: MSG.tagSelectedTitle,
       tags,
@@ -2932,29 +2935,29 @@ import { makeUsers } from './users.ts';
       saveLabel: MSG.save,
       onCancel: closeEditOverlay,
       onTagAdd: (tag: string) => {
-        window.corpusBulkEdit.add(tag);
+        add(tag);
         refreshEditOverlayFields();
       },
       onTagRemove: (tag: string) => {
-        window.corpusBulkEdit.remove(tag);
+        remove(tag);
         refreshEditOverlayFields();
       },
       onTagToggle: (tag: string) => {
-        window.corpusBulkEdit.toggle(tag);
+        toggle(tag);
         refreshEditOverlayFields();
       },
       onTagContextMenu: (tag: string, x: number, y: number) => {
         if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, refreshEditOverlayFields);
       },
       onSave: async () => {
-        const editingRecords = window.corpusBulkEdit.getRecords();
+        const editingRecords = getRecords();
         if (!editingRecords.length) {
           closeEditOverlay();
           return;
         }
         keepCurrentVisible(); // removing a tag can un-match an active tag filter
-        const tags = [...window.corpusBulkEdit.getTags()];
-        const editAdditive = window.corpusBulkEdit.isAdditive();
+        const tags = [...getTags()];
+        const editAdditive = isAdditive();
         // Capture before-state for undo, then persist.
         const undoRecords = editingRecords.map((r) => {
           const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
@@ -3929,12 +3932,12 @@ import { makeUsers } from './users.ts';
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
   // Search box ↔ query-tree text-leaf state machine + suggestion-pick handling —
-  // extracted to search-editing.ts (P4-B slice⑨; window.corpusSearchEditing).
+  // extracted to search-editing.ts (P4-B slice⑨).
   // The functions below are thin wrappers keeping the existing call-site names
   // (handleSearchQueryStoreChange/onConfirmText/postQB ctx/window.corpusViewer
   // all reference these by name) — same "wrapper preserves names" shape as the
   // postQB.addFilter/removeFilter/removeNode module-level wrappers above.
-  const searchEditing = window.corpusSearchEditing.makeSearchEditing({
+  const searchEditing = makeSearchEditing({
     getTree: () => postQB.getTree(),
     addFilter: (f) => postQB.addFilter(f),
     removeNode: (n) => postQB.removeNode(n),
@@ -4097,21 +4100,14 @@ import { makeUsers } from './users.ts';
 
   // --- Utility functions ---
   // Count / date formatters (formatCount / formatDate / compactDate / …) live in
-  // format.js now; escapeHtml/escapeAttr stay as thin aliases over corpusUI.
-  function escapeHtml(str: unknown) {
-    return window.corpusUI.escapeHtml(str);
-  }
-  // corpusUI.escapeHtml is quote-safe (escapes " and '), so attribute values are
-  // safe through the same call — escapeAttr stays as a named alias to keep the
-  // intent ("this value lands in an attribute") legible at the 35 call sites.
-  function escapeAttr(str: unknown) {
-    return window.corpusUI.escapeHtml(str);
-  }
+  // format.js now. escapeHtml/escapeAttr no longer have any callers here — the
+  // remaining HTML construction is JSX (which escapes automatically, see L2013);
+  // ui.ts's escapeHtml is still used directly by folders.ts's own modal markup.
 
   // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid
   // #333 #toast; unified to #ivToast so viewer + folders share one look.
   function showToast(msg: unknown) {
-    return window.corpusUI.notify(msg);
+    return notify(msg);
   }
 
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)

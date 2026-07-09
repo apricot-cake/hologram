@@ -43,7 +43,6 @@ import 'corpus-svc:facets';
 import 'corpus-svc:cooc';
 import 'corpus-svc:tags';
 import 'corpus-svc:tab-state';
-import 'corpus-svc:search-editing';
 import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';
 import 'corpus-svc:backup';
@@ -53,7 +52,6 @@ import 'corpus-svc:posts';
 // popover module-load time, so it must precede them; order below mirrors the old
 // index.html <script> order, which already satisfied this).
 import 'corpus-svc:i18n';
-import 'corpus-svc:ui';
 import 'corpus-svc:folders';
 import 'corpus-svc:store';
 import 'corpus-svc:bridge';
@@ -69,7 +67,6 @@ import 'corpus-svc:image-tab';
 import 'corpus-svc:tabs';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection';
-import 'corpus-svc:bulk-edit';
 import 'corpus-svc:confirm';
 import 'corpus-svc:about-icon';
 import './root.tsx';

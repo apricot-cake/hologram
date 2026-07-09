@@ -10,6 +10,8 @@
 //   window.corpusFolders.{ load, all, byId, has, toggleIn,
 //     isClipped, toggleClip, clearClips, clippedItems, clipCount,
 //     reconcile, openManager, closeManager, isManagerOpen, toast, onChange, isLoaded }
+import { escapeHtml as uiEscapeHtml, notify as uiNotify } from './ui.ts';
+
 (function () {
   'use strict';
   const $ = (id: string) => document.getElementById(id);
@@ -227,7 +229,7 @@
   }
 
   function escapeHtml(s: unknown) {
-    return window.corpusUI.escapeHtml(s);
+    return uiEscapeHtml(s);
   }
   function persist() {
     loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
@@ -336,7 +338,7 @@
 
   // --- toast (shared, top-level #ivToast) ---
   function toast(msg: unknown) {
-    return window.corpusUI.notify(msg);
+    return uiNotify(msg);
   }
 
   // --- management modal ---

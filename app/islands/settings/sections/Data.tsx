@@ -3,13 +3,11 @@ import type { ChangeEvent, CSSProperties } from 'react';
 import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
+import { notify } from '../../../renderer/ui.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
 const corpus = (): CorpusPreload => window.corpus || ({} as CorpusPreload);
-const notify = (m: string) => {
-  if (window.corpusUI && window.corpusUI.notify) window.corpusUI.notify(m);
-};
 const reloadPosts = () => {
   if (window.corpusViewer && window.corpusViewer.reloadPosts) window.corpusViewer.reloadPosts();
 };

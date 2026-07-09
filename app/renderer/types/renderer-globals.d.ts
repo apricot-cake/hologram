@@ -147,17 +147,8 @@ interface CorpusSelectionApi {
 }
 
 // ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
-// (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭). ----
-interface CorpusBulkEditApi {
-  open(records: CorpusPost[]): void;
-  close(): void;
-  getRecords(): CorpusPost[];
-  getTags(): string[];
-  isAdditive(): boolean;
-  add(tag: string): void;
-  remove(tag: string): void;
-  toggle(tag: string): void;
-}
+// (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭).
+// A real ES module (named exports) now — no ambient Window-shaped interface needed.
 
 // ---- renderer/facets.js — facet counts + value-flyout row models ----
 interface CorpusQfRow {
@@ -360,33 +351,10 @@ interface CorpusUndoRecord {
   newTags: string[];
 }
 
-// ---- renderer/search-editing.js — search box ↔ query-tree text-leaf state
-// machine + suggestion-pick handling (P4-B slice⑨). Encapsulates which leaf (if
-// any) is being typed; rendering/persistence side effects stay injected callbacks.
-interface CorpusSearchEditingApi {
-  makeSearchEditing(deps: {
-    getTree(): CorpusQueryGroup;
-    addFilter(leaf: { type: string; [k: string]: any }): CorpusQueryLeaf | null;
-    removeNode(node: CorpusQueryLeaf): void;
-    treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
-    searchQuery(): string;
-    setSearchBoxValue(v: string): void;
-    isFuzzy(): boolean;
-    isPostsMode(): boolean;
-    afterQueryChange(): void;
-    renderPosts(): void;
-    updateSidebarState(): void;
-  }): {
-    isEditingLeaf(node: unknown): boolean;
-    onLeafMutated(node: unknown): void;
-    clear(): void;
-    sync(): void;
-    confirm(): void;
-    rebind(): void;
-    pick(it: { kind: string; value: string; label?: string } | null | undefined): void;
-    onSearchModeChange(): void;
-  };
-}
+// ---- renderer/search-editing.ts — search box ↔ query-tree text-leaf state
+// machine + suggestion-pick handling (P4-B slice⑨). A real ES module (named
+// exports) now — SearchEditingDeps is exported directly from search-editing.ts,
+// no ambient Window-shaped interface needed.
 
 // ---- renderer/folders.js — library collections store + management modal +
 // library-wide clip set. The raw createFolderStore factory is shared internally by the
@@ -471,10 +439,8 @@ interface Window {
   corpusCooc: CorpusCoocApi;
   corpusTags: CorpusTagsApi;
   corpusTabState: CorpusTabStateApi;
-  corpusSearchEditing: CorpusSearchEditingApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
   corpusMakeBridge: CorpusMakeBridge;
   corpusSelection: CorpusSelectionApi;
-  corpusBulkEdit: CorpusBulkEditApi;
 }
