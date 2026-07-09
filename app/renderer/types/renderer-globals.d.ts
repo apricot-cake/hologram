@@ -59,56 +59,10 @@ interface CorpusFacetView {
   excl: CorpusQueryLeaf[];
 }
 
-interface CorpusQueryApi {
-  emptyTree(): CorpusQueryGroup;
-  treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[];
-  opposite(op: string): 'and' | 'or';
-  /** Migrates a flat filter list (+ per-type ops) into a condition tree. */
-  facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): CorpusQueryGroup;
-  evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean;
-  // Tree mutation domain (9th slice) — pure surgery; viewer binds these to its
-  // per-builder tree. All mutate in place except wrapAllInGroup (new root).
-  /** child → parent map, rebuilt for one surgery pass. */
-  treeParentMap(tree: CorpusQueryGroup): Map<CorpusQueryNode, CorpusQueryGroup>;
-  nodeContains(a: CorpusQueryNode | null | undefined, b: CorpusQueryNode | null | undefined): boolean;
-  detachNode(node: CorpusQueryNode, pmap: Map<CorpusQueryNode, CorpusQueryGroup>): void;
-  /** Drops empty groups; collapses single-member non-root groups (neg folds into the survivor). */
-  cleanupTree(tree: CorpusQueryGroup): void;
-  hasLeafValue(tree: CorpusQueryGroup, type: string, value: unknown): boolean;
-  /** Removes matching cond leaves anywhere in the tree (+cleanup); true when something was removed. */
-  removeCondsMatching(tree: CorpusQueryGroup, pred: (c: CorpusQueryLeaf) => boolean): boolean;
-  /** Shadow identity: date matches by type alone, engagement by engType, others by value. */
-  sameLeaf(c: CorpusQueryLeaf, f: { type: string; [k: string]: any }): boolean;
-  /** Flat deduped leaf shadow (sidebar highlight / row badges / tab title). */
-  buildShadow(tree: CorpusQueryGroup): Array<{ type: string; [k: string]: any }>;
-  /** Applies a drag-drop; false = rejected (drop onto itself / own descendant). */
-  dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | undefined, target: CorpusQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean;
-  /** Wraps the whole expression in one group; returns the NEW root, or null when empty. */
-  wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null;
-  // Facet domain (改訂④) — strict analysis + canonical mutations.
-  /** Default within-cluster operator: multi-value types 'and', others 'or'. */
-  facetDefaultOp(type: string, opts: CorpusFacetOpts): 'and' | 'or';
-  /** Strict facet analysis; null = not facet-shaped (renders as a read-only summary). */
-  facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): CorpusFacetView | null;
-  /** Rebuilds a facet-shaped tree into canonical form in place; false = not facet-shaped. */
-  canonicalizeFacet(tree: CorpusQueryGroup, opts: CorpusFacetOpts): boolean;
-  /** Inserts a positive leaf into its type cluster (group-join / pair-up / top level). */
-  facetAdd(tree: CorpusQueryGroup, node: CorpusQueryLeaf, opts: CorpusFacetOpts): CorpusQueryLeaf;
-  /** Sets a cluster's operator (the すべて/どれか toggle); false when no such group. */
-  facetSetOp(tree: CorpusQueryGroup, type: string, op: string): boolean;
-  /** Moves a leaf between its cluster and the 除く cluster; false when neg is unchanged. */
-  facetSetNeg(tree: CorpusQueryGroup, node: CorpusQueryLeaf, neg: boolean, opts: CorpusFacetOpts): boolean;
-  /** LOCAL-day range: from = local midnight, to = NEXT local midnight (exclusive). */
-  localDayRange(from?: string | null, to?: string | null): { from: Date | null; to: Date | null };
-  hostOf(url: string | null | undefined): string;
-  /** Stable per-author key: platform user id, falling back to the handle. */
-  userKey(p: CorpusPost): string;
-  textHaystackOf(p: CorpusPost): string[];
-  /** Post-side leaf-predicate factory; runtime couplings injected by viewer.js. */
-  makePostPredOf(deps: { isInCollection(id: string, captureId: string): boolean; isClipped(captureId: string): boolean; fuzzyCompile?(q: string): ((hay: string) => boolean) | null; postKeyOf?(url: string | null | undefined): string | null }): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean;
-  /** Poster-side leaf-predicate factory (mirror of makePostPredOf); poster-only couplings injected by viewer.js. */
-  makePosterPredOf(deps: { posterTagsOf(key: string): string[]; folderById(id: string): { items: string[] } | null | undefined }): (f: CorpusQueryLeaf) => (u: CorpusUserAgg) => boolean;
-}
+// query.ts's own API surface (emptyTree/evalNode/makePostPredOf/etc.) is a real
+// ES module now — its named exports carry their own types, so no ambient
+// Window-shaped interface is declared for it here anymore (see backlog memory
+// 「window.corpusXxx → export/import」).
 
 // ---- renderer/records.js — record shape helpers + grouping (dual-exported
 // to main via CommonJS for the shared postKeyOf) ----
@@ -383,50 +337,11 @@ interface CorpusCollection {
   created?: number;
   [k: string]: any;
 }
-interface CorpusListingApi {
-  makeListing(deps: {
-    allPosts(): CorpusPost[];
-    postsById(): Map<string, CorpusPost>;
-    mediaFilesOf(p: CorpusPost): string[];
-    densityImage(p: CorpusPost, density: string): string;
-    percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
-    evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean;
-    treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[];
-    postPredOf(f: CorpusQueryLeaf): (p: CorpusPost) => boolean;
-    currentTree(): CorpusQueryGroup;
-    stickyRecs: Set<string>;
-    sortValue(): string;
-    searchQuery(): string;
-    buildUsers(): CorpusUserAgg[];
-    posterQBEval(u: CorpusUserAgg): boolean;
-    posterQBTree(): CorpusQueryGroup;
-    posterSort(): string;
-    collectionSort(): string;
-    allCollections(): CorpusCollection[];
-    filterLabel(f: { type: string; [k: string]: any }): string;
-  }): {
-    getFilteredPosts(): CorpusPost[];
-    namedPosters(): CorpusUserAgg[];
-    filteredPosters(): CorpusUserAgg[];
-    /** Folds a legacy free-text q into the tree as a confirmed 'text' leaf. */
-    treeWithLegacyQ(tree: CorpusQueryGroup | null | undefined, q: string | null | undefined): CorpusQueryGroup | null;
-    dynamicMatches(coll: CorpusCollection): CorpusPost[];
-    /** Arms the per-render-pass record memo (renderCollections calls this first). */
-    resetCollectionCache(): void;
-    collectionRecords(coll: CorpusCollection): CorpusPost[];
-    collectionThumbsFrom(recs: CorpusPost[]): string[];
-    collectionItemCount(coll: CorpusCollection): number;
-    collCondLabels(coll: CorpusCollection): string[];
-    filteredCollections(): CorpusCollection[];
-  };
-  /** Deep-clone a query tree for persistence, dropping transient _memo fields. */
-  cloneTree(tree: CorpusQueryNode): any;
-  // Bound once at boot (viewer.ts, right after its own makeListing() call) — see
-  // CorpusTagsApi's tagKindOf/posterFilterVocab note above (same reasoning: the
-  // poster sidebar source needs namedPosters() for poster-instance disclosure,
-  // and this is the one already-bound closure, not a second implementation).
-  namedPosters?(): CorpusUserAgg[];
-}
+// listing.ts's own API surface (makeListing/cloneTree/namedPosters/etc.) is a
+// real ES module now — its named exports (including the exported ListingDeps
+// interface) carry their own types, so no ambient Window-shaped interface is
+// declared for it here anymore (see backlog memory 「window.corpusXxx →
+// export/import」).
 
 // ---- renderer/geometry.js — pure column / slider-track / thumbnail math ----
 // Metrics: W = floored fractional container width, g = gutter px.
@@ -592,14 +507,12 @@ type CorpusMakeBridge = (name?: string) => CorpusCallbackBridge;
 // directly (via `islands/**/*`) — the old duplicated CorpusStoreApi is gone.
 
 interface Window {
-  corpusQuery: CorpusQueryApi;
   corpusRecords: CorpusRecordsApi;
   corpusFacets: CorpusFacetsApi;
   corpusCooc: CorpusCoocApi;
   corpusTags: CorpusTagsApi;
   corpusUsers: CorpusUsersApi;
   corpusTabState: CorpusTabStateApi;
-  corpusListing: CorpusListingApi;
   corpusGeometry: CorpusGeometryApi;
   corpusFormat: CorpusFormatApi;
   corpusUndo: CorpusUndoApi;

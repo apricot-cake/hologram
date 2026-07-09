@@ -1,3 +1,10 @@
+// query.ts and listing.ts are real ES modules (the first two renderer
+// services converted off the window.corpusX bridge — see backlog memory
+// 「window.corpusXxx → export/import」); every other service below is still a
+// window-IIFE read via window.corpusX at call time.
+import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf, makePostPredOf, makePosterPredOf } from './query.ts';
+import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
+
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
   // bootApp() below, instead of viewer self-invoking its own init sequence — the
@@ -591,8 +598,8 @@
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
   // injected: reassigned lets (allPosts/multiOnly) + tags.js's own getter
   // (tagGroups) as getters, and consts declared after this point (posterQB /
-  // pfStore / the corpusQuery destructure / the listing.js products) as
-  // deferred arrow wrappers — a direct ref here would hit TDZ at wiring time;
+  // pfStore / the listing.ts products) as deferred arrow wrappers — a direct
+  // ref here would hit TDZ at wiring time;
   // the wrappers only run when a flyout opens.
   const { qfValues } = window.corpusFacets.makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
@@ -1143,13 +1150,12 @@
   // title / counts) — postQB.shadow()/posterQB.shadow(), read fresh at each
   // call site rather than mirrored into a separate module-level global (P4-B
   // slice⑧; see the syncShadow comment below).
-  // The tree machinery + post-side predicates live in query.js (window.corpusQuery)
+  // The tree machinery + post-side predicates live in query.ts (imported above)
   // — the first "pure logic → service" extraction of the viewer decomposition.
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through corpusSearch.
-  const { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } = window.corpusQuery;
-  const postPredOf = window.corpusQuery.makePostPredOf({
+  const postPredOf = makePostPredOf({
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
     fuzzyCompile: (q) => (window.corpusSearch ? window.corpusSearch.compile(q) : null),
@@ -1304,7 +1310,7 @@
   // suggestion items) moved to users.js (window.corpusUsers) — 5th extraction
   // slice. Reassigned lets (allPosts / _allPostsGeneration) are injected as
   // getters; userKey/hostOf are consts already initialized at this point (the
-  // corpusQuery destructure above), so they pass through directly. corpusSearch
+  // query.ts import above), so they pass through directly. corpusSearch
   // is a getter because buildSuggest reads its live fuzzy mode per call.
   const { buildUsers, buildSuggest } = window.corpusUsers.makeUsers({
     allPosts: () => allPosts,
@@ -1326,7 +1332,7 @@
   const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn } = window.corpusRecords;
   const groupRecords = window.corpusRecords.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
 
-  // hostOf / userKey moved to query.js (destructured from window.corpusQuery above).
+  // hostOf / userKey moved to query.ts (imported above).
 
   // --- Load posts ---
   // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
@@ -1385,14 +1391,14 @@
 
   // The listing pipeline — getFilteredPosts (content gate → query tree → sticky
   // merge → sort), namedPosters/filteredPosters, and the collection derivations —
-  // moved to listing.js (window.corpusListing), 7th extraction slice. Runtime
+  // moved to listing.ts (imported above), 7th extraction slice. Runtime
   // couplings are injected: reassigned lets (allPosts/_postsById/posterSort/
   // collectionSort) as getters; posterQB is a const declared later — arrow
   // wrappers defer the read past TDZ (they only run once posters render).
   // Collection derivations (filteredCollections / dynamicMatches / …) are no longer
   // destructured — collections became a sidebar folder list (2026-07-04), so only the
   // post/poster selection pipeline is used here. cloneTree stays (tab-state serialize).
-  const { getFilteredPosts, namedPosters, filteredPosters } = window.corpusListing.makeListing({
+  const { getFilteredPosts, namedPosters, filteredPosters } = makeListing({
     allPosts: () => allPosts,
     postsById: () => _postsById,
     mediaFilesOf,
@@ -1420,12 +1426,11 @@
     allCollections: () => (CF() ? CF().allCollections() : []) as CorpusCollection[],
     filterLabel,
   });
-  // Bound onto the shared service object so renderer/sidebar.ts's poster source (P4-B
-  // slice⑰) can read the same namedPosters() this viewer instance uses (poster-instance
-  // row disclosure) — see the corpusTags.tagKindOf note above for why this is a bind,
-  // not a reimplementation.
-  window.corpusListing.namedPosters = namedPosters;
-  const { cloneTree } = window.corpusListing;
+  // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster
+  // source (P4-B スライス⑰) can read the same namedPosters() this viewer instance uses
+  // (poster-instance row disclosure) — see the corpusTags.tagKindOf note above for why
+  // this is a bind, not a reimplementation.
+  bindNamedPosters(namedPosters);
 
   let lastRenderedState: any = null;
   let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
@@ -3304,11 +3309,12 @@
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
   // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
-  // Poster leaf predicate — extracted to query.js (makePosterPredOf), the mirror
-  // of postPredOf above. posterTagsOf (tags.js) and posterFolderById (pfStore)
-  // are both declared above, so a direct ref is TDZ-safe. posterFilterLabel now
-  // lives in tab-state.js's makeTabLabels (destructured near filterLabel).
-  const posterPredOf = window.corpusQuery.makePosterPredOf({
+  // Poster leaf predicate — extracted to query.ts (makePosterPredOf, imported
+  // above), the mirror of postPredOf above. posterTagsOf (tags.js) and
+  // posterFolderById (pfStore) are both declared above, so a direct ref is
+  // TDZ-safe. posterFilterLabel now lives in tab-state.js's makeTabLabels
+  // (destructured near filterLabel).
+  const posterPredOf = makePosterPredOf({
     posterTagsOf,
     folderById: posterFolderById,
   });
@@ -3318,7 +3324,7 @@
   // this used to also mirror the tree shadow into a module-level `posterShadow`
   // global via onShadow — that global had zero readers (the poster sidebar model
   // read posterQB.shadow() directly, and now renderer/sidebar.ts's source reads
-  // the mirrored 'posterQueryTree' store key via corpusQuery.buildShadow instead),
+  // the mirrored 'posterQueryTree' store key via query.ts's buildShadow instead),
   // so it's removed outright rather than converted to a read site.
   const posterQB = createQueryBuilder({
     msg: qbMsg,

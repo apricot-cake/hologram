@@ -30,12 +30,14 @@
 //     project, so that reason is gone — the bare specifiers remain only because these
 //     are still window-global side-effect imports, not real ES module imports (see
 //     「window.corpusXxx → export/import」 in the backlog memory for the pending
-//     conversion). Order mirrors the old index.html scripts; these precede root.tsx
-//     (islands read the globals at render) and viewer (last). Wave 1 = the logic
-//     services. ---
+//     conversion — query.ts and listing.ts are the first two converted, so they're no
+//     longer listed here: they're real ES modules now, pulled in by a plain relative
+//     import wherever a consumer (viewer.ts / query-chips.ts / sidebar.ts / tabs.ts)
+//     needs them, with no side-effect-only import required at this barrel). Order
+//     mirrors the old index.html scripts; these precede root.tsx (islands read the
+//     globals at render) and viewer (last). Wave 1 = the logic services. ---
 import 'corpus-svc:ipc';
 import 'corpus-svc:search';
-import 'corpus-svc:query';
 import 'corpus-svc:records';
 import 'corpus-svc:posts-data';
 import 'corpus-svc:facets';
@@ -43,7 +45,6 @@ import 'corpus-svc:cooc';
 import 'corpus-svc:tags';
 import 'corpus-svc:users';
 import 'corpus-svc:tab-state';
-import 'corpus-svc:listing';
 import 'corpus-svc:geometry';
 import 'corpus-svc:format';
 import 'corpus-svc:undo';

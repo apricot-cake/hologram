@@ -18,24 +18,30 @@
 // because it ran inside viewer.ts; that reason is gone once the derivation moves here).
 //
 // tagKindOf/posterFilterVocab/namedPosters are NOT reimplemented here — they're the
-// exact closures viewer.ts already builds (via corpusTags.makeTags / corpusListing.
-// makeListing), bound onto the shared service objects once at boot so this module reads
-// the SAME functions instead of a second copy that could drift. They're optional on
-// their host APIs (undefined until viewer.ts's assignment runs) because this module's
-// store/service subscriptions are wired at load time, before viewer.ts's own `await
-// corpusI18n`-gated body runs — a pull that lands in that narrow window just sees "no
-// data yet" and recomputes once viewer wires up and the first real mutation notifies.
+// exact closures viewer.ts already builds (via corpusTags.makeTags / listing.ts's
+// makeListing), bound onto the shared service object (corpusTags) / live binding
+// (listing.ts's namedPosters) once at boot so this module reads the SAME functions
+// instead of a second copy that could drift. They're null/undefined until viewer.ts's
+// binding call runs, because this module's store/service subscriptions are wired at
+// load time, before viewer.ts's own `await corpusI18n`-gated body runs — a pull that
+// lands in that narrow window just sees "no data yet" and recomputes once viewer
+// wires up and the first real mutation notifies.
 //
 // Two independent sources (post / poster) so a change in one column never triggers the
 // other's subscribers. Plain IIFE on window (like grid.ts); loaded BEFORE viewer.js,
-// AFTER store.ts/folders.ts/tags.ts/query.ts/posts-data.ts/listing.ts (see the barrel's
-// import order) — every dependency this module reads is already assigned by the time
-// its own top-level subscriptions are wired.
+// AFTER store.ts/folders.ts/tags.ts/posts-data.ts (see the barrel's import order) —
+// every dependency this module reads is already assigned by the time its own
+// top-level subscriptions are wired. query.ts/listing.ts are real ES modules now
+// (imported directly below) rather than window-IIFEs, so their load order no
+// longer matters.
+import { buildShadow } from './query.ts';
+import { namedPosters } from './listing.ts';
+
 (function () {
   'use strict';
 
   function computePostModel(): CorpusSidebarModel {
-    const activeFilters = window.corpusQuery.buildShadow(window.corpusStore.get('postQueryTree'));
+    const activeFilters = buildShadow(window.corpusStore.get('postQueryTree'));
     // Per-category active-filter counts. Instance filters live inside the platform
     // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
     // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
@@ -92,10 +98,10 @@
     const tagKindOf = window.corpusTags.tagKindOf;
     const kindOf = (v: string) => (tagKindOf ? tagKindOf(v) : null);
     const vocab = window.corpusTags.posterFilterVocab ? window.corpusTags.posterFilterVocab() : [];
-    const named = window.corpusListing.namedPosters ? window.corpusListing.namedPosters() : [];
+    const named = namedPosters ? namedPosters() : [];
     const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
     // Row badges count the matching leaves in the poster query tree (shadow).
-    const leaves = window.corpusQuery.buildShadow(window.corpusStore.get('posterQueryTree'));
+    const leaves = buildShadow(window.corpusStore.get('posterQueryTree'));
     const tagLeaves = leaves.filter((f) => f.type === 'tag');
     const badges: Record<string, number> = {
       'poster-platform': leaves.filter((f) => f.type === 'platform').length,

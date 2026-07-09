@@ -12,7 +12,7 @@
 // persisted .state, which only updates on switch-away). postQB.shadow() was
 // deliberately never mirrored to the store (P4-B slice⑧: every read site calls
 // it directly, to avoid a second copy) — this recomputes the same thing from
-// what IS mirrored: corpusQuery.buildShadow(postQueryTree) is the exact function
+// what IS mirrored: query.ts's buildShadow(postQueryTree) is the exact function
 // postQB.shadow() calls internally. searchQuery/sortPost were already mirrored;
 // multiOnly is mirrored for the first time in this slice (viewer.ts, alongside
 // sortPost). allPostsCount (⑩) covers the tab title's item count.
@@ -27,6 +27,8 @@
 // window.corpusViewer via TabBarEvents (App.tsx, P4-B slice④) — unchanged by
 // this slice; this file only computes the model, it never mutates tab state.
 // Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
+import { buildShadow } from './query.ts';
+
 (function () {
   'use strict';
 
@@ -56,7 +58,7 @@
   function liveActiveState() {
     const tree = window.corpusStore.get('postQueryTree');
     return {
-      f: tree ? window.corpusQuery.buildShadow(tree) : [],
+      f: tree ? buildShadow(tree) : [],
       search: window.corpusStore.get('searchQuery') || '',
       sort: window.corpusStore.get('sortPost'),
       multi: !!window.corpusStore.get('multiOnly'),

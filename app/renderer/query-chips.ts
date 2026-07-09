@@ -14,10 +14,11 @@
 //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
 //        standaloneTypes? }  (barEl = the bar's static container: reveal +
 //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
+import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, facetSetNeg, evalNode } from './query.ts';
+
 (function () {
   'use strict';
 
-  const Q = window.corpusQuery;
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // ── per-container cached model + subscribers (the island's useSyncExternalStore
@@ -84,7 +85,7 @@
   }
 
   function createQueryBuilder(ctx: QbCtx) {
-    let tree = Q.emptyTree();
+    let tree = emptyTree();
     let qbNodeMap = new Map<string, any>(); // data-nid → tree node (rebuilt each render)
     let shadow: any[] = []; // last computed flat (deduped) leaf shadow
     const chips = ctx.container;
@@ -98,20 +99,20 @@
     // question, so the UI never has to ask.
     const facetOpts = { multiValueTypes: ctx.multiValueTypes || [], standaloneTypes: ctx.standaloneTypes || [] };
 
-    // --- Tree mutation domain lives in query.js (9th extraction slice); the
+    // --- Tree mutation domain lives in query.ts (imported above, 9th extraction slice); the
     // bindings below close over THIS instance's tree.
-    const qHasValue = (type: string, value: unknown) => Q.hasLeafValue(tree, type, value);
-    const removeCondsMatching = (pred: (c: CorpusQueryLeaf) => boolean) => Q.removeCondsMatching(tree, pred);
+    const qHasValue = (type: string, value: unknown) => hasLeafValue(tree, type, value);
+    const removeCondsMatching = (pred: (c: CorpusQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
     // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
     // Also mirror the tree into corpusStore under ctx.storeKey, a fresh deep
-    // clone each time (tree is mutated in-place by the Q.* calls below, so a
+    // clone each time (tree is mutated in-place by the query.ts calls below, so a
     // same-reference push would never pass the store's identity-equality
     // guard — same issue as the selectedSet slice, same fix). This is THE
     // single choke point for "the tree changed" (every mutation path —
     // addFilter/removeNode/dispatch's opt/neg toggles, plus setTree/resetTree
     // — calls syncShadow), so one push here covers all of them.
     const syncShadow = () => {
-      shadow = Q.buildShadow(tree);
+      shadow = buildShadow(tree);
       if (ctx.storeKey) window.corpusStore.set(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
     };
     // One canonical refresh after any tree mutation: rebuild the shadow, then let
@@ -156,8 +157,8 @@
       // Re-assert the canonical facet shape before reading it (mutations keep it,
       // but a freshly loaded compatible tree may still carry bare 2+-value runs;
       // the すべて/どれか toggle needs real group nodes to write to).
-      const isFacet = Q.canonicalizeFacet(tree, facetOpts);
-      const view = isFacet ? Q.facetViewOf(tree, facetOpts) : null;
+      const isFacet = canonicalizeFacet(tree, facetOpts);
+      const view = isFacet ? facetViewOf(tree, facetOpts) : null;
       // Rebuild qbNodeMap (data-nid → node) in the same pre-order the model
       // carries, so dispatch()'s nodeById() keeps resolving. The island only
       // RENDERS this model and calls dispatch(); this module keeps the ids,
@@ -227,9 +228,9 @@
       // Prevent exact duplicates (anywhere in the tree), except for multi types.
       else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
       const node = Object.assign({ kind: 'cond' as const }, filter);
-      if (Q.facetViewOf(tree, facetOpts)) Q.facetAdd(tree, node, facetOpts);
+      if (facetViewOf(tree, facetOpts)) facetAdd(tree, node, facetOpts);
       else tree.children.push(node);
-      Q.cleanupTree(tree);
+      cleanupTree(tree);
       refresh();
       return node; // callers binding to the new leaf (e.g. the editing text leaf) need it
     }
@@ -238,13 +239,13 @@
     function removeFilter(index: number) {
       const f = shadow[index];
       if (!f) return;
-      removeCondsMatching((c) => Q.sameLeaf(c, f));
+      removeCondsMatching((c) => sameLeaf(c, f));
       refresh();
     }
     function removeNode(node: CorpusQueryLeaf) {
       if (ctx.onLeafMutated) ctx.onLeafMutated(node); // let the view reconcile (e.g. unbind the editing text leaf)
-      Q.detachNode(node, Q.treeParentMap(tree));
-      Q.cleanupTree(tree);
+      detachNode(node, treeParentMap(tree));
+      cleanupTree(tree);
       refresh();
     }
 
@@ -258,7 +259,7 @@
       window.corpusContextMenu.open({ items, x, y }, (item) => {
         if (item.act === 'neg') {
           if (ctx.onLeafMutated) ctx.onLeafMutated(node); // an editing text leaf moving to 除く is confirmed
-          Q.facetSetNeg(tree, node, !node.neg, facetOpts);
+          facetSetNeg(tree, node, !node.neg, facetOpts);
           refresh();
         } else if (item.act === 'del') {
           removeNode(node);
@@ -311,13 +312,13 @@
       // Facet-compatible persisted trees normalize into the canonical shape;
       // anything else stays intact and renders as the read-only summary.
       setTree: (t: CorpusQueryGroup | null | undefined) => {
-        tree = t ? JSON.parse(JSON.stringify(t)) : Q.emptyTree();
-        Q.cleanupTree(tree);
-        Q.canonicalizeFacet(tree, facetOpts);
+        tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
+        cleanupTree(tree);
+        canonicalizeFacet(tree, facetOpts);
         syncShadow();
       },
       resetTree: () => {
-        tree = Q.emptyTree();
+        tree = emptyTree();
         // Every tree mutation must resync the flat shadow (the invariant refresh()
         // documents). resetTree was the lone mutator that skipped it, leaving the
         // shadow — and its consumers (.shadow() readers → sidebar row badges) —
@@ -340,7 +341,7 @@
       render,
       refresh,
       syncShadow,
-      eval: (item: unknown) => Q.evalNode(tree, item, ctx.predOf),
+      eval: (item: unknown) => evalNode(tree, item, ctx.predOf),
       hasQuery: () => tree.children.length > 0,
       shadow: () => shadow,
       dispatch,
