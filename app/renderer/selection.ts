@@ -20,7 +20,7 @@
 
   let anchor: number | null = null;
 
-  function has(key) {
+  function has(key: string) {
     return current().has(key);
   }
   function size() {

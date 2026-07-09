@@ -25,16 +25,17 @@
   //   isPostsMode() — browseMode === 'posts' (a viewer.js reassigned let, so a getter).
   //   afterQueryChange() / renderPosts() / updateSidebarState() — viewer.js
   //     re-render triggers, called after a state transition.
-  function makeSearchEditing(deps) {
+  type SearchEditingDeps = Parameters<CorpusSearchEditingApi['makeSearchEditing']>[0];
+  function makeSearchEditing(deps: SearchEditingDeps) {
     const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, isFuzzy, isPostsMode, afterQueryChange, renderPosts, updateSidebarState } = deps;
-    let editingTextNode: any = null;
+    let editingTextNode: CorpusQueryLeaf | null = null;
 
-    function isEditingLeaf(node) {
+    function isEditingLeaf(node: unknown) {
       return node === editingTextNode;
     }
     // The query-builder's onLeafMutated: the bound leaf was removed or dragged
     // elsewhere — detach so typing doesn't mutate an orphan node.
-    function onLeafMutated(node) {
+    function onLeafMutated(node: unknown) {
       if (node === editingTextNode) {
         editingTextNode = null;
         setSearchBoxValue('');
@@ -88,7 +89,7 @@
     }
     // A concrete suggestion pick (tag/user) wins over an in-progress free-text
     // term — the typed text was for FINDING the filter, not a body search to keep.
-    function pick(it) {
+    function pick(it: { kind: string; value: string; label?: string } | null | undefined) {
       if (!it) return;
       setSearchBoxValue('');
       if (editingTextNode) {

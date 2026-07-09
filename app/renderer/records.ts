@@ -22,16 +22,18 @@
   // NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
   // height reservation (shotW/shotH) sizes the same image the card shows.
   const SS_EXT = /\.jpe?g$/i;
-  const mediaFilesOf = (p) => (Array.isArray(p.media) ? p.media.filter((m) => m && m.file).map((m) => m.file) : []);
+  // p.media entries are a loose JSON shape (same pragmatics as CorpusPost itself).
+  type CorpusMediaItem = { file?: string; alt?: string; [k: string]: any };
+  const mediaFilesOf = (p: CorpusPost): string[] => (Array.isArray(p.media) ? (p.media as CorpusMediaItem[]).filter((m) => m && m.file).map((m) => m.file as string) : []);
   // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
-  const isScreenshot = (p) => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
-  const captureFile = (p) => (isScreenshot(p) ? p.image : '');
-  const artworkFile = (p) => {
+  const isScreenshot = (p: CorpusPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
+  const captureFile = (p: CorpusPost): string => (isScreenshot(p) ? p.image : '');
+  const artworkFile = (p: CorpusPost): string => {
     const m = mediaFilesOf(p);
     if (m.length) return m[0];
     return p.image && !isScreenshot(p) ? p.image : '';
   };
-  function densityImage(p, density) {
+  function densityImage(p: CorpusPost, density: string): string {
     const cap = captureFile(p),
       art = artworkFile(p);
     return density === 'list' ? cap || art : art || cap;
@@ -41,9 +43,9 @@
   // Auto: records sharing the same post URL (multi-image drags, re-captures of
   // one post) collapse into one card. Manual groups (manual-groups.json) win
   // over auto. ungrouped.json opts individual post keys out.
-  const postIdKey = (p) => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
+  const postIdKey = (p: CorpusPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
   // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
-  function postKeyOf(url) {
+  function postKeyOf(url: string | null | undefined): string | null {
     if (!url) return null;
     let u: any;
     try {
@@ -62,7 +64,7 @@
     return null;
   }
   // The "artwork pages" of one record: original media, else the dragged/migrated image.
-  const groupFilesOf = (p) => {
+  const groupFilesOf = (p: CorpusPost): string[] => {
     const m = mediaFilesOf(p);
     if (m.length) return m;
     const a = artworkFile(p);
@@ -74,16 +76,16 @@
   // lookup, so deletions degrade to a "missing" empty state instead of a broken image. Same
   // rep pick as groupRecords (capture first, then any record with text). Pure — byId is
   // injected (so this loads under Node too).
-  function imageTabGroup(t, byId) {
-    const ids = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
-    const records = ids.map((id) => byId(id)).filter(Boolean);
+  function imageTabGroup(t: CorpusTab, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null {
+    const ids: string[] = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
+    const records = ids.map((id) => byId(id)).filter(Boolean) as CorpusPost[];
     if (!records.length) return null;
     const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
     return { key: 'imgtab:' + t.id, records, rep, files: records.flatMap(groupFilesOf) };
   }
   // Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
   // caller-supplied 無題 fallback (i18n-owned by the caller).
-  function imageTabTitleOf(g, fallback) {
+  function imageTabTitleOf(g: CorpusPostGroup, fallback: string): string {
     const p = g.rep;
     const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
     const base = raw || p.displayName || fallback;
@@ -95,14 +97,14 @@
   //   ungrouped()    → Set of post keys opted out of auto-grouping
   // Both are getter functions because viewer.js REASSIGNS the underlying
   // bindings on load/edit — a by-value snapshot would go stale.
-  function makeGroupRecords(deps) {
-    return function groupRecords(list) {
+  function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }) {
+    return function groupRecords(list: CorpusPost[]): CorpusPostGroup[] {
       const manualGroups = deps.manualGroups();
       const ungrouped = deps.ungrouped();
       // url-derived group key, precomputed once per record by stampPost (_postKey);
       // fall back to a live parse for any record that somehow predates the stamp.
-      const pk = (p) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
-      const manualOf = new Map(); // captureId → 'manual:idx' (manual groups win)
+      const pk = (p: CorpusPost) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
+      const manualOf = new Map<string, string>(); // captureId → 'manual:idx' (manual groups win)
       manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
       let solo = 0;
       const base = list.map((p) => {
@@ -120,16 +122,16 @@
       // render as one card. The platform-local own-id is the last segment of the
       // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
       // suppress the merge for either side.
-      const pidOf = (p) => {
+      const pidOf = (p: CorpusPost) => {
         const k = pk(p);
         return k ? k.split(/[/:]/).pop() : null;
       };
-      const idIndex = new Map(); // userId + '|' + ownPostId → entry
+      const idIndex = new Map<string, (typeof base)[number]>(); // userId + '|' + ownPostId → entry
       for (const e of base) {
         const id = pidOf(e.p);
         if (id && e.p.userId) idIndex.set(e.p.userId + '|' + id, e);
       }
-      const alias = new Map(); // child group key → parent group key
+      const alias = new Map<any, any>(); // child group key → parent group key
       for (const e of base) {
         const p = e.p;
         if (!p.replyToId || !p.userId) continue;
@@ -144,7 +146,7 @@
       // self-reply aliases to its IMMEDIATE parent's key, so chain length equals
       // thread length and a fixed cap would split long threads into several
       // cards. The seen-set guards pathological cycles (dup keys/corrupt data).
-      const resolveKey = (k) => {
+      const resolveKey = (k: any) => {
         const seen = new Set();
         while (alias.has(k) && !seen.has(k)) {
           seen.add(k);
@@ -177,7 +179,7 @@
 
   // Likes percentile within each platform — ranks "did well for its SNS" so X's
   // raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
-  function percentileFn(list) {
+  function percentileFn(list: CorpusPost[]): (p: CorpusPost) => number {
     const byPlat: Record<string, number[]> = {};
     list.forEach((p) => {
       const k = p.platform || '';
@@ -202,24 +204,24 @@
   // --- Lightbox gallery items (twelfth extraction slice) ----------------------
   // The URL scheme (psimg://) stays viewer-owned: fileSrc is injected so the
   // protocol knowledge isn't duplicated here.
-  const isVideoFile = (f) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+  const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
   // deps: fileSrc(file) — renderer media URL builder (viewer.js).
-  function makeGallery(deps) {
+  function makeGallery(deps: { fileSrc(file: string): string }) {
     const { fileSrc } = deps;
     // Gallery items for a post: the screenshot first, then each original image.
-    function buildGalleryItems(p) {
+    function buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[] {
       const items: { src: string; alt: string; video: boolean }[] = [];
       if (p.image) items.push({ src: fileSrc(p.image), alt: '', video: false });
       if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
       if (Array.isArray(p.media)) {
-        for (const m of p.media) {
+        for (const m of p.media as CorpusMediaItem[]) {
           if (m && m.file) items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
         }
       }
       return items;
     }
     // Gallery for a whole group: every record's items in captureId order, deduped by src.
-    function buildGroupGalleryItems(g) {
+    function buildGroupGalleryItems(g: CorpusPostGroup): { src: string; alt: string; video: boolean }[] {
       if (g.records.length === 1) return buildGalleryItems(g.rep);
       const seen = new Set<string>();
       const items: { src: string; alt: string; video: boolean }[] = [];
@@ -248,9 +250,9 @@
   //   isClipped/fileSrc keep folder + psimg knowledge viewer-owned. Selection is
   //   NOT here — the grid island derives .selected straight from corpusStore's
   //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
-  function makeCardModel(deps) {
+  function makeCardModel(deps: Parameters<CorpusRecordsApi['makeCardModel']>[0]) {
     const { MSG, PF_NAME, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
-    return function cardModel(g, i) {
+    return function cardModel(g: CorpusPostGroup, i: number): Record<string, any> {
       const p = g.rep;
       const view = currentView();
       const aspectCache = imgAspect();
@@ -328,7 +330,7 @@
 
   // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
   // comparison (done once per record on arrival, not per render).
-  function stampPost(p) {
+  function stampPost(p: CorpusPost): CorpusPost {
     p._dateMs = p.date ? +new Date(p.date) : 0;
     p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
     p._postKey = postKeyOf(p.url); // url-derived group key; groupRecords would re-parse it 3x/record otherwise
@@ -349,7 +351,7 @@
       return [];
     }
   }
-  async function persistManualGroups(groups) {
+  async function persistManualGroups(groups: string[][]) {
     try {
       await window.corpusIpc.setManualGroups(groups);
     } catch {
@@ -364,7 +366,7 @@
       return new Set<string>();
     }
   }
-  async function persistUngrouped(keys) {
+  async function persistUngrouped(keys: Set<string> | string[]) {
     try {
       await window.corpusIpc.setUngrouped([...keys]);
     } catch {
@@ -372,7 +374,7 @@
     }
   }
 
-  const api = {
+  const api: CorpusRecordsApi = {
     mediaFilesOf,
     isScreenshot,
     captureFile,

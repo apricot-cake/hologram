@@ -22,7 +22,10 @@
 
   const bridge = () => window.corpus;
 
-  const api = {
+  // Annotated against the shared CorpusPreload contract (islands/types/globals.d.ts)
+  // so every forwarding arrow below is contextually typed from that interface —
+  // no per-parameter annotations needed for a pure pass-through layer.
+  const api: CorpusPreload = {
     getConfig: () => bridge().getConfig(),
     setExtensionId: (id) => bridge().setExtensionId(id),
     listPosts: () => bridge().listPosts(),

@@ -26,12 +26,20 @@
   //   formatShortDate(dateStr) / formatCount(n) — viewer formatting helpers
   //   collectionName(id) — resolves a collection id to its display name
   //                        (null/undefined when unknown → caller falls back)
-  function makeTabLabels(deps) {
+  function makeTabLabels(deps: {
+    MSG: { [k: string]: any };
+    engTypeLabels: { [k: string]: string };
+    platformName(v: string): string;
+    formatShortDate(dateStr: string): string;
+    formatCount(n: number | null | undefined): string;
+    collectionName(id: string): string | null | undefined;
+    posterFolderName(id: string): string | null | undefined;
+  }) {
     const { MSG, engTypeLabels, platformName, formatShortDate, formatCount, collectionName } = deps;
 
     // Returns the human-readable label for a single active filter. Shared by
     // the query-chip renderer and the tab title generator.
-    function filterLabel(f) {
+    function filterLabel(f: { type: string; [k: string]: any }): string {
       switch (f.type) {
         case 'kind':
           return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
@@ -70,7 +78,7 @@
 
     // Derives a tab title from a snapshot state. Pure function (no DOM reads).
     // All active labels joined with ・ in priority order so every tab is unique.
-    function tabTitleOf(state, ctx) {
+    function tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
       const filters = (state && state.f) || [];
       const search = (state && state.search) || '';
       const multi = !!(state && state.multi);
@@ -82,7 +90,7 @@
 
       const parts: string[] = [];
       let primaryIconType: string | null = null;
-      const add = (label, iconType) => {
+      const add = (label: string, iconType: string) => {
         parts.push(label);
         if (!primaryIconType) primaryIconType = iconType;
       };
@@ -116,7 +124,7 @@
     // poster-specific; platform / instance / tag reuse the shared filterLabel.
     // deps.posterFolderName resolves a poster-folder id → name (or null) from
     // the viewer-owned pfStore, mirroring collectionName above.
-    function posterFilterLabel(f) {
+    function posterFilterLabel(f: { type: string; [k: string]: any }): string {
       if (f.type === 'folder') {
         const name = deps.posterFolderName(f.value);
         return name != null ? name : f.value;
@@ -146,14 +154,14 @@
   //   snapshot() — current view state object (seeds a fresh history on adopt)
   //   apply(state) — restores a view state (its restoring guard stops the re-push)
   //   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
-  function makeNavHistory(deps) {
+  function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusTabSnapshot; apply(s: CorpusTabSnapshot): void; onChange(): void }) {
     const { cap, enabled, snapshot, apply, onChange } = deps;
     let hist: string[] = [];
     let idx = -1;
 
     // Record a fresh view. No-op when the state equals the current entry, so
     // background refreshes / re-renders of the same query don't pile up.
-    function push(snap) {
+    function push(snap: CorpusTabSnapshot) {
       if (!enabled()) return;
       const s = JSON.stringify(snap);
       if (idx >= 0 && hist[idx] === s) return;
@@ -164,7 +172,7 @@
       onChange();
     }
     // Returns true when it actually navigated (the caller persists on true).
-    function go(i) {
+    function go(i: number): boolean {
       if (i < 0 || i >= hist.length || i === idx) return false;
       idx = i;
       apply(JSON.parse(hist[idx]));
@@ -174,7 +182,7 @@
     const back = () => go(idx - 1);
     const forward = () => go(idx + 1);
     // Adopt (or seed) a tab's history when it becomes active.
-    function adopt(t) {
+    function adopt(t: CorpusTab | null | undefined) {
       if (t && Array.isArray(t._navHist) && t._navHist.length) {
         hist = t._navHist;
         idx = typeof t._navIdx === 'number' ? Math.max(0, Math.min(t._navIdx, hist.length - 1)) : hist.length - 1;
@@ -185,7 +193,7 @@
       onChange();
     }
     // Carry the live history with the tab object across switches.
-    function saveInto(t) {
+    function saveInto(t: CorpusTab) {
       t._navHist = hist;
       t._navIdx = idx;
     }
@@ -199,7 +207,7 @@
   // fields are ignored). Image tabs persist type+img instead of filter state
   // (undefined fields drop out of the JSON, so filter tabs keep their old
   // shape on disk).
-  function serializeTabs(tabs, activeTabId) {
+  function serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> } {
     return { activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, type: t.type, img: t.img })) };
   }
 
@@ -207,18 +215,22 @@
   // nothing usable was saved (the caller seeds a fresh single tab). Image tabs:
   // sanitize the persisted shape (unknown/older files just yield a filter tab;
   // an image tab with bad recs shows the missing state).
-  function sanitizeSavedTabs(saved, genId) {
-    if (!saved || !Array.isArray(saved.tabs) || saved.tabs.length === 0) return null;
-    const tabs = saved.tabs.map((t) => ({
+  function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null {
+    // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
+    // loose shape once here, matching the CorpusPost "open JSON" convention,
+    // rather than threading `unknown` through every field access below.
+    const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
+    if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
+    const tabs: CorpusTab[] = data.tabs.map((t) => ({
       id: t.id || genId(),
       pinned: !!t.pinned,
       title: t.title || null,
       state: t.state || null,
       type: t.type === 'image' ? 'image' : undefined,
-      img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
+      img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x: any) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
       _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
     }));
-    const sid = saved.activeTabId;
+    const sid = data.activeTabId;
     return { tabs, activeTabId: sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id };
   }
 
@@ -234,7 +246,7 @@
       return null;
     }
   }
-  async function persistTabs(tabs, activeTabId) {
+  async function persistTabs(tabs: CorpusTab[], activeTabId: string | null) {
     try {
       await window.corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
     } catch {

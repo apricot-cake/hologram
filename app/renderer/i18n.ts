@@ -10,7 +10,10 @@
 // i18n.js (the extension can't read this file or the app's config), so banner /
 // content-script strings deliberately do NOT live here.
 (function () {
-  const MESSAGES = {
+  // Keyed by message id; Record's index signature lets getMessage() below index
+  // it with a plain `key: string` (the callers don't all pass literal keys).
+  type CorpusMessageTable = Record<string, string>;
+  const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     ja: {
       // viewer: tabs / search / sort
       tabTags: 'ハッシュタグ',
@@ -740,7 +743,7 @@
     const resolved = lang === 'auto' ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en') : lang === 'ja' ? 'ja' : 'en';
     const table = MESSAGES[resolved] || MESSAGES.en;
 
-    const getMessage = (key, subs) => {
+    const getMessage = (key: string, subs?: ReadonlyArray<string | number | null | undefined>): string => {
       let text = table[key];
       if (text == null) return key;
       if (subs && subs.length) {

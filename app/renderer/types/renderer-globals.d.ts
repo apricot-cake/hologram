@@ -217,7 +217,11 @@ interface CorpusQfRow {
 interface CorpusFacetsApi {
   /** Everything comes in as functions: reassigned viewer lets are getters, later consts are deferred arrows (TDZ). */
   makeFacets(deps: { [k: string]: any }): {
-    facetCounts(keyFn: (p: CorpusPost) => string | string[] | null | undefined, pool?: CorpusPost[]): Map<string, number>;
+    // Population is usually a post pool, but the poster-scoped rows (poster-tag /
+    // poster-work / poster-character / poster-platform / poster-instance /
+    // poster-folder) pass filteredPosters() and key off a CorpusUserAgg instead.
+    facetCounts(keyFn: (p: CorpusPost) => string | string[] | null | undefined): Map<string, number>;
+    facetCounts<T extends CorpusUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
     qfValues(cat: string): CorpusQfRow[];
   };
   PF_ORDER: string[];

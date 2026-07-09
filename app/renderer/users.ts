@@ -17,7 +17,7 @@
   //                  invalidates the buildUsers cache)
   //   userKey(p) / hostOf(url) — from query.js
   //   corpusSearch() — window.corpusSearch (fuzzy mode + matcher compiler)
-  function makeUsers(deps) {
+  function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; corpusSearch(): { isFuzzy(): boolean; compile(q: string): (hay: string) => boolean } | undefined }) {
     const { allPosts, generation, userKey, hostOf, corpusSearch } = deps;
 
     // Group posts by author. Posts arrive newest-first, so the first occurrence
@@ -66,12 +66,15 @@
     // posters whose display/screen name matches. Honors the live search mode —
     // fuzzy compiles a matcher via corpusSearch, exact is a case-insensitive
     // substring test.
-    function buildSuggest(q) {
-      const norm = (s) => String(s || '').toLowerCase();
+    function buildSuggest(q: string) {
+      const norm = (s: string) => String(s || '').toLowerCase();
       const cs = corpusSearch();
-      const fuzzyOn = cs && cs.isFuzzy();
-      const matcher = fuzzyOn ? cs.compile(q) : null;
-      const hit = (s) => (fuzzyOn ? matcher(String(s || '')) : norm(s).includes(norm(q)));
+      // `matcher` (rather than the old separate `fuzzyOn` flag) is the TS-visible
+      // narrowing: it's non-null exactly when cs exists and fuzzy mode is on, so
+      // branching on its presence below is behaviorally identical to the old
+      // `fuzzyOn ? ... : ...` while letting TS see `cs` is defined inside the ternary.
+      const matcher = cs && cs.isFuzzy() ? cs.compile(q) : null;
+      const hit = (s: string) => (matcher ? matcher(String(s || '')) : norm(s).includes(norm(q)));
       const items: any[] = [];
       const counts = new Map<string, any>();
       for (const p of allPosts()) if (p.url) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);

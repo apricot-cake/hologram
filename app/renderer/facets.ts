@@ -25,7 +25,25 @@
   //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
   //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
   //   buildUsers() — user facet source (cached in viewer)
-  function makeFacets(deps) {
+  function makeFacets(deps: {
+    getFilteredPosts(): CorpusPost[];
+    qHasValue(type: string, v: string): boolean;
+    posterQHasValue(type: string, v: string): boolean;
+    allPosts(): CorpusPost[];
+    hostOf(url: string | null | undefined): string;
+    userKey(p: CorpusPost): string;
+    MSG: { [k: string]: any };
+    PF_NAME: Record<string, string>;
+    tagKindOf(tag: string): string | null | undefined;
+    tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
+    posterTagsOf(key: string): string[];
+    filteredPosters(): CorpusUserAgg[];
+    posterFilterVocab(): string[];
+    namedPosters(): CorpusUserAgg[];
+    posterFolders(): CorpusFolder[];
+    postFolders(): CorpusFolder[];
+    buildUsers(): CorpusUserAgg[];
+  }) {
     const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
 
     // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
@@ -37,8 +55,14 @@
     // NOTE: self-category exclusion is intentionally NOT done — picking within the same
     // category narrows the base, so those zeros sink. Values absent from the current
     // results stay listed (greyed but clickable) so you can still pick one.
-    function facetCounts(keyFn, pool?) {
-      const m = new Map();
+    // Overloaded: with no pool, keys off the post population (getFilteredPosts());
+    // the poster-scoped rows (poster-tag / poster-work / poster-character /
+    // poster-platform / poster-instance / poster-folder) pass filteredPosters()
+    // as `pool` and key off a CorpusUserAgg instead.
+    function facetCounts(keyFn: (p: CorpusPost) => string | string[] | null | undefined): Map<string, number>;
+    function facetCounts<T extends CorpusUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
+    function facetCounts(keyFn: (p: any) => string | string[] | null | undefined, pool?: any[]): Map<string, number> {
+      const m = new Map<string, number>();
       for (const p of pool || getFilteredPosts()) {
         const k = keyFn(p);
         if (k == null) continue;
@@ -49,9 +73,9 @@
       return m;
     }
 
-    function qfValues(cat) {
+    function qfValues(cat: string) {
       // "on" = this value already exists anywhere in the query tree.
-      const act = (type, v) => qHasValue(type, v);
+      const act = (type: string, v: string): boolean => qHasValue(type, v);
       switch (cat) {
         case 'kind':
           return [
@@ -60,7 +84,7 @@
           ].map(([v, l]) => ({ v, l, on: act('kind', v) }));
         case 'platform': {
           // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
-          const hostsOf = (plat) => {
+          const hostsOf = (plat: string) => {
             const set = new Set<string>();
             for (const p of allPosts())
               if (p.platform === plat) {
@@ -71,7 +95,7 @@
           };
           const pcnt = facetCounts((p) => p.platform || '__none');
           const icnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
-          const out: any[] = [];
+          const out: CorpusQfRow[] = [];
           for (const v of PF_ORDER) {
             out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
             if (v === 'misskey' || v === 'mastodon') {
@@ -85,7 +109,7 @@
         }
         case 'postType': {
           const cnt = facetCounts((p) => {
-            const a: any[] = [];
+            const a: string[] = [];
             if (!p.isReply && !p.isQuote && !p.isThread) a.push('post');
             if (p.isReply) a.push('reply');
             if (p.isQuote) a.push('quote');
@@ -101,8 +125,7 @@
         }
         case 'media': {
           const cnt = facetCounts((p) => p.mediaType);
-          /** @type {CorpusQfRow[]} */
-          const out = [
+          const out: CorpusQfRow[] = [
             ['image', MSG.qfImage],
             ['video', MSG.qfVideo],
             ['gif', MSG.qfGif],
@@ -178,14 +201,14 @@
           // Include tags from all posts (incl. imported url-less images), not just SNS posts.
           // 用語帳: kinded tags live in the 作品/キャラ rows — the タグ flyout is general-only.
           const cnt = facetCounts((p) => p.tags);
-          const item = (t) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
+          const item = (t: string) => ({ v: t, l: t, on: act('tag', t), count: cnt.get(t) || 0, facetDim: true });
           // Within a list/group, present values (count desc) precede absent ones.
-          const byCount = (a, b) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
+          const byCount = (a: { count: number; l: string }, b: { count: number; l: string }) => b.count - a.count || a.l.localeCompare(b.l, 'ja');
           const allTags = [...new Set<string>(allPosts().flatMap((p) => p.tags || []))].filter((t) => !tagKindOf(t)).sort();
           const groups = tagGroups();
           if (!groups.length) return allTags.map(item).sort(byCount);
           const grouped = new Set<string>();
-          const out: any[] = [];
+          const out: CorpusQfRow[] = [];
           for (const g of groups) {
             const own = (g.tags || []).filter((t) => allTags.includes(t));
             if (!own.length) continue;
@@ -217,7 +240,7 @@
           const cnt = facetCounts((p) => p.hashtags);
           const counts: Record<string, number> = {};
           allPosts().forEach((p) =>
-            (p.hashtags || []).forEach((h) => {
+            (p.hashtags || []).forEach((h: string) => {
               counts[h] = (counts[h] || 0) + 1;
             }),
           );
@@ -236,7 +259,7 @@
         }
         case 'instance': {
           const cnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
-          const hosts = new Map();
+          const hosts = new Map<string, number>();
           for (const p of allPosts()) {
             if (p.platform !== 'misskey' && p.platform !== 'mastodon') continue;
             const h = hostOf(p.url);

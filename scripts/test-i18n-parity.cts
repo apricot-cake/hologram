@@ -12,6 +12,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const stripTS = require('./strip-ts.cts');
 
 let failed = 0;
 const fail = (msg) => {
@@ -47,9 +48,12 @@ function diffValues(name, a, b) {
 
 // ---- 1) renderer MESSAGES (closure-private → expose via a guarded source patch)
 {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8');
-  const HOOK = 'const MESSAGES = {';
-  if (!src.includes(HOOK)) {
+  const src = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
+  // stripTS pads erased type annotations with spaces (preserves line/column numbers),
+  // so `const MESSAGES: {...} = {` survives as `const MESSAGES <spaces>= {` — match
+  // whitespace-tolerantly rather than the old exact-string HOOK.
+  const HOOK = /const MESSAGES\s*=\s*\{/;
+  if (!HOOK.test(src)) {
     fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");
   } else {
     // Shims so the IIFE runs under Node: corpus.getPrefs resolves, navigator exists.

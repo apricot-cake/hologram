@@ -15,27 +15,31 @@
   function emptyTree() {
     return { kind: 'group', op: 'and', neg: false, children: [] } as CorpusQueryGroup;
   }
-  function treeLeaves(n, out?) {
+  function treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[] {
     out = out || [];
     if (!n) return out;
     if (n.kind === 'cond') out.push(n);
     else (n.children || []).forEach((c) => treeLeaves(c, out));
     return out;
   }
-  function opposite(op) {
+  function opposite(op: string): 'and' | 'or' {
     return op === 'and' ? 'or' : 'and';
   }
   // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
-  function facetTreeFrom(f, ops) {
+  function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): CorpusQueryGroup {
     const root = emptyTree();
     const NO_OP = new Set(['date', 'engagement', 'clip', 'workspace']);
-    const byType = new Map();
+    const byType = new Map<string, { type: string; [k: string]: any }[]>();
     for (const x of f) {
-      if (!byType.has(x.type)) byType.set(x.type, []);
-      byType.get(x.type).push(x);
+      let list = byType.get(x.type);
+      if (!list) {
+        list = [];
+        byType.set(x.type, list);
+      }
+      list.push(x);
     }
     for (const [type, list] of byType) {
-      const leaves = list.map((x) => Object.assign({ kind: 'cond' }, x));
+      const leaves: CorpusQueryLeaf[] = list.map((x) => Object.assign({ kind: 'cond' as const }, x));
       if (NO_OP.has(type)) {
         root.children.push(...leaves);
         continue;
@@ -47,7 +51,7 @@
   }
   // Recursive evaluation of a query tree against one item, using a view-supplied
   // leaf predicate factory (predOf). Shared by both builders (post + poster).
-  function evalNode(n, item, predOf) {
+  function evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean {
     if (n.kind === 'cond') {
       const r = predOf(n)(item);
       return n.neg ? !r : r;
@@ -62,9 +66,10 @@
   // wiring stays in viewer.js (createQueryBuilder), which binds these to its
   // per-instance tree. ---
   /** child → parent map, rebuilt for one surgery pass. */
-  function treeParentMap(tree) {
-    const m = new Map();
-    (function rec(n) {
+  function treeParentMap(tree: CorpusQueryGroup): Map<CorpusQueryNode, CorpusQueryGroup> {
+    const m = new Map<CorpusQueryNode, CorpusQueryGroup>();
+    (function rec(n: CorpusQueryNode) {
+      if (n.kind !== 'group') return;
       (n.children || []).forEach((c) => {
         m.set(c, n);
         rec(c);
@@ -72,12 +77,12 @@
     })(tree);
     return m;
   }
-  function nodeContains(a, b) {
+  function nodeContains(a: CorpusQueryNode | null | undefined, b: CorpusQueryNode | null | undefined): boolean {
     if (a === b) return true;
     if (!a || a.kind !== 'group') return false;
     return (a.children || []).some((c) => nodeContains(c, b));
   }
-  function detachNode(node, pmap) {
+  function detachNode(node: CorpusQueryNode, pmap: Map<CorpusQueryNode, CorpusQueryGroup>): void {
     const par = pmap.get(node);
     if (!par) return;
     const i = par.children.indexOf(node);
@@ -86,10 +91,10 @@
   // Auto-clean: drop empty groups, collapse single-member non-root groups,
   // folding the group's negation into the survivor ("parentheses vanish once a
   // group is down to one member").
-  function cleanupTree(tree) {
-    (function rec(node) {
+  function cleanupTree(tree: CorpusQueryGroup): void {
+    (function rec(node: CorpusQueryNode) {
       if (node.kind !== 'group') return;
-      const out: any[] = [];
+      const out: CorpusQueryNode[] = [];
       for (const c of node.children) {
         rec(c);
         if (c.kind === 'group') {
@@ -106,14 +111,14 @@
       node.children = out;
     })(tree);
   }
-  function hasLeafValue(tree, type, value) {
+  function hasLeafValue(tree: CorpusQueryGroup, type: string, value: unknown): boolean {
     return treeLeaves(tree).some((c) => c.type === type && c.value === value);
   }
   // Remove every cond leaf matching pred, anywhere in the tree (+ cleanup).
   // Returns whether anything was actually removed (callers gate a refresh on it).
-  function removeCondsMatching(tree, pred) {
+  function removeCondsMatching(tree: CorpusQueryGroup, pred: (c: CorpusQueryLeaf) => boolean): boolean {
     const before = treeLeaves(tree).length;
-    (function rec(node) {
+    (function rec(node: CorpusQueryNode) {
       if (node.kind !== 'group') return;
       node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
       node.children.forEach(rec);
@@ -123,7 +128,7 @@
   }
   // Shadow-filter identity: date matches by type alone (single date condition),
   // engagement by engType, everything else by value.
-  function sameLeaf(c, f) {
+  function sameLeaf(c: CorpusQueryLeaf, f: { type: string; [k: string]: any }): boolean {
     if (c.type !== f.type) return false;
     if (f.type === 'date') return true; // single date condition
     if (f.type === 'engagement') return c.engType === f.engType;
@@ -132,21 +137,21 @@
   // The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
   // tab title consume. date/engagement pass through whole (minus tree-only
   // fields); other types dedupe on type+value.
-  function buildShadow(tree) {
+  function buildShadow(tree: CorpusQueryGroup): Array<{ type: string; [k: string]: any }> {
     const seen = new Set<string>();
-    const out: any[] = [];
+    const out: Array<{ type: string; [k: string]: any }> = [];
     for (const c of treeLeaves(tree)) {
       if (c.type === 'date' || c.type === 'engagement') {
-        const f = Object.assign({}, c);
+        const f: Record<string, any> = Object.assign({}, c);
         delete f.kind;
         delete f.neg;
-        out.push(f);
+        out.push(f as { type: string; [k: string]: any });
         continue;
       }
       const k = c.type + ' ' + c.value;
       if (seen.has(k)) continue;
       seen.add(k);
-      const f: any = { type: c.type, value: c.value };
+      const f: { type: string; [k: string]: any } = { type: c.type, value: c.value };
       if (c.label) f.label = c.label;
       out.push(f);
     }
@@ -157,13 +162,13 @@
   // as a member of the target group, 'root' moves it to the top level. Returns
   // false (tree untouched) when the drop is rejected — onto itself or into its
   // own descendant.
-  function dropNode(tree, drag, target, mode) {
-    if (!target || target === drag || nodeContains(drag, target)) return false;
+  function dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | undefined, target: CorpusQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean {
+    if (!target || !drag || target === drag || nodeContains(drag, target)) return false;
     const pmap = treeParentMap(tree);
     detachNode(drag, pmap); // remove from its current parent first
     if (mode === 'pair') {
       const par = pmap.get(target) || tree;
-      const g = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
+      const g: CorpusQueryGroup = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
       const i = par.children.indexOf(target);
       if (i >= 0) par.children[i] = g;
       else par.children.push(g);
@@ -179,11 +184,7 @@
   // Returns the NEW root (the caller reassigns its tree) or null when there is
   // nothing to wrap. A single-condition wrap collapses via cleanup (nothing
   // meaningful to group).
-  /**
-   * @param {CorpusQueryGroup} tree
-   * @returns {CorpusQueryGroup | null}
-   */
-  function wrapAllInGroup(tree) {
+  function wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null {
     if (!tree.children.length) return null;
     const g = { kind: 'group', op: tree.op, neg: false, children: tree.children } as CorpusQueryGroup;
     const root = { kind: 'group', op: 'and', neg: false, children: [g] } as CorpusQueryGroup;
@@ -201,7 +202,7 @@
   // type schemas (posts vs posters differ), injected like predOf. ---
   /** Default within-cluster operator: multi-value attributes narrow by default
    *  (すべて); for single-value attributes "any of" is the only satisfiable read. */
-  function facetDefaultOp(type, opts) {
+  function facetDefaultOp(type: string, opts: CorpusFacetOpts): 'and' | 'or' {
     return (opts.multiValueTypes || []).includes(type) ? 'and' : 'or';
   }
   // Strict facet analysis. null = NOT facet-shaped (OR root / real nesting /
@@ -209,13 +210,13 @@
   // falls back to a read-only summary. Semantics-preserving with ONE deliberate
   // repair: 2+ bare single-value leaves of one type read as 'or' (their root-AND
   // was the 改訂③ two-platform always-false trap).
-  function facetViewOf(tree, opts) {
+  function facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): CorpusFacetView | null {
     if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
     const standalone = new Set<string>(opts.standaloneTypes || []);
     const multi = new Set<string>(opts.multiValueTypes || []);
-    const clusters = new Map<string, any>(); // type → cluster (insertion order = display order)
-    const singles: any[] = [];
-    const excl: any[] = [];
+    const clusters = new Map<string, CorpusFacetCluster>(); // type → cluster (insertion order = display order)
+    const singles: CorpusQueryLeaf[] = [];
+    const excl: CorpusQueryLeaf[] = [];
     for (const c of tree.children) {
       if (c.kind === 'cond') {
         if (c.neg) {
@@ -239,7 +240,7 @@
       const t = first.kind === 'cond' ? first.type : null;
       if (!t || standalone.has(t) || clusters.has(t)) return null;
       for (const l of c.children) if (l.kind !== 'cond' || l.neg || l.type !== t) return null;
-      clusters.set(t, { type: t, op: multi.has(t) ? c.op : 'or', leaves: c.children.slice(), grouped: true });
+      clusters.set(t, { type: t, op: multi.has(t) ? c.op : 'or', leaves: c.children.slice() as CorpusQueryLeaf[], grouped: true });
     }
     return { clusters: Array.from(clusters.values()), singles, excl };
   }
@@ -247,11 +248,11 @@
   // cluster becomes a real group (the すべて/どれか toggle needs a node to write
   // to), ordered clusters → standalone leaves → excluded leaves. Returns true
   // when the tree was facet-shaped (now canonical); false leaves it untouched.
-  function canonicalizeFacet(tree, opts) {
+  function canonicalizeFacet(tree: CorpusQueryGroup, opts: CorpusFacetOpts): boolean {
     const v = facetViewOf(tree, opts);
     if (!v) return false;
-    const out: any[] = [];
-    for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : { kind: 'group', op: cl.op, neg: false, children: cl.leaves });
+    const out: CorpusQueryNode[] = [];
+    for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : ({ kind: 'group', op: cl.op, neg: false, children: cl.leaves } as CorpusQueryGroup));
     out.push(...v.singles, ...v.excl);
     tree.children = out;
     return true;
@@ -260,7 +261,7 @@
   // the existing bare leaf + the newcomer into a fresh group (default op), or
   // land at the top level (standalone types always do). Callers handle
   // single-value replacement and dup checks; only call on facet-shaped trees.
-  function facetAdd(tree, node, opts) {
+  function facetAdd(tree: CorpusQueryGroup, node: CorpusQueryLeaf, opts: CorpusFacetOpts): CorpusQueryLeaf {
     if (!(opts.standaloneTypes || []).includes(node.type)) {
       for (let i = 0; i < tree.children.length; i++) {
         const c = tree.children[i];
@@ -279,7 +280,7 @@
   }
   // The すべて/どれか toggle: set a cluster's operator. Clusters with 2+ values
   // are real groups in a canonical tree; false when no such group exists.
-  function facetSetOp(tree, type, op) {
+  function facetSetOp(tree: CorpusQueryGroup, type: string, op: string): boolean {
     for (const c of tree.children) {
       if (c.kind === 'group' && !c.neg && c.children.length && c.children[0].kind === 'cond' && c.children[0].type === type) {
         c.op = op === 'and' ? 'and' : 'or';
@@ -291,7 +292,7 @@
   // Move a leaf between its cluster and the 除く cluster: detach, flip neg,
   // re-insert (negated → top level; positive → back through facetAdd). A value
   // returning while it already exists positively is dropped as redundant.
-  function facetSetNeg(tree, node, neg, opts) {
+  function facetSetNeg(tree: CorpusQueryGroup, node: CorpusQueryLeaf, neg: boolean, opts: CorpusFacetOpts): boolean {
     if (!!node.neg === !!neg) return false;
     detachNode(node, treeParentMap(tree));
     cleanupTree(tree);
@@ -308,7 +309,7 @@
   // --- Pure post helpers (used by the predicates below and by viewer.js). ---
   // Date filters compare in LOCAL days: from = local midnight, to = the NEXT
   // local midnight (exclusive), so a single-day range covers the whole day.
-  function localDayRange(from, to) {
+  function localDayRange(from?: string | null, to?: string | null): { from: Date | null; to: Date | null } {
     return {
       from: from ? new Date(from + 'T00:00:00') : null,
       to: to
@@ -320,18 +321,18 @@
         : null,
     };
   }
-  const hostOf = (url) => {
+  const hostOf = (url: string | null | undefined): string => {
     try {
-      return new URL(url).hostname;
+      return new URL(url as string).hostname;
     } catch {
       return '';
     }
   };
   // Stable per-author key: prefer the platform user id, fall back to the handle.
-  const userKey = (p) => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+  const userKey = (p: CorpusPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
   // Every text-ish field a free-text query can match against.
   // (p.description = Eagle-migration annotation — real prose, so it belongs here.)
-  function textHaystackOf(p) {
+  function textHaystackOf(p: CorpusPost): string[] {
     return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description]
       .concat(p.tags || [])
       .concat(p.hashtags || [])
@@ -342,7 +343,12 @@
   // deps carry the runtime couplings the engine must not own:
   //   isInCollection(id, captureId) / isClipped(captureId) — folders.js state
   //   fuzzyCompile(q) → matcher(string)=>bool, or null to fall back to exact
-  function makePostPredOf(deps) {
+  function makePostPredOf(deps: {
+    isInCollection(id: string, captureId: string): boolean;
+    isClipped(captureId: string): boolean;
+    fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
+    postKeyOf?(url: string | null | undefined): string | null;
+  }): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean {
     return function postPredOf(f) {
       switch (f.type) {
         // 'post' = SNS投稿（リンクあり）/ 'image' = 取り込み画像（リンクなし）。url の有無が本質。
@@ -403,12 +409,12 @@
             const lq = q.toLowerCase();
             const urlish = /[./]/.test(q);
             const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
-            const urlHit = !urlish ? null : (p) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
+            const urlHit: ((p: CorpusPost) => boolean) | null = !urlish ? null : (p: CorpusPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
             const m = f.mode === 'fuzzy' && deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
             if (m) {
-              f._compiled = (p) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
+              f._compiled = (p: CorpusPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
             } else {
-              f._compiled = (p) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
+              f._compiled = (p: CorpusPost) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
             }
           }
           return f._compiled;
@@ -427,7 +433,10 @@
   // couplings the engine must not own:
   //   posterTagsOf(key) → string[]           — tags.js (作品/キャラ share 'tag')
   //   folderById(id) → {items:string[]}|null — poster-folders.js state
-  function makePosterPredOf(deps) {
+  function makePosterPredOf(deps: {
+    posterTagsOf(key: string): string[];
+    folderById(id: string): { items: string[] } | null | undefined;
+  }): (f: CorpusQueryLeaf) => (u: CorpusUserAgg) => boolean {
     return function posterPredOf(f) {
       switch (f.type) {
         case 'platform':
@@ -442,7 +451,7 @@
           return (u) => set.has(u.key);
         }
         case 'date': {
-          const field = f.dateField || 'latest'; // latest | lastCapture | authorCreatedAt
+          const field = (f.dateField || 'latest') as keyof CorpusUserAgg; // latest | lastCapture | authorCreatedAt
           const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
           return (u) => {
             const v = u[field];

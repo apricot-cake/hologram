@@ -57,12 +57,38 @@
     channel(id).notify();
   }
 
-  function createQueryBuilder(ctx) {
+  // Local shape for the ctx contract documented in the file-top comment (the
+  // exported CorpusQueryChipsIsland.create(ctx: any) stays loose — the islands
+  // project doesn't see CorpusQueryLeaf/CorpusQueryGroup — so this is typed only
+  // for this module's own body).
+  interface QbCtx {
+    container: HTMLElement;
+    storeKey?: string;
+    barEl?: HTMLElement | null;
+    predOf: (f: CorpusQueryLeaf) => (item: any) => boolean;
+    labelOf: (f: CorpusQueryLeaf) => string;
+    glyphOf: (type: string) => string;
+    msg: { [k: string]: string };
+    getSearchVal?: () => string;
+    onClearSearch?: () => void;
+    onChange: () => void;
+    openLeafEditor?: (node: CorpusQueryLeaf) => void;
+    editableLeafTypes?: string[];
+    singleValueTypes?: string[];
+    noDupTypes?: string[];
+    multiValueTypes?: string[];
+    standaloneTypes?: string[];
+    isEditingLeaf?: (leaf: CorpusQueryLeaf) => boolean;
+    textInTree?: boolean;
+    onLeafMutated?: (node: CorpusQueryLeaf) => void;
+  }
+
+  function createQueryBuilder(ctx: QbCtx) {
     let tree = Q.emptyTree();
     let qbNodeMap = new Map<string, any>(); // data-nid → tree node (rebuilt each render)
     let shadow: any[] = []; // last computed flat (deduped) leaf shadow
     const chips = ctx.container;
-    const nodeById = (id) => qbNodeMap.get(id) || null;
+    const nodeById = (id: string) => qbNodeMap.get(id) || null;
     const editableLeafTypes = ctx.editableLeafTypes || [];
     const singleValueTypes = ctx.singleValueTypes || [];
     const noDupTypes = ctx.noDupTypes || [];
@@ -74,8 +100,8 @@
 
     // --- Tree mutation domain lives in query.js (9th extraction slice); the
     // bindings below close over THIS instance's tree.
-    const qHasValue = (type, value) => Q.hasLeafValue(tree, type, value);
-    const removeCondsMatching = (pred) => Q.removeCondsMatching(tree, pred);
+    const qHasValue = (type: string, value: unknown) => Q.hasLeafValue(tree, type, value);
+    const removeCondsMatching = (pred: (c: CorpusQueryLeaf) => boolean) => Q.removeCondsMatching(tree, pred);
     // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
     // Also mirror the tree into corpusStore under ctx.storeKey, a fresh deep
     // clone each time (tree is mutated in-place by the Q.* calls below, so a
@@ -98,7 +124,7 @@
     // Read-only text for a NON-facet tree (persisted 改訂③ nesting the ④ UI
     // cannot edit): honest parenthesised form; the existing リセット button is
     // the rebuild path.
-    function summaryOf(node, isRoot) {
+    function summaryOf(node: CorpusQueryNode, isRoot: boolean): string {
       if (node.kind === 'cond') return (node.neg ? '≠' : '') + ctx.labelOf(node);
       const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${ctx.msg.qcJoinOr} ` : ` ${ctx.msg.qcJoinAnd} `);
       return isRoot ? inner : `${node.neg ? '≠' : ''}(${inner})`;
@@ -138,13 +164,13 @@
       // the state, and the event routing.
       qbNodeMap = new Map();
       let idc = 0;
-      const nid = (node) => {
+      const nid = (node: CorpusQueryNode) => {
         const id = 'n' + idc++;
         qbNodeMap.set(id, node);
         return id;
       };
       const animate = !prefersReducedMotion();
-      const itemModel = (leaf) => {
+      const itemModel = (leaf: CorpusQueryLeaf) => {
         const label = ctx.labelOf(leaf);
         // chip-new entrance: flag leaves whose label wasn't on the bar last render
         // (skip the live-updating editing chip — it would flicker per keystroke).
@@ -195,12 +221,12 @@
     // the newcomer joins its type's group, or pairs with the existing bare leaf
     // (structure is DERIVED — the user never builds it). On a non-facet tree
     // (persisted 改訂③ nesting) it lands at the top level (AND) instead.
-    function addFilter(filter) {
+    function addFilter(filter: { type: string; [k: string]: any }): CorpusQueryLeaf | null {
       // Single-valued types (択一): a new one replaces the existing anywhere.
       if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
       // Prevent exact duplicates (anywhere in the tree), except for multi types.
       else if (!noDupTypes.includes(filter.type) && qHasValue(filter.type, filter.value)) return null;
-      const node = Object.assign({ kind: 'cond' }, filter);
+      const node = Object.assign({ kind: 'cond' as const }, filter);
       if (Q.facetViewOf(tree, facetOpts)) Q.facetAdd(tree, node, facetOpts);
       else tree.children.push(node);
       Q.cleanupTree(tree);
@@ -209,13 +235,13 @@
     }
     // Remove the condition(s) matching the shadow filter at `index` (sidebar toggle
     // handlers findIndex into the shadow). Bar-pill removal targets a node by id.
-    function removeFilter(index) {
+    function removeFilter(index: number) {
       const f = shadow[index];
       if (!f) return;
       removeCondsMatching((c) => Q.sameLeaf(c, f));
       refresh();
     }
-    function removeNode(node) {
+    function removeNode(node: CorpusQueryLeaf) {
       if (ctx.onLeafMutated) ctx.onLeafMutated(node); // let the view reconcile (e.g. unbind the editing text leaf)
       Q.detachNode(node, Q.treeParentMap(tree));
       Q.cleanupTree(tree);
@@ -225,7 +251,7 @@
     // Right-click a value → 「除外へ移す／含む条件に戻す」＋削除 (fold-menu 様式,
     // right-click = the menu of actions per DESIGN). React-owned glass menu
     // (window.corpusContextMenu); one bridge serves BOTH builder instances.
-    function showQbMenu(node, x, y) {
+    function showQbMenu(node: CorpusQueryLeaf, x: number, y: number) {
       const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
       const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
       const items = [{ label: node.neg ? ctx.msg.qbMenuInclude : ctx.msg.qbMenuExclude, act: 'neg', icon: NEG }, { sep: true }, { label: ctx.msg.qfDelete, act: 'del', icon: DEL, danger: true }];
@@ -245,7 +271,7 @@
     // former delegated click/contextmenu listeners 1:1: すべて/どれか segment,
     // delete a value (✕), clear the search echo, open a leaf editor (date/
     // engagement), or open the exclude/delete context menu.
-    function dispatch(action) {
+    function dispatch(action: { act: string; nid: string; op?: 'and' | 'or'; x: number; y: number }) {
       switch (action.act) {
         case 'opt': {
           const n = nodeById(action.nid);
@@ -284,7 +310,7 @@
       // Replace the tree (clone + self-heal singleton groups + recompute shadow).
       // Facet-compatible persisted trees normalize into the canonical shape;
       // anything else stays intact and renders as the read-only summary.
-      setTree: (t) => {
+      setTree: (t: CorpusQueryGroup | null | undefined) => {
         tree = t ? JSON.parse(JSON.stringify(t)) : Q.emptyTree();
         Q.cleanupTree(tree);
         Q.canonicalizeFacet(tree, facetOpts);
@@ -303,10 +329,10 @@
       addFilter,
       removeFilter,
       removeNode,
-      removeByLeaf: (type, value) => {
+      removeByLeaf: (type: string, value: unknown) => {
         if (removeCondsMatching((c) => c.type === type && c.value === value)) refresh();
       },
-      removeByType: (type) => {
+      removeByType: (type: string) => {
         if (removeCondsMatching((c) => c.type === type)) refresh();
       },
       removeCondsMatching,
@@ -314,7 +340,7 @@
       render,
       refresh,
       syncShadow,
-      eval: (item) => Q.evalNode(tree, item, ctx.predOf),
+      eval: (item: unknown) => Q.evalNode(tree, item, ctx.predOf),
       hasQuery: () => tree.children.length > 0,
       shadow: () => shadow,
       dispatch,

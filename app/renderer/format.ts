@@ -11,7 +11,7 @@
   'use strict';
 
   // Engagement count: 1.2K / 3.4M style abbreviation. null/undefined → ''.
-  function formatCount(n) {
+  function formatCount(n: number | null | undefined): string {
     if (n == null) return '';
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 10000) return (n / 1000).toFixed(1) + 'K';
@@ -19,7 +19,7 @@
   }
 
   // Numeric short date used by the date-filter chips (M/D this year, else Y/M/D).
-  function formatShortDate(dateStr) {
+  function formatShortDate(dateStr: string): string {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');
     const thisYear = new Date().getFullYear().toString();
@@ -31,7 +31,7 @@
   // compactDate runs once per card × up to 150 cards.
   const _compactFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
   const _compactFmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  function compactDate(ds) {
+  function compactDate(ds: string | number | Date): string {
     if (!ds) return '';
     const d = new Date(ds);
     if (Number.isNaN(d.getTime())) return '';
@@ -42,31 +42,31 @@
   // toLocaleDateString/TimeString per call dominated render time (2×/card × 150).
   const _dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });
   const _timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
-  function formatDate(isoStr) {
+  function formatDate(isoStr: string | number | Date): string {
     const d = new Date(isoStr);
     if (Number.isNaN(d.getTime())) return '';
     return _dateFmt.format(d) + ' ' + _timeFmt.format(d);
   }
 
   // Backup tooltip: absolute Y/M/D HH:MM (zero-padded, locale-independent).
-  function fmtTime(iso) {
+  function fmtTime(iso: string | number | Date): string {
     if (!iso) return '';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
-    const p = (n) => String(n).padStart(2, '0');
+    const p = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
   // Backup rail: compact relative time (today/yesterday HH:MM, else M/D or Y/M/D).
   // The "今日"/"昨日" words are i18n-owned by the caller and passed as labels.
-  function fmtBackupTime(iso, labels) {
+  function fmtBackupTime(iso: string | number | Date, labels: { today: string; yesterday: string }): string {
     if (!iso) return '';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     const now = new Date();
-    const p = (n) => String(n).padStart(2, '0');
+    const p = (n: number) => String(n).padStart(2, '0');
     const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
-    const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     const yest = new Date(now);
     yest.setDate(now.getDate() - 1);
     if (sameDay(d, now)) return `${labels.today} ${hhmm}`;
@@ -78,8 +78,8 @@
   // Locale defaults for inspector fields (join date / posted / saved / updated).
   // Kept as the platform default (no explicit options) so output is byte-identical
   // to the inline `new Date(x).toLocale*()` calls these replaced. '' for falsy.
-  const localeDate = (x) => (x ? new Date(x).toLocaleDateString() : '');
-  const localeDateTime = (x) => (x ? new Date(x).toLocaleString() : '');
+  const localeDate = (x: string | number | Date | null | undefined) => (x ? new Date(x).toLocaleDateString() : '');
+  const localeDateTime = (x: string | number | Date | null | undefined) => (x ? new Date(x).toLocaleString() : '');
 
   const api = { formatCount, formatShortDate, compactDate, formatDate, fmtTime, fmtBackupTime, localeDate, localeDateTime };
   if (typeof window !== 'undefined') window.corpusFormat = api;

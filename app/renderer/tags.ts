@@ -30,29 +30,29 @@
   //   MSG — pre-resolved message table (finalized before makeTags runs)
   //   charCandidatesFor(workTags) / relatedTagCandidates(sel, opts) — cooc.js
   //     products (deferred arrows — consts declared after the wiring point)
-  function makeTags(deps) {
+  function makeTags(deps: Parameters<CorpusTagsApi['makeTags']>[0]) {
     const { tagTypes, tagLabels, tagGroups, posterTags, allPosts, MSG, charCandidatesFor, relatedTagCandidates } = deps;
-    const KIND_LABEL = { work: MSG.kindWork, character: MSG.kindCharacter }; // MSG is finalized at load
+    const KIND_LABEL: Record<string, string> = { work: MSG.kindWork, character: MSG.kindCharacter }; // MSG is finalized at load
 
-    function tagKindOf(tag) {
+    function tagKindOf(tag: string): string | null {
       return tagTypes()[tag] || null;
     }
-    function kindLabel(kind) {
+    function kindLabel(kind: string): string {
       const labels = tagLabels();
       return (labels && labels[kind]) || KIND_LABEL[kind] || '';
     }
 
-    function posterTagsOf(key) {
+    function posterTagsOf(key: string): string[] {
       const t = posterTags()[key];
       return Array.isArray(t) ? t : [];
     }
     // Tags actually applied to at least one poster — the vocabulary the filter offers.
     // Kinded (作品/キャラ) tags stay in (種別 dots distinguish them); order is by 種別
     // (作品 → キャラ → 一般) then ja-collation so the flyout reads like the palette.
-    function posterFilterVocab() {
+    function posterFilterVocab(): string[] {
       const set = new Set<string>();
       for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) set.add(t);
-      const rank = (t) => {
+      const rank = (t: string) => {
         const k = tagKindOf(t);
         return k === 'work' ? 0 : k === 'character' ? 1 : 2;
       };
@@ -62,11 +62,11 @@
     // Tag vocabulary grouped by tag-group (defined groups in order, then 未分類 =
     // ungrouped tags that exist on posts), each section filtered by `query`. Shared
     // by the inspector's TagEditor and the bulk edit modal (via inspectorTagPickerData).
-    function groupedTagVocab(query, opts) {
+    function groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
       const scope = (opts && opts.scope) || 'post';
       const q = (query || '').toLowerCase();
-      const ok = (t) => !q || t.toLowerCase().includes(q);
-      const byJa = (a, b) => a.localeCompare(b, 'ja');
+      const ok = (t: string) => !q || t.toLowerCase().includes(q);
+      const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
       const groups = tagGroups();
       const grouped = new Set(groups.flatMap((g) => g.tags || []));
       const out: Array<{ name: string; tags: string[] }> = [];
@@ -112,9 +112,9 @@
     // but shaped as DATA for the React tag editor, which filters by its own local
     // query client-side — so keystrokes never round-trip through here (the full/
     // unfiltered vocabulary is the only thing ever asked for: query is always '').
-    function inspectorTagPickerData(selectedTags, recordsForSource, scope) {
-      const sel = new Set(selectedTags || []);
-      const vocabGroups = groupedTagVocab('', { scope: scope || 'post' }).map((g) => ({
+    function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: CorpusPost[] | null | undefined, scope?: string) {
+      const sel = new Set<string>(selectedTags || []);
+      const vocabGroups = groupedTagVocab('', { scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
         name: g.name,
         items: g.tags.map((t) => ({ tag: t, kind: tagKindOf(t) || null })),
       }));
@@ -132,13 +132,13 @@
       const workTags = [...sel].filter((t) => tagKindOf(t) === 'work');
       if (workTags.length) {
         const cands = charCandidatesFor(workTags)
-          .filter(([t]) => !sel.has(t))
+          .filter(([t]: [string, number]) => !sel.has(t))
           .slice(0, 8);
         if (cands.length) {
           const who = workTags.join('・');
           coocGroups.push({
             name: workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars,
-            items: cands.map(([t, n]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
+            items: cands.map(([t, n]: [string, number]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
           });
           for (const [t] of cands) strong.add(t);
         }
@@ -158,7 +158,7 @@
     return { tagKindOf, kindLabel, posterTagsOf, posterFilterVocab, groupedTagVocab, inspectorTagPickerData };
   }
 
-  function sameTags(a, b) {
+  function sameTags(a: string[], b: string[]): boolean {
     if (a.length !== b.length) return false;
     const s = new Set(a);
     return b.every((t) => s.has(t));
@@ -300,7 +300,7 @@
     notify('poster');
   }
 
-  const api = {
+  const api: CorpusTagsApi = {
     makeTags,
     sameTags,
     load,

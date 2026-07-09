@@ -20,9 +20,9 @@
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { lang, getMessage } = await window.corpusI18n;
-  const _s = (key) => getMessage(key);
-  const _f1 = (key) => (a) => getMessage(key, [a]);
-  const _f2 = (key) => (a, b) => getMessage(key, [a, b]);
+  const _s = (key: string) => getMessage(key);
+  const _f1 = (key: string) => (a: string | number) => getMessage(key, [a]);
+  const _f2 = (key: string) => (a: string | number, b: string | number) => getMessage(key, [a, b]);
   // Count / date display formatters live in format.js now (loaded before this
   // script). (The backup-rail time formatters fmtTime/fmtBackupTime are used only
   // by the MirrorStatus island now, which reads window.corpusFormat directly.)
@@ -277,7 +277,7 @@
     captured: _f1('captured'),
 
     // stats formatters (pure formatting, no translation)
-    likes: (n) => (n != null ? `${formatCount(n)}` : ''),
+    likes: (n: number | null | undefined) => (n != null ? `${formatCount(n)}` : ''),
 
     // query/sidebar filters
     qfPlatform: _s('qfPlatform'),
@@ -326,7 +326,7 @@
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
   // card / 種別) so the clamp formula stays in one place instead of drifting between
   // copies. Anchored flyouts (cs/qf/tab) keep their own placement strategy.
-  function clampIntoView(el) {
+  function clampIntoView(el: HTMLElement) {
     const r = el.getBoundingClientRect();
     if (r.right > innerWidth - 8) el.style.left = Math.max(8, innerWidth - r.width - 8) + 'px';
     if (r.bottom > innerHeight - 8) el.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';
@@ -337,16 +337,16 @@
   // surrounding code already dereferences it directly — and narrow to the concrete
   // element subtype so .value/.options/.min/.disabled type-check. closestOf mirrors
   // folders.js: casts an event target to the nearest matching element (or null). ---
-  const byId = (id) => document.getElementById(id) as HTMLElement;
-  const inputById = (id) => document.getElementById(id) as HTMLInputElement;
-  const selectById = (id) => document.getElementById(id) as HTMLSelectElement;
+  const byId = (id: string) => document.getElementById(id) as HTMLElement;
+  const inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const selectById = (id: string) => document.getElementById(id) as HTMLSelectElement;
   const closestOf = (e: Event, sel: string) => {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
 
   // --- Apply i18n to static elements ---
-  const setAttr = (id, attr, val) => {
+  const setAttr = (id: string, attr: string, val: string) => {
     const el = document.getElementById(id);
     if (el) el.setAttribute(attr, val);
   };
@@ -411,7 +411,7 @@
   // (tab restore pushes 'sortPost'; see applyState / the tab click handler).
 
   // --- Query Field ---
-  const ENG_TYPE_LABELS = {
+  const ENG_TYPE_LABELS: Record<string, string> = {
     likes: MSG.qfEngLikes,
     reposts: MSG.qfEngReposts,
     replies: MSG.qfEngReplies,
@@ -428,16 +428,16 @@
   const { filterLabel, tabTitleOf, posterFilterLabel } = window.corpusTabState.makeTabLabels({
     MSG,
     engTypeLabels: ENG_TYPE_LABELS,
-    platformName: (v) => PF_NAME[v] || v,
+    platformName: (v: string) => PF_NAME[v] || v,
     formatShortDate,
     formatCount,
-    collectionName: (id) => {
+    collectionName: (id: string) => {
       const fobj = CF() && CF().byId(id);
       return fobj ? fobj.name : null;
     },
     // Deferred arrow (posterFolderById is a const declared far below — same TDZ
     // dance as CF()/collectionName; the wrapper only runs at render time).
-    posterFolderName: (id) => {
+    posterFolderName: (id: string) => {
       const fo = posterFolderById(id);
       return fo ? fo.name : null;
     },
@@ -446,7 +446,7 @@
   // Leading type glyph for a query-builder chip — the SAME icons as the sidebar
   // filter rows, so a chip's category reads at a glance (the monotone glass pill
   // dropped per-type tints; the icon now carries the "which filter" cue).
-  const QC_GLYPH = {
+  const QC_GLYPH: Record<string, string> = {
     kind: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
     platform: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     postType: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
@@ -461,12 +461,12 @@
     clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   };
-  const qcGlyph = (type) => {
+  const qcGlyph = (type: string) => {
     const g = QC_GLYPH[type === 'text' ? 'search' : type]; // text leaf reuses the magnifier glyph
     return g ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>` : '';
   };
 
-  const PF_NAME = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
+  const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
@@ -476,7 +476,7 @@
     const bounce = posterReturn && qHasValue('user', posterReturn);
     postQB.resetTree();
     searchEditing.clear(); // the editing text leaf is gone with the tree
-    const set = (id, v) => {
+    const set = (id: string, v: string) => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.value = v;
     };
@@ -497,7 +497,7 @@
   // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
   // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx); this stays
   // the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
-  function handleShortcutNavKey(e) {
+  function handleShortcutNavKey(e: KeyboardEvent) {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const t = e.target as HTMLElement | null;
@@ -509,7 +509,7 @@
   }
   // Mouse back/forward (buttons 3/4). DOM events fire in the renderer on most
   // platforms; preventDefault stops any stray in-page navigation.
-  function handleShortcutMouseNav(e) {
+  function handleShortcutMouseNav(e: MouseEvent) {
     if (e.button !== 3 && e.button !== 4) return;
     if (!navAllowed()) return;
     e.preventDefault();
@@ -597,10 +597,10 @@
   const { qfValues } = window.corpusFacets.makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
-    posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
+    posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
     allPosts: () => allPosts,
-    hostOf: (u) => hostOf(u),
-    userKey: (p) => userKey(p),
+    hostOf: (u: string | null | undefined) => hostOf(u),
+    userKey: (p: CorpusPost) => userKey(p),
     MSG,
     PF_NAME,
     tagKindOf,
@@ -677,12 +677,12 @@
             }
           }
         : null,
-      onPick: (it) => onQfPick(cat, it),
+      onPick: (it: CorpusQfPopItem) => onQfPick(cat, it),
     });
   }
   // Route a value pick to the right business action, then refresh (the flyout stays
   // open so several values can be picked in a row).
-  function onQfPick(cat, it) {
+  function onQfPick(cat: string, it: CorpusQfPopItem) {
     const v = it.v;
     // (複数画像 moved to its own sidebar toggle row — see setupMultiSidebar. It's no
     //  longer emitted into the メディア flyout, so there's no __multi case here.)
@@ -715,7 +715,7 @@
       return;
     }
     const vtype = it.type || cat; // sub-rows (instances) override the type
-    const i = postQB.shadow().findIndex((f) => f.type === vtype && f.value === v);
+    const i = postQB.shadow().findIndex((f: { type: string; value?: string }) => f.type === vtype && f.value === v);
     if (i >= 0) {
       removeFilter(i);
     } else if (vtype === 'tag' || vtype === 'hashtag') {
@@ -730,7 +730,7 @@
     renderQfPop();
   }
   // 行の横にフライアウトを開く（同じアンカー再クリックで閉じる）
-  function showQfPopAt(cat, anchorEl) {
+  function showQfPopAt(cat: string, anchorEl: HTMLElement) {
     // Re-clicking the open row toggles it closed (cat, not node identity — robust to the
     // island re-rendering the row on a badge change).
     if (window.corpusQfPop.get() && qfCat === cat) {
@@ -769,7 +769,7 @@
   // search-editing.ts now (P4-B slice⑨) — see the searchEditing construction
   // near syncEditingTextLeaf/confirmEditingTextLeaf/rebindEditingTextLeaf below.
 
-  function openDatePopover(node) {
+  function openDatePopover(node: CorpusQueryLeaf | null) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingDateNode = node || null;
     const existing = editingDateNode;
@@ -781,7 +781,7 @@
       editing: !!editingDateNode,
       fields: { dateField: existing?.dateField || 'date', from: existing?.from || '', to: existing?.to || '' },
       labels: { typeDate: MSG.qfDatePost, typeCaptured: MSG.qfDateCaptured, removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply },
-      onApply({ dateField, from, to }) {
+      onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
         if (!from && !to) return;
         if (editingDateNode) {
           Object.assign(editingDateNode, { dateField, from, to });
@@ -799,7 +799,7 @@
   // Separate from the post date popover — writes the transient posterDate state.
   // arg = the date leaf to edit (from openLeafEditor) OR the row element (from the row click).
   // Range only — the 並べ替え方向 moved to the sort select (フィルタとソートの分離).
-  function openPosterDatePopover(arg) {
+  function openPosterDatePopover(arg: any) {
     closeAllMenus();
     const editNode = arg && arg.kind === 'cond' ? arg : null;
     editingPosterDateNode = editNode;
@@ -818,7 +818,7 @@
         { value: 'lastCapture', label: MSG.posterDateLastCapture },
         { value: 'authorCreatedAt', label: MSG.posterDateCreated },
       ],
-      onApply({ dateField, from, to }) {
+      onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
         if (!from && !to) return;
         if (editingPosterDateNode) {
           Object.assign(editingPosterDateNode, { dateField, from, to });
@@ -834,7 +834,7 @@
   // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
   let editingEngNode: CorpusQueryLeaf | null = null;
 
-  function openEngPopover(node) {
+  function openEngPopover(node: CorpusQueryLeaf | null) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
     editingEngNode = node || null;
     const existing = editingEngNode;
@@ -847,8 +847,8 @@
       fields: { engType: existing?.engType || 'likes', min: existing?.min || '', op: existing?.op || 'gte' },
       labels: { removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply, opGte: MSG.qfEngGte, opLte: MSG.qfEngLte },
       typeOptions: Object.entries(ENG_TYPE_LABELS).map(([value, label]) => ({ value, label })),
-      onApply({ engType, min, op }) {
-        if (!min || min <= 0) return;
+      onApply({ engType, min, op }: { engType?: string; min?: string | number; op?: string }) {
+        if (!min || Number(min) <= 0) return;
         if (editingEngNode) {
           Object.assign(editingEngNode, { engType, min, op });
           afterQueryChange();
@@ -885,7 +885,7 @@
     }
     // クリップ row: toggle the "show only clipped" filter.
     if (closestOf(e, '#clipRow')) {
-      const idx = postQB.shadow().findIndex((f) => f.type === 'clip');
+      const idx = postQB.shadow().findIndex((f: { type: string }) => f.type === 'clip');
       if (idx < 0) addFilter({ type: 'clip', value: '*' });
       else removeFilter(idx);
       return;
@@ -901,7 +901,7 @@
     }
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
-    const cat = row.dataset.qfrow;
+    const cat = row.dataset.qfrow as string;
     const openKind = window.corpusFilterPopover.get()?.kind;
     // Re-clicking the row whose popover is already open = toggle it closed.
     if (cat === 'date' && openKind === 'date') {
@@ -952,14 +952,14 @@
   // read kindLabel() live too.
   // Mutation + persistence live in tags.js (setTagKind/setKindLabel); these wrappers
   // existed for the view-specific sidebar re-derive/re-push, now unnecessary.
-  async function setTagKind(tag, kind) {
+  async function setTagKind(tag: string, kind: string | null) {
     await window.corpusTags.setTagKind(tag, kind);
   }
   // Rename a 種別 (work/character) globally; blank resets to the built-in label.
-  async function setKindLabel(kind, label) {
+  async function setKindLabel(kind: string, label: string | null | undefined) {
     await window.corpusTags.setKindLabel(kind, label);
   }
-  const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
@@ -971,12 +971,12 @@
   });
   const pushUndo = _undo.push;
 
-  async function applyTagUndo(records) {
+  async function applyTagUndo(records: { captureId?: string; image?: string; tags: string[] }[]) {
     for (const r of records) {
       try {
-        await window.corpusPosts.updateTags(r.image, r.tags);
+        await window.corpusPosts.updateTags(r.image || '', r.tags);
       } catch {}
-      const rec = _postsById.get(r.captureId); // O(1) via the delta-cache map (allPosts holds the same record refs)
+      const rec = r.captureId ? _postsById.get(r.captureId) : undefined; // O(1) via the delta-cache map (allPosts holds the same record refs)
       if (rec) rec.tags = r.tags.slice();
     }
     markPostsMutated();
@@ -993,8 +993,11 @@
   // post record), so undo/redo re-applies the captured tag list per poster key
   // and keeps an open poster inspector in sync (mirrors applyTagUndo's inspector
   // refresh). The bulk mutation + persist now live in tags.js.
-  async function applyPosterTagUndo(records) {
-    window.corpusTags.applyPosterTagRecords(records);
+  async function applyPosterTagUndo(records: { key?: string; tags: string[] }[]) {
+    // key is always populated for poster-tags undo entries at runtime (pushUndo's
+    // caller always supplies one); the narrow just satisfies applyPosterTagRecords'
+    // stricter (key required) signature.
+    window.corpusTags.applyPosterTagRecords(records.filter((r): r is { key: string; tags: string[] } => !!r.key));
     if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
@@ -1009,7 +1012,7 @@
   }
 
   // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutUndoKey(e) {
+  function handleShortcutUndoKey(e: KeyboardEvent) {
     if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
     if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
     e.preventDefault();
@@ -1082,7 +1085,7 @@
     const el = contentScrollEl();
     return el ? el.scrollTop : 0;
   };
-  const scrollContentTo = (y) => {
+  const scrollContentTo = (y: number) => {
     const el = contentScrollEl();
     if (el) el.scrollTop = y;
   };
@@ -1199,7 +1202,7 @@
     onChange: () => {
       renderPosts();
     },
-    openLeafEditor: (n) => {
+    openLeafEditor: (n: CorpusQueryLeaf) => {
       if (n.type === 'date') openDatePopover(n);
       else if (n.type === 'engagement') openEngPopover(n);
     },
@@ -1208,8 +1211,8 @@
     // Deferred arrows: searchEditing is constructed later in this closure (near
     // syncEditingTextLeaf below), same forward-reference pattern as postQB/posterQB
     // being referenced from functions defined above their own declarations.
-    onLeafMutated: (node) => searchEditing.onLeafMutated(node),
-    isEditingLeaf: (node) => searchEditing.isEditingLeaf(node),
+    onLeafMutated: (node: CorpusQueryLeaf) => searchEditing.onLeafMutated(node),
+    isEditingLeaf: (node: CorpusQueryLeaf) => searchEditing.isEditingLeaf(node),
     textInTree: true,
     editableLeafTypes: ['date', 'engagement'],
     singleValueTypes: ['date', 'kind'],
@@ -1232,19 +1235,19 @@
   function renderQueryChips() {
     postQB.render();
   }
-  function addFilter(filter) {
+  function addFilter(filter: { type: string; [k: string]: any }) {
     postQB.addFilter(filter);
   }
-  function removeFilter(index) {
+  function removeFilter(index: number) {
     postQB.removeFilter(index);
   }
-  function removeNode(node) {
+  function removeNode(node: CorpusQueryLeaf) {
     postQB.removeNode(node);
   }
-  function removeCondsMatching(pred) {
+  function removeCondsMatching(pred: (c: CorpusQueryLeaf) => boolean) {
     return postQB.removeCondsMatching(pred);
   }
-  function qHasValue(type, value) {
+  function qHasValue(type: string, value: string) {
     return postQB.qHasValue(type, value);
   }
   function afterQueryChange() {
@@ -1313,7 +1316,7 @@
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
   // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
-  const fileSrc = (file, w?) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
+  const fileSrc = (file: string, w?: number) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
@@ -1340,7 +1343,7 @@
   // changedNames is the fs-watch hint relayed from main (null | [] | [names…]);
   // it lets the refresh re-stat only the changed sidecars instead of the whole
   // folder. Absent (explicit reloads: sort change, import) -> full reconcile.
-  async function loadPosts(keepLimit?, changedNames?) {
+  async function loadPosts(keepLimit?: boolean, changedNames?: string[] | null) {
     if (_loadPostsInFlight) {
       _loadPostsPending = true;
       return;
@@ -1452,7 +1455,7 @@
   let _tabPersistTimer: any = null;
   // Image tabs (type:'image') show ONE post's media fit-to-screen with the
   // inspector alongside instead of a filtered grid — they have no filter state.
-  const isImageTab = (t) => !!t && t.type === 'image';
+  const isImageTab = (t: CorpusTab | null | undefined) => !!t && t.type === 'image';
   const activeTab = () => getTabs().find((t) => t.id === getActiveTabId());
   let appBooted = false; // gate history until initTabs has applied the saved view (avoids a spurious empty entry from the early prefs render)
   const NAV_CAP = 60;
@@ -1483,7 +1486,7 @@
     // function runs after all of those are already current.
     persistTabsDebounced();
   }
-  function applyState(s) {
+  function applyState(s: CorpusTabSnapshot) {
     restoringState = true;
     // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
     postQB.setTree(s.tree ? s.tree : facetTreeFrom(s.f || [], s.ops || {}));
@@ -1580,7 +1583,7 @@
   // Restore a tab's remembered content scroll. rAF×2 so the freshly rendered
   // grid has laid out; the virtualized grid derives its window from scrollTop
   // alone (its estimated container height already spans all items).
-  function restoreTabView(t) {
+  function restoreTabView(t: CorpusTab | null | undefined) {
     if (!t || isImageTab(t)) return; // no grid scroll to restore under an image tab
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
@@ -1593,7 +1596,7 @@
   // The pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
   window.corpusTabsSource.configure({ tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: MSG.tabClose, newTitle: MSG.tabNew });
-  function switchTab(id) {
+  function switchTab(id: string) {
     if (id === getActiveTabId()) return;
     saveActiveTabState();
     setActiveTabId(id);
@@ -1623,7 +1626,7 @@
     requestAnimationFrame(() => scrollContentTo(0)); // new tab starts at the top
     persistTabsDebounced();
   }
-  function closeTab(id) {
+  function closeTab(id: string | null | undefined) {
     if (getTabs().length <= 1) {
       if (isImageTab(getTabs()[0])) {
         // Last tab: a window always keeps one grid tab, so the image tab
@@ -1662,7 +1665,7 @@
     }
     persistTabsDebounced();
   }
-  function pinTab(id) {
+  function pinTab(id: string) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     mutateTabs((arr) => {
@@ -1672,7 +1675,7 @@
     });
     persistTabsDebounced();
   }
-  function renameTab(id, name) {
+  function renameTab(id: string, name: string) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     mutateTabs((arr) => {
@@ -1681,7 +1684,7 @@
     });
     persistTabsDebounced();
   }
-  function duplicateTab(id) {
+  function duplicateTab(id: string) {
     saveActiveTabState();
     const src = getTabs().find((t) => t.id === id);
     if (!src) return;
@@ -1707,18 +1710,18 @@
   // against the live library on every activation (imageTabGroup, records.ts — the
   // _postsById lookup is injected), so deletions degrade to a "missing" empty state
   // instead of a broken image.
-  const resolveImageTabGroup = (t) => imageTabGroup(t, (id) => _postsById.get(id));
+  const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => _postsById.get(id));
   // Publish the tab's identity to corpusStore — renderer/image-tab.ts (P4-B slice⑮)
   // derives the whole React model from this (crossed with corpusPostsData for library
   // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
-  function publishActiveImageTab(t) {
+  function publishActiveImageTab(t: CorpusTab | null) {
     window.corpusStore.set('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
   }
   // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
   // — the class ⟺ an image tab is showing). viewer keeps only this local flag for the
   // re-entrancy guard + the Esc check, so it no longer touches document.body.classList.
   let imageTabShowing = false;
-  function showImageTab(t) {
+  function showImageTab(t: CorpusTab) {
     imageTabShowing = true;
     t._g = resolveImageTabGroup(t); // runtime resolution (inspector toggle re-uses it; never persisted)
     publishActiveImageTab(t); // → ImageTabHost derives the model, adds body.image-tab-active
@@ -1736,7 +1739,7 @@
   // Index step / inspector toggle / close-tab commands, dispatched FROM
   // renderer/image-tab.ts via window.corpusViewer — same event-half shape as
   // query-chips / TabBarEvents (this file computes the model, viewer keeps the logic).
-  function setImageTabIndex(i) {
+  function setImageTabIndex(i: number) {
     const t = activeTab();
     if (!t || !isImageTab(t) || !t.img) return;
     t.img.idx = i;
@@ -1758,7 +1761,7 @@
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { setImageTabIndex, toggleImageTabInspector, closeImageTab });
   // Open a post group as its own tab. Background by default (browser-like:
   // middle-click / context menu leave you in the grid).
-  function addImageTab(g, opts?) {
+  function addImageTab(g: CorpusPostGroup, opts?: { activate?: boolean }) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
@@ -1819,7 +1822,7 @@
   // Tab context menu (right-click a tab): pin / rename / duplicate / close /
   // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
   // items + actions.
-  function showTabMenu(id, e) {
+  function showTabMenu(id: string, e: MouseEvent) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     const items: any[] = [
@@ -1855,7 +1858,7 @@
   // synchronously or on the next frame (renderer/tabs.ts's pull source isn't
   // useSyncExternalStore-backed — see its island's comment) — rAF is the same
   // "wait for React to have painted" trick restoreTabView already relies on.
-  function startTabRename(id) {
+  function startTabRename(id: string) {
     if (!getTabs().find((t) => t.id === id)) return;
     setTabEditingId(id);
     requestAnimationFrame(() => {
@@ -1879,7 +1882,7 @@
   }
   // Rename input commit (Enter / blur) + cancel (Escape), delegated on the bar so
   // they keep working across React re-renders of the strip.
-  function handleTabBarKeydown(e) {
+  function handleTabBarKeydown(e: KeyboardEvent) {
     if (!getTabEditingId() || !closestOf(e, '.tab-rename-input')) return;
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1889,10 +1892,10 @@
       cancelTabRename();
     }
   }
-  function handleTabBarFocusout(e) {
+  function handleTabBarFocusout(e: FocusEvent) {
     if (getTabEditingId() && closestOf(e, '.tab-rename-input')) commitTabRename();
   }
-  function handleTabBarClick(e) {
+  function handleTabBarClick(e: MouseEvent) {
     const closeBtn = closestOf(e, '[data-close]');
     if (closeBtn) {
       e.stopPropagation();
@@ -1906,13 +1909,13 @@
     }
     const tabBtn = closestOf(e, '.tab-item[data-tab]');
     if (tabBtn && !closestOf(e, '.tab-rename-input')) {
-      switchTab(tabBtn.dataset.tab);
+      switchTab(tabBtn.dataset.tab as string);
       return;
     }
   }
   // Middle-click (wheel) a tab to close it — matches the close-button rule
   // (pinned tabs and the last remaining tab stay protected).
-  function handleTabBarAuxclick(e) {
+  function handleTabBarAuxclick(e: MouseEvent) {
     if (e.button !== 1) return;
     const tabBtn = closestOf(e, '.tab-item[data-tab]');
     if (!tabBtn) return;
@@ -1921,21 +1924,21 @@
     if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
   }
   // Suppress the middle-click autoscroll cursor over the tab strip.
-  function handleTabBarMousedown(e) {
+  function handleTabBarMousedown(e: MouseEvent) {
     if (e.button === 1 && closestOf(e, '.tab-item[data-tab]')) e.preventDefault();
   }
-  function handleTabBarContextmenu(e) {
+  function handleTabBarContextmenu(e: MouseEvent) {
     const tabBtn = closestOf(e, '.tab-item[data-tab]');
     if (!tabBtn) return;
     e.preventDefault();
-    showTabMenu(tabBtn.dataset.tab, e);
+    showTabMenu(tabBtn.dataset.tab as string, e);
   }
-  function handleTabBarDblclick(e) {
+  function handleTabBarDblclick(e: MouseEvent) {
     const tabBtn = closestOf(e, '.tab-item[data-tab]');
     if (!tabBtn || closestOf(e, '[data-close]')) return;
-    startTabRename(tabBtn.dataset.tab);
+    startTabRename(tabBtn.dataset.tab as string);
   }
-  function handleGlobalTabShortcut(e) {
+  function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (!e.ctrlKey || e.altKey) return;
     if (e.key === 't') {
       e.preventDefault();
@@ -1979,7 +1982,7 @@
   // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
   // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
   // so masonry packs correctly the first time = no settle/jitter and no eager load.
-  let imgAspect = {};
+  let imgAspect: Record<string, string> = {};
   try {
     imgAspect = JSON.parse(localStorage.getItem('corpus.imgAspect') || '{}') || {};
   } catch (e) {}
@@ -2029,7 +2032,7 @@
   // Cards whose image has NO reserved height (no shotW/H in the index, no cached
   // aspect — rare: video poster / unreadable header) report their real aspect on
   // load; the cache reserves the height on the NEXT render.
-  function onCardAspect(cap, ar) {
+  function onCardAspect(cap: string, ar: string) {
     if (imgAspect[cap] !== ar) {
       imgAspect[cap] = ar;
       persistAspect();
@@ -2049,7 +2052,7 @@
   // legacy path): true = in-place mutation re-render — reuse the grouped set
   // when possible, keep sticky survivors, no entrance animation, and skip the
   // tab-title/persist sync.
-  function renderPosts(inPlace?) {
+  function renderPosts(inPlace?: boolean) {
     // View signature (filter/sort/search/view) — stable across this render, so
     // compute once and reuse for the sticky-drop and group-reuse checks.
     const stateSig = JSON.stringify(snapshotState());
@@ -2118,7 +2121,7 @@
     // Tile overlay (author/❤) is optional; the ❤ count only shows while an
     // engagement sort or filter is active (otherwise it's noise).
     grid.classList.toggle('no-overlay', !tileOverlay);
-    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f) => f.type === 'engagement'));
+    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f: { type: string }) => f.type === 'engagement'));
 
     // THE GRID — fully React-owned (grid island via window.corpusPostGridSource):
     // masonic windowing + live cell rendering for all three views. viewer.js keeps
@@ -2233,7 +2236,7 @@
     );
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
-    if (postQB.shadow().some((f) => f.type === 'clip')) renderPosts(true);
+    if (postQB.shadow().some((f: { type: string }) => f.type === 'clip')) renderPosts(true);
   });
 
   // Folder picker flyout (destinations) — opened from the card context menu
@@ -2242,7 +2245,7 @@
   // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
   // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
   // 「フォルダに追加」 button.
-  function foldMenuItems(g) {
+  function foldMenuItems(g: CorpusPostGroup) {
     const list = CF() ? CF().all() : [];
     const rep = g.rep.captureId;
     const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
@@ -2250,7 +2253,7 @@
     items.push({ label: MSG.ctxManage, act: 'manage', manage: true });
     return items;
   }
-  function onFoldMenuPick(g, item) {
+  function onFoldMenuPick(g: CorpusPostGroup, item: CorpusMenuItem) {
     if (!CF()) return;
     if (item.act === 'manage') {
       CF().openManager();
@@ -2264,10 +2267,10 @@
         g.rep.captureId,
       );
       // re-render only if a collection filter could change the visible set
-      if (postQB.shadow().some((f) => f.type === 'collection')) renderPosts(true);
+      if (postQB.shadow().some((f: { type: string }) => f.type === 'collection')) renderPosts(true);
     }
   }
-  function showFoldMenu(g, x, y) {
+  function showFoldMenu(g: CorpusPostGroup, x: number, y: number) {
     if (!CF()) return;
     window.corpusContextMenu.open({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
   }
@@ -2289,11 +2292,11 @@
   // Card context menu — React-owned glass menu (window.corpusContextMenu); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
   // spot; the bridge's transition guard keeps that open instead of closing it.
-  function cardMenuItems(g) {
+  function cardMenuItems(g: CorpusPostGroup) {
     const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
-    const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m) => m && m.url) || {}).url || '';
+    const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
     if (g.rep.url) items.push({ label: MSG.tipOpen, act: 'open', icon: CM_IC.open });
     items.push({ label: MSG.ctxOpenNewTab, act: 'newtab', icon: CM_IC.newtab });
@@ -2313,7 +2316,7 @@
     items.push({ label: MSG.tipDelete, act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
   }
-  function onCardMenuPick(g, x, y, srcUrl, item) {
+  function onCardMenuPick(g: CorpusPostGroup, x: number, y: number, srcUrl: string, item: CorpusMenuItem) {
     const act = item.act;
     if (act === 'open') {
       if (g.rep.url) window.corpusIpc.openExternal(g.rep.url);
@@ -2335,7 +2338,7 @@
       if (file && window.corpusIpc.showInFolder) window.corpusIpc.showInFolder(file);
     } else if (act === 'delete') requestDeleteGroup(g);
   }
-  function showCardMenu(g, x, y) {
+  function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);
     window.corpusContextMenu.open({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
   }
@@ -2367,9 +2370,9 @@
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
-  function toggleCardSelection(card, shiftKey) {
+  function toggleCardSelection(card: HTMLElement, shiftKey: boolean) {
     const idx = Number.parseInt(card.dataset.index ?? '', 10);
-    const key = card.dataset.key;
+    const key = card.dataset.key as string;
     window.corpusSelection.toggle(idx, key, shiftKey, viewGroups, postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
@@ -2388,7 +2391,7 @@
     const ring = closestOf(e, '.select-check');
     if (!ring) return;
     e.stopPropagation();
-    const card = ring.closest('.post-card');
+    const card = ring.closest('.post-card') as HTMLElement | null;
     if (card) toggleCardSelection(card, e.shiftKey);
   });
 
@@ -2409,7 +2412,7 @@
   );
 
   // Delete a card group (reached via the card context menu): confirm unless skipped.
-  function requestDeleteGroup(g) {
+  function requestDeleteGroup(g: CorpusPostGroup) {
     if (skipDeleteConfirm) {
       executeDeleteGroup(g);
       return;
@@ -2430,7 +2433,7 @@
   }
 
   // Delete every record of the group (a group IS one post in the UI).
-  async function executeDeleteGroup(g) {
+  async function executeDeleteGroup(g: CorpusPostGroup) {
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try {
@@ -2454,11 +2457,11 @@
   // pick target and its rename button are two independent click targets, which the
   // generic ContextMenu item shape has no room for); this only builds the row model
   // and runs the pick/rename actions via the corpusKindMenu bridge (kind-menu.js). ===
-  function showKindMenu(tag, x, y, onChanged) {
+  function showKindMenu(tag: string, x: number, y: number, onChanged?: (() => void) | null) {
     const cur = tagKindOf(tag);
     // The work/character pair carries a quiet ✎ to rename the 種別 globally
     // (段階的開示: only here, in the tag-management kind menu).
-    const row = (k, label) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
+    const row = (k: string, label: string) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
     window.corpusKindMenu.open({
       x,
       y,
@@ -2494,7 +2497,7 @@
     window.corpusRecords.persistManualGroups(manualGroups);
   }
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
-  function setGroupKey(key, ungroup) {
+  function setGroupKey(key: string, ungroup: boolean) {
     if (!key) return;
     keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
     if (ungroup) ungrouped.add(key);
@@ -2504,7 +2507,7 @@
     renderPosts(true);
     if (ungroup) showToast(MSG.ungroupDone);
   }
-  function ungroupManual(idx) {
+  function ungroupManual(idx: number) {
     if (!(idx >= 0 && idx < manualGroups.length)) return;
     keepCurrentVisible();
     manualGroups.splice(idx, 1);
@@ -2523,18 +2526,18 @@
 
   // inspectorTagPickerData moved to tags.js (corpusTags wiring above).
 
-  function refreshInspectorTagFields(g) {
+  function refreshInspectorTagFields(g: CorpusPostGroup | null | undefined) {
     if (!g) return;
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
-    const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h) => !userSet.has(h));
+    const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
     window.corpusInspector.refresh({ tags, srcTagsView, ...inspectorTagPickerData(tags, g.records, 'post') });
   }
 
   // Apply a tag mutation to every record of the inspected group, persist immediately,
   // record undo, and refresh grid + inspector tag fields (NOT a full showDetail — so the
   // image/meta don't flicker and the input keeps focus).
-  async function applyInspectorTagChange(g, mutate) {
+  async function applyInspectorTagChange(g: CorpusPostGroup | null | undefined, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
     keepCurrentVisible(); // removing a tag can un-match an active tag filter
@@ -2563,13 +2566,13 @@
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
   // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
   // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
-  async function addInspectorTag(g, tag) {
+  async function addInspectorTag(g: CorpusPostGroup, tag: string) {
     const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
     if (adding) await maybeDistinguishHomonym(fresh(), tag);
   }
-  async function toggleInspectorTag(g, tag) {
+  async function toggleInspectorTag(g: CorpusPostGroup, tag: string) {
     const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
@@ -2580,9 +2583,9 @@
   // this character was seen with before, it's likely a same-name character from
   // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
   // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
-  async function maybeDistinguishHomonym(g, addedTag) {
+  async function maybeDistinguishHomonym(g: CorpusPostGroup | null | undefined, addedTag: string) {
     if (!g || tagKindOf(addedTag) !== 'character') return;
-    const cardTags = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
+    const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => tagKindOf(t) === 'work');
     if (!worksNow.length) return; // no 作品 context to distinguish by
     const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
@@ -2601,7 +2604,7 @@
     showToast(MSG.homonymDistinguished(distinguished));
   }
 
-  function showDetail(g) {
+  function showDetail(g: CorpusPostGroup) {
     if (!g) return;
     const p = g.rep;
     const eng: string[] = [];
@@ -2615,7 +2618,7 @@
     // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
-    const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h) => !userSet.has(h));
+    const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h: string) => !userSet.has(h));
     // Poster row carries the locally-saved avatar (psimg://) when present, so the
     // inspector keeps its "label: value" rhythm while adding a face to the name.
     const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
@@ -2629,7 +2632,7 @@
     // a screenshot-only post has none, so the search links are hidden then.
     // pixiv (i.pximg.net) is referer-gated so the fetcher may 403 — but pixiv
     // IS the source, so reverse search there is moot anyway.
-    const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m) => m && m.url) || {}).url || '';
+    const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
     // (same post URL with siblings) toggle via the persisted ungrouped set.
     const gkey = postKeyOf(p.url);
@@ -2698,11 +2701,11 @@
       onSauce: srcImageUrl ? () => window.corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
       onAscii: srcImageUrl ? () => window.corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => jumpToPoster(p) : null,
-      onAdoptSourceTag: (tag) => adoptSourceTag(g, tag),
-      onTagAdd: (tag) => addInspectorTag(g, tag),
-      onTagRemove: (tag) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag) => toggleInspectorTag(g, tag),
-      onTagContextMenu: (tag, x, y) => {
+      onAdoptSourceTag: (tag: string) => adoptSourceTag(g, tag),
+      onTagAdd: (tag: string) => addInspectorTag(g, tag),
+      onTagRemove: (tag: string) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
+      onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
+      onTagContextMenu: (tag: string, x: number, y: number) => {
         if (taggingApi && taggingApi.showKindMenu) {
           taggingApi.showKindMenu(tag, x, y, () => {
             const g2 = viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey);
@@ -2723,7 +2726,7 @@
 
   // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
   // the inspected group. Persisted + undoable, mirroring the edit overlay's save.
-  async function adoptSourceTag(g, tag) {
+  async function adoptSourceTag(g: CorpusPostGroup, tag: string) {
     if (!tag) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
     const undoRecords: CorpusUndoRecord[] = [];
@@ -2753,7 +2756,7 @@
   // press (lightbox/popovers/modals win the first Esc, the panel the next).
   // Registration lives in the DetailDismiss component (app/islands/app/App.tsx);
   // this stays the handler + guard logic (viewer keeps the orchestration).
-  function handleEscDismissDetail(e) {
+  function handleEscDismissDetail(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
     const inImageTab = imageTabShowing;
     if (byId('postDetail').hidden && !inImageTab) return;
@@ -2778,7 +2781,7 @@
   // explicit "show this one instead" entry. Inline mode (wide) keeps clicks:
   // cards swap the content there since the panel covers nothing. Also
   // registered from DetailDismiss, in CAPTURE phase like the Esc handler above.
-  function handleOutsideClickDismissDetail(e) {
+  function handleOutsideClickDismissDetail(e: MouseEvent) {
     const insp = byId('postDetail');
     if (insp.hidden) return;
     if (!matchMedia('(max-width: 1279px)').matches) return;
@@ -2875,7 +2878,9 @@
         const ids = recs.map((r) => r.captureId).filter(Boolean);
         if (!ids.length) return;
         const r = btn.getBoundingClientRect();
-        showFoldMenu({ rep: { captureId: ids[0] }, records: recs }, r.left, r.bottom + 4);
+        // Synthetic stand-in group (no real key/files — showFoldMenu's callees only
+        // read .rep.captureId and .records for this bulk "add selection to folder" path).
+        showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as CorpusPostGroup, r.left, r.bottom + 4);
         break;
       }
       case 'group':
@@ -2918,19 +2923,19 @@
       cancelLabel: MSG.confirmCancel,
       saveLabel: MSG.save,
       onCancel: closeEditOverlay,
-      onTagAdd: (tag) => {
+      onTagAdd: (tag: string) => {
         window.corpusBulkEdit.add(tag);
         refreshEditOverlayFields();
       },
-      onTagRemove: (tag) => {
+      onTagRemove: (tag: string) => {
         window.corpusBulkEdit.remove(tag);
         refreshEditOverlayFields();
       },
-      onTagToggle: (tag) => {
+      onTagToggle: (tag: string) => {
         window.corpusBulkEdit.toggle(tag);
         refreshEditOverlayFields();
       },
-      onTagContextMenu: (tag, x, y) => {
+      onTagContextMenu: (tag: string, x: number, y: number) => {
         if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, refreshEditOverlayFields);
       },
       onSave: async () => {
@@ -2986,7 +2991,7 @@
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   function groupSelected() {
-    const members = window.corpusSelection.selectedGroups(viewGroups, postIdKey).flatMap((g) => g.records.map((r) => r.captureId).filter(Boolean));
+    const members = window.corpusSelection.selectedGroups(viewGroups, postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
@@ -3009,7 +3014,7 @@
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
   // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutSelectAllKey(e) {
+  function handleShortcutSelectAllKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
@@ -3026,7 +3031,7 @@
 
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A: never steal keys from fields or open overlays.
-  function handleShortcutSearchFocusKey(e) {
+  function handleShortcutSearchFocusKey(e: KeyboardEvent) {
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
     if (!slash && !ctrlK) return;
@@ -3091,7 +3096,7 @@
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
-  function setBrowseMode(mode, opts?) {
+  function setBrowseMode(mode: string, opts?: { silent?: boolean }) {
     mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
     posterReturn = null; // an explicit mode switch ends any pending poster-return
     browseMode = mode;
@@ -3168,7 +3173,7 @@
     if (posterView === 'tile')
       return {
         get: () => posterTileSize,
-        set: (v) => {
+        set: (v: number) => {
           posterTileSize = v;
         },
         min: PTILE_MIN,
@@ -3178,7 +3183,7 @@
     if (posterView === 'card')
       return {
         get: () => posterCardSize,
-        set: (v) => {
+        set: (v: number) => {
           posterCardSize = v;
         },
         min: PCARD_MIN,
@@ -3279,14 +3284,14 @@
   const pfStore = window.corpusPosterFolderStore();
   const posterFolderById = pfStore.byId;
   const posterFolderHas = pfStore.has;
-  function createPosterFolder(name) {
+  function createPosterFolder(name: string | null) {
     return pfStore.create(name);
   }
-  function deletePosterFolder(id) {
+  function deletePosterFolder(id: string) {
     pfStore.remove(id);
     posterQB.removeByLeaf('folder', id); // drop the filter leaf if its folder is gone
   }
-  function togglePosterFolderMember(id, key) {
+  function togglePosterFolderMember(id: string, key: string) {
     const res = pfStore.toggleIn(id, key);
     if (!res) return false;
     const f = posterFolderById(id);
@@ -3331,7 +3336,7 @@
     onChange: () => {
       renderPosters();
     },
-    openLeafEditor: (n) => {
+    openLeafEditor: (n: CorpusQueryLeaf) => {
       if (n.type === 'date') openPosterDatePopover(n);
     },
     editableLeafTypes: ['date'],
@@ -3356,7 +3361,7 @@
   // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
   function renderPosterFilterRows() {
     const present = new Set(posterFilterVocab());
-    if (posterQB.removeCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
+    if (posterQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
   }
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
@@ -3369,7 +3374,7 @@
     renderPosters();
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { resetPosterFilters });
-  function renderPosters(keepLimit?) {
+  function renderPosters(keepLimit?: boolean) {
     const grid = byId('posterGrid');
     const empty = byId('emptyState');
     renderPosterFilterRows();
@@ -3441,10 +3446,10 @@
   // the prior posts view (tags/date/media/search/engagement) — not just a previous
   // user filter — otherwise unrelated leftover filters AND-narrow the result and
   // hide posts the user expects to see.
-  function openPosterPosts(u) {
+  function openPosterPosts(u: CorpusUserAgg) {
     if (!u) return;
     postQB.resetTree();
-    const set = (id, v) => {
+    const set = (id: string, v: string) => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (el) el.value = v;
     };
@@ -3459,7 +3464,7 @@
   // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster
   // view and open that poster's inspector. Only SNS posts have a poster in buildUsers()
   // (url-less Eagle migrations don't), so callers guard on existence before offering it.
-  function jumpToPoster(p) {
+  function jumpToPoster(p: CorpusPost) {
     if (!p || !p.url) return;
     const u = buildUsers().find((x) => x.key === userKey(p));
     if (!u) return;
@@ -3471,17 +3476,17 @@
   // (NOT a post's tags), persisted to poster-tags.json. Posters carry no source (pixiv/
   // SNS) tags, so the picker is fed recordsForSource:[]. The UI shows whenever the
   // poster inspector is open (no tagging-edit gate — there is no poster tagging mode).
-  function refreshPosterTagFields(key) {
+  function refreshPosterTagFields(key: string) {
     window.corpusInspector.refresh({ tags: posterTagsOf(key), ...inspectorTagPickerData(posterTagsOf(key), [], 'poster') });
   }
-  function refreshPosterFolderFields(key) {
+  function refreshPosterFolderFields(key: string) {
     window.corpusInspector.refresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
   }
   // Apply a tag mutation to a poster, persist, and refresh the inspector tag fields
   // (input keeps focus and the picker keeps its scroll — same openId, no remount).
   // Records the change on the shared undo stack (type 'poster-tags') so Ctrl+Z works
   // the same as for posts.
-  function applyPosterTagChange(key, mutate) {
+  function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!key) return;
     const prev = posterTagsOf(key);
     const next = mutate(prev.slice());
@@ -3492,7 +3497,7 @@
     window.corpusTags.setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
   }
-  function showPosterDetail(u, opts?) {
+  function showPosterDetail(u: CorpusUserAgg, opts?: { focusTag?: boolean }) {
     if (!u) return;
     const pfName = u.platform ? PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? fileSrc(u.avatarFile) : null;
@@ -3544,7 +3549,7 @@
       },
       onClose: closeDetail,
       onPosterPosts: () => openPosterPosts(u),
-      onFolderToggle: (id) => {
+      onFolderToggle: (id: string) => {
         togglePosterFolderMember(id, u.key);
         refreshPosterFolderFields(u.key);
       },
@@ -3558,10 +3563,10 @@
           }
         }
       },
-      onTagAdd: (tag) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
-      onTagRemove: (tag) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
-      onTagContextMenu: (tag, x, y) => {
+      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
+      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
+      onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
+      onTagContextMenu: (tag: string, x: number, y: number) => {
         if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
     });
@@ -3597,7 +3602,7 @@
   // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
   // poster-folders (toggle, stays open). React-owned glass popup via
   // window.corpusContextMenu; viewer owns the items + actions here.
-  function posterMenuItems(u) {
+  function posterMenuItems(u: CorpusUserAgg) {
     const items = [{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }] as CorpusMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
@@ -3605,7 +3610,7 @@
     items.push({ label: MSG.posterMenuNewFolder, act: 'newfolder', manage: true });
     return items;
   }
-  function onPosterMenuPick(u, item) {
+  function onPosterMenuPick(u: CorpusUserAgg, item: CorpusMenuItem) {
     if (item.act === 'posts') {
       openPosterPosts(u);
       return;
@@ -3623,7 +3628,7 @@
       return posterMenuItems(u); // keep open to assign more
     }
   }
-  function showPosterMenu(u, x, y) {
+  function showPosterMenu(u: CorpusUserAgg, x: number, y: number) {
     window.corpusContextMenu.open({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
   byId('posterGrid').addEventListener('contextmenu', (e) => {
@@ -3645,7 +3650,7 @@
   byId('posterFilterRows').addEventListener('click', (e) => {
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
-    const cat = row.dataset.qfrow;
+    const cat = row.dataset.qfrow as string;
     if (cat === 'poster-date' && window.corpusFilterPopover.get()?.kind === 'posterDate') {
       closeAllMenus();
       return;
@@ -3673,7 +3678,7 @@
     if (currentView === 'card')
       return {
         get: () => cardSize,
-        set: (v) => {
+        set: (v: number) => {
           cardSize = v;
         },
         min: CARD_MIN,
@@ -3685,7 +3690,7 @@
     if (currentView === 'list')
       return {
         get: () => listThumb,
-        set: (v) => {
+        set: (v: number) => {
           listThumb = v;
         },
         min: LIST_MIN,
@@ -3696,7 +3701,7 @@
       };
     return {
       get: () => tileSize,
-      set: (v) => {
+      set: (v: number) => {
         tileSize = v;
       },
       min: TILE_MIN,
@@ -3706,7 +3711,7 @@
       columns: true,
     };
   }
-  function setViewSize(px, commit = true) {
+  function setViewSize(px: number, commit = true) {
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
     applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
@@ -3769,7 +3774,7 @@
     return trackCols(Number.parseInt(tileSlider.value, 10), Number.parseInt(tileSlider.min, 10), Number.parseInt(tileSlider.max, 10));
   }
   let _dragMetrics: CorpusGridMetrics | null = null; // grid geometry cached for the duration of one size drag
-  function onSliderMove(commit) {
+  function onSliderMove(commit: boolean) {
     if (!viewSizeState().columns) {
       setViewSize(Number.parseInt(tileSlider.value, 10), commit);
       return;
@@ -3787,7 +3792,7 @@
   tileSlider.addEventListener('change', () => onSliderMove(true));
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
   // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutSizeKey(e) {
+  function handleShortcutSizeKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
     const t = e.target as HTMLElement | null;
@@ -3808,7 +3813,7 @@
 
   // Tile overlay lives in the React settings island now; expose an apply-and-
   // persist bridge it can call so the post grid updates immediately.
-  function applyTileOverlay(v) {
+  function applyTileOverlay(v: boolean) {
     tileOverlay = v;
     window.corpusIpc.setPref('tileOverlay', tileOverlay);
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
@@ -3822,7 +3827,7 @@
   window.corpusViewer = Object.assign(window.corpusViewer || {}, {
     setTileOverlay: applyTileOverlay,
     reloadPosts: () => loadPosts(),
-    setSkipDeleteConfirm: (v) => {
+    setSkipDeleteConfirm: (v: boolean) => {
       skipDeleteConfirm = v;
       window.corpusIpc.setPref('skipDeleteConfirm', v);
     },
@@ -3887,7 +3892,7 @@
     return String(window.corpusStore.get('searchQuery') || '');
   }
   let _searchEcho = '';
-  function setSearchBoxValue(v) {
+  function setSearchBoxValue(v: string | null | undefined) {
     _searchEcho = String(v ?? '');
     window.corpusStore.set('searchQuery', _searchEcho);
   }
@@ -3951,7 +3956,7 @@
   // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
   // from buildSuggest (users.js — wired above with buildUsers); what a pick DOES
   // is searchEditing.pick (wired through the corpusSearchBox bridge registered below).
-  function applySuggest(it) {
+  function applySuggest(it: { kind: string; value: string; label?: string } | null | undefined) {
     searchEditing.pick(it);
   }
   // Register the island's data callbacks. onConfirmText replicates the old bare-
@@ -4084,19 +4089,19 @@
   // --- Utility functions ---
   // Count / date formatters (formatCount / formatDate / compactDate / …) live in
   // format.js now; escapeHtml/escapeAttr stay as thin aliases over corpusUI.
-  function escapeHtml(str) {
+  function escapeHtml(str: unknown) {
     return window.corpusUI.escapeHtml(str);
   }
   // corpusUI.escapeHtml is quote-safe (escapes " and '), so attribute values are
   // safe through the same call — escapeAttr stays as a named alias to keep the
   // intent ("this value lands in an attribute") legible at the 35 call sites.
-  function escapeAttr(str) {
+  function escapeAttr(str: unknown) {
     return window.corpusUI.escapeHtml(str);
   }
 
   // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid
   // #333 #toast; unified to #ivToast so viewer + folders share one look.
-  function showToast(msg) {
+  function showToast(msg: unknown) {
     return window.corpusUI.notify(msg);
   }
 
@@ -4106,9 +4111,9 @@
   // unsubscribe — subs.push — so the effect there has no cleanup, harmless since it
   // mounts once for the app's lifetime like every other App.tsx-level effect); this
   // stays the guard + action logic.
-  function handleFolderChange(kind) {
+  function handleFolderChange(kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c) => c.type === 'collection' && !CF().byId(c.value))) {
+    if (postQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'collection' && !CF().byId(c.value))) {
       postQB.syncShadow();
       postQB.render();
     }
@@ -4119,7 +4124,7 @@
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
   // lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer below
   // (window.corpusPosts.onPostsChanged has no unsubscribe either — same reasoning).
-  async function handlePostsChanged(names) {
+  async function handlePostsChanged(names: string[] | null) {
     await loadPosts(true, names);
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleFolderChange, handlePostsChanged });
@@ -4165,7 +4170,7 @@
     // library is loaded — enter the detail view here, after the grid restore.
     {
       const bootTab = getTabs().find((t) => t.id === getActiveTabId());
-      if (isImageTab(bootTab)) showImageTab(bootTab);
+      if (bootTab && isImageTab(bootTab)) showImageTab(bootTab);
       // grid-tab titles deriving live counts (allPostsCount, just set above by the
       // library load) reach the Tabs source automatically — no push needed here.
     }

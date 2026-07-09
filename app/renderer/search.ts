@@ -29,7 +29,7 @@
   };
 
   // カタカナ(U+30A1..U+30F6)→ひらがな(U+3041..U+3096)。長音符ー等はそのまま。
-  function kataToHira(s) {
+  function kataToHira(s: string) {
     let out = '';
     for (let i = 0; i < s.length; i++) {
       const c = s.charCodeAt(i);
@@ -40,7 +40,7 @@
 
   // 表記ゆれ正規化（B）。NFKC で全角英数→半角・半角カナ→全角カナ等を吸収し、
   // 小文字化＋カナ統一する。
-  function normalize(s) {
+  function normalize(s: unknown) {
     if (s == null) return '';
     let t = String(s);
     try {
@@ -52,7 +52,7 @@
   }
 
   // needle の各文字が hay に出現順で現れるか（連続でなくてよい＝サブシーケンス一致, A）。
-  function isSubsequence(hay, needle) {
+  function isSubsequence(hay: string, needle: string) {
     let i = 0;
     for (let k = 0; k < needle.length; k++) {
       i = hay.indexOf(needle[k], i);
@@ -64,7 +64,7 @@
 
   // 近似部分一致（C）。Sellers のアルゴリズムで、needle が hay の「どこかの部分文字列」と
   // 編集距離 maxErr 以内で一致するか判定（開始/終了位置は自由＝部分一致）。
-  function approxSubstring(hay, needle, maxErr) {
+  function approxSubstring(hay: string, needle: string, maxErr: number) {
     const n = needle.length,
       h = hay.length;
     if (n === 0) return true;
@@ -95,13 +95,13 @@
   }
 
   // 語長に応じた許容編集回数。短語は誤判定が増えるので 0、中〜長語で 1〜2。
-  function errBudget(len) {
+  function errBudget(len: number) {
     return len <= 2 ? 0 : len <= 4 ? 1 : 2;
   }
 
   // クエリを1度だけ正規化・前処理し、各 haystack を判定する関数を返す（描画毎に1回 compile）。
   // 空クエリは常に true。
-  function compile(query) {
+  function compile(query: string) {
     const nq = normalize(query).trim();
     if (!nq)
       return function () {
@@ -115,7 +115,7 @@
       return function () {
         return true;
       };
-    return function (rawHay) {
+    return function (rawHay: string) {
       const H = normalize(rawHay);
       for (let i = 0; i < terms.length; i++) {
         const term = terms[i];
@@ -127,7 +127,7 @@
     };
   }
 
-  function subscribe(fn) {
+  function subscribe(fn: (mode?: string) => void) {
     if (typeof fn !== 'function') return () => {};
     listeners.add(fn);
     return () => listeners.delete(fn);

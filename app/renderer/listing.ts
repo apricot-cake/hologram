@@ -27,12 +27,13 @@
   //   posterSort() / collectionSort() — mode sort keys (getters — reassigned lets)
   //   allCollections() — CF().allCollections() or [] before folders load
   //   filterLabel(f) — leaf pill label (tab-state.js makeTabLabels product)
-  function makeListing(deps) {
+  type ListingDeps = Parameters<CorpusListingApi['makeListing']>[0];
+  function makeListing(deps: ListingDeps) {
     const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, collectionSort, allCollections, filterLabel } = deps;
 
     // Content gate shared by the post grid and dynamic collections: only records
     // with something to show (image / media / text / title) enter a listing.
-    const hasContent = (p) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
+    const hasContent = (p: CorpusPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
     function getFilteredPosts() {
       // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
@@ -99,15 +100,17 @@
       if (root.children.length) list = list.filter((u) => posterQBEval(u));
       // Search is kept OUT of the tree (same作法 as the post side).
       if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
-      const nameOf = (u) => (u.displayName || u.screenName || '').toLowerCase();
+      const nameOf = (u: CorpusUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
       list = list.slice();
       // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
       // query's date leaf (range axis == sort axis), falling back to 最終投稿日 (latest).
       const pSort = posterSort();
       if (pSort === 'date-desc' || pSort === 'date-asc') {
         const dl = treeLeaves(root).find((c) => c.type === 'date');
-        const field = (dl && dl.dateField) || 'latest',
-          asc = pSort === 'date-asc';
+        // dateField's actual domain for posters (query.ts makePosterPredOf) — dl.dateField
+        // itself is an open leaf field ('any'), so this just names its known values.
+        const field: 'latest' | 'lastCapture' | 'authorCreatedAt' = (dl && dl.dateField) || 'latest';
+        const asc = pSort === 'date-asc';
         list.sort((a, b) => {
           const av = a[field] || '',
             bv = b[field] || '';
@@ -136,14 +139,14 @@
     // Fold a legacy free-text q into a tree as a confirmed 'text' leaf (pre-text-leaf
     // saves stored the search term separately in coll.q). Returns the tree to evaluate —
     // a pass-through when q is empty or the tree already carries a text leaf.
-    function treeWithLegacyQ(tree, q) {
+    function treeWithLegacyQ(tree: CorpusQueryGroup | null | undefined, q: string | null | undefined): CorpusQueryGroup | null {
       const t = tree && Array.isArray(tree.children) ? tree : null;
       if (!q || !q.trim() || (t && treeLeaves(t).some((c) => c.type === 'text'))) return t;
       return { kind: 'group', op: 'and', neg: false, children: [...((t && t.children) || []), { kind: 'cond', type: 'text', value: q.trim(), mode: 'exact' }] };
     }
-    function dynamicMatches(coll) {
+    function dynamicMatches(coll: CorpusCollection): CorpusPost[] {
       const tree = treeWithLegacyQ(coll.tree, coll.q); // text term lives in the tree now (q = legacy only)
-      const out: any[] = [];
+      const out: CorpusPost[] = [];
       for (const p of allPosts()) {
         if (!hasContent(p)) continue; // mirror getFilteredPosts' content gate
         if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
@@ -151,13 +154,13 @@
       }
       return out;
     }
-    function collectionRecords(coll) {
+    function collectionRecords(coll: CorpusCollection): CorpusPost[] {
       if (_collRecCache && _collRecCache.has(coll.id)) return _collRecCache.get(coll.id);
-      let recs: any;
+      let recs: CorpusPost[];
       if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
       else {
         recs = [];
-        for (const cid of coll.items) {
+        for (const cid of coll.items || []) {
           const r = postsById().get(cid);
           if (r) recs.push(r);
         }
@@ -165,7 +168,7 @@
       if (_collRecCache) _collRecCache.set(coll.id, recs);
       return recs;
     }
-    function collectionThumbsFrom(recs) {
+    function collectionThumbsFrom(recs: CorpusPost[]) {
       const files: string[] = [];
       for (const rec of recs) {
         const f = densityImage(rec, 'card');
@@ -174,12 +177,12 @@
       }
       return files;
     }
-    function collectionItemCount(coll) {
+    function collectionItemCount(coll: CorpusCollection) {
       return collectionRecords(coll).length;
     }
     // Small condition chips under a dynamic card's name (saved tree leaves + the
     // free-text q). Capped; purely informational (the mock's optional 条件チップ).
-    function collCondLabels(coll) {
+    function collCondLabels(coll: CorpusCollection) {
       const chips: string[] = [];
       try {
         for (const leaf of treeLeaves(coll.tree)) {
@@ -207,7 +210,7 @@
   }
 
   // Deep-clone a query tree for persistence, dropping transient memo fields (_compiled…).
-  const cloneTree = (tree) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
+  const cloneTree = (tree: CorpusQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
 
   const api = { makeListing, cloneTree };
   if (typeof window !== 'undefined') window.corpusListing = api;

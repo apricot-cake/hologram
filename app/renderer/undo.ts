@@ -14,11 +14,12 @@
   // deps contract (both async, both viewer-owned side effects):
   //   applyTags(records)       — records = [{captureId, image, tags}] (post sidecars)
   //   applyPosterTags(records) — records = [{key, tags}] (poster-tags.json)
-  function makeUndo(deps) {
-    const undoStack: any[] = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
-    let redoStack: any[] = [];
+  type CorpusUndoEntry = { type: string; records: CorpusUndoRecord[] };
+  function makeUndo(deps: Parameters<CorpusUndoApi['makeUndo']>[0]) {
+    const undoStack: CorpusUndoEntry[] = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
+    let redoStack: CorpusUndoEntry[] = [];
 
-    function push(type, records) {
+    function push(type: string, records: CorpusUndoRecord[]) {
       if (!records || !records.length) return;
       undoStack.push({ type, records });
       if (undoStack.length > UNDO_MAX) undoStack.shift();
@@ -26,7 +27,7 @@
     }
 
     // dir = which captured tag list to re-apply: 'prevTags' (undo) / 'newTags' (redo).
-    async function apply(entry, dir) {
+    async function apply(entry: CorpusUndoEntry, dir: 'prevTags' | 'newTags') {
       if (entry.type === 'poster-tags') await deps.applyPosterTags(entry.records.map((r) => ({ key: r.key, tags: r[dir] })));
       else await deps.applyTags(entry.records.map((r) => ({ captureId: r.captureId, image: r.image, tags: r[dir] })));
     }
@@ -52,7 +53,7 @@
     return { push, undo, redo };
   }
 
-  const api = { makeUndo };
+  const api: CorpusUndoApi = { makeUndo };
   if (typeof window !== 'undefined') window.corpusUndo = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

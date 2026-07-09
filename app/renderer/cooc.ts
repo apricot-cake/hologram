@@ -11,7 +11,7 @@
   // deps contract (all functions):
   //   allPosts() — full library (getter — viewer reassigns it)
   //   tagKindOf(tag) — 用語帳 kind ('work'/'character'/null)
-  function makeCooc(deps) {
+  function makeCooc(deps: Parameters<CorpusCoocApi['makeCooc']>[0]) {
     const { allPosts, tagKindOf } = deps;
 
     // Tag co-occurrence: 作品 → characters that have shared a post with any of these
@@ -19,7 +19,7 @@
     // confidence). 種別 already fixes the two hard guesses (which tags relate, which is
     // the parent), so what's left — which character belongs to which work — is high
     // precision (a character co-occurs with ~one work).
-    function charCandidatesFor(workTags) {
+    function charCandidatesFor(workTags: string[] | null | undefined): Array<[string, number]> {
       if (!workTags || !workTags.length) return [];
       const works = new Set(workTags);
       const counts = new Map<string, number>();
@@ -34,7 +34,7 @@
     // 同名キャラ（別作品）の検知: the 作品 tags this character has co-occurred with
     // elsewhere in the library (the current group excluded, so a just-added tag never
     // counts itself as history).
-    function worksCooccurringWith(charTag, excludeIds?) {
+    function worksCooccurringWith(charTag: string, excludeIds?: Set<string> | null): Set<string> {
       const works = new Set<string>();
       for (const p of allPosts()) {
         if (excludeIds && excludeIds.has(p.captureId)) continue;
@@ -54,7 +54,7 @@
     // limit — withTag+count feed the "X と N 件で一緒" tooltip, so every suggestion
     // stays explainable. opts.exclude: extra tags to never suggest (e.g. ones the
     // strong tier already offers).
-    function relatedTagCandidates(selectedTags, opts?) {
+    function relatedTagCandidates(selectedTags: ReadonlyArray<string> | null | undefined, opts?: { minCount?: number; limit?: number; exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }> {
       const sel = new Set((selectedTags || []).filter(Boolean));
       if (!sel.size) return [];
       const o = opts || {};
@@ -92,7 +92,7 @@
     return { charCandidatesFor, worksCooccurringWith, relatedTagCandidates };
   }
 
-  const api = { makeCooc };
+  const api: CorpusCoocApi = { makeCooc };
   if (typeof window !== 'undefined') window.corpusCooc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

@@ -443,7 +443,13 @@ declare global {
     labels: any;
     typeOptions?: any[];
     dimOptions?: any[];
-    onApply(fields: any): void;
+    // Union of the three popovers' field shapes ('date'/'posterDate' pass
+    // dateField/from/to, 'eng' passes engType/min/op) — kept as one loose object
+    // (rather than 3 overloads) so viewer.ts's inline destructuring parameter
+    // types without a discriminated-union cast at each call site.
+    // min arrives as a parsed number (FilterPopover.tsx's EngForm calls
+    // Number.parseInt on it before invoking onApply) — the rest stay strings.
+    onApply(fields: { dateField?: string; from?: string; to?: string; engType?: string; min?: string | number; op?: string }): void;
     onRemove(): void;
     [extra: string]: any;
   }
@@ -456,9 +462,37 @@ declare global {
 
   // ---- renderer/inspector.js / renderer/edit-overlay.js — model mechanics
   // shared; the deep field lists live in viewer.js's model builders. ----
-  interface CorpusInspectorModel {
+  // Tag-editing callbacks the post/poster inspector wires to TagEditor.tsx
+  // (_shared) — its onAdd/onRemove/onToggle/onContextMenu props are all
+  // required, so these mirror that exactly (Inspector.tsx invokes
+  // onAdoptSourceTag/onFolderToggle directly too, same "always provided"
+  // shape). Kept OFF CorpusEditOverlayModel below: EditOverlay.tsx wires the
+  // very same TagEditor props from that model, but renderer/edit-overlay.ts's
+  // open() spreads Omit<CorpusEditOverlayModel,'openId'> without the narrowing
+  // cast renderer/inspector.ts's open() already has, so required members there
+  // would need a cast this pass doesn't add (out of scope: viewer.ts /
+  // globals.d.ts only) — it keeps falling through the index signature instead,
+  // same as before this pass.
+  interface CorpusTagEditorCallbacks {
+    onTagAdd(tag: string): void;
+    onTagRemove(tag: string): void;
+    onTagToggle(tag: string): void;
+    onTagContextMenu(tag: string, x: number, y: number): void;
+  }
+  interface CorpusInspectorModel extends CorpusTagEditorCallbacks {
     kind: 'post' | 'poster';
     openId: number;
+    onClose(): void;
+    // Post-only (Inspector.tsx renders these when present).
+    onOpenExternal?(): void;
+    onSauce?(): void;
+    onAscii?(): void;
+    onPosterJump?(): void;
+    onAdoptSourceTag(tag: string): void;
+    // Poster-only.
+    onPosterPosts?(): void;
+    onFolderToggle(id: string): void;
+    onFolderCreate?(): void;
     [extra: string]: any;
   }
   interface CorpusInspector {
@@ -468,8 +502,16 @@ declare global {
     get(): CorpusInspectorModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
+  // NOT extending CorpusTagEditorCallbacks — see the comment above that
+  // interface for why (renderer/edit-overlay.ts's open() needs a narrowing
+  // cast this pass doesn't add; onTagAdd/onTagRemove/onTagToggle/
+  // onTagContextMenu keep falling through the index signature below, same as
+  // before this pass). viewer.ts's own onTagAdd/etc. literals stay directly
+  // annotated at their call sites regardless.
   interface CorpusEditOverlayModel {
     openId: number;
+    onCancel?(): void;
+    onSave?(): void;
     [extra: string]: any;
   }
 

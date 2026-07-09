@@ -23,13 +23,13 @@
   }
   let pref = 'auto'; // auto | light | dark
 
-  function cleanPref(t) {
+  function cleanPref(t: string): string {
     return t === 'light' || t === 'dark' ? t : 'auto';
   }
   function systemDark() {
     return !!(mql && mql.matches);
   }
-  function resolve(p) {
+  function resolve(p: string): string {
     p = cleanPref(p);
     return p === 'auto' ? (systemDark() ? 'dark' : 'light') : p;
   }
@@ -49,12 +49,12 @@
       } catch (e) {}
     }
   }
-  function applyTitleBar(modal) {
+  function applyTitleBar(modal?: boolean) {
     modalDark = !!modal;
     setBar();
   }
 
-  function apply(p) {
+  function apply(p: string): string {
     pref = cleanPref(p);
     if (resolve(pref) === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     else document.documentElement.removeAttribute('data-theme');
@@ -64,7 +64,7 @@
   function get() {
     return pref;
   }
-  function set(p, persist) {
+  function set(p: string, persist?: boolean): string {
     apply(p);
     try {
       localStorage.setItem(KEY, pref);
@@ -154,7 +154,7 @@
 // preventDefault() in its own bubble-phase handlers, so those keep working; this
 // document-level guard only neutralizes drops that no element handled.
 (function () {
-  const stop = function (e) {
+  const stop = function (e: Event) {
     e.preventDefault();
   };
   window.addEventListener('dragover', stop, false);
