@@ -4,6 +4,11 @@
 // window-IIFE read via window.corpusX at call time.
 import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf, makePostPredOf, makePosterPredOf } from './query.ts';
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
+import { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } from './format.ts';
+import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
+import { sync as syncPostsData } from './posts-data.ts';
+import { makeUndo } from './undo.ts';
+import { makeUsers } from './users.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -30,10 +35,9 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   const _s = (key: string) => getMessage(key);
   const _f1 = (key: string) => (a: string | number) => getMessage(key, [a]);
   const _f2 = (key: string) => (a: string | number, b: string | number) => getMessage(key, [a, b]);
-  // Count / date display formatters live in format.js now (loaded before this
-  // script). (The backup-rail time formatters fmtTime/fmtBackupTime are used only
-  // by the MirrorStatus island now, which reads window.corpusFormat directly.)
-  const { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } = window.corpusFormat;
+  // Count / date display formatters live in format.ts now (imported above).
+  // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
+  // MirrorStatus island now, which imports format.ts directly.)
   // Back-compat shim so existing call sites (MSG.key / MSG.key(args)) keep working.
   // Static keys are pre-resolved strings; interpolated keys are bound functions.
   const MSG = {
@@ -953,7 +957,7 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
   // to tags.js (corpusTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
-  // renderer/sidebar.ts's sources now (corpusTags.onChange / corpusPostsData.subscribe
+  // renderer/sidebar.ts's sources now (corpusTags.onChange / posts-data.ts's subscribe
   // — P4-B slice⑰), so a 種別 rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
   // read kindLabel() live too.
@@ -970,9 +974,9 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
-  // Stack semantics (cap / redo discard / prev-next direction) live in undo.js;
+  // Stack semantics (cap / redo discard / prev-next direction) live in undo.ts;
   // the two apply callbacks below carry the viewer-owned side effects.
-  const _undo = window.corpusUndo.makeUndo({
+  const _undo = makeUndo({
     applyTags: (records) => applyTagUndo(records),
     applyPosterTags: (records) => applyPosterTagUndo(records),
   });
@@ -1044,7 +1048,7 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   function markPostsMutated() {
     _allPostsGeneration++;
     window.corpusStore.set('allPostsCount', allPosts.length);
-    window.corpusPostsData.sync(allPosts);
+    syncPostsData(allPosts);
   }
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
@@ -1112,8 +1116,7 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   window.corpusStore.set('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
   let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
   let taggingApi: any = null; // shared 種別 (kind) menu API; set by showKindMenu() below
-  // Column / slider-track / thumbnail-bucket math lives in geometry.js now.
-  const { sizeFor, sliderTrack, trackCols, thumbW } = window.corpusGeometry;
+  // Column / slider-track / thumbnail-bucket math lives in geometry.ts now (imported above).
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
   // card/list serve a thumbnail too now (they used to load the full original —
@@ -1307,12 +1310,12 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
 
   // --- Authors (作者 row → flyout; derived from post author fields, no fetching) ---
   // buildUsers (generation-cached poster roll-up) + buildSuggest (search-box
-  // suggestion items) moved to users.js (window.corpusUsers) — 5th extraction
+  // suggestion items) moved to users.ts (imported above) — 5th extraction
   // slice. Reassigned lets (allPosts / _allPostsGeneration) are injected as
   // getters; userKey/hostOf are consts already initialized at this point (the
   // query.ts import above), so they pass through directly. corpusSearch
   // is a getter because buildSuggest reads its live fuzzy mode per call.
-  const { buildUsers, buildSuggest } = window.corpusUsers.makeUsers({
+  const { buildUsers, buildSuggest } = makeUsers({
     allPosts: () => allPosts,
     generation: () => _allPostsGeneration,
     userKey,
@@ -1373,7 +1376,7 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
       reconcileFolders();
       // An active image tab shows library records — re-resolve it against the fresh
       // set so t._g stays current (inspector re-open); the React model itself
-      // re-derives live via renderer/image-tab.ts's corpusPostsData subscription.
+      // re-derives live via renderer/image-tab.ts's posts-data.ts subscription.
       const it = activeTab();
       if (it && isImageTab(it)) it._g = resolveImageTabGroup(it);
     } finally {
@@ -1717,7 +1720,7 @@ import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
   // instead of a broken image.
   const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => _postsById.get(id));
   // Publish the tab's identity to corpusStore — renderer/image-tab.ts (P4-B slice⑮)
-  // derives the whole React model from this (crossed with corpusPostsData for library
+  // derives the whole React model from this (crossed with posts-data.ts for library
   // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
   function publishActiveImageTab(t: CorpusTab | null) {
     window.corpusStore.set('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);

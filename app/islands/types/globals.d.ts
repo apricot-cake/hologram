@@ -273,17 +273,8 @@ declare global {
   }
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
-  // allPosts itself stays a viewer.js `let` (its real shape, CorpusPost, is a
-  // renderer-only type — this project doesn't need it; `any[]` is the deliberate
-  // pass-through, same reasoning as CorpusGridModel's items). Nobody subscribes
-  // from an island yet — this exists so a later slice (⑫/⑮/⑯/⑰, all of which read
-  // allPosts today only via a viewer push) has something to pull from.
-  interface CorpusPostsDataService {
-    get(): any[];
-    sync(next: any[]): void;
-    generation(): number;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // A real ES module (named exports) now — no ambient Window-shaped interface
+  // needed (see backlog memory 「window.corpusXxx → export/import」).
 
   // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
@@ -291,7 +282,7 @@ declare global {
   // same shape as the grid sources (⑩/⑫). viewer.js writes only the tab identity
   // (corpusStore's 'activeImageTab' — id/recs/idx, the one slice of tab state
   // migrated ahead of the full tabs→store move in ⑯) + still owns 'inspectedKey'
-  // (state→store phase); get() crosses both with corpusPostsData (library
+  // (state→store phase); get() crosses both with posts-data.ts (library
   // changes — a deleted post degrades to the missing state live with no viewer
   // push, exactly what the posts-data.ts comment above anticipated). Commands
   // (index step / inspector toggle / close tab) dispatch back through
@@ -526,7 +517,7 @@ declare global {
   // the same "island resolves its own i18n" pattern GlassSelect/SectionTitle use.
   // Everything else (badges/visible/clip/multi/openCat) is derived from corpusStore
   // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + corpusTags/corpusFolders/
-  // corpusPostsData/corpusListing — no viewer push needed, so viewer's mutation call
+  // posts-data.ts/corpusListing — no viewer push needed, so viewer's mutation call
   // sites (addFilter/removeFilter/setTagKind/markPostsMutated/…) no longer need a
   // matching re-push; the source's own subscriptions cover it. Two independent
   // sources (post / poster) so a change in one column never re-renders the other. ----
@@ -561,15 +552,6 @@ declare global {
   // variant itself from corpusStore instead of a pushed bridge (the old
   // renderer/empty.js bridge was deleted — no callers left). ----
   type CorpusEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
-
-  // ---- renderer/format.ts — the MirrorStatus island derives the
-  // backup rail's relative/absolute time itself now, so it needs these two formatters
-  // (partial: only what the island calls; viewer.ts sees the full CorpusFormatApi via its
-  // own renderer-globals.d.ts).
-  interface CorpusFormat {
-    fmtBackupTime(iso: string | null, labels: { today: string; yesterday: string }): string;
-    fmtTime(iso: string | null): string;
-  }
 
   // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
   // フィルター title, empty hint, result count, リセット, and the ⓘ help popover. viewer
@@ -712,7 +694,6 @@ declare global {
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGridSource: CorpusPosterGridSource;
-    corpusPostsData: CorpusPostsDataService;
     corpusQfPop: CorpusQfPop;
     corpusContextMenu: CorpusContextMenu;
     corpusKindMenu: CorpusKindMenu;
@@ -723,7 +704,6 @@ declare global {
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusRecords: CorpusRecordsApi;
     corpusSelection: CorpusSelectionApi;
-    corpusFormat: CorpusFormat;
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;

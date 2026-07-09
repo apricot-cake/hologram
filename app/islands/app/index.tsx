@@ -39,15 +39,10 @@
 import 'corpus-svc:ipc';
 import 'corpus-svc:search';
 import 'corpus-svc:records';
-import 'corpus-svc:posts-data';
 import 'corpus-svc:facets';
 import 'corpus-svc:cooc';
 import 'corpus-svc:tags';
-import 'corpus-svc:users';
 import 'corpus-svc:tab-state';
-import 'corpus-svc:geometry';
-import 'corpus-svc:format';
-import 'corpus-svc:undo';
 import 'corpus-svc:search-editing';
 import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';

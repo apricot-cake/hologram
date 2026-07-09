@@ -36,6 +36,7 @@
 // longer matters.
 import { buildShadow } from './query.ts';
 import { namedPosters } from './listing.ts';
+import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 
 (function () {
   'use strict';
@@ -62,7 +63,7 @@ import { namedPosters } from './listing.ts';
     badges.tag = tagGen;
     badges.work = tagWork;
     badges.character = tagChar;
-    const posts = window.corpusPostsData.get();
+    const posts = getPostsData();
     // 作品/キャラ rows are progressively disclosed — shown only once at least one tag
     // wears that 種別 (zero trace for people who just save posts).
     let hasWork = false,
@@ -160,14 +161,14 @@ import { namedPosters } from './listing.ts';
     byKey('multiOnly'),
     byKey('qfCat'),
     (cb) => window.corpusTags.onChange(cb),
-    (cb) => window.corpusPostsData.subscribe(cb),
+    subscribePostsData,
     (cb) => window.corpusFolders.onChange(cb), // clip state (count/active) is folders-owned
   ]);
   window.corpusPosterSidebarSource = makeSource(computePosterModel, [
     byKey('posterQueryTree'),
     byKey('qfCat'),
     (cb) => window.corpusTags.onChange(cb),
-    (cb) => window.corpusPostsData.subscribe(cb), // namedPosters()/buildUsers() read allPosts
+    subscribePostsData, // namedPosters()/buildUsers() read allPosts
     // No corpusFolders subscription — poster badges/visible never depend on clip state.
   ]);
 })();

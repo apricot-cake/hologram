@@ -249,7 +249,9 @@ interface CorpusTagsApi {
   posterFilterVocab?(): string[];
 }
 
-// ---- renderer/users.js — poster roll-up + search-box suggestions ----
+// ---- renderer/users.ts — poster roll-up + search-box suggestions. A real ES
+// module (named exports) now — no ambient Window-shaped interface needed, but
+// CorpusUserAgg stays (a data shape shared with listing.ts/sidebar.ts). ----
 interface CorpusUserAgg {
   key: string;
   platform: string;
@@ -265,14 +267,6 @@ interface CorpusUserAgg {
   firstCapture: string;
   count: number;
 }
-interface CorpusUsersApi {
-  makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; corpusSearch(): { isFuzzy(): boolean; compile(q: string): (hay: string) => boolean } | undefined }): {
-    /** Cached behind the library generation; same array identity until the generation bumps. */
-    buildUsers(): CorpusUserAgg[];
-    buildSuggest(q: string): Array<{ kind: 'tag' | 'user'; value: string; label: string; note: number }>;
-  };
-}
-
 // ---- renderer/tab-state.js — tab titles + nav history + tabs.json shape ----
 interface CorpusTabSnapshot {
   f?: Array<{ type: string; [k: string]: any }>;
@@ -343,62 +337,27 @@ interface CorpusCollection {
 // declared for it here anymore (see backlog memory 「window.corpusXxx →
 // export/import」).
 
-// ---- renderer/geometry.js — pure column / slider-track / thumbnail math ----
+// ---- renderer/geometry.ts — pure column / slider-track / thumbnail math. A
+// real ES module (named exports) now — no ambient Window-shaped interface
+// needed, but CorpusGridMetrics stays (a data shape shared with viewer.ts). ----
 // Metrics: W = floored fractional container width, g = gutter px.
 interface CorpusGridMetrics {
   W: number;
   g: number;
 }
-interface CorpusGeometryApi {
-  colsFor(size: number, m: CorpusGridMetrics): number;
-  sizeFor(n: number, m: CorpusGridMetrics): number;
-  minColsFor(max: number, m: CorpusGridMetrics): number;
-  /** Column-count slider track, inverted (right = larger = fewer columns). */
-  sliderTrack(st: { min: number; max: number; size: number }, m: CorpusGridMetrics, opts?: { minCols?: number }): { nBig: number; nSmall: number; single: boolean; value: number };
-  /** Un-invert a track value back to its target column count (self-inverse). */
-  trackCols(value: number, nBig: number, nSmall: number): number;
-  /** 60px-bucketed thumbnail width, clamped to [min, max]. */
-  thumbW(raw: number, min: number, max: number): number;
-}
 
-// ---- renderer/format.js — pure count/date display formatters ----
-interface CorpusFormatApi {
-  /** Engagement count abbreviation (1.2K / 3.4M); null/undefined → ''. */
-  formatCount(n: number | null | undefined): string;
-  /** Numeric short date for filter chips (M/D this year, else Y/M/D). */
-  formatShortDate(dateStr: string): string;
-  /** Compact month-name card date ("Jun 13" / "6月13日"); invalid → ''. */
-  compactDate(ds: string | number | Date): string;
-  /** Full date + time for the card hover tooltip; invalid → ''. */
-  formatDate(isoStr: string | number | Date): string;
-  /** Absolute zero-padded Y/M/D HH:MM for the backup tooltip. */
-  fmtTime(iso: string | number | Date): string;
-  /** Relative backup time; today/yesterday words injected via labels. */
-  fmtBackupTime(iso: string | number | Date, labels: { today: string; yesterday: string }): string;
-  /** Platform-default locale date; falsy → '' (inspector join date). */
-  localeDate(x: string | number | Date | null | undefined): string;
-  /** Platform-default locale date+time; falsy → '' (posted/saved/updated). */
-  localeDateTime(x: string | number | Date | null | undefined): string;
-}
+// ---- renderer/format.ts — pure count/date display formatters. A real ES
+// module (named exports) now — no ambient Window-shaped interface needed. ----
 
-// ---- renderer/undo.js — linear tag-edit undo/redo stack ----
+// ---- renderer/undo.ts — linear tag-edit undo/redo stack. A real ES module
+// (named exports) now — no ambient Window-shaped interface needed, but
+// CorpusUndoRecord stays (a data shape shared with viewer.ts). ----
 interface CorpusUndoRecord {
   captureId?: string;
   image?: string;
   key?: string;
   prevTags: string[];
   newTags: string[];
-}
-interface CorpusUndoApi {
-  makeUndo(deps: {
-    applyTags(records: { captureId?: string; image?: string; tags: string[] }[]): Promise<void> | void;
-    applyPosterTags(records: { key?: string; tags: string[] }[]): Promise<void> | void;
-  }): {
-    push(type: string, records: CorpusUndoRecord[]): void;
-    /** Both resolve to whether an entry was applied (callers toast only then). */
-    undo(): Promise<boolean>;
-    redo(): Promise<boolean>;
-  };
 }
 
 // ---- renderer/search-editing.js — search box ↔ query-tree text-leaf state
@@ -511,11 +470,7 @@ interface Window {
   corpusFacets: CorpusFacetsApi;
   corpusCooc: CorpusCoocApi;
   corpusTags: CorpusTagsApi;
-  corpusUsers: CorpusUsersApi;
   corpusTabState: CorpusTabStateApi;
-  corpusGeometry: CorpusGeometryApi;
-  corpusFormat: CorpusFormatApi;
-  corpusUndo: CorpusUndoApi;
   corpusSearchEditing: CorpusSearchEditingApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;

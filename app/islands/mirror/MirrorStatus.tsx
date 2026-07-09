@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { fmtBackupTime, fmtTime } from '../../renderer/format.ts';
 
 // Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
 // auto-backup state. This island OWNS the state machine (backup config + last result +
 // syncing flag), reading it straight from window.corpusBackup (getBackup + onBackupStart/
-// Done) and deriving the model (kind/text/title/time) with its own t() + window.corpusFormat
-// — there is no viewer push (the old window.corpusMirror bridge + setupMirrorStatusRail are
-// gone). The status modifier (.is-syncing / .is-error / .is-done) lives on the host <span>
-// itself (the portal target, not a React-owned element), so a useLayoutEffect writes
-// host.className/title there — the inline margin-left:auto style is left untouched.
+// Done) and deriving the model (kind/text/title/time) with its own t() + format.ts's
+// fmtBackupTime/fmtTime — there is no viewer push (the old window.corpusMirror bridge +
+// setupMirrorStatusRail are gone). The status modifier (.is-syncing / .is-error / .is-done)
+// lives on the host <span> itself (the portal target, not a React-owned element), so a
+// useLayoutEffect writes host.className/title there — the inline margin-left:auto style is
+// left untouched.
 
 // Status glyphs (verbatim from viewer's old MS_ICON_*): spinning arrows = syncing, check =
 // done, triangle = error / prune-guarded.
@@ -60,8 +62,8 @@ function deriveModel(cfg: any, syncing: boolean): MirrorModel {
   if (!r) return null;
   if (r.ok === false && r.error) return { kind: 'error', text: t('mirrorFailed'), title: r.error };
   if (r.pruneSkipped) return { kind: 'error', text: t('mirrorGuarded'), title: pruneSkipTip(r) };
-  const ts = window.corpusFormat.fmtBackupTime(r.at, { today: t('timeToday'), yesterday: t('timeYesterday') });
-  let tip = `${t('backupLastLabel')} ${window.corpusFormat.fmtTime(r.at)}`;
+  const ts = fmtBackupTime(r.at, { today: t('timeToday'), yesterday: t('timeYesterday') });
+  let tip = `${t('backupLastLabel')} ${fmtTime(r.at)}`;
   if (r.written) tip += `（+${r.written}${t('backupItemsUnit')}）`;
   else if (r.fileCount) tip += `（${r.fileCount}${t('backupItemsUnit')}）`;
   return { kind: 'done', text: t('mirrorDone'), time: ts, title: tip };

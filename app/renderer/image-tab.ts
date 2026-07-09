@@ -5,14 +5,16 @@
 // (renderer/grid.ts, ⑩/⑫). viewer.js writes only the tab IDENTITY into corpusStore's
 // 'activeImageTab' (id/recs/idx — the one slice of tab state migrated ahead of the
 // full tabs→store move in ⑯); get() derives everything else: the gallery items (via
-// corpusRecords.imageTabGroup, crossed with corpusPostsData so a deleted post
+// corpusRecords.imageTabGroup, crossed with posts-data.ts so a deleted post
 // degrades to the missing state live with no viewer push — exactly what
 // posts-data.ts's doc comment anticipated) and inspectorOpen (corpusStore's
 // 'inspectedKey', already the single source for "is the inspector open" since the
 // state→store phase). Commands (index step / inspector toggle / close tab) dispatch
 // back through window.corpusViewer, mirroring the query-chips / TabBarEvents
 // event-half pattern — this file only computes, it never mutates tab state.
-// Plain IIFE on window (like grid.ts / posts-data.ts); loaded BEFORE viewer.js.
+// Plain IIFE on window (like grid.ts); loaded BEFORE viewer.js.
+import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
+
 (function () {
   'use strict';
 
@@ -33,7 +35,7 @@
 
   function byIdMap() {
     const m = new Map<string, any>();
-    for (const p of window.corpusPostsData.get()) m.set(p.captureId, p);
+    for (const p of getPostsData()) m.set(p.captureId, p);
     return m;
   }
 
@@ -81,5 +83,5 @@
     },
   };
   for (const k of ['activeImageTab', 'inspectedKey']) window.corpusStore.subscribe(k, notify);
-  window.corpusPostsData.subscribe(notify);
+  subscribePostsData(notify);
 })();

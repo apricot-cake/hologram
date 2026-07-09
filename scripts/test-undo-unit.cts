@@ -1,7 +1,7 @@
 'use strict';
 
-// undo.js（window.corpusUndo）のロジック単体テスト。CommonJS でも export するので
-// 直接 require し、線形履歴のスタック意味論（上限50・新規編集で redo 破棄・
+// undo.ts のロジック単体テスト。undo.ts は real ES module（named exports）なので
+// 動的 import() で読み込む。線形履歴のスタック意味論（上限50・新規編集で redo 破棄・
 // prev/new の方向写像・poster-tags ルーティング・適用有無の bool 返却）を
 // スタブ deps 注入で検証する。副作用（IPC 書き・再描画）は viewer 残置＝
 // ここでは呼び出し記録のみ見る。
@@ -9,20 +9,21 @@
 //   node scripts/test-undo-unit.cts
 
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
-const U = require(path.join(__dirname, '..', 'app', 'renderer', 'undo.ts'));
+async function main() {
+  const U = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'undo.ts')).href);
 
-let failed = 0;
-function assert(name, cond) {
-  if (cond) {
-    console.log('ok  ', name);
-  } else {
-    console.log('FAIL', name);
-    failed++;
+  let failed = 0;
+  function assert(name, cond) {
+    if (cond) {
+      console.log('ok  ', name);
+    } else {
+      console.log('FAIL', name);
+      failed++;
+    }
   }
-}
 
-(async () => {
   // --- スタブ: 適用呼び出しを記録するだけ ---
   const tagCalls: any[] = [];
   const posterCalls: any[] = [];
@@ -77,4 +78,9 @@ function assert(name, cond) {
     process.exit(1);
   }
   console.log('\nall undo unit tests passed');
-})();
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
