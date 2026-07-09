@@ -417,17 +417,9 @@ interface CorpusFoldersApi {
   isLoaded(): boolean;
 }
 
-// ---- renderer/bridge.js — makeCallbackBridge factory shared by the callback-carrying
-// popover bridges (qf-pop / filter-popover). Returns the open/close/get/subscribe api
-// and, when given a name, assigns window[name] = api. ----
-interface CorpusCallbackBridge {
-  /** Replaces the model and stamps a fresh monotonic openId onto it. */
-  open(model: { [k: string]: any }): void;
-  close(): void;
-  get(): { openId: number; [k: string]: any } | null;
-  subscribe(cb: () => void): () => void;
-}
-type CorpusMakeBridge = (name?: string) => CorpusCallbackBridge;
+// renderer/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
+// popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
+// its return type is inferred, so no ambient CorpusCallbackBridge/CorpusMakeBridge type.
 
 // renderer/store.ts's window.corpusStore contract (CorpusStore) now comes from
 // islands/types/globals.d.ts, which this same tsconfig.json project includes
@@ -441,6 +433,5 @@ interface Window {
   corpusTabState: CorpusTabStateApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
-  corpusMakeBridge: CorpusMakeBridge;
   corpusSelection: CorpusSelectionApi;
 }

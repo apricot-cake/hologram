@@ -362,12 +362,8 @@ declare global {
     onPick(item: CorpusQfPopItem): void;
     [extra: string]: any;
   }
-  interface CorpusQfPop {
-    open(model: Omit<CorpusQfPopModel, 'openId'>): void;
-    close(): void;
-    get(): CorpusQfPopModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusQfPop (the open/close/get/subscribe API) removed — qf-pop.ts is a real
+  // ES module now, imported directly by its consumers.
 
   // ---- renderer/menu.js — shared right-click context menu ----
   interface CorpusMenuItem {
@@ -434,12 +430,8 @@ declare global {
     onRemove(): void;
     [extra: string]: any;
   }
-  interface CorpusFilterPopover {
-    open(model: Omit<CorpusFilterPopoverModel, 'openId'>): void;
-    close(): void;
-    get(): CorpusFilterPopoverModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusFilterPopover (the open/close/get/subscribe API) removed — filter-popover.ts
+  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/inspector.js / renderer/edit-overlay.js — model mechanics
   // shared; the deep field lists live in viewer.js's model builders. ----
@@ -665,8 +657,6 @@ declare global {
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGridSource: CorpusPosterGridSource;
-    corpusQfPop: CorpusQfPop;
-    corpusFilterPopover: CorpusFilterPopover;
     corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusRecords: CorpusRecordsApi;

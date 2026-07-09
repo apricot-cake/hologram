@@ -2,6 +2,7 @@ import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState, use
 import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
 import { tipProps } from '../_shared/tip.ts';
+import { subscribe, get, close } from '../../renderer/qf-pop.ts';
 
 // Render list entries buildRows() flattens the facet items into.
 type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: CorpusQfPopItem };
@@ -11,7 +12,7 @@ type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; 
 type QfGroup = { name: string; items: CorpusQfPopItem[] };
 
 // Glass value-flyout (qf-pop) — ONE always-mounted host that renders whatever
-// window.corpusQfPop currently holds (or nothing). viewer.js owns the bespoke facet
+// qf-pop.ts's bridge currently holds (or nothing). viewer.ts owns the bespoke facet
 // logic (qfValues — per-category counting/sorting rules) and pick routing; this island
 // owns the find-input's local filter state and draws the glass popup. Every value pick
 // makes viewer.js recompute items and call open() again (matching the old
@@ -229,7 +230,7 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
 }
 
 export function QfPopHost() {
-  const model = useSyncExternalStore(window.corpusQfPop.subscribe, window.corpusQfPop.get);
+  const model = useSyncExternalStore(subscribe, get);
   const popRef = useRef<HTMLDivElement | null>(null);
   usePlaceFlyout(popRef, model && model.anchorRect);
 
@@ -242,10 +243,10 @@ export function QfPopHost() {
       if (!document.contains(e.target as Node)) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
       if ((e.target as Element).closest('.sb-row')) return;
-      window.corpusQfPop.close();
+      close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.corpusQfPop.close();
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);

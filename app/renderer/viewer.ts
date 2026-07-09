@@ -17,6 +17,8 @@ import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorC
 import { open as kindMenuOpen } from './kind-menu.ts';
 import { open as menuOpen } from './menu.ts';
 import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
+import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-pop.ts';
+import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPopoverGet } from './filter-popover.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -550,7 +552,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
   });
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
-  // Rendering lives in the qf-pop React island (window.corpusQfPop); this only builds
+  // Rendering lives in the qf-pop React island (QfPop.tsx, via qf-pop.ts); this only builds
   // the row model (qfValues — bespoke facet logic, unchanged) and routes picks. The
   // find-input's "no re-render, just toggle row visibility" trick from the old
   // implementation is no longer needed: the island keeps its own local filter state,
@@ -562,7 +564,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
   // selected tag group + find text) while opening a different row remounts fresh.
   let qfSession = 0;
   function hideQfPop() {
-    window.corpusQfPop.close();
+    qfPopClose();
   }
   // The island may close itself (outside-click / Escape) without going through
   // hideQfPop() — this handler keeps the anchor highlight + bookkeeping in sync with
@@ -570,7 +572,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
   // window.corpusViewer below; this stays the guard + action logic (viewer keeps the
   // orchestration, React owns the wiring) — same "cut out and rewire" as the tab bar.
   function handleQfPopChange() {
-    if (!window.corpusQfPop.get()) {
+    if (!qfPopGet()) {
       qfCat = null;
       qfAnchor = null;
       // Both columns own .qf-open through corpusStore's 'qfCat' now (renderer/sidebar.ts
@@ -665,7 +667,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     // 「フォルダを管理」 footer that opens the shared folder-manager modal — the create/
     // rename/delete home now that folders live in a flyout, not a sidebar list.
     const showManage = (cat === 'poster-folder' || cat === 'collection') && !!CF();
-    window.corpusQfPop.open({
+    qfPopOpen({
       anchorRect: (qfAnchor as HTMLElement).getBoundingClientRect(),
       sessionId: qfSession,
       items,
@@ -752,7 +754,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
   function showQfPopAt(cat: string, anchorEl: HTMLElement) {
     // Re-clicking the open row toggles it closed (cat, not node identity — robust to the
     // island re-rendering the row on a badge change).
-    if (window.corpusQfPop.get() && qfCat === cat) {
+    if (qfPopGet() && qfCat === cat) {
       hideQfPop();
       return;
     }
@@ -777,12 +779,12 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
   // （クリックが backdrop に吸われて closeAllMenus するだけ＝ユーザー報告のバグ）。
   // backdrop は撤去し、下の document クリックハンドラ + 行ハンドラで開閉する。
   function closeAllMenus() {
-    window.corpusFilterPopover.close();
+    filterPopoverClose();
   }
 
   // Date popover. editingDateNode = the date cond being edited (null = new). Rendering
-  // is the filter-popover React island now (window.corpusFilterPopover) — this only
-  // builds the field model + owns the apply/remove actions.
+  // is the filter-popover React island now (FilterPopover.tsx, via filter-popover.ts) —
+  // this only builds the field model + owns the apply/remove actions.
   let editingDateNode: CorpusQueryLeaf | null = null;
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts now (P4-B slice⑨) — see the searchEditing construction
@@ -794,7 +796,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     const existing = editingDateNode;
     const anchor = document.querySelector('#filterRows [data-qfrow="date"]') as HTMLElement;
     const r = anchor.getBoundingClientRect();
-    window.corpusFilterPopover.open({
+    filterPopoverOpen({
       kind: 'date',
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!editingDateNode,
@@ -826,7 +828,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     if (!anchor) return;
     const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
     const r = anchor.getBoundingClientRect();
-    window.corpusFilterPopover.open({
+    filterPopoverOpen({
       kind: 'posterDate',
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!existing,
@@ -859,7 +861,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     const existing = editingEngNode;
     const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]') as HTMLElement;
     const r = anchor.getBoundingClientRect();
-    window.corpusFilterPopover.open({
+    filterPopoverOpen({
       kind: 'eng',
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!editingEngNode,
@@ -921,7 +923,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow as string;
-    const openKind = window.corpusFilterPopover.get()?.kind;
+    const openKind = filterPopoverGet()?.kind;
     // Re-clicking the row whose popover is already open = toggle it closed.
     if (cat === 'date' && openKind === 'date') {
       closeAllMenus();
@@ -2783,7 +2785,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     if (!byId('ivFolderModal').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
-    if (window.corpusFilterPopover.get()) return;
+    if (filterPopoverGet()) return;
     if (inImageTab) {
       closeTab(getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
       return;
@@ -3668,7 +3670,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow as string;
-    if (cat === 'poster-date' && window.corpusFilterPopover.get()?.kind === 'posterDate') {
+    if (cat === 'poster-date' && filterPopoverGet()?.kind === 'posterDate') {
       closeAllMenus();
       return;
     } // re-click closes

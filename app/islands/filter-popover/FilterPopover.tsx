@@ -1,6 +1,7 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, RefObject } from 'react';
+import { subscribe, get, close } from '../../renderer/filter-popover.ts';
 
 type Commit = (fn?: () => void) => void;
 interface FormProps {
@@ -9,7 +10,7 @@ interface FormProps {
 }
 
 // Glass date / engagement / poster-date-range popover — ONE always-mounted host that
-// renders whatever window.corpusFilterPopover currently holds (or nothing). viewer.js
+// renders whatever filter-popover.ts's bridge currently holds (or nothing). viewer.ts
 // owns the field values (open) + apply/remove actions; this island owns the form's
 // local input state (controlled inputs) and draws the glass popup. Emits the SAME DOM
 // the old imperative builders did (.qf-popover with .chip / .date-input /
@@ -131,7 +132,7 @@ function PosterDateForm({ model, commit }: FormProps) {
 const FORMS = { date: DateForm, eng: EngForm, posterDate: PosterDateForm };
 
 export function FilterPopoverHost() {
-  const model = useSyncExternalStore(window.corpusFilterPopover.subscribe, window.corpusFilterPopover.get);
+  const model = useSyncExternalStore(subscribe, get);
   const popRef = useRef<HTMLDivElement | null>(null);
   usePlaceFlyout(popRef, model && model.anchorRect);
 
@@ -144,10 +145,10 @@ export function FilterPopoverHost() {
       if (!document.contains(e.target as Node)) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
       if ((e.target as Element).closest('.sb-row')) return;
-      window.corpusFilterPopover.close();
+      close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.corpusFilterPopover.close();
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);
@@ -159,7 +160,7 @@ export function FilterPopoverHost() {
 
   if (!model) return null;
   const commit: Commit = (fn) => {
-    window.corpusFilterPopover.close();
+    close();
     if (fn) fn();
   };
   const Form = FORMS[model.kind];
