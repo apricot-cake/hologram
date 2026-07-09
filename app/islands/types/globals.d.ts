@@ -80,6 +80,15 @@ declare global {
     onChange(cb: (kind?: string) => void): void;
   }
 
+  // ---- renderer/tags.ts — tag vocabulary / 種別 domain. The full CorpusTagsApi
+  // shape lives in renderer/types/renderer-globals.d.ts; only getTagLabels is
+  // needed from the islands side (Sidebar/PosterSidebar read a custom 作品/キャラ
+  // label, falling back to t('kindWork'/'kindCharacter') when unset), declared
+  // here as a partial merge (same pattern as CorpusFoldersApi.onChange above).
+  interface CorpusTagsApi {
+    getTagLabels(): Record<string, string>;
+  }
+
   // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
   // several places, so every method is optional. Only what islands call. ----
   interface CorpusViewer {
@@ -441,36 +450,36 @@ declare global {
     [extra: string]: any;
   }
 
-  // ---- renderer/sidebar.js — the two filter-row columns. viewer builds each model
-  // (buildSidebarModel / buildPosterSidebarModel); the islands render them. Clicks route
-  // through viewer's own delegated #filterRows / #posterFilterRows handlers, so no
-  // callbacks here. Two channels (post / poster) so one column never re-renders the other. ----
+  // ---- renderer/sidebar.ts — the two filter-row columns (P4-B slice⑰: converted
+  // from a PUSHED bridge — viewer built a full model incl. labels and called
+  // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
+  // tabs sources. Labels are NOT in the model: the islands resolve their own static
+  // row names via t() and the 作品/キャラ custom label via corpusTags.getTagLabels(),
+  // the same "island resolves its own i18n" pattern GlassSelect/SectionTitle use.
+  // Everything else (badges/visible/clip/multi/openCat) is derived from corpusStore
+  // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + corpusTags/corpusFolders/
+  // corpusPostsData/corpusListing — no viewer push needed, so viewer's mutation call
+  // sites (addFilter/removeFilter/setTagKind/markPostsMutated/…) no longer need a
+  // matching re-push; the source's own subscriptions cover it. Two independent
+  // sources (post / poster) so a change in one column never re-renders the other. ----
   interface CorpusSidebarModel {
-    title: string;
     openCat: string | null; // the flyout cat with .qf-open (null = none)
-    clip: { label: string; active: boolean; count: number; clearVisible: boolean; emptyTip: string; emptyAria: string };
-    multi: { label: string; active: boolean };
-    labels: Record<string, string>; // per-row name, keyed by row key
+    clip: { active: boolean; count: number; clearVisible: boolean };
+    multi: { active: boolean };
     badges: Record<string, number>; // per-row active-filter count
     visible: { work: boolean; character: boolean }; // 種別 progressive disclosure
   }
   // Poster column (#posterFilterRows): a leaner twin — no clip/multi toggles, and the
   // rows are keyed by their full poster-* cat (data-qfrow === data-badge). work / character
-  // / tag / instance are progressively disclosed once posters carry such values.
+  // / tag / instance are progressively disclosed once posters actually carry such values.
   interface CorpusPosterSidebarModel {
-    title: string;
     openCat: string | null; // the poster-* flyout cat with .qf-open (null = none)
-    labels: Record<string, string>; // per-row name, keyed by poster-* row key
     badges: Record<string, number>; // per-row active leaf count (poster query shadow)
     visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
   }
-  interface CorpusSidebar {
-    render(model: CorpusSidebarModel | null): void;
-    get(): CorpusSidebarModel | null;
+  interface CorpusSidebarSource<T> {
+    get(): T | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
-    renderPoster(model: CorpusPosterSidebarModel | null): void;
-    getPoster(): CorpusPosterSidebarModel | null;
-    subscribePoster(cb: () => void): CorpusUnsubscribe;
   }
 
   // ---- renderer/selection-bar.js — #selectionBar bulk-action bar. viewer builds the
@@ -659,6 +668,7 @@ declare global {
     corpusBackup: CorpusBackupApi;
     corpusPosts: CorpusPostsApi;
     corpusFolders: CorpusFoldersApi;
+    corpusTags: CorpusTagsApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
@@ -674,7 +684,8 @@ declare global {
     corpusFilterPopover: CorpusFilterPopover;
     corpusInspector: CorpusInspector;
     corpusEditOverlay: CorpusEditOverlay;
-    corpusSidebar: CorpusSidebar;
+    corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
+    corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusSelectionBar: CorpusSelectionBar;
     corpusFormat: CorpusFormat;
     corpusActivebar: CorpusActivebar;

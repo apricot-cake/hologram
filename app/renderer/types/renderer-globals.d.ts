@@ -282,6 +282,14 @@ interface CorpusTagsApi {
   applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>): void;
   /** Subscribe to any mutator above; returns an unsubscribe function. */
   onChange(cb: (kind?: string) => void): () => void;
+  // Bound once at boot (viewer.ts, right after its own makeTags() call) so
+  // renderer/sidebar.ts (P4-B slice⑰, self-deriving from services) can read the
+  // SAME tagKindOf/posterFilterVocab viewer uses — both close over this module's
+  // own getTagTypes()/getPosterTags(), so there's no second implementation to
+  // drift. Optional: undefined until viewer.ts's assignment runs (a pull that
+  // fires before then just sees "no data yet", same as any other P4-B source).
+  tagKindOf?(tag: string): string | null;
+  posterFilterVocab?(): string[];
 }
 
 // ---- renderer/users.js — poster roll-up + search-box suggestions ----
@@ -410,6 +418,11 @@ interface CorpusListingApi {
   };
   /** Deep-clone a query tree for persistence, dropping transient _memo fields. */
   cloneTree(tree: CorpusQueryNode): any;
+  // Bound once at boot (viewer.ts, right after its own makeListing() call) — see
+  // CorpusTagsApi's tagKindOf/posterFilterVocab note above (same reasoning: the
+  // poster sidebar source needs namedPosters() for poster-instance disclosure,
+  // and this is the one already-bound closure, not a second implementation).
+  namedPosters?(): CorpusUserAgg[];
 }
 
 // ---- renderer/geometry.js — pure column / slider-track / thumbnail math ----

@@ -354,7 +354,8 @@
   setAttr('settingsBtn', 'data-tip', MSG.tabSettings); // shared glass tooltip (was native title)
   setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
-  // rendered by the sidebar island from buildSidebarModel now — no static setText here.
+  // rendered by the sidebar island, self-deriving from corpusPostSidebarSource (P4-B
+  // slice⑰; renderer/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
@@ -367,8 +368,8 @@
   // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
   // redundant noise on hover (user 2026-07-04).
   // #sbPosterSortTitle is island-owned now too (toolbar SectionTitle) — no static setText.
-  // #posterFilterRows title + row labels are model-driven now — the poster sidebar island
-  // renders them from buildPosterSidebarModel (window.corpusSidebar poster channel). No
+  // #posterFilterRows title + row labels are rendered by the poster sidebar island,
+  // self-deriving from corpusPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
   // #posterSortSelect option labels are the GlassSelect island now (rendered from i18n
   // keys) — the native <select> stays hidden (.cs-host) as the value source, so writing
@@ -393,7 +394,8 @@
   // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now
   // (rendered from buildActivebarModel) — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
-  // rendered by the sidebar island from buildSidebarModel — no static setText here.
+  // rendered by the sidebar island, self-deriving from corpusPostSidebarSource — no
+  // static setText here.
   byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
 
   // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
@@ -550,10 +552,10 @@
     if (!window.corpusQfPop.get()) {
       qfCat = null;
       qfAnchor = null;
-      // Both columns own .qf-open through their model (openCat) now, so clearing the
-      // highlight is a re-push, not an imperative classList sweep.
-      pushSidebar();
-      pushPosterSidebar();
+      // Both columns own .qf-open through corpusStore's 'qfCat' now (renderer/sidebar.ts
+      // derives openCat from it), so clearing the highlight is a store write, not an
+      // imperative classList sweep or a model re-push.
+      window.corpusStore.set('qfCat', null);
     }
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
@@ -576,6 +578,12 @@
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
+  // Bound onto the shared service object so renderer/sidebar.ts's pull sources (P4-B
+  // slice⑰) can read the SAME tagKindOf/posterFilterVocab this viewer instance uses —
+  // both close over corpusTags' own getTagTypes()/getPosterTags(), so there's no second
+  // implementation to drift.
+  window.corpusTags.tagKindOf = tagKindOf;
+  window.corpusTags.posterFilterVocab = posterFilterVocab;
   const { sameTags } = window.corpusTags;
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
@@ -727,15 +735,15 @@
       hideQfPop();
       return;
     }
-    // .qf-open is model-driven on BOTH columns now (React owns each container's className,
-    // so an imperative classList.add would be clobbered on the next render; switching rows
-    // is handled by openCat in the model). A cat is post- or poster-side; the matching
-    // column lights its row, the other clears — both re-push below.
+    // .qf-open is derived from corpusStore's 'qfCat' on BOTH columns now (React owns each
+    // container's className, so an imperative classList.add would be clobbered on the next
+    // render; renderer/sidebar.ts's openCat picks post- vs poster-side by the cat's
+    // 'poster-' prefix). A cat is post- or poster-side; the matching column lights its
+    // row, the other clears — both re-derive from the single store write below.
     qfCat = cat;
     qfAnchor = anchorEl;
     qfSession++; // fresh open → island remounts (resets group/find); picks keep it
-    pushSidebar(); // light up the post-side row via openCat
-    pushPosterSidebar(); // …or the poster-side row (whichever cat matches)
+    window.corpusStore.set('qfCat', qfCat);
     renderQfPop();
   }
 
@@ -855,9 +863,9 @@
   }
 
   // --- Sidebar filter controls ---
-  // (#filterRows row labels are model-driven now — the sidebar island renders them from
-  // buildSidebarModel. No static setText for プラットフォーム / 投稿 / メディア / 日付 /
-  // エンゲージメント here.)
+  // (#filterRows row labels are rendered by the sidebar island, self-deriving from
+  // corpusPostSidebarSource (P4-B slice⑰). No static setText for プラットフォーム / 投稿 /
+  // メディア / 日付 / エンゲージメント here.)
 
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
@@ -878,7 +886,6 @@
       const idx = postQB.shadow().findIndex((f) => f.type === 'clip');
       if (idx < 0) addFilter({ type: 'clip', value: '*' });
       else removeFilter(idx);
-      renderClipRow();
       return;
     }
     // 複数画像: a direct 2-state toggle (no data-qfrow, no flyout). Handled via this
@@ -886,9 +893,7 @@
     // time, so a listener bound at load could miss it. Flips the group-level flag.
     if (closestOf(e, '#multiRow')) {
       multiOnly = !multiOnly;
-      window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
-      renderMultiRow();
-      renderFilterBadges();
+      window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
       renderPosts();
       return;
     }
@@ -922,95 +927,13 @@
   // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
   // 別行へカーソルが乗って別フライアウトに化ける問題があったため）。
 
-  // Update sidebar state (chip actives, row badges, tag area, active bar)
+  // Update sidebar state — kept as a thin alias to renderQueryChips (its many call
+  // sites keep their name) now that badges/tag-visibility are self-derived by
+  // renderer/sidebar.ts's corpusPostSidebarSource/corpusPosterSidebarSource (P4-B
+  // slice⑰; see that file for how postQueryTree/tags/folders/posts-data feed it).
   function updateSidebarState() {
     // (#searchBox's has-value accent is owned by the searchbox island)
-    renderFilterBadges();
-    updateSidebarTags();
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
-  }
-
-  // Build the whole post-mode filter-row model (#filterRows) from current viewer state
-  // and push it to the sidebar island. Aggregates what used to be scattered imperative
-  // DOM writes across renderFilterBadges / renderClipRow / renderMultiRow / updateKindRows
-  // / applyKindLabels + the boot setText calls: row labels (MSG + custom 種別 labels),
-  // per-category active-filter badge counts, the クリップ/複数画像 toggle states, the
-  // 作品/キャラ progressive-disclosure visibility, and which flyout row wears .qf-open.
-  // Cheap to rebuild; called on every filter/clip/vocab change (React diffs it).
-  function buildSidebarModel(): CorpusSidebarModel {
-    // Per-category active-filter counts. Instance filters live inside the platform
-    // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
-    // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
-    const activeFilters = postQB.shadow();
-    const badges: Record<string, number> = {};
-    for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
-    badges.platform = (badges.platform || 0) + (badges.instance || 0);
-    let tagWork = 0,
-      tagChar = 0,
-      tagGen = 0;
-    for (const f of activeFilters)
-      if (f.type === 'tag') {
-        const k = tagKindOf(f.value);
-        if (k === 'work') tagWork++;
-        else if (k === 'character') tagChar++;
-        else tagGen++;
-      }
-    badges.tag = tagGen;
-    badges.work = tagWork;
-    badges.character = tagChar;
-    // 作品/キャラ rows are progressively disclosed — shown only once at least one tag
-    // wears that 種別 (zero trace for people who just save posts).
-    const tagset = _cachedTagSet || new Set<string>();
-    let hasWork = false,
-      hasChar = false;
-    for (const t of tagset) {
-      const k = tagKindOf(t);
-      if (k === 'work') hasWork = true;
-      else if (k === 'character') hasChar = true;
-      if (hasWork && hasChar) break;
-    }
-    // クリップ: count library-wide clipped posts; the row is active when its filter is on.
-    const existing = new Set(allPosts.map((p) => p.captureId));
-    const clipCount = CF() ? CF().clipCount(existing) : 0;
-    return {
-      title: MSG.sbFilterTitle,
-      // Only post-side flyout rows carry .qf-open (poster rows are still static HTML).
-      openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
-      clip: {
-        label: MSG.clipTitle,
-        active: activeFilters.some((f) => f.type === 'clip'),
-        count: clipCount,
-        clearVisible: clipCount > 0,
-        emptyTip: MSG.clipEmptyTip,
-        emptyAria: MSG.clipEmpty,
-      },
-      multi: { label: MSG.qfMultiImage, active: multiOnly },
-      labels: {
-        collection: MSG.qfCatFolder,
-        platform: MSG.qfPlatform,
-        postType: MSG.qfPostType,
-        media: MSG.qfMediaTitle,
-        date: MSG.qfDate,
-        engagement: MSG.qfEngagement,
-        user: MSG.sidebarAuthors,
-        work: kindLabel('work'),
-        character: kindLabel('character'),
-        hashtag: MSG.tabTags,
-        tag: MSG.qfTag,
-      },
-      badges,
-      visible: { work: hasWork, character: hasChar },
-    };
-  }
-  function pushSidebar() {
-    window.corpusSidebar.render(buildSidebarModel());
-  }
-  // Row badges / labels / toggle states are all model-driven now; the island renders
-  // them from buildSidebarModel via window.corpusSidebar. Kept as a thin alias so the
-  // many call sites (updateSidebarState, the #multiRow toggle, afterQueryChange, …) are
-  // unchanged.
-  function renderFilterBadges() {
-    pushSidebar();
   }
 
   // --- Tag area: the タグ row opens ONE flyout listing every general tag,
@@ -1020,63 +943,21 @@
   // (sub-rows removed 2026-07-03).
   // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
   // to tags.js (corpusTags wiring above) — the P4 "状態→store" tags slice.
-  // Reflect the (possibly custom) 作品/キャラ names onto both sidebar columns' 種別 rows.
-  // The rest (palette section headers, kind menu, dot tooltips) read kindLabel() live.
-  function applyKindLabels() {
-    // 作品/キャラ row names on BOTH columns are model-driven now — the sidebar islands read
-    // kindLabel() via buildSidebarModel / buildPosterSidebarModel, so a 種別 rename lands by
-    // re-pushing each model (no setText).
-    pushSidebar();
-    pushPosterSidebar();
-  }
-  // Mutation + persistence now live in tags.js (setTagKind/setKindLabel); these
-  // wrappers keep the view-specific side effects (sidebar re-derive/re-push).
+  // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
+  // renderer/sidebar.ts's sources now (corpusTags.onChange / corpusPostsData.subscribe
+  // — P4-B slice⑰), so a 種別 rename or classification no longer needs an explicit
+  // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
+  // read kindLabel() live too.
+  // Mutation + persistence live in tags.js (setTagKind/setKindLabel); these wrappers
+  // existed for the view-specific sidebar re-derive/re-push, now unnecessary.
   async function setTagKind(tag, kind) {
     await window.corpusTags.setTagKind(tag, kind);
-    updateSidebarTags(); // a newly classified tag may reveal/hide its 作品/キャラ section
   }
   // Rename a 種別 (work/character) globally; blank resets to the built-in label.
   async function setKindLabel(kind, label) {
     await window.corpusTags.setKindLabel(kind, label);
-    applyKindLabels();
-    updateSidebarTags(); // section header names + counts re-read kindLabel
   }
   const _ic = (paths) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
-  // Cached sets — rebuilt only when allPosts changes (tracked by generation counter).
-  let _sidebarSetsGen = -1;
-  let _cachedTagSet: Set<string> | null = null,
-    _cachedHtSet: Set<string> | null = null,
-    _cachedUserSet: Set<string> | null = null,
-    _cachedInstSet: Set<string> | null = null;
-  function _rebuildSidebarSets() {
-    if (_sidebarSetsGen === _allPostsGeneration) return;
-    const snPosts = allPosts.filter((p) => p.url);
-    // Tags / body hashtags are user-applied to ALL posts (incl. imported, url-less
-    // images migrated from Eagle), so build their choice sets from the whole library.
-    // Authors / instances only make sense for SNS posts, so keep those url-scoped.
-    _cachedTagSet = new Set(allPosts.flatMap((p) => p.tags || []));
-    _cachedHtSet = new Set(allPosts.flatMap((p) => p.hashtags || []));
-    _cachedUserSet = new Set(snPosts.map((p) => userKey(p)));
-    _cachedInstSet = new Set(
-      snPosts
-        .filter((p) => p.platform === 'misskey' || p.platform === 'mastodon')
-        .map((p) => hostOf(p.url))
-        .filter(Boolean),
-    );
-    _sidebarSetsGen = _allPostsGeneration;
-  }
-  // Refresh the tag-derived sidebar rows (作品/キャラ 種別 rows).
-  function updateSidebarTags() {
-    _rebuildSidebarSets();
-    updateKindRows();
-  }
-  // 用語帳 (Phase 2 ②): the 作品/キャラ rows are progressively disclosed — each appears
-  // only once at least one tag wears that 種別. No kinds set → no rows → zero trace for
-  // people who just save posts (Corpus isn't illustration-only).
-  function updateKindRows() {
-    // 作品/キャラ row visibility is derived in buildSidebarModel from _cachedTagSet.
-    pushSidebar();
-  }
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
@@ -1314,7 +1195,6 @@
       afterQueryChange();
     },
     onChange: () => {
-      renderPostFolders();
       renderPosts();
     },
     openLeafEditor: (n) => {
@@ -1480,7 +1360,6 @@
       if (browseMode === 'posters') renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
-      renderPostFolders();
       // An active image tab shows library records — re-resolve it against the fresh
       // set so t._g stays current (inspector re-open); the React model itself
       // re-derives live via renderer/image-tab.ts's corpusPostsData subscription.
@@ -1536,6 +1415,11 @@
     allCollections: () => (CF() ? CF().allCollections() : []) as CorpusCollection[],
     filterLabel,
   });
+  // Bound onto the shared service object so renderer/sidebar.ts's poster source (P4-B
+  // slice⑰) can read the same namedPosters() this viewer instance uses (poster-instance
+  // row disclosure) — see the corpusTags.tagKindOf note above for why this is a bind,
+  // not a reimplementation.
+  window.corpusListing.namedPosters = namedPosters;
   const { cloneTree } = window.corpusListing;
 
   let lastRenderedState: any = null;
@@ -1606,8 +1490,7 @@
     sortSelect.value = s.sort;
     window.corpusStore.set('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
     multiOnly = !!s.multi;
-    window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
-    renderPostFolders();
+    window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
     renderQueryChips();
     renderPosts();
     restoringState = false;
@@ -2386,7 +2269,6 @@
     );
     if (!res) return;
     btn.classList.toggle('in', res === 'added');
-    renderClipRow();
     if (postQB.shadow().some((f) => f.type === 'clip')) renderPosts(true);
   });
 
@@ -2505,18 +2387,10 @@
   // Sidebar folder chips (shared folders.json): count + ★default. Like tag chips
   // they cycle 解除→いずれか(OR)→＋すべて含む(AND)→解除 and join the same
   // かつ/または expression as the tags.
-  // postFolderChips was retired (collections moved to the collections view); this
-  // now only keeps the clip + 複数画像 row entries in sync. Call sites keep the name.
-  function renderPostFolders() {
-    renderClipRow();
-    renderMultiRow();
-  }
-  // Clip sidebar row: the library-wide flag filter. Click toggles a filter to show
-  // only clipped posts; 空にする clears all flags (the posts themselves are kept).
-  function renderClipRow() {
-    // Clip active / count / clear-visibility are model-driven now (buildSidebarModel).
-    pushSidebar();
-  }
+  // postFolderChips was retired (collections moved to the collections view); the クリップ
+  // + 複数画像 row entries (active state, clip count) are self-derived now by
+  // renderer/sidebar.ts's corpusPostSidebarSource (P4-B slice⑰) — no viewer-side
+  // re-render call needed after a clip/multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
   // The クリップ row toggle + 空にする clear are handled by the delegated #filterRows
@@ -2526,10 +2400,6 @@
   // 複数画像 sidebar row: reflects the group-level multiOnly flag as the row's active
   // state (accent icon) via the model. The click that flips it is handled by the
   // delegated #filterRows listener.
-  function renderMultiRow() {
-    // 複数画像 active is model-driven now (buildSidebarModel).
-    pushSidebar();
-  }
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
@@ -2610,7 +2480,6 @@
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders(); // 削除した captureId をフォルダから即時掃除
-    renderPostFolders();
     showToast(MSG.deleted);
   }
 
@@ -2765,7 +2634,6 @@
       await window.corpusTags.setTagKind(distinguished, 'character');
     }
     await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
-    updateSidebarTags();
     showToast(MSG.homonymDistinguished(distinguished));
   }
 
@@ -3495,9 +3363,10 @@
   // The poster-side builder instance. transient (no tabs / nav history for posters);
   // onChange → renderPosters (which redraws the rows + bar + grid). P4-B slice⑧:
   // this used to also mirror the tree shadow into a module-level `posterShadow`
-  // global via onShadow — that global had zero readers (buildPosterSidebarModel
-  // already called posterQB.shadow() directly), so it's removed outright rather
-  // than converted to a read site.
+  // global via onShadow — that global had zero readers (the poster sidebar model
+  // read posterQB.shadow() directly, and now renderer/sidebar.ts's source reads
+  // the mirrored 'posterQueryTree' store key via corpusQuery.buildShadow instead),
+  // so it's removed outright rather than converted to a read site.
   const posterQB = createQueryBuilder({
     msg: qbMsg,
     container: document.getElementById('posterQueryChips'),
@@ -3530,64 +3399,16 @@
   // filter interaction.
   window.corpusStore.set('posterQueryTree', JSON.parse(JSON.stringify(posterQB.getTree())));
 
-  // Build the whole poster-mode filter-row model (#posterFilterRows) from current state
-  // and hand it to the poster sidebar island (twin of buildSidebarModel for the post side).
-  // Aggregates row labels (MSG + custom 種別 labels), per-row active-leaf badge counts
-  // (from the poster query shadow), the 作品/キャラ/タグ/サーバー progressive-disclosure
-  // visibility, and which flyout row wears .qf-open. PURE (no tree mutation — the prune
-  // side-effect lives in renderPosterFilterRows), so it's safe to call on every flyout
-  // open/close for an openCat refresh. Cheap: posterFilterVocab scans the small poster-tag
-  // map and namedPosters is a cached buildUsers().
-  function buildPosterSidebarModel(): CorpusPosterSidebarModel {
-    const vocab = posterFilterVocab();
-    const named = namedPosters();
-    const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
-    // Row badges count the matching leaves in the poster query tree (shadow).
-    const leaves = posterQB.shadow();
-    const tagLeaves = leaves.filter((f) => f.type === 'tag');
-    const badges: Record<string, number> = {
-      'poster-platform': leaves.filter((f) => f.type === 'platform').length,
-      'poster-work': tagLeaves.filter((f) => tagKindOf(f.value) === 'work').length,
-      'poster-character': tagLeaves.filter((f) => tagKindOf(f.value) === 'character').length,
-      'poster-tag': tagLeaves.filter((f) => !tagKindOf(f.value)).length,
-      'poster-instance': leaves.filter((f) => f.type === 'instance').length,
-      'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
-      'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
-    };
-    return {
-      title: MSG.sbFilterTitle,
-      // Only poster-side flyout rows carry .qf-open here (post rows live in buildSidebarModel).
-      openCat: qfCat && String(qfCat).startsWith('poster-') ? qfCat : null,
-      labels: {
-        'poster-platform': MSG.qfPlatform,
-        'poster-work': kindLabel('work'),
-        'poster-character': kindLabel('character'),
-        'poster-tag': MSG.qfTag,
-        'poster-instance': MSG.qfInstance,
-        'poster-date': MSG.qfDate,
-        'poster-folder': MSG.qfCatFolder,
-      },
-      badges,
-      // 段階的開示: reveal a row only when posters actually carry that kind of value.
-      visible: {
-        work: vocab.some((t) => tagKindOf(t) === 'work'),
-        character: vocab.some((t) => tagKindOf(t) === 'character'),
-        tag: vocab.some((t) => !tagKindOf(t)),
-        instance: instPresent.size > 0,
-      },
-    };
-  }
-  function pushPosterSidebar() {
-    window.corpusSidebar.renderPoster(buildPosterSidebarModel());
-  }
-  // Poster sidebar filter rows (mirror of renderFilterBadges for posters): prune tag
-  // selections that no longer have a backing value (poster removed/edited), then re-push
-  // the model. The rows are React-owned now — this only carries the ONE side effect (the
-  // shadow prune); labels / badges / disclosure ride the model via pushPosterSidebar.
+  // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
+  // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
+  // row wears .qf-open) is self-derived now by renderer/sidebar.ts's
+  // corpusPosterSidebarSource (P4-B slice⑰) — no viewer-side build+push.
+  // Poster sidebar filter rows: prune tag selections that no longer have a backing value
+  // (poster removed/edited). The rows are React-owned; this is the ONE remaining side
+  // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
   function renderPosterFilterRows() {
     const present = new Set(posterFilterVocab());
     if (posterQB.removeCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
-    pushPosterSidebar();
   }
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
@@ -4297,12 +4118,11 @@
         allPosts = [];
         // P4-B slice⑪: this call was missing before (only the two other allPosts
         // reassignment sites called it) — clear-all never bumped _allPostsGeneration,
-        // so updateSidebarState()'s `_sidebarSetsGen === _allPostsGeneration` cache
-        // guard stayed "fresh" and could leave stale tag/author/instance facets in
-        // the sidebar after a wipe. Harmless for THIS render (renderPosts() below is
-        // never inPlace, so the separate viewGroups-reuse guard was never at risk),
-        // but the sidebar cache guard has no such protection — worth fixing here
-        // since it's exactly the choke point this slice is unifying.
+        // which left stale tag/author/instance facets around after a wipe until
+        // something else happened to bump it. Harmless for THIS render (renderPosts()
+        // below is never inPlace, so the separate viewGroups-reuse guard was never at
+        // risk), but worth fixing here since it's exactly the choke point this slice
+        // is unifying.
         markPostsMutated();
         renderPosts();
         showToast(MSG.cleared);
@@ -4342,7 +4162,8 @@
       postQB.syncShadow();
       postQB.render();
     }
-    renderPostFolders(); // refreshes the clip row + the sidebar collection list (counts/active)
+    // The clip row / sidebar collection state (counts/active) self-derives from the
+    // corpusFolders.onChange subscription in renderer/sidebar.ts (P4-B slice⑰).
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   }
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
@@ -4368,12 +4189,9 @@
     await pfStore.load();
     manualGroups = await window.corpusRecords.loadManualGroups();
     await window.corpusTags.load();
-    applyKindLabels();
-    // Seed both sidebar columns with labels + initial state before the first loadPosts so the
-    // filter rows paint immediately (badges/disclosure fill in as data loads). Unconditional
-    // (applyKindLabels above also pushes, but only if getTagTypes resolved).
-    pushSidebar();
-    pushPosterSidebar();
+    // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
+    // model on first get() (P4-B slice⑰), so both columns paint immediately with
+    // whatever's already loaded and pick up badges/disclosure as data streams in.
     await initTabs();
     appBooted = true; // saved view is now applied — the first loadPosts render seeds history
     await loadPosts();

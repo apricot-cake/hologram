@@ -2005,10 +2005,12 @@
                (NOT the post query), AND-combined in filteredPosters. React-owned now:
                the poster sidebar island (app/islands/sidebar/PosterSidebar) renders the
                title + every data-qfrow="poster-*" row (+ badges + 作品/キャラ/タグ/サーバー
-               disclosure) from viewer.js's buildPosterSidebarModel via
-               window.corpusSidebar's poster channel. This container stays viewer's: its
-               delegated click handler + the flyout/popover anchor queries key off
-               .sb-row / data-qfrow, which the island reproduces byte-for-byte. -->
+               disclosure), self-deriving its model from renderer/sidebar.ts's
+               corpusPosterSidebarSource — a pull source over corpusStore + the tags/
+               posts-data/listing services (P4-B slice⑰), no viewer push. This
+               container stays viewer's: its delegated click handler + the
+               flyout/popover anchor queries key off .sb-row / data-qfrow, which the
+               island reproduces byte-for-byte. -->
           <div class="sb-section" id="posterFilterRows"></div>
         </div>
         <!-- Filters: one compact row per category — clicking a row opens a flyout
@@ -2018,10 +2020,12 @@
              the unbounded lists (tags/authors/instances) live in the flyouts.
              The rows (title + クリップ / 複数画像 toggles + every data-qfrow row +
              badges + 作品/キャラ disclosure) are React-owned now: the sidebar island
-             (app/islands/sidebar) renders them from viewer.js's buildSidebarModel via
-             window.corpusSidebar. This container stays viewer's: its delegated click
-             handler + the flyout/popover anchor queries key off .sb-row / data-qfrow,
-             which the island reproduces byte-for-byte. -->
+             (app/islands/sidebar) renders them, self-deriving its model from
+             renderer/sidebar.ts's corpusPostSidebarSource — a pull source over
+             corpusStore + the tags/folders/posts-data services (P4-B slice⑰), no
+             viewer push. This container stays viewer's: its delegated click handler +
+             the flyout/popover anchor queries key off .sb-row / data-qfrow, which the
+             island reproduces byte-for-byte. -->
         <div class="sb-section" id="filterRows"></div>
 
         </div><!-- /sb-scroll -->
