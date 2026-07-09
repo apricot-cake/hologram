@@ -76,9 +76,11 @@ const RENDERER_DIR = path.join(appRoot, 'renderer').replace(/\\/g, '/');
 // Array form (order matters: the more specific shim/index.js must precede shim). The
 // `corpus-svc:NAME` regex folds the renderer SERVICE layer into this one bundle — each
 // former <script src="NAME.js"> is now `import 'corpus-svc:NAME'` from app/index.tsx,
-// resolved here to renderer/NAME.ts. Bare specifiers (not relative paths) so the strict
-// islands tsc can't resolve them → the services stay OUT of that program and are
-// type-checked ONLY by tsconfig.renderer.json (same isolation as corpus-viewer-bundle).
+// resolved here to renderer/NAME.ts. Bare specifiers (not relative paths) because these
+// are still window-global side-effect imports, not real ES module imports (pending
+// conversion — see backlog memory). They no longer serve a type-isolation purpose:
+// tsc now type-checks the renderer service layer as part of the SAME tsconfig.json
+// program as islands (merged 2026-07-09; formerly a separate tsconfig.renderer.json).
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
   { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },

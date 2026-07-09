@@ -33,7 +33,7 @@
   "overrides": [
     {
       // tsconfig.json は Biome が既知名として JSONC 扱いするが、プロジェクト分割の
-      // tsconfig.*.json（renderer 用 checkJs 等）は名前で認識されない＝コメント可を明示。
+      // tsconfig.*.json（main プロセス用等）は名前で認識されない＝コメント可を明示。
       "include": ["**/tsconfig.*.json"],
       "json": { "parser": { "allowComments": true, "allowTrailingCommas": true } }
     }

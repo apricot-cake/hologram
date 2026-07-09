@@ -1,16 +1,15 @@
-// Window-global contracts for the build-less plain-JS renderer service layer —
-// TypeScript stage 2 (BACKLOG 採用#1「残り②」): the extracted viewer.js service
-// modules (query/records/facets/cooc/users/tab-state + store) get their
-// cross-module contracts visible to tsc via checkJs (tsconfig.renderer.json)
-// WITHOUT a build step; they convert to .ts when 単一バンドル化 puts them under
-// Vite. This is a GLOBAL script d.ts (no import/export) so the interfaces merge
-// into Window for every file of that project.
+// Window-global contracts for the renderer service layer (query/records/facets/
+// cooc/users/tab-state/viewer + store, all .ts, strict-checked — see
+// [[corpus-esm-under-file-protocol]]/backlog memory for the TS-stage history).
+// This is a GLOBAL script d.ts (no import/export) so the interfaces merge into
+// Window for every file that includes it. As of 2026-07-09 this project is
+// merged into app/tsconfig.json — the same single strict TS program as the
+// islands (formerly a separate, looser tsconfig.renderer.json).
 //
 // Typing altitude: function surfaces are typed; domain payloads (sidecar post
 // records, aggregate rows) stay open objects (`CorpusPost` = index signature)
 // until the JSON layer itself is typed — same pragmatics as the islands'
-// globals.d.ts. viewer.js is NOT checked yet; these contracts serve the service
-// modules' own bodies and the future viewer/main adoption.
+// globals.d.ts.
 
 // Third-party global loaded via <script> in index.html (app/vendor/jszip.min.js);
 // viewer.js references it as a bare global for library import/export.
@@ -588,9 +587,9 @@ interface CorpusCallbackBridge {
 }
 type CorpusMakeBridge = (name?: string) => CorpusCallbackBridge;
 
-// renderer/store.js's window.corpusStore contract (CorpusStore) now comes from
-// islands/types/globals.d.ts, which this tsc project shares directly (it is in
-// tsconfig.renderer.json "files") — the old duplicated CorpusStoreApi is gone.
+// renderer/store.ts's window.corpusStore contract (CorpusStore) now comes from
+// islands/types/globals.d.ts, which this same tsconfig.json project includes
+// directly (via `islands/**/*`) — the old duplicated CorpusStoreApi is gone.
 
 interface Window {
   corpusQuery: CorpusQueryApi;

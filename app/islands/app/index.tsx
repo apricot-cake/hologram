@@ -23,10 +23,16 @@
 //     into this one bundle so they compile through Vite → .ts). Each is a window-IIFE
 //     assigning window.corpusX; viewer + islands read those globals (the bridge
 //     dissolution is P4). Imported via `corpus-svc:NAME` bare specifiers (aliased to
-//     renderer/NAME.ts by build.mjs / vite.config.mjs) so the strict islands tsc leaves
-//     them to tsconfig.renderer.json — the same isolation corpus-viewer-bundle uses.
-//     Order mirrors the old index.html scripts; these precede root.tsx (islands read the
-//     globals at render) and viewer (last). Wave 1 = the logic services. ---
+//     renderer/NAME.ts by build.mjs / vite.config.mjs) — the same indirection
+//     corpus-viewer-bundle uses. Originally this also kept the service layer out of
+//     the strict islands tsc program (a separate, looser tsconfig.renderer.json
+//     type-checked it); as of 2026-07-09 both are merged into one strict tsconfig.json
+//     project, so that reason is gone — the bare specifiers remain only because these
+//     are still window-global side-effect imports, not real ES module imports (see
+//     「window.corpusXxx → export/import」 in the backlog memory for the pending
+//     conversion). Order mirrors the old index.html scripts; these precede root.tsx
+//     (islands read the globals at render) and viewer (last). Wave 1 = the logic
+//     services. ---
 import 'corpus-svc:ipc';
 import 'corpus-svc:search';
 import 'corpus-svc:query';
@@ -80,11 +86,11 @@ import './root.tsx';
 //
 // It is imported through the bare specifier 'corpus-viewer-bundle', aliased to
 // renderer/viewer.ts by BOTH islands/build.mjs (prod) and vite.config.mjs (dev).
-// The indirection keeps viewer.ts OUT of this strict islands tsc program: tsc
-// can't resolve the bare specifier (so it never pulls viewer.ts in), while Vite's
-// alias resolves it to the exact same file — identical module graph, so the bundle
-// is byte-for-byte the same as a direct import. viewer.ts is type-checked ONLY by
-// tsconfig.renderer.json (loose + renderer-globals), where it lives in `files`.
+// tsc has no path mapping for this literal (Vite's alias is build-only), so the
+// import itself still needs @ts-ignore below — but viewer.ts is now type-checked
+// as part of THIS SAME tsconfig.json program regardless, via the `renderer/**/*`
+// include (merged 2026-07-09; formerly a separate, looser tsconfig.renderer.json).
+// The bare specifier is Vite/bundling indirection now, not a type-isolation trick.
 // @ts-ignore — resolved by the Vite alias above, not by tsc.
 import 'corpus-viewer-bundle';
 // shell.ts was index.html's LAST <script> (after islands/app.js, so after viewer too) —
