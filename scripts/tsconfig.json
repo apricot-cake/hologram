@@ -42,6 +42,7 @@
     "types": ["node"]
   },
   "files": [
+    "audit-react-purity.cts",
     "backfill-metadata.cts",
     "cdp-verify.cts",
     "e2e-capture-test.cts",
