@@ -1,13 +1,16 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { t } from '../_shared/i18n.ts';
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
-// count, the リセット button, and the ⓘ help popover. viewer.js keeps ALL logic and pushes
-// a model via window.corpusActivebar (buildActivebarModel / pushActivebar); this host
-// renders the frame. The count/reset/empty/nav are pure data; nav/reset/help call back into
-// viewer through the model's callbacks.
+// count, the リセット button, and the ⓘ help popover. Self-derived (P4-B slice⑱): every
+// read-only field comes straight from corpusStore ('postQueryTree'/'posterQueryTree'/
+// 'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/'navCanForward' — all already
+// mirrored there by viewer.ts for other consumers) + t(); the 4 actions (nav/reset) call
+// window.corpusViewer.navBack/navForward/resetAllFilters/resetPosterFilters directly. No
+// more pushed model (the old renderer/activebar.ts bridge is gone).
 //
 // The chips (#queryChips / #posterQueryChips) are their OWN island (query-chips) and keep
 // viewer's delegated click/contextmenu handlers. So the frame is NOT a single portal into
@@ -17,8 +20,20 @@ import { createPortal } from 'react-dom';
 // #posterCount) — the chips containers are never touched. Same ids/classes as the old
 // static HTML so CSS + the verify scripts that click #postResetBtn etc. keep working.
 
-const subscribe = (cb: () => void) => window.corpusActivebar.subscribe(cb);
-const getSnapshot = () => window.corpusActivebar.get();
+const subSearchQuery = (cb: () => void) => window.corpusStore.subscribe('searchQuery', cb);
+const getSearchQuery = () => (window.corpusStore.get('searchQuery') as string | undefined) ?? '';
+const subPostTree = (cb: () => void) => window.corpusStore.subscribe('postQueryTree', cb);
+const getPostTree = () => window.corpusStore.get('postQueryTree') as { children: unknown[] } | undefined;
+const subPosterTree = (cb: () => void) => window.corpusStore.subscribe('posterQueryTree', cb);
+const getPosterTree = () => window.corpusStore.get('posterQueryTree') as { children: unknown[] } | undefined;
+const subPostGroups = (cb: () => void) => window.corpusStore.subscribe('postGroups', cb);
+const getPostGroups = () => window.corpusStore.get('postGroups') as any[] | null | undefined;
+const subPosterGroups = (cb: () => void) => window.corpusStore.subscribe('posterGroups', cb);
+const getPosterGroups = () => window.corpusStore.get('posterGroups') as any[] | undefined;
+const subNavCanBack = (cb: () => void) => window.corpusStore.subscribe('navCanBack', cb);
+const getNavCanBack = () => !!window.corpusStore.get('navCanBack');
+const subNavCanForward = (cb: () => void) => window.corpusStore.subscribe('navCanForward', cb);
+const getNavCanForward = () => !!window.corpusStore.get('navCanForward');
 
 // Portal a subtree into a static viewer-owned sub-mount by id (present before app.js runs,
 // so getElementById resolves synchronously). Mirrors App.tsx's Portal helper.
@@ -63,9 +78,9 @@ function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
   return (
     <div ref={ref} className="qb-help-pop glass-lens show">
       <div className="qh-title">{help.title}</div>
-      {help.rows.map((t) => (
-        <div className="qh-row" key={t}>
-          {t}
+      {help.rows.map((row) => (
+        <div className="qh-row" key={row}>
+          {row}
         </div>
       ))}
     </div>
@@ -73,7 +88,13 @@ function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
 }
 
 export function ActivebarHost() {
-  const m = useSyncExternalStore(subscribe, getSnapshot);
+  const search = useSyncExternalStore(subSearchQuery, getSearchQuery).trim();
+  const postTree = useSyncExternalStore(subPostTree, getPostTree);
+  const posterTree = useSyncExternalStore(subPosterTree, getPosterTree);
+  const postGroups = useSyncExternalStore(subPostGroups, getPostGroups);
+  const posterGroups = useSyncExternalStore(subPosterGroups, getPosterGroups);
+  const navCanBack = useSyncExternalStore(subNavCanBack, getNavCanBack);
+  const navCanForward = useSyncExternalStore(subNavCanForward, getNavCanForward);
   const [helpOpen, setHelpOpen] = useState(false);
   // Escape closes the hint (parity with viewer's old global keydown handler).
   useEffect(() => {
@@ -84,27 +105,30 @@ export function ActivebarHost() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [helpOpen]);
-  if (!m) return null;
-  const P = m.post;
-  const Po = m.poster;
+
+  const postActive = (postTree?.children?.length ?? 0) > 0 || !!search;
+  const posterActive = (posterTree?.children?.length ?? 0) > 0 || !!search;
+  const postCount = postGroups ? postGroups.length : 0;
+  const posterCount = posterGroups ? posterGroups.length : 0;
+
   return (
     <>
       {/* --- Post bar frame --- */}
       {into(
         'postNavMount',
         <>
-          <NavBtn dir="back" disabled={P.navBackDisabled} onClick={m.onNavBack} />
-          <NavBtn dir="fwd" disabled={P.navFwdDisabled} onClick={m.onNavFwd} />
+          <NavBtn dir="back" disabled={!navCanBack} onClick={() => window.corpusViewer?.navBack?.()} />
+          <NavBtn dir="fwd" disabled={!navCanForward} onClick={() => window.corpusViewer?.navForward?.()} />
         </>,
       )}
       {into(
         'postFrameLead',
         <>
           <span className="sb-activebar-title" id="activebarLabel">
-            {P.label}
+            {t('activebarLabel')}
           </span>
-          <span className="qb-empty" id="qbEmptyHint" style={showHide(P.emptyVisible)}>
-            {P.emptyHint}
+          <span className="qb-empty" id="qbEmptyHint" style={showHide(!postActive)}>
+            {t('qbEmptyHint')}
           </span>
         </>,
       )}
@@ -112,10 +136,10 @@ export function ActivebarHost() {
         'postTrailMount',
         <>
           <span className="post-count" id="postCount">
-            {P.countLabel}
+            {t('postCount', [postCount])}
           </span>
-          <button className="sb-reset" id="postResetBtn" type="button" style={showHide(P.resetVisible)} onClick={m.onReset}>
-            {P.resetLabel}
+          <button className="sb-reset" id="postResetBtn" type="button" style={showHide(postActive)} onClick={() => window.corpusViewer?.resetAllFilters?.()}>
+            {t('reset')}
           </button>
           <button className="qb-help" id="qbHelpBtn" type="button" onMouseEnter={() => setHelpOpen(true)} onMouseLeave={() => setHelpOpen(false)} onFocus={() => setHelpOpen(true)} onBlur={() => setHelpOpen(false)}>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -129,19 +153,19 @@ export function ActivebarHost() {
       {/* --- Poster bar frame (no nav / title; count lives in the sidebar) --- */}
       {into(
         'posterFrameLead',
-        <span className="qb-empty" id="posterQbEmptyHint" style={showHide(Po.emptyVisible)}>
-          {Po.emptyHint}
+        <span className="qb-empty" id="posterQbEmptyHint" style={showHide(!posterActive)}>
+          {t('qbEmptyHint')}
         </span>,
       )}
       {into(
         'posterTrailMount',
-        <button className="sb-reset" id="posterResetBtn" type="button" style={showHide(Po.resetVisible)} onClick={m.onPosterReset}>
-          {Po.resetLabel}
+        <button className="sb-reset" id="posterResetBtn" type="button" style={showHide(posterActive)} onClick={() => window.corpusViewer?.resetPosterFilters?.()}>
+          {t('reset')}
         </button>,
       )}
-      {into('posterCount', Po.countLabel)}
+      {into('posterCount', t('posterCount', [posterCount]))}
       {/* Fixed-position help popover: viewport-relative, so it renders as a direct child. */}
-      {helpOpen && <HelpPop help={m.help} />}
+      {helpOpen && <HelpPop help={{ title: t('qbHelpTitle'), rows: [t('qbHelp1'), t('qbHelp2'), t('qbHelp3'), t('qbHelp4'), t('qbHelp5')] }} />}
     </>
   );
 }

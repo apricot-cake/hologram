@@ -359,7 +359,8 @@
   setAttr('contentTop', 'aria-label', MSG.sbTopTip);
   setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
-  // ⓘ help) are the activebar island now (window.corpusActivebar) — no static setText here.
+  // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
+  // renderer/activebar.ts is gone — no bridge left) — no static setText here.
   // segments: icon always, label shown only on the active one (no tooltips —
   // the active label is the affordance). Labels live in their own span so the
   // SVG glyph survives.
@@ -391,8 +392,8 @@
   // longer writes them (writing here would race the island after a language reload).
   // #sbSearchTitle / #sbSortTitle are island-owned now too (toolbar SectionTitle) — no
   // static setText (writing here would race the island after a language reload).
-  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now
-  // (rendered from buildActivebarModel) — no static setText here.
+  // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now,
+  // self-deriving from corpusStore + t() (P4-B slice⑱) — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource — no
   // static setText here.
@@ -487,8 +488,9 @@
     posterReturn = null;
     if (bounce) setBrowseMode('posters');
   }
-  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island
-  // (onReset / onNavBack / onNavFwd callbacks in the model) — the buttons are React-owned.
+  // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island,
+  // which calls window.corpusViewer.resetAllFilters/navBack/navForward directly (P4-B
+  // slice⑱ — no more pushed model callbacks) — the buttons are React-owned.
 
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
   // buttons themselves route through the island callbacks above). Guarded so they never fire
@@ -1508,10 +1510,13 @@
     apply: applyState,
     onChange: updateNavButtons,
   });
-  // The nav 戻る/進む disabled state is part of the activebar model now — a nav change just
-  // re-pushes it (the island reads navBackDisabled/navFwdDisabled).
+  // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
+  // activebar island now self-derives everything else from corpusStore (P4-B slice⑱), but
+  // nav's canBack/canForward live in a closure (the history stack), not the store — so this
+  // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
-    pushActivebar();
+    window.corpusStore.set('navCanBack', nav.canBack());
+    window.corpusStore.set('navCanForward', nav.canForward());
   }
   function navBack() {
     if (nav.back()) persistTabsDebounced();
@@ -1519,45 +1524,7 @@
   function navForward() {
     if (nav.forward()) persistTabsDebounced();
   }
-
-  // --- Active-bar frame model (window.corpusActivebar) ---
-  // The query-builder FRAME (nav / フィルター title / empty hint / result count / リセット /
-  // ⓘ help) around #queryChips / #posterQueryChips is a React island now. viewer keeps all
-  // the state; buildActivebarModel() aggregates it and pushActivebar() renders it. Called
-  // from renderPosts / renderPosters (after the counts are known), updateNavButtons, and
-  // boot. The chips themselves stay their own island (createQueryBuilder.render()).
-  function buildActivebarModel() {
-    const search = searchQuery().trim();
-    const postActive = postQB.hasQuery() || !!search;
-    const posterActive = posterQB.hasQuery() || !!search;
-    return {
-      post: {
-        label: MSG.activebarLabel,
-        emptyHint: MSG.qbEmptyHint,
-        emptyVisible: !postActive,
-        countLabel: MSG.postCount(viewGroups.length),
-        resetLabel: MSG.reset,
-        resetVisible: postActive,
-        navBackDisabled: !nav.canBack(),
-        navFwdDisabled: !nav.canForward(),
-      },
-      poster: {
-        emptyHint: MSG.qbEmptyHint,
-        emptyVisible: !posterActive,
-        countLabel: MSG.posterCount(posterList.length),
-        resetLabel: MSG.reset,
-        resetVisible: posterActive,
-      },
-      help: { title: MSG.qbHelpTitle, rows: [MSG.qbHelp1, MSG.qbHelp2, MSG.qbHelp3, MSG.qbHelp4, MSG.qbHelp5] },
-      onNavBack: navBack,
-      onNavFwd: navForward,
-      onReset: resetAllFilters,
-      onPosterReset: resetPosterFilters,
-    };
-  }
-  function pushActivebar() {
-    window.corpusActivebar.render(buildActivebarModel());
-  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { navBack, navForward, resetAllFilters });
   // Nav is post-mode only and yields to typing / open overlays / poster mode.
   function navAllowed() {
     if (browseMode !== 'posts') return false; // history nav is post-view only (posters/collections excluded)
@@ -2110,9 +2077,6 @@
       viewGroups = groupRecords(getFilteredPosts());
       if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
     }
-
-    // Post count + reset/empty/nav frame → the activebar island (viewGroups is now final).
-    pushActivebar();
 
     if (viewGroups.length === 0) {
       // P4-B slice⑩: pushing 'postGroups'=null (not just an empty array — see
@@ -2885,10 +2849,11 @@
   });
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
-  // #selectionBar buttons + count are React-owned now (the selection-bar island renders
-  // them from updateSelectionBar's model via window.corpusSelectionBar). viewer keeps the
-  // container (show/hide) and this ONE delegated click handler that dispatches by data-act
-  // — the island reproduces the button IDs so scripts/_verify-select.js's
+  // #selectionBar buttons + count are React-owned now — the selection-bar island derives
+  // its own model straight from corpusStore's 'selectedSet' (P4-B slice⑱, reusing
+  // corpusSelection's isAllSelected/selectedGroups; no more viewer-pushed model). viewer
+  // keeps the container (show/hide) and this ONE delegated click handler that dispatches
+  // by data-act — the island reproduces the button IDs so scripts/_verify-select.js's
   // getElementById(...).click() still bubbles here.
   const selectionBar = byId('selectionBar');
   selectionBar.addEventListener('click', (e) => {
@@ -3008,30 +2973,13 @@
     updateSelectionBar();
   }
 
-  // Build the #selectionBar model (labels / count / disabled) and push it to the island.
-  // The container show/hide stays viewer's — React owns only the children. Every
-  // window.corpusSelection mutation site ends by calling this to keep the bar's
-  // labels/counts in sync (the 'selectedSet' corpusStore key itself is already
-  // fresh by the time this runs — corpusSelection's mutators write it directly).
+  // #selectionBar's container show/hide — the ONE thing that stays viewer's (container
+  // chrome). The buttons/count/labels are self-derived by the selection-bar island
+  // straight from corpusStore's 'selectedSet' + 'postGroups' (P4-B slice⑱) — every
+  // window.corpusSelection mutation site still calls this to keep the container's
+  // visibility in sync (the island re-renders on its own via the store subscription).
   function updateSelectionBar() {
-    const count = window.corpusSelection.size();
-    selectionBar.style.display = count > 0 ? '' : 'none';
-    const allSelected = window.corpusSelection.isAllSelected(viewGroups, postIdKey);
-    window.corpusSelectionBar.render({
-      count,
-      countLabel: MSG.selectedCount(count),
-      selectAllLabel: allSelected ? MSG.deselectAll : MSG.selectAll,
-      // Manual grouping needs at least two selected cards (groups).
-      groupDisabled: window.corpusSelection.selectedGroups(viewGroups, postIdKey).length < 2,
-      deleteDisabled: count === 0,
-      labels: {
-        tag: MSG.tagSelected,
-        folder: MSG.folderSelected,
-        group: MSG.groupSelected,
-        delete: MSG.deleteSelected,
-        cancel: MSG.cancelSelect,
-      },
-    });
+    selectionBar.style.display = window.corpusSelection.size() > 0 ? '' : 'none';
   }
 
   // Manual grouping: merge every record of the selected cards into one persisted
@@ -3413,12 +3361,14 @@
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
-  // Poster query reset — the activebar island's #posterResetBtn onClick (onPosterReset).
+  // Poster query reset — the activebar island's #posterResetBtn calls this directly via
+  // window.corpusViewer.resetPosterFilters (P4-B slice⑱).
   function resetPosterFilters() {
     posterQB.resetTree();
     setSearchBoxValue('');
     renderPosters();
   }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { resetPosterFilters });
   function renderPosters(keepLimit?) {
     const grid = byId('posterGrid');
     const empty = byId('emptyState');
@@ -3427,8 +3377,8 @@
     posterList = filteredPosters();
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
-    // frame は activebar 島が描画する（posterList が確定した後に push）。
-    pushActivebar();
+    // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
+    // する（P4-B slice⑱・下の corpusStore.set('posterGroups', …) を購読）。
     syncBrowseBar();
     // Density: the classes style the CELLS (descendant selectors); the column
     // layout itself lives in the masonic model (pushPosterModel).
@@ -4182,7 +4132,6 @@
   // logic of WHAT), rather than viewer.ts self-booting in parallel with React's mount.
   async function bootApp() {
     renderQueryChips();
-    pushActivebar(); // initial frame (label / empty hint / reset hidden / nav disabled) before first render
     if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
     ungrouped = await window.corpusRecords.loadUngrouped();

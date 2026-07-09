@@ -139,6 +139,29 @@ declare global {
     setImageTabIndex?(i: number): void;
     toggleImageTabInspector?(): void;
     closeImageTab?(): void;
+    // Activebar commands — the activebar island calls these directly (P4-B slice⑱; no
+    // more pushed model callbacks).
+    navBack?(): void;
+    navForward?(): void;
+    resetAllFilters?(): void;
+    resetPosterFilters?(): void;
+  }
+
+  // ---- renderer/records.ts — the full CorpusRecordsApi shape lives in
+  // renderer/types/renderer-globals.d.ts; only postIdKey is needed from the islands side
+  // (SelectionBar reuses it to key selectedSet — same partial-merge pattern as
+  // CorpusFoldersApi.onChange above).
+  interface CorpusRecordsApi {
+    postIdKey(p: any): string;
+  }
+
+  // ---- renderer/selection.ts — the full CorpusSelectionApi shape (toggle/clear/
+  // selectAll/…) lives in renderer/types/renderer-globals.d.ts; SelectionBar (P4-B
+  // slice⑱) only reads the pure query methods, reusing them instead of re-deriving
+  // allSelected/groupDisabled itself.
+  interface CorpusSelectionApi {
+    isAllSelected(groups: any[], postIdKey: (p: any) => string): boolean;
+    selectedGroups(groups: any[], postIdKey: (p: any) => string): any[];
   }
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
@@ -482,22 +505,11 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
-  // ---- renderer/selection-bar.js — #selectionBar bulk-action bar. viewer builds the
-  // model in updateSelectionBar(); the island renders the buttons + count. Clicks route
-  // through viewer's delegated #selectionBar handler (data-act), so no callbacks here. ----
-  interface CorpusSelectionBarModel {
-    count: number;
-    countLabel: string;
-    selectAllLabel: string; // toggles 全選択 ⇄ 選択解除
-    groupDisabled: boolean;
-    deleteDisabled: boolean;
-    labels: { tag: string; folder: string; group: string; delete: string; cancel: string };
-  }
-  interface CorpusSelectionBar {
-    render(model: CorpusSelectionBarModel | null): void;
-    get(): CorpusSelectionBarModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // ---- #selectionBar bulk-action bar. viewer keeps the container's show/hide + the
+  // delegated #selectionBar click handler (data-act); SelectionBar.tsx (P4-B slice⑱)
+  // derives count/allSelected/groupDisabled itself from corpusStore's 'selectedSet' +
+  // 'postGroups' (the old renderer/selection-bar.ts push bridge was deleted — no callers
+  // left, same as renderer/empty.ts below). ----
 
   // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
   // delegated CTA click handler; EmptyState.tsx (P4-B slice⑩/⑫) derives the
@@ -514,37 +526,15 @@ declare global {
     fmtTime(iso: string | null): string;
   }
 
-  // ---- renderer/activebar.js — the query-builder FRAME (#postActiveBar / #posterActiveBar):
-  // nav 戻る/進む, フィルター title, empty hint, result count, リセット, and the ⓘ help
-  // popover. viewer builds the model in buildActivebarModel(); the island renders the frame
-  // (portaled into sub-mounts BESIDE the chips containers, which stay their own island). The
-  // count/reset/empty/nav are data; nav/reset/help must call back, so the model carries
-  // callbacks (like confirm.js). Post + poster in one model (one bar shown at a time). ----
-  interface CorpusActivebarSide {
-    emptyHint: string;
-    emptyVisible: boolean; // the empty-bar hint shows while nothing is filtered
-    countLabel: string;
-    resetLabel: string;
-    resetVisible: boolean; // リセット shows only once something is filtered/searched
-  }
-  interface CorpusActivebarModel {
-    post: CorpusActivebarSide & {
-      label: string; // the フィルター section title (post bar only)
-      navBackDisabled: boolean;
-      navFwdDisabled: boolean;
-    };
-    poster: CorpusActivebarSide; // no nav / no title on the poster bar
-    help: { title: string; rows: string[] };
-    onNavBack(): void;
-    onNavFwd(): void;
-    onReset(): void;
-    onPosterReset(): void;
-  }
-  interface CorpusActivebar {
-    render(model: CorpusActivebarModel | null): void;
-    get(): CorpusActivebarModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
+  // フィルター title, empty hint, result count, リセット, and the ⓘ help popover. viewer
+  // keeps only the container reveal + --activebar-h measurement; ActivebarHost (P4-B
+  // slice⑱) derives everything else itself from corpusStore ('postQueryTree'/
+  // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
+  // 'navCanForward') + t(), and calls window.corpusViewer.navBack/navForward/
+  // resetAllFilters/resetPosterFilters directly for the actions (the old
+  // renderer/activebar.ts push bridge was deleted — no callers left). Portaled into
+  // sub-mounts BESIDE the chips containers, which stay their own island. ----
 
   // ---- renderer/confirm.js — shared confirm modal (#confirmOverlay). viewer opens it with
   // a message + optional skip/keyword gate + callbacks; the island renders it. ----
@@ -686,9 +676,9 @@ declare global {
     corpusEditOverlay: CorpusEditOverlay;
     corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
-    corpusSelectionBar: CorpusSelectionBar;
+    corpusRecords: CorpusRecordsApi;
+    corpusSelection: CorpusSelectionApi;
     corpusFormat: CorpusFormat;
-    corpusActivebar: CorpusActivebar;
     corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;

@@ -68,9 +68,7 @@ import 'corpus-svc:tabs';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection';
 import 'corpus-svc:bulk-edit';
-import 'corpus-svc:selection-bar';
 import 'corpus-svc:confirm';
-import 'corpus-svc:activebar';
 import 'corpus-svc:about-icon';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so

@@ -1879,11 +1879,11 @@
   <!-- Query builder: full-width top bar that spans above the sidebar (the sidebar
        starts below it). Always shown (it's also the entry point for filters). -->
   <!-- The FRAME (nav / title / empty hint / count / reset / ⓘ help) is the activebar
-       island (window.corpusActivebar): it portals into the static sub-mounts below
-       (#postNavMount / #postFrameLead / #postTrailMount) which sit BESIDE #queryChips so
-       that chips container keeps viewer's delegated click/contextmenu handlers untouched.
-       viewer still reveals the bar (display) + measures --activebar-h; the qb-lead glyph
-       stays static. -->
+       island (ActivebarHost, self-derived from corpusStore — P4-B slice⑱): it portals
+       into the static sub-mounts below (#postNavMount / #postFrameLead / #postTrailMount)
+       which sit BESIDE #queryChips so that chips container keeps viewer's delegated
+       click/contextmenu handlers untouched. viewer still reveals the bar (display) +
+       measures --activebar-h; the qb-lead glyph stays static. -->
   <div id="postActiveBar" class="content-activebar" style="display:none">
     <div class="qb-nav" id="postNavMount"></div>
     <div class="qb-body">
@@ -1917,11 +1917,11 @@
         <!-- Selection bar: pinned at the very top of the sidebar (outside the
              scroll area) so the bulk actions stay reachable while scrolling.
              React-owned now: the selection-bar island (app/islands/selection-bar)
-             renders the buttons + count from viewer.js's updateSelectionBar via
-             window.corpusSelectionBar. This container stays viewer's: it owns the
-             show/hide (display) and a delegated click handler that dispatches by
-             data-act; the island reproduces the button IDs so verify scripts that
-             click by id keep working. -->
+             self-derives the buttons + count straight from corpusStore's 'selectedSet'
+             (P4-B slice⑱). This container stays viewer's: it owns the show/hide
+             (display) and a delegated click handler that dispatches by data-act; the
+             island reproduces the button IDs so verify scripts that click by id keep
+             working. -->
         <div class="selection-bar" id="selectionBar" style="display:none;"></div>
         <div class="sb-scroll">
         <!-- Browse-mode switch: ライブラリ（投稿グリッド）↔ 投稿者（投稿者グリッド）。
@@ -2460,13 +2460,13 @@
 
   <script src="../vendor/jszip.min.js"></script>
   <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
-       filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/selection-bar/
-       empty/mirror/confirm/activebar/about-icon/shell, plus the logic-service wave —
-       search/query/records/facets/cooc/tags/users/tab-state/listing/geometry/format/
-       undo) is folded into the app.js bundle (P2): see the `corpus-svc:*` imports in
-       app/islands/app/index.tsx, in the same order these used to load in. theme.js stays
-       its own pre-paint <script> (head, above) — it must run before first paint, which
-       app.js (loaded at the end of body) cannot guarantee. -->
+       filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
+       about-icon/shell, plus the logic-service wave — search/query/records/facets/cooc/
+       tags/users/tab-state/listing/geometry/format/undo) is folded into the app.js bundle
+       (P2): see the `corpus-svc:*` imports in app/islands/app/index.tsx, in the same
+       order these used to load in. theme.js stays its own pre-paint <script> (head,
+       above) — it must run before first paint, which app.js (loaded at the end of body)
+       cannot guarantee. -->
   <!-- Shared React runtime (react + react-dom) for every island below. Bundled
        once by islands/build.mjs and loaded FIRST so islands (built with React
        externalized) reach window.React/ReactDOM/… instead of each inlining its
