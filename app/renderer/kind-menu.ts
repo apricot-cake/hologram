@@ -1,45 +1,40 @@
 // 種別 (tag-kind) menu bridge — the imperative→declarative bridge for the work/
 // character/general classification menu (right-click a tag chip in the edit picker /
-// inspector / poster picker). viewer.js builds the row model (current kind, already-
+// inspector / poster picker). viewer.ts builds the row model (current kind, already-
 // localized labels) and owns the pick/rename actions; the kind-menu React island
-// subscribes and renders the glass popup. Kept SEPARATE from window.corpusStore for the
-// same reason as menu.js: onPick/onRename carry CALLBACKS, which don't belong in the
-// serializable reactive store. Plain IIFE on window (like store.js / menu.js); loaded
-// BEFORE viewer.js.
+// subscribes and renders the glass popup. Kept SEPARATE from corpusStore for the
+// same reason as menu.ts: onPick/onRename carry CALLBACKS, which don't belong in the
+// serializable reactive store. A real ES module (named exports), imported directly
+// by its consumers (viewer.ts / KindMenu.tsx).
 //
 // model shape: { x, y, header, renameTitle, rows, onPick(kind), onRename(kind) }.
 // row shape: { kind, label, dot?, renameable?, checked? } | { sep: true }.
-(function () {
-  'use strict';
-  let current: CorpusKindMenuModel | null = null; // model | null
-  const subs = new Set<() => void>();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
+let current: CorpusKindMenuModel | null = null; // model | null
+const subs = new Set<() => void>();
+const notify = () => {
+  for (const cb of [...subs]) {
+    try {
+      cb();
+    } catch (_e) {
+      /* ignore */
     }
-  };
+  }
+};
 
-  function open(model: CorpusKindMenuModel) {
-    current = model;
+export function open(model: CorpusKindMenuModel) {
+  current = model;
+  notify();
+}
+export function close() {
+  if (current) {
+    current = null;
     notify();
   }
-  function close() {
-    if (current) {
-      current = null;
-      notify();
-    }
-  }
-  function get() {
-    return current;
-  } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb: () => void) {
-    subs.add(cb);
-    return () => subs.delete(cb);
-  }
-
-  window.corpusKindMenu = { open, close, get, subscribe };
-})();
+}
+export function get() {
+  return current;
+} // stable ref between changes (useSyncExternalStore)
+export function subscribe(cb: () => void) {
+  subs.add(cb);
+  return () => subs.delete(cb);
+}

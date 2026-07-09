@@ -1,10 +1,11 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { close, get, subscribe } from '../../renderer/kind-menu.ts';
 
 // Glass 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
-// window.corpusKindMenu currently holds (or nothing). viewer.js owns the row model +
+// kind-menu.ts currently holds (or nothing). viewer.ts owns the row model +
 // pick/rename actions; this island only draws the glass popup and calls back through
-// corpusKindMenu's model callbacks. A DEDICATED component (not the generic
+// kind-menu.ts's model callbacks. A DEDICATED component (not the generic
 // ContextMenu) because each row carries TWO independent click targets — the row
 // itself (pick a kind) and a nested rename button (relabel that kind) — plus a
 // header, none of which fit ContextMenu's item shape.
@@ -26,7 +27,7 @@ const Pencil = () => (
 );
 
 export function KindMenuHost() {
-  const menu = useSyncExternalStore(window.corpusKindMenu.subscribe, window.corpusKindMenu.get);
+  const menu = useSyncExternalStore(subscribe, get);
   const popRef = useRef<HTMLDivElement | null>(null);
 
   // Position at (x, y); clamp into the viewport once the size is known (mirrors
@@ -53,10 +54,10 @@ export function KindMenuHost() {
     if (!menu) return;
     const onDoc = (e: MouseEvent) => {
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      window.corpusKindMenu.close();
+      close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.corpusKindMenu.close();
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);
@@ -69,12 +70,12 @@ export function KindMenuHost() {
   if (!menu) return null;
 
   const pick = (row: CorpusKindMenuRow) => {
-    window.corpusKindMenu.close();
+    close();
     menu.onPick(row.kind as string);
   };
   const rename = (e: { stopPropagation(): void }, kind?: string) => {
     e.stopPropagation();
-    window.corpusKindMenu.close();
+    close();
     menu.onRename(kind as string);
   };
 

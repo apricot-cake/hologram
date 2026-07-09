@@ -12,6 +12,11 @@ import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
 import { makeSearchEditing } from './search-editing.ts';
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
+import { open as confirmOpen } from './confirm.ts';
+import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
+import { open as kindMenuOpen } from './kind-menu.ts';
+import { open as menuOpen } from './menu.ts';
+import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -393,9 +398,9 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // posterDateClear are the filter-popover React island now — no static labels here.
   // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
   // settings island; the confirm modal is the React confirm island (labels come through
-  // window.corpusConfirm.open's config), so no static confirm setText here either.
+  // confirmOpen's config), so no static confirm setText here either.
 
-  // Edit overlay labels are now passed directly in the corpusEditOverlay model (see
+  // Edit overlay labels are now passed directly in the edit-overlay.ts model (see
   // openTagSelectedOverlay below) — no static DOM to set text on anymore.
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
@@ -1831,7 +1836,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // action logic (viewer keeps the orchestration, React owns the wiring) — same
   // "cut out and rewire" as the global shortcuts / detail-dismiss slices.
   // Tab context menu (right-click a tab): pin / rename / duplicate / close /
-  // close-others. React-owned glass menu (window.corpusContextMenu); viewer owns the
+  // close-others. React-owned glass menu (menu.ts); viewer owns the
   // items + actions.
   function showTabMenu(id: string, e: MouseEvent) {
     const t = getTabs().find((t) => t.id === id);
@@ -1845,7 +1850,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
       items.push({ label: MSG.tabClose, act: 'close' });
       items.push({ label: MSG.tabCloseOthers, act: 'close-others', danger: true });
     }
-    window.corpusContextMenu.open({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
+    menuOpen({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
       const tid = id;
       const act = item.act;
       if (act === 'pin') pinTab(tid);
@@ -2252,7 +2257,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
 
   // Folder picker flyout (destinations) — opened from the card context menu
   // and the bulk 「フォルダに追加」 button.
-  // Folder picker (destinations) — React-owned glass menu (window.corpusContextMenu);
+  // Folder picker (destinations) — React-owned glass menu (menu.ts);
   // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
   // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
   // 「フォルダに追加」 button.
@@ -2283,7 +2288,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   }
   function showFoldMenu(g: CorpusPostGroup, x: number, y: number) {
     if (!CF()) return;
-    window.corpusContextMenu.open({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
+    menuOpen({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
   }
 
   // --- Card context menu: the labeled table of contents of per-card actions.
@@ -2300,7 +2305,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
     newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
   };
-  // Card context menu — React-owned glass menu (window.corpusContextMenu); viewer owns
+  // Card context menu — React-owned glass menu (menu.ts); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
   // spot; the bridge's transition guard keeps that open instead of closing it.
   function cardMenuItems(g: CorpusPostGroup) {
@@ -2351,7 +2356,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);
-    window.corpusContextMenu.open({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
+    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
   }
   byId('postGrid').addEventListener('contextmenu', (e) => {
     const card = closestOf(e, '.post-card');
@@ -2428,7 +2433,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
       executeDeleteGroup(g);
       return;
     }
-    window.corpusConfirm.open({
+    confirmOpen({
       message: g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost,
       okLabel: MSG.confirmOk,
       cancelLabel: MSG.confirmCancel,
@@ -2467,13 +2472,13 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // Rendering lives in the kind-menu React island (dedicated component — a row's
   // pick target and its rename button are two independent click targets, which the
   // generic ContextMenu item shape has no room for); this only builds the row model
-  // and runs the pick/rename actions via the corpusKindMenu bridge (kind-menu.js). ===
+  // and runs the pick/rename actions via kind-menu.ts. ===
   function showKindMenu(tag: string, x: number, y: number, onChanged?: (() => void) | null) {
     const cur = tagKindOf(tag);
     // The work/character pair carries a quiet ✎ to rename the 種別 globally
     // (段階的開示: only here, in the tag-management kind menu).
     const row = (k: string, label: string) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
-    window.corpusKindMenu.open({
+    kindMenuOpen({
       x,
       y,
       header: MSG.tagKindHeader,
@@ -2499,7 +2504,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     byId('postDetail').hidden = true;
-    window.corpusInspector.close();
+    inspectorClose();
     setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
     byId('postGrid').classList.remove('insp-open');
     refreshTileSlider(); // the grid width grew back — re-derive the track
@@ -2529,7 +2534,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   }
   // --- Inspector inline tag editor (always available while the inspector is open) ---
   // Source of truth = the records' real tags. Each change saves immediately (mirrors
-  // adoptSourceTag) and refreshes only the tag fields of the corpusInspector model (not
+  // adoptSourceTag) and refreshes only the tag fields of the inspector.ts model (not
   // a full re-open) — the React tag editor keeps its own input text/focus and scroll
   // across a refresh (same openId). The chips + picker live in the panel itself — tag
   // editing is per-card here, no mode to enter (matches the poster inspector).
@@ -2542,7 +2547,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
     const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    window.corpusInspector.refresh({ tags, srcTagsView, ...inspectorTagPickerData(tags, g.records, 'post') });
+    inspectorRefresh({ tags, srcTagsView, ...inspectorTagPickerData(tags, g.records, 'post') });
   }
 
   // Apply a tag mutation to every record of the inspected group, persist immediately,
@@ -2658,7 +2663,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
           ? { icon: '🔗', label: MSG.groupRegroup, onClick: () => setGroupKey(gkey, false) }
           : { icon: '✂', label: MSG.groupUngroup, onClick: () => setGroupKey(gkey, true) }
         : null;
-    window.corpusInspector.open({
+    inspectorOpen({
       kind: 'post',
       heading,
       thumbSrc: thumbFile ? fileSrc(thumbFile, 480) : null,
@@ -2839,13 +2844,13 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // the only thing that writes the staged tags out to the records.
   function refreshEditOverlayFields() {
     const tags = getTags();
-    window.corpusEditOverlay.refresh({ tags, ...inspectorTagPickerData(tags, getRecords(), 'post') });
+    editOverlayRefresh({ tags, ...inspectorTagPickerData(tags, getRecords(), 'post') });
   }
 
   function closeEditOverlay() {
     close();
     byId('editOverlay').classList.remove('show');
-    window.corpusEditOverlay.close();
+    editOverlayClose();
   }
 
   // Modal chrome (lock background scroll + darken the native titlebar while any
@@ -2853,7 +2858,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // — same observe-each-overlay logic, just registered by React instead of this IIFE.
 
   // Inspector inline tag editors (post ivTag* / poster pdTag*) are now the React
-  // TagEditor component inside the corpusInspector island — it owns its own input/
+  // TagEditor component inside the inspector island — it owns its own input/
   // click/contextmenu handling directly via the callbacks in the model (see
   // showDetail/showPosterDetail), so no delegated #postDetail listeners are needed.
 
@@ -2918,7 +2923,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
     if (!records.length) return;
     open(records);
     const tags = getTags();
-    window.corpusEditOverlay.open({
+    editOverlayOpen({
       titleLabel: MSG.tagSelectedTitle,
       tags,
       ...inspectorTagPickerData(tags, records, 'post'),
@@ -3061,7 +3066,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
 
   function requestDeleteSelected() {
     if (window.corpusSelection.size() === 0) return;
-    window.corpusConfirm.open({
+    confirmOpen({
       message: MSG.confirmDeleteSelected(window.corpusSelection.size()),
       okLabel: MSG.confirmOk,
       cancelLabel: MSG.confirmCancel,
@@ -3489,10 +3494,10 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // SNS) tags, so the picker is fed recordsForSource:[]. The UI shows whenever the
   // poster inspector is open (no tagging-edit gate — there is no poster tagging mode).
   function refreshPosterTagFields(key: string) {
-    window.corpusInspector.refresh({ tags: posterTagsOf(key), ...inspectorTagPickerData(posterTagsOf(key), [], 'poster') });
+    inspectorRefresh({ tags: posterTagsOf(key), ...inspectorTagPickerData(posterTagsOf(key), [], 'poster') });
   }
   function refreshPosterFolderFields(key: string) {
-    window.corpusInspector.refresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
+    inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
   }
   // Apply a tag mutation to a poster, persist, and refresh the inspector tag fields
   // (input keeps focus and the picker keeps its scroll — same openId, no remount).
@@ -3526,7 +3531,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
       })
       .filter(Boolean);
     const tags = posterTagsOf(u.key);
-    window.corpusInspector.open({
+    inspectorOpen({
       kind: 'poster',
       avatarSrc,
       name,
@@ -3613,7 +3618,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // .fold-menu chrome + clampIntoView; folder rows toggle in place (menu stays open).
   // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
   // poster-folders (toggle, stays open). React-owned glass popup via
-  // window.corpusContextMenu; viewer owns the items + actions here.
+  // menu.ts; viewer owns the items + actions here.
   function posterMenuItems(u: CorpusUserAgg) {
     const items = [{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }] as CorpusMenuItem[];
     for (const f of pfStore.all()) {
@@ -3641,7 +3646,7 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
     }
   }
   function showPosterMenu(u: CorpusUserAgg, x: number, y: number) {
-    window.corpusContextMenu.open({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
+    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
   byId('posterGrid').addEventListener('contextmenu', (e) => {
     const card = closestOf(e, '.poster-card');
@@ -4062,11 +4067,11 @@ import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } fro
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
   // enable the OK button — a stray click can't wipe everything. The confirm modal is
-  // React-owned now (window.corpusConfirm / the confirm island); openClearAllConfirm just
+  // React-owned now (confirm.ts / the confirm island); openClearAllConfirm just
   // opens it with the keyword gate + the wipe as its onOk. Exposed on corpusViewer so the
   // React Danger section triggers the exact same destructive flow — no second wipe dialog.
   function openClearAllConfirm() {
-    window.corpusConfirm.open({
+    confirmOpen({
       message: MSG.confirmClear,
       okLabel: MSG.confirmOk,
       cancelLabel: MSG.confirmCancel,

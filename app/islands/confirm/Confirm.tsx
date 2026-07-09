@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { close, get, subscribe as subscribeConfirm } from '../../renderer/confirm.ts';
 
-// Shared confirm modal (#confirmOverlay) — React-owned. viewer.js pushes a config via
-// window.corpusConfirm.open({message, okLabel, cancelLabel, skipLabel?, keyword?, onOk,
+// Shared confirm modal (#confirmOverlay) — React-owned. viewer.ts pushes a config via
+// confirm.ts's open({message, okLabel, cancelLabel, skipLabel?, keyword?, onOk,
 // onCancel}); this host renders the .confirm-box into #confirmOverlay (the container stays
 // viewer's — CSS + setupModalChrome key on #confirmOverlay.show, which this toggles from
 // model presence, like the lightbox owns #lightbox's classes). Local state (skip checkbox,
@@ -10,8 +11,8 @@ import { createPortal } from 'react-dom';
 // runs in viewer's onOk closure — this only decides when to call it. Same DOM (ids/classes)
 // as the old static HTML so styling is unchanged.
 
-const subscribe = (cb: () => void) => window.corpusConfirm.subscribe(cb);
-const getSnapshot = () => window.corpusConfirm.get();
+const subscribe = (cb: () => void) => subscribeConfirm(cb);
+const getSnapshot = () => get();
 
 function ConfirmBox({ model }: { model: CorpusConfirmModel }) {
   const [skip, setSkip] = useState(false);
@@ -19,11 +20,11 @@ function ConfirmBox({ model }: { model: CorpusConfirmModel }) {
   const okDisabled = model.keywordRequired != null && kw.trim() !== model.keywordRequired;
   const doOk = () => {
     if (okDisabled) return;
-    window.corpusConfirm.close();
+    close();
     model.onOk({ skip });
   };
   const doCancel = () => {
-    window.corpusConfirm.close();
+    close();
     model.onCancel?.();
   };
   return (
@@ -67,8 +68,8 @@ export function ConfirmHost() {
     if (!el) return;
     const onClick = (e: MouseEvent) => {
       if (e.target !== el) return;
-      const cur = window.corpusConfirm.get();
-      window.corpusConfirm.close();
+      const cur = get();
+      close();
       cur?.onCancel?.();
     };
     el.addEventListener('click', onClick);

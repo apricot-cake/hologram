@@ -1,11 +1,12 @@
 import { useSyncExternalStore, useRef, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { close, get, pick, subscribe } from '../../renderer/menu.ts';
 
 // Glass context-menu host — ONE always-mounted instance that renders whatever
-// window.corpusContextMenu currently holds (or nothing). viewer.js owns the menu's
+// menu.ts currently holds (or nothing). viewer.ts owns the menu's
 // data + actions; this island only draws the glass popup and dispatches clicks back
-// through corpusContextMenu.pick(). Replaces the per-menu hand-rolled builders in
-// viewer.js (innerHTML template + show/hide/clamp/outside-click/Escape), which were
+// through menu.ts's pick(). Replaces the per-menu hand-rolled builders in
+// viewer.ts (innerHTML template + show/hide/clamp/outside-click/Escape), which were
 // duplicated across the collection / poster / … context menus.
 //
 // Emits the SAME DOM the old builders did (.fold-menu > .fm-row/.fm-sep, with
@@ -20,7 +21,7 @@ const Check = () => (
 );
 
 export function ContextMenuHost() {
-  const menu = useSyncExternalStore(window.corpusContextMenu.subscribe, window.corpusContextMenu.get);
+  const menu = useSyncExternalStore(subscribe, get);
   const popRef = useRef<HTMLDivElement | null>(null);
 
   // Position at (x, y); clamp into the viewport once the size is known (mirrors
@@ -47,10 +48,10 @@ export function ContextMenuHost() {
     if (!menu) return;
     const onDoc = (e: MouseEvent) => {
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      window.corpusContextMenu.close();
+      close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.corpusContextMenu.close();
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('click', onDoc, true);
     document.addEventListener('keydown', onKey);
@@ -67,7 +68,7 @@ export function ContextMenuHost() {
         it.sep ? (
           <div key={i} className="fm-sep" />
         ) : (
-          <div key={i} className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')} onClick={() => window.corpusContextMenu.pick(it)}>
+          <div key={i} className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')} onClick={() => pick(it)}>
             {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from viewer.js, never user content */}
             {it.icon && <span className="fm-ic" dangerouslySetInnerHTML={{ __html: it.icon }} />}
             <span className="fm-name">{it.label}</span>

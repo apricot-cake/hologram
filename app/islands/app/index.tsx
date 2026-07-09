@@ -47,27 +47,24 @@ import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';
 import 'corpus-svc:backup';
 import 'corpus-svc:posts';
-// Wave 2 = infra + UI bridges (store/bridge before their consumers menu/kind-menu/
-// filter-popover/qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-
-// popover module-load time, so it must precede them; order below mirrors the old
-// index.html <script> order, which already satisfied this).
+// Wave 2 = infra + UI bridges (store/bridge before their consumers filter-popover/
+// qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-popover
+// module-load time, so it must precede them; order below mirrors the old
+// index.html <script> order, which already satisfied this). menu/kind-menu/
+// inspector/edit-overlay/confirm are real ES modules now, imported directly by
+// their consumers (no barrel entry needed).
 import 'corpus-svc:i18n';
 import 'corpus-svc:folders';
 import 'corpus-svc:store';
 import 'corpus-svc:bridge';
-import 'corpus-svc:menu';
-import 'corpus-svc:kind-menu';
 import 'corpus-svc:filter-popover';
 import 'corpus-svc:qf-pop';
-import 'corpus-svc:inspector';
-import 'corpus-svc:edit-overlay';
 import 'corpus-svc:searchbox';
 import 'corpus-svc:grid';
 import 'corpus-svc:image-tab';
 import 'corpus-svc:tabs';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection';
-import 'corpus-svc:confirm';
 import 'corpus-svc:about-icon';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so

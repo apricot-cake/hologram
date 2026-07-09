@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { TagEditor } from '../_shared/TagEditor.tsx';
+import { get, subscribe } from '../../renderer/inspector.ts';
 import type { ReactNode } from 'react';
 
 function Row({ k, v }: { k?: string; v?: ReactNode }) {
@@ -155,7 +156,7 @@ function PosterInspector({ m }: { m: CorpusInspectorModel }) {
 }
 
 export function Inspector() {
-  const m = useSyncExternalStore(window.corpusInspector.subscribe, window.corpusInspector.get);
+  const m = useSyncExternalStore(subscribe, get);
   if (!m) return null;
   // Keyed on openId (bumped only by open(), not refresh()): a fresh post/poster remounts
   // and resets local state (tag-input text), while a tag mutation on the SAME panel

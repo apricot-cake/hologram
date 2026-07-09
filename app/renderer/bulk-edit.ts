@@ -1,9 +1,9 @@
 // Bulk "add tags to selection" staging list — the single owner of the records/
 // tags/additive-flag staged while #editOverlay is open (P4-B スライス⑭). These
 // were previously plain viewer.js closure variables (editingRecords/editTags/
-// editAdditive) reachable only by re-pushing a fresh corpusEditOverlay model —
+// editAdditive) reachable only by re-pushing a fresh edit-overlay.ts model —
 // now a dedicated module holds them, addressable directly instead of via push.
-// viewer.js still owns everything around a mutation: the corpusEditOverlay
+// viewer.ts still owns everything around a mutation: the edit-overlay.ts
 // model/labels, picker-data recompute (inspectorTagPickerData closes over
 // viewer-local tag vocab, so it stays there), selection lookup, IPC
 // persistence, undo, render, and toast on save. additive is always true today

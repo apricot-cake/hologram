@@ -390,14 +390,8 @@ declare global {
     // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
     onPick: ((item: CorpusMenuItem) => CorpusMenuItem[] | void) | null;
   }
-  interface CorpusContextMenu {
-    // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
-    open(model: { items: CorpusMenuItem[]; x: number; y: number }, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | void): void;
-    close(): void;
-    pick(item: CorpusMenuItem): void;
-    get(): CorpusContextMenuModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusContextMenu (the open/close/pick/get/subscribe API) removed — menu.ts
+  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/kind-menu.js — tag-kind (work/character/…) menu ----
   interface CorpusKindMenuRow {
@@ -417,12 +411,8 @@ declare global {
     onPick(kind: string): void;
     onRename(kind: string): void;
   }
-  interface CorpusKindMenu {
-    open(model: CorpusKindMenuModel): void;
-    close(): void;
-    get(): CorpusKindMenuModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusKindMenu (the open/close/get/subscribe API) removed — kind-menu.ts
+  // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/filter-popover.js — date / engagement / poster-date forms ----
   interface CorpusFilterPopoverModel {
@@ -486,13 +476,8 @@ declare global {
     onFolderCreate?(): void;
     [extra: string]: any;
   }
-  interface CorpusInspector {
-    open(model: Omit<CorpusInspectorModel, 'openId'>): void;
-    refresh(partial: Record<string, unknown>): void;
-    close(): void;
-    get(): CorpusInspectorModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusInspector (the open/refresh/close/get/subscribe API) removed —
+  // inspector.ts is a real ES module now, imported directly by its consumers.
   // NOT extending CorpusTagEditorCallbacks — see the comment above that
   // interface for why (renderer/edit-overlay.ts's open() needs a narrowing
   // cast this pass doesn't add; onTagAdd/onTagRemove/onTagToggle/
@@ -575,19 +560,9 @@ declare global {
   interface CorpusConfirmModel extends CorpusConfirmConfig {
     openId: number;
   }
-  interface CorpusConfirm {
-    open(config: CorpusConfirmConfig): void;
-    close(): void;
-    get(): CorpusConfirmModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
-  interface CorpusEditOverlay {
-    open(model: Omit<CorpusEditOverlayModel, 'openId'>): void;
-    refresh(partial: Record<string, unknown>): void;
-    close(): void;
-    get(): CorpusEditOverlayModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // CorpusConfirm / CorpusEditOverlay (the open/close/get/subscribe APIs)
+  // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
+  // directly by their consumers.
 
   // ---- renderer/searchbox.js — viewer registers handlers; island pulls lazily ----
   interface CorpusSearchBoxHandlers {
@@ -691,16 +666,11 @@ declare global {
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGridSource: CorpusPosterGridSource;
     corpusQfPop: CorpusQfPop;
-    corpusContextMenu: CorpusContextMenu;
-    corpusKindMenu: CorpusKindMenu;
     corpusFilterPopover: CorpusFilterPopover;
-    corpusInspector: CorpusInspector;
-    corpusEditOverlay: CorpusEditOverlay;
     corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusRecords: CorpusRecordsApi;
     corpusSelection: CorpusSelectionApi;
-    corpusConfirm: CorpusConfirm;
     corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
     corpusQueryChips: CorpusQueryChipsIsland;

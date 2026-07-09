@@ -1,59 +1,54 @@
 // Context-menu controller — the imperative→declarative bridge for the right-click
-// menus. viewer.js calls corpusContextMenu.open({ items, x, y }, onPick) to show a
+// menus. viewer.ts calls open({ items, x, y }, onPick) to show a
 // glass menu; the context-menu React island subscribes and renders it. Kept SEPARATE
-// from window.corpusStore because the menu carries an onPick CALLBACK (a function),
-// which doesn't belong in the serializable reactive store. Plain IIFE on window (like
-// store.js / search.js); loaded BEFORE viewer.js.
+// from corpusStore because the menu carries an onPick CALLBACK (a function),
+// which doesn't belong in the serializable reactive store. A real ES module (named
+// exports), imported directly by its consumers (viewer.ts / query-chips.ts / ContextMenu.tsx).
 //
 // item shape: { label, act, danger?, checked?, sep?, manage?, ...extra }. onPick(item)
 // runs the viewer-side action; if it RETURNS a new items array the menu stays open and
 // re-renders (toggle rows — e.g. assign-to-folder), otherwise the menu closes.
-(function () {
-  'use strict';
-  let current: CorpusContextMenuModel | null = null; // { items, x, y, onPick } | null
-  const subs = new Set<() => void>();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
+let current: CorpusContextMenuModel | null = null; // { items, x, y, onPick } | null
+const subs = new Set<() => void>();
+const notify = () => {
+  for (const cb of [...subs]) {
+    try {
+      cb();
+    } catch (_e) {
+      /* ignore */
     }
-  };
+  }
+};
 
-  // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as CorpusContextMenu in globals.d.ts)
-  function open(model: { items?: CorpusMenuItem[]; x?: number; y?: number } | null, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | void) {
-    current = { items: (model && model.items) || [], x: (model && model.x) || 0, y: (model && model.y) || 0, onPick: onPick || null };
+// biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as CorpusContextMenu in globals.d.ts)
+export function open(model: { items?: CorpusMenuItem[]; x?: number; y?: number } | null, onPick?: (item: CorpusMenuItem) => CorpusMenuItem[] | void) {
+  current = { items: (model && model.items) || [], x: (model && model.x) || 0, y: (model && model.y) || 0, onPick: onPick || null };
+  notify();
+}
+export function close() {
+  if (current) {
+    current = null;
     notify();
   }
-  function close() {
-    if (current) {
-      current = null;
-      notify();
-    }
+}
+export function pick(item: CorpusMenuItem) {
+  if (!current || !current.onPick) {
+    close();
+    return;
   }
-  function pick(item: CorpusMenuItem) {
-    if (!current || !current.onPick) {
-      close();
-      return;
-    }
-    const ref = current;
-    const next = current.onPick(item);
-    if (current !== ref) return; // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
-    if (Array.isArray(next)) {
-      current = { ...current, items: next };
-      notify();
-    } // stay open, re-render (toggle rows)
-    else close();
-  }
-  function get() {
-    return current;
-  } // stable ref between changes (useSyncExternalStore)
-  function subscribe(cb: () => void) {
-    subs.add(cb);
-    return () => subs.delete(cb);
-  }
-
-  window.corpusContextMenu = { open, close, pick, get, subscribe };
-})();
+  const ref = current;
+  const next = current.onPick(item);
+  if (current !== ref) return; // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
+  if (Array.isArray(next)) {
+    current = { ...current, items: next };
+    notify();
+  } // stay open, re-render (toggle rows)
+  else close();
+}
+export function get() {
+  return current;
+} // stable ref between changes (useSyncExternalStore)
+export function subscribe(cb: () => void) {
+  subs.add(cb);
+  return () => subs.delete(cb);
+}

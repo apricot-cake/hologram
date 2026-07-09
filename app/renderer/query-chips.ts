@@ -15,6 +15,7 @@
 //        standaloneTypes? }  (barEl = the bar's static container: reveal +
 //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
 import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, facetSetNeg, evalNode } from './query.ts';
+import { open as menuOpen } from './menu.ts';
 
 (function () {
   'use strict';
@@ -251,12 +252,12 @@ import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, b
 
     // Right-click a value → 「除外へ移す／含む条件に戻す」＋削除 (fold-menu 様式,
     // right-click = the menu of actions per DESIGN). React-owned glass menu
-    // (window.corpusContextMenu); one bridge serves BOTH builder instances.
+    // (menu.ts); one bridge serves BOTH builder instances.
     function showQbMenu(node: CorpusQueryLeaf, x: number, y: number) {
       const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
       const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
       const items = [{ label: node.neg ? ctx.msg.qbMenuInclude : ctx.msg.qbMenuExclude, act: 'neg', icon: NEG }, { sep: true }, { label: ctx.msg.qfDelete, act: 'del', icon: DEL, danger: true }];
-      window.corpusContextMenu.open({ items, x, y }, (item) => {
+      menuOpen({ items, x, y }, (item) => {
         if (item.act === 'neg') {
           if (ctx.onLeafMutated) ctx.onLeafMutated(node); // an editing text leaf moving to 除く is confirmed
           facetSetNeg(tree, node, !node.neg, facetOpts);

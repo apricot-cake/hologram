@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import { TagEditor } from '../_shared/TagEditor.tsx';
+import { get, subscribe } from '../../renderer/edit-overlay.ts';
 
 // Bulk "add tags to selection" modal body — mirrors the old #editOverlay static
 // markup (label, chips, add-row, picker, cancel/save) but React-owned. The outer
-// #editOverlay backdrop (show/hide, background-click-to-cancel) stays in viewer.js;
+// #editOverlay backdrop (show/hide, background-click-to-cancel) stays in viewer.ts;
 // this renders into the empty #editOverlayBox inside it.
 export function EditOverlay() {
-  const m = useSyncExternalStore(window.corpusEditOverlay.subscribe, window.corpusEditOverlay.get);
+  const m = useSyncExternalStore(subscribe, get);
   if (!m) return null;
   return (
     <>
