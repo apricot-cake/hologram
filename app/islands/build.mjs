@@ -4,7 +4,10 @@
 // these islands are compiled. Replaces the former esbuild bundler.
 //
 //   npm run build:islands   → production: builds every island (imported by the
-//                              app/index.tsx barrel) into ONE renderer/islands/app.js
+//                              app/index.tsx barrel) into ONE renderer/islands/app.js,
+//                              plus two standalone side-effect-only IIFEs that stay
+//                              OUTSIDE that bundle (vendor-react.js, theme.js — see
+//                              each build() call below for why).
 //
 // ALL islands are bundled into a single IIFE via one barrel entry (app/index.tsx
 // side-effect-imports every island). rollup CAN emit IIFE for a single entry, so
@@ -83,6 +86,30 @@ const RESOLVE_ALIAS = [
   { find: /^corpus-svc:(.+)$/, replacement: `${RENDERER_DIR}/$1.ts` },
 ];
 
+// theme.ts stays OUTSIDE the app.js bundle (its own IIFE, next to it): it must
+// run during <head> parse, before first paint, which app.js (loaded at the end
+// of body) can't guarantee — see the load-order comment in renderer/index.html.
+// Built the same way as vendor-react.js above (standalone Vite lib IIFE) so the
+// source can be real TypeScript despite never going through the app.js bundle.
+await build({
+  root: appRoot,
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    outDir: path.join(appRoot, 'renderer'),
+    emptyOutDir: false, // shares the dir with every other renderer/*.ts source — never wipe it
+    target: 'chrome130',
+    minify: true,
+    sourcemap: false,
+    lib: {
+      entry: path.join(appRoot, 'renderer', 'theme.ts'),
+      formats: ['iife'],
+      name: '__corpusTheme', // side-effect only (assigns window.corpusTheme); no exports read
+      fileName: () => 'theme.js',
+    },
+  },
+});
+
 // Build every island as ONE IIFE bundle via the app/index.tsx barrel.
 await build({
   root: appRoot,
@@ -112,4 +139,4 @@ await build({
   },
 });
 
-console.log('[islands] built renderer/islands/{vendor-react,app}.js via Vite lib IIFE');
+console.log('[islands] built renderer/theme.js + renderer/islands/{vendor-react,app}.js via Vite lib IIFE');

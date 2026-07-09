@@ -1,0 +1,115 @@
+{
+  // TypeScript stage 2/3 (BACKLOG 採用#1「残り②」棚卸し 2026-07-09): the
+  // build-less dev-tooling / test-harness layer (pure-unit suites, app-harness
+  // Electron smoke tests, capture/verify CLIs) — the one runtime the earlier
+  // TS-scope declaration (renderer/main/native-host/extension) never named.
+  //
+  // A SIXTH standalone Node runtime, same recipe as native-host/tsconfig.json:
+  // plain `node scripts/foo.cts` (no bundler, no build step), CommonJS
+  // (require/module.exports), Node's native type-stripping erases the
+  // annotations at runtime. .cts (not .mts) because these already are, and
+  // stay, CommonJS — repo root package.json has no "type": "module", and
+  // several of these require() each other and app/renderer/*.ts by relative
+  // path (test-query-unit.cts's require('./strip-ts.cts'), the *-unit.cts
+  // suites' require(path.join(__dirname, '..', 'app', 'renderer', 'X.ts'))).
+  //
+  // noImplicitAny stays OFF (same rationale as main/renderer/native-host):
+  // plain JS-shaped code where internal lambda params would each need
+  // annotation noise.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "esModuleInterop": true,
+    // Enforce the runtime constraint: Node's type stripping only ERASES types,
+    // it cannot transform enums/namespaces/parameter-properties.
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noImplicitAny": false,
+    // Caught errors stay `any` — these scripts report err.message at many
+    // sites; leaving these `any` keeps behavior byte-identical instead of
+    // forcing instanceof Error guards.
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // scripts/ (and the repo root) has no @types/node of its own — point at the
+    // app/ install (shared with tsconfig.main.json / native-host/tsconfig.json)
+    // instead of duplicating an @types/node install here.
+    "typeRoots": ["../app/node_modules/@types"],
+    "types": ["node"]
+  },
+  "files": [
+    "backfill-metadata.cts",
+    "cdp-verify.cts",
+    "e2e-capture-test.cts",
+    "inject-dummy.cts",
+    "make-icons.cts",
+    "run-app-tests.cts",
+    "run-tests.cts",
+    "self-test.cts",
+    "strip-ts.cts",
+    "test-app-backup.cts",
+    "test-app-facetcounts.cts",
+    "test-app-folders.cts",
+    "test-app-hardening.cts",
+    "test-app-hashtags.cts",
+    "test-app-import-dedup.cts",
+    "test-app-instances.cts",
+    "test-app-ipc.cts",
+    "test-app-postfilter.cts",
+    "test-app-recovery.cts",
+    "test-app-render.cts",
+    "test-app-search.cts",
+    "test-app-tabs.cts",
+    "test-app-tagtypes.cts",
+    "test-app-textleaf.cts",
+    "test-app-textleaf-or.cts",
+    "test-app-textleaf-stable.cts",
+    "test-app-users.cts",
+    "test-app-watch.cts",
+    "test-archive-zipbomb.cts",
+    "test-archive-zipslip.cts",
+    "test-avatar-fill.cts",
+    "test-backfill-metadata.cts",
+    "test-backup-guard.cts",
+    "test-bridge.cts",
+    "test-bridge-ssrf.cts",
+    "test-collections-merge.cts",
+    "test-collections-migrate.cts",
+    "test-config-recovery.cts",
+    "test-content-fixtures.cts",
+    "test-contrast-parity.cts",
+    "test-cooc-unit.cts",
+    "test-drag.cts",
+    "test-facets-unit.cts",
+    "test-format-unit.cts",
+    "test-geometry-unit.cts",
+    "test-i18n-parity.cts",
+    "test-imgsize.cts",
+    "test-index.cts",
+    "test-listing-unit.cts",
+    "test-mastodon-url.cts",
+    "test-media.cts",
+    "test-metadata.cts",
+    "test-metadata-correctness.cts",
+    "test-metadata-origin.cts",
+    "test-migrate-unit.cts",
+    "test-parse-url.cts",
+    "test-pixiv.cts",
+    "test-query-unit.cts",
+    "test-records-unit.cts",
+    "test-search-unit.cts",
+    "test-select-posts.cts",
+    "test-tabstate-unit.cts",
+    "test-tag-types.cts",
+    "test-tags-unit.cts",
+    "test-token-parity.cts",
+    "test-typecheck.cts",
+    "test-undo-unit.cts",
+    "test-users-unit.cts",
+    "test-watch-verify.cts"
+  ]
+}

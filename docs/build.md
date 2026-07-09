@@ -54,9 +54,9 @@ electron-builder, win/nsis。
 ブランドの実体はホログラフィック虹色スクエア（ラスター）。**マスター 1 枚から全アイコンを再生成**する＝差し替えが半端にならない仕組み:
 
 1. `assets/icon-master.png` を差し替える（正方・512px 以上推奨）
-2. `app/node_modules/.bin/electron scripts/make-icons.js` を実行
+2. `app/node_modules/.bin/electron scripts/make-icons.cts` を実行
 
-これで以下が一括更新される（`scripts/make-icons.js` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
+これで以下が一括更新される（`scripts/make-icons.cts` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
 - `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.js` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
 - `extension/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（manifest の `icons`/`action.default_icon`）。差し替え後は拡張の再読み込みでツールバーに反映。

@@ -12,6 +12,6 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "node scripts/run-tests.js"
+    "test": "node scripts/run-tests.cts"
   }
 }

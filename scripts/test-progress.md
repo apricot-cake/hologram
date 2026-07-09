@@ -66,16 +66,16 @@
 
 | # | 状態 | 結果メモ |
 |---|------|---------|
-| A-5a | OK | E2E自動（e2e-capture-test.js）。単ページ作品、media1枚原寸保存、API照合PASS |
+| A-5a | OK | E2E自動（e2e-capture-test.cts）。単ページ作品、media1枚原寸保存、API照合PASS |
 | A-5b | OK | E2E自動。複数ページ作品（pages API）、media2枚保存、API照合PASS。★修正検証OK |
 | A-5c | - | |
 | A-5d | OK | E2E自動。ドラッグ保存、imageIndex=1/2、API照合PASS |
 | A-5e | - | ★修正検証（フォールバックcrop） |
 
 > 正常系（A-2b/g/i・A-3b・A-4b・A-5a/b/d）と★回帰（A-2e/f/k・A-3e・A-4e）は
-> `node scripts/e2e-capture-test.js` で全自動検証（実Chrome＋拡張＋ブリッジ→
+> `node scripts/e2e-capture-test.cts` で全自動検証（実Chrome＋拡張＋ブリッジ→
 > **URL一致**＋API照合→後始末）。2026-06-11 拡張v1.1.0＋ランチャ修正後に
 > 全PF（X以外）ALL PASS。★回帰＝引用クリックで引用した側・リプライで本人・
 > アバタードラッグは保存しない（監査の誤帰属修正の回帰防止）。
-> X は要ログインのためデフォルト除外（`node scripts/e2e-capture-test.js x`
+> X は要ログインのためデフォルト除外（`node scripts/e2e-capture-test.cts x`
 > ＝認証済みプロファイルが必要）。引数でPF絞り込み可。

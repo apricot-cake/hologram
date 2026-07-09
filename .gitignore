@@ -10,9 +10,9 @@ app/.ia-*.png
 app/.b1-*.png
 __pycache__/
 # design-brief/ design-export/ は UI 刷新の原資料。実装取り込み済みで作業ツリーからは git rm 済み（git 履歴に残置＝再生成不可だが履歴から復元可）
-# 使い捨てスクリプト/検証スクショは _ 接頭辞で除外するが、検証ハーネス _verify-*.js は追跡する
+# 使い捨てスクリプト/検証スクショは _ 接頭辞で除外（2026-07-09: 旧 _verify-*.js の
+# 追跡例外は廃止＝TS化スコープの棚卸しで手書き .js の温床と判明・20本削除）
 scripts/_*.js
-!scripts/_verify-*.js
 scripts/_*.jpg
 scripts/_*.png
 # 公開前の内部監査メモ（取得方針の棚卸し等）＝公開リポに出さない（gitignore＝ファイルはローカルに保持）

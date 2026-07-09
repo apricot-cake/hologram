@@ -15,10 +15,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 //
 // root is app/ (this directory), NOT renderer/, because the island SOURCES live
 // in app/islands/ — OUTSIDE renderer/. With root=app/ every existing relative URL
-// still resolves: index.html is served at /renderer/index.html, its plain
-// non-module scripts (viewer.js, folders.js, theme.js, …) at /renderer/*,
-// ../vendor/jszip.min.js at /vendor/*, and the island sources at
-// /islands/<name>/index.tsx — all under the same root so Vite serves them.
+// still resolves: index.html is served at /renderer/index.html, jszip at
+// /vendor/*, and the island sources at /islands/<name>/index.tsx — all under the
+// same root so Vite serves them. renderer/theme.js is the one non-module
+// <script src> left (must run pre-paint — see index.html's load-order comment);
+// it's a committed Vite lib-IIFE build output of renderer/theme.ts (islands/
+// build.mjs), same as renderer/islands/vendor-react.js — dev serves whatever
+// copy is on disk as a static file, so `npm run build:islands` after editing
+// theme.ts is what refreshes it (dev has no live-reload path for this one file).
 
 // Matches the committed island <script src="islands/NAME.js"> tags in index.html.
 const ISLAND_SCRIPT = /<script src="islands\/([\w-]+)\.js"><\/script>/g;

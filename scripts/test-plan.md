@@ -36,14 +36,14 @@ python scripts/verify-store.py --recent N
 
 ### 検証手順（半自動フロー）
 
-1. `node scripts/test-select-posts.js` — テスト対象投稿を公開APIから**自動選別**し、セルごとの
+1. `node scripts/test-select-posts.cts` — テスト対象投稿を公開APIから**自動選別**し、セルごとの
    URL・アクション・期待値のセッションシートを出力（毎回実行＝常に生きている投稿が選ばれる）
-2. `node scripts/test-watch-verify.js` — 保存先フォルダを**監視開始**。キャプチャが落ちるたびに
+2. `node scripts/test-watch-verify.cts` — 保存先フォルダを**監視開始**。キャプチャが落ちるたびに
    API再照合（作者/本文/日付/URL形式/メディア数）して PASS/FAIL と test-progress 用の行を出力
 3. シートのURLを開き、Alt+S → クリック（またはドラッグ）
 4. watcher の出力行を test-progress.md に貼る
 
-> 過去キャプチャの一括点検は `node scripts/test-watch-verify.js --recent N`（または
+> 過去キャプチャの一括点検は `node scripts/test-watch-verify.cts --recent N`（または
 > `python scripts/verify-store.py --recent N`）。
 > **完全自動化（次段階・調査済みの方針）**: puppeteer-core で拡張入りChromeを起動し、
 > Service Worker コンテキストに attach して activateOnTab() を直接呼べば Alt+S 相当を
@@ -119,7 +119,7 @@ python scripts/verify-store.py --recent N
 | A-4e | 個別: リプライ | 返信投稿 | isReply=true |
 | A-4f | 個別: 引用（4.4+）★ | 引用プレビュー内をクリック | **引用した側**が保存される（X/Bluesky/Misskeyと同挙動）。isQuote=true・quotedUrl |
 | A-4g | 個別: 複数画像 | 画像2枚以上 | media[] が枚数ぶんDL |
-| A-4h | リモート投稿 | 連合で流れてきた投稿 | canonical URL フォールバック（test-mastodon-url.js の実機版） |
+| A-4h | リモート投稿 | 連合で流れてきた投稿 | canonical URL フォールバック（test-mastodon-url.cts の実機版） |
 
 **Mastodon 固有の確認**: screenName=acct（user@host）。ドラッグ保存は対象外（設計）。
 

@@ -16,13 +16,13 @@
     "ignore": [
       // 生成物（ビルド出力＝コミットされているが手書きでない）
       "app/renderer/islands/**",
+      // 同上（theme.ts の Vite lib IIFE ビルド出力・renderer/theme.ts が手書きソース）
+      "app/renderer/theme.js",
       // ベンダー同梱・ロックファイル・package.json（npm が所有＝再インストールの
       // たびに npm 形式へ書き戻され Biome と書式ピンポンになるため対象外）
       "app/vendor/**",
       "**/package-lock.json",
       "**/package.json",
-      // 使い捨て検証ハーネス（_verify-*.js は追跡されるが lint 対象外）
-      "scripts/_*.js",
       // 並行エージェントセッションの worktree（別チェックアウト＝そちらの
       // ワーキングツリーをこちらの lint が赤にしない）
       ".claude/**"

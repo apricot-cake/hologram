@@ -78,7 +78,7 @@ UI 変更なので実装時はデザイン規約（メモリ `corpus-design`・�
 - `renderQueryChips`（[viewer.js:579](../app/renderer/viewer.js:579)）＝type グルーピング＋per-type
   演算子 select。評価＝[viewer.js:1938](../app/renderer/viewer.js:1938) で型ごとに畳み型間 AND。
   `activeFilters`（`mode` 廃止）＋ `typeOps`。i18n / CSS / DESIGN.md 追従済み。
-  検証: `scripts/_verify-tagmix.js`（or/and/not）・`test-app-postfilter.js` PASS。
+  検証: `scripts/_verify-tagmix.js`（or/and/not）・`test-app-postfilter.cts` PASS。
 
 ---
 
@@ -127,7 +127,7 @@ UI 変更なので実装時はデザイン規約（メモリ `corpus-design`・�
    詳細モード中はサイドバーのフライアウト値はルートグループへ追加。
 
 検証: `scripts/_verify-tree.js`（跨ぎOR=3／AND=1／要約／編集）・`_verify-tagmix.js`
-（ファセット回帰）・`test-app-postfilter.js` いずれも PASS。
+（ファセット回帰）・`test-app-postfilter.cts` いずれも PASS。
 
 未磨き（既知・任意の追い込み）: ① サイドバーのピン/フォルダ“チップ”は詳細モードでまだ
 faceted 経路（行→フライアウトはルート追加で動く）。② フライアウトのチェックはルート直下
@@ -157,7 +157,7 @@ UI（グループ箱パネル `.qb-panel` ＋ 詳細/編集入口 ＋ qfPop pick
 > 追加に統一。**連結語クリックでトグル**＋**忠実版ドロップ判定**（ユーザー選択 2026-06-19）。
 > 旧タブ状態（`f`+`ops`・`tree` 無し）は `facetTreeFrom()` で移行。
 > 検証: `scripts/_verify-tagmix.js`（トップ階層AND既定・連結語トグル・≠否定）・
-> `_verify-tree.js`（ドラッグでの跨ぎOR・パネル不在）・`test-app-postfilter.js` いずれも PASS。
+> `_verify-tree.js`（ドラッグでの跨ぎOR・パネル不在）・`test-app-postfilter.cts` いずれも PASS。
 
 ### スコープ
 - **クエリビルダーの中だけ**の再設計。サイドバー（種類別の入口＝条件のピッカー）は不変。

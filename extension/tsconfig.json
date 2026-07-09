@@ -10,7 +10,7 @@
   // still importScripts()'s metadata.ts's compiled output, content_scripts
   // still loads i18n.js/drag.js as separate globally-scoped files, and
   // metadata.ts keeps its dual browser-global / Node module.exports shape
-  // (required directly by scripts/backfill-metadata.js etc. — see
+  // (required directly by scripts/backfill-metadata.cts etc. — see
   // dist/metadata.js). TS only emits CommonJS boilerplate (`exports`/`require`)
   // for files it detects as modules (via import/export); with none present
   // here, tsc auto-detects "script" and emits plain global code — using TS's

@@ -28,7 +28,7 @@
     "renderer/i18n.ts",
     "renderer/ui.ts",
     "renderer/ipc.ts",
-    "renderer/theme.js",
+    "renderer/theme.ts",
     "renderer/bridge.ts",
     "renderer/search.ts",
     "renderer/menu.ts",
