@@ -11,7 +11,6 @@ Corpus = SNS投稿を画像・メタデータごとローカル保存し検索�
 - テストは`CORPUS_CONFIG_DIR=<tmp>`でサンドボックス化（Electronスモークは`CORPUS_SMOKE=1`）
 
 # ルール
-- UI変更はデザイン規約＝メモリ`corpus-design`（旧DESIGN.md・repo外）準拠
 - lint/format＝Biome（`npm run lint`／1.9.4完全固定・設定と固定理由は biome.jsonc）
 - 反映: renderer=自動／native-host=`~/.corpus`へコピーで反映（再起動不要）／mainプロセスのみ再起動要（詳細docs/build.md）
 - 私個人ライブラリの事情に合わせた機能開発はしない。一般ユーザーにも有用な機能、もしくは単なるライブラリの整理や修正ならOK。
