@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { dispatch as qcDispatch, getModel as qcGetModel, subscribe as qcSubscribe } from '../../renderer/query-chips.ts';
 import { Chips } from './Chips.tsx';
 import type { ChipsAction, ChipsModel, QbCluster, QbItem } from './Chips.tsx';
 
@@ -102,9 +103,9 @@ function AnimatedChips({ model, dispatch }: { model: ChipsModel | null | undefin
 // keyed by container id; this just reads through useSyncExternalStore and binds
 // dispatch to the same key so clicks route back to the owning builder instance.
 export function ChipsHost({ id }: { id: string }) {
-  const subscribe = (cb: () => void) => window.corpusQueryChips.subscribe(id, cb);
-  const getSnapshot = () => window.corpusQueryChips.getModel(id) as ChipsModel | null;
+  const subscribe = (cb: () => void) => qcSubscribe(id, cb);
+  const getSnapshot = () => qcGetModel(id) as ChipsModel | null;
   const model = useSyncExternalStore(subscribe, getSnapshot);
-  const dispatch = (action: ChipsAction) => window.corpusQueryChips.dispatch(id, action);
+  const dispatch = (action: ChipsAction) => qcDispatch(id, action);
   return model ? <AnimatedChips model={model} dispatch={dispatch} /> : null;
 }

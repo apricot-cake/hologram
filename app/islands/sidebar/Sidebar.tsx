@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { corpusPostSidebarSource } from '../../renderer/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
 import { getTagLabels } from '../../renderer/tags.ts';
 import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
@@ -54,10 +55,10 @@ const TAIL_ROWS = ['hashtag', 'tag'] as const;
 // grid/image-tab/tabs sources), which would trip React's "cached snapshot" tearing check
 // — a plain subscribe→setState effect (same shape as ImageTabHost) sidesteps that.
 export function Sidebar() {
-  const [m, setM] = useState(() => window.corpusPostSidebarSource.get());
+  const [m, setM] = useState(() => corpusPostSidebarSource.get());
   useEffect(() => {
-    const sync = () => setM(window.corpusPostSidebarSource.get());
-    const unsub = window.corpusPostSidebarSource.subscribe(sync);
+    const sync = () => setM(corpusPostSidebarSource.get());
+    const unsub = corpusPostSidebarSource.subscribe(sync);
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);

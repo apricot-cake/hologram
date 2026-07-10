@@ -270,11 +270,8 @@ declare global {
     closeTitle?: string;
     newTitle?: string;
   }
-  interface CorpusTabsSource {
-    configure(cfg: { tabTitleOf: (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string }; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string }): void;
-    get(): CorpusTabsModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // renderer/tabs.ts — a real ES module (named export: corpusTabsSource) now,
+  // imported directly by tabs/index.tsx.
 
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
   interface CorpusAnchorRect {
@@ -457,10 +454,8 @@ declare global {
     badges: Record<string, number>; // per-row active leaf count (poster query shadow)
     visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
   }
-  interface CorpusSidebarSource<T> {
-    get(): T | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // renderer/sidebar.ts — a real ES module (named exports: corpusPostSidebarSource/
+  // corpusPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
 
   // ---- #selectionBar bulk-action bar. viewer keeps the container's show/hide + the
   // delegated #selectionBar click handler (data-act); SelectionBar.tsx (P4-B slice⑱)
@@ -518,20 +513,8 @@ declare global {
     close(): void;
     isOpen(): boolean;
   }
-  // Renderer-registered now (renderer/query-chips.ts) — P4-B スライス⑦ event半分
-  // moved the tree state, qbNodeMap, and click/contextmenu dispatch out of
-  // viewer.js's createQueryBuilder into this dedicated service. `create` builds
-  // one builder instance (loosely typed — CorpusQueryGroup/Leaf live only in
-  // renderer-globals.d.ts, which the islands project doesn't see); `getModel`/
-  // `subscribe` back the query-chips island's useSyncExternalStore, `dispatch`
-  // routes a click/contextmenu action (see Chips.tsx's ChipsAction) to the
-  // instance owning that container id.
-  interface CorpusQueryChipsIsland {
-    create(ctx: any): any;
-    getModel(id: string): any;
-    subscribe(id: string, cb: () => void): () => void;
-    dispatch(id: string, action: any): void;
-  }
+  // renderer/query-chips.ts — a real ES module (named exports: createQueryBuilder/
+  // getModel/subscribe/dispatch) now, imported directly by query-chips/index.tsx.
   interface CorpusLightbox {
     open(items: any[], start?: number): void;
     close(): void;
@@ -560,13 +543,9 @@ declare global {
     corpusIpc: CorpusPreload;
     corpusStore: CorpusStore;
     corpusViewer?: CorpusViewer;
-    corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
-    corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusSettings: CorpusSettings;
-    corpusQueryChips: CorpusQueryChipsIsland;
     corpusLightbox: CorpusLightbox;
     corpusImageTabSource: CorpusImageTabSource;
-    corpusTabsSource: CorpusTabsSource;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
     React: typeof import('react');

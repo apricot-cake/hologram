@@ -40,7 +40,6 @@ import 'corpus-svc:ipc';
 import 'corpus-svc:records';
 import 'corpus-svc:tags';
 import 'corpus-svc:tab-state';
-import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';
 // Wave 2 = infra + UI bridges (store/bridge before their consumers filter-popover/
 // qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-popover
@@ -50,8 +49,6 @@ import 'corpus-svc:trash';
 // ES modules now, imported directly by their consumers (no barrel entry needed).
 import 'corpus-svc:store';
 import 'corpus-svc:image-tab';
-import 'corpus-svc:tabs';
-import 'corpus-svc:sidebar';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

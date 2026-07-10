@@ -29,74 +29,72 @@
 // Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
 import { buildShadow } from './query.ts';
 
-(function () {
-  'use strict';
+type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
+type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string };
 
-  type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
+let tabTitleOf: TabTitleOf | null = null;
+let tabIcons: Record<string, string> | null = null;
+let pinSvg = '';
+let closeTitle = '';
+let newTitle = '';
 
-  let tabTitleOf: TabTitleOf | null = null;
-  let tabIcons: Record<string, string> | null = null;
-  let pinSvg = '';
-  let closeTitle = '';
-  let newTitle = '';
-
-  const subs = new Set<() => void>();
-  const notify = () => {
-    for (const cb of [...subs]) {
-      try {
-        cb();
-      } catch (_e) {
-        /* ignore */
-      }
+const subs = new Set<() => void>();
+const notify = () => {
+  for (const cb of [...subs]) {
+    try {
+      cb();
+    } catch (_e) {
+      /* ignore */
     }
-  };
-
-  const isImageTab = (t: CorpusTab) => !!t && t.type === 'image';
-
-  // Mirrors what postQB.shadow() computes internally, from the SAME mirrored
-  // tree (P4-B slice⑦ state-half) — no second shadow copy lives in the store.
-  function liveActiveState() {
-    const tree = window.corpusStore.get('postQueryTree');
-    return {
-      f: tree ? buildShadow(tree) : [],
-      search: window.corpusStore.get('searchQuery') || '',
-      sort: window.corpusStore.get('sortPost'),
-      multi: !!window.corpusStore.get('multiOnly'),
-    };
   }
+};
 
-  function get(): CorpusTabsModel | null {
-    const tt = tabTitleOf;
-    const icons = tabIcons;
-    if (!tt || !icons) return null;
-    const rawTabs: CorpusTab[] | undefined = window.corpusStore.get('tabs');
-    if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
-    const activeTabId = window.corpusStore.get('activeTabId');
-    const editingId = window.corpusStore.get('tabEditingId') || null;
-    const allCount = window.corpusStore.get('allPostsCount') || 0;
-    const tabs = rawTabs.map((t) => {
-      const isActive = t.id === activeTabId;
-      const s = isImageTab(t) ? {} : isActive ? liveActiveState() : t.state || {};
-      const derived = tt(s, { allCount });
-      const icon = t.pinned ? pinSvg : isImageTab(t) ? icons.media : icons[derived.iconType] || icons.all;
-      return { id: t.id, title: t.title || derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
-    });
-    return { tabs, editingId, closeTitle, newTitle };
-  }
+const isImageTab = (t: CorpusTab) => !!t && t.type === 'image';
 
-  window.corpusTabsSource = {
-    configure(cfg) {
-      tabTitleOf = cfg.tabTitleOf;
-      tabIcons = cfg.tabIcons;
-      pinSvg = cfg.pinSvg;
-      closeTitle = cfg.closeTitle || '';
-      newTitle = cfg.newTitle || '';
-    },
-    get,
-    subscribe(cb) {
-      subs.add(cb);
-      return () => subs.delete(cb);
-    },
+// Mirrors what postQB.shadow() computes internally, from the SAME mirrored
+// tree (P4-B slice⑦ state-half) — no second shadow copy lives in the store.
+function liveActiveState() {
+  const tree = window.corpusStore.get('postQueryTree');
+  return {
+    f: tree ? buildShadow(tree) : [],
+    search: window.corpusStore.get('searchQuery') || '',
+    sort: window.corpusStore.get('sortPost'),
+    multi: !!window.corpusStore.get('multiOnly'),
   };
-  for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount']) window.corpusStore.subscribe(k, notify);
-})();
+}
+
+function get(): CorpusTabsModel | null {
+  const tt = tabTitleOf;
+  const icons = tabIcons;
+  if (!tt || !icons) return null;
+  const rawTabs: CorpusTab[] | undefined = window.corpusStore.get('tabs');
+  if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
+  const activeTabId = window.corpusStore.get('activeTabId');
+  const editingId = window.corpusStore.get('tabEditingId') || null;
+  const allCount = window.corpusStore.get('allPostsCount') || 0;
+  const tabs = rawTabs.map((t) => {
+    const isActive = t.id === activeTabId;
+    const s = isImageTab(t) ? {} : isActive ? liveActiveState() : t.state || {};
+    const derived = tt(s, { allCount });
+    const icon = t.pinned ? pinSvg : isImageTab(t) ? icons.media : icons[derived.iconType] || icons.all;
+    return { id: t.id, title: t.title || derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+  });
+  return { tabs, editingId, closeTitle, newTitle };
+}
+
+export const corpusTabsSource = {
+  configure(cfg: TabsConfig) {
+    tabTitleOf = cfg.tabTitleOf;
+    tabIcons = cfg.tabIcons;
+    pinSvg = cfg.pinSvg;
+    closeTitle = cfg.closeTitle || '';
+    newTitle = cfg.newTitle || '';
+  },
+  get,
+  subscribe(cb: () => void): () => void {
+    subs.add(cb);
+    return () => subs.delete(cb);
+  },
+};
+for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount']) window.corpusStore.subscribe(k, notify);
+

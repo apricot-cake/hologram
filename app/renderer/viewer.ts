@@ -32,6 +32,8 @@ import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
+import { createQueryBuilder } from './query-chips.ts';
+import { corpusTabsSource } from './tabs.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -1193,7 +1195,6 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
   // directly instead of viewer.js pushing a model and delegating raw DOM
   // events. viewer.js keeps constructing instances (below) and the
   // orchestration around a change (onChange/openLeafEditor/onClearSearch).
-  const createQueryBuilder = window.corpusQueryChips.create;
   // i18n strings the builder needs for labels/menus — resolved once here (MSG
   // is a viewer.js-local construct) and passed in via ctx.msg since
   // query-chips.ts has no access to viewer.js's i18n binding.
@@ -1218,7 +1219,7 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
   // postQB.shadow() directly instead of maintaining a second copy.
   const postQB = createQueryBuilder({
     msg: qbMsg,
-    container: document.getElementById('queryChips'),
+    container: document.getElementById('queryChips')!,
     storeKey: 'postQueryTree',
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: postPredOf,
@@ -1615,14 +1616,14 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => scrollContentTo(y)));
   }
-  // Model derivation (title/icon/editing state) moved to renderer/tabs.ts
-  // (window.corpusTabsSource, P4-B slice⑯) — it pulls from the SAME corpusStore
+  // Model derivation (title/icon/editing state) moved to renderer/tabs.ts's
+  // corpusTabsSource (P4-B slice⑯) — it pulls from the SAME corpusStore
   // keys every mutation below already writes (tabs/activeTabId/tabEditingId, plus
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
   // tab's derived title), so nothing here builds a model or pushes one anymore.
   // The pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-  window.corpusTabsSource.configure({ tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: MSG.tabClose, newTitle: MSG.tabNew });
+  corpusTabsSource.configure({ tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: MSG.tabClose, newTitle: MSG.tabNew });
   function switchTab(id: string) {
     if (id === getActiveTabId()) return;
     saveActiveTabState();
@@ -3350,7 +3351,7 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
   // so it's removed outright rather than converted to a read site.
   const posterQB = createQueryBuilder({
     msg: qbMsg,
-    container: document.getElementById('posterQueryChips'),
+    container: document.getElementById('posterQueryChips')!,
     storeKey: 'posterQueryTree',
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     predOf: posterPredOf,

@@ -7,7 +7,7 @@
 // old "a <button> can't contain the .tab-close button" HTML-parser hazard — it
 // builds the DOM via createElement.)
 
-// The strip model TabsHost pulls from renderer/tabs.ts (window.corpusTabsSource).
+// The strip model TabsHost pulls from renderer/tabs.ts's corpusTabsSource.
 export interface TabModel {
   id: string;
   title: string;

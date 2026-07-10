@@ -40,135 +40,135 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
 import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
 import { clipCount as foldersClipCount, onChange as foldersOnChange } from './folders.ts';
 
-(function () {
-  'use strict';
+type SidebarSource<T> = { get(): T | null; subscribe(cb: () => void): CorpusUnsubscribe };
 
-  function computePostModel(): CorpusSidebarModel {
-    const activeFilters = buildShadow(window.corpusStore.get('postQueryTree'));
-    // Per-category active-filter counts. Instance filters live inside the platform
-    // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
-    // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
-    const badges: Record<string, number> = {};
-    for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
-    badges.platform = (badges.platform || 0) + (badges.instance || 0);
-    let tagWork = 0,
-      tagChar = 0,
-      tagGen = 0;
-    for (const f of activeFilters)
-      if (f.type === 'tag') {
-        const k = tagKindOf ? tagKindOf(f.value) : null;
-        if (k === 'work') tagWork++;
-        else if (k === 'character') tagChar++;
-        else tagGen++;
-      }
-    badges.tag = tagGen;
-    badges.work = tagWork;
-    badges.character = tagChar;
-    const posts = getPostsData();
-    // 作品/キャラ rows are progressively disclosed — shown only once at least one tag
-    // wears that 種別 (zero trace for people who just save posts).
-    let hasWork = false,
-      hasChar = false;
-    if (tagKindOf) {
-      const tagset = new Set<string>(posts.flatMap((p) => p.tags || []));
-      for (const t of tagset) {
-        const k = tagKindOf(t);
-        if (k === 'work') hasWork = true;
-        else if (k === 'character') hasChar = true;
-        if (hasWork && hasChar) break;
+function computePostModel(): CorpusSidebarModel {
+  const activeFilters = buildShadow(window.corpusStore.get('postQueryTree'));
+  // Per-category active-filter counts. Instance filters live inside the platform
+  // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
+  // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
+  const badges: Record<string, number> = {};
+  for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
+  badges.platform = (badges.platform || 0) + (badges.instance || 0);
+  let tagWork = 0,
+    tagChar = 0,
+    tagGen = 0;
+  for (const f of activeFilters)
+    if (f.type === 'tag') {
+      const k = tagKindOf ? tagKindOf(f.value) : null;
+      if (k === 'work') tagWork++;
+      else if (k === 'character') tagChar++;
+      else tagGen++;
+    }
+  badges.tag = tagGen;
+  badges.work = tagWork;
+  badges.character = tagChar;
+  const posts = getPostsData();
+  // 作品/キャラ rows are progressively disclosed — shown only once at least one tag
+  // wears that 種別 (zero trace for people who just save posts).
+  let hasWork = false,
+    hasChar = false;
+  if (tagKindOf) {
+    const tagset = new Set<string>(posts.flatMap((p) => p.tags || []));
+    for (const t of tagset) {
+      const k = tagKindOf(t);
+      if (k === 'work') hasWork = true;
+      else if (k === 'character') hasChar = true;
+      if (hasWork && hasChar) break;
+    }
+  }
+  // クリップ: count library-wide clipped posts; the row is active when its filter is on.
+  const existing = new Set<string>(posts.map((p) => p.captureId));
+  const clipCount = foldersClipCount(existing);
+  const qfCat = window.corpusStore.get('qfCat');
+  return {
+    // Only post-side flyout rows carry .qf-open (poster rows read their own half below).
+    openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
+    clip: {
+      active: activeFilters.some((f) => f.type === 'clip'),
+      count: clipCount,
+      clearVisible: clipCount > 0,
+    },
+    multi: { active: !!window.corpusStore.get('multiOnly') },
+    badges,
+    visible: { work: hasWork, character: hasChar },
+  };
+}
+
+function computePosterModel(): CorpusPosterSidebarModel {
+  const kindOf = (v: string) => (tagKindOf ? tagKindOf(v) : null);
+  const vocab = posterFilterVocab ? posterFilterVocab() : [];
+  const named = namedPosters ? namedPosters() : [];
+  const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
+  // Row badges count the matching leaves in the poster query tree (shadow).
+  const leaves = buildShadow(window.corpusStore.get('posterQueryTree'));
+  const tagLeaves = leaves.filter((f) => f.type === 'tag');
+  const badges: Record<string, number> = {
+    'poster-platform': leaves.filter((f) => f.type === 'platform').length,
+    'poster-work': tagLeaves.filter((f) => kindOf(f.value) === 'work').length,
+    'poster-character': tagLeaves.filter((f) => kindOf(f.value) === 'character').length,
+    'poster-tag': tagLeaves.filter((f) => !kindOf(f.value)).length,
+    'poster-instance': leaves.filter((f) => f.type === 'instance').length,
+    'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
+    'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
+  };
+  const qfCat = window.corpusStore.get('qfCat');
+  return {
+    // Only poster-side flyout rows carry .qf-open here (post rows read their own half above).
+    openCat: qfCat && String(qfCat).startsWith('poster-') ? qfCat : null,
+    badges,
+    // 段階的開示: reveal a row only when posters actually carry that kind of value.
+    visible: {
+      work: vocab.some((t) => kindOf(t) === 'work'),
+      character: vocab.some((t) => kindOf(t) === 'character'),
+      tag: vocab.some((t) => !kindOf(t)),
+      instance: instPresent.size > 0,
+    },
+  };
+}
+
+// Each source wires its own upstream subscriptions ONCE at module load (mirrors
+// grid.ts) rather than per subscribe() caller — there's a single consumer (the
+// island) in practice, but this avoids stacking duplicates if that changes. `wire`
+// is the list of "register this notify callback" calls the source's own compute()
+// depends on — store keys plus whichever services it reads.
+function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>): SidebarSource<T> {
+  const subs = new Set<() => void>();
+  const notify = () => {
+    for (const cb of [...subs]) {
+      try {
+        cb();
+      } catch (_e) {
+        /* ignore */
       }
     }
-    // クリップ: count library-wide clipped posts; the row is active when its filter is on.
-    const existing = new Set<string>(posts.map((p) => p.captureId));
-    const clipCount = foldersClipCount(existing);
-    const qfCat = window.corpusStore.get('qfCat');
-    return {
-      // Only post-side flyout rows carry .qf-open (poster rows read their own half below).
-      openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
-      clip: {
-        active: activeFilters.some((f) => f.type === 'clip'),
-        count: clipCount,
-        clearVisible: clipCount > 0,
-      },
-      multi: { active: !!window.corpusStore.get('multiOnly') },
-      badges,
-      visible: { work: hasWork, character: hasChar },
-    };
-  }
+  };
+  for (const w of wire) w(notify);
+  return {
+    get: compute,
+    subscribe(cb) {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+  };
+}
 
-  function computePosterModel(): CorpusPosterSidebarModel {
-    const kindOf = (v: string) => (tagKindOf ? tagKindOf(v) : null);
-    const vocab = posterFilterVocab ? posterFilterVocab() : [];
-    const named = namedPosters ? namedPosters() : [];
-    const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
-    // Row badges count the matching leaves in the poster query tree (shadow).
-    const leaves = buildShadow(window.corpusStore.get('posterQueryTree'));
-    const tagLeaves = leaves.filter((f) => f.type === 'tag');
-    const badges: Record<string, number> = {
-      'poster-platform': leaves.filter((f) => f.type === 'platform').length,
-      'poster-work': tagLeaves.filter((f) => kindOf(f.value) === 'work').length,
-      'poster-character': tagLeaves.filter((f) => kindOf(f.value) === 'character').length,
-      'poster-tag': tagLeaves.filter((f) => !kindOf(f.value)).length,
-      'poster-instance': leaves.filter((f) => f.type === 'instance').length,
-      'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
-      'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
-    };
-    const qfCat = window.corpusStore.get('qfCat');
-    return {
-      // Only poster-side flyout rows carry .qf-open here (post rows read their own half above).
-      openCat: qfCat && String(qfCat).startsWith('poster-') ? qfCat : null,
-      badges,
-      // 段階的開示: reveal a row only when posters actually carry that kind of value.
-      visible: {
-        work: vocab.some((t) => kindOf(t) === 'work'),
-        character: vocab.some((t) => kindOf(t) === 'character'),
-        tag: vocab.some((t) => !kindOf(t)),
-        instance: instPresent.size > 0,
-      },
-    };
-  }
+const byKey = (k: string) => (cb: () => void) => window.corpusStore.subscribe(k, cb);
 
-  // Each source wires its own upstream subscriptions ONCE at module load (mirrors
-  // grid.ts) rather than per subscribe() caller — there's a single consumer (the
-  // island) in practice, but this avoids stacking duplicates if that changes. `wire`
-  // is the list of "register this notify callback" calls the source's own compute()
-  // depends on — store keys plus whichever services it reads.
-  function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>): CorpusSidebarSource<T> {
-    const subs = new Set<() => void>();
-    const notify = () => {
-      for (const cb of [...subs]) {
-        try {
-          cb();
-        } catch (_e) {
-          /* ignore */
-        }
-      }
-    };
-    for (const w of wire) w(notify);
-    return {
-      get: compute,
-      subscribe(cb) {
-        subs.add(cb);
-        return () => subs.delete(cb);
-      },
-    };
-  }
+export const corpusPostSidebarSource = makeSource(computePostModel, [
+  byKey('postQueryTree'),
+  byKey('multiOnly'),
+  byKey('qfCat'),
+  (cb) => onChange(cb),
+  subscribePostsData,
+  (cb) => foldersOnChange(cb), // clip state (count/active) is folders-owned
+]);
 
-  const byKey = (k: string) => (cb: () => void) => window.corpusStore.subscribe(k, cb);
+export const corpusPosterSidebarSource = makeSource(computePosterModel, [
+  byKey('posterQueryTree'),
+  byKey('qfCat'),
+  (cb) => onChange(cb),
+  subscribePostsData, // namedPosters()/buildUsers() read allPosts
+  // No corpusFolders subscription — poster badges/visible never depend on clip state.
+]);
 
-  window.corpusPostSidebarSource = makeSource(computePostModel, [
-    byKey('postQueryTree'),
-    byKey('multiOnly'),
-    byKey('qfCat'),
-    (cb) => onChange(cb),
-    subscribePostsData,
-    (cb) => foldersOnChange(cb), // clip state (count/active) is folders-owned
-  ]);
-  window.corpusPosterSidebarSource = makeSource(computePosterModel, [
-    byKey('posterQueryTree'),
-    byKey('qfCat'),
-    (cb) => onChange(cb),
-    subscribePostsData, // namedPosters()/buildUsers() read allPosts
-    // No corpusFolders subscription — poster badges/visible never depend on clip state.
-  ]);
-})();

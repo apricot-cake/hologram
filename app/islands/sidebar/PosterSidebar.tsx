@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
+import { corpusPosterSidebarSource } from '../../renderer/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
 import { getTagLabels } from '../../renderer/tags.ts';
 import { Row } from './parts.tsx';
@@ -44,10 +45,10 @@ function rowLabel(cat: string): string {
 // grid/image-tab/tabs sources), which would trip React's "cached snapshot" tearing check
 // — a plain subscribe→setState effect (same shape as ImageTabHost) sidesteps that.
 export function PosterSidebar() {
-  const [m, setM] = useState(() => window.corpusPosterSidebarSource.get());
+  const [m, setM] = useState(() => corpusPosterSidebarSource.get());
   useEffect(() => {
-    const sync = () => setM(window.corpusPosterSidebarSource.get());
-    const unsub = window.corpusPosterSidebarSource.subscribe(sync);
+    const sync = () => setM(corpusPosterSidebarSource.get());
+    const unsub = corpusPosterSidebarSource.subscribe(sync);
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);
