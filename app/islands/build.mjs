@@ -88,11 +88,13 @@ const RESOLVE_ALIAS = [
   { find: /^corpus-svc:(.+)$/, replacement: `${RENDERER_DIR}/$1.ts` },
 ];
 
-// theme.ts stays OUTSIDE the app.js bundle (its own IIFE, next to it): it must
-// run during <head> parse, before first paint, which app.js (loaded at the end
-// of body) can't guarantee — see the load-order comment in renderer/index.html.
-// Built the same way as vendor-react.js above (standalone Vite lib IIFE) so the
-// source can be real TypeScript despite never going through the app.js bundle.
+// theme.ts is the pre-paint FOUC boot (set [data-theme] before first paint). It stays
+// OUTSIDE the app.js bundle (its own IIFE, next to it): it must run during <head> parse,
+// before first paint, which app.js (loaded at the end of body) can't guarantee — see the
+// load-order comment in renderer/index.html. Built the same way as vendor-react.js above
+// (standalone Vite lib IIFE) so the source can be real TypeScript despite never going
+// through the app.js bundle. It publishes no window global; the LIVE theme runtime API
+// (apply/get/set/resolve/applyTitleBar) is renderer/theme-api.ts, folded into app.js.
 await build({
   root: appRoot,
   configFile: false,
@@ -106,7 +108,7 @@ await build({
     lib: {
       entry: path.join(appRoot, 'renderer', 'theme.ts'),
       formats: ['iife'],
-      name: '__corpusTheme', // side-effect only (assigns window.corpusTheme); no exports read
+      name: '__corpusTheme', // side-effect only (pre-paint [data-theme] boot); no window global, no exports read
       fileName: () => 'theme.js',
     },
   },

@@ -62,14 +62,9 @@ declare global {
   // ---- renderer/ui.ts — notify/escapeHtml. A real ES module (named exports)
   // now — no ambient Window-shaped interface needed.
 
-  // ---- renderer/theme.js ----
-  interface CorpusTheme {
-    apply(pref: string): void;
-    get(): string;
-    set(pref: string, persist?: boolean): void;
-    resolve(): string;
-    applyTitleBar(open?: boolean): void;
-  }
+  // ---- renderer/theme-api.ts — apply/get/set/resolve/applyTitleBar. A real ES module
+  // (named exports) now — no ambient Window-shaped interface needed. The pre-paint
+  // renderer/theme.js boot publishes no window global.
 
   // ---- renderer/folders.js — shared post-folder domain. The full CorpusFoldersApi
   // shape (18 methods) lives in renderer/types/renderer-globals.d.ts; only onChange
@@ -648,7 +643,6 @@ declare global {
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
-    corpusTheme?: CorpusTheme;
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGridSource: CorpusPosterGridSource;

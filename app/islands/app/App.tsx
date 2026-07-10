@@ -25,6 +25,7 @@ import { TabsHost } from '../tabs/index.tsx';
 import { Toolbar } from '../toolbar/index.tsx';
 import { t } from '../_shared/i18n.ts';
 import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
+import { applyTitleBar } from '../../renderer/theme-api.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
@@ -93,7 +94,7 @@ function ModalChrome() {
       const open = ids.some((id) => visible(document.getElementById(id)));
       document.documentElement.classList.toggle('modal-open', open);
       document.body.classList.toggle('modal-open', open);
-      window.corpusTheme?.applyTitleBar?.(open);
+      applyTitleBar(open);
     };
     const observers = ids
       .map((id) => document.getElementById(id))
