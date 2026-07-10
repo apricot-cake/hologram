@@ -150,36 +150,15 @@ interface CorpusSelectionApi {
 // (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭).
 // A real ES module (named exports) now — no ambient Window-shaped interface needed.
 
-// ---- renderer/facets.js — facet counts + value-flyout row models ----
+// ---- renderer/facets.ts — facet counts + value-flyout row models. makeFacets
+// (facets.ts) and makeCooc (cooc.ts) are real ES modules (named exports) now; only
+// CorpusQfRow stays here as a cross-module value-flyout row shape. ----
 interface CorpusQfRow {
   v?: string;
   l?: string;
   on?: boolean;
   count?: number;
   [k: string]: any;
-}
-interface CorpusFacetsApi {
-  /** Everything comes in as functions: reassigned viewer lets are getters, later consts are deferred arrows (TDZ). */
-  makeFacets(deps: { [k: string]: any }): {
-    // Population is usually a post pool, but the poster-scoped rows (poster-tag /
-    // poster-work / poster-character / poster-platform / poster-instance /
-    // poster-folder) pass filteredPosters() and key off a CorpusUserAgg instead.
-    facetCounts(keyFn: (p: CorpusPost) => string | string[] | null | undefined): Map<string, number>;
-    facetCounts<T extends CorpusUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
-    qfValues(cat: string): CorpusQfRow[];
-  };
-  PF_ORDER: string[];
-}
-
-// ---- renderer/cooc.js — tag co-occurrence math ----
-interface CorpusCoocApi {
-  makeCooc(deps: { allPosts(): CorpusPost[]; tagKindOf(tag: string): string | null | undefined }): {
-    /** [characterTag, sharedPostCount] pairs, most-frequent first. */
-    charCandidatesFor(workTags: string[] | null | undefined): Array<[string, number]>;
-    worksCooccurringWith(charTag: string, excludeIds?: Set<string> | null): Set<string>;
-    /** Weak tier: {tag, withTag, count} rows, count-desc, capped. */
-    relatedTagCandidates(selectedTags: ReadonlyArray<string> | null | undefined, opts?: { minCount?: number; limit?: number; exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
-  };
 }
 
 // ---- renderer/tags.js — tag vocabulary / 種別 (kind) domain (read-side
@@ -427,8 +406,6 @@ interface CorpusFoldersApi {
 
 interface Window {
   corpusRecords: CorpusRecordsApi;
-  corpusFacets: CorpusFacetsApi;
-  corpusCooc: CorpusCoocApi;
   corpusTags: CorpusTagsApi;
   corpusTabState: CorpusTabStateApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;

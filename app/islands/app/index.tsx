@@ -39,8 +39,6 @@
 import 'corpus-svc:ipc';
 import 'corpus-svc:search';
 import 'corpus-svc:records';
-import 'corpus-svc:facets';
-import 'corpus-svc:cooc';
 import 'corpus-svc:tags';
 import 'corpus-svc:tab-state';
 import 'corpus-svc:query-chips';
@@ -56,13 +54,11 @@ import 'corpus-svc:posts';
 import 'corpus-svc:i18n';
 import 'corpus-svc:folders';
 import 'corpus-svc:store';
-import 'corpus-svc:searchbox';
 import 'corpus-svc:grid';
 import 'corpus-svc:image-tab';
 import 'corpus-svc:tabs';
 import 'corpus-svc:sidebar';
 import 'corpus-svc:selection';
-import 'corpus-svc:about-icon';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
+import { mount as mountAboutIcon } from '../../../renderer/about-icon.ts';
 
 // このアプリについて: the live holographic icon over name / version / build meta.
 interface AppInfo {
@@ -18,8 +19,8 @@ export function About() {
   // visibility (IntersectionObserver) and tears down rAF/observers on destroy(),
   // so the React unmount cleanup is just handle.destroy().
   useEffect(() => {
-    if (!canvasRef.current || !window.corpusAboutIcon) return undefined;
-    const handle = window.corpusAboutIcon.mount(canvasRef.current);
+    if (!canvasRef.current) return undefined;
+    const handle = mountAboutIcon(canvasRef.current);
     return () => handle.destroy();
   }, []);
 

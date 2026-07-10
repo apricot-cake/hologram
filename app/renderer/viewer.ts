@@ -19,6 +19,9 @@ import { open as menuOpen } from './menu.ts';
 import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
 import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-pop.ts';
 import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPopoverGet } from './filter-popover.ts';
+import { makeFacets } from './facets.ts';
+import { makeCooc } from './cooc.ts';
+import { init as initSearchBox } from './searchbox.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -609,13 +612,12 @@ import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPo
   window.corpusTags.posterFilterVocab = posterFilterVocab;
   const { sameTags } = window.corpusTags;
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
-  // facets.js (window.corpusFacets) — 3rd extraction slice. Runtime couplings are
-  // injected: reassigned lets (allPosts/multiOnly) + tags.js's own getter
-  // (tagGroups) as getters, and consts declared after this point (posterQB /
-  // pfStore / the listing.ts products) as deferred arrow wrappers — a direct
-  // ref here would hit TDZ at wiring time;
-  // the wrappers only run when a flyout opens.
-  const { qfValues } = window.corpusFacets.makeFacets({
+  // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
+  // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
+  // consts declared after this point (posterQB / pfStore / the listing.ts
+  // products) as deferred arrow wrappers — a direct ref here would hit TDZ at
+  // wiring time; the wrappers only run when a flyout opens.
+  const { qfValues } = makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
@@ -637,10 +639,10 @@ import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPo
     buildUsers: () => buildUsers(),
   });
   // Tag co-occurrence math (charCandidatesFor / worksCooccurringWith /
-  // relatedTagCandidates) moved to cooc.js (window.corpusCooc) — 4th extraction
-  // slice. Same deferred-getter wiring as facets above (allPosts is a reassigned
-  // let; the getters only run when a picker or homonym check fires).
-  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = window.corpusCooc.makeCooc({ allPosts: () => allPosts, tagKindOf });
+  // relatedTagCandidates) moved to cooc.ts — 4th extraction slice. Same deferred-
+  // getter wiring as facets above (allPosts is a reassigned let; the getters only
+  // run when a picker or homonym check fires).
+  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => allPosts, tagKindOf });
   // Push the current category's row model to the qf-pop bridge. Called on every open
   // AND after every pick (the bridge bumps openId each call, which keys the island's
   // root and remounts its find-input local state — matching the old rebuild-on-every-
@@ -3974,14 +3976,14 @@ import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPo
   // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
   // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
   // from buildSuggest (users.js — wired above with buildUsers); what a pick DOES
-  // is searchEditing.pick (wired through the corpusSearchBox bridge registered below).
+  // is searchEditing.pick (wired through the searchbox bridge registered below).
   function applySuggest(it: { kind: string; value: string; label?: string } | null | undefined) {
     searchEditing.pick(it);
   }
   // Register the island's data callbacks. onConfirmText replicates the old bare-
   // Enter behavior: only posts mode confirms a text leaf (posters/collections
   // filter live off the box value, Enter is a no-op there).
-  window.corpusSearchBox?.init({
+  initSearchBox({
     getSuggestions: (q) => buildSuggest(q),
     onPick: applySuggest,
     onConfirmText: () => {

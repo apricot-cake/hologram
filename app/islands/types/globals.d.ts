@@ -556,15 +556,13 @@ declare global {
   // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
   // directly by their consumers.
 
-  // ---- renderer/searchbox.js — viewer registers handlers; island pulls lazily ----
+  // ---- renderer/searchbox.ts — a real ES module (named exports: init/handlers) now.
+  // Only the handlers payload contract stays here as a cross-module data shape (viewer
+  // produces it, the searchbox island pulls it). ----
   interface CorpusSearchBoxHandlers {
     getSuggestions(q: string): any[];
     onPick(item: any): void;
     onConfirmText(): void;
-  }
-  interface CorpusSearchBox {
-    init(h: CorpusSearchBoxHandlers): void;
-    handlers(): CorpusSearchBoxHandlers | null;
   }
 
   // ---- island-registered globals (the islands themselves assign these) ----
@@ -592,9 +590,6 @@ declare global {
     close(): void;
     isOpen(): boolean;
     setLabels(l: Record<string, string> | null | undefined): void;
-  }
-  interface CorpusAboutIcon {
-    mount(el: HTMLCanvasElement | null): { destroy(): void };
   }
 
   // ---- renderer/trash.ts — trash domain, read by both viewer.ts and this strict
@@ -661,13 +656,11 @@ declare global {
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
     corpusRecords: CorpusRecordsApi;
     corpusSelection: CorpusSelectionApi;
-    corpusSearchBox?: CorpusSearchBox;
     corpusSettings: CorpusSettings;
     corpusQueryChips: CorpusQueryChipsIsland;
     corpusLightbox: CorpusLightbox;
     corpusImageTabSource: CorpusImageTabSource;
     corpusTabsSource: CorpusTabsSource;
-    corpusAboutIcon?: CorpusAboutIcon;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
     React: typeof import('react');

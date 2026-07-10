@@ -4,15 +4,16 @@
 // pushes into the store; programmatic writes (resets / tab & history restore)
 // flow back into the controlled input. Suggestion DATA (buildSuggest) and what a
 // pick DOES (applySuggest / confirmEditingTextLeaf) stay in viewer.js, pulled
-// lazily through the corpusSearchBox bridge — react-aria supplies keyboard nav,
+// lazily through the searchbox bridge — react-aria supplies keyboard nav,
 // open/close, positioning and aria wiring (the hand-rolled suggestIdx/fixed-div
 // machinery is gone).
 import { useCallback, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
 import { ComboBox, Input, ListBox, ListBoxItem, Popover } from 'react-aria-components';
 import type { Key } from 'react-aria-components';
 import type { KeyboardEvent } from 'react';
+import { handlers as sbHandlers } from '../../renderer/searchbox.ts';
 
-// Suggestion rows from viewer.js's buildSuggest (via the corpusSearchBox bridge),
+// Suggestion rows from viewer.js's buildSuggest (via the searchbox bridge),
 // plus the id react-aria keys the collection on.
 interface SugRow {
   id: string;
@@ -23,7 +24,7 @@ interface SugRow {
 }
 
 const SUG_ICON: Record<string, string> = { tag: '\u{1F3F7}', user: '\u{1F464}', folder: '\u{1F4C1}' };
-const handlers = () => (window.corpusSearchBox && window.corpusSearchBox.handlers()) || null;
+const handlers = () => sbHandlers() || null;
 
 export function SearchBox({ placeholder }: { placeholder?: string }) {
   const subscribe = useCallback((cb: () => void) => window.corpusStore.subscribe('searchQuery', cb), []);
