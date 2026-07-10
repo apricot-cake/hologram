@@ -8,8 +8,10 @@
 // DOM. Runtime couplings are injected — reassigned viewer lets (appBooted) come
 // in as getter functions and later-declared consts (PF_NAME / CF) as deferred
 // arrows — so this file loads under Node (scripts/test-tabstate-unit.cts drives
-// it via dynamic import): loadTabs/persistTabs read window.corpusIpc directly,
-// which stays on the bridge until the ipc.ts core wave.
+// it via dynamic import): loadTabs/persistTabs call corpusIpc (renderer/ipc.ts),
+// which touches window.corpus lazily inside its arrow functions — the import
+// itself is side-effect free, so it stays harmless under Node.
+import { corpusIpc } from './ipc.ts';
 
 export function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
@@ -234,18 +236,17 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
 // tabs.json load/persist (P4 "IPC→service" domain-grouping slice — the raw
 // corpusIpc.getTabs/setTabs calls move here from viewer.js, next to the
 // (de)serialization pair they wrap). Only called from the browser (viewer.js);
-// never invoked by the Node unit test, so window.corpusIpc's absence under
-// Node is harmless.
+// never invoked by the Node unit test.
 export async function loadTabs() {
   try {
-    return await window.corpusIpc.getTabs();
+    return await corpusIpc.getTabs();
   } catch {
     return null;
   }
 }
 export async function persistTabs(tabs: CorpusTab[], activeTabId: string | null) {
   try {
-    await window.corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
+    await corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
   } catch {
     /* best-effort */
   }

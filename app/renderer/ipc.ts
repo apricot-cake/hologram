@@ -14,71 +14,65 @@
 // (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importPosts/
 // importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
 // onSaveFolderProgress/onPostsChanged) — those domain services call this module
-// rather than window.corpus directly, same as viewer.js. Still flat here (no clear
-// existing/new home decided yet): cross-cutting prefs/config/window-chrome. Plain
-// IIFE on window (like the sibling renderer/*.ts services), loaded before viewer.js.
-(function () {
-  'use strict';
+// rather than window.corpus directly, same as viewer.ts. Still flat here (no clear
+// existing/new home decided yet): cross-cutting prefs/config/window-chrome. A real
+// ES module now (named export), imported directly by every caller.
 
-  const bridge = () => window.corpus;
+const bridge = () => window.corpus;
 
-  // Annotated against the shared CorpusPreload contract (islands/types/globals.d.ts)
-  // so every forwarding arrow below is contextually typed from that interface —
-  // no per-parameter annotations needed for a pure pass-through layer.
-  const api: CorpusPreload = {
-    getConfig: () => bridge().getConfig(),
-    setExtensionId: (id) => bridge().setExtensionId(id),
-    listPosts: () => bridge().listPosts(),
-    listPostsDelta: (haveBaseline, changedNames) => bridge().listPostsDelta(haveBaseline, changedNames),
-    getTagGroups: () => bridge().getTagGroups(),
-    setTagGroups: (groups) => bridge().setTagGroups(groups),
-    getTagTypes: () => bridge().getTagTypes(),
-    setTagTypes: (types, labels) => bridge().setTagTypes(types, labels),
-    getUngrouped: () => bridge().getUngrouped(),
-    setUngrouped: (keys) => bridge().setUngrouped(keys),
-    getPosterFolders: () => bridge().getPosterFolders(),
-    setPosterFolders: (data) => bridge().setPosterFolders(data),
-    getPosterTags: () => bridge().getPosterTags(),
-    setPosterTags: (data) => bridge().setPosterTags(data),
-    getManualGroups: () => bridge().getManualGroups(),
-    setManualGroups: (groups) => bridge().setManualGroups(groups),
-    getFolders: () => bridge().getFolders(),
-    setFolders: (data) => bridge().setFolders(data),
-    getCollections: () => bridge().getCollections(),
-    setCollections: (data) => bridge().setCollections(data),
-    getTabs: () => bridge().getTabs(),
-    setTabs: (data) => bridge().setTabs(data),
-    openExternal: (url) => bridge().openExternal(url),
-    openImageWindow: (image) => bridge().openImageWindow(image),
-    showInFolder: (file) => bridge().showInFolder(file),
-    getAppInfo: () => bridge().getAppInfo(),
-    getPrefs: () => bridge().getPrefs(),
-    setPref: (key, value) => bridge().setPref(key, value),
-    imageDataUrl: (image) => bridge().imageDataUrl(image),
-    deletePost: (image) => bridge().deletePost(image),
-    updateTags: (image, tags, patch) => bridge().updateTags(image, tags, patch),
-    importPosts: (posts) => bridge().importPosts(posts),
-    clearAll: () => bridge().clearAll(),
-    exportSave: (filename, bytes) => bridge().exportSave(filename, bytes),
-    exportComplete: (mode) => bridge().exportComplete(mode),
-    importComplete: (bytes) => bridge().importComplete(bytes),
-    pickSaveFolder: () => bridge().pickSaveFolder(),
-    onSaveFolderProgress: (cb) => bridge().onSaveFolderProgress(cb),
-    getBackup: () => bridge().getBackup(),
-    setBackup: (patch) => bridge().setBackup(patch),
-    pickBackupDir: () => bridge().pickBackupDir(),
-    runBackup: () => bridge().runBackup(),
-    importImages: () => bridge().importImages(),
-    onBackupStart: (cb) => bridge().onBackupStart(cb),
-    onBackupDone: (cb) => bridge().onBackupDone(cb),
-    listTrash: () => bridge().listTrash(),
-    restorePost: (image) => bridge().restorePost(image),
-    emptyTrash: () => bridge().emptyTrash(),
-    deleteFromTrash: (image) => bridge().deleteFromTrash(image),
-    onPostsChanged: (cb) => bridge().onPostsChanged(cb),
-    setTitleBarOverlay: (opts) => bridge().setTitleBarOverlay(opts),
-  };
-
-  if (typeof window !== 'undefined') window.corpusIpc = api;
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-})();
+// Annotated against the shared CorpusPreload contract (islands/types/globals.d.ts)
+// so every forwarding arrow below is contextually typed from that interface —
+// no per-parameter annotations needed for a pure pass-through layer.
+export const corpusIpc: CorpusPreload = {
+  getConfig: () => bridge().getConfig(),
+  setExtensionId: (id) => bridge().setExtensionId(id),
+  listPosts: () => bridge().listPosts(),
+  listPostsDelta: (haveBaseline, changedNames) => bridge().listPostsDelta(haveBaseline, changedNames),
+  getTagGroups: () => bridge().getTagGroups(),
+  setTagGroups: (groups) => bridge().setTagGroups(groups),
+  getTagTypes: () => bridge().getTagTypes(),
+  setTagTypes: (types, labels) => bridge().setTagTypes(types, labels),
+  getUngrouped: () => bridge().getUngrouped(),
+  setUngrouped: (keys) => bridge().setUngrouped(keys),
+  getPosterFolders: () => bridge().getPosterFolders(),
+  setPosterFolders: (data) => bridge().setPosterFolders(data),
+  getPosterTags: () => bridge().getPosterTags(),
+  setPosterTags: (data) => bridge().setPosterTags(data),
+  getManualGroups: () => bridge().getManualGroups(),
+  setManualGroups: (groups) => bridge().setManualGroups(groups),
+  getFolders: () => bridge().getFolders(),
+  setFolders: (data) => bridge().setFolders(data),
+  getCollections: () => bridge().getCollections(),
+  setCollections: (data) => bridge().setCollections(data),
+  getTabs: () => bridge().getTabs(),
+  setTabs: (data) => bridge().setTabs(data),
+  openExternal: (url) => bridge().openExternal(url),
+  openImageWindow: (image) => bridge().openImageWindow(image),
+  showInFolder: (file) => bridge().showInFolder(file),
+  getAppInfo: () => bridge().getAppInfo(),
+  getPrefs: () => bridge().getPrefs(),
+  setPref: (key, value) => bridge().setPref(key, value),
+  imageDataUrl: (image) => bridge().imageDataUrl(image),
+  deletePost: (image) => bridge().deletePost(image),
+  updateTags: (image, tags, patch) => bridge().updateTags(image, tags, patch),
+  importPosts: (posts) => bridge().importPosts(posts),
+  clearAll: () => bridge().clearAll(),
+  exportSave: (filename, bytes) => bridge().exportSave(filename, bytes),
+  exportComplete: (mode) => bridge().exportComplete(mode),
+  importComplete: (bytes) => bridge().importComplete(bytes),
+  pickSaveFolder: () => bridge().pickSaveFolder(),
+  onSaveFolderProgress: (cb) => bridge().onSaveFolderProgress(cb),
+  getBackup: () => bridge().getBackup(),
+  setBackup: (patch) => bridge().setBackup(patch),
+  pickBackupDir: () => bridge().pickBackupDir(),
+  runBackup: () => bridge().runBackup(),
+  importImages: () => bridge().importImages(),
+  onBackupStart: (cb) => bridge().onBackupStart(cb),
+  onBackupDone: (cb) => bridge().onBackupDone(cb),
+  listTrash: () => bridge().listTrash(),
+  restorePost: (image) => bridge().restorePost(image),
+  emptyTrash: () => bridge().emptyTrash(),
+  deleteFromTrash: (image) => bridge().deleteFromTrash(image),
+  onPostsChanged: (cb) => bridge().onPostsChanged(cb),
+  setTitleBarOverlay: (opts) => bridge().setTitleBarOverlay(opts),
+};

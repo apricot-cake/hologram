@@ -14,6 +14,8 @@
 // matching flips to ぴったり and that choice is persisted (pref 'searchMode') and
 // restored by applyMode below (2026-07-04). Only an explicit 'normal' pref maps to
 // exact — an unset pref keeps the fuzzy default.
+import { corpusIpc } from './ipc.ts';
+
 let mode: 'normal' | 'fuzzy' = 'fuzzy';
 // Set (not array) so subscribe can return an unsubscribe that actually removes the
 // listener — React islands subscribe via useSyncExternalStore and must detach on
@@ -153,8 +155,8 @@ export function setMode(m: 'normal' | 'fuzzy') {
   const next = m === 'fuzzy' ? 'fuzzy' : 'normal';
   const changed = next !== mode;
   mode = next;
-  if (changed && window.corpusIpc && window.corpusIpc.setPref) {
-    window.corpusIpc.setPref('searchMode', mode).catch(() => {
+  if (changed && corpusIpc && corpusIpc.setPref) {
+    corpusIpc.setPref('searchMode', mode).catch(() => {
       /* best-effort */
     });
   }

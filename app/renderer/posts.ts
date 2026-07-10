@@ -7,46 +7,48 @@
 // Settings > データ island (save-folder move + export/import ZIP + import media) —
 // pure 1:1 forwarding, no wrapping logic (same as trash/backup; distinct from
 // renderer/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
-// calls). The internal corpusIpc calls stay on window until ipc.ts is converted (Wave13).
+// calls).
+import { corpusIpc } from './ipc.ts';
+
 export function listPosts() {
-  return window.corpusIpc.listPosts();
+  return corpusIpc.listPosts();
 }
 export function listPostsDelta(haveBaseline: boolean, changedNames?: string[] | null) {
-  return window.corpusIpc.listPostsDelta(haveBaseline, changedNames);
+  return corpusIpc.listPostsDelta(haveBaseline, changedNames);
 }
 export function imageDataUrl(image: string) {
-  return window.corpusIpc.imageDataUrl(image);
+  return corpusIpc.imageDataUrl(image);
 }
 export function deletePost(image: string) {
-  return window.corpusIpc.deletePost(image);
+  return corpusIpc.deletePost(image);
 }
 export function updateTags(image: string, tags: unknown, patch?: unknown) {
-  return window.corpusIpc.updateTags(image, tags, patch);
+  return corpusIpc.updateTags(image, tags, patch);
 }
 export function importPosts(posts: unknown) {
-  return window.corpusIpc.importPosts(posts);
+  return corpusIpc.importPosts(posts);
 }
 export function importImages() {
-  return window.corpusIpc.importImages();
+  return corpusIpc.importImages();
 }
 export function clearAll() {
-  return window.corpusIpc.clearAll();
+  return corpusIpc.clearAll();
 }
 export function exportSave(filename: string, bytes: Uint8Array | ArrayBuffer) {
-  return window.corpusIpc.exportSave(filename, bytes);
+  return corpusIpc.exportSave(filename, bytes);
 }
 export function exportComplete(mode?: string) {
-  return window.corpusIpc.exportComplete(mode);
+  return corpusIpc.exportComplete(mode);
 }
 export function importComplete(bytes: Uint8Array | ArrayBuffer) {
-  return window.corpusIpc.importComplete(bytes);
+  return corpusIpc.importComplete(bytes);
 }
 export function pickSaveFolder() {
-  return window.corpusIpc.pickSaveFolder();
+  return corpusIpc.pickSaveFolder();
 }
 export function onSaveFolderProgress(cb: (p: any) => void) {
-  return window.corpusIpc.onSaveFolderProgress(cb);
+  return corpusIpc.onSaveFolderProgress(cb);
 }
 export function onPostsChanged(cb: (names: string[] | null) => void) {
-  return window.corpusIpc.onPostsChanged(cb);
+  return corpusIpc.onPostsChanged(cb);
 }

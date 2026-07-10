@@ -14,6 +14,7 @@
 // corpusPosterFolderStore() factory (viewer.js's poster-folder store).
 import { escapeHtml as uiEscapeHtml, notify as uiNotify } from './ui.ts';
 import { corpusI18n } from './i18n.ts';
+import { corpusIpc } from './ipc.ts';
 
 const $ = (id: string) => document.getElementById(id);
 // event.target → nearest matching ancestor as an HTMLElement (null when the
@@ -146,8 +147,7 @@ function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: str
 // store backed by a get/set IPC pair (the same load-caching idiom as the collections
 // store's own load()/persist() below, generalized). Currently used for the poster
 // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
-// closure + a manual getPosterFolders/setAll block in boot — both now live here,
-// the one place besides ipc.ts that still touches window.corpusIpc for folders).
+// closure + a manual getPosterFolders/setAll block in boot — both now live here).
 function createPersistedFolderStore({
   idPrefix,
   get,
@@ -182,8 +182,8 @@ function createPersistedFolderStore({
 export function corpusPosterFolderStore(): CorpusPersistedFolderStore {
   return createPersistedFolderStore({
     idPrefix: 'pf',
-    get: () => window.corpusIpc.getPosterFolders(),
-    set: (data) => window.corpusIpc.setPosterFolders(data),
+    get: () => corpusIpc.getPosterFolders(),
+    set: (data) => corpusIpc.setPosterFolders(data),
   });
 }
 
@@ -233,8 +233,8 @@ function escapeHtml(s: unknown) {
 }
 function persist() {
   loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-  if (window.corpusIpc && window.corpusIpc.setCollections)
-    window.corpusIpc.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
+  if (corpusIpc && corpusIpc.setCollections)
+    corpusIpc.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
       /* best-effort */
     });
 }
@@ -251,7 +251,7 @@ function notify(kind?: string) {
 async function doLoad() {
   try {
     // getCollections migrates a legacy folders.json on first read (main.js).
-    const r = window.corpusIpc && window.corpusIpc.getCollections ? await window.corpusIpc.getCollections() : null;
+    const r = corpusIpc && corpusIpc.getCollections ? await corpusIpc.getCollections() : null;
     store.setAll((r && r.collections) || []);
     // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
     // just stays as a normal collection. Clip loads from the persisted `clip` array.

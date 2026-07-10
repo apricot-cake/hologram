@@ -35,6 +35,7 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { createQueryBuilder } from './query-chips.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
+import { corpusIpc } from './ipc.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -2348,7 +2349,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
   function onCardMenuPick(g: CorpusPostGroup, x: number, y: number, srcUrl: string, item: CorpusMenuItem) {
     const act = item.act;
     if (act === 'open') {
-      if (g.rep.url) window.corpusIpc.openExternal(g.rep.url);
+      if (g.rep.url) corpusIpc.openExternal(g.rep.url);
     } else if (act === 'newtab') {
       addImageTab(g); // background, browser-like
     } else if (act === 'folder') {
@@ -2360,11 +2361,11 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
       if (b) b.click();
     } else if (act === 'info') showDetail(g);
     else if (act === 'poster') jumpToPoster(g.rep);
-    else if (act === 'sauce') window.corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
-    else if (act === 'ascii') window.corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
+    else if (act === 'sauce') corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
+    else if (act === 'ascii') corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
       const file = densityImage(g.rep, currentView) || g.rep.image;
-      if (file && window.corpusIpc.showInFolder) window.corpusIpc.showInFolder(file);
+      if (file && corpusIpc.showInFolder) corpusIpc.showInFolder(file);
     } else if (act === 'delete') requestDeleteGroup(g);
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
@@ -2454,7 +2455,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
       onOk: async ({ skip }) => {
         if (skip) {
           skipDeleteConfirm = true;
-          window.corpusIpc.setPref('skipDeleteConfirm', true);
+          corpusIpc.setPref('skipDeleteConfirm', true);
         }
         await executeDeleteGroup(g);
       },
@@ -2726,9 +2727,9 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
         adoptSource: MSG.editAdoptSource,
       },
       onClose: closeDetail,
-      onOpenExternal: p.url ? () => window.corpusIpc.openExternal(p.url) : null,
-      onSauce: srcImageUrl ? () => window.corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
-      onAscii: srcImageUrl ? () => window.corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
+      onOpenExternal: p.url ? () => corpusIpc.openExternal(p.url) : null,
+      onSauce: srcImageUrl ? () => corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
+      onAscii: srcImageUrl ? () => corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => jumpToPoster(p) : null,
       onAdoptSourceTag: (tag: string) => adoptSourceTag(g, tag),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
@@ -3113,7 +3114,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
     const v = storeGet('view');
     if (v === currentView) return;
     currentView = v;
-    window.corpusIpc.setPref('viewMode', currentView);
+    corpusIpc.setPref('viewMode', currentView);
     clearTimeout(_densityRenderT);
     _densityRenderT = setTimeout(() => {
       if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
@@ -3143,7 +3144,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
     // (Changing which toolbars are visible shifts the sidebar width → the toggle's geometry;
     // the island's ResizeObserver re-slides its own thumb, so there is nothing to measure here.)
     closeDetail(); // a stale post/poster detail shouldn't survive the switch
-    if (!(opts && opts.silent)) window.corpusIpc.setPref('browseMode', mode);
+    if (!(opts && opts.silent)) corpusIpc.setPref('browseMode', mode);
     // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
     // was updated synchronously above; defer the heavy grid render past a paint so the
     // switch shows INSTANTLY instead of blocking on renderPosts/Posters/Collections.
@@ -3264,7 +3265,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
     const v = storeGet('posterView');
     if (v === posterView) return;
     posterView = v;
-    window.corpusIpc.setPref('posterViewMode', posterView);
+    corpusIpc.setPref('posterViewMode', posterView);
     clearTimeout(_posterDensityRenderT);
     _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
   }
@@ -3286,7 +3287,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
       // writing the store on every tick too costs nothing extra — masonic still
       // recreates its positioner on the resulting columnWidth change either way.
       storeSet(st.pref, size);
-      window.corpusIpc.setPref(st.pref, size);
+      corpusIpc.setPref(st.pref, size);
     });
   })();
   // The column counts depend on the grid width — re-derive the track on resize.
@@ -3753,7 +3754,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
       if (st.columns) corpusPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
-    window.corpusIpc.setPref(st.pref, st.get());
+    corpusIpc.setPref(st.pref, st.get());
     // The settled size mirrors into corpusStore (P4-B slice④) — the post-grid
     // source (slice⑩) derives columnWidth/itemHeightEstimate from it. Clear the
     // live-drag override so a later VIEW change (which reads a different
@@ -3845,7 +3846,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
   // persist bridge it can call so the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
     tileOverlay = v;
-    window.corpusIpc.setPref('tileOverlay', tileOverlay);
+    corpusIpc.setPref('tileOverlay', tileOverlay);
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
     // via CSS), so flip the class directly instead of re-grouping + rebuilding the
     // grid (a full renderPosts reloaded every tile image = flicker).
@@ -3859,12 +3860,12 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
     reloadPosts: () => loadPosts(),
     setSkipDeleteConfirm: (v: boolean) => {
       skipDeleteConfirm = v;
-      window.corpusIpc.setPref('skipDeleteConfirm', v);
+      corpusIpc.setPref('skipDeleteConfirm', v);
     },
   });
 
   // Load saved view mode and skipDeleteConfirm
-  window.corpusIpc.getPrefs().then((prefs) => {
+  corpusIpc.getPrefs().then((prefs) => {
     if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
       currentView = prefs.viewMode;
       // Push the restored view into the store so the toolbar island renders the right
@@ -4175,7 +4176,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
     // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
     // buildUsers has data for the poster grid. silent = no history/pref echo.
     try {
-      const prefs = await window.corpusIpc.getPrefs();
+      const prefs = await corpusIpc.getPrefs();
       // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
       const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
       // Run the heavy restore synchronously (silent = no history/pref echo, no animation),

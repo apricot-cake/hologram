@@ -54,7 +54,11 @@ function diffValues(name, a, b) {
 // `const MESSAGES = {...}` declaration, not the corpusI18n async IIFE that follows
 // it (which needs window/navigator + is now invalid syntax for indirect eval anyway,
 // since it starts with the `export` keyword) — slice it off before eval, dropping
-// the window/navigator shims entirely.
+// the window/navigator shims entirely. The `import { corpusIpc } from './ipc.ts'`
+// line that now sits just above the cut (Wave13) is ALSO invalid indirect-eval
+// syntax (import declarations are Module-only, same restriction as export) — it's
+// dead weight in this slice anyway (MESSAGES never references corpusIpc), so strip
+// any import lines before eval rather than widen the cut point.
 {
   const fullSrc = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
   const EXPORT_LINE = /^export const corpusI18n = /m;
@@ -62,7 +66,7 @@ function diffValues(name, a, b) {
   if (cut === -1) {
     fail("renderer/i18n.ts: expected `export const corpusI18n = ` not found — update this test's cut point");
   } else {
-    const src = fullSrc.slice(0, cut);
+    const src = fullSrc.slice(0, cut).replace(/^import .*;$/gm, '');
     const HOOK = /const MESSAGES\s*=\s*\{/;
     if (!HOOK.test(src)) {
       fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");

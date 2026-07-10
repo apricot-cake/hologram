@@ -5,17 +5,18 @@
 // directly by the Settings > Trash island (app/islands/settings/sections/Trash.tsx),
 // giving it a domain home instead of reaching into window.corpus directly — pure 1:1
 // forwarding, no wrapping logic (unlike tab-state/folders, trash has no serialize/
-// sanitize step to own). The corpusIpc calls stay on window.corpusIpc until the
-// ipc.ts core wave (see memory corpus-react-purity-execution-map).
+// sanitize step to own).
+import { corpusIpc } from './ipc.ts';
+
 export function listTrash() {
-  return window.corpusIpc.listTrash();
+  return corpusIpc.listTrash();
 }
 export function restorePost(image: string) {
-  return window.corpusIpc.restorePost(image);
+  return corpusIpc.restorePost(image);
 }
 export function deleteFromTrash(image: string) {
-  return window.corpusIpc.deleteFromTrash(image);
+  return corpusIpc.deleteFromTrash(image);
 }
 export function emptyTrash() {
-  return window.corpusIpc.emptyTrash();
+  return corpusIpc.emptyTrash();
 }

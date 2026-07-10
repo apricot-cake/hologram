@@ -7,11 +7,12 @@
 // Collapsible sidebar sections were dropped in the row→flyout restructure; the
 // only remaining collapse (tag-group subrows) lives in viewer.js.
 import { applyMode } from './search.ts';
+import { corpusIpc } from './ipc.ts';
 
 // Restore the saved search mode (通常/あいまい) into the viewer.
 (async () => {
   try {
-    const prefs = window.corpusIpc.getPrefs ? await window.corpusIpc.getPrefs() : null;
+    const prefs = corpusIpc.getPrefs ? await corpusIpc.getPrefs() : null;
     if (prefs) applyMode(prefs.searchMode);
   } catch {
     /* ignore */

@@ -36,15 +36,11 @@
 //     needs them, with no side-effect-only import required at this barrel). Order
 //     mirrors the old index.html scripts; these precede root.tsx (islands read the
 //     globals at render) and viewer (last). Wave 1 = the logic services. ---
-import 'corpus-svc:ipc';
-import 'corpus-svc:records';
-import 'corpus-svc:tags';
-import 'corpus-svc:tab-state';
-import 'corpus-svc:trash';
-// Wave 2 = the remaining infra bridge. store/bridge/menu/kind-menu/inspector/
-// edit-overlay/confirm/search/backup/posts/i18n/grid/selection are real ES
-// modules now, imported directly by their consumers (no barrel entry needed) —
-// image-tab.ts is the last window-IIFE bridge left (Wave14 pending).
+// Wave 2 = the remaining infra bridge. ipc/store/bridge/menu/kind-menu/inspector/
+// edit-overlay/confirm/search/backup/posts/i18n/grid/selection/records/tags/
+// tab-state/trash are real ES modules now, imported directly by their consumers
+// (no barrel entry needed) — image-tab.ts is the last window-IIFE bridge left
+// (Wave14 pending).
 import 'corpus-svc:image-tab';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
@@ -65,6 +61,6 @@ import './root.tsx';
 import 'corpus-viewer-bundle';
 // shell.ts was index.html's LAST <script> (after islands/app.js, so after viewer too) —
 // kept last here to preserve that ordering. Its only load-time work is an async IIFE
-// that awaits window.corpus.getPrefs() then calls applyMode(...) (search.ts, imported
+// that awaits corpusIpc.getPrefs() then calls applyMode(...) (search.ts, imported
 // directly by shell.ts now).
 import 'corpus-svc:shell';

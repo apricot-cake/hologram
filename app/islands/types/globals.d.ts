@@ -530,11 +530,11 @@ declare global {
   // calls the save-folder/export/import/import-media methods directly). A real ES
   // module (named exports) now — no ambient Window-shaped interface needed.
 
+  // renderer/ipc.ts — the P4 IPC→service seam over the raw bridge below. A real ES
+  // module now (named export `corpusIpc`), imported directly by every caller.
+
   interface Window {
     corpus: CorpusPreload;
-    // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
-    // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
-    corpusIpc: CorpusPreload;
     corpusViewer?: CorpusViewer;
     corpusSettings: CorpusSettings;
     corpusLightbox: CorpusLightbox;

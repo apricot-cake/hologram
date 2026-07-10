@@ -8,9 +8,10 @@
 // (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
 // — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
 // under Node too (scripts/test-records-unit.cts drives it via dynamic import); the
-// load/persist pair below reads window.corpusIpc directly, which stays on the bridge
-// until the ipc.ts core wave. postKeyOf is a plain named export now (the planned
-// duplicate-save detection can import the same URL→key normalization when it lands).
+// load/persist pair below goes through corpusIpc (renderer/ipc.ts). postKeyOf is a
+// plain named export now (the planned duplicate-save detection can import the same
+// URL→key normalization when it lands).
+import { corpusIpc } from './ipc.ts';
 
 // Per-density image source. A post may carry both a capture (screenshot) and
 // real media/artwork; the density decides which leads:
@@ -354,10 +355,10 @@ export function stampPost(p: CorpusPost): CorpusPost {
 // grouping slice — the raw corpusIpc calls move here from viewer.js, next to
 // makeGroupRecords/makeGallery which already consume these two stores as
 // injected deps). Only called from the browser (viewer.js); never invoked by
-// the Node unit test, so window.corpusIpc's absence under Node is harmless.
+// the Node unit test.
 export async function loadManualGroups() {
   try {
-    const r = await window.corpusIpc.getManualGroups();
+    const r = await corpusIpc.getManualGroups();
     return (r && r.groups) || [];
   } catch {
     return [];
@@ -365,14 +366,14 @@ export async function loadManualGroups() {
 }
 export async function persistManualGroups(groups: string[][]) {
   try {
-    await window.corpusIpc.setManualGroups(groups);
+    await corpusIpc.setManualGroups(groups);
   } catch {
     /* best-effort */
   }
 }
 export async function loadUngrouped() {
   try {
-    const r = await window.corpusIpc.getUngrouped();
+    const r = await corpusIpc.getUngrouped();
     return new Set<string>((r && r.keys) || []);
   } catch {
     return new Set<string>();
@@ -380,7 +381,7 @@ export async function loadUngrouped() {
 }
 export async function persistUngrouped(keys: Set<string> | string[]) {
   try {
-    await window.corpusIpc.setUngrouped([...keys]);
+    await corpusIpc.setUngrouped([...keys]);
   } catch {
     /* best-effort */
   }

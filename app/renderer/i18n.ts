@@ -1,6 +1,6 @@
 // i18n helper for the Electron viewer (renderer) only.
 // Language resolves from the app's saved preference (config.json `language`, via
-// window.corpusIpc.getPrefs); 'auto' follows navigator.language (the OS/app
+// corpusIpc.getPrefs); 'auto' follows navigator.language (the OS/app
 // locale). The viewer reloads on change so the new language takes effect.
 //
 // Consumers do: import { corpusI18n } from './i18n.ts'; const { getMessage, lang,
@@ -731,10 +731,15 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
   },
 };
 
+// Placed here (not at file top) so scripts/test-i18n-parity.cts's textual slice —
+// everything before this `export const corpusI18n = ` line — never has to eval an
+// `import` declaration (also invalid for indirect eval, same reason `export` is).
+import { corpusIpc } from './ipc.ts';
+
 export const corpusI18n = (async () => {
   let lang = 'auto';
   try {
-    const prefs = await window.corpusIpc.getPrefs();
+    const prefs = await corpusIpc.getPrefs();
     lang = prefs.language || 'auto';
   } catch {
     // prefs unavailable — fall back to auto

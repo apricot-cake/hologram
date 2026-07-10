@@ -22,8 +22,8 @@
 // imported directly by viewer.ts / sidebar.ts and the Sidebar islands; touches
 // no DOM. The read-side tagKindOf/posterFilterVocab are also exposed as live
 // bindings (below) that viewer.ts binds at boot, so sidebar.ts reads the same
-// closures. Disk round-trips read window.corpusIpc directly, which stays on the
-// bridge until the ipc.ts core wave.
+// closures. Disk round-trips go through corpusIpc (renderer/ipc.ts).
+import { corpusIpc } from './ipc.ts';
 
 // deps contract:
 //   tagTypes() / tagLabels() / tagGroups() / posterTags() / allPosts() —
@@ -222,11 +222,10 @@ export function onChange(cb: (kind?: string) => void) {
 
 // tag-groups.json / tag-types.json / poster-tags.json disk round-trip.
 // Private — only load() and the mutators below call these. Only called
-// from the browser (viewer.js); never invoked by the Node unit test, so
-// window.corpusIpc's absence under Node is harmless.
+// from the browser (viewer.js); never invoked by the Node unit test.
 async function readTagGroups() {
   try {
-    const r = await window.corpusIpc.getTagGroups();
+    const r = await corpusIpc.getTagGroups();
     return (r && r.groups) || [];
   } catch {
     return [];
@@ -234,14 +233,14 @@ async function readTagGroups() {
 }
 async function writeTagGroups() {
   try {
-    await window.corpusIpc.setTagGroups(tagGroups);
+    await corpusIpc.setTagGroups(tagGroups);
   } catch {
     /* best-effort */
   }
 }
 async function readTagTypes() {
   try {
-    const r = await window.corpusIpc.getTagTypes();
+    const r = await corpusIpc.getTagTypes();
     return { types: (r && r.types) || {}, labels: (r && r.labels) || {} };
   } catch {
     return { types: {}, labels: {} };
@@ -251,14 +250,14 @@ async function readTagTypes() {
 // only keeps the labels it receives).
 async function writeTagTypes() {
   try {
-    await window.corpusIpc.setTagTypes(tagTypes, tagLabels);
+    await corpusIpc.setTagTypes(tagTypes, tagLabels);
   } catch {
     /* best-effort */
   }
 }
 async function readPosterTags() {
   try {
-    const r = await window.corpusIpc.getPosterTags();
+    const r = await corpusIpc.getPosterTags();
     return (r && r.tags) || {};
   } catch {
     return {};
@@ -266,7 +265,7 @@ async function readPosterTags() {
 }
 async function writePosterTags() {
   try {
-    await window.corpusIpc.setPosterTags({ tags: posterTags });
+    await corpusIpc.setPosterTags({ tags: posterTags });
   } catch {
     /* best-effort */
   }
