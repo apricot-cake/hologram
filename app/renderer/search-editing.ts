@@ -1,8 +1,8 @@
 // Search box ↔ query-tree text-leaf state machine + suggestion-pick handling —
 // the P4-B "search-editing service" slice (⑨), extracted 1:1 from viewer.js.
 // The post-mode search box's typed value binds to a 'text' leaf in the query
-// tree (free text becomes a real filter condition alongside tag/platform/etc,
-// docs/design-query-builder.md) — this module owns WHICH leaf (if any) is
+// tree (free text becomes a real filter condition alongside tag/platform/etc)
+// — this module owns WHICH leaf (if any) is
 // currently "being typed" (editingTextNode, private state) and the state
 // transitions: sync on typing, confirm on Enter, rebind after a tab/history
 // restore, drop when a concrete suggestion is picked instead, and follow the

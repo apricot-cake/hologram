@@ -1,4 +1,4 @@
-// The shared facet-chip query builder (改訂④, docs/design-query-builder.md) —
+// The shared facet-chip query builder (改訂④) —
 // extracted from viewer.js's inline createQueryBuilder (P4-B スライス⑦ event半分).
 // One instance per bar (posts / posters). Owns the tree state, the cluster
 // view-model derivation, the mutation helpers, AND (since this slice) the

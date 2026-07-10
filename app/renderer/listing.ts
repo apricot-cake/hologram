@@ -63,8 +63,8 @@ export function makeListing(deps: ListingDeps) {
 
     // ---- Query-builder evaluation: boolean condition tree ----
     // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
-    // conditions, built directly by the inline drag builder; evalNode walks it
-    // recursively. See docs/design-query-builder.md「改訂③」.
+    // conditions, built directly by the inline drag builder (改訂③); evalNode
+    // walks it recursively.
     const queryRoot = currentTree(); // the boolean query tree (root group)
     if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
 

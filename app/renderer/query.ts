@@ -1,5 +1,5 @@
 // Query engine — the boolean condition-tree core of Corpus filtering
-// (docs/design-query-builder.md 改訂③), extracted 1:1 from viewer.js as the
+// (改訂③), extracted 1:1 from viewer.js as the
 // first "pure logic → service" slice of the viewer decomposition (最終形B).
 // A real ES module (named exports) — imported directly by its consumers
 // (viewer.ts / query-chips.ts / sidebar.ts / tabs.ts) via a relative path;
@@ -191,7 +191,7 @@ export function wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null 
   return root;
 }
 
-// --- Facet domain (改訂④ ファセット・チップ, docs/design-query-builder.md).
+// --- Facet domain (改訂④ ファセット・チップ).
 // The UI only ever BUILDS facet-CNF trees: root group(and) whose children are
 // per-type groups (2+ positive values of one type), bare positive leaves, and
 // negated leaves (the 除く cluster — root-AND makes them "none of these").

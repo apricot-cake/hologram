@@ -1,5 +1,5 @@
 // Presentational chips for the query-builder active bar (改訂④ ファセット・
-// チップ, docs/design-query-builder.md). Values cluster by attribute inside one
+// チップ). Values cluster by attribute inside one
 // glass pill; the only operator surface is the すべて/どれか toggle (.qb-opt) on
 // multi-value clusters; exclusions render in the 除く cluster; a non-facet
 // persisted tree renders as a read-only summary. Each interactive element calls

@@ -1162,7 +1162,7 @@ import { corpusI18n } from './i18n.ts';
   // window.corpusSelection (renderer/selection.ts, P4-B slice⑬) — corpusStore's
   // 'selectedSet' key IS the state; the grid island's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
-  // (docs/design-query-builder.md 改訂③: flat conditions you drag into parenthesised
+  // (改訂③: flat conditions you drag into parenthesised
   // groups; no auto type-grouping). BOTH views (posts / posters) share ONE builder
   // implementation via the createQueryBuilder(ctx) factory below; ctx carries the
   // per-view differences (container, leaf predicate, label, callbacks). The tree is
@@ -1183,7 +1183,7 @@ import { corpusI18n } from './i18n.ts';
     postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
-  // The shared facet-chip builder (改訂④, docs/design-query-builder.md) now
+  // The shared facet-chip builder (改訂④) now
   // lives in query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster
   // view-model derivation, qbNodeMap, and click/contextmenu dispatch all moved
   // there — the query-chips island reads a cached model + calls dispatch()
