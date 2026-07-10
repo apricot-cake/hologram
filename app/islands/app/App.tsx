@@ -28,6 +28,7 @@ import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
 import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
+import { onChange as foldersOnChange } from '../../renderer/folders.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
@@ -217,7 +218,7 @@ function StoreSubscriptions() {
     const unsubSearchQuery = window.corpusStore.subscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
     const unsubQfPop = subscribeQfPop(() => window.corpusViewer?.handleQfPopChange?.());
     const unsubSearchMode = subscribeSearch(() => window.corpusViewer?.handleSearchModeChange?.());
-    window.corpusFolders?.onChange((kind) => window.corpusViewer?.handleFolderChange?.(kind));
+    foldersOnChange((kind) => window.corpusViewer?.handleFolderChange?.(kind));
     onPostsChanged((names) => window.corpusViewer?.handlePostsChanged?.(names));
     return () => {
       unsubView();

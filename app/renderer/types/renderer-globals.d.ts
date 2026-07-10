@@ -197,12 +197,14 @@ interface CorpusUndoRecord {
 // exports) now — SearchEditingDeps is exported directly from search-editing.ts,
 // no ambient Window-shaped interface needed.
 
-// ---- renderer/folders.js — library collections store + management modal +
-// library-wide clip set. The raw createFolderStore factory is shared internally by the
-// library collections store (isCollections) and, via createPersistedFolderStore's
-// persist/load wiring, the poster folder store (window.corpusPosterFolderStore, used by
-// viewer.js pfStore, no isCollections). A folder always has an id/name/items;
-// collections additionally carry kind/created and a dynamic saved-search (tree+q). ----
+// ---- renderer/folders.ts — library collections store + management modal +
+// library-wide clip set. A real ES module (named exports) now — no ambient
+// CorpusFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
+// shared internally by the library collections store (isCollections) and, via
+// createPersistedFolderStore's persist/load wiring, the corpusPosterFolderStore()
+// factory (used by viewer.js pfStore, no isCollections). A folder always has an
+// id/name/items; collections additionally carry kind/created and a dynamic
+// saved-search (tree+q). ----
 interface CorpusFolder {
   id: string;
   name: string;
@@ -233,30 +235,6 @@ interface CorpusFolderStore {
 }
 /** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
 type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
-interface CorpusFoldersApi {
-  load(): Promise<void>;
-  all(): CorpusFolder[];
-  byId(id: string | null | undefined): CorpusFolder | null;
-  has(id: string | null | undefined, key: string): boolean;
-  isClipped(cid: string): boolean;
-  toggleClip(captureIds: string[] | null | undefined, anchorCid?: string | null): 'added' | 'removed' | null;
-  clearClips(): number;
-  clippedItems(): string[];
-  clipCount(existing?: Set<string> | null): number;
-  reconcile(existing: Set<string>): void;
-  toggleIn(fid: string | null | undefined, captureIds: string[] | null | undefined, anchorCid?: string | null): 'added' | 'removed' | null;
-  openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null): void;
-  closeManager(): void;
-  isManagerOpen(): boolean;
-  allCollections(): CorpusFolder[];
-  createCollection(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null): CorpusFolder | null;
-  updateCollection(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
-  renameCollection(id: string | null | undefined, name: string | null | undefined): boolean;
-  removeCollection(id: string | null | undefined): void;
-  toast(msg: unknown): void;
-  onChange(cb: (kind?: string) => void): void;
-  isLoaded(): boolean;
-}
 
 // renderer/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
@@ -267,7 +245,5 @@ interface CorpusFoldersApi {
 // directly (via `islands/**/*`) — the old duplicated CorpusStoreApi is gone.
 
 interface Window {
-  corpusPosterFolderStore: () => CorpusPersistedFolderStore;
-  corpusFolders: CorpusFoldersApi;
   corpusSelection: CorpusSelectionApi;
 }

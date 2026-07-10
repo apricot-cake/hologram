@@ -29,6 +29,7 @@ import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
+import * as folders from './folders.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -1281,7 +1282,7 @@ import { corpusI18n } from './i18n.ts';
     postQB.refresh();
   }
 
-  const CF = () => window.corpusFolders; // shared folder module
+  const CF = () => folders; // shared folder module
 
   // --- Settings (the React island owns the modal; see app/islands/settings).
   // The brand-bar gear opens it; Esc / backdrop close are handled in the island.
@@ -3305,7 +3306,7 @@ import { corpusI18n } from './i18n.ts';
   // Reuses the shared folder-list store (folders.js createPersistedFolderStore) so the
   // CRUD/id-minting/toggle/persist/load logic isn't reimplemented; only the
   // view-specific toast/re-render live here.
-  const pfStore = window.corpusPosterFolderStore();
+  const pfStore = folders.corpusPosterFolderStore();
   const posterFolderById = pfStore.byId;
   const posterFolderHas = pfStore.has;
   function createPosterFolder(name: string | null) {

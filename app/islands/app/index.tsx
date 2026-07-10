@@ -48,7 +48,6 @@ import 'corpus-svc:trash';
 // index.html <script> order, which already satisfied this). menu/kind-menu/
 // inspector/edit-overlay/confirm/search/backup/posts/i18n are real ES modules now,
 // imported directly by their consumers (no barrel entry needed).
-import 'corpus-svc:folders';
 import 'corpus-svc:store';
 import 'corpus-svc:grid';
 import 'corpus-svc:image-tab';

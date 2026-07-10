@@ -29,13 +29,12 @@ const evalJs = `(async () => {
   await sleep(200);   // let posts load + reconcile settle
   const r1 = await window.corpus.getCollections();
   const r2 = await window.corpus.getCollections();   // idempotency: now reads collections.json
-  const all = window.corpusFolders.all();
   const legacy = await window.corpus.getFolders();    // folders.json deleted → empty
   return {
     collections: r1.collections.map((c) => ({ id: c.id, name: c.name, kind: c.kind, items: c.items.slice().sort() })),
     activeId: r1.activeId,
     clip: (r1.clip || []).slice().sort(),
-    allCount: all.length,
+    allCount: r1.collections.length,
     posterWorkspace: (r1.posterWorkspace || []).slice().sort(),
     idempotent: JSON.stringify(r1) === JSON.stringify(r2),
     legacyEmpty: (legacy.folders || []).length === 0 && (legacy.workspace || []).length === 0,

@@ -55,14 +55,9 @@ declare global {
   // (named exports) now — no ambient Window-shaped interface needed. The pre-paint
   // renderer/theme.js boot publishes no window global.
 
-  // ---- renderer/folders.js — shared post-folder domain. The full CorpusFoldersApi
-  // shape (18 methods) lives in renderer/types/renderer-globals.d.ts; only onChange
-  // is needed from the islands side (StoreSubscriptions, App.tsx), declared here as
-  // a partial merge (TS unions same-named interface members across files sharing a
-  // tsconfig — both declarations of onChange must stay identical).
-  interface CorpusFoldersApi {
-    onChange(cb: (kind?: string) => void): void;
-  }
+  // ---- renderer/folders.ts — shared post-folder domain. A real ES module (named
+  // exports) now — App.tsx imports onChange directly, so no ambient interface is
+  // needed here anymore.
 
   // ---- renderer/tags.ts — tag vocabulary / 種別 domain. A real ES module now;
   // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
@@ -585,7 +580,6 @@ declare global {
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
-    corpusFolders: CorpusFoldersApi;
     corpusStore: CorpusStore;
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;

@@ -38,6 +38,7 @@ import { buildShadow } from './query.ts';
 import { namedPosters } from './listing.ts';
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
+import { clipCount as foldersClipCount, onChange as foldersOnChange } from './folders.ts';
 
 (function () {
   'use strict';
@@ -79,7 +80,7 @@ import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
     }
     // クリップ: count library-wide clipped posts; the row is active when its filter is on.
     const existing = new Set<string>(posts.map((p) => p.captureId));
-    const clipCount = window.corpusFolders.clipCount(existing);
+    const clipCount = foldersClipCount(existing);
     const qfCat = window.corpusStore.get('qfCat');
     return {
       // Only post-side flyout rows carry .qf-open (poster rows read their own half below).
@@ -161,7 +162,7 @@ import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
     byKey('qfCat'),
     (cb) => onChange(cb),
     subscribePostsData,
-    (cb) => window.corpusFolders.onChange(cb), // clip state (count/active) is folders-owned
+    (cb) => foldersOnChange(cb), // clip state (count/active) is folders-owned
   ]);
   window.corpusPosterSidebarSource = makeSource(computePosterModel, [
     byKey('posterQueryTree'),
