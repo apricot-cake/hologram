@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
@@ -20,20 +21,20 @@ import { t } from '../_shared/i18n.ts';
 // #posterCount) — the chips containers are never touched. Same ids/classes as the old
 // static HTML so CSS + the verify scripts that click #postResetBtn etc. keep working.
 
-const subSearchQuery = (cb: () => void) => window.corpusStore.subscribe('searchQuery', cb);
-const getSearchQuery = () => (window.corpusStore.get('searchQuery') as string | undefined) ?? '';
-const subPostTree = (cb: () => void) => window.corpusStore.subscribe('postQueryTree', cb);
-const getPostTree = () => window.corpusStore.get('postQueryTree') as { children: unknown[] } | undefined;
-const subPosterTree = (cb: () => void) => window.corpusStore.subscribe('posterQueryTree', cb);
-const getPosterTree = () => window.corpusStore.get('posterQueryTree') as { children: unknown[] } | undefined;
-const subPostGroups = (cb: () => void) => window.corpusStore.subscribe('postGroups', cb);
-const getPostGroups = () => window.corpusStore.get('postGroups') as any[] | null | undefined;
-const subPosterGroups = (cb: () => void) => window.corpusStore.subscribe('posterGroups', cb);
-const getPosterGroups = () => window.corpusStore.get('posterGroups') as any[] | undefined;
-const subNavCanBack = (cb: () => void) => window.corpusStore.subscribe('navCanBack', cb);
-const getNavCanBack = () => !!window.corpusStore.get('navCanBack');
-const subNavCanForward = (cb: () => void) => window.corpusStore.subscribe('navCanForward', cb);
-const getNavCanForward = () => !!window.corpusStore.get('navCanForward');
+const subSearchQuery = (cb: () => void) => storeSubscribe('searchQuery', cb);
+const getSearchQuery = () => (storeGet('searchQuery') as string | undefined) ?? '';
+const subPostTree = (cb: () => void) => storeSubscribe('postQueryTree', cb);
+const getPostTree = () => storeGet('postQueryTree') as { children: unknown[] } | undefined;
+const subPosterTree = (cb: () => void) => storeSubscribe('posterQueryTree', cb);
+const getPosterTree = () => storeGet('posterQueryTree') as { children: unknown[] } | undefined;
+const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
+const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
+const subPosterGroups = (cb: () => void) => storeSubscribe('posterGroups', cb);
+const getPosterGroups = () => storeGet('posterGroups') as any[] | undefined;
+const subNavCanBack = (cb: () => void) => storeSubscribe('navCanBack', cb);
+const getNavCanBack = () => !!storeGet('navCanBack');
+const subNavCanForward = (cb: () => void) => storeSubscribe('navCanForward', cb);
+const getNavCanForward = () => !!storeGet('navCanForward');
 
 // Portal a subtree into a static viewer-owned sub-mount by id (present before app.js runs,
 // so getElementById resolves synchronously). Mirrors App.tsx's Portal helper.

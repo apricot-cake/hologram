@@ -26,15 +26,9 @@ declare module 'corpus-svc:*';
 declare global {
   type CorpusUnsubscribe = () => void;
 
-  // ---- renderer/store.js — key-addressed external store (viewer ⇄ islands) ----
-  // Values are heterogeneous by design (a string pref here, a number there), so
-  // get() is `any`; the per-call-site cast IS the contract until keys get typed.
-  interface CorpusStore {
-    get(key: string): any;
-    set(key: string, val: unknown): void;
-    subscribe(key: string, cb: () => void): CorpusUnsubscribe;
-    subscribe(cb: () => void): CorpusUnsubscribe;
-  }
+  // ---- renderer/store.ts — key-addressed external store (viewer ⇄ islands). A
+  // real ES module now (Wave12) — get/set/subscribe are imported directly by
+  // every consumer; no ambient Window-shaped interface needed here. ----
 
   // ---- renderer/i18n.ts — corpusI18n resolves after prefs are read. Data-shape
   // type only (the promise's resolved value) — the module itself is a real ES
@@ -541,7 +535,6 @@ declare global {
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
-    corpusStore: CorpusStore;
     corpusViewer?: CorpusViewer;
     corpusSettings: CorpusSettings;
     corpusLightbox: CorpusLightbox;

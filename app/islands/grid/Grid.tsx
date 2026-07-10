@@ -10,6 +10,7 @@ import type { SyntheticEvent } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // One grid cell. modelOf() re-reads live viewer state (clip flag) on every
 // render, so a bridge repaint() refreshes visible cells. The inspected ring
@@ -17,11 +18,11 @@ import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 // both are derived straight from corpusStore ('inspectedKey' / 'selectedSet',
 // real subscriptions), so opening/closing the inspector or toggling a
 // selection re-renders the right cell with no bridge repaint() needed.
-const subInspected = (cb: () => void) => window.corpusStore.subscribe('inspectedKey', cb);
-const getInspected = () => (window.corpusStore.get('inspectedKey') as string | null | undefined) ?? null;
+const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
+const getInspected = () => (storeGet('inspectedKey') as string | null | undefined) ?? null;
 const EMPTY_SELECTION: ReadonlySet<string> = new Set();
-const subSelected = (cb: () => void) => window.corpusStore.subscribe('selectedSet', cb);
-const getSelected = () => (window.corpusStore.get('selectedSet') as ReadonlySet<string> | undefined) ?? EMPTY_SELECTION;
+const subSelected = (cb: () => void) => storeSubscribe('selectedSet', cb);
+const getSelected = () => (storeGet('selectedSet') as ReadonlySet<string> | undefined) ?? EMPTY_SELECTION;
 
 function Cell({ index, data }: GridCellProps) {
   const model = useGridModel();

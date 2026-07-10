@@ -41,13 +41,10 @@ import 'corpus-svc:records';
 import 'corpus-svc:tags';
 import 'corpus-svc:tab-state';
 import 'corpus-svc:trash';
-// Wave 2 = infra + UI bridges (store/bridge before their consumers filter-popover/
-// qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-popover
-// module-load time, so it must precede them; order below mirrors the old
-// index.html <script> order, which already satisfied this). menu/kind-menu/
-// inspector/edit-overlay/confirm/search/backup/posts/i18n/grid/selection are real
-// ES modules now, imported directly by their consumers (no barrel entry needed).
-import 'corpus-svc:store';
+// Wave 2 = the remaining infra bridge. store/bridge/menu/kind-menu/inspector/
+// edit-overlay/confirm/search/backup/posts/i18n/grid/selection are real ES
+// modules now, imported directly by their consumers (no barrel entry needed) —
+// image-tab.ts is the last window-IIFE bridge left (Wave14 pending).
 import 'corpus-svc:image-tab';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so

@@ -1,7 +1,7 @@
 // Selection state — the post-grid multi-select Set + shift-range anchor, extracted
 // as the single owner (P4-B スライス⑬). corpusStore's 'selectedSet' key IS the
 // state (no separate closure Set to keep in sync): every mutation reads the
-// current Set via window.corpusStore.get('selectedSet'), builds a fresh Set (the
+// current Set via store.get('selectedSet'), builds a fresh Set (the
 // store's set() no-ops on === identity, and the grid island's Cell — see
 // Grid.tsx — subscribes to this key directly, so a fresh reference is required
 // to notify), and writes it back. The shift-range anchor stays a private module
@@ -10,11 +10,12 @@
 // viewer.js keeps every side effect around a mutation (the #postGrid 'selecting'
 // class, the #selectionBar model push, bulk IPC/confirm/render orchestration)
 // and calls only this module's query/mutate API. A real ES module now — its
-// exports are imported directly by viewer.ts and SelectionBar.tsx. corpusStore
-// itself is still read/written via window.corpusStore (Wave12 converts it).
+// exports are imported directly by viewer.ts and SelectionBar.tsx.
+
+import { get as storeGet, set as storeSet } from './store.ts';
 
 function current(): Set<string> {
-  return window.corpusStore.get('selectedSet') || new Set<string>();
+  return storeGet('selectedSet') || new Set<string>();
 }
 
 let anchor: number | null = null;
@@ -65,12 +66,12 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Corp
     next.add(key);
     anchor = idx;
   }
-  window.corpusStore.set('selectedSet', next);
+  storeSet('selectedSet', next);
 }
 
 export function clear() {
   anchor = null;
-  window.corpusStore.set('selectedSet', new Set<string>());
+  storeSet('selectedSet', new Set<string>());
 }
 
 // Unconditional select-all (Ctrl/Cmd+A): every group in, regardless of the
@@ -79,7 +80,7 @@ export function selectAll(groups: CorpusPostGroup[], postIdKey: PostIdKey) {
   const next = new Set(current());
   groups.forEach((g) => next.add(postIdKey(g.rep)));
   anchor = null;
-  window.corpusStore.set('selectedSet', next);
+  storeSet('selectedSet', next);
 }
 
 // 全選択/全解除 button + toolbar shortcut: flips between everything selected

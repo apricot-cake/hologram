@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // Empty-state placeholder (#emptyState): the "no posts yet" first-run message, the "no
 // results" filtered-empty message, or the poster first-run message. Pure presentation —
@@ -11,18 +12,18 @@ import { t } from '../_shared/i18n.ts';
 // selectors — corpusStore already carries everything needed reactively — instead
 // of a viewer push. window.corpusEmpty (the old shared bridge) has no callers left
 // anywhere and was deleted.
-const subPostGroups = (cb: () => void) => window.corpusStore.subscribe('postGroups', cb);
-const getPostGroups = () => window.corpusStore.get('postGroups') as any[] | null | undefined;
-const subAllPostsCount = (cb: () => void) => window.corpusStore.subscribe('allPostsCount', cb);
-const getAllPostsCount = () => (window.corpusStore.get('allPostsCount') as number | undefined) ?? 0;
-const subPosterGroups = (cb: () => void) => window.corpusStore.subscribe('posterGroups', cb);
-const getPosterGroups = () => window.corpusStore.get('posterGroups') as any[] | undefined; // never explicitly null — see the comment below
-const subAllUsersCount = (cb: () => void) => window.corpusStore.subscribe('allUsersCount', cb);
-const getAllUsersCount = () => (window.corpusStore.get('allUsersCount') as number | undefined) ?? 0;
-const subSearchQuery = (cb: () => void) => window.corpusStore.subscribe('searchQuery', cb);
-const getSearchQuery = () => (window.corpusStore.get('searchQuery') as string | undefined) ?? '';
-const subMode = (cb: () => void) => window.corpusStore.subscribe('browseMode', cb);
-const getMode = () => (window.corpusStore.get('browseMode') as string | undefined) ?? 'posts';
+const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
+const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
+const subAllPostsCount = (cb: () => void) => storeSubscribe('allPostsCount', cb);
+const getAllPostsCount = () => (storeGet('allPostsCount') as number | undefined) ?? 0;
+const subPosterGroups = (cb: () => void) => storeSubscribe('posterGroups', cb);
+const getPosterGroups = () => storeGet('posterGroups') as any[] | undefined; // never explicitly null — see the comment below
+const subAllUsersCount = (cb: () => void) => storeSubscribe('allUsersCount', cb);
+const getAllUsersCount = () => (storeGet('allUsersCount') as number | undefined) ?? 0;
+const subSearchQuery = (cb: () => void) => storeSubscribe('searchQuery', cb);
+const getSearchQuery = () => (storeGet('searchQuery') as string | undefined) ?? '';
+const subMode = (cb: () => void) => storeSubscribe('browseMode', cb);
+const getMode = () => (storeGet('browseMode') as string | undefined) ?? 'posts';
 
 export function EmptyState() {
   const mode = useSyncExternalStore(subMode, getMode);

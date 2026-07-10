@@ -10,12 +10,13 @@ import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // The inspected ring is derived straight from corpusStore's 'inspectedKey'
 // (a real subscription) rather than riding on modelOf's closure-read model —
 // see grid/Grid.tsx's Cell for the post-side twin of this.
-const subInspected = (cb: () => void) => window.corpusStore.subscribe('inspectedKey', cb);
-const getInspected = () => (window.corpusStore.get('inspectedKey') as string | null | undefined) ?? null;
+const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
+const getInspected = () => (storeGet('inspectedKey') as string | null | undefined) ?? null;
 
 // The poster cell model viewer.js resolves per card — only the fields laid out here.
 interface PosterCardModel {

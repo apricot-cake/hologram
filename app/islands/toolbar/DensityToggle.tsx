@@ -1,10 +1,11 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { tipProps } from '../_shared/tip.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // View-density toggle (card / tile / list). One component, two mounts: the post grid
 // (storeKey='view', data-view) and the poster grid (storeKey='posterView', data-pview).
-// The active view is shared state in window.corpusStore; viewer.js reads it for layout
+// The active view is shared state in corpusStore; viewer.js reads it for layout
 // and re-renders the grid on change. React owns this control's rendering AND its
 // glass-thumb positioning — viewer.js's positionViewThumb explicitly EXCLUDES both
 // #densityToggle and #posterDensityToggle so there are never two writers on one
@@ -52,8 +53,8 @@ const VIEWS = [
 // `el` is the mount container; React renders its children here. storeKey/dataAttr/
 // defaultView parameterize the post-grid vs poster-grid instances (defaults = post grid).
 export function DensityToggle({ el, storeKey = 'view', dataAttr = 'data-view', defaultView = 'card' }: { el: HTMLElement; storeKey?: string; dataAttr?: string; defaultView?: string }) {
-  const subscribe = useCallback((cb: () => void) => window.corpusStore.subscribe(storeKey, cb), [storeKey]);
-  const getView = useCallback((): string => window.corpusStore.get(storeKey) || defaultView, [storeKey, defaultView]);
+  const subscribe = useCallback((cb: () => void) => storeSubscribe(storeKey, cb), [storeKey]);
+  const getView = useCallback((): string => storeGet(storeKey) || defaultView, [storeKey, defaultView]);
   const view = useSyncExternalStore(subscribe, getView);
   const thumbRef = useRef<HTMLElement | null>(null);
   const prevView = useRef(view);
@@ -100,7 +101,7 @@ export function DensityToggle({ el, storeKey = 'view', dataAttr = 'data-view', d
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {VIEWS.map(({ v, key }) => (
-        <button key={v} type="button" {...{ [dataAttr]: v }} {...tipProps(t(key))} className={v === view ? 'active' : undefined} onClick={() => window.corpusStore.set(storeKey, v)}>
+        <button key={v} type="button" {...{ [dataAttr]: v }} {...tipProps(t(key))} className={v === view ? 'active' : undefined} onClick={() => storeSet(storeKey, v)}>
           <ViewIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>

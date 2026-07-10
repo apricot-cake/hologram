@@ -39,11 +39,12 @@ import { namedPosters } from './listing.ts';
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
 import { clipCount as foldersClipCount, onChange as foldersOnChange } from './folders.ts';
+import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 type SidebarSource<T> = { get(): T | null; subscribe(cb: () => void): CorpusUnsubscribe };
 
 function computePostModel(): CorpusSidebarModel {
-  const activeFilters = buildShadow(window.corpusStore.get('postQueryTree'));
+  const activeFilters = buildShadow(storeGet('postQueryTree'));
   // Per-category active-filter counts. Instance filters live inside the platform
   // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
   // 作品/キャラ filter lights its own row, leaving タグ for general (未分類) tags only.
@@ -80,7 +81,7 @@ function computePostModel(): CorpusSidebarModel {
   // クリップ: count library-wide clipped posts; the row is active when its filter is on.
   const existing = new Set<string>(posts.map((p) => p.captureId));
   const clipCount = foldersClipCount(existing);
-  const qfCat = window.corpusStore.get('qfCat');
+  const qfCat = storeGet('qfCat');
   return {
     // Only post-side flyout rows carry .qf-open (poster rows read their own half below).
     openCat: qfCat && !String(qfCat).startsWith('poster-') ? qfCat : null,
@@ -89,7 +90,7 @@ function computePostModel(): CorpusSidebarModel {
       count: clipCount,
       clearVisible: clipCount > 0,
     },
-    multi: { active: !!window.corpusStore.get('multiOnly') },
+    multi: { active: !!storeGet('multiOnly') },
     badges,
     visible: { work: hasWork, character: hasChar },
   };
@@ -101,7 +102,7 @@ function computePosterModel(): CorpusPosterSidebarModel {
   const named = namedPosters ? namedPosters() : [];
   const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
   // Row badges count the matching leaves in the poster query tree (shadow).
-  const leaves = buildShadow(window.corpusStore.get('posterQueryTree'));
+  const leaves = buildShadow(storeGet('posterQueryTree'));
   const tagLeaves = leaves.filter((f) => f.type === 'tag');
   const badges: Record<string, number> = {
     'poster-platform': leaves.filter((f) => f.type === 'platform').length,
@@ -112,7 +113,7 @@ function computePosterModel(): CorpusPosterSidebarModel {
     'poster-date': leaves.some((f) => f.type === 'date') ? 1 : 0,
     'poster-folder': leaves.some((f) => f.type === 'folder') ? 1 : 0,
   };
-  const qfCat = window.corpusStore.get('qfCat');
+  const qfCat = storeGet('qfCat');
   return {
     // Only poster-side flyout rows carry .qf-open here (post rows read their own half above).
     openCat: qfCat && String(qfCat).startsWith('poster-') ? qfCat : null,
@@ -153,7 +154,7 @@ function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>):
   };
 }
 
-const byKey = (k: string) => (cb: () => void) => window.corpusStore.subscribe(k, cb);
+const byKey = (k: string) => (cb: () => void) => storeSubscribe(k, cb);
 
 export const corpusPostSidebarSource = makeSource(computePostModel, [
   byKey('postQueryTree'),

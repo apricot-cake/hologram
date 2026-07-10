@@ -34,6 +34,7 @@ import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { createQueryBuilder } from './query-chips.ts';
 import { corpusTabsSource } from './tabs.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -443,7 +444,7 @@ import { corpusTabsSource } from './tabs.ts';
   // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
   // the native <select> (.cs-host), renders the glass trigger + popup, and drives the
   // select on pick so the change handlers below still fire. The active value is mirrored
-  // into window.corpusStore ('sortPost' etc.) so the island reflects programmatic changes
+  // into corpusStore ('sortPost' etc.) so the island reflects programmatic changes
   // (tab restore pushes 'sortPost'; see applyState / the tab click handler).
 
   // --- Query Field ---
@@ -593,7 +594,7 @@ import { corpusTabsSource } from './tabs.ts';
       // Both columns own .qf-open through corpusStore's 'qfCat' now (renderer/sidebar.ts
       // derives openCat from it), so clearing the highlight is a store write, not an
       // imperative classList sweep or a model re-push.
-      window.corpusStore.set('qfCat', null);
+      storeSet('qfCat', null);
     }
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
@@ -779,7 +780,7 @@ import { corpusTabsSource } from './tabs.ts';
     qfCat = cat;
     qfAnchor = anchorEl;
     qfSession++; // fresh open → island remounts (resets group/find); picks keep it
-    window.corpusStore.set('qfCat', qfCat);
+    storeSet('qfCat', qfCat);
     renderQfPop();
   }
 
@@ -929,7 +930,7 @@ import { corpusTabsSource } from './tabs.ts';
     // time, so a listener bound at load could miss it. Flips the group-level flag.
     if (closestOf(e, '#multiRow')) {
       multiOnly = !multiOnly;
-      window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
+      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
       renderPosts();
       return;
     }
@@ -1070,7 +1071,7 @@ import { corpusTabsSource } from './tabs.ts';
   // scattered pushes at each call site.
   function markPostsMutated() {
     _allPostsGeneration++;
-    window.corpusStore.set('allPostsCount', allPosts.length);
+    storeSet('allPostsCount', allPosts.length);
     syncPostsData(allPosts);
   }
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
@@ -1134,9 +1135,9 @@ import { corpusTabsSource } from './tabs.ts';
   let inspectedKey: string | null = null;
   function setInspectedKey(key: string | null) {
     inspectedKey = key;
-    window.corpusStore.set('inspectedKey', key);
+    storeSet('inspectedKey', key);
   }
-  window.corpusStore.set('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
+  storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
   let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
   let taggingApi: any = null; // shared 種別 (kind) menu API; set by showKindMenu() below
   // Column / slider-track / thumbnail-bucket math lives in geometry.ts now (imported above).
@@ -1258,7 +1259,7 @@ import { corpusTabsSource } from './tabs.ts';
   // Establish an initial value (emptyTree()) before any mutation, so a future
   // reader never sees undefined — setTree only runs on tab restore, which may
   // not happen before the first render of a brand-new tab.
-  window.corpusStore.set('postQueryTree', JSON.parse(JSON.stringify(postQB.getTree())));
+  storeSet('postQueryTree', JSON.parse(JSON.stringify(postQB.getTree())));
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
     return postQB.getTree();
@@ -1441,7 +1442,7 @@ import { corpusTabsSource } from './tabs.ts';
     // Poster sort's single source is corpusStore 'sortPoster' (the GlassSelect writes it);
     // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
     // as the old closure default).
-    posterSort: () => (window.corpusStore.get('sortPoster') as string) || 'count',
+    posterSort: () => (storeGet('sortPoster') as string) || 'count',
     // Collections migrated to sidebar folders; the collection-sort UI is gone, so
     // listing.js's filteredCollections() is dormant smart-collection foundation and
     // is never called here. This getter satisfies its contract with the default
@@ -1470,17 +1471,17 @@ import { corpusTabsSource } from './tabs.ts';
   // island's pull source (renderer/tabs.ts) subscribes to these same keys, so
   // nothing here pushes a model anymore — every call site that used to end in
   // renderTabs() is just gone (the reactivity is automatic now).
-  const getTabs = (): CorpusTab[] => window.corpusStore.get('tabs') || [];
-  const setTabs = (arr: CorpusTab[]) => window.corpusStore.set('tabs', arr);
+  const getTabs = (): CorpusTab[] => storeGet('tabs') || [];
+  const setTabs = (arr: CorpusTab[]) => storeSet('tabs', arr);
   function mutateTabs(fn: (arr: CorpusTab[]) => CorpusTab[] | undefined) {
     const copy = getTabs().slice();
     const result = fn(copy);
     setTabs(result || copy);
   }
-  const getActiveTabId = (): string | null => window.corpusStore.get('activeTabId') ?? null;
-  const setActiveTabId = (id: string | null) => window.corpusStore.set('activeTabId', id);
-  const getTabEditingId = (): string | null => window.corpusStore.get('tabEditingId') ?? null; // id of the tab being inline-renamed (React renders its input)
-  const setTabEditingId = (id: string | null) => window.corpusStore.set('tabEditingId', id);
+  const getActiveTabId = (): string | null => storeGet('activeTabId') ?? null;
+  const setActiveTabId = (id: string | null) => storeSet('activeTabId', id);
+  const getTabEditingId = (): string | null => storeGet('tabEditingId') ?? null; // id of the tab being inline-renamed (React renders its input)
+  const setTabEditingId = (id: string | null) => storeSet('tabEditingId', id);
   let _tabPersistTimer: any = null;
   // Image tabs (type:'image') show ONE post's media fit-to-screen with the
   // inspector alongside instead of a filtered grid — they have no filter state.
@@ -1522,9 +1523,9 @@ import { corpusTabsSource } from './tabs.ts';
     setSearchBoxValue(s.search);
     rebindEditingTextLeaf(); // resume editing the restored term instead of duplicating it
     sortSelect.value = s.sort;
-    window.corpusStore.set('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
+    storeSet('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
     multiOnly = !!s.multi;
-    window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
+    storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
     renderQueryChips();
     renderPosts();
     restoringState = false;
@@ -1547,8 +1548,8 @@ import { corpusTabsSource } from './tabs.ts';
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
-    window.corpusStore.set('navCanBack', nav.canBack());
-    window.corpusStore.set('navCanForward', nav.canForward());
+    storeSet('navCanBack', nav.canBack());
+    storeSet('navCanForward', nav.canForward());
   }
   function navBack() {
     if (nav.back()) persistTabsDebounced();
@@ -1743,7 +1744,7 @@ import { corpusTabsSource } from './tabs.ts';
   // derives the whole React model from this (crossed with posts-data.ts for library
   // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
   function publishActiveImageTab(t: CorpusTab | null) {
-    window.corpusStore.set('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
+    storeSet('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
   }
   // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
   // — the class ⟺ an image tab is showing). viewer keeps only this local flag for the
@@ -1830,9 +1831,9 @@ import { corpusTabsSource } from './tabs.ts';
         setSearchBoxValue(at.state.search || '');
         rebindEditingTextLeaf();
         sortSelect.value = at.state.sort || 'date-desc';
-        window.corpusStore.set('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
+        storeSet('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
         multiOnly = !!at.state.multi;
-        window.corpusStore.set('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
+        storeSet('multiOnly', multiOnly); // mirror into the store — the Tabs source (P4-B slice⑯) reads it for the active tab's derived title
       }
     } catch (err) {
       console.error('initTabs error:', err);
@@ -2117,7 +2118,7 @@ import { corpusTabsSource } from './tabs.ts';
       // pushed render(null) call gave) BEFORE the innerHTML clear
       // below runs. The EmptyState island derives 'firstRun'/'filtered' itself
       // from this same key + 'allPostsCount' + 'searchQuery' — one less push.
-      window.corpusStore.set('postGroups', null);
+      storeSet('postGroups', null);
       grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
@@ -2160,7 +2161,7 @@ import { corpusTabsSource } from './tabs.ts';
     // there since slice④); modelOf/keyOf/labels/onAspect were configured once,
     // above. Pushing the SAME array reference (in-place reuse) is a no-op via the
     // store's identity guard, matching the old itemsKey-doesn't-bump behavior.
-    window.corpusStore.set('postGroups', viewGroups);
+    storeSet('postGroups', viewGroups);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll.
@@ -3101,7 +3102,7 @@ import { corpusTabsSource } from './tabs.ts';
   let _browseRenderT: any = null,
     _densityRenderT: any = null,
     _posterDensityRenderT: any = null;
-  // #densityToggle is rendered by the toolbar island (window.corpusStore 'view').
+  // #densityToggle is rendered by the toolbar island (corpusStore 'view').
   // React owns the active state + glass thumb; viewer reacts to a view change:
   // mirror it into currentView, persist it, and re-render the grid (deferred past a
   // paint with a view transition, like the old optimistic handler). The idempotent
@@ -3109,7 +3110,7 @@ import { corpusTabsSource } from './tabs.ts';
   // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
   // window.corpusViewer below; this stays the guard + action logic.
   function handleViewStoreChange() {
-    const v = window.corpusStore.get('view');
+    const v = storeGet('view');
     if (v === currentView) return;
     currentView = v;
     window.corpusIpc.setPref('viewMode', currentView);
@@ -3134,7 +3135,7 @@ import { corpusTabsSource } from './tabs.ts';
     // than a toggle click. Safe against recursion: the store's set is value-guarded, and
     // when the click path drove us the value is already equal (no-op); when an internal
     // setter drove us, browseMode === mode by now so the subscribe handler's guard skips.
-    window.corpusStore.set('browseMode', mode);
+    storeSet('browseMode', mode);
     // The active state + glass thumb AND body.browse-posters (CSS hides the inactive grid)
     // are React-owned now — the BrowseToggle island / App's ShellClasses both react to this
     // corpusStore 'browseMode' change (ShellClasses toggles the body class in a
@@ -3158,14 +3159,14 @@ import { corpusTabsSource } from './tabs.ts';
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
-  // #browseToggle is rendered by the toolbar island (window.corpusStore 'browseMode').
+  // #browseToggle is rendered by the toolbar island (corpusStore 'browseMode').
   // React owns the active state + glass thumb; viewer reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
   // below, so the loop stays one-way (island → store → viewer, never back). Subscribe
   // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
   // below; this stays the guard + action logic.
   function handleBrowseModeStoreChange() {
-    const m = window.corpusStore.get('browseMode');
+    const m = storeGet('browseMode');
     if (m === browseMode) return;
     setBrowseMode(m);
   }
@@ -3252,7 +3253,7 @@ import { corpusTabsSource } from './tabs.ts';
     sl.value = String(tr.value); // inverted: right = larger
   }
   // Poster grid density (card / tile / list) — rendered by the toolbar island
-  // (window.corpusStore 'posterView'). React owns the active state + glass thumb;
+  // (corpusStore 'posterView'). React owns the active state + glass thumb;
   // viewer reacts to a change: mirror it into posterView, persist it, and re-render
   // the poster grid (deferred past a paint, like the old optimistic handler).
   // renderPosters re-applies the layout classes and refreshes the size slider. The
@@ -3260,7 +3261,7 @@ import { corpusTabsSource } from './tabs.ts';
   // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
   // below; this stays the guard + action logic.
   function handlePosterViewStoreChange() {
-    const v = window.corpusStore.get('posterView');
+    const v = storeGet('posterView');
     if (v === posterView) return;
     posterView = v;
     window.corpusIpc.setPref('posterViewMode', posterView);
@@ -3284,7 +3285,7 @@ import { corpusTabsSource } from './tabs.ts';
       // handler already commits corpusIpc.setPref on every 'input' tick below), so
       // writing the store on every tick too costs nothing extra — masonic still
       // recreates its positioner on the resulting columnWidth change either way.
-      window.corpusStore.set(st.pref, size);
+      storeSet(st.pref, size);
       window.corpusIpc.setPref(st.pref, size);
     });
   })();
@@ -3379,7 +3380,7 @@ import { corpusTabsSource } from './tabs.ts';
   // Establish an initial value (emptyTree()) before any mutation — posters have
   // no tabs/setTree restore path, so this is the ONLY populator until the first
   // filter interaction.
-  window.corpusStore.set('posterQueryTree', JSON.parse(JSON.stringify(posterQB.getTree())));
+  storeSet('posterQueryTree', JSON.parse(JSON.stringify(posterQB.getTree())));
 
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
   // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
@@ -3429,13 +3430,13 @@ import { corpusTabsSource } from './tabs.ts';
       // computed here (buildUsers() is the generation-cached poster roll-up — the
       // OLD code only ever called it in this branch too, so this preserves the
       // same laziness, not a new cost).
-      window.corpusStore.set('allUsersCount', buildUsers().length);
-      window.corpusStore.set('posterGroups', posterList); // [] — React renders an empty grid (no cards)
+      storeSet('allUsersCount', buildUsers().length);
+      storeSet('posterGroups', posterList); // [] — React renders an empty grid (no cards)
       return;
     }
     empty.style.display = 'none';
     grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
-    window.corpusStore.set('posterGroups', posterList);
+    storeSet('posterGroups', posterList);
     // With windowing, cells keep MOUNTING while the user scrolls — drop the
     // entrance class once the initial animation has played, or every late
     // cell would replay it mid-scroll (same wiring as the post grid).
@@ -3670,7 +3671,7 @@ import { corpusTabsSource } from './tabs.ts';
   // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the GlassSelect
   // writes it on pick); re-render when it changes. This replaces the old #posterSortSelect
   // DOM-'change' listener — the store is now the one trigger (no dual source).
-  window.corpusStore.subscribe('sortPoster', () => renderPosters());
+  storeSubscribe('sortPoster', () => renderPosters());
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
   // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
@@ -3757,7 +3758,7 @@ import { corpusTabsSource } from './tabs.ts';
     // source (slice⑩) derives columnWidth/itemHeightEstimate from it. Clear the
     // live-drag override so a later VIEW change (which reads a different
     // storeKey) can't see a stale value from this one.
-    window.corpusStore.set(st.storeKey, st.get());
+    storeSet(st.storeKey, st.get());
     corpusPostGridSource.setLiveColumnWidth(null);
     renderPosts(); // re-request thumbnails at the new size
   }
@@ -3869,35 +3870,35 @@ import { corpusTabsSource } from './tabs.ts';
       // Push the restored view into the store so the toolbar island renders the right
       // button active. currentView is already set, so the subscribe above no-ops
       // (idempotent guard) — no double render, no echo.
-      window.corpusStore.set('view', currentView);
+      storeSet('view', currentView);
     }
     if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
       posterView = prefs.posterViewMode;
       // Push into the store so the island renders the right button active; posterView
       // is already set, so the subscribe above no-ops (idempotent guard).
-      window.corpusStore.set('posterView', posterView);
+      storeSet('posterView', posterView);
     }
     // Poster-grid view sizes mirror into corpusStore (P4-B slice⑫, mirrors slice④'s post-side treatment below).
     if (Number.isFinite(prefs.posterTileSize)) {
       posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
-      window.corpusStore.set('posterTileSize', posterTileSize);
+      storeSet('posterTileSize', posterTileSize);
     }
     if (Number.isFinite(prefs.posterCardSize)) {
       posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
-      window.corpusStore.set('posterCardSize', posterCardSize);
+      storeSet('posterCardSize', posterCardSize);
     }
     // Post-grid view sizes also mirror into corpusStore (P4-B slice④ — see setViewSize).
     if (Number.isFinite(prefs.imageTileSize)) {
       tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
-      window.corpusStore.set('tileSize', tileSize);
+      storeSet('tileSize', tileSize);
     }
     if (Number.isFinite(prefs.cardSize)) {
       cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
-      window.corpusStore.set('cardSize', cardSize);
+      storeSet('cardSize', cardSize);
     }
     if (Number.isFinite(prefs.listThumb)) {
       listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
-      window.corpusStore.set('listThumb', listThumb);
+      storeSet('listThumb', listThumb);
     }
     if (prefs.tileOverlay === false) {
       tileOverlay = false;
@@ -3918,12 +3919,12 @@ import { corpusTabsSource } from './tabs.ts';
   // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
   // the typing pipeline would double-render and churn the editing text leaf.
   function searchQuery() {
-    return String(window.corpusStore.get('searchQuery') || '');
+    return String(storeGet('searchQuery') || '');
   }
   let _searchEcho = '';
   function setSearchBoxValue(v: string | null | undefined) {
     _searchEcho = String(v ?? '');
-    window.corpusStore.set('searchQuery', _searchEcho);
+    storeSet('searchQuery', _searchEcho);
   }
 
   // Search / sort events
@@ -4182,7 +4183,7 @@ import { corpusTabsSource } from './tabs.ts';
       // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the
       // same shape as the density toggle's pref restore.)
       if (bm !== 'posts') setBrowseMode(bm, { silent: true });
-      window.corpusStore.set('browseMode', bm);
+      storeSet('browseMode', bm);
     } catch {
       /* stay in library mode */
     }

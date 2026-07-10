@@ -1,6 +1,7 @@
 import { useSyncExternalStore, useCallback, useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // Glass dropdown for the sidebar sort selects (post / poster / collection). Replaces
 // viewer.js's hand-rolled enhanceSelect machinery (custom button + body-level glass
@@ -10,7 +11,7 @@ import { t } from '../_shared/i18n.ts';
 // viewer's value source: on pick we drive it (set value + dispatch 'change') so the
 // existing change handlers (renderPosts / renderPosters / renderCollections, and the
 // per-tab sort persistence) fire UNCHANGED. The active value is mirrored into
-// window.corpusStore so the trigger label updates without reading the hidden select.
+// corpusStore so the trigger label updates without reading the hidden select.
 //
 // Emits the SAME DOM the old enhanceSelect did (.cs-btn trigger + a .fold-menu.cs-pop
 // glass popup with .fm-row.cs-opt rows) so the CSS is unchanged. Option LABELS come
@@ -33,9 +34,9 @@ const Check = () => (
 // `sel` = the (now hidden) native <select> value source. `options` = [{ value, key }]
 // where key is the i18n message key for the label.
 export function GlassSelect({ sel, storeKey, options }: { sel: HTMLSelectElement; storeKey: string; options: { value: string; key: string }[] }) {
-  const subscribe = useCallback((cb: () => void) => window.corpusStore.subscribe(storeKey, cb), [storeKey]);
+  const subscribe = useCallback((cb: () => void) => storeSubscribe(storeKey, cb), [storeKey]);
   const getVal = useCallback((): string => {
-    const v = window.corpusStore.get(storeKey);
+    const v = storeGet(storeKey);
     return v != null ? v : sel.value; // store wins; fall back to the native select's initial value
   }, [storeKey, sel]);
   const value = useSyncExternalStore(subscribe, getVal);
@@ -53,7 +54,7 @@ export function GlassSelect({ sel, storeKey, options }: { sel: HTMLSelectElement
         sel.value = next;
         sel.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      window.corpusStore.set(storeKey, next);
+      storeSet(storeKey, next);
       setOpen(false);
     },
     [sel, storeKey],

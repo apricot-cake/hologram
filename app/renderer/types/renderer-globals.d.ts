@@ -228,8 +228,8 @@ type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
 // its return type is inferred, so no ambient CorpusCallbackBridge/CorpusMakeBridge type.
 
-// renderer/store.ts's window.corpusStore contract (CorpusStore) now comes from
-// islands/types/globals.d.ts, which this same tsconfig.json project includes
-// directly (via `islands/**/*`) — the old duplicated CorpusStoreApi is gone.
-// The old duplicated `interface Window { corpusSelection }` (once the only
-// Window-merge in this file) is gone too — selection.ts is a real ES module now.
+// renderer/store.ts is a real ES module now (Wave12) — get/set/subscribe are
+// imported directly by every consumer; no ambient CorpusStore/Window merge
+// exists anywhere anymore. The old duplicated `interface Window { corpusSelection }`
+// (once the only Window-merge in this file) is gone too — selection.ts is a real
+// ES module now.

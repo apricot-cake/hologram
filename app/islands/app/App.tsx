@@ -29,6 +29,7 @@ import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
 import { onChange as foldersOnChange } from '../../renderer/folders.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
@@ -73,8 +74,8 @@ function AppBoot() {
 // store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
 // flash. (image-tab-active is owned by ImageTabHost from its model; modal-open stays in
 // viewer — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
-const subBrowseMode = (cb: () => void) => window.corpusStore.subscribe('browseMode', cb);
-const getBrowseMode = () => window.corpusStore.get('browseMode') as string;
+const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
+const getBrowseMode = () => storeGet('browseMode') as string;
 function ShellClasses() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   useLayoutEffect(() => {
@@ -200,7 +201,7 @@ function TabBarEvents() {
   return null;
 }
 
-// External-store / IPC subscriptions: window.corpusStore keys (view / browseMode /
+// External-store / IPC subscriptions: corpusStore keys (view / browseMode /
 // posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
 // folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
 // registration (mounted once for the app's lifetime); each handler's guard + action
@@ -212,10 +213,10 @@ function TabBarEvents() {
 // single-page app.
 function StoreSubscriptions() {
   useEffect(() => {
-    const unsubView = window.corpusStore.subscribe('view', () => window.corpusViewer?.handleViewStoreChange?.());
-    const unsubBrowseMode = window.corpusStore.subscribe('browseMode', () => window.corpusViewer?.handleBrowseModeStoreChange?.());
-    const unsubPosterView = window.corpusStore.subscribe('posterView', () => window.corpusViewer?.handlePosterViewStoreChange?.());
-    const unsubSearchQuery = window.corpusStore.subscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
+    const unsubView = storeSubscribe('view', () => window.corpusViewer?.handleViewStoreChange?.());
+    const unsubBrowseMode = storeSubscribe('browseMode', () => window.corpusViewer?.handleBrowseModeStoreChange?.());
+    const unsubPosterView = storeSubscribe('posterView', () => window.corpusViewer?.handlePosterViewStoreChange?.());
+    const unsubSearchQuery = storeSubscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
     const unsubQfPop = subscribeQfPop(() => window.corpusViewer?.handleQfPopChange?.());
     const unsubSearchMode = subscribeSearch(() => window.corpusViewer?.handleSearchModeChange?.());
     foldersOnChange((kind) => window.corpusViewer?.handleFolderChange?.(kind));

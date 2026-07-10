@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { postIdKey } from '../../renderer/records.ts';
 import { isAllSelected, selectedGroups } from '../../renderer/selection.ts';
+import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // Bulk-action bar (#selectionBar), shown when 1+ cards are selected. Self-derived (P4-B
 // slice⑱): count/allSelected/groupDisabled come straight from corpusStore's 'selectedSet'
@@ -12,10 +13,10 @@ import { isAllSelected, selectedGroups } from '../../renderer/selection.ts';
 // children. Clicks are NOT handled here: each button carries data-act and the click
 // bubbles to viewer's #selectionBar delegation. The button IDs match the old static HTML
 // so scripts/_verify-select.js (getElementById(...).click() / offsetParent) is unchanged.
-const subSelectedSet = (cb: () => void) => window.corpusStore.subscribe('selectedSet', cb);
-const getSelectedSet = () => window.corpusStore.get('selectedSet') as Set<string> | undefined;
-const subPostGroups = (cb: () => void) => window.corpusStore.subscribe('postGroups', cb);
-const getPostGroups = () => window.corpusStore.get('postGroups') as any[] | null | undefined;
+const subSelectedSet = (cb: () => void) => storeSubscribe('selectedSet', cb);
+const getSelectedSet = () => storeGet('selectedSet') as Set<string> | undefined;
+const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
+const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
 
 export function SelectionBar() {
   const selectedSet = useSyncExternalStore(subSelectedSet, getSelectedSet);

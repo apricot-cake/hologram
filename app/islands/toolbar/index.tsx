@@ -7,7 +7,7 @@ import { SearchModeSeg } from './SearchModeSeg.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. Presentational,
-// with state in shared stores (search.ts for the search mode; window.corpusStore
+// with state in shared stores (search.ts for the search mode; corpusStore
 // for the view density / browse mode / sort). viewer.js keeps the heavy logic. Each control
 // portals into its EXISTING, now-empty container so the DOM/CSS contract is unchanged.
 // Lives under the single App root now: app/App.tsx renders <Toolbar/>, which portals every

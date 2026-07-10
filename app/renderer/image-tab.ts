@@ -15,6 +15,7 @@
 // Plain IIFE on window (like grid.ts); loaded BEFORE viewer.js.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
+import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 (function () {
   'use strict';
@@ -51,7 +52,7 @@ import { imageTabGroup } from './records.ts';
   }
 
   function get(): CorpusImageTabModel | null {
-    const active = window.corpusStore.get('activeImageTab');
+    const active = storeGet('activeImageTab');
     if (!active || !gallery || !labels) return null;
     const byId = byIdMap();
     // Only id + img matter to imageTabGroup (records.ts) — the rest of CorpusTab is
@@ -64,7 +65,7 @@ import { imageTabGroup } from './records.ts';
     return {
       items,
       idx: Math.max(0, Math.min(active.idx, items.length - 1)),
-      inspectorOpen: window.corpusStore.get('inspectedKey') != null,
+      inspectorOpen: storeGet('inspectedKey') != null,
       labels,
       onIndexChange: dispatchIndex,
       onToggleInspector: dispatchToggleInspector,
@@ -83,6 +84,6 @@ import { imageTabGroup } from './records.ts';
       return () => subs.delete(cb);
     },
   };
-  for (const k of ['activeImageTab', 'inspectedKey']) window.corpusStore.subscribe(k, notify);
+  for (const k of ['activeImageTab', 'inspectedKey']) storeSubscribe(k, notify);
   subscribePostsData(notify);
 })();

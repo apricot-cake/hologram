@@ -16,6 +16,7 @@
 //        --activebar-h measure; the reset/empty/count chrome is the activebar island)
 import { emptyTree, hasLeafValue, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, facetSetNeg, evalNode } from './query.ts';
 import { open as menuOpen } from './menu.ts';
+import { set as storeSet } from './store.ts';
 
 const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -111,7 +112,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // — calls syncShadow), so one push here covers all of them.
   const syncShadow = () => {
     shadow = buildShadow(tree);
-    if (ctx.storeKey) window.corpusStore.set(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
+    if (ctx.storeKey) storeSet(ctx.storeKey, JSON.parse(JSON.stringify(tree)));
   };
   // One canonical refresh after any tree mutation: rebuild the shadow, then let
   // the view re-render (which itself re-renders this bar via render()).

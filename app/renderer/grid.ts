@@ -2,12 +2,13 @@
 // grid (#postGrid / #posterGrid). viewer.js owns the data pipeline, the
 // container's classes/CSS vars, and every delegated container event handler;
 // the grid islands own cell rendering + windowing (masonic). Kept SEPARATE from
-// window.corpusStore for modelOf/keyOf specifically, which carry CALLBACKS (same
+// corpusStore for modelOf/keyOf specifically, which carry CALLBACKS (same
 // reason as menu.js/qf-pop.js) — everything else (items, layout inputs) DOES live
 // in corpusStore; these sources derive the rest of the model from it. A real ES
 // module now — its exports are imported directly by viewer.ts and the grid
-// islands; window.corpusStore itself is still read/written via window (Wave12
-// converts it).
+// islands; corpusStore itself is a real ES module too (store.ts).
+
+import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 //
 // P4-B slice⑩ (post) and slice⑫ (poster) converted both grids from a PUSHED
 // bridge (viewer calls render()/patch() with a full model) to a PULLED source
@@ -52,19 +53,19 @@ function makePostGridSource() {
   // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
   // single consumer (GridMount) in practice, but this avoids stacking duplicate
   // corpusStore subscriptions (and duplicate notify() fan-out) if that changes.
-  for (const k of ['postGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) window.corpusStore.subscribe(k, notify);
+  for (const k of ['postGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) storeSubscribe(k, notify);
   function computeModel(): CorpusGridModel | null {
     if (!config) return null;
-    const items = window.corpusStore.get('postGroups');
+    const items = storeGet('postGroups');
     if (items == null) return null; // undefined (nothing rendered yet) or explicit null (grid empty)
     if (items !== lastItems) {
       lastItems = items;
       itemsKeySeq++;
     }
-    const view = window.corpusStore.get('view') || 'card';
-    const cardSize = window.corpusStore.get('cardSize');
-    const tileSize = window.corpusStore.get('tileSize');
-    const listThumb = window.corpusStore.get('listThumb');
+    const view = storeGet('view') || 'card';
+    const cardSize = storeGet('cardSize');
+    const tileSize = storeGet('tileSize');
+    const listThumb = storeGet('listThumb');
     const computedColumnWidth = view === 'tile' ? tileSize : view === 'card' ? cardSize : undefined;
     return {
       view,
@@ -121,18 +122,18 @@ function makePosterGridSource() {
       }
     }
   };
-  for (const k of ['posterGroups', 'posterView', 'posterTileSize', 'posterCardSize']) window.corpusStore.subscribe(k, notify);
+  for (const k of ['posterGroups', 'posterView', 'posterTileSize', 'posterCardSize']) storeSubscribe(k, notify);
   function computeModel(): CorpusGridModel | null {
     if (!config) return null;
-    const items = window.corpusStore.get('posterGroups');
+    const items = storeGet('posterGroups');
     if (items == null) return null; // undefined until the first renderPosters() — after that it's always an array (possibly empty), never explicitly cleared to null (unlike posts, poster has no innerHTML-clear ordering constraint to preserve)
     if (items !== lastItems) {
       lastItems = items;
       itemsKeySeq++;
     }
-    const view = window.corpusStore.get('posterView') || 'card';
-    const posterTileSize = window.corpusStore.get('posterTileSize');
-    const posterCardSize = window.corpusStore.get('posterCardSize');
+    const view = storeGet('posterView') || 'card';
+    const posterTileSize = storeGet('posterTileSize');
+    const posterCardSize = storeGet('posterCardSize');
     return {
       items,
       itemsKey: itemsKeySeq,

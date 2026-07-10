@@ -12,6 +12,7 @@ import { ComboBox, Input, ListBox, ListBoxItem, Popover } from 'react-aria-compo
 import type { Key } from 'react-aria-components';
 import type { KeyboardEvent } from 'react';
 import { handlers as sbHandlers } from '../../renderer/searchbox.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // Suggestion rows from viewer.js's buildSuggest (via the searchbox bridge),
 // plus the id react-aria keys the collection on.
@@ -27,8 +28,8 @@ const SUG_ICON: Record<string, string> = { tag: '\u{1F3F7}', user: '\u{1F464}', 
 const handlers = () => sbHandlers() || null;
 
 export function SearchBox({ placeholder }: { placeholder?: string }) {
-  const subscribe = useCallback((cb: () => void) => window.corpusStore.subscribe('searchQuery', cb), []);
-  const value = useSyncExternalStore(subscribe, () => String(window.corpusStore.get('searchQuery') || ''));
+  const subscribe = useCallback((cb: () => void) => storeSubscribe('searchQuery', cb), []);
+  const value = useSyncExternalStore(subscribe, () => String(storeGet('searchQuery') || ''));
   // Focus recomputes suggestions for an unchanged value (viewer may have booted /
   // the library may have changed since the last keystroke) — bump to bust the memo.
   const [focusTick, bumpFocus] = useReducer((x) => x + 1, 0);
@@ -48,7 +49,7 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
 
   const onInputChange = (v: string) => {
     if (pickingRef.current) return; // the selection commit echoes the item's text — the pick already cleared the value
-    window.corpusStore.set('searchQuery', v);
+    storeSet('searchQuery', v);
   };
 
   const onSelectionChange = (key: Key | null) => {

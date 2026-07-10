@@ -28,6 +28,7 @@
 // this slice; this file only computes the model, it never mutates tab state.
 // Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
 import { buildShadow } from './query.ts';
+import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
 type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string };
@@ -54,12 +55,12 @@ const isImageTab = (t: CorpusTab) => !!t && t.type === 'image';
 // Mirrors what postQB.shadow() computes internally, from the SAME mirrored
 // tree (P4-B slice⑦ state-half) — no second shadow copy lives in the store.
 function liveActiveState() {
-  const tree = window.corpusStore.get('postQueryTree');
+  const tree = storeGet('postQueryTree');
   return {
     f: tree ? buildShadow(tree) : [],
-    search: window.corpusStore.get('searchQuery') || '',
-    sort: window.corpusStore.get('sortPost'),
-    multi: !!window.corpusStore.get('multiOnly'),
+    search: storeGet('searchQuery') || '',
+    sort: storeGet('sortPost'),
+    multi: !!storeGet('multiOnly'),
   };
 }
 
@@ -67,11 +68,11 @@ function get(): CorpusTabsModel | null {
   const tt = tabTitleOf;
   const icons = tabIcons;
   if (!tt || !icons) return null;
-  const rawTabs: CorpusTab[] | undefined = window.corpusStore.get('tabs');
+  const rawTabs: CorpusTab[] | undefined = storeGet('tabs');
   if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
-  const activeTabId = window.corpusStore.get('activeTabId');
-  const editingId = window.corpusStore.get('tabEditingId') || null;
-  const allCount = window.corpusStore.get('allPostsCount') || 0;
+  const activeTabId = storeGet('activeTabId');
+  const editingId = storeGet('tabEditingId') || null;
+  const allCount = storeGet('allPostsCount') || 0;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
     const s = isImageTab(t) ? {} : isActive ? liveActiveState() : t.state || {};
@@ -96,5 +97,5 @@ export const corpusTabsSource = {
     return () => subs.delete(cb);
   },
 };
-for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount']) window.corpusStore.subscribe(k, notify);
+for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount']) storeSubscribe(k, notify);
 

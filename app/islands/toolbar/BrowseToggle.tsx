@@ -1,9 +1,10 @@
 import { useSyncExternalStore, useLayoutEffect, useRef, useCallback } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { tipProps } from '../_shared/tip.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 // Browse-mode segmented control (ライブラリ / 投稿者). The active mode is shared state in
-// window.corpusStore ('browseMode'); viewer.js subscribes and runs the heavy
+// corpusStore ('browseMode'); viewer.js subscribes and runs the heavy
 // orchestration (body class, grid render swap, closeDetail, setPref). React owns ONLY
 // this control's rendering AND its glass-thumb positioning — viewer.js's
 // positionViewThumb EXCLUDES #browseToggle so there are never two writers on the
@@ -44,8 +45,8 @@ const MODES = [
   { v: 'posters', key: 'browsePosters' },
 ];
 
-const subscribe = (cb: () => void) => window.corpusStore.subscribe('browseMode', cb);
-const getMode = (): string => window.corpusStore.get('browseMode') || 'posts';
+const subscribe = (cb: () => void) => storeSubscribe('browseMode', cb);
+const getMode = (): string => storeGet('browseMode') || 'posts';
 
 // `el` is the mount container; React renders its children here.
 export function BrowseToggle({ el }: { el: HTMLElement }) {
@@ -95,7 +96,7 @@ export function BrowseToggle({ el }: { el: HTMLElement }) {
     <>
       <i className="vt-thumb" aria-hidden="true" ref={thumbRef} />
       {MODES.map(({ v, key }) => (
-        <button key={v} type="button" data-mode={v} {...tipProps(t(key))} className={v === mode ? 'active' : undefined} onClick={() => window.corpusStore.set('browseMode', v)}>
+        <button key={v} type="button" data-mode={v} {...tipProps(t(key))} className={v === mode ? 'active' : undefined} onClick={() => storeSet('browseMode', v)}>
           <BrowseIcon v={v} />
           <span className="vt-label">{t(key)}</span>
         </button>

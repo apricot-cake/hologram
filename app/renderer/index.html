@@ -1931,14 +1931,14 @@
         <div class="sb-section browse-bar-section">
           <div class="sb-title" id="sbViewTitle"></div>
           <!-- Browse-mode segment is rendered by the toolbar island (BrowseToggle);
-               active state lives in window.corpusStore 'browseMode'. -->
+               active state lives in corpusStore 'browseMode'. -->
           <div class="view-toggle browse-toggle" id="browseToggle"></div>
         </div>
         <!-- Poster-mode view density (card/tile/list) — only while browsing posters.
              Mirrors #densityToggle; the tile view leads with the avatar (アイコン) image. -->
         <div class="sb-section" id="posterViewSection">
           <div class="sb-title" id="sbPosterLayoutTitle"></div>
-          <!-- Filled by the toolbar island (window.corpusStore 'posterView'). Empty
+          <!-- Filled by the toolbar island (corpusStore 'posterView'). Empty
                container = React mount point; #sbPosterLayoutTitle stays viewer-owned. -->
           <div class="view-toggle" id="posterDensityToggle"></div>
           <div class="tile-size" id="posterTileSizeRow" style="display:none">
@@ -1950,7 +1950,7 @@
         <div class="toolbar" id="postsToolbar">
           <div class="sb-section">
             <div class="sb-title" id="sbLayoutTitle"></div>
-            <!-- Filled by the toolbar island (window.corpusStore 'view'). Empty
+            <!-- Filled by the toolbar island (corpusStore 'view'). Empty
                  container = React mount point; #sbLayoutTitle stays viewer-owned. -->
             <div class="view-toggle" id="densityToggle"></div>
             <div class="tile-size" id="tileSizeRow" style="display:none">
