@@ -34,6 +34,7 @@ import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { createQueryBuilder } from './query-chips.ts';
 import { corpusTabsSource } from './tabs.ts';
+import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { corpusIpc } from './ipc.ts';
 
@@ -2206,7 +2207,7 @@ import { corpusIpc } from './ipc.ts';
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
-  window.corpusImageTabSource.configure({
+  corpusImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
     labels: { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo },
   });

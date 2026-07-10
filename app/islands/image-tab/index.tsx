@@ -1,21 +1,22 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
+import { corpusImageTabSource } from '../../renderer/image-tab.ts';
 import { ImageTab } from './ImageTab.tsx';
 
 // React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object
 // (type:'image') and its recs/idx; this island PULLS its model from renderer/image-tab.ts
-// (window.corpusImageTabSource) instead of being pushed one — P4-B slice⑮ converted this
-// off the old render(model) push (viewer called it from ~8 call sites), the same shape as
-// the grid sources (⑩/⑫). This island still owns zoom/pan (react-zoom-pan-pinch), prev/next
-// painting, and the ←/→ keys while an image tab is the active view.
+// instead of being pushed one — P4-B slice⑮ converted this off the old render(model)
+// push (viewer called it from ~8 call sites), the same shape as the grid sources (⑩/⑫).
+// This island still owns zoom/pan (react-zoom-pan-pinch), prev/next painting, and the
+// ←/→ keys while an image tab is the active view.
 
 // Not useSyncExternalStore: get() recomputes a fresh object on every notify (like the grid
 // sources), which would trip React's "cached snapshot" tearing check — a plain subscribe→
 // setState effect (same shape as GridMount's sync()) sidesteps that.
 export function ImageTabHost() {
-  const [model, setModel] = useState(() => window.corpusImageTabSource.get());
+  const [model, setModel] = useState(() => corpusImageTabSource.get());
   useEffect(() => {
-    const sync = () => setModel(window.corpusImageTabSource.get());
-    const unsub = window.corpusImageTabSource.subscribe(sync);
+    const sync = () => setModel(corpusImageTabSource.get());
+    const unsub = corpusImageTabSource.subscribe(sync);
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);
@@ -32,7 +33,7 @@ export function ImageTabHost() {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   if (!document.body.classList.contains('image-tab-active')) return;
-  const model = window.corpusImageTabSource.get();
+  const model = corpusImageTabSource.get();
   if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;

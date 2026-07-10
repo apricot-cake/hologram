@@ -38,10 +38,9 @@
 //     globals at render) and viewer (last). Wave 1 = the logic services. ---
 // Wave 2 = the remaining infra bridge. ipc/store/bridge/menu/kind-menu/inspector/
 // edit-overlay/confirm/search/backup/posts/i18n/grid/selection/records/tags/
-// tab-state/trash are real ES modules now, imported directly by their consumers
-// (no barrel entry needed) — image-tab.ts is the last window-IIFE bridge left
-// (Wave14 pending).
-import 'corpus-svc:image-tab';
+// tab-state/trash/image-tab are real ES modules now, imported directly by their
+// consumers (no barrel entry needed) — shell.ts (below) is the only entry left
+// here, and only because it's a side-effect-only IIFE with nothing to import.
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

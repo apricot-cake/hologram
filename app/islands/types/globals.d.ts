@@ -216,15 +216,18 @@ declare global {
 
   // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
-  // window.corpusImageTab.render(model) from ~8 call sites) to a PULLED source,
-  // same shape as the grid sources (⑩/⑫). viewer.js writes only the tab identity
-  // (corpusStore's 'activeImageTab' — id/recs/idx, the one slice of tab state
-  // migrated ahead of the full tabs→store move in ⑯) + still owns 'inspectedKey'
-  // (state→store phase); get() crosses both with posts-data.ts (library
-  // changes — a deleted post degrades to the missing state live with no viewer
-  // push, exactly what the posts-data.ts comment above anticipated). Commands
-  // (index step / inspector toggle / close tab) dispatch back through
-  // window.corpusViewer — this file only computes, it never mutates tab state.
+  // render(model) on it from ~8 call sites) to a PULLED source, same shape as
+  // the grid sources (⑩/⑫). viewer.js writes only the tab identity (corpusStore's
+  // 'activeImageTab' — id/recs/idx, the one slice of tab state migrated ahead of
+  // the full tabs→store move in ⑯) + still owns 'inspectedKey' (state→store
+  // phase); get() crosses both with posts-data.ts (library changes — a deleted
+  // post degrades to the missing state live with no viewer push, exactly what
+  // the posts-data.ts comment above anticipated). Commands (index step /
+  // inspector toggle / close tab) dispatch back through window.corpusViewer —
+  // this file only computes, it never mutates tab state. A real ES module
+  // (named export `corpusImageTabSource`) now — no ambient Window-shaped
+  // interface needed for it (CorpusImageTabModel stays: the shared data shape
+  // between image-tab.ts and this island).
   interface CorpusImageTabModel {
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
@@ -234,11 +237,6 @@ declare global {
     onIndexChange?(i: number): void;
     onToggleInspector?(): void;
     onCloseTab?(): void;
-  }
-  interface CorpusImageTabSource {
-    configure(cfg: { gallery: { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean }[] }; labels: Record<string, string> }): void;
-    get(): CorpusImageTabModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
   // ---- renderer/tabs.ts — P4-B slice⑯: converts the tab strip (#tabBarInner) off
@@ -538,7 +536,6 @@ declare global {
     corpusViewer?: CorpusViewer;
     corpusSettings: CorpusSettings;
     corpusLightbox: CorpusLightbox;
-    corpusImageTabSource: CorpusImageTabSource;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
     React: typeof import('react');
