@@ -6,16 +6,14 @@
 // (grouping, ○ select + manual grouping, and ℹ detail all live in viewer.js).
 // Collapsible sidebar sections were dropped in the row→flyout restructure; the
 // only remaining collapse (tag-group subrows) lives in viewer.js.
-(function () {
-  'use strict';
+import { applyMode } from './search.ts';
 
-  // Restore the saved search mode (通常/あいまい) into the viewer.
-  (async () => {
-    try {
-      const prefs = window.corpusIpc.getPrefs ? await window.corpusIpc.getPrefs() : null;
-      if (prefs && window.corpusSearch) window.corpusSearch.applyMode(prefs.searchMode);
-    } catch {
-      /* ignore */
-    }
-  })();
+// Restore the saved search mode (通常/あいまい) into the viewer.
+(async () => {
+  try {
+    const prefs = window.corpusIpc.getPrefs ? await window.corpusIpc.getPrefs() : null;
+    if (prefs) applyMode(prefs.searchMode);
+  } catch {
+    /* ignore */
+  }
 })();

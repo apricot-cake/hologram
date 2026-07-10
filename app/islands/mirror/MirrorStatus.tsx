@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { fmtBackupTime, fmtTime } from '../../renderer/format.ts';
+import { getBackup, onBackupStart, onBackupDone } from '../../renderer/backup.ts';
 
 // Backup status rail (#mirrorStatus) — the always-visible sidebar footer showing the
 // auto-backup state. This island OWNS the state machine (backup config + last result +
-// syncing flag), reading it straight from window.corpusBackup (getBackup + onBackupStart/
+// syncing flag), reading it straight from backup.ts (getBackup + onBackupStart/
 // Done) and deriving the model (kind/text/title/time) with its own t() + format.ts's
 // fmtBackupTime/fmtTime — there is no viewer push (the old window.corpusMirror bridge +
 // setupMirrorStatusRail are gone). The status modifier (.is-syncing / .is-error / .is-done)
@@ -81,7 +82,7 @@ export function MirrorStatus() {
     let alive = true;
     const load = async () => {
       try {
-        cfgRef.current = await window.corpusBackup.getBackup();
+        cfgRef.current = await getBackup();
       } catch {
         cfgRef.current = null;
       }
@@ -92,11 +93,11 @@ export function MirrorStatus() {
     // still lights the rail (cfg may have been null at boot). onBackupStart/Done register
     // once for the app's lifetime (no unsubscribe, like the other App-level IPC effects) —
     // this island never actually unmounts in the single-page app.
-    window.corpusBackup.onBackupStart(async () => {
+    onBackupStart(async () => {
       syncingRef.current = true;
       if (!cfgRef.current || !cfgRef.current.dir) {
         try {
-          cfgRef.current = await window.corpusBackup.getBackup();
+          cfgRef.current = await getBackup();
         } catch {
           /* ignore */
         }
@@ -105,11 +106,11 @@ export function MirrorStatus() {
     });
     // A run finished: carry over the fresh result (and pull cfg if it was empty when the
     // run began) so the rail is correct without a manual refresh.
-    window.corpusBackup.onBackupDone(async (_e: any, r: any) => {
+    onBackupDone(async (_e: any, r: any) => {
       syncingRef.current = false;
       if (!cfgRef.current) {
         try {
-          cfgRef.current = await window.corpusBackup.getBackup();
+          cfgRef.current = await getBackup();
         } catch {
           /* ignore */
         }

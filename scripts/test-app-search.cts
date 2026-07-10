@@ -120,8 +120,7 @@ const evalJs = `(async () => {
   // are gone — the thumb slides by inline transform instead)
   const exactBtn = seg.querySelector('.seg-opt[data-mode="normal"]');
   const fuzzyBtn = seg.querySelector('.seg-opt[data-mode="fuzzy"]');
-  const defaultMode = window.corpusSearch.getMode();      // 既定 = normal
-  const exactOnByDefault = exactBtn.classList.contains('is-on') && !fuzzyBtn.classList.contains('is-on');
+  const exactOnByDefault = exactBtn.classList.contains('is-on') && !fuzzyBtn.classList.contains('is-on'); // 既定 = normal
   // ぴったり（既定）: カタカナ本文にひらがなクエリは部分一致しない → 0
   typeSearch('ねこ');
   await wait(220);
@@ -130,8 +129,7 @@ const evalJs = `(async () => {
   fuzzyBtn.click();
   await wait(220);
   const fuzzyKana = cards();
-  const selValue = window.corpusSearch.getMode();          // fuzzy
-  const fuzzyOn = fuzzyBtn.classList.contains('is-on') && !exactBtn.classList.contains('is-on');
+  const fuzzyOn = fuzzyBtn.classList.contains('is-on') && !exactBtn.classList.contains('is-on'); // fuzzy
   // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致 → 1
   typeSearch('こんにとは');
   await wait(220);
@@ -176,7 +174,7 @@ const evalJs = `(async () => {
   // capturedAt mirrors date in the fixtures → same field path must yield the same set.
   const capturedRange = await applyDate('capturedAt', '2026-06-20', '2026-06-20');
 
-  return { normalKana, fuzzyKana, fuzzyTypo, defaultMode, selValue, exactOnByDefault, fuzzyOn, dateRange, capturedRange };
+  return { normalKana, fuzzyKana, fuzzyTypo, exactOnByDefault, fuzzyOn, dateRange, capturedRange };
 })()`;
 
 // TZ=Asia/Tokyo (UTC+9) so the date-filter section exercises a non-UTC boundary.
@@ -198,8 +196,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 && r.defaultMode === 'normal' && r.selValue === 'fuzzy' && r.exactOnByDefault === true && r.fuzzyOn === true && r.dateRange === 'dz0,dz1' && r.capturedRange === 'dz0,dz1';
-  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} default=${r.defaultMode} mode=${r.selValue} exactOn=${r.exactOnByDefault} fuzzyOn=${r.fuzzyOn} dateRange=${r.dateRange} capturedRange=${r.capturedRange}`);
+  const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 && r.exactOnByDefault === true && r.fuzzyOn === true && r.dateRange === 'dz0,dz1' && r.capturedRange === 'dz0,dz1';
+  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} exactOn=${r.exactOnByDefault} fuzzyOn=${r.fuzzyOn} dateRange=${r.dateRange} capturedRange=${r.capturedRange}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

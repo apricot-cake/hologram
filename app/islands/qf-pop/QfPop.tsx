@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
 import { tipProps } from '../_shared/tip.ts';
 import { subscribe, get, close } from '../../renderer/qf-pop.ts';
+import { subscribe as subscribeSearch, isFuzzy, compile, setMode } from '../../renderer/search.ts';
 
 // Render list entries buildRows() flattens the facet items into.
 type QfRow = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: CorpusQfPopItem };
@@ -127,7 +128,7 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
     }, 0);
     return () => clearTimeout(t);
   }, [model.showFind]);
-  const fuzzy = useSyncExternalStore(window.corpusSearch.subscribe, window.corpusSearch.isFuzzy);
+  const fuzzy = useSyncExternalStore(subscribeSearch, isFuzzy);
 
   const groups = useMemo(() => buildGroups(model.items), [model.items]);
   const twoPane = groups.length > 0;
@@ -141,7 +142,7 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
   const raw = query.trim().toLowerCase();
   const atMode = raw.startsWith('@');
   const q = atMode ? raw.slice(1) : raw;
-  const matcher = q && fuzzy ? window.corpusSearch.compile(q) : null;
+  const matcher = q && fuzzy ? compile(q) : null;
   const hit = (hay: unknown) => {
     const s = String(hay || '').toLowerCase();
     return matcher ? matcher(s) : s.includes(q);
@@ -165,10 +166,10 @@ function QfBody({ model }: { model: CorpusQfPopModel }) {
           </div>
           <div className="seg-control seg-control--qf" role="group" aria-label={model.searchModeTitle}>
             <span className="seg-thumb" aria-hidden="true" style={{ transform: fuzzy ? '' : 'translateX(100%)' }} />
-            <button type="button" className={'seg-opt' + (fuzzy ? ' is-on' : '')} data-mode="fuzzy" {...tipProps(model.fuzzyHint || '')} onClick={() => window.corpusSearch.setMode('fuzzy')}>
+            <button type="button" className={'seg-opt' + (fuzzy ? ' is-on' : '')} data-mode="fuzzy" {...tipProps(model.fuzzyHint || '')} onClick={() => setMode('fuzzy')}>
               {model.fuzzyLabel}
             </button>
-            <button type="button" className={'seg-opt' + (!fuzzy ? ' is-on' : '')} data-mode="normal" {...tipProps(model.exactHint || '')} onClick={() => window.corpusSearch.setMode('normal')}>
+            <button type="button" className={'seg-opt' + (!fuzzy ? ' is-on' : '')} data-mode="normal" {...tipProps(model.exactHint || '')} onClick={() => setMode('normal')}>
               {model.exactLabel}
             </button>
           </div>

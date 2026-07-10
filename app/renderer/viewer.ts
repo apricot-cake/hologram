@@ -25,6 +25,10 @@ import { init as initSearchBox } from './searchbox.ts';
 import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setKindLabel as tagsSetKindLabel, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
+import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
+import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
+import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
+import { corpusI18n } from './i18n.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -47,7 +51,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
-  const { lang, getMessage } = await window.corpusI18n;
+  const { lang, getMessage } = await corpusI18n;
   const _s = (key: string) => getMessage(key);
   const _f1 = (key: string) => (a: string | number) => getMessage(key, [a]);
   const _f2 = (key: string) => (a: string | number, b: string | number) => getMessage(key, [a, b]);
@@ -999,7 +1003,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
   async function applyTagUndo(records: { captureId?: string; image?: string; tags: string[] }[]) {
     for (const r of records) {
       try {
-        await window.corpusPosts.updateTags(r.image || '', r.tags);
+        await postsUpdateTags(r.image || '', r.tags);
       } catch {}
       const rec = r.captureId ? _postsById.get(r.captureId) : undefined; // O(1) via the delta-cache map (allPosts holds the same record refs)
       if (rec) rec.tags = r.tags.slice();
@@ -1175,7 +1179,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
   const postPredOf = makePostPredOf({
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
-    fuzzyCompile: (q) => (window.corpusSearch ? window.corpusSearch.compile(q) : null),
+    fuzzyCompile: (q) => searchCompile(q),
     postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
@@ -1334,7 +1338,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
     generation: () => _allPostsGeneration,
     userKey,
     hostOf,
-    corpusSearch: () => window.corpusSearch,
+    corpusSearch: () => ({ isFuzzy: searchIsFuzzy, compile: searchCompile }),
   });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
@@ -1372,7 +1376,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
     }
     _loadPostsInFlight = true;
     try {
-      const res = await window.corpusPosts.listPostsDelta(_haveBaseline, changedNames);
+      const res = await listPostsDelta(_haveBaseline, changedNames);
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
@@ -2457,7 +2461,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
     for (const r of g.records) {
       try {
-        await window.corpusPosts.deletePost(r.image || r.video);
+        await deletePost(r.image || r.video);
       } catch {
         /* keep going */
       }
@@ -2567,7 +2571,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
       try {
-        await window.corpusPosts.updateTags(r.image || r.video, next);
+        await postsUpdateTags(r.image || r.video, next);
       } catch {
         /* keep going */
       }
@@ -2755,7 +2759,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
       if (prev.includes(tag)) continue;
       const newTags = [...prev, tag];
       try {
-        await window.corpusPosts.updateTags(r.image || r.video, newTags);
+        await postsUpdateTags(r.image || r.video, newTags);
       } catch {
         /* keep going */
       }
@@ -2974,7 +2978,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
         });
         for (const u of undoRecords) {
           try {
-            await window.corpusPosts.updateTags(u.image, u.newTags);
+            await postsUpdateTags(u.image, u.newTags);
           } catch {
             /* keep going */
           }
@@ -3078,7 +3082,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
         // Bulk delete selected groups — every record of each selected group.
         const toDelete = window.corpusSelection.selectedRecords(viewGroups, postIdKey);
         const count = toDelete.length;
-        for (const p of toDelete) await window.corpusPosts.deletePost(p.image || p.video);
+        for (const p of toDelete) await deletePost(p.image || p.video);
         window.corpusSelection.clear();
         updateSelectionBar();
         await loadPosts(true);
@@ -3953,7 +3957,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
     treeLeaves,
     searchQuery: () => searchQuery(),
     setSearchBoxValue: (v) => setSearchBoxValue(v),
-    isFuzzy: () => !!(window.corpusSearch && window.corpusSearch.isFuzzy()),
+    isFuzzy: () => searchIsFuzzy(),
     isPostsMode: () => browseMode === 'posts',
     afterQueryChange: () => afterQueryChange(),
     renderPosts: () => renderPosts(),
@@ -4027,7 +4031,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
       const zip = await JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
-        const res = await window.corpusPosts.importComplete(buf);
+        const res = await importComplete(buf);
         await loadPosts();
         (e.target as HTMLInputElement).value = '';
         if (!res || !res.ok) {
@@ -4052,7 +4056,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await window.corpusPosts.importPosts(posts);
+      const { imported, skipped } = await importPosts(posts);
       await loadPosts();
       (e.target as HTMLInputElement).value = '';
       if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
@@ -4064,7 +4068,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
   });
 
   // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus island now — it
-  // reads window.corpusBackup (getBackup + onBackupStart/Done) and derives the rail model
+  // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
   // itself. viewer no longer holds any of that state (the old setupMirrorStatusRail +
   // window.corpusMirror bridge are gone).
 
@@ -4083,7 +4087,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
       keywordRequired: MSG.deleteKeyword, // OK stays disabled until this is typed
       onOk: async () => {
         // Clear all data (deletes every image + sidecar in the save folder).
-        const res = await window.corpusPosts.clearAll();
+        const res = await clearAll();
         // Main refuses the wipe if config is degraded — keep the library on screen and
         // tell the user to restart (initSaveFolderRedundancy repairs on launch).
         if (res && res.blocked) {
@@ -4137,7 +4141,7 @@ import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, p
   }
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
   // lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer below
-  // (window.corpusPosts.onPostsChanged has no unsubscribe either — same reasoning).
+  // (posts.ts's onPostsChanged has no unsubscribe either — same reasoning).
   async function handlePostsChanged(names: string[] | null) {
     await loadPosts(true, names);
   }

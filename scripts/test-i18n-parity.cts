@@ -46,32 +46,38 @@ function diffValues(name, a, b) {
   }
 }
 
-// ---- 1) renderer MESSAGES (closure-private → expose via a guarded source patch)
+// ---- 1) renderer MESSAGES (module-private → expose via a guarded source patch).
+// i18n.ts is a real ES module now (named export `corpusI18n`), but MESSAGES itself
+// stays module-scope (both ja/en tables are needed side by side here, whereas
+// corpusI18n only resolves to ONE locale) — so this still reads the source rather
+// than import()-ing. Simpler than before the conversion, though: we only need the
+// `const MESSAGES = {...}` declaration, not the corpusI18n async IIFE that follows
+// it (which needs window/navigator + is now invalid syntax for indirect eval anyway,
+// since it starts with the `export` keyword) — slice it off before eval, dropping
+// the window/navigator shims entirely.
 {
-  const src = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
-  // stripTS pads erased type annotations with spaces (preserves line/column numbers),
-  // so `const MESSAGES: {...} = {` survives as `const MESSAGES <spaces>= {` — match
-  // whitespace-tolerantly rather than the old exact-string HOOK.
-  const HOOK = /const MESSAGES\s*=\s*\{/;
-  if (!HOOK.test(src)) {
-    fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");
+  const fullSrc = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
+  const EXPORT_LINE = /^export const corpusI18n = /m;
+  const cut = fullSrc.search(EXPORT_LINE);
+  if (cut === -1) {
+    fail("renderer/i18n.ts: expected `export const corpusI18n = ` not found — update this test's cut point");
   } else {
-    // Shims so the IIFE runs under Node: corpus.getPrefs resolves, navigator exists.
-    (global as any).window = { corpus: { getPrefs: async () => ({}) } };
-    if (!(global as any).navigator) (global as any).navigator = { language: 'ja' };
-    // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read the closure-private MESSAGES table (same pattern as test-search-unit)
-    // biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
-    (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__corpusMessages = {'));
-    if ((global as any).window.corpusI18n && typeof (global as any).window.corpusI18n.catch === 'function') {
-      (global as any).window.corpusI18n.catch(() => {}); // don't die on an unrelated init rejection
-    }
-    const M = (globalThis as any).__corpusMessages;
-    if (!M || !M.ja || !M.en) {
-      fail('renderer/i18n.ts: MESSAGES.ja / MESSAGES.en not captured');
+    const src = fullSrc.slice(0, cut);
+    const HOOK = /const MESSAGES\s*=\s*\{/;
+    if (!HOOK.test(src)) {
+      fail("renderer/i18n.ts: expected `const MESSAGES = {` not found — update this test's HOOK");
     } else {
-      diffKeys('renderer', M.ja, M.en);
-      diffValues('renderer', M.ja, M.en);
-      console.log(`renderer: ja=${Object.keys(M.ja).length} en=${Object.keys(M.en).length} keys checked`);
+      // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read the module-private MESSAGES table (same pattern as test-search-unit used before its own conversion)
+      // biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
+      (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__corpusMessages = {'));
+      const M = (globalThis as any).__corpusMessages;
+      if (!M || !M.ja || !M.en) {
+        fail('renderer/i18n.ts: MESSAGES.ja / MESSAGES.en not captured');
+      } else {
+        diffKeys('renderer', M.ja, M.en);
+        diffValues('renderer', M.ja, M.en);
+        console.log(`renderer: ja=${Object.keys(M.ja).length} en=${Object.keys(M.en).length} keys checked`);
+      }
     }
   }
 }

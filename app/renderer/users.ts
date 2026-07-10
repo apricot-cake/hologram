@@ -12,7 +12,7 @@
 //   generation() — _allPostsGeneration (bumped on every allPosts replacement;
 //                  invalidates the buildUsers cache)
 //   userKey(p) / hostOf(url) — from query.js
-//   corpusSearch() — window.corpusSearch (fuzzy mode + matcher compiler)
+//   corpusSearch() — search.ts (fuzzy mode + matcher compiler)
 export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; corpusSearch(): { isFuzzy(): boolean; compile(q: string): (hay: string) => boolean } | undefined }) {
   const { allPosts, generation, userKey, hostOf, corpusSearch } = deps;
 

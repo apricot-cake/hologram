@@ -37,21 +37,17 @@
 //     mirrors the old index.html scripts; these precede root.tsx (islands read the
 //     globals at render) and viewer (last). Wave 1 = the logic services. ---
 import 'corpus-svc:ipc';
-import 'corpus-svc:search';
 import 'corpus-svc:records';
 import 'corpus-svc:tags';
 import 'corpus-svc:tab-state';
 import 'corpus-svc:query-chips';
 import 'corpus-svc:trash';
-import 'corpus-svc:backup';
-import 'corpus-svc:posts';
 // Wave 2 = infra + UI bridges (store/bridge before their consumers filter-popover/
 // qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-popover
 // module-load time, so it must precede them; order below mirrors the old
 // index.html <script> order, which already satisfied this). menu/kind-menu/
-// inspector/edit-overlay/confirm are real ES modules now, imported directly by
-// their consumers (no barrel entry needed).
-import 'corpus-svc:i18n';
+// inspector/edit-overlay/confirm/search/backup/posts/i18n are real ES modules now,
+// imported directly by their consumers (no barrel entry needed).
 import 'corpus-svc:folders';
 import 'corpus-svc:store';
 import 'corpus-svc:grid';
@@ -78,6 +74,6 @@ import './root.tsx';
 import 'corpus-viewer-bundle';
 // shell.ts was index.html's LAST <script> (after islands/app.js, so after viewer too) —
 // kept last here to preserve that ordering. Its only load-time work is an async IIFE
-// that awaits window.corpus.getPrefs() then calls window.corpusSearch.applyMode(...);
-// corpusSearch is already assigned synchronously by the Wave 1 import above.
+// that awaits window.corpus.getPrefs() then calls applyMode(...) (search.ts, imported
+// directly by shell.ts now).
 import 'corpus-svc:shell';

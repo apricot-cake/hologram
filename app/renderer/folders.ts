@@ -11,6 +11,7 @@
 //     isClipped, toggleClip, clearClips, clippedItems, clipCount,
 //     reconcile, openManager, closeManager, isManagerOpen, toast, onChange, isLoaded }
 import { escapeHtml as uiEscapeHtml, notify as uiNotify } from './ui.ts';
+import { corpusI18n } from './i18n.ts';
 
 (function () {
   'use strict';
@@ -202,20 +203,18 @@ import { escapeHtml as uiEscapeHtml, notify as uiNotify } from './ui.ts';
   let loadPromise: Promise<void> | null = null;
   const subs: Array<(kind?: string) => void> = [];
 
-  // i18n: this module owns the folder modal + its toasts. window.corpusI18n is a
-  // promise set by i18n.js (loaded before this script). Resolve once and cache
-  // getMessage as t(); until then t() echoes the key. Static modal labels are
-  // applied on resolve (and re-applied if the modal is open). Dynamic strings
-  // (toasts, row buttons, prompts, confirms) call t() at use time.
+  // i18n: this module owns the folder modal + its toasts. corpusI18n is a
+  // promise from i18n.ts. Resolve once and cache getMessage as t(); until then
+  // t() echoes the key. Static modal labels are applied on resolve (and
+  // re-applied if the modal is open). Dynamic strings (toasts, row buttons,
+  // prompts, confirms) call t() at use time.
   let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
-  if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
-    window.corpusI18n.then((api) => {
-      if (api && api.getMessage) {
-        t = api.getMessage;
-        applyStaticI18n();
-      }
-    });
-  }
+  corpusI18n.then((api) => {
+    if (api && api.getMessage) {
+      t = api.getMessage;
+      applyStaticI18n();
+    }
+  });
   function applyStaticI18n() {
     const modal = $('ivFolderModal');
     if (!modal) return;

@@ -4,6 +4,8 @@ import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../../renderer/ui.ts';
+import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../../renderer/backup.ts';
+import { onSaveFolderProgress, pickSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
@@ -50,12 +52,12 @@ function wireIpcOnce() {
   if (ipcWired) return;
   ipcWired = true;
   try {
-    window.corpusPosts.onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
+    onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
   } catch {
     /* bare dev server: no preload bridge behind corpusPosts */
   }
   try {
-    window.corpusBackup.onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
+    onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
     /* bare dev server: no preload bridge behind corpusBackup */
   }
@@ -111,7 +113,7 @@ export function Data() {
     Promise.resolve(corpus().getConfig ? corpus().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
       .catch(() => {});
-    Promise.resolve(window.corpusBackup.getBackup())
+    Promise.resolve(getBackup())
       .then((b) => setBackup(b || null))
       .catch(() => {});
   }, []);
@@ -155,7 +157,7 @@ export function Data() {
     setMigrating(true);
     setProgress(null); // box appears on the first progress event (after a folder is picked)
     try {
-      const res = await window.corpusPosts.pickSaveFolder();
+      const res = await pickSaveFolder();
       if (!res || res.canceled) {
         setProgress(null);
         return;
@@ -179,7 +181,7 @@ export function Data() {
   const exportZip = async () => {
     notify(t('exporting'));
     try {
-      const res = await window.corpusPosts.exportComplete(exportMode);
+      const res = await exportComplete(exportMode);
       if (res && res.saved) notify(t('exported'));
       else if (res && res.empty) notify(t('noData'));
       else if (res && res.error) notify(t('exportFailed'));
@@ -199,7 +201,7 @@ export function Data() {
       const zip = await window.JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
-        const res = await window.corpusPosts.importComplete(buf);
+        const res = await importComplete(buf);
         reloadPosts();
         input.value = '';
         if (!res || !res.ok) {
@@ -224,7 +226,7 @@ export function Data() {
         const b64 = await f.async('base64');
         posts.push(Object.assign({}, m, { image: 'data:image/jpeg;base64,' + b64 }));
       }
-      const { imported, skipped } = await window.corpusPosts.importPosts(posts);
+      const { imported, skipped } = await importPosts(posts);
       reloadPosts();
       input.value = '';
       if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
@@ -238,7 +240,7 @@ export function Data() {
   // --- import media (arbitrary local image/video files) ---
   const importMedia = async () => {
     try {
-      const res = await window.corpusPosts.importImages();
+      const res = await importImages();
       if (!res || res.canceled) return;
       reloadPosts();
       if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));
@@ -264,7 +266,7 @@ export function Data() {
 
   const saveBackup = async (patch: Partial<BackupState>) => {
     try {
-      const res = await window.corpusBackup.setBackup(patch);
+      const res = await setBackupConfig(patch);
       if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));
       if (res && res.backup) setBackup(res.backup);
     } catch {
@@ -273,7 +275,7 @@ export function Data() {
   };
   const chooseBackupDir = async () => {
     try {
-      const res = await window.corpusBackup.pickBackupDir();
+      const res = await pickBackupDir();
       if (res && res.error === 'overlap') {
         notify(t('backupOverlap'));
         return;

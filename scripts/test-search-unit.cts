@@ -1,62 +1,66 @@
 'use strict';
 
-// search.js（window.corpusSearch）のロジック単体テスト。window シムで読み込み、
-// 正規化(B)・サブシーケンス(A)・近似部分一致=編集距離(C) を直接検証する。
+// search.ts のロジック単体テスト。search.ts は real ES module（named exports）
+// なので動的 import() で読み込む。正規化(B)・サブシーケンス(A)・近似部分一致=
+// 編集距離(C) を直接検証する。
 //
 //   node scripts/test-search-unit.cts
 
-const fs = require('node:fs');
 const path = require('node:path');
-const stripTS = require('./strip-ts.cts');
+const { pathToFileURL } = require('node:url');
 
-const code = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'search.ts'), 'utf8'));
-(global as any).window = {};
-// 間接 eval でグローバルスコープ実行（search.js は window.corpusSearch を生やす）。
-// biome-ignore lint/security/noGlobalEval: intentional indirect eval to load a plain window-IIFE script into the Node test scope
-// biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
-(0, eval)(code);
-const S = (global as any).window.corpusSearch;
+async function main() {
+  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'search.ts')).href);
 
-let failed = 0;
-function assert(name, cond) {
-  if (cond) {
-    console.log('ok  ', name);
-  } else {
-    console.log('FAIL', name);
-    failed++;
+  let failed = 0;
+  function assert(name, cond) {
+    if (cond) {
+      console.log('ok  ', name);
+    } else {
+      console.log('FAIL', name);
+      failed++;
+    }
   }
+
+  // --- B: 表記ゆれ正規化 ---
+  assert('normalize: カタカナ→ひらがな', S.normalize('ネコ') === 'ねこ');
+  assert('normalize: 全角英数→半角+小文字', S.normalize('ＡB１２') === 'ab12');
+  assert('normalize: 半角カナ→ひらがな', S.normalize('ﾈｺ') === 'ねこ');
+
+  // --- B 経由のマッチ（ひらがなクエリ↔カタカナ本文）---
+  const mKana = S.compile('ねこ');
+  assert('B: "ねこ" が "ネコかわいい" に一致', mKana('ネコかわいい') === true);
+  assert('B: "ねこ" は "いぬのおさんぽ" に不一致', mKana('いぬのおさんぽ') === false);
+
+  // --- A: サブシーケンス（順序一致・飛び石OK）---
+  const mSub = S.compile('ねこわ');
+  assert('A: "ねこわ" が "ねこかわいい" に一致(飛び石)', mSub('ねこかわいい') === true);
+
+  // --- C: 編集距離（置換タイプミス）---
+  const mTypo = S.compile('こんにとは'); // 「こんにちは」の ち→と 置換ミス
+  assert('C: 置換ミス "こんにとは" が "こんにちは世界" に一致', mTypo('こんにちは世界') === true);
+  assert('C: 無関係文には不一致', mTypo('いぬのおさんぽ') === false);
+
+  // --- C: 短語(<=2)は編集距離0（誤爆防止）---
+  const mShort = S.compile('ねこ');
+  assert('C: 短語は厳密（"ねこ" は "ねね" に不一致）', mShort('ねね') === false);
+
+  // --- AND 結合 + 全角スペース ---
+  const mAnd = S.compile('ねこ　かわ'); // 全角スペース区切り
+  assert('AND: 両語一致で true', mAnd('ねことかわいい') === true);
+  assert('AND: 片方欠落で false', mAnd('ねこだけ') === false);
+
+  // --- 空クエリは常に true ---
+  assert('空クエリは常に一致', S.compile('   ')('なんでも') === true);
+
+  if (failed) {
+    console.log(`SEARCH_UNIT_FAIL (${failed})`);
+    process.exit(1);
+  }
+  console.log('SEARCH_UNIT_PASS');
 }
 
-// --- B: 表記ゆれ正規化 ---
-assert('normalize: カタカナ→ひらがな', S.normalize('ネコ') === 'ねこ');
-assert('normalize: 全角英数→半角+小文字', S.normalize('ＡB１２') === 'ab12');
-assert('normalize: 半角カナ→ひらがな', S.normalize('ﾈｺ') === 'ねこ');
-
-// --- B 経由のマッチ（ひらがなクエリ↔カタカナ本文）---
-const mKana = S.compile('ねこ');
-assert('B: "ねこ" が "ネコかわいい" に一致', mKana('ネコかわいい') === true);
-assert('B: "ねこ" は "いぬのおさんぽ" に不一致', mKana('いぬのおさんぽ') === false);
-
-// --- A: サブシーケンス（順序一致・飛び石OK）---
-const mSub = S.compile('ねこわ');
-assert('A: "ねこわ" が "ねこかわいい" に一致(飛び石)', mSub('ねこかわいい') === true);
-
-// --- C: 編集距離（置換タイプミス）---
-const mTypo = S.compile('こんにとは'); // 「こんにちは」の ち→と 置換ミス
-assert('C: 置換ミス "こんにとは" が "こんにちは世界" に一致', mTypo('こんにちは世界') === true);
-assert('C: 無関係文には不一致', mTypo('いぬのおさんぽ') === false);
-
-// --- C: 短語(<=2)は編集距離0（誤爆防止）---
-const mShort = S.compile('ねこ');
-assert('C: 短語は厳密（"ねこ" は "ねね" に不一致）', mShort('ねね') === false);
-
-// --- AND 結合 + 全角スペース ---
-const mAnd = S.compile('ねこ　かわ'); // 全角スペース区切り
-assert('AND: 両語一致で true', mAnd('ねことかわいい') === true);
-assert('AND: 片方欠落で false', mAnd('ねこだけ') === false);
-
-// --- 空クエリは常に true ---
-assert('空クエリは常に一致', S.compile('   ')('なんでも') === true);
-
-console.log(failed ? `SEARCH_UNIT_FAIL (${failed})` : 'SEARCH_UNIT_PASS');
-process.exit(failed ? 1 : 0);
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

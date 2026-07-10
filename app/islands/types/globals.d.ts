@@ -36,28 +36,17 @@ declare global {
     subscribe(cb: () => void): CorpusUnsubscribe;
   }
 
-  // ---- renderer/i18n.js — window.corpusI18n resolves after prefs are read ----
+  // ---- renderer/i18n.ts — corpusI18n resolves after prefs are read. Data-shape
+  // type only (the promise's resolved value) — the module itself is a real ES
+  // module (named export `corpusI18n`), imported by _shared/i18n.ts. ----
   interface CorpusI18nApi {
     lang: string;
     resolved: 'ja' | 'en';
     getMessage(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   }
 
-  // ---- renderer/search.js — shared search-mode + fuzzy matching utilities ----
-  interface CorpusSearch {
-    getMode(): 'normal' | 'fuzzy';
-    isFuzzy(): boolean;
-    setMode(m: 'normal' | 'fuzzy'): void;
-    toggle(): void;
-    applyMode(m: string): void;
-    subscribe(cb: (mode?: string) => void): CorpusUnsubscribe;
-    onChange(cb: (mode?: string) => void): CorpusUnsubscribe;
-    normalize(s: unknown): string;
-    isSubsequence(hay: string, needle: string): boolean;
-    approxSubstring(hay: string, needle: string, maxErr: number): boolean;
-    compile(query: string): (hay: string) => boolean;
-    fuzzy(hay: string, query: string): boolean;
-  }
+  // ---- renderer/search.ts — shared search-mode + fuzzy matching utilities. A real
+  // ES module (named exports) now — no ambient Window-shaped interface needed.
 
   // ---- renderer/ui.ts — notify/escapeHtml. A real ES module (named exports)
   // now — no ambient Window-shaped interface needed.
@@ -582,48 +571,22 @@ declare global {
 
   // ---- renderer/backup.ts — auto-backup domain, read by both viewer.ts's project
   // (the #mirrorStatus rail) and this strict islands project (the Settings > データ
-  // island calls it directly) ----
-  interface CorpusBackupApi {
-    getBackup(): Promise<any>;
-    setBackup(patch: unknown): Promise<any>;
-    pickBackupDir(): Promise<any>;
-    runBackup(): Promise<any>;
-    onBackupStart(cb: (...args: any[]) => void): void;
-    onBackupDone(cb: (...args: any[]) => void): void;
-  }
+  // island calls it directly). A real ES module (named exports) now — no ambient
+  // Window-shaped interface needed.
 
   // ---- renderer/posts.ts — post-record CRUD/import/export + save-folder move
   // domain, read by both viewer.ts's project (list/delete/tags/import/clearAll/
   // change-watch) and this strict islands project (the Settings > データ island
-  // calls the save-folder/export/import/import-media methods directly) ----
-  interface CorpusPostsApi {
-    listPosts(): Promise<any[]>;
-    listPostsDelta(haveBaseline: boolean, changedNames?: string[] | null): Promise<any>;
-    imageDataUrl(image: string): Promise<string | null>;
-    deletePost(image: string): Promise<any>;
-    updateTags(image: string, tags: unknown, patch?: unknown): Promise<any>;
-    importPosts(posts: unknown): Promise<any>;
-    importImages(): Promise<any>;
-    clearAll(): Promise<any>;
-    exportSave(filename: string, bytes: Uint8Array | ArrayBuffer): Promise<any>;
-    exportComplete(mode?: string): Promise<any>;
-    importComplete(bytes: Uint8Array | ArrayBuffer): Promise<any>;
-    pickSaveFolder(): Promise<any>;
-    onSaveFolderProgress(cb: (p: any) => void): void;
-    onPostsChanged(cb: (names: string[] | null) => void): void;
-  }
+  // calls the save-folder/export/import/import-media methods directly). A real ES
+  // module (named exports) now — no ambient Window-shaped interface needed.
 
   interface Window {
     corpus: CorpusPreload;
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
-    corpusBackup: CorpusBackupApi;
-    corpusPosts: CorpusPostsApi;
     corpusFolders: CorpusFoldersApi;
     corpusStore: CorpusStore;
-    corpusI18n: Promise<CorpusI18nApi>;
-    corpusSearch: CorpusSearch;
     corpusViewer?: CorpusViewer;
     corpusPostGridSource: CorpusPostGridSource;
     corpusPosterGridSource: CorpusPosterGridSource;
