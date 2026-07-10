@@ -2,7 +2,7 @@
 // modules one wave at a time (see memory corpus-react-purity-execution-map);
 // the ones imported below are converted, the rest are still read via
 // window.corpusX at call time.
-import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf, makePostPredOf, makePosterPredOf } from './query.ts';
+import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } from './format.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
@@ -32,7 +32,7 @@ import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
-import { createQueryBuilder } from './query-chips.ts';
+import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -482,28 +482,8 @@ import { corpusIpc } from './ipc.ts';
     },
   });
 
-  // Leading type glyph for a query-builder chip — the SAME icons as the sidebar
-  // filter rows, so a chip's category reads at a glance (the monotone glass pill
-  // dropped per-type tints; the icon now carries the "which filter" cue).
-  const QC_GLYPH: Record<string, string> = {
-    kind: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-    platform: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
-    postType: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-    media: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 16.5h-4"/>',
-    date: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
-    engagement: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
-    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
-    tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="0.6" fill="currentColor"/>',
-    hashtag: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
-    folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
-    instance: '<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="12" width="18" height="8" rx="2"/><line x1="7" y1="8" x2="7.01" y2="8"/><line x1="7" y1="16" x2="7.01" y2="16"/>',
-    clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
-    search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
-  };
-  const qcGlyph = (type: string) => {
-    const g = QC_GLYPH[type === 'text' ? 'search' : type]; // text leaf reuses the magnifier glyph
-    return g ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>` : '';
-  };
+  // Leading type glyph for a query-builder chip (qcGlyph, imported above) moved
+  // to query-builder.ts along with the postQB/posterQB instance wiring — Wave15/V1.
 
   const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
@@ -1184,23 +1164,18 @@ import { corpusIpc } from './ipc.ts';
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through corpusSearch.
-  const postPredOf = makePostPredOf({
-    isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
-    isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
-    fuzzyCompile: (q) => searchCompile(q),
-    postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
-  });
-
-  // The shared facet-chip builder (改訂④) now
-  // lives in query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster
-  // view-model derivation, qbNodeMap, and click/contextmenu dispatch all moved
-  // there — the query-chips island reads a cached model + calls dispatch()
-  // directly instead of viewer.js pushing a model and delegating raw DOM
-  // events. viewer.js keeps constructing instances (below) and the
-  // orchestration around a change (onChange/openLeafEditor/onClearSearch).
+  // The shared facet-chip builder (改訂④) lives in
+  // query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster view-model
+  // derivation, qbNodeMap, and click/contextmenu dispatch all moved there — the
+  // query-chips island reads a cached model + calls dispatch() directly instead
+  // of viewer.js pushing a model and delegating raw DOM events. The postQB/
+  // posterQB instance construction (predOf/glyph/createQueryBuilder ctx) itself
+  // moved to query-builder.ts (Wave15/V1); viewer.js keeps the orchestration
+  // around a change (onChange/openLeafEditor/onClearSearch) since those still
+  // reach into state (renderPosts, searchEditing, popovers) not yet extracted.
   // i18n strings the builder needs for labels/menus — resolved once here (MSG
   // is a viewer.js-local construct) and passed in via ctx.msg since
-  // query-chips.ts has no access to viewer.js's i18n binding.
+  // query-builder.ts has no access to viewer.js's i18n binding.
   const qbMsg = {
     qcJoinAnd: MSG.qcJoinAnd,
     qcJoinOr: MSG.qcJoinOr,
@@ -1220,14 +1195,11 @@ import { corpusIpc } from './ipc.ts';
   // onShadow callback; that global was a pure duplicate of postQB.shadow() (the
   // instance already exposes the same cached array) — every read site now calls
   // postQB.shadow() directly instead of maintaining a second copy.
-  const postQB = createQueryBuilder({
+  const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
     msg: qbMsg,
     container: document.getElementById('queryChips')!,
-    storeKey: 'postQueryTree',
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
-    predOf: postPredOf,
     labelOf: filterLabel,
-    glyphOf: qcGlyph,
     getSearchVal: () => searchQuery(),
     onClearSearch: () => {
       setSearchBoxValue('');
@@ -1241,27 +1213,14 @@ import { corpusIpc } from './ipc.ts';
       else if (n.type === 'engagement') openEngPopover(n);
     },
     // When the editing text leaf is removed or dragged on the bar, detach it from
-    // the box. textInTree suppresses the legacy echo chip (the term is a real leaf).
-    // Deferred arrows: searchEditing is constructed later in this closure (near
-    // syncEditingTextLeaf below), same forward-reference pattern as postQB/posterQB
-    // being referenced from functions defined above their own declarations.
+    // the box. textInTree (query-builder.ts) suppresses the legacy echo chip (the
+    // term is a real leaf). Deferred arrows: searchEditing is constructed later in
+    // this closure (near syncEditingTextLeaf below), same forward-reference
+    // pattern as postQB/posterQB being referenced from functions defined above
+    // their own declarations.
     onLeafMutated: (node: CorpusQueryLeaf) => searchEditing.onLeafMutated(node),
     isEditingLeaf: (node: CorpusQueryLeaf) => searchEditing.isEditingLeaf(node),
-    textInTree: true,
-    editableLeafTypes: ['date', 'engagement'],
-    singleValueTypes: ['date', 'kind'],
-    noDupTypes: ['engagement', 'text'],
-    // Facet schema (改訂④): tags/hashtags/collections are multi-value per post
-    // (both すべて/どれか meaningful, default すべて); date/engagement/clip/text
-    // (+ the legacy 'workspace' alias) stay standalone chips. Everything else
-    // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
-    multiValueTypes: ['tag', 'hashtag', 'collection'],
-    standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'],
   });
-  // Establish an initial value (emptyTree()) before any mutation, so a future
-  // reader never sees undefined — setTree only runs on tab restore, which may
-  // not happen before the first render of a brand-new tab.
-  storeSet('postQueryTree', JSON.parse(JSON.stringify(postQB.getTree())));
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
     return postQB.getTree();
@@ -3335,31 +3294,26 @@ import { corpusIpc } from './ipc.ts';
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
   // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
-  // Poster leaf predicate — extracted to query.ts (makePosterPredOf, imported
-  // above), the mirror of postPredOf above. posterTagsOf (tags.js) and
-  // posterFolderById (pfStore) are both declared above, so a direct ref is
-  // TDZ-safe. posterFilterLabel now lives in tab-state.js's makeTabLabels
-  // (destructured near filterLabel).
-  const posterPredOf = makePosterPredOf({
-    posterTagsOf,
-    folderById: posterFolderById,
-  });
+  // Poster leaf predicate — query.ts's makePosterPredOf (the mirror of postPredOf)
+  // is now called inside query-builder.ts's makePosterQueryBuilder (Wave15/V1);
+  // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
+  // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
+  // tab-state.js's makeTabLabels (destructured near filterLabel).
   let editingPosterDateNode: CorpusQueryLeaf | null = null; // the date leaf being edited via the popover (null = new)
-  // The poster-side builder instance. transient (no tabs / nav history for posters);
-  // onChange → renderPosters (which redraws the rows + bar + grid). P4-B slice⑧:
-  // this used to also mirror the tree shadow into a module-level `posterShadow`
-  // global via onShadow — that global had zero readers (the poster sidebar model
-  // read posterQB.shadow() directly, and now renderer/sidebar.ts's source reads
-  // the mirrored 'posterQueryTree' store key via query.ts's buildShadow instead),
-  // so it's removed outright rather than converted to a read site.
-  const posterQB = createQueryBuilder({
+  // The poster-side builder instance (predOf/glyph/instance construction moved to
+  // query-builder.ts, Wave15/V1 — see that file's makePosterQueryBuilder).
+  // transient (no tabs / nav history for posters); onChange → renderPosters
+  // (which redraws the rows + bar + grid). P4-B slice⑧: this used to also mirror
+  // the tree shadow into a module-level `posterShadow` global via onShadow — that
+  // global had zero readers (the poster sidebar model read posterQB.shadow()
+  // directly, and now renderer/sidebar.ts's source reads the mirrored
+  // 'posterQueryTree' store key via query.ts's buildShadow instead), so it's
+  // removed outright rather than converted to a read site.
+  const { qb: posterQB } = makePosterQueryBuilder({
     msg: qbMsg,
     container: document.getElementById('posterQueryChips')!,
-    storeKey: 'posterQueryTree',
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
-    predOf: posterPredOf,
     labelOf: posterFilterLabel,
-    glyphOf: qcGlyph,
     getSearchVal: () => searchQuery(),
     onClearSearch: () => {
       setSearchBoxValue('');
@@ -3371,18 +3325,9 @@ import { corpusIpc } from './ipc.ts';
     openLeafEditor: (n: CorpusQueryLeaf) => {
       if (n.type === 'date') openPosterDatePopover(n);
     },
-    editableLeafTypes: ['date'],
-    singleValueTypes: ['date', 'folder'], // 択一: 1つ選ぶと既存を置換
-    noDupTypes: [],
-    // Poster facet schema: a poster aggregates many tags (すべて/どれか both
-    // meaningful); date + the workspace toggle stay standalone chips.
-    multiValueTypes: ['tag'],
-    standaloneTypes: ['date', 'workspace'],
+    posterTagsOf,
+    folderById: posterFolderById,
   });
-  // Establish an initial value (emptyTree()) before any mutation — posters have
-  // no tabs/setTree restore path, so this is the ONLY populator until the first
-  // filter interaction.
-  storeSet('posterQueryTree', JSON.parse(JSON.stringify(posterQB.getTree())));
 
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
   // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
