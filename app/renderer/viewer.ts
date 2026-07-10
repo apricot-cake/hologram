@@ -30,6 +30,8 @@ import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComple
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
+import * as selection from './selection.ts';
+import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -1099,7 +1101,7 @@ import * as folders from './folders.ts';
     }
   })();
   if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
-  // Virtualized grid (window.corpusPostGridSource → islands/grid, P4-B slice⑩): items
+  // Virtualized grid (corpusPostGridSource → islands/grid, P4-B slice⑩): items
   // + layout are now pulled from corpusStore by the source itself (renderer/grid.ts) —
   // viewer just pushes 'postGroups' and no longer tracks an itemsKey/isActive here.
   let _gridAnimT: any = null;
@@ -1160,7 +1162,7 @@ import * as folders from './folders.ts';
   }
   let skipDeleteConfirm = false;
   // Post-grid selection state (Set + shift-range anchor) lives in
-  // window.corpusSelection (renderer/selection.ts, P4-B slice⑬) — corpusStore's
+  // renderer/selection.ts (P4-B slice⑬) — corpusStore's
   // 'selectedSet' key IS the state; the grid island's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (改訂③: flat conditions you drag into parenthesised
@@ -2023,7 +2025,7 @@ import * as folders from './folders.ts';
   // Resolve ONE group into a plain, fully-formatted card model: image src,
   // formatted counts/dates, selection, clip, aspect — everything the markup
   // needs as primitives. The grid island renders it with the shared PostCard
-  // component (live React cells via window.corpusPostGridSource). Raw text/names are
+  // component (live React cells via corpusPostGridSource). Raw text/names are
   // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
   // Per-card view model (records.js makeCardModel) — the model the grid island
   // renders. Extracted 1:1 from the old inline cardModel; runtime couplings are
@@ -2066,7 +2068,7 @@ import * as folders from './folders.ts';
   // P4-B slice⑩: modelOf/keyOf/labels/onAspect never change identity meaningfully
   // between renders (only items/layout do, and those are corpusStore-derived by the
   // source itself) — configure once instead of rebuilding + pushing every renderPosts().
-  window.corpusPostGridSource.configure({
+  corpusPostGridSource.configure({
     modelOf: (g, i) => cardModel(g, i),
     keyOf: (g) => postIdKey(g.rep),
     labels: cardLabels,
@@ -2111,7 +2113,7 @@ import * as folders from './folders.ts';
       // renderer/grid.ts's computeModel) unmounts the grid island's cells
       // SYNCHRONOUSLY (corpusStore.set's notify loop is synchronous, and the
       // island's subscriber flushSync's the unmount — same guarantee the old
-      // window.corpusGrid.render(null) call gave) BEFORE the innerHTML clear
+      // pushed render(null) call gave) BEFORE the innerHTML clear
       // below runs. The EmptyState island derives 'firstRun'/'filtered' itself
       // from this same key + 'allPostsCount' + 'searchQuery' — one less push.
       window.corpusStore.set('postGroups', null);
@@ -2142,13 +2144,13 @@ import * as folders from './folders.ts';
     grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion());
     grid.classList.toggle('masonry', currentView === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
-    grid.classList.toggle('selecting', window.corpusSelection.size() > 0);
+    grid.classList.toggle('selecting', selection.size() > 0);
     // Tile overlay (author/❤) is optional; the ❤ count only shows while an
     // engagement sort or filter is active (otherwise it's noise).
     grid.classList.toggle('no-overlay', !tileOverlay);
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f: { type: string }) => f.type === 'engagement'));
 
-    // THE GRID — fully React-owned (grid island via window.corpusPostGridSource):
+    // THE GRID — fully React-owned (grid island via corpusPostGridSource):
     // masonic windowing + live cell rendering for all three views. viewer.js keeps
     // the data pipeline (viewGroups above), the container's classes/CSS vars, and
     // every delegated #postGrid handler. P4-B slice⑩: layout (view/columnWidth/
@@ -2398,16 +2400,16 @@ import * as folders from './folders.ts';
   function toggleCardSelection(card: HTMLElement, shiftKey: boolean) {
     const idx = Number.parseInt(card.dataset.index ?? '', 10);
     const key = card.dataset.key as string;
-    window.corpusSelection.toggle(idx, key, shiftKey, viewGroups, postIdKey);
+    selection.toggle(idx, key, shiftKey, viewGroups, postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
   }
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
-  // corpusStore's 'selectedSet' directly (window.corpusSelection.toggle already
+  // corpusStore's 'selectedSet' directly (selection.toggle already
   // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
   function syncSelectionClasses() {
-    byId('postGrid').classList.toggle('selecting', window.corpusSelection.size() > 0);
+    byId('postGrid').classList.toggle('selecting', selection.size() > 0);
   }
 
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -2426,7 +2428,7 @@ import * as folders from './folders.ts';
   byId('postGrid').addEventListener(
     'click',
     (e) => {
-      if (window.corpusSelection.size() === 0) return;
+      if (selection.size() === 0) return;
       const card = closestOf(e, '.post-card');
       if (!card) return;
       e.preventDefault();
@@ -2922,7 +2924,7 @@ import * as folders from './folders.ts';
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
-    return window.corpusSelection.selectedRecords(viewGroups, postIdKey);
+    return selection.selectedRecords(viewGroups, postIdKey);
   }
 
   // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
@@ -2998,7 +3000,7 @@ import * as folders from './folders.ts';
   }
 
   function clearSelection() {
-    window.corpusSelection.clear();
+    selection.clear();
     syncSelectionClasses(); // class-only (callers that change content re-render themselves)
     updateSelectionBar();
   }
@@ -3006,17 +3008,17 @@ import * as folders from './folders.ts';
   // #selectionBar's container show/hide — the ONE thing that stays viewer's (container
   // chrome). The buttons/count/labels are self-derived by the selection-bar island
   // straight from corpusStore's 'selectedSet' + 'postGroups' (P4-B slice⑱) — every
-  // window.corpusSelection mutation site still calls this to keep the container's
+  // selection.ts mutation site still calls this to keep the container's
   // visibility in sync (the island re-renders on its own via the store subscription).
   function updateSelectionBar() {
-    selectionBar.style.display = window.corpusSelection.size() > 0 ? '' : 'none';
+    selectionBar.style.display = selection.size() > 0 ? '' : 'none';
   }
 
   // Manual grouping: merge every record of the selected cards into one persisted
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   function groupSelected() {
-    const members = window.corpusSelection.selectedGroups(viewGroups, postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
+    const members = selection.selectedGroups(viewGroups, postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
     manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
     manualGroups.push(members);
@@ -3024,14 +3026,14 @@ import * as folders from './folders.ts';
     markPostsMutated(); // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
     // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
     // class-only). Clear first so the rebuild shows no stale selection.
-    window.corpusSelection.clear();
+    selection.clear();
     renderPosts(true);
     updateSelectionBar();
     showToast(MSG.grouped);
   }
 
   function toggleSelectAll() {
-    window.corpusSelection.toggleAll(viewGroups, postIdKey);
+    selection.toggleAll(viewGroups, postIdKey);
     syncSelectionClasses();
     updateSelectionBar();
   }
@@ -3049,7 +3051,7 @@ import * as folders from './folders.ts';
     if (browseMode !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (viewGroups.length === 0) return;
     e.preventDefault();
-    window.corpusSelection.selectAll(viewGroups, postIdKey);
+    selection.selectAll(viewGroups, postIdKey);
     renderPosts(true);
     updateSelectionBar();
   }
@@ -3074,17 +3076,17 @@ import * as folders from './folders.ts';
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey, handleShortcutSearchFocusKey });
 
   function requestDeleteSelected() {
-    if (window.corpusSelection.size() === 0) return;
+    if (selection.size() === 0) return;
     confirmOpen({
-      message: MSG.confirmDeleteSelected(window.corpusSelection.size()),
+      message: MSG.confirmDeleteSelected(selection.size()),
       okLabel: MSG.confirmOk,
       cancelLabel: MSG.confirmCancel,
       onOk: async () => {
         // Bulk delete selected groups — every record of each selected group.
-        const toDelete = window.corpusSelection.selectedRecords(viewGroups, postIdKey);
+        const toDelete = selection.selectedRecords(viewGroups, postIdKey);
         const count = toDelete.length;
         for (const p of toDelete) await deletePost(p.image || p.video);
-        window.corpusSelection.clear();
+        selection.clear();
         updateSelectionBar();
         await loadPosts(true);
         showToast(MSG.deletedN(count));
@@ -3440,7 +3442,7 @@ import * as folders from './folders.ts';
     if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
   }
   let _posterAnimT: any = null;
-  // React owns the poster cells (virtualized — window.corpusPosterGridSource,
+  // React owns the poster cells (virtualized — corpusPosterGridSource,
   // P4-B slice⑫); viewer.js keeps posterList, the count badge, the density
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
   // highlight is NOT part of this model — the island derives its own ring from
@@ -3448,7 +3450,7 @@ import * as folders from './folders.ts';
   // item's `.key`. modelOf/keyOf/tagTitle/infoTitle never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post
   // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
-  window.corpusPosterGridSource.configure({
+  corpusPosterGridSource.configure({
     modelOf: (u, i) => {
       const hasName = !!u.displayName;
       const s = (u.displayName || u.screenName || '').trim();
@@ -3746,7 +3748,7 @@ import * as folders from './folders.ts';
       // change) via a deliberate side channel, NOT corpusStore — writing every drag
       // input to the store would recompute+notify on every pointermove for no
       // benefit (P4-B slice④'s reasoning, carried into slice⑩'s pulled source).
-      if (st.columns) window.corpusPostGridSource.setLiveColumnWidth(st.get());
+      if (st.columns) corpusPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
     window.corpusIpc.setPref(st.pref, st.get());
@@ -3755,7 +3757,7 @@ import * as folders from './folders.ts';
     // live-drag override so a later VIEW change (which reads a different
     // storeKey) can't see a stale value from this one.
     window.corpusStore.set(st.storeKey, st.get());
-    window.corpusPostGridSource.setLiveColumnWidth(null);
+    corpusPostGridSource.setLiveColumnWidth(null);
     renderPosts(); // re-request thumbnails at the new size
   }
   function tileGridMetrics() {

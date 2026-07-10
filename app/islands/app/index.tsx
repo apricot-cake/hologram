@@ -46,14 +46,12 @@ import 'corpus-svc:trash';
 // qf-pop — bridge.ts's makeCallbackBridge is called at qf-pop/filter-popover
 // module-load time, so it must precede them; order below mirrors the old
 // index.html <script> order, which already satisfied this). menu/kind-menu/
-// inspector/edit-overlay/confirm/search/backup/posts/i18n are real ES modules now,
-// imported directly by their consumers (no barrel entry needed).
+// inspector/edit-overlay/confirm/search/backup/posts/i18n/grid/selection are real
+// ES modules now, imported directly by their consumers (no barrel entry needed).
 import 'corpus-svc:store';
-import 'corpus-svc:grid';
 import 'corpus-svc:image-tab';
 import 'corpus-svc:tabs';
 import 'corpus-svc:sidebar';
-import 'corpus-svc:selection';
 import './root.tsx';
 // The viewer orchestrator (renderer/viewer.ts) folds into this single bundle so
 // it compiles through Vite. It is a plain window-IIFE (no imports/exports); its

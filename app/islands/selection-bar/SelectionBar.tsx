@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { postIdKey } from '../../renderer/records.ts';
+import { isAllSelected, selectedGroups } from '../../renderer/selection.ts';
 
 // Bulk-action bar (#selectionBar), shown when 1+ cards are selected. Self-derived (P4-B
 // slice⑱): count/allSelected/groupDisabled come straight from corpusStore's 'selectedSet'
@@ -22,9 +23,9 @@ export function SelectionBar() {
   const count = selectedSet ? selectedSet.size : 0;
   if (count === 0) return null;
   const groups = postGroups || [];
-  const allSelected = window.corpusSelection.isAllSelected(groups, postIdKey);
+  const allSelected = isAllSelected(groups, postIdKey);
   // Manual grouping needs at least two selected cards (groups).
-  const groupDisabled = window.corpusSelection.selectedGroups(groups, postIdKey).length < 2;
+  const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
   return (
     <>
       <span className="post-count" id="selectedCount">

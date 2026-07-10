@@ -1,4 +1,4 @@
-// Virtualized poster-grid island (window.corpusPosterGridSource). React owns
+// Virtualized poster-grid island (renderer/grid.ts's corpusPosterGridSource). React owns
 // cell rendering + windowing; viewer.js keeps owning posterList, the count
 // badge, the grid density classes, the inspected highlight (model-driven via
 // modelOf), and ALL event delegation on #posterGrid (click → info/tag/open,
@@ -8,7 +8,8 @@
 // (corpusStore-derived), not pushed — see renderer/grid.ts.
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
+import { corpusPosterGridSource } from '../../renderer/grid.ts';
 
 export function PosterGrid() {
-  return <GridMount bridge={window.corpusPosterGridSource} containerId="posterGrid" hostId="posterGridReact" renderHost={(model) => <PostersHost model={model} />} />;
+  return <GridMount bridge={corpusPosterGridSource} containerId="posterGrid" hostId="posterGridReact" renderHost={(model) => <PostersHost model={model} />} />;
 }

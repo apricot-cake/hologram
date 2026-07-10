@@ -124,14 +124,9 @@ declare global {
   // ---- renderer/records.ts — a real ES module now; SelectionBar imports postIdKey
   // directly, so no ambient partial interface is needed here anymore.
 
-  // ---- renderer/selection.ts — the full CorpusSelectionApi shape (toggle/clear/
-  // selectAll/…) lives in renderer/types/renderer-globals.d.ts; SelectionBar (P4-B
-  // slice⑱) only reads the pure query methods, reusing them instead of re-deriving
-  // allSelected/groupDisabled itself.
-  interface CorpusSelectionApi {
-    isAllSelected(groups: any[], postIdKey: (p: any) => string): boolean;
-    selectedGroups(groups: any[], postIdKey: (p: any) => string): any[];
-  }
+  // ---- renderer/selection.ts — a real ES module now (named exports); SelectionBar
+  // (P4-B slice⑱) imports isAllSelected/selectedGroups directly instead of
+  // re-deriving allSelected/groupDisabled itself.
 
   // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
   interface CorpusPreload {
@@ -213,29 +208,12 @@ declare global {
   }
   // The shape GridMount (_shared/VirtualGrid.tsx) actually consumes — it only
   // ever calls get()/subscribe(), so this is the minimal contract both sources
-  // below satisfy (plus their own configure()/etc., which GridMount never touches).
+  // (renderer/grid.ts's corpusPostGridSource/corpusPosterGridSource, real ES
+  // module exports now) satisfy, plus their own configure()/etc., which GridMount
+  // never touches.
   interface CorpusGridSource {
     get(): CorpusGridModel | null;
     subscribe(cb: () => void): CorpusUnsubscribe;
-  }
-  // items (postGroups) + layout inputs (view/cardSize/tileSize/listThumb) live in
-  // corpusStore already (slice④); configure() sets the invariant callbacks ONCE
-  // (modelOf/keyOf/labels/onAspect never change identity meaningfully across
-  // renders — only items+layout do). setLiveColumnWidth is the one exception: a
-  // size-slider drag reflow that deliberately stays OUT of the store (mid-drag
-  // store writes would be wasteful — slice④'s reasoning) — a thin ephemeral
-  // override read by get(), cleared on commit.
-  interface CorpusPostGridSource extends CorpusGridSource {
-    configure(cfg: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void }): void;
-    setLiveColumnWidth(px: number | null): void;
-  }
-  // Poster grid (P4-B slice⑫): same shape, minus onAspect (poster avatars don't
-  // report a learned aspect ratio) and minus setLiveColumnWidth — the poster size
-  // slider already commits corpusIpc.setPref on every 'input' tick (no separate
-  // mid-drag/commit split like the post slider), so writing corpusStore on every
-  // tick too is no NEW cost, and a live-override side channel isn't needed.
-  interface CorpusPosterGridSource extends CorpusGridSource {
-    configure(cfg: { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string; infoTitle: string }): void;
   }
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
@@ -582,11 +560,8 @@ declare global {
     corpusIpc: CorpusPreload;
     corpusStore: CorpusStore;
     corpusViewer?: CorpusViewer;
-    corpusPostGridSource: CorpusPostGridSource;
-    corpusPosterGridSource: CorpusPosterGridSource;
     corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
-    corpusSelection: CorpusSelectionApi;
     corpusSettings: CorpusSettings;
     corpusQueryChips: CorpusQueryChipsIsland;
     corpusLightbox: CorpusLightbox;
