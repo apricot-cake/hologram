@@ -14,6 +14,7 @@
 // event-half pattern — this file only computes, it never mutates tab state.
 // Plain IIFE on window (like grid.ts); loaded BEFORE viewer.js.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
+import { imageTabGroup } from './records.ts';
 
 (function () {
   'use strict';
@@ -56,7 +57,7 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
     // Only id + img matter to imageTabGroup (records.ts) — the rest of CorpusTab is
     // full tab state that hasn't migrated to corpusStore yet (that's slice⑯).
     const stub = { id: active.id, img: { recs: active.recs, idx: active.idx } } as CorpusTab;
-    const g = window.corpusRecords.imageTabGroup(stub, (id) => byId.get(id));
+    const g = imageTabGroup(stub, (id) => byId.get(id));
     if (!g) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
     const items = gallery.buildGroupGalleryItems(g);
     if (!items.length) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };

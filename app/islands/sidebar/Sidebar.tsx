@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '../_shared/i18n.ts';
+import { getTagLabels } from '../../renderer/tags.ts';
 import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
 
 // Post-mode filter-row column (#filterRows). Pure presentation, PULLING its own model
@@ -35,7 +36,7 @@ const ROW_LABEL_KEY: Record<string, string> = {
 // 作品/キャラ 種別 names are user-renamable (corpusTags.setKindLabel); fall back to the
 // built-in i18n label when unset — mirrors tags.ts's own kindLabel().
 function kindLabel(kind: 'work' | 'character'): string {
-  return window.corpusTags.getTagLabels()[kind] || t(kind === 'work' ? 'kindWork' : 'kindCharacter');
+  return getTagLabels()[kind] || t(kind === 'work' ? 'kindWork' : 'kindCharacter');
 }
 function rowLabel(cat: string): string {
   if (cat === 'work' || cat === 'character') return kindLabel(cat);

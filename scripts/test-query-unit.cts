@@ -110,7 +110,7 @@ async function main() {
   assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tFuzzy)(post({ text: 'ネコ' })) && fuzzyCalls.length === 2);
 
   // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・fuzzy 不適用）---
-  const R = require(path.join(__dirname, '..', 'app', 'renderer', 'records.ts'));
+  const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
   const predOfU = Q.makePostPredOf({
     isInCollection: () => false,
     isClipped: () => false,

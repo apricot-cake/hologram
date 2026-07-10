@@ -64,68 +64,15 @@ interface CorpusFacetView {
 // Window-shaped interface is declared for it here anymore (see backlog memory
 // 「window.corpusXxx → export/import」).
 
-// ---- renderer/records.js — record shape helpers + grouping (dual-exported
-// to main via CommonJS for the shared postKeyOf) ----
+// ---- renderer/records.ts — record shape helpers + grouping. A real ES module
+// (named exports) now; only the CorpusPostGroup data shape stays here (shared
+// with viewer.ts / selection.ts / image-tab.ts). ----
 interface CorpusPostGroup {
   key: string;
   records: CorpusPost[];
   rep: CorpusPost;
   files: string[];
   [k: string]: any;
-}
-interface CorpusRecordsApi {
-  mediaFilesOf(p: CorpusPost): string[];
-  isScreenshot(p: CorpusPost): boolean;
-  captureFile(p: CorpusPost): string;
-  artworkFile(p: CorpusPost): string;
-  densityImage(p: CorpusPost, density: string): string;
-  postIdKey(p: CorpusPost): string;
-  /** Normalized url-derived group key (x.com⇄twitter.com folded); null for no-url records. */
-  postKeyOf(url: string | null | undefined): string | null;
-  groupFilesOf(p: CorpusPost): string[];
-  /** Image-tab record resolution: resolve the tab's persisted captureIds against the live
-      library via the injected byId lookup; null when none resolve (→ the missing state). */
-  imageTabGroup(t: CorpusTab, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null;
-  /** Image-tab title from the group's rep (≤24 chars), else the injected 無題 fallback string. */
-  imageTabTitleOf(g: CorpusPostGroup, fallback: string): string;
-  /** Grouping factory; manualGroups/ungrouped are getters (viewer reassigns them; ungrouped is a Set of opted-out post keys). */
-  makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }): (list: CorpusPost[]) => CorpusPostGroup[];
-  /** Lightbox gallery-item factory; fileSrc keeps the psimg URL scheme viewer-owned. */
-  makeGallery(deps: { fileSrc(file: string): string }): {
-    buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[];
-    buildGroupGalleryItems(g: CorpusPostGroup): { src: string; alt: string; video: boolean }[];
-  };
-  /** Per-card view-model factory (the model PostCard.tsx renders as the grid's modelOf).
-      Runtime couplings are injected: currentView/imgAspect are getters (viewer reassigns
-      the lets), isClipped/fileSrc keep folder + psimg viewer-owned. Selection is NOT
-      injected here — the grid island derives .selected from corpusStore's 'selectedSet'.
-      Returns the PostCardModel shape (see PostCard.tsx); typed loosely here to avoid a
-      parallel interface — the island re-validates on consumption. */
-  makeCardModel(deps: {
-    MSG: any;
-    PF_NAME: Record<string, string>;
-    formatCount(n: number): string;
-    formatDate(d: string): string;
-    compactDate(d: string): string;
-    fileSrc(file: string, w?: number): string;
-    isClipped(captureId: string): boolean;
-    smokeCapture: boolean;
-    currentView(): string;
-    imgAspect(): Record<string, string>;
-    tileThumbW(): number;
-    cardThumbW(): number;
-    listThumbW(): number;
-  }): (g: CorpusPostGroup, i: number) => Record<string, any>;
-  /** Per-platform likes percentile (0..1) over the given population. */
-  percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
-  /** Pre-computes _dateMs/_capturedMs/_postKey/_quotedKey on arrival. */
-  stampPost(p: CorpusPost): CorpusPost;
-  /** manual-groups.json load; [] on failure. */
-  loadManualGroups(): Promise<string[][]>;
-  persistManualGroups(groups: string[][]): Promise<void>;
-  /** ungrouped.json load; empty Set on failure. */
-  loadUngrouped(): Promise<Set<string>>;
-  persistUngrouped(keys: Set<string> | string[]): Promise<void>;
 }
 
 // ---- renderer/selection.ts — the post-grid multi-select Set + shift-range
@@ -161,63 +108,9 @@ interface CorpusQfRow {
   [k: string]: any;
 }
 
-// ---- renderer/tags.js — tag vocabulary / 種別 (kind) domain (read-side
-// derivations take every store as a getter dep; loadTagGroups/persistTagGroups/
-// loadTagTypes/persistTagTypes/loadPosterTags/persistPosterTags own the disk
-// round-trip for those same three stores) ----
-interface CorpusTagPickerItem {
-  tag: string;
-  kind?: string | null;
-  title?: string;
-}
-interface CorpusTagsApi {
-  makeTags(deps: {
-    tagTypes(): Record<string, string>;
-    tagLabels(): Record<string, string>;
-    tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
-    posterTags(): Record<string, string[]>;
-    allPosts(): CorpusPost[];
-    MSG: { [k: string]: any };
-    charCandidatesFor(workTags: string[]): Array<[string, number]>;
-    relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
-  }): {
-    tagKindOf(tag: string): string | null;
-    kindLabel(kind: string): string;
-    posterTagsOf(key: string): string[];
-    /** Poster-applied tags, ordered 作品 → キャラ → 一般 then ja-collation. */
-    posterFilterVocab(): string[];
-    groupedTagVocab(query: string, opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }>;
-    /** The React tag editor's data bundle: sectioned vocab + source hashtags + cooc suggestion tiers. */
-    inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: CorpusPost[] | null | undefined, scope?: string): { vocabGroups: Array<{ name: string; items: CorpusTagPickerItem[] }>; srcTagsForPicker: CorpusTagPickerItem[]; coocGroups: Array<{ name: string; items: CorpusTagPickerItem[] }> };
-  };
-  /** Set-equality on tag arrays (order-insensitive). */
-  sameTags(a: string[], b: string[]): boolean;
-  /** Loads tag-groups.json / tag-types.json / poster-tags.json into this service's own state (idempotent — safe to call once at boot). */
-  load(): Promise<void>;
-  getTagTypes(): Record<string, string>;
-  getTagLabels(): Record<string, string>;
-  getTagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
-  getPosterTags(): Record<string, string[]>;
-  /** Set (or clear, kind=null) a tag's 種別; persists both maps and notifies subscribers. */
-  setTagKind(tag: string, kind: string | null): Promise<void>;
-  /** Rename (or reset, label falsy) a 種別's custom label; persists both maps and notifies subscribers. */
-  setKindLabel(kind: string, label: string | null | undefined): Promise<void>;
-  setTagGroups(groups: Array<{ id: string; name: string; tags?: string[] }>): Promise<void>;
-  /** Set (or clear, tags=null) one poster's tag list; persists and notifies subscribers. */
-  setPosterTags(key: string, tags: string[] | null): void;
-  /** Bulk-apply poster tag records (undo/redo); persists once and notifies subscribers. */
-  applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>): void;
-  /** Subscribe to any mutator above; returns an unsubscribe function. */
-  onChange(cb: (kind?: string) => void): () => void;
-  // Bound once at boot (viewer.ts, right after its own makeTags() call) so
-  // renderer/sidebar.ts (P4-B slice⑰, self-deriving from services) can read the
-  // SAME tagKindOf/posterFilterVocab viewer uses — both close over this module's
-  // own getTagTypes()/getPosterTags(), so there's no second implementation to
-  // drift. Optional: undefined until viewer.ts's assignment runs (a pull that
-  // fires before then just sees "no data yet", same as any other P4-B source).
-  tagKindOf?(tag: string): string | null;
-  posterFilterVocab?(): string[];
-}
+// ---- renderer/tags.ts — tag vocabulary / 種別 (kind) domain. A real ES module
+// (named exports) now; the read-side derivations + disk round-trip carry their own
+// types, so no ambient Window-shaped interface is declared here anymore. ----
 
 // ---- renderer/users.ts — poster roll-up + search-box suggestions. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed, but
@@ -237,7 +130,9 @@ interface CorpusUserAgg {
   firstCapture: string;
   count: number;
 }
-// ---- renderer/tab-state.js — tab titles + nav history + tabs.json shape ----
+// ---- renderer/tab-state.ts — tab titles + nav history + tabs.json shape. A real
+// ES module (named exports) now; only the CorpusTabSnapshot / CorpusTab data shapes
+// stay here (shared with viewer.ts / tabs.ts / image-tab.ts). ----
 interface CorpusTabSnapshot {
   f?: Array<{ type: string; [k: string]: any }>;
   search?: string;
@@ -253,39 +148,6 @@ interface CorpusTab {
   img?: { recs: string[]; idx: number };
   _scrollTop?: number;
   [k: string]: any;
-}
-interface CorpusNavHistory {
-  push(snap: CorpusTabSnapshot): void;
-  /** true = actually navigated (caller persists on true). */
-  back(): boolean;
-  forward(): boolean;
-  adopt(t: CorpusTab | null | undefined): void;
-  saveInto(t: CorpusTab): void;
-  canBack(): boolean;
-  canForward(): boolean;
-}
-interface CorpusTabStateApi {
-  genTabId(): string;
-  makeTabLabels(deps: {
-    MSG: { [k: string]: any };
-    engTypeLabels: { [k: string]: string };
-    platformName(v: string): string;
-    formatShortDate(dateStr: string): string;
-    formatCount(n: number | null | undefined): string;
-    collectionName(id: string): string | null | undefined;
-    posterFolderName(id: string): string | null | undefined;
-  }): {
-    filterLabel(f: { type: string; [k: string]: any }): string;
-    tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
-    posterFilterLabel(f: { type: string; [k: string]: any }): string;
-  };
-  makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusTabSnapshot; apply(s: CorpusTabSnapshot): void; onChange(): void }): CorpusNavHistory;
-  serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> };
-  sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null;
-  /** tabs.json load (raw shape — pass through sanitizeSavedTabs); null on failure. */
-  loadTabs(): Promise<unknown>;
-  /** Serializes + persists tabs.json. */
-  persistTabs(tabs: CorpusTab[], activeTabId: string | null): Promise<void>;
 }
 
 // ---- renderer/listing.js — the "what is visible, in what order" pipeline for
@@ -405,9 +267,6 @@ interface CorpusFoldersApi {
 // directly (via `islands/**/*`) — the old duplicated CorpusStoreApi is gone.
 
 interface Window {
-  corpusRecords: CorpusRecordsApi;
-  corpusTags: CorpusTagsApi;
-  corpusTabState: CorpusTabStateApi;
   corpusPosterFolderStore: () => CorpusPersistedFolderStore;
   corpusFolders: CorpusFoldersApi;
   corpusSelection: CorpusSelectionApi;

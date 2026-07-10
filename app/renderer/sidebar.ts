@@ -37,6 +37,7 @@
 import { buildShadow } from './query.ts';
 import { namedPosters } from './listing.ts';
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
+import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
 
 (function () {
   'use strict';
@@ -49,7 +50,6 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
     const badges: Record<string, number> = {};
     for (const f of activeFilters) badges[f.type] = (badges[f.type] || 0) + 1;
     badges.platform = (badges.platform || 0) + (badges.instance || 0);
-    const tagKindOf = window.corpusTags.tagKindOf;
     let tagWork = 0,
       tagChar = 0,
       tagGen = 0;
@@ -96,9 +96,8 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
   }
 
   function computePosterModel(): CorpusPosterSidebarModel {
-    const tagKindOf = window.corpusTags.tagKindOf;
     const kindOf = (v: string) => (tagKindOf ? tagKindOf(v) : null);
-    const vocab = window.corpusTags.posterFilterVocab ? window.corpusTags.posterFilterVocab() : [];
+    const vocab = posterFilterVocab ? posterFilterVocab() : [];
     const named = namedPosters ? namedPosters() : [];
     const instPresent = new Set(named.map((u) => u.instance).filter(Boolean));
     // Row badges count the matching leaves in the poster query tree (shadow).
@@ -160,14 +159,14 @@ import { get as getPostsData, subscribe as subscribePostsData } from './posts-da
     byKey('postQueryTree'),
     byKey('multiOnly'),
     byKey('qfCat'),
-    (cb) => window.corpusTags.onChange(cb),
+    (cb) => onChange(cb),
     subscribePostsData,
     (cb) => window.corpusFolders.onChange(cb), // clip state (count/active) is folders-owned
   ]);
   window.corpusPosterSidebarSource = makeSource(computePosterModel, [
     byKey('posterQueryTree'),
     byKey('qfCat'),
-    (cb) => window.corpusTags.onChange(cb),
+    (cb) => onChange(cb),
     subscribePostsData, // namedPosters()/buildUsers() read allPosts
     // No corpusFolders subscription — poster badges/visible never depend on clip state.
   ]);

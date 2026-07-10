@@ -17,7 +17,7 @@
 // multiOnly is mirrored for the first time in this slice (viewer.ts, alongside
 // sortPost). allPostsCount (⑩) covers the tab title's item count.
 //
-// tabTitleOf itself stays viewer-constructed (window.corpusTabState.makeTabLabels
+// tabTitleOf itself stays viewer-constructed (tab-state.ts's makeTabLabels
 // with viewer's MSG/collectionName/etc deps, which this file has no access to) —
 // configure() takes the already-built function, plus the static icon map + pin
 // glyph, as invariant callbacks (same "configure once" shape as the grid

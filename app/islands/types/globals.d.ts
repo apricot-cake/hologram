@@ -75,14 +75,9 @@ declare global {
     onChange(cb: (kind?: string) => void): void;
   }
 
-  // ---- renderer/tags.ts — tag vocabulary / 種別 domain. The full CorpusTagsApi
-  // shape lives in renderer/types/renderer-globals.d.ts; only getTagLabels is
-  // needed from the islands side (Sidebar/PosterSidebar read a custom 作品/キャラ
-  // label, falling back to t('kindWork'/'kindCharacter') when unset), declared
-  // here as a partial merge (same pattern as CorpusFoldersApi.onChange above).
-  interface CorpusTagsApi {
-    getTagLabels(): Record<string, string>;
-  }
+  // ---- renderer/tags.ts — tag vocabulary / 種別 domain. A real ES module now;
+  // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
+  // interface is needed here anymore.
 
   // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
   // several places, so every method is optional. Only what islands call. ----
@@ -142,13 +137,8 @@ declare global {
     resetPosterFilters?(): void;
   }
 
-  // ---- renderer/records.ts — the full CorpusRecordsApi shape lives in
-  // renderer/types/renderer-globals.d.ts; only postIdKey is needed from the islands side
-  // (SelectionBar reuses it to key selectedSet — same partial-merge pattern as
-  // CorpusFoldersApi.onChange above).
-  interface CorpusRecordsApi {
-    postIdKey(p: any): string;
-  }
+  // ---- renderer/records.ts — a real ES module now; SelectionBar imports postIdKey
+  // directly, so no ambient partial interface is needed here anymore.
 
   // ---- renderer/selection.ts — the full CorpusSelectionApi shape (toggle/clear/
   // selectAll/…) lives in renderer/types/renderer-globals.d.ts; SelectionBar (P4-B
@@ -587,15 +577,8 @@ declare global {
     setLabels(l: Record<string, string> | null | undefined): void;
   }
 
-  // ---- renderer/trash.ts — trash domain, read by both viewer.ts and this strict
-  // islands project (now the same tsconfig.json program; the Settings > Trash
-  // island calls it directly) ----
-  interface CorpusTrashApi {
-    listTrash(): Promise<any[]>;
-    restorePost(image: string): Promise<any>;
-    deleteFromTrash(image: string): Promise<any>;
-    emptyTrash(): Promise<any>;
-  }
+  // ---- renderer/trash.ts — trash domain. A real ES module now; the Settings > Trash
+  // island imports its commands directly, so no ambient interface is needed here. ----
 
   // ---- renderer/backup.ts — auto-backup domain, read by both viewer.ts's project
   // (the #mirrorStatus rail) and this strict islands project (the Settings > データ
@@ -635,11 +618,9 @@ declare global {
     // renderer/ipc.ts — the P4 IPC→service seam. Same shape as the raw bridge; viewer.ts
     // calls this instead of window.corpus directly (see renderer/ipc.ts for why).
     corpusIpc: CorpusPreload;
-    corpusTrash: CorpusTrashApi;
     corpusBackup: CorpusBackupApi;
     corpusPosts: CorpusPostsApi;
     corpusFolders: CorpusFoldersApi;
-    corpusTags: CorpusTagsApi;
     corpusStore: CorpusStore;
     corpusI18n: Promise<CorpusI18nApi>;
     corpusSearch: CorpusSearch;
@@ -648,7 +629,6 @@ declare global {
     corpusPosterGridSource: CorpusPosterGridSource;
     corpusPostSidebarSource: CorpusSidebarSource<CorpusSidebarModel>;
     corpusPosterSidebarSource: CorpusSidebarSource<CorpusPosterSidebarModel>;
-    corpusRecords: CorpusRecordsApi;
     corpusSelection: CorpusSelectionApi;
     corpusSettings: CorpusSettings;
     corpusQueryChips: CorpusQueryChipsIsland;

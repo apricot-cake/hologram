@@ -22,6 +22,9 @@ import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPo
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { init as initSearchBox } from './searchbox.ts';
+import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setKindLabel as tagsSetKindLabel, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
+import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 
 (async () => {
   // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
@@ -444,12 +447,12 @@ import { init as initSearchBox } from './searchbox.ts';
   };
 
   // filterLabel (query-chip renderer + tab titles share it) and tabTitleOf moved
-  // to tab-state.js (window.corpusTabState) — 6th extraction slice. Consts
+  // to tab-state.ts (makeTabLabels, imported) — 6th extraction slice. Consts
   // declared after this point (PF_NAME / CF) are injected as deferred arrows — a
   // direct ref here would hit TDZ at wiring time; the wrappers only run at
   // render time. formatShortDate / formatCount are hoisted function declarations
   // (direct refs are fine).
-  const { filterLabel, tabTitleOf, posterFilterLabel } = window.corpusTabState.makeTabLabels({
+  const { filterLabel, tabTitleOf, posterFilterLabel } = makeTabLabels({
     MSG,
     engTypeLabels: ENG_TYPE_LABELS,
     platformName: (v: string) => PF_NAME[v] || v,
@@ -586,31 +589,30 @@ import { init as initSearchBox } from './searchbox.ts';
   }
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
-  // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.js
-  // (window.corpusTags) — 8th extraction slice. The 4 tag stores themselves
-  // (tagTypes/tagLabels/tagGroups/posterTags) also live in tags.js now (P4
+  // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
+  // (imported) — 8th extraction slice. The 4 tag stores themselves
+  // (tagTypes/tagLabels/tagGroups/posterTags) also live in tags.ts now (P4
   // "状態→store" tags slice) — its own getters go in where viewer.js's local
   // `let`s used to. Wired BEFORE the facets/cooc wiring below, which passes
   // tagKindOf/posterTagsOf/posterFilterVocab as direct refs.
   // charCandidatesFor/relatedTagCandidates are consts from the cooc
   // destructure below, so they enter as deferred arrows.
-  const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = window.corpusTags.makeTags({
-    tagTypes: window.corpusTags.getTagTypes,
-    tagLabels: window.corpusTags.getTagLabels,
-    tagGroups: window.corpusTags.getTagGroups,
-    posterTags: window.corpusTags.getPosterTags,
+  const { tagKindOf, kindLabel, groupedTagVocab, inspectorTagPickerData, posterTagsOf, posterFilterVocab } = makeTags({
+    tagTypes: getTagTypes,
+    tagLabels: getTagLabels,
+    tagGroups: getTagGroups,
+    posterTags: getPosterTags,
     allPosts: () => allPosts,
     MSG,
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
-  // Bound onto the shared service object so renderer/sidebar.ts's pull sources (P4-B
+  // Bound onto tags.ts's live bindings so renderer/sidebar.ts's pull sources (P4-B
   // slice⑰) can read the SAME tagKindOf/posterFilterVocab this viewer instance uses —
-  // both close over corpusTags' own getTagTypes()/getPosterTags(), so there's no second
+  // both close over tags.ts's own getTagTypes()/getPosterTags(), so there's no second
   // implementation to drift.
-  window.corpusTags.tagKindOf = tagKindOf;
-  window.corpusTags.posterFilterVocab = posterFilterVocab;
-  const { sameTags } = window.corpusTags;
+  bindTagKindOf(tagKindOf);
+  bindPosterFilterVocab(posterFilterVocab);
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
   // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
@@ -627,7 +629,7 @@ import { init as initSearchBox } from './searchbox.ts';
     MSG,
     PF_NAME,
     tagKindOf,
-    tagGroups: window.corpusTags.getTagGroups,
+    tagGroups: getTagGroups,
     posterTagsOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -976,11 +978,11 @@ import { init as initSearchBox } from './searchbox.ts';
   // Mutation + persistence live in tags.js (setTagKind/setKindLabel); these wrappers
   // existed for the view-specific sidebar re-derive/re-push, now unnecessary.
   async function setTagKind(tag: string, kind: string | null) {
-    await window.corpusTags.setTagKind(tag, kind);
+    await tagsSetTagKind(tag, kind);
   }
   // Rename a 種別 (work/character) globally; blank resets to the built-in label.
   async function setKindLabel(kind: string, label: string | null | undefined) {
-    await window.corpusTags.setKindLabel(kind, label);
+    await tagsSetKindLabel(kind, label);
   }
   const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // --- In-session Edit Undo/Redo ---
@@ -1020,7 +1022,7 @@ import { init as initSearchBox } from './searchbox.ts';
     // key is always populated for poster-tags undo entries at runtime (pushUndo's
     // caller always supplies one); the narrow just satisfies applyPosterTagRecords'
     // stricter (key required) signature.
-    window.corpusTags.applyPosterTagRecords(records.filter((r): r is { key: string; tags: string[] } => !!r.key));
+    applyPosterTagRecords(records.filter((r): r is { key: string; tags: string[] } => !!r.key));
     if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
       refreshPosterTagFields(inspectedKey.slice('poster:'.length));
     }
@@ -1174,7 +1176,7 @@ import { init as initSearchBox } from './searchbox.ts';
     isInCollection: (id, cap) => !!(CF() && CF().has(id, cap)),
     isClipped: (cap) => !!(CF() && CF().isClipped(cap)),
     fuzzyCompile: (q) => (window.corpusSearch ? window.corpusSearch.compile(q) : null),
-    postKeyOf: window.corpusRecords.postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
+    postKeyOf, // URL-shaped queries match saved posts across x.com⇄twitter.com etc.
   });
 
   // The shared facet-chip builder (改訂④, docs/design-query-builder.md) now
@@ -1341,11 +1343,10 @@ import { init as initSearchBox } from './searchbox.ts';
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
-  // and percentileFn moved to records.js (window.corpusRecords) — 2nd extraction
+  // and percentileFn moved to records.ts (imported) — 2nd extraction
   // slice. groupRecords is rebuilt here with the live manualGroups/ungrouped
   // bindings injected as getters (viewer reassigns them on load/edit).
-  const { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn } = window.corpusRecords;
-  const groupRecords = window.corpusRecords.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
+  const groupRecords = makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
 
   // hostOf / userKey moved to query.ts (imported above).
 
@@ -1526,7 +1527,7 @@ import { init as initSearchBox } from './searchbox.ts';
   // The state machine (hist/idx/cap/dedupe/forward-branch drop/adopt) lives in
   // tab-state.js (makeNavHistory); viewer keeps the DOM button sync and the
   // persistence hooks. applyState's restoringState guards the re-push.
-  const nav = window.corpusTabState.makeNavHistory({
+  const nav = makeNavHistory({
     cap: NAV_CAP,
     enabled: () => appBooted,
     snapshot: snapshotState,
@@ -1577,8 +1578,7 @@ import { init as initSearchBox } from './searchbox.ts';
     folder: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
   };
   // genTabId + the tabs.json payload/restore shape + its load/persist live in
-  // tab-state.js (6th extraction slice + P4 domain-grouping follow-up).
-  const { genTabId, sanitizeSavedTabs, loadTabs, persistTabs } = window.corpusTabState;
+  // tab-state.ts (6th extraction slice + P4 domain-grouping follow-up), imported above.
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
     const at = getTabs().find((t) => t.id === getActiveTabId());
@@ -2025,7 +2025,7 @@ import { init as initSearchBox } from './searchbox.ts';
   // injected (density/aspect cache as getters; the psimg scheme and folder-clip
   // flag stay viewer-owned via fileSrc / isClipped). Selection is NOT injected —
   // the grid island's Cell derives .selected from corpusStore's 'selectedSet'.
-  const cardModel = window.corpusRecords.makeCardModel({
+  const cardModel = makeCardModel({
     MSG,
     PF_NAME,
     formatCount,
@@ -2193,7 +2193,7 @@ import { init as initSearchBox } from './searchbox.ts';
 
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
   // scheme stays viewer-owned via the injected fileSrc.
-  const { buildGroupGalleryItems } = window.corpusRecords.makeGallery({ fileSrc });
+  const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
   window.corpusImageTabSource.configure({
@@ -2514,7 +2514,7 @@ import { init as initSearchBox } from './searchbox.ts';
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
   function persistManual() {
-    window.corpusRecords.persistManualGroups(manualGroups);
+    persistManualGroups(manualGroups);
   }
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
   function setGroupKey(key: string, ungroup: boolean) {
@@ -2522,7 +2522,7 @@ import { init as initSearchBox } from './searchbox.ts';
     keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
-    window.corpusRecords.persistUngrouped(ungrouped);
+    persistUngrouped(ungrouped);
     closeDetail();
     renderPosts(true);
     if (ungroup) showToast(MSG.ungroupDone);
@@ -2542,7 +2542,7 @@ import { init as initSearchBox } from './searchbox.ts';
   // a full re-open) — the React tag editor keeps its own input text/focus and scroll
   // across a refresh (same openId). The chips + picker live in the panel itself — tag
   // editing is per-card here, no mode to enter (matches the poster inspector).
-  // sameTags moved to tags.js (window.corpusTags.sameTags).
+  // sameTags moved to tags.ts (imported).
 
   // inspectorTagPickerData moved to tags.js (corpusTags wiring above).
 
@@ -2618,7 +2618,7 @@ import { init as initSearchBox } from './searchbox.ts';
     if (!window.confirm(MSG.homonymConfirm(addedTag, work))) return;
     // The distinguished string stays a character (danbooru-style); record its 種別.
     if (!tagKindOf(distinguished)) {
-      await window.corpusTags.setTagKind(distinguished, 'character');
+      await tagsSetTagKind(distinguished, 'character');
     }
     await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
     showToast(MSG.homonymDistinguished(distinguished));
@@ -3515,7 +3515,7 @@ import { init as initSearchBox } from './searchbox.ts';
     const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
     if (!changed) return;
     pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
-    window.corpusTags.setPosterTags(key, next.length ? next : null);
+    setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
   }
   function showPosterDetail(u: CorpusUserAgg, opts?: { focusTag?: boolean }) {
@@ -4153,10 +4153,10 @@ import { init as initSearchBox } from './searchbox.ts';
     renderQueryChips();
     if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
-    ungrouped = await window.corpusRecords.loadUngrouped();
+    ungrouped = await loadUngrouped();
     await pfStore.load();
-    manualGroups = await window.corpusRecords.loadManualGroups();
-    await window.corpusTags.load();
+    manualGroups = await loadManualGroups();
+    await loadTags();
     // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
     // model on first get() (P4-B slice⑰), so both columns paint immediately with
     // whatever's already loaded and pick up badges/disclosure as data streams in.

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
+import { listTrash, restorePost, deleteFromTrash, emptyTrash } from '../../../renderer/trash.ts';
 
 // Soft-deleted record as returned by the list-trash IPC — only the fields used here.
 interface TrashRecord {
@@ -29,7 +30,7 @@ export function Trash() {
 
   const load = async () => {
     try {
-      setRecords((await window.corpusTrash.listTrash()) || []);
+      setRecords((await listTrash()) || []);
     } catch {
       setRecords([]);
     }
@@ -41,7 +42,7 @@ export function Trash() {
 
   const restore = async (r: TrashRecord) => {
     try {
-      await window.corpusTrash.restorePost((r.image || r.video || r.captureId) as string);
+      await restorePost((r.image || r.video || r.captureId) as string);
     } catch {
       /* ignore */
     }
@@ -49,7 +50,7 @@ export function Trash() {
   };
   const perma = async (r: TrashRecord) => {
     try {
-      await window.corpusTrash.deleteFromTrash(r.captureId as string);
+      await deleteFromTrash(r.captureId as string);
     } catch {
       /* ignore */
     }
@@ -57,7 +58,7 @@ export function Trash() {
   };
   const emptyAll = async () => {
     try {
-      await window.corpusTrash.emptyTrash();
+      await emptyTrash();
     } catch {
       /* ignore */
     }
