@@ -113,8 +113,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (deps.posterQBRemoveCondsMatching((c) => c.type === 'tag' && !present.has(c.value))) deps.posterQBSyncShadow();
   }
 
-  // Poster query reset — the activebar island's #posterResetBtn calls this directly via
-  // window.corpusViewer.resetPosterFilters (P4-B slice⑱).
+  // Poster query reset — the activebar island's #posterResetBtn calls this directly by
+  // importing the resetPosterFilters live binding from viewer.ts (P4-B slice⑱).
   function resetPosterFilters() {
     deps.posterQBResetTree();
     deps.setSearchBoxValue('');

@@ -10,8 +10,8 @@
 //
 // Image tabs (addImageTab/showImageTab/hideImageTabView/setImageTabIndex/
 // toggleImageTabInspector/closeImageTab/resolveImageTabGroup) stay in
-// viewer.ts — that cluster is V13's (Wave27) scope, which also finishes
-// image-tab.ts's remaining window.corpusViewer DI. This module takes
+// viewer.ts — that cluster was V13's (Wave27) scope, which also finished
+// image-tab.ts's window.corpusViewer DI (image-tab-builder.ts). This module takes
 // showImageTab/hideImageTabView as deps (deferred forward references, same
 // shape as undo-builder.ts's showToast/postGrid) and exports enough surface
 // (getTabs/mutateTabs/getActiveTabId/setActiveTabId/isImageTab/activeTab/
@@ -369,11 +369,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
   // autoscroll suppression, right-click context menu, double-click rename, and the
-  // Ctrl+T/W/Tab document shortcuts. Registration lives in React (TabBarEvents,
-  // app/islands/app/App.tsx) via window.corpusViewer, wired at the construction
-  // site (viewer.ts); this stays the guard + action logic (viewer keeps the
-  // orchestration, React owns the wiring) — same "cut out and rewire" as the
-  // global shortcuts / detail-dismiss slices.
+  // Ctrl+T/W/Tab document shortcuts. React owns the registration (TabBarEvents,
+  // app/islands/app/App.tsx), importing these handlers' live bindings from viewer.ts
+  // directly (assigned at this controller's construction site); this stays the guard
+  // + action logic (viewer keeps the orchestration, React owns the wiring) — same
+  // "cut out and rewire" as the global shortcuts / detail-dismiss slices.
   // Tab context menu (right-click a tab): pin / rename / duplicate / close /
   // close-others. React-owned glass menu (menu.ts); this module owns the
   // items + actions.

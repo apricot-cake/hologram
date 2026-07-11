@@ -45,10 +45,10 @@ export function makeQfPop(deps: QfPopDeps) {
 
   // The island may close itself (outside-click / Escape) without going through
   // hideQfPop() — this handler keeps the anchor highlight + bookkeeping in sync with
-  // whoever closed it. Registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer in viewer.ts; this stays the guard + action logic (viewer
-  // keeps the orchestration, React owns the wiring) — same "cut out and rewire" as
-  // the tab bar.
+  // whoever closed it. React owns the subscribe() registration (StoreSubscriptions,
+  // App.tsx), importing this function's live binding from viewer.ts directly; this
+  // stays the guard + action logic (viewer keeps the orchestration, React owns the
+  // wiring) — same "cut out and rewire" as the tab bar.
   function handleQfPopChange() {
     if (!qfPopGet()) {
       qfCat = null;

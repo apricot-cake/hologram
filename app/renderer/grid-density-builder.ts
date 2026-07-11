@@ -204,9 +204,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Tile overlay lives in the React settings island; this is the apply-and-persist
-  // bridge it calls (via window.corpusViewer.setTileOverlay, wired in viewer.ts —
-  // that bridge itself is V16/Wave30 territory, still viewer.ts's job) so the post
-  // grid updates immediately.
+  // function it calls (islands/settings/ipc.ts's setTileOverlay imports the
+  // `applyTileOverlay` live binding below directly — V16/Wave30, no window.corpusViewer
+  // detour) so the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
     tileOverlay = v;
     deps.corpusIpc.setPref('tileOverlay', tileOverlay);
@@ -221,9 +221,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // owns the active state + glass thumb; this reacts to a view change: mirror it
   // into currentView, persist it, and re-render the grid (deferred past a paint
   // with a view transition, like the old optimistic handler). The idempotent guard
-  // skips the no-op set from restorePrefs, so the loop stays one-way. Subscribe
-  // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
-  // (viewer.ts wires this function in).
+  // skips the no-op set from restorePrefs, so the loop stays one-way. React owns the
+  // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
+  // directly (viewer.ts wires it into the module-scope export).
   let _densityRenderT: any = null;
   function handleViewStoreChange() {
     const v = storeGet('view');
@@ -330,8 +330,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // (corpusStore 'posterView'). React owns the active state + glass thumb; this
   // reacts to a change: mirror it into posterView, persist it, and re-render the
   // poster grid (deferred past a paint, like the old optimistic handler). The
-  // idempotent guard skips the no-op set from restorePrefs. Subscribe registration
-  // lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer.
+  // idempotent guard skips the no-op set from restorePrefs. React owns the
+  // subscribe() registration (StoreSubscriptions, App.tsx), importing this
+  // function directly.
   let _posterDensityRenderT: any = null;
   function handlePosterViewStoreChange() {
     const v = storeGet('posterView');

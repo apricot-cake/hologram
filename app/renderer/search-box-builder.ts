@@ -116,8 +116,9 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   }
   // The toggle sets the mode for the NEXT term. The editing (un-confirmed) leaf
   // follows it; confirmed leaves keep their own frozen mode (postPredOf reads
-  // f.mode). Subscribe registration lives in React (StoreSubscriptions, App.tsx)
-  // via window.corpusViewer in viewer.ts; this stays the guard + action logic.
+  // f.mode). React owns the subscribe() registration (StoreSubscriptions, App.tsx),
+  // importing this function's live binding from viewer.ts directly; this stays the
+  // guard + action logic.
   function handleSearchModeChange() {
     searchEditing.onSearchModeChange();
   }

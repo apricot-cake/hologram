@@ -23,9 +23,10 @@
 // glyph, as invariant callbacks (same "configure once" shape as the grid
 // sources' modelOf/keyOf/labels/onAspect).
 //
-// Tab bar EVENTS (click/contextmenu/keydown/…) stay wired through
-// window.corpusViewer via TabBarEvents (App.tsx, P4-B slice④) — unchanged by
-// this slice; this file only computes the model, it never mutates tab state.
+// Tab bar EVENTS (click/contextmenu/keydown/…) stay wired through TabBarEvents
+// (App.tsx, P4-B slice④), which imports the handlers' live bindings from
+// viewer.ts directly — unchanged by this slice; this file only computes the
+// model, it never mutates tab state.
 // Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
 import { buildShadow } from './query.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';

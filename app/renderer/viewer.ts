@@ -52,6 +52,39 @@ export let bootApp: () => Promise<void>;
 export let handleFolderChange: (kind?: string) => void;
 export let handlePostsChanged: (names: string[] | null) => Promise<void>;
 
+// Global keyboard/mouse shortcuts, tab-bar events, inspector-dismiss, and store/IPC
+// subscription handlers: the rest of the window.corpusViewer bridge, converted to real
+// ES exports the same way (Wave32/V17 continued — the roadmap's "Object.assign hits
+// zero when V17 completes" undercounted this cluster; see corpus-react-purity-execution-map
+// memory). Each is assigned once, below, at the same construction site the old
+// Object.assign registration used to sit at.
+export let handleShortcutNavKey: (e: KeyboardEvent) => void;
+export let handleShortcutMouseNav: (e: MouseEvent) => void;
+export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
+export let handleShortcutSelectAllKey: (e: KeyboardEvent) => void;
+export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
+export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
+export let handleEscDismissDetail: (e: KeyboardEvent) => void;
+export let handleOutsideClickDismissDetail: (e: MouseEvent) => void;
+export let handleTabBarKeydown: (e: KeyboardEvent) => void;
+export let handleTabBarFocusout: (e: FocusEvent) => void;
+export let handleTabBarClick: (e: MouseEvent) => void;
+export let handleTabBarAuxclick: (e: MouseEvent) => void;
+export let handleTabBarMousedown: (e: MouseEvent) => void;
+export let handleTabBarContextmenu: (e: MouseEvent) => void;
+export let handleTabBarDblclick: (e: MouseEvent) => void;
+export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
+export let handleQfPopChange: () => void;
+export let handleViewStoreChange: () => void;
+export let handleBrowseModeStoreChange: () => void;
+export let handlePosterViewStoreChange: () => void;
+export let handleSearchQueryStoreChange: () => void;
+export let handleSearchModeChange: () => void;
+export let navBack: () => void;
+export let navForward: () => void;
+export let resetAllFilters: () => void;
+export let resetPosterFilters: () => void;
+
 (async () => {
   // The Promise executor runs synchronously, so this is assigned before any other
   // code executes — the `!` tells tsc what the executor already guarantees.
@@ -196,7 +229,9 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
 
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
-  function resetAllFilters() {
+  // Assigned (not a hoisted declaration) so the module-scope `export let` above is what
+  // gets set — Activebar.tsx imports it directly now (Wave32/V17 continued).
+  resetAllFilters = function () {
     // Bounce back to the poster grid only if we drilled in from a poster AND that
     // poster's user filter is still active (check before emptying the tree).
     const bounce = posterReturn && qHasValue('user', posterReturn);
@@ -213,16 +248,16 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     afterQueryChange();
     posterReturn = null;
     if (bounce) setBrowseMode('posters');
-  }
+  };
   // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island,
-  // which calls window.corpusViewer.resetAllFilters/navBack/navForward directly (P4-B
-  // slice⑱ — no more pushed model callbacks) — the buttons are React-owned.
+  // which imports resetAllFilters/navBack/navForward directly (P4-B slice⑱ — no more
+  // pushed model callbacks) — the buttons are React-owned.
   //
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
   // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts —
   // viewer.ts decomposition's V12 slice (Wave26); tabsCtl is constructed further below
   // (after postQB/postGrid/browseMode/multiOnly are in scope) and its handlers are
-  // registered onto window.corpusViewer at that construction site.
+  // assigned to the module-scope exports at that construction site.
 
   // Empty-state CTAs (innerHTML rebuilds the buttons each render → delegate)
   byId('emptyState').addEventListener('click', (e) => {
@@ -428,8 +463,8 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     showDetail: (g) => showDetail(g), // showDetail (inspector) is declared far below — deferred
     refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields (posterGrid) is declared far below — deferred
   });
-  const { pushUndo, doUndo, doRedo, handleShortcutUndoKey } = undoCtl;
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutUndoKey });
+  const { pushUndo, doUndo, doRedo } = undoCtl;
+  handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
 
   // --- State ---
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
@@ -795,37 +830,26 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     isImageTab,
     activeTab,
     nav,
-    navBack,
-    navForward,
     persistTabsDebounced,
     saveActiveTabState,
     closeTab,
-    handleShortcutNavKey,
-    handleShortcutMouseNav,
-    handleTabBarKeydown,
-    handleTabBarFocusout,
-    handleTabBarClick,
-    handleTabBarAuxclick,
-    handleTabBarMousedown,
-    handleTabBarContextmenu,
-    handleTabBarDblclick,
-    handleGlobalTabShortcut,
   } = tabsCtl;
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
-    navBack,
-    navForward,
-    resetAllFilters,
-    handleShortcutNavKey,
-    handleShortcutMouseNav,
-    handleTabBarKeydown,
-    handleTabBarFocusout,
-    handleTabBarClick,
-    handleTabBarAuxclick,
-    handleTabBarMousedown,
-    handleTabBarContextmenu,
-    handleTabBarDblclick,
-    handleGlobalTabShortcut,
-  });
+  // The rest of tabsCtl's surface only ever gets read through the module-scope exports
+  // above (App.tsx/Activebar.tsx import those directly) — assigned by property, not
+  // destructured, so there's no local same-named binding shadowing the `export let`s
+  // (Wave32/V17 continued).
+  navBack = tabsCtl.navBack;
+  navForward = tabsCtl.navForward;
+  handleShortcutNavKey = tabsCtl.handleShortcutNavKey;
+  handleShortcutMouseNav = tabsCtl.handleShortcutMouseNav;
+  handleTabBarKeydown = tabsCtl.handleTabBarKeydown;
+  handleTabBarFocusout = tabsCtl.handleTabBarFocusout;
+  handleTabBarClick = tabsCtl.handleTabBarClick;
+  handleTabBarAuxclick = tabsCtl.handleTabBarAuxclick;
+  handleTabBarMousedown = tabsCtl.handleTabBarMousedown;
+  handleTabBarContextmenu = tabsCtl.handleTabBarContextmenu;
+  handleTabBarDblclick = tabsCtl.handleTabBarDblclick;
+  handleGlobalTabShortcut = tabsCtl.handleGlobalTabShortcut;
 
   // --- Image tabs (type:'image') — fit-to-screen detail view (Eagle 風) ---
   // The model/state cluster (resolveImageTabGroup/showImageTab/hideImageTabView/
@@ -853,8 +877,8 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
 
   // initTabs/showTabMenu/tab-rename commit-cancel/tab-bar DOM handlers/the
   // Ctrl+T/W/Tab shortcut all live in tabsCtl now (destructured above); the
-  // window.corpusViewer registration for the tab-bar handlers happened at
-  // that destructure site too.
+  // module-scope export assignment for the tab-bar handlers happened at that
+  // construction site too.
 
   // keepCurrentVisible/imgAspect/cardModel/corpusPostGridSource.configure/
   // renderPosts all moved to post-grid-builder.ts (postGrid above).
@@ -1029,8 +1053,9 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
   });
-  const { closeDetail, showDetail, persistManual, handleEscDismissDetail, handleOutsideClickDismissDetail } = inspector;
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleEscDismissDetail, handleOutsideClickDismissDetail });
+  const { closeDetail, showDetail, persistManual } = inspector;
+  handleEscDismissDetail = inspector.handleEscDismissDetail;
+  handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
   // === Selection (click a card to select; the bar appears when 1+ are selected) ===
   // groupSelected needs inspector's persistManual, so this is constructed here
@@ -1051,7 +1076,7 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     openTagSelectedOverlay: () => bulkEdit.openTagSelectedOverlay(),
     getBrowseMode: () => browseMode, // viewer.ts `let`, read live
   });
-  const { toggleCardSelection, selectedRecords, handleShortcutSelectAllKey } = selectionCtl;
+  const { toggleCardSelection, selectedRecords } = selectionCtl;
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
   // Clicking the card body does not select while nothing is selected yet.
   byId('postGrid').addEventListener('click', (e) => {
@@ -1077,7 +1102,7 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     true,
   );
   byId('selectionBar').addEventListener('click', selectionCtl.handleSelectionBarClick);
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey });
+  handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
 
   // ℹ button on card → detail popup (re-click same card toggles close)
   byId('postGrid').addEventListener('click', (e) => {
@@ -1152,7 +1177,7 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // reaction (mirror into currentView, persist, re-render with a view transition)
   // lives in grid-density-builder.ts now (V10/Wave24) — this just bridges React's
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleViewStoreChange: gridDensity.handleViewStoreChange });
+  handleViewStoreChange = gridDensity.handleViewStoreChange;
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
   // Switches the content area between the post grid and the poster grid (same tab).
@@ -1194,15 +1219,15 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // #browseToggle is rendered by the toolbar island (corpusStore 'browseMode').
   // React owns the active state + glass thumb; viewer reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
-  // below, so the loop stays one-way (island → store → viewer, never back). Subscribe
-  // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
-  // below; this stays the guard + action logic.
-  function handleBrowseModeStoreChange() {
+  // below, so the loop stays one-way (island → store → viewer, never back). React owns
+  // the subscribe() registration (StoreSubscriptions, App.tsx), importing this directly;
+  // this stays the guard + action logic. Assigned (not a hoisted declaration) so the
+  // module-scope `export let` above is what gets set.
+  handleBrowseModeStoreChange = function () {
     const m = storeGet('browseMode');
     if (m === browseMode) return;
     setBrowseMode(m);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleBrowseModeStoreChange });
+  };
 
   // The browse toggle is React-owned now (BrowseToggle island); it measures its own glass
   // thumb via a ResizeObserver on its container, so the sidebar-width changes that grid
@@ -1223,7 +1248,7 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // lives in grid-density-builder.ts now (V10/Wave24), alongside the post-side
   // equivalent above. This just bridges React's subscribe registration
   // (StoreSubscriptions, App.tsx) and the slider's DOM 'input' listener to it.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handlePosterViewStoreChange: gridDensity.handlePosterViewStoreChange });
+  handlePosterViewStoreChange = gridDensity.handlePosterViewStoreChange;
   (function setupPosterSizeSlider() {
     const sl = inputById('posterTileSlider');
     if (!sl) return;
@@ -1286,7 +1311,6 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     deletePosterFolder,
     togglePosterFolderMember,
     renderPosterFilterRows,
-    resetPosterFilters,
     renderPosters,
     openPosterPosts,
     jumpToPoster,
@@ -1364,9 +1388,9 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     renderPosters,
   });
   // The island may close itself (outside-click / Escape) without going through
-  // qfPop.hideQfPop() — subscribe registration lives in React (StoreSubscriptions,
-  // App.tsx) via window.corpusViewer below; this stays the guard + action logic.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange: qfPop.handleQfPopChange });
+  // qfPop.hideQfPop() — React owns the subscribe() registration (StoreSubscriptions,
+  // App.tsx), importing this directly; this stays the guard + action logic.
+  handleQfPopChange = qfPop.handleQfPopChange;
 
   const filterPopover = makeFilterPopover({
     t: getMessage,
@@ -1384,8 +1408,10 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // resetPosterFilters/renderPosters/corpusPosterGridSource.configure/
   // openPosterPosts/jumpToPoster/refreshPosterTagFields/refreshPosterFolderFields/
   // applyPosterTagChange/showPosterDetail all moved to poster-grid-builder.ts
-  // (V6/Wave20) — destructured from posterGrid above.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { resetPosterFilters });
+  // (V6/Wave20). resetPosterFilters is read only through the module-scope export
+  // (Activebar.tsx imports it directly) — assigned by property, not destructured above,
+  // to avoid shadowing it.
+  resetPosterFilters = posterGrid.resetPosterFilters;
   byId('posterGrid').addEventListener('click', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
@@ -1455,8 +1481,9 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
   tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
-  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey: gridDensity.handleShortcutSizeKey });
+  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
+  // imports this directly.
+  handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
 
   // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
   // through window.corpusViewer for the React settings island (Danger.tsx/Data.tsx/
@@ -1482,15 +1509,7 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // (viewer.ts decomposition's V3 slice, Wave17). searchEditing itself stays a
   // local const here — resetAllFilters (above) and postQB's onLeafMutated/
   // isEditingLeaf deps still reference it directly.
-  const {
-    searchQuery,
-    setSearchBoxValue,
-    handleSearchQueryStoreChange,
-    rebindEditingTextLeaf,
-    handleSearchModeChange,
-    handleShortcutSearchFocusKey,
-    searchEditing,
-  } = makeSearchBox({
+  const searchBox = makeSearchBox({
     storeGet,
     storeSet,
     getTree: () => postQB.getTree(),
@@ -1506,11 +1525,13 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
     buildSuggest: (q) => buildSuggest(q),
     searchModeTitle: getMessage('searchModeTitle'),
   });
-  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer below; this stays the guard + action logic.
-  // handleShortcutSearchFocusKey's registration lives in GlobalShortcuts (App.tsx) —
-  // wired here too since both come off the same makeSearchBox() construction site.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange, handleShortcutSearchFocusKey });
+  const { searchQuery, setSearchBoxValue, rebindEditingTextLeaf, searchEditing } = searchBox;
+  // React owns the subscribe() registration (StoreSubscriptions, App.tsx), importing
+  // this directly; this stays the guard + action logic. handleShortcutSearchFocusKey's
+  // registration lives in GlobalShortcuts (App.tsx) — also imported directly, wired
+  // there since both come off the same makeSearchBox() construction site.
+  handleSearchQueryStoreChange = searchBox.handleSearchQueryStoreChange;
+  handleShortcutSearchFocusKey = searchBox.handleShortcutSearchFocusKey;
 
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
@@ -1523,9 +1544,9 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
   // フライアウト絞り込みで共有する。UI は toolbar 島（#searchModeSeg）が描画し、
   // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。コンテナの
   // aria-label 設定とhandleSearchModeChange本体はsearch-box-builder.tsへ移設済み
-  // （Wave17/V3）。Subscribe registration lives in React (StoreSubscriptions,
-  // App.tsx) via window.corpusViewer below; this stays the guard + action logic.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchModeChange });
+  // （Wave17/V3）。React owns the subscribe() registration (StoreSubscriptions,
+  // App.tsx), importing this directly; this stays the guard + action logic.
+  handleSearchModeChange = searchBox.handleSearchModeChange;
 
   // --- Import from ZIP ---
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して

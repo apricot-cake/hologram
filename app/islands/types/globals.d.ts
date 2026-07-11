@@ -57,47 +57,10 @@ declare global {
   // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
   // interface is needed here anymore.
 
-  // ---- viewer.js — window.corpusViewer is assembled via Object.assign in
-  // several places, so every method is optional. Only what islands call. ----
-  interface CorpusViewer {
-    // Global keyboard/mouse shortcut handlers, wired by the GlobalShortcuts component
-    // (App.tsx). Each is a full guard+action handler (viewer keeps the logic); the
-    // component just registers the raw DOM listener and forwards the event.
-    handleShortcutNavKey?(e: KeyboardEvent): void;
-    handleShortcutMouseNav?(e: MouseEvent): void;
-    handleShortcutUndoKey?(e: KeyboardEvent): void;
-    handleShortcutSelectAllKey?(e: KeyboardEvent): void;
-    handleShortcutSearchFocusKey?(e: KeyboardEvent): void;
-    handleShortcutSizeKey?(e: KeyboardEvent): void;
-    // Capture-phase inspector dismiss handlers, wired by DetailDismiss (App.tsx).
-    handleEscDismissDetail?(e: KeyboardEvent): void;
-    handleOutsideClickDismissDetail?(e: MouseEvent): void;
-    // Tab bar event handlers, wired by TabBarEvents (App.tsx).
-    handleTabBarKeydown?(e: KeyboardEvent): void;
-    handleTabBarFocusout?(e: FocusEvent): void;
-    handleTabBarClick?(e: MouseEvent): void;
-    handleTabBarAuxclick?(e: MouseEvent): void;
-    handleTabBarMousedown?(e: MouseEvent): void;
-    handleTabBarContextmenu?(e: MouseEvent): void;
-    handleTabBarDblclick?(e: MouseEvent): void;
-    handleGlobalTabShortcut?(e: KeyboardEvent): void;
-    // External-store / IPC subscription handlers, wired by StoreSubscriptions (App.tsx).
-    handleQfPopChange?(): void;
-    handleViewStoreChange?(): void;
-    handleBrowseModeStoreChange?(): void;
-    handlePosterViewStoreChange?(): void;
-    handleSearchQueryStoreChange?(): void;
-    handleSearchModeChange?(): void;
-    // Image-tab commands (renderer/image-tab.ts's setImageTabIndex/toggleImageTabInspector/
-    // closeImageTab dispatch) were DI'd off window.corpusViewer in V13/Wave27 — see
-    // renderer/image-tab-builder.ts and image-tab.ts's configure() callbacks.
-    // Activebar commands — the activebar island calls these directly (P4-B slice⑱; no
-    // more pushed model callbacks).
-    navBack?(): void;
-    navForward?(): void;
-    resetAllFilters?(): void;
-    resetPosterFilters?(): void;
-  }
+  // ---- viewer.ts — window.corpusViewer is gone (Wave31/Wave32, V17). Every method it
+  // used to carry (global shortcuts, inspector-dismiss, tab-bar events, store/IPC
+  // subscription handlers, boot, nav/reset) is now a real ES export that App.tsx/
+  // Activebar.tsx import directly — no ambient Window-shaped interface needed here.
 
   // ---- renderer/records.ts — a real ES module now; SelectionBar imports postIdKey
   // directly, so no ambient partial interface is needed here anymore.
@@ -451,10 +414,10 @@ declare global {
   // keeps only the container reveal + --activebar-h measurement; ActivebarHost (P4-B
   // slice⑱) derives everything else itself from corpusStore ('postQueryTree'/
   // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
-  // 'navCanForward') + t(), and calls window.corpusViewer.navBack/navForward/
-  // resetAllFilters/resetPosterFilters directly for the actions (the old
-  // renderer/activebar.ts push bridge was deleted — no callers left). Portaled into
-  // sub-mounts BESIDE the chips containers, which stay their own island. ----
+  // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
+  // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
+  // bridge was deleted — no callers left). Portaled into sub-mounts BESIDE the chips
+  // containers, which stay their own island. ----
 
   // ---- renderer/confirm.js — shared confirm modal (#confirmOverlay). viewer opens it with
   // a message + optional skip/keyword gate + callbacks; the island renders it. ----
@@ -518,7 +481,6 @@ declare global {
 
   interface Window {
     corpus: CorpusPreload;
-    corpusViewer?: CorpusViewer;
     corpusSettings: CorpusSettings;
     corpusLightbox: CorpusLightbox;
     // vendor-react/index.ts assigns these; every island reaches React through

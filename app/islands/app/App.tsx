@@ -30,7 +30,34 @@ import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
 import { onChange as foldersOnChange } from '../../renderer/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { viewerReady, bootApp, handleFolderChange, handlePostsChanged } from '../../renderer/viewer.ts';
+import {
+  viewerReady,
+  bootApp,
+  handleFolderChange,
+  handlePostsChanged,
+  handleShortcutNavKey,
+  handleShortcutMouseNav,
+  handleShortcutUndoKey,
+  handleShortcutSelectAllKey,
+  handleShortcutSearchFocusKey,
+  handleShortcutSizeKey,
+  handleEscDismissDetail,
+  handleOutsideClickDismissDetail,
+  handleTabBarKeydown,
+  handleTabBarFocusout,
+  handleTabBarClick,
+  handleTabBarAuxclick,
+  handleTabBarMousedown,
+  handleTabBarContextmenu,
+  handleTabBarDblclick,
+  handleGlobalTabShortcut,
+  handleQfPopChange,
+  handleViewStoreChange,
+  handleBrowseModeStoreChange,
+  handlePosterViewStoreChange,
+  handleSearchQueryStoreChange,
+  handleSearchModeChange,
+} from '../../renderer/viewer.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
@@ -118,20 +145,21 @@ function ModalChrome() {
 // Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
 // focus, content-size step). React now owns the DOM listener registration (mounted
 // once for the app's lifetime); each handler's guard + action logic is unchanged and
-// stays in viewer.ts, reached through window.corpusViewer — "cut out and rewire", not
-// reimplemented. If viewer hasn't finished booting yet, the optional chain no-ops,
-// same as before this slice (the old listeners lived past viewer's own await gate too).
+// stays in viewer.ts, imported directly as a live binding — "cut out and rewire", not
+// reimplemented (Wave32/V17 continued). No boot-readiness guard needed, same reasoning
+// as handleFolderChange/handlePostsChanged below: these only ever fire on a real
+// keydown/mouseup, and viewer.ts's IIFE assigns the real functions well before a human
+// (or a CDP test) can produce one.
 function GlobalShortcuts() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => {
-      const v = window.corpusViewer;
-      v?.handleShortcutNavKey?.(e);
-      v?.handleShortcutUndoKey?.(e);
-      v?.handleShortcutSelectAllKey?.(e);
-      v?.handleShortcutSearchFocusKey?.(e);
-      v?.handleShortcutSizeKey?.(e);
+      handleShortcutNavKey(e);
+      handleShortcutUndoKey(e);
+      handleShortcutSelectAllKey(e);
+      handleShortcutSearchFocusKey(e);
+      handleShortcutSizeKey(e);
     };
-    const onMouseup = (e: MouseEvent) => window.corpusViewer?.handleShortcutMouseNav?.(e);
+    const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
     document.addEventListener('keydown', onKeydown);
     window.addEventListener('mouseup', onMouseup);
     return () => {
@@ -146,12 +174,12 @@ function GlobalShortcuts() {
 // CAPTURE phase (ahead of the overlays/popovers they check for) — a different phase than
 // GlobalShortcuts' bubble-phase keydown, so this stays a separate effect/component rather
 // than merging into it. Handler + guard logic lives in inspector-builder.ts (moved there
-// in Wave21/V7, ahead of this wave), reached through window.corpusViewer, same
+// in Wave21/V7, ahead of this wave), imported directly as a live binding, same
 // "cut out and rewire" as GlobalShortcuts.
 function DetailDismiss() {
   useEffect(() => {
-    const onKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleEscDismissDetail?.(e);
-    const onClick = (e: MouseEvent) => window.corpusViewer?.handleOutsideClickDismissDetail?.(e);
+    const onKeydown = (e: KeyboardEvent) => handleEscDismissDetail(e);
+    const onClick = (e: MouseEvent) => handleOutsideClickDismissDetail(e);
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('click', onClick, true);
     return () => {
@@ -166,21 +194,21 @@ function DetailDismiss() {
 // autoscroll suppression, right-click context menu, double-click rename, and the
 // Ctrl+T/W/Tab document shortcuts. React owns the listener registration (mounted once
 // for the app's lifetime); guard + action logic is unchanged and stays in viewer.ts,
-// reached through window.corpusViewer — same "cut out and rewire" as GlobalShortcuts.
+// imported directly as a live binding — same "cut out and rewire" as GlobalShortcuts.
 // #tabBarInner is TabsHost's static portal container (present before app.js runs), so
 // getElementById resolves synchronously, same as the Portal() containers below.
 function TabBarEvents() {
   useEffect(() => {
     const bar = document.getElementById('tabBarInner');
     if (!bar) return;
-    const onKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleTabBarKeydown?.(e);
-    const onFocusout = (e: FocusEvent) => window.corpusViewer?.handleTabBarFocusout?.(e);
-    const onClick = (e: MouseEvent) => window.corpusViewer?.handleTabBarClick?.(e);
-    const onAuxclick = (e: MouseEvent) => window.corpusViewer?.handleTabBarAuxclick?.(e);
-    const onMousedown = (e: MouseEvent) => window.corpusViewer?.handleTabBarMousedown?.(e);
-    const onContextmenu = (e: MouseEvent) => window.corpusViewer?.handleTabBarContextmenu?.(e);
-    const onDblclick = (e: MouseEvent) => window.corpusViewer?.handleTabBarDblclick?.(e);
-    const onDocKeydown = (e: KeyboardEvent) => window.corpusViewer?.handleGlobalTabShortcut?.(e);
+    const onKeydown = (e: KeyboardEvent) => handleTabBarKeydown(e);
+    const onFocusout = (e: FocusEvent) => handleTabBarFocusout(e);
+    const onClick = (e: MouseEvent) => handleTabBarClick(e);
+    const onAuxclick = (e: MouseEvent) => handleTabBarAuxclick(e);
+    const onMousedown = (e: MouseEvent) => handleTabBarMousedown(e);
+    const onContextmenu = (e: MouseEvent) => handleTabBarContextmenu(e);
+    const onDblclick = (e: MouseEvent) => handleTabBarDblclick(e);
+    const onDocKeydown = (e: KeyboardEvent) => handleGlobalTabShortcut(e);
     bar.addEventListener('keydown', onKeydown);
     bar.addEventListener('focusout', onFocusout);
     bar.addEventListener('click', onClick);
@@ -207,22 +235,22 @@ function TabBarEvents() {
 // posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
 // folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
 // registration (mounted once for the app's lifetime). The store/qf-pop/search-mode
-// handlers are guard+action logic that still lives in viewer.ts, reached through
-// window.corpusViewer — "cut out and rewire", same as the other App.tsx-level
-// effects. handleFolderChange/handlePostsChanged are imported directly instead
-// (Wave31/V17 — no bridge needed once viewer.ts exports them as real bindings).
-// corpusStore/qf-pop/search all return an unsubscribe (useSyncExternalStore-
+// handlers are guard+action logic that still lives in viewer.ts, imported directly as
+// live bindings — "cut out and rewire", same as the other App.tsx-level effects and
+// handleFolderChange/handlePostsChanged below (Wave31/V17, extended to the rest of
+// this effect in Wave32 — no bridge needed once viewer.ts exports them as real
+// bindings). corpusStore/qf-pop/search all return an unsubscribe (useSyncExternalStore-
 // compatible) and get one on cleanup; corpusFolders.onChange and
 // corpusPosts.onPostsChanged don't (subs.push / raw ipcRenderer.on) — harmless,
 // since this effect never actually unmounts in this single-page app.
 function StoreSubscriptions() {
   useEffect(() => {
-    const unsubView = storeSubscribe('view', () => window.corpusViewer?.handleViewStoreChange?.());
-    const unsubBrowseMode = storeSubscribe('browseMode', () => window.corpusViewer?.handleBrowseModeStoreChange?.());
-    const unsubPosterView = storeSubscribe('posterView', () => window.corpusViewer?.handlePosterViewStoreChange?.());
-    const unsubSearchQuery = storeSubscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
-    const unsubQfPop = subscribeQfPop(() => window.corpusViewer?.handleQfPopChange?.());
-    const unsubSearchMode = subscribeSearch(() => window.corpusViewer?.handleSearchModeChange?.());
+    const unsubView = storeSubscribe('view', () => handleViewStoreChange());
+    const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
+    const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
+    const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
+    const unsubQfPop = subscribeQfPop(() => handleQfPopChange());
+    const unsubSearchMode = subscribeSearch(() => handleSearchModeChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged((names) => handlePostsChanged(names));
     return () => {
