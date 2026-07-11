@@ -7,6 +7,7 @@ import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
+import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
@@ -290,6 +291,7 @@ export function App() {
       <FilterPopoverHost />
       <QfPopHost />
       <ConfirmHost />
+      <FolderManagerHost />
       {/* Container-mounted islands — portaled into their orchestrator-owned static containers. */}
       <Portal id="filterRows">
         <Sidebar />

@@ -70,6 +70,10 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
+  // React-controlled input (FolderManagerModal, same idiom as SearchBox in test-app-search) —
+  // setting .value directly bypasses React's change tracking, so use the native setter + a
+  // real 'input' event.
+  const setVal = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
   const cards = () => grid.querySelectorAll('.post-card').length;
   // A flyout value row, found by its .fm-name label (same shape the platform flyout uses in
   // test-app-postfilter). The qf-pop island renders rows without data-* value hooks.
@@ -90,7 +94,7 @@ const evalJs = `(async () => {
   await waitFor(() => !!document.querySelector('.qf-footer-link'));
   click(document.querySelector('.qf-footer-link')); await sleep(40);
   const modalOpen = !$('ivFolderModal').hidden;
-  $('ivFolderNewName').value = '一次資料';
+  setVal($('ivFolderNewName'), '一次資料');
   click($('ivFolderCreate')); await sleep(60);
   const c1 = await getCollections();
   const folderCount = c1.collections.length;                // 1 folder exists

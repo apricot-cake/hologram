@@ -1,28 +1,21 @@
-// Shared folder store + management modal + toast, used by the post-view
-// (viewer.js). The library data lives in collections.json (keyed by captureId) — the
-// unified container for folders (collections). Clip is a separate library-wide
+// Shared folder store + management-modal state + toast, used by the post-view
+// (orchestrator.ts). The library data lives in collections.json (keyed by captureId) —
+// the unified container for folders (collections). Clip is a separate library-wide
 // ephemeral flag set (a captureId Set), persisted alongside the collections. This
-// module owns the data, the management modal (#ivFolderModal), membership toggling,
-// and the toast (#ivToast); the "which folder is filtered" state stays per-view.
-// Subscribers (onChange) are notified after any mutation so each view refreshes its
-// own chips.
+// module owns the data, the management-modal state (rendering is the FolderManagerModal
+// island, #ivFolderModal), membership toggling, and the toast (#ivToast); the "which
+// folder is filtered" state stays per-view. Subscribers (onChange) are notified after
+// any mutation so each view refreshes its own chips.
 //
 // A real ES module (named exports) now: load, all, byId, has, toggleIn, isClipped,
 // toggleClip, clearClips, clippedItems, clipCount, reconcile, openManager,
-// closeManager, isManagerOpen, toast, onChange, isLoaded, allCollections,
+// closeManager, isManagerOpen, getManager, subscribeManager, managerCreate,
+// managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allCollections,
 // createCollection, updateCollection, renameCollection, removeCollection — plus the
-// corpusPosterFolderStore() factory (viewer.js's poster-folder store).
-import { escapeHtml as uiEscapeHtml, notify as uiNotify } from './ui.ts';
+// corpusPosterFolderStore() factory (orchestrator.ts's poster-folder store).
+import { notify as uiNotify } from './ui.ts';
 import { corpusI18n } from './i18n.ts';
 import { corpusIpc } from './ipc.ts';
-
-const $ = (id: string) => document.getElementById(id);
-// event.target → nearest matching ancestor as an HTMLElement (null when the
-// target is not an Element or no match) — keeps the DOM casts in one place.
-const closestOf = (e: Event, sel: string): HTMLElement | null => {
-  const t = e.target;
-  return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
-};
 
 // Folder-list store shared by the library collections (below, isCollections) and the
 // poster folders (viewer.js, via the corpusPosterFolderStore() factory below, no isCollections). Owns the
@@ -193,44 +186,43 @@ const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isCol
 // Clip = a library-wide ephemeral flag set (captureId Set), separate from collections.
 // Persisted alongside the collections in collections.json (the `clip` array).
 let clipSet = new Set<string>();
-// The management modal (#ivFolderModal) is shared: by default it edits the library
-// store, but openManager({store,onChange}) re-points it at the poster folder store
-// (viewer.js pfStore) so both views get the same CRUD + drag-reorder UI. Each store
-// owns its own persist (folders.json vs poster-folders.json); mgrAfter re-renders
-// the view that owns the rows.
+// The management modal (FolderManagerModal island, #ivFolderModal) is shared: by
+// default it edits the library store, but openManager({store,onChange}) re-points it at
+// the poster folder store (orchestrator.ts pfStore) so both views get the same CRUD +
+// drag-reorder UI. Each store owns its own persist (folders.json vs poster-folders.json);
+// mgrAfter re-renders the view that owns the rows. mgrModel/mgrSubs are the modal's own
+// open/closed + list state (separate from `subs`/notify below, which is the folder-DATA
+// change channel every view's chips subscribe to) — FolderManagerModal.tsx subscribes
+// via getManager()/subscribeManager().
 let mgrStore = store;
 let mgrAfter = () => notify('list');
+let mgrModel: CorpusFolderManagerModel | null = null;
+let mgrSeq = 0;
+const mgrSubs = new Set<() => void>();
+function notifyMgr() {
+  for (const cb of [...mgrSubs]) {
+    try {
+      cb();
+    } catch {
+      /* ignore */
+    }
+  }
+}
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
 const subs: Array<(kind?: string) => void> = [];
 
-// i18n: this module owns the folder modal + its toasts. corpusI18n is a
-// promise from i18n.ts. Resolve once and cache getMessage as t(); until then
-// t() echoes the key. Static modal labels are applied on resolve (and
-// re-applied if the modal is open). Dynamic strings (toasts, row buttons,
-// prompts, confirms) call t() at use time.
+// i18n: this module's own toasts (foldAdded/foldRemoved/clipAdded/clipRemoved/
+// clipCleared, fired from business logic below, outside any component render) reuse the
+// renderer's i18n — corpusI18n is a promise from i18n.ts; resolve once and cache
+// getMessage as t(), until then t() echoes the key. The modal's own labels (title,
+// placeholder, rename/delete prompts) are the island's concern — FolderManagerModal.tsx
+// uses the shared islands/_shared/i18n.ts t() directly in JSX.
 let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
 corpusI18n.then((api) => {
-  if (api && api.getMessage) {
-    t = api.getMessage;
-    applyStaticI18n();
-  }
+  if (api && api.getMessage) t = api.getMessage;
 });
-function applyStaticI18n() {
-  const modal = $('ivFolderModal');
-  if (!modal) return;
-  const title = modal.querySelector('.iv-insp-title');
-  if (title) title.textContent = t('foldManageTitle');
-  const inp = $('ivFolderNewName') as HTMLInputElement | null;
-  if (inp) inp.placeholder = t('foldNewPlaceholder');
-  const createBtn = $('ivFolderCreate');
-  if (createBtn) createBtn.textContent = t('foldCreate');
-  if (isManagerOpen()) renderModal(); // refresh empty-state / row labels if already shown
-}
 
-function escapeHtml(s: unknown) {
-  return uiEscapeHtml(s);
-}
 function persist() {
   loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
   if (corpusIpc && corpusIpc.setCollections)
@@ -341,138 +333,59 @@ export function toast(msg: unknown) {
   return uiNotify(msg);
 }
 
-// --- management modal ---
+// --- management modal (state only — rendering is FolderManagerModal.tsx) ---
 export function isManagerOpen() {
-  const m = $('ivFolderModal');
-  return !!(m && !m.hidden);
+  return !!mgrModel;
 }
 export function openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null) {
   mgrStore = (opts && opts.store) || store;
   mgrAfter = (opts && opts.onChange) || (() => notify('list'));
-  renderModal();
-  const m = $('ivFolderModal');
-  if (m) m.hidden = false;
-  setTimeout(() => {
-    try {
-      $('ivFolderNewName')?.focus();
-    } catch {
-      /* ignore */
-    }
-  }, 0);
+  mgrModel = { openId: ++mgrSeq, list: mgrStore.all() };
+  notifyMgr();
 }
 export function closeManager() {
-  const m = $('ivFolderModal');
-  if (m) m.hidden = true;
+  mgrModel = null;
   mgrStore = store;
   mgrAfter = () => notify('list');
+  notifyMgr();
 }
-function renderModal() {
-  const host = $('ivFolderList');
-  if (!host) return;
-  const list = mgrStore.all();
-  // purity: imperative-dom-ok — deferred to Wave18 (FolderManagerModal island)
-  host.innerHTML = list.length
-    ? list
-        .map((f) => {
-          return (
-            `<div class="iv-folder-row" data-fid="${escapeHtml(f.id)}" draggable="true">` +
-            `<span class="iv-fold-name">${escapeHtml(f.name)}</span>` +
-            `<span class="iv-fold-n">${f.items.length}</span>` +
-            `<button class="iv-fold-btn" data-fact="rename" title="${escapeHtml(t('foldRename'))}">✎</button>` +
-            `<button class="iv-fold-btn" data-fact="delete" title="${escapeHtml(t('foldDelete'))}">🗑</button>` +
-            '</div>'
-          );
-        })
-        .join('')
-    : `<div class="iv-folder-empty">${escapeHtml(t('foldEmpty'))}</div>`;
+function refreshManager() {
+  if (!mgrModel) return;
+  mgrModel = { ...mgrModel, list: mgrStore.all() };
+  notifyMgr();
 }
-function create() {
-  const inp = $('ivFolderNewName') as HTMLInputElement | null;
-  if (!inp) return;
-  if (!mgrStore.create(inp.value)) return; // store mints the id + persists
-  inp.value = '';
-  renderModal();
+export function getManager() {
+  return mgrModel;
+}
+export function subscribeManager(cb: () => void) {
+  mgrSubs.add(cb);
+  return () => mgrSubs.delete(cb);
+}
+export function managerCreate(name: string | null | undefined) {
+  if (!mgrStore.create(name)) return false; // store mints the id + persists
+  refreshManager();
+  mgrAfter();
+  return true;
+}
+export function managerRename(id: string | null | undefined, name: string | null | undefined) {
+  if (!mgrStore.rename(id, name)) return false;
+  refreshManager();
+  mgrAfter(); // mgrStore.rename persists on success
+  return true;
+}
+export function managerRemove(id: string | null | undefined) {
+  mgrStore.remove(id);
+  refreshManager();
   mgrAfter();
 }
-
-function bind() {
-  const modal = $('ivFolderModal');
-  if (!modal) return;
-  const flist = $('ivFolderList');
-  if (!flist) return;
-  $('ivFolderClose')?.addEventListener('click', closeManager);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeManager();
-  });
-  $('ivFolderCreate')?.addEventListener('click', create);
-  $('ivFolderNewName')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') create();
-  });
-  flist.addEventListener('click', (e) => {
-    const row = closestOf(e, '.iv-folder-row');
-    if (!row) return;
-    const act = closestOf(e, '[data-fact]');
-    if (!act) return;
-    const fid = row.dataset.fid;
-    const f = mgrStore.byId(fid);
-    if (!f) return;
-    if (act.dataset.fact === 'rename') {
-      mgrStore.rename(fid, window.prompt(t('foldRenamePrompt'), f.name));
-    } else if (act.dataset.fact === 'delete') {
-      if (!window.confirm(t('foldDeleteConfirm', [f.name]))) return;
-      mgrStore.remove(fid);
-    }
-    renderModal();
-    mgrAfter(); // mgrStore.rename/remove persist on success
-  });
-  // Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
-  // notify so the sidebar chips re-render in the new order.
-  let dragId: string | null | undefined = null;
-  const clearMarks = () => flist.querySelectorAll('.iv-drop-before, .iv-drop-after').forEach((el) => el.classList.remove('iv-drop-before', 'iv-drop-after'));
-  const dropBefore = (row: HTMLElement, clientY: number) => {
-    const r = row.getBoundingClientRect();
-    return clientY < r.top + r.height / 2;
-  };
-  flist.addEventListener('dragstart', (e) => {
-    const row = closestOf(e, '.iv-folder-row');
-    if (!row) return;
-    dragId = row.dataset.fid;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      try {
-        e.dataTransfer.setData('text/plain', dragId || '');
-      } catch {
-        /* some engines disallow */
-      }
-    }
-    row.classList.add('iv-dragging');
-  });
-  flist.addEventListener('dragover', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    clearMarks();
-    const row = closestOf(e, '.iv-folder-row');
-    if (row && row.dataset.fid !== dragId) row.classList.add(dropBefore(row, e.clientY) ? 'iv-drop-before' : 'iv-drop-after');
-  });
-  flist.addEventListener('drop', (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    const row = closestOf(e, '.iv-folder-row');
-    if (row && row.dataset.fid !== dragId && mgrStore.move(dragId, row.dataset.fid, dropBefore(row, e.clientY))) {
-      renderModal();
-      mgrAfter();
-    }
-    dragId = null;
-  });
-  flist.addEventListener('dragend', () => {
-    dragId = null;
-    clearMarks();
-    flist.querySelectorAll('.iv-dragging').forEach((el) => el.classList.remove('iv-dragging'));
-  });
+// Drag-and-drop reorder (same idiom as the poster folders): persist via store.move,
+// notify so the sidebar chips re-render in the new order.
+export function managerMove(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean) {
+  if (!mgrStore.move(draggedId, targetId, before)) return false;
+  refreshManager();
+  mgrAfter();
+  return true;
 }
-
-bind();
 
 export function all() {
   return store.all();

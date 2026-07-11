@@ -2107,18 +2107,10 @@
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
   <div id="ivToast" class="iv-toast"></div>
 
-  <!-- Folder management modal (shared by both modes) — set default + create/rename/delete -->
-  <div id="ivFolderModal" class="iv-detail-overlay" hidden>
-    <div class="iv-detail-box">
-      <button class="iv-insp-close" id="ivFolderClose" type="button">×</button>
-      <div class="iv-insp-title">フォルダを管理</div>
-      <div class="iv-folder-new">
-        <input type="text" id="ivFolderNewName" class="search-box" placeholder="新しいフォルダ名" maxlength="60">
-        <button class="iv-htbtn" id="ivFolderCreate" type="button">作成</button>
-      </div>
-      <div id="ivFolderList" class="iv-folder-list"></div>
-    </div>
-  </div>
+  <!-- Folder management modal (shared by both modes) — React island (FolderManagerModal,
+       app/islands/folders) owns the content + [hidden] visibility; folders.ts's
+       openManager()/closeManager() drive it. -->
+  <div id="ivFolderModal" class="iv-detail-overlay" hidden></div>
 
   <!-- Delete confirmation -->
   <!-- Shared confirm modal — React-owned now: the confirm island (app/islands/confirm)

@@ -223,6 +223,11 @@ interface CorpusFolderStore {
 }
 /** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
 type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
+/** folders.ts's management-modal state (FolderManagerModal.tsx via getManager()/subscribeManager()). openId bumps only on openManager() (a fresh modal session), not on list refreshes. */
+interface CorpusFolderManagerModel {
+  openId: number;
+  list: CorpusFolder[];
+}
 
 // renderer/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
