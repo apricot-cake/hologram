@@ -6,8 +6,9 @@
 // just wires the returned functions in. selection.ts (Wave10, the corpusStore-backed
 // selectedSet/anchor bridge) stays untouched — this module is one of its consumers
 // (the selection-bar island's own model derivation is the other, unaffected here).
-// タグを追加 (openTagSelectedOverlay) is bulk-edit.ts territory (V9/Wave23, not yet
-// extracted) — this module only calls it via a deferred dep, same shape as
+// タグを追加 (openTagSelectedOverlay) is bulk-edit-builder.ts territory (V9/Wave23).
+// It's constructed right after this module in viewer.ts (needs this module's own
+// selectedRecords), so this module only calls it via a deferred dep, same shape as
 // jumpToPoster/showToast forward-references in inspector-builder.ts.
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
@@ -26,7 +27,7 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: CorpusPostGroup, x: number, y: number): void;
-  // openTagSelectedOverlay lives in viewer.ts (bulk-edit.ts consumer, V9/Wave23) — a
+  // openTagSelectedOverlay lives in bulk-edit-builder.ts (V9/Wave23) — a
   // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
   openTagSelectedOverlay(): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a

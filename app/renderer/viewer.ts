@@ -10,10 +10,8 @@ import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndo } from './undo.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
-import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
-import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
 import { get as filterPopoverGet } from './filter-popover.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFilterPopover } from './filter-popover-builder.ts';
@@ -36,6 +34,7 @@ import { makePostGridBuilder } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
+import { makeBulkEdit } from './bulk-edit-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -1859,9 +1858,9 @@ import { corpusIpc } from './ipc.ts';
     loadPosts,
     persistManual,
     showFoldMenu,
-    // openTagSelectedOverlay (bulk-edit.ts, edit-overlay.ts consumer) is declared
-    // far below — deferred, V9/Wave23 territory (not yet extracted).
-    openTagSelectedOverlay: () => openTagSelectedOverlay(),
+    // bulkEdit (bulk-edit.ts, edit-overlay.ts consumer) is constructed just
+    // below — deferred since it needs this selectionCtl's own selectedRecords.
+    openTagSelectedOverlay: () => bulkEdit.openTagSelectedOverlay(),
     getBrowseMode: () => browseMode, // viewer.ts `let`, read live
   });
   const { toggleCardSelection, selectedRecords, handleShortcutSelectAllKey } = selectionCtl;
@@ -1914,26 +1913,25 @@ import { corpusIpc } from './ipc.ts';
     showDetail(g);
   });
 
-  // --- Edit overlay logic (bulk "add tags to selection") ---
+  // --- Edit overlay (bulk "add tags to selection") ---
   // The staging list itself (selected records / tags-in-progress / additive flag)
-  // lives in corpusBulkEdit (renderer/bulk-edit.ts) — nothing persists until Save
-  // (see openTagSelectedOverlay/onSave below) writes it out.
-
-  // groupedTagVocab moved to tags.js (corpusTags wiring above).
-
-  // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
-  // staging-list mutation. Not persisted yet — Save (see openTagSelectedOverlay below) is
-  // the only thing that writes the staged tags out to the records.
-  function refreshEditOverlayFields() {
-    const tags = getTags();
-    editOverlayRefresh({ tags, ...inspectorTagPickerData(tags, getRecords(), 'post') });
-  }
-
-  function closeEditOverlay() {
-    close();
-    byId('editOverlay').classList.remove('show');
-    editOverlayClose();
-  }
+  // lives in bulk-edit.ts — nothing persists until Save (see openTagSelectedOverlay/
+  // onSave inside bulk-edit-builder.ts) writes it out. Constructed here (after
+  // selectionCtl above) since groupSelected's sibling openTagSelectedOverlay needs
+  // this cluster's own selectedRecords — see the deferred dep on selectionCtl above.
+  const bulkEdit = makeBulkEdit({
+    MSG,
+    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    showKindMenu,
+    inspectorTagPickerData,
+    pushUndo,
+    markPostsMutated,
+    renderPosts,
+    keepCurrentVisible,
+    getPostById: postGrid.getPostById,
+    selectedRecords,
+  });
+  const { closeEditOverlay } = bulkEdit;
 
   // Modal chrome (lock background scroll + darken the native titlebar while any
   // full-screen overlay is up) moved to the ModalChrome hook in app/islands/app/App.tsx
@@ -1953,78 +1951,6 @@ import { corpusIpc } from './ipc.ts';
   // Wiring (selectionCtl, its listeners, toggleCardSelection/selectedRecords/
   // clearSelection/handleShortcutSelectAllKey) moved up next to the inspector —
   // see the V8/Wave22 comment there.
-
-  // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
-  // merged into each selected record's existing tags (nothing is replaced).
-  function openTagSelectedOverlay() {
-    const records = selectedRecords();
-    if (!records.length) return;
-    open(records);
-    const tags = getTags();
-    editOverlayOpen({
-      titleLabel: MSG.tagSelectedTitle,
-      tags,
-      ...inspectorTagPickerData(tags, records, 'post'),
-      tagLabels: {
-        tagsLabel: MSG.detailTags,
-        newTagPlaceholder: MSG.tagNewName,
-        addBtn: MSG.tagAddBtn,
-        noTags: MSG.editNoTags,
-        noMatch: MSG.tagPalNoMatch,
-        noVocab: MSG.tagNoTags,
-        adoptSource: MSG.editAdoptSource,
-      },
-      cancelLabel: MSG.confirmCancel,
-      saveLabel: MSG.save,
-      onCancel: closeEditOverlay,
-      onTagAdd: (tag: string) => {
-        add(tag);
-        refreshEditOverlayFields();
-      },
-      onTagRemove: (tag: string) => {
-        remove(tag);
-        refreshEditOverlayFields();
-      },
-      onTagToggle: (tag: string) => {
-        toggle(tag);
-        refreshEditOverlayFields();
-      },
-      onTagContextMenu: (tag: string, x: number, y: number) => {
-        showKindMenu(tag, x, y, refreshEditOverlayFields);
-      },
-      onSave: async () => {
-        const editingRecords = getRecords();
-        if (!editingRecords.length) {
-          closeEditOverlay();
-          return;
-        }
-        keepCurrentVisible(); // removing a tag can un-match an active tag filter
-        const tags = [...getTags()];
-        const editAdditive = isAdditive();
-        // Capture before-state for undo, then persist.
-        const undoRecords = editingRecords.map((r) => {
-          const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
-          return { captureId: r.captureId, image: r.image || r.video, prevTags: (r.tags || []).slice(), newTags };
-        });
-        for (const u of undoRecords) {
-          try {
-            await postsUpdateTags(u.image, u.newTags);
-          } catch {
-            /* keep going */
-          }
-          const rec = postGrid.getPostById(u.captureId); // O(1) lookup; allPosts shares the same record refs
-          if (rec) rec.tags = u.newTags.slice();
-        }
-        pushUndo('tags', undoRecords);
-        markPostsMutated();
-        renderPosts(true); // keepLimit: selection (if any) stays put, no anim replay
-        const n = editingRecords.length;
-        closeEditOverlay();
-        showToast(n > 1 ? MSG.tagsSavedN(n) : MSG.tagsSaved);
-      },
-    });
-    byId('editOverlay').classList.add('show');
-  }
 
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A: never steal keys from fields or open overlays.
