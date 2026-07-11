@@ -69,10 +69,6 @@ declare global {
     // (App.tsx) instead of viewer self-invoking — same "React owns WHEN, viewer.ts
     // keeps WHAT" shape as the other control→hooks handlers below.
     bootApp?(): Promise<void>;
-    setTileOverlay?(v: boolean): void;
-    reloadPosts?(): void | Promise<void>;
-    confirmClearAll?(): void;
-    setSkipDeleteConfirm?(v: boolean): void;
     // Global keyboard/mouse shortcut handlers, wired by the GlobalShortcuts component
     // (App.tsx). Each is a full guard+action handler (viewer keeps the logic); the
     // component just registers the raw DOM listener and forwards the event.

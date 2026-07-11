@@ -5,6 +5,7 @@
 
 import { get as themeGet, set as themeSet } from '../../renderer/theme-api.ts';
 import { corpusIpc } from '../../renderer/ipc.ts';
+import { applyTileOverlay } from '../../renderer/grid-density-builder.ts';
 
 export const getPrefs = () => (corpusIpc.getPrefs ? corpusIpc.getPrefs() : Promise.resolve({}));
 export const setPref = (key: string, value: unknown) => (corpusIpc.setPref ? corpusIpc.setPref(key, value) : Promise.resolve());
@@ -20,10 +21,11 @@ export const theme = {
   },
 };
 
-// Tile overlay also drives the (vanilla) post grid, so flipping it must reach
-// viewer.js to update the grid class immediately. viewer.js exposes the
-// apply-and-persist bridge; fall back to a plain setPref if it isn't present.
+// Tile overlay also drives the post grid, so flipping it must reach
+// grid-density-builder.ts to update the grid class immediately. That module
+// exposes the apply-and-persist bridge as a live binding (bound at boot from
+// viewer.ts); fall back to a plain setPref if it isn't bound yet.
 export const setTileOverlay = (v: boolean) => {
-  if (window.corpusViewer && window.corpusViewer.setTileOverlay) window.corpusViewer.setTileOverlay(v);
+  if (applyTileOverlay) applyTileOverlay(v);
   else setPref('tileOverlay', v);
 };

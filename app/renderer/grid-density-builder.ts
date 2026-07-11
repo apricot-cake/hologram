@@ -411,3 +411,12 @@ export function makeGridDensity(deps: GridDensityDeps) {
     getPosterView: () => posterView,
   };
 }
+
+// applyTileOverlay is bound once at boot (viewer.ts, right after constructing
+// gridDensity) so the settings island (islands/settings/ipc.ts) can flip the
+// tile-overlay pref directly — no window.corpusViewer detour. See memory
+// corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
+export let applyTileOverlay: ((v: boolean) => void) | null = null;
+export function bindApplyTileOverlay(fn: (v: boolean) => void): void {
+  applyTileOverlay = fn;
+}

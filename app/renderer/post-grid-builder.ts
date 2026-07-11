@@ -16,7 +16,7 @@ import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
 import { corpusPostGridSource } from './grid.ts';
-import { listPostsDelta, deletePost } from './posts.ts';
+import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { corpusIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { set as storeSet } from './store.ts';
@@ -54,8 +54,6 @@ export interface PostGridBuilderDeps {
   showDetail(g: CorpusPostGroup): void;
   jumpToPoster(post: CorpusPost): void;
   addImageTab(g: CorpusPostGroup): void;
-  getSkipDeleteConfirm(): boolean;
-  setSkipDeleteConfirm(v: boolean): void;
 }
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
@@ -67,6 +65,25 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
   const GRID_ANIM_MS = 950;
   let _gridAnimT: any = null;
+
+  // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
+  // owned here since this module is the only reader (requestDeleteGroup below)
+  // and the settings island (Danger.tsx) wants a direct live binding instead of
+  // going through window.corpusViewer (viewer.ts decomposition's V16 slice, see
+  // memory corpus-react-purity-execution-map).
+  let skipDeleteConfirm = false;
+  function getSkipDeleteConfirm() {
+    return skipDeleteConfirm;
+  }
+  function setSkipDeleteConfirm(v: boolean) {
+    skipDeleteConfirm = v;
+    corpusIpc.setPref('skipDeleteConfirm', v);
+  }
+  // Restoring a saved pref shouldn't re-persist it right back (mirrors
+  // grid-density-builder.ts's restorePrefs, which assigns tileOverlay directly).
+  function restoreSkipDeleteConfirm(v: boolean) {
+    skipDeleteConfirm = v;
+  }
 
   // --- Authoritative post cache (allPosts ownership) ------------------------
   let allPosts: CorpusPost[] = [];
@@ -476,7 +493,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   function requestDeleteGroup(g: CorpusPostGroup) {
-    if (deps.getSkipDeleteConfirm()) {
+    if (getSkipDeleteConfirm()) {
       executeDeleteGroup(g);
       return;
     }
@@ -486,11 +503,37 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       cancelLabel: deps.MSG.confirmCancel,
       skipLabel: deps.MSG.confirmSkip, // "次回から確認しない"
       onOk: async ({ skip }) => {
-        if (skip) {
-          deps.setSkipDeleteConfirm(true);
-          corpusIpc.setPref('skipDeleteConfirm', true);
-        }
+        if (skip) setSkipDeleteConfirm(true);
         await executeDeleteGroup(g);
+      },
+    });
+  }
+
+  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
+  // enable the OK button — a stray click can't wipe everything. The confirm modal is
+  // React-owned (confirm.ts / the confirm island); this just opens it with the keyword
+  // gate + the wipe as its onOk. Was window.corpusViewer.confirmClearAll — the React
+  // Danger section now imports the confirmClearAll live binding below directly (V16).
+  function confirmClearAll() {
+    confirmOpen({
+      message: deps.MSG.confirmClear,
+      okLabel: deps.MSG.confirmOk,
+      cancelLabel: deps.MSG.confirmCancel,
+      keywordPlaceholder: deps.MSG.confirmKeywordPh,
+      keywordRequired: deps.MSG.deleteKeyword, // OK stays disabled until this is typed
+      onOk: async () => {
+        // Clear all data (deletes every image + sidecar in the save folder).
+        const res = await clearAll();
+        // Main refuses the wipe if config is degraded — keep the library on screen and
+        // tell the user to restart (initSaveFolderRedundancy repairs on launch).
+        if (res && res.blocked) {
+          notify(deps.MSG.clearBlocked);
+          return;
+        }
+        resetAll(); // keep the delta cache in sync with the wipe
+        markPostsMutated(); // drop stale tag/author/instance facets left over from the wipe
+        renderPosts();
+        notify(deps.MSG.cleared);
       },
     });
   }
@@ -536,5 +579,30 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     showFoldMenu,
     showCardMenu,
     requestDeleteGroup,
+    confirmClearAll,
+    getSkipDeleteConfirm,
+    setSkipDeleteConfirm,
+    restoreSkipDeleteConfirm,
   };
+}
+
+// loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm are bound
+// once at boot (viewer.ts, right after constructing postGrid) so the settings
+// island (Danger.tsx/Data.tsx) can reach them directly — no window.corpusViewer
+// detour. See memory corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
+export let loadPosts: ((keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>) | null = null;
+export function bindLoadPosts(fn: (keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>): void {
+  loadPosts = fn;
+}
+export let confirmClearAll: (() => void) | null = null;
+export function bindConfirmClearAll(fn: () => void): void {
+  confirmClearAll = fn;
+}
+export let getSkipDeleteConfirm: (() => boolean) | null = null;
+export function bindGetSkipDeleteConfirm(fn: () => boolean): void {
+  getSkipDeleteConfirm = fn;
+}
+export let setSkipDeleteConfirm: ((v: boolean) => void) | null = null;
+export function bindSetSkipDeleteConfirm(fn: (v: boolean) => void): void {
+  setSkipDeleteConfirm = fn;
 }

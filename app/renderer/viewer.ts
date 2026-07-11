@@ -9,7 +9,6 @@ import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
-import { open as confirmOpen } from './confirm.ts';
 import { get as filterPopoverGet } from './filter-popover.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFilterPopover } from './filter-popover-builder.ts';
@@ -19,7 +18,7 @@ import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, group
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
-import { listPostsDelta, importComplete, importPosts, clearAll } from './posts.ts';
+import { listPostsDelta, importComplete, importPosts } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -28,9 +27,9 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
-import { makePostGridBuilder } from './post-grid-builder.ts';
+import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
-import { makeGridDensity } from './grid-density-builder.ts';
+import { makeGridDensity, bindApplyTileOverlay } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
@@ -791,7 +790,7 @@ import { corpusIpc } from './ipc.ts';
     getBrowseMode: () => browseMode,
   });
   const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
-  let skipDeleteConfirm = false;
+  bindApplyTileOverlay(gridDensity.applyTileOverlay);
   // Post-grid selection state (Set + shift-range anchor) lives in
   // renderer/selection.ts (P4-B slice⑬) — corpusStore's
   // 'selectedSet' key IS the state; the grid island's cells read it reactively.
@@ -1006,12 +1005,12 @@ import { corpusIpc } from './ipc.ts';
     showDetail: (g) => showDetail(g),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
-    getSkipDeleteConfirm: () => skipDeleteConfirm,
-    setSkipDeleteConfirm: (v) => {
-      skipDeleteConfirm = v;
-    },
   });
   const { loadPosts, renderPosts, markPostsMutated, reconcileFolders, keepCurrentVisible, showFoldMenu, showCardMenu, requestDeleteGroup } = postGrid;
+  bindLoadPosts(postGrid.loadPosts);
+  bindConfirmClearAll(postGrid.confirmClearAll);
+  bindGetSkipDeleteConfirm(postGrid.getSkipDeleteConfirm);
+  bindSetSkipDeleteConfirm(postGrid.setSkipDeleteConfirm);
 
   // The listing pipeline — getFilteredPosts (content gate → query tree → sticky
   // merge → sort), namedPosters/filteredPosters, and the collection derivations —
@@ -1765,24 +1764,15 @@ import { corpusIpc } from './ipc.ts';
   // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey: gridDensity.handleShortcutSizeKey });
 
-  // Tile overlay lives in the React settings island now; grid-density-builder.ts
-  // exposes the apply-and-persist bridge it calls (via window.corpusViewer.setTileOverlay
-  // below) so the post grid updates immediately.
-  // Bridges the React settings island calls into (the controls live there now,
-  // but these effects touch viewer.js-owned state / the post grid).
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
-    setTileOverlay: gridDensity.applyTileOverlay,
-    reloadPosts: () => loadPosts(),
-    setSkipDeleteConfirm: (v: boolean) => {
-      skipDeleteConfirm = v;
-      corpusIpc.setPref('skipDeleteConfirm', v);
-    },
-  });
+  // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
+  // through window.corpusViewer for the React settings island (Danger.tsx/Data.tsx/
+  // settings/ipc.ts) to reach; those now import the live bindings above directly
+  // (viewer.ts decomposition's V16 slice, see memory corpus-react-purity-execution-map).
 
   // Load saved view mode and skipDeleteConfirm
   corpusIpc.getPrefs().then((prefs) => {
     gridDensity.restorePrefs(prefs);
-    skipDeleteConfirm = !!prefs.skipDeleteConfirm;
+    postGrid.restoreSkipDeleteConfirm(!!prefs.skipDeleteConfirm);
     // Re-render once after applying the saved view mode. Sort is NOT read here anymore
     // — it comes from the tab state (applied by initTabs), so the old prefs/initTabs
     // load race on sortSelect.value is gone.
@@ -1899,41 +1889,10 @@ import { corpusIpc } from './ipc.ts';
 
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
-  // enable the OK button — a stray click can't wipe everything. The confirm modal is
-  // React-owned now (confirm.ts / the confirm island); openClearAllConfirm just
-  // opens it with the keyword gate + the wipe as its onOk. Exposed on corpusViewer so the
-  // React Danger section triggers the exact same destructive flow — no second wipe dialog.
-  function openClearAllConfirm() {
-    confirmOpen({
-      message: MSG.confirmClear,
-      okLabel: MSG.confirmOk,
-      cancelLabel: MSG.confirmCancel,
-      keywordPlaceholder: MSG.confirmKeywordPh,
-      keywordRequired: MSG.deleteKeyword, // OK stays disabled until this is typed
-      onOk: async () => {
-        // Clear all data (deletes every image + sidecar in the save folder).
-        const res = await clearAll();
-        // Main refuses the wipe if config is degraded — keep the library on screen and
-        // tell the user to restart (initSaveFolderRedundancy repairs on launch).
-        if (res && res.blocked) {
-          showToast(MSG.clearBlocked);
-          return;
-        }
-        postGrid.resetAll(); // keep the delta cache in sync with the wipe
-        // P4-B slice⑪: this call was missing before (only the two other allPosts
-        // reassignment sites called it) — clear-all never bumped _allPostsGeneration,
-        // which left stale tag/author/instance facets around after a wipe until
-        // something else happened to bump it. Harmless for THIS render (renderPosts()
-        // below is never inPlace, so the separate viewGroups-reuse guard was never at
-        // risk), but worth fixing here since it's exactly the choke point this slice
-        // is unifying.
-        markPostsMutated();
-        renderPosts();
-        showToast(MSG.cleared);
-      },
-    });
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { confirmClearAll: openClearAllConfirm });
+  // enable the OK button — moved into post-grid-builder.ts's confirmClearAll (viewer.ts
+  // decomposition's V16 slice) since that's where postGrid.resetAll()/markPostsMutated()
+  // already live; the React Danger section imports the confirmClearAll live binding
+  // directly now instead of going through window.corpusViewer.
 
   // --- Utility functions ---
   // Count / date formatters (formatCount / formatDate / compactDate / …) live in

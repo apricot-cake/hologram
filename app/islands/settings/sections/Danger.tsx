@@ -4,10 +4,11 @@ import { Highlight } from '../components/Highlight.tsx';
 import { Switch } from '../components/Switch.tsx';
 import { t } from '../../_shared/i18n.ts';
 import { getPrefs } from '../ipc.ts';
+import { setSkipDeleteConfirm, confirmClearAll } from '../../../renderer/post-grid-builder.ts';
 
 // 危険な操作: re-enable the delete confirmation + wipe the whole library.
 // The wipe is NOT reimplemented here — the button only triggers the shared
-// keyword-gated confirm overlay via window.corpusViewer.confirmClearAll().
+// keyword-gated confirm overlay via post-grid-builder.ts's confirmClearAll live binding.
 export function Danger() {
   // checked = confirmation is shown (i.e. NOT skipped).
   const [confirmShown, setConfirmShown] = useState(true);
@@ -22,13 +23,11 @@ export function Danger() {
 
   const onToggle = (checked: boolean) => {
     setConfirmShown(checked);
-    if (window.corpusViewer && window.corpusViewer.setSkipDeleteConfirm) {
-      window.corpusViewer.setSkipDeleteConfirm(!checked);
-    }
+    if (setSkipDeleteConfirm) setSkipDeleteConfirm(!checked);
   };
 
   const clearAll = () => {
-    if (window.corpusViewer && window.corpusViewer.confirmClearAll) window.corpusViewer.confirmClearAll();
+    if (confirmClearAll) confirmClearAll();
   };
 
   return (

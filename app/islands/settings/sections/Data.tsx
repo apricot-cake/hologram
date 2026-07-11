@@ -6,12 +6,13 @@ import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../../renderer/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../../renderer/backup.ts';
 import { onSaveFolderProgress, pickSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
+import { loadPosts } from '../../../renderer/post-grid-builder.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
 const corpus = (): CorpusPreload => window.corpus || ({} as CorpusPreload);
 const reloadPosts = () => {
-  if (window.corpusViewer && window.corpusViewer.reloadPosts) window.corpusViewer.reloadPosts();
+  if (loadPosts) loadPosts();
 };
 
 // save-folder-progress IPC payload (main.js move pipeline).
