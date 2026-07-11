@@ -32,7 +32,7 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 
 ### `app/` — Electron デスクトップアプリ
 
-メインプロセスは`.mts`直実行（`main.mts`＋`ipc-{backup,config,organize,posts,transfer,trash,window}.mts`＋`lib-*.mts`＝Node型消去・無ビルド）。`preload.js`のみ意図的に手書き`.js`（サンドボックスpreloadローダーが型ストリップ非対応という技術的制約・`tsconfig.main.json`に明記）。
+メインプロセスは`.mts`直実行（`main.mts`＋`ipc-{backup,config,organize,posts,transfer,trash,window}.mts`＋`lib-*.mts`＝Node型消去・無ビルド）。preloadのみビルドを経る＝ソースは`preload.cts`で、`islands/build.mjs`（Vite lib CJS）が`preload.js`へビルド（サンドボックスpreloadローダーが型ストリップ非対応という技術的制約・`tsconfig.main.json`に明記）。公開APIの型は`preload.cts`が実装から`CorpusPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）。
 
 - `main.mts` — メインプロセス（ウィンドウ生成・`fs.watch`・IPC登録）
 - `lib-archive.mts` — ZIP入出力

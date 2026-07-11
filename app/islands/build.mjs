@@ -7,7 +7,9 @@
 //                              app/index.tsx barrel) — React included — into ONE
 //                              renderer/islands/app.js, plus a standalone
 //                              side-effect-only IIFE that stays OUTSIDE that bundle
-//                              (theme.js — see its build() call below for why).
+//                              (theme.js — see its build() call below for why),
+//                              plus the preload bridge (preload.cts → app/preload.js
+//                              CJS — see its build() call below for why).
 //
 // ALL islands (React included — see the removed vendor-react split below) are
 // bundled into a single IIFE via one barrel entry (app/index.tsx side-effect-imports
@@ -80,6 +82,34 @@ await build({
   },
 });
 
+// preload.cts → app/preload.js (committed CJS build output, loaded by main.mts's
+// webPreferences.preload). The sandbox preload loader does NOT type-strip, so
+// unlike the rest of the .mts main-process layer this ONE file goes through a
+// build. electron stays external (the literal require('electron') is the only
+// module the sandboxed preload can resolve); unminified so the committed security
+// boundary (the contextBridge surface) stays readable in diffs.
+await build({
+  // repo root, NOT appRoot: with root === outDir Vite emits a (here harmless —
+  // emptyOutDir:false) "outDir must not be the same directory of root" warning
+  // on every build. root only anchors relative resolution (entry is absolute).
+  root: path.join(appRoot, '..'),
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    outDir: appRoot,
+    emptyOutDir: false, // outDir IS app/ itself — wiping it would delete the app
+    target: 'chrome130',
+    minify: false,
+    sourcemap: false,
+    lib: {
+      entry: path.join(appRoot, 'preload.cts'),
+      formats: ['cjs'],
+      fileName: () => 'preload.js',
+    },
+    rollupOptions: { external: ['electron'] },
+  },
+});
+
 // Build every island as ONE IIFE bundle via the app/index.tsx barrel.
 await build({
   root: appRoot,
@@ -108,4 +138,4 @@ await build({
   },
 });
 
-console.log('[islands] built renderer/theme.js + renderer/islands/app.js via Vite lib IIFE');
+console.log('[islands] built renderer/theme.js + renderer/islands/app.js (IIFE) + preload.js (CJS) via Vite lib mode');

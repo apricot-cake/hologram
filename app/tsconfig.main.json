@@ -1,17 +1,21 @@
 {
   // TypeScript stage 2/3, main-process half (BACKLOG 採用#1「残り②/③」): the
   // build-less Electron MAIN-process layer (main.mts + ipc-*.mts + lib-*.mts +
-  // backup-guard.mts + preload.js).
+  // backup-guard.mts) plus the preload bridge (preload.cts).
   //
-  // These files run un-built under Electron 43 (Node 24) via native type
+  // The .mts files run un-built under Electron 43 (Node 24) via native type
   // stripping — no emit, no bundler. They use the .mts extension (unconditionally
   // ESM) rather than .ts + package.json "type":"module", because "type":"module"
   // would also flip every OTHER app/*.js (the renderer service layer's dual-export)
   // to ESM and break the CJS unit-test / bundle consumers.
   // import { app } from 'electron' resolves Electron's ESM builtin (CJS
   // require('electron') does NOT resolve under the type-strip loader — proven on
-  // the real binary 2026-07-06). preload stays .js (CJS) because the sandbox
-  // preload loader does NOT type-strip.
+  // the real binary 2026-07-06). preload.cts is the ONE built file: the sandbox
+  // preload loader does NOT type-strip, so islands/build.mjs compiles it to the
+  // committed plain-CJS app/preload.js (Issue #17); its ESM import syntax is fine
+  // here because Vite — not the type-strip loader — transforms it. This project
+  // checks it against the REAL electron types (the renderer project re-checks the
+  // same file against a minimal electron shim — see islands/types/electron-shim.d.ts).
   //
   // Separate project from tsconfig.renderer.json because the runtime is
   // Node/Electron ESM, not the DOM/global-IIFE renderer: nodenext resolution,
@@ -29,8 +33,6 @@
     // how Node 24 actually resolves these files at runtime.
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "allowJs": true,
-    "checkJs": true,
     "noEmit": true,
     // imports name the real .ts file (no build step rewrites extensions).
     "allowImportingTsExtensions": true,
@@ -53,5 +55,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "files": ["main.mts", "preload.js", "backup-guard.mts", "ipc-backup.mts", "ipc-config.mts", "ipc-organize.mts", "ipc-posts.mts", "ipc-transfer.mts", "ipc-trash.mts", "ipc-window.mts", "lib-archive.mts", "lib-imgsize.mts", "lib-index.mts", "lib-json.mts", "lib-migrate.mts"]
+  "files": ["main.mts", "preload.cts", "backup-guard.mts", "ipc-backup.mts", "ipc-config.mts", "ipc-organize.mts", "ipc-posts.mts", "ipc-transfer.mts", "ipc-trash.mts", "ipc-window.mts", "lib-archive.mts", "lib-imgsize.mts", "lib-index.mts", "lib-json.mts", "lib-migrate.mts"]
 }

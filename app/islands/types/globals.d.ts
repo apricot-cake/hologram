@@ -70,60 +70,14 @@ declare global {
   // (P4-B slice⑱) imports isAllSelected/selectedGroups directly instead of
   // re-deriving allSelected/groupDisabled itself.
 
-  // ---- preload.js — the full contextBridge IPC surface (window.corpus) ----
-  interface CorpusPreload {
-    getConfig(): Promise<any>;
-    setExtensionId(id: string): Promise<any>;
-    listPosts(): Promise<any[]>;
-    listPostsDelta(haveBaseline: boolean, changedNames?: string[] | null): Promise<any>;
-    getTagGroups(): Promise<any>;
-    setTagGroups(groups: unknown): Promise<any>;
-    getTagTypes(): Promise<any>;
-    setTagTypes(types: unknown, labels?: unknown): Promise<any>;
-    getUngrouped(): Promise<any>;
-    setUngrouped(keys: unknown): Promise<any>;
-    getPosterFolders(): Promise<any>;
-    setPosterFolders(data: unknown): Promise<any>;
-    getPosterTags(): Promise<any>;
-    setPosterTags(data: unknown): Promise<any>;
-    getManualGroups(): Promise<any>;
-    setManualGroups(groups: unknown): Promise<any>;
-    getFolders(): Promise<any>;
-    setFolders(data: unknown): Promise<any>;
-    getCollections(): Promise<any>;
-    setCollections(data: unknown): Promise<any>;
-    getTabs(): Promise<any>;
-    setTabs(data: unknown): Promise<any>;
-    openExternal(url: string): Promise<any>;
-    openImageWindow(image: string): Promise<any>;
-    showInFolder(file: string): Promise<any>;
-    getAppInfo(): Promise<any>;
-    getPrefs(): Promise<any>;
-    setPref(key: string, value: unknown): Promise<any>;
-    imageDataUrl(image: string): Promise<string | null>;
-    deletePost(image: string): Promise<any>;
-    updateTags(image: string, tags: unknown, patch?: unknown): Promise<any>;
-    importPosts(posts: unknown): Promise<any>;
-    clearAll(): Promise<any>;
-    exportSave(filename: string, bytes: Uint8Array | ArrayBuffer): Promise<any>;
-    exportComplete(mode?: string): Promise<any>;
-    importComplete(bytes: Uint8Array | ArrayBuffer): Promise<any>;
-    pickSaveFolder(): Promise<any>;
-    onSaveFolderProgress(cb: (p: any) => void): void;
-    getBackup(): Promise<any>;
-    setBackup(patch: unknown): Promise<any>;
-    pickBackupDir(): Promise<any>;
-    runBackup(): Promise<any>;
-    importImages(): Promise<any>;
-    onBackupStart(cb: (...args: any[]) => void): void;
-    onBackupDone(cb: (...args: any[]) => void): void;
-    listTrash(): Promise<any[]>;
-    restorePost(image: string): Promise<any>;
-    emptyTrash(): Promise<any>;
-    deleteFromTrash(image: string): Promise<any>;
-    onPostsChanged(cb: (names: string[] | null) => void): void;
-    setTitleBarOverlay(opts: unknown): Promise<any>;
-  }
+  // ---- preload.cts — the full contextBridge IPC surface (window.corpus). The
+  // type is exported by the implementation itself (typeof the exposed api object,
+  // Issue #17), so this alias can never drift from what the bridge actually
+  // exposes — the old hand-maintained interface mirror is gone. In THIS program
+  // 'electron' resolves to islands/types/electron-shim.d.ts (tsconfig paths; see
+  // the shim's comment); tsconfig.main.json checks the same file against the real
+  // electron types. ----
+  type CorpusPreload = import('../../preload.cts').CorpusPreload;
 
   // ---- renderer/grid.ts — a PULLED model source per virtualized grid (P4-B
   // slice⑩ post, slice⑫ poster — both converted off the old push bridge; nothing

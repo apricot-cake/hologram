@@ -31,7 +31,10 @@
     // globals in and shadows the DOM lib's setTimeout/setInterval (number) with
     // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
     // the runtime import still resolves to the real npm package via Vite/Node.
-    "paths": { "jszip": ["./islands/types/jszip-shim.d.ts"] }
+    // 'electron' gets the same treatment (same node-globals hazard) for preload.cts,
+    // which this program pulls in via globals.d.ts's CorpusPreload import type —
+    // see islands/types/electron-shim.d.ts.
+    "paths": { "jszip": ["./islands/types/jszip-shim.d.ts"], "electron": ["./islands/types/electron-shim.d.ts"] }
   },
   "include": ["islands/**/*", "renderer/**/*"]
 }

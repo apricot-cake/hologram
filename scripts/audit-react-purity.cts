@@ -36,12 +36,7 @@ const ALL_FILES = gitLsFiles();
 // --- check① scope: app/renderer/*.ts (incl. types/*.d.ts) + app/islands/**/*.{ts,tsx} + app/renderer/index.html
 // ビルド出力（app/renderer/islands/app.js・vendor-react.js・app/renderer/theme.js）は
 // 拡張子が .js のため自然に対象外。
-const CHECK1_SCOPE = ALL_FILES.filter(
-  (f) =>
-    (f.startsWith('app/renderer/') && f.endsWith('.ts')) ||
-    (f.startsWith('app/islands/') && (f.endsWith('.ts') || f.endsWith('.tsx'))) ||
-    f === 'app/renderer/index.html',
-);
+const CHECK1_SCOPE = ALL_FILES.filter((f) => (f.startsWith('app/renderer/') && f.endsWith('.ts')) || (f.startsWith('app/islands/') && (f.endsWith('.ts') || f.endsWith('.tsx'))) || f === 'app/renderer/index.html');
 
 type Violation = { file: string; line: number; text: string };
 
@@ -91,15 +86,9 @@ function check2(): boolean {
 // 最終許可Set＝7件（2026-07-09 ユーザー確定・実プロダクト一致に振り切る）。
 // vendor-react.js と jszip.min.js は framework脱外部化（V18節7・2026-07-11完了）で
 // 消滅済み＝Reactはapp.jsへ直接バンドル、JSZipはnpm依存化。
-const CHECK3_ALLOW = new Set([
-  'app/preload.js',
-  'app/renderer/islands/app.js',
-  'app/renderer/theme.js',
-  'app/vite.config.mjs',
-  'app/islands/build.mjs',
-  'extension/build.mjs',
-  '.claude/hooks/guard-commit-heredoc.js',
-]);
+// preload.js は 2026-07-12（Issue #17）から手書きでなく preload.cts の Vite lib CJS
+// ビルド出力（app.js/theme.js と同格のコミット済み生成物）＝手書き.jsソースはゼロ。
+const CHECK3_ALLOW = new Set(['app/preload.js', 'app/renderer/islands/app.js', 'app/renderer/theme.js', 'app/vite.config.mjs', 'app/islands/build.mjs', 'extension/build.mjs', '.claude/hooks/guard-commit-heredoc.js']);
 
 function check3(): { extra: string[]; missing: string[] } {
   const tracked = new Set(ALL_FILES.filter((f) => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs')));
@@ -111,16 +100,7 @@ function check3(): { extra: string[]; missing: string[] } {
 // check④: app/renderer/**/*.ts のみ（islands は対象外＝ref/focus/scroll等の命令的
 // DOM を禁じないという外部基準と整合）。メソッド呼び出し/代入形限定＝コメント内の
 // 単純言及を誤検出しない。
-const DOM_PATTERNS = [
-  /\.createElement\s*\(/,
-  /\.innerHTML\s*=/,
-  /\.insertAdjacentHTML\s*\(/,
-  /\.appendChild\s*\(/,
-  /\.removeChild\s*\(/,
-  /\.replaceChild\s*\(/,
-  /\.insertBefore\s*\(/,
-  /\.createTextNode\s*\(/,
-];
+const DOM_PATTERNS = [/\.createElement\s*\(/, /\.innerHTML\s*=/, /\.insertAdjacentHTML\s*\(/, /\.appendChild\s*\(/, /\.removeChild\s*\(/, /\.replaceChild\s*\(/, /\.insertBefore\s*\(/, /\.createTextNode\s*\(/];
 const ANNOTATION = '// purity: imperative-dom-ok';
 
 function check4(): Violation[] {
@@ -201,27 +181,23 @@ function report(name: string, violations: string[]): boolean {
 function main() {
   let allPass = true;
 
-  allPass = report(
-    'check①: window.corpus[A-Z] グローバル参照ゼロ',
-    check1().map((v) => `${v.file}:${v.line}: ${v.text}`),
-  ) && allPass;
-
-  const renameIntact = check2();
-  allPass =
-    report('check②: viewer.ts→orchestrator.ts の改名が維持されている', renameIntact ? [] : ['app/renderer/viewer.ts が復活しているか、orchestrator.ts が見当たらない']) &&
-    allPass;
-
-  const { extra: c3extra, missing: c3missing } = check3();
   allPass =
     report(
-      'check③: 手書き.js/.mjs/.cjs が許可リストと一致',
-      [...c3extra.map((f) => `余分: ${f}`), ...c3missing.map((f) => `不足: ${f}`)],
+      'check①: window.corpus[A-Z] グローバル参照ゼロ',
+      check1().map((v) => `${v.file}:${v.line}: ${v.text}`),
     ) && allPass;
 
-  allPass = report(
-    'check④: 無注釈の命令的DOM操作ゼロ（app/renderer/**/*.ts）',
-    check4().map((v) => `${v.file}:${v.line}: ${v.text}`),
-  ) && allPass;
+  const renameIntact = check2();
+  allPass = report('check②: viewer.ts→orchestrator.ts の改名が維持されている', renameIntact ? [] : ['app/renderer/viewer.ts が復活しているか、orchestrator.ts が見当たらない']) && allPass;
+
+  const { extra: c3extra, missing: c3missing } = check3();
+  allPass = report('check③: 手書き.js/.mjs/.cjs が許可リストと一致', [...c3extra.map((f) => `余分: ${f}`), ...c3missing.map((f) => `不足: ${f}`)]) && allPass;
+
+  allPass =
+    report(
+      'check④: 無注釈の命令的DOM操作ゼロ（app/renderer/**/*.ts）',
+      check4().map((v) => `${v.file}:${v.line}: ${v.text}`),
+    ) && allPass;
 
   const c5results = check5();
   const c5violations = c5results.flatMap((r) => r.extra.map((n) => `${r.file}: ${n}`));

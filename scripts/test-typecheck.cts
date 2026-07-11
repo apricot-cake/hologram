@@ -8,8 +8,9 @@
 //      gradual TS adoption, not a real boundary; both are strict now and both
 //      fold into the same Vite bundle, islands/app.js).
 //   2. app/tsconfig.main.json     — the Electron main-process ESM layer
-//      (main.mts + ipc-*.mts + lib-*.mts + backup-guard.mts + preload.js, stage
-//      2/3; Node ESM via .mts, no DOM; runs un-built under Electron 43 (type strip))
+//      (main.mts + ipc-*.mts + lib-*.mts + backup-guard.mts + preload.cts, stage
+//      2/3; Node ESM via .mts, no DOM; runs un-built under Electron 43 (type
+//      strip) except preload.cts, the one Vite-built file — see tsconfig.main.json)
 //   3. native-host/tsconfig.json  — the native-messaging-host CJS layer
 //      (bridge.cts + install.cts + paths.cts + media-download.cts +
 //      config-recovery.cts, stage 2/3; a THIRD standalone-Node runtime, .cts,
@@ -34,7 +35,7 @@ const extTsc = path.join(extDir, 'node_modules', 'typescript', 'bin', 'tsc');
 
 const PROJECTS = [
   { p: appDir, label: 'islands + renderer services', tsc: appTsc, cwd: appDir },
-  { p: path.join(appDir, 'tsconfig.main.json'), label: 'main process (checkJs)', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.main.json'), label: 'main process + preload', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
   { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },

@@ -20,8 +20,9 @@
 
 const bridge = () => window.corpus;
 
-// Annotated against the shared CorpusPreload contract (islands/types/globals.d.ts)
-// so every forwarding arrow below is contextually typed from that interface —
+// Annotated against the shared CorpusPreload contract (exported by preload.cts
+// itself — typeof the exposed api — and aliased in islands/types/globals.d.ts) so
+// every forwarding arrow below is contextually typed from the implementation —
 // no per-parameter annotations needed for a pure pass-through layer.
 export const corpusIpc: CorpusPreload = {
   getConfig: () => bridge().getConfig(),

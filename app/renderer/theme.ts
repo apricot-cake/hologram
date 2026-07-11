@@ -6,7 +6,7 @@
    see the load-order comment in index.html). External file because the page CSP is
    `script-src 'self'`; a browser can't type-strip .ts at runtime the way Node's main/
    native-host layers do, so this one file needs its own tiny build step (same reason
-   preload.js stays .js — see tsconfig.main.json).
+   preload.cts is built to preload.js — see tsconfig.main.json).
 
    FOUC-only: it resolves the pref (main passes config's theme as ?theme=; else the
    localStorage cache; else 'auto') and sets the attribute, nothing more. It publishes no

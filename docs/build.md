@@ -15,7 +15,7 @@ cd app && npm install
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
-main プロセス（`main.js`/`preload`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer は自動ホットリロード／native-host は `~/.corpus` へコピーで反映＝再起動不要）。
+main プロセス（`main.mts`/`ipc-*`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer は自動ホットリロード／native-host は `~/.corpus` へコピーで反映＝再起動不要）。preload の変更は `preload.cts` を編集 → `npm run build:islands` で `preload.js` を再生成してから再起動（preload だけビルドを経る＝docs/architecture.md 参照）。
 
 **再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
 

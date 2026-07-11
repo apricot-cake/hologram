@@ -1,5 +1,5 @@
 // Thin wrappers over corpusIpc (renderer/ipc.ts, the P4 IPC→service seam over the
-// preload bridge) and the theme runtime (renderer/theme-api.ts). main.js / preload.js
+// preload bridge) and the theme runtime (renderer/theme-api.ts). main.mts / preload.cts
 // stay untouched — the island talks to the exact same IPC the vanilla settings did,
 // just routed through the same seam every other renderer service uses now.
 
