@@ -15,9 +15,9 @@ import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFilterPopover } from './filter-popover-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
-import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
+import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
-import { genTabId, makeTabLabels } from './tab-state.ts';
+import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, importComplete, importPosts, clearAll } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
@@ -35,6 +35,7 @@ import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
+import { makeImageTabController } from './image-tab-builder.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { corpusIpc } from './ipc.ts';
@@ -998,13 +999,13 @@ import { corpusIpc } from './ipc.ts';
       // set so t._g stays current (inspector re-open); the React model itself
       // re-derives live via renderer/image-tab.ts's posts-data.ts subscription.
       const it = tabsCtl.activeTab();
-      if (it && tabsCtl.isImageTab(it)) it._g = resolveImageTabGroup(it);
+      if (it && tabsCtl.isImageTab(it)) it._g = imageTabCtl.resolveImageTabGroup(it);
     },
     getInspectedKey: () => inspectedKey,
     closeDetail: () => closeDetail(),
     showDetail: (g) => showDetail(g),
     jumpToPoster: (post) => jumpToPoster(post),
-    addImageTab: (g) => addImageTab(g),
+    addImageTab: (g) => imageTabCtl.addImageTab(g),
     getSkipDeleteConfirm: () => skipDeleteConfirm,
     setSkipDeleteConfirm: (v) => {
       skipDeleteConfirm = v;
@@ -1062,8 +1063,9 @@ import { corpusIpc } from './ipc.ts';
   // Nav history (browser-style back/forward), the corpusStore-backed tabs/
   // activeTabId/tabEditingId accessors (P4-B slice⑯), and the tab bar CRUD/DOM
   // handlers all moved to tabs-builder.ts — viewer.ts decomposition's V12 slice
-  // (Wave26). Image tabs (below) stay here (V13/Wave27's scope) and receive
-  // tabsCtl's tab-state surface as deferred deps/direct references.
+  // (Wave26). Image tabs moved to image-tab-builder.ts below — V13/Wave27's
+  // scope — and receive tabsCtl's tab-state surface as deferred deps/direct
+  // references (imageTabCtl is constructed just below, after tabsCtl).
   const tabsCtl = makeTabsController({
     MSG,
     tabTitleOf,
@@ -1089,8 +1091,8 @@ import { corpusIpc } from './ipc.ts';
     getBrowseMode: () => browseMode,
     contentScrollTop: () => contentScrollTop(),
     scrollContentTo: (y) => scrollContentTo(y),
-    showImageTab: (t) => showImageTab(t), // showImageTab/hideImageTabView are declared just below — deferred
-    hideImageTabView: () => hideImageTabView(),
+    showImageTab: (t) => imageTabCtl.showImageTab(t), // imageTabCtl is constructed just below — deferred
+    hideImageTabView: () => imageTabCtl.hideImageTabView(),
   });
   const {
     getTabs,
@@ -1133,82 +1135,28 @@ import { corpusIpc } from './ipc.ts';
   });
 
   // --- Image tabs (type:'image') — fit-to-screen detail view (Eagle 風) ---
-  // Persisted as { type:'image', img:{ recs:[captureId…], idx } }; recs resolve
-  // against the live library on every activation (imageTabGroup, records.ts — the
-  // _postsById lookup is injected), so deletions degrade to a "missing" empty state
-  // instead of a broken image.
-  const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => postGrid.getPostById(id));
-  // Publish the tab's identity to corpusStore — renderer/image-tab.ts (P4-B slice⑮)
-  // derives the whole React model from this (crossed with posts-data.ts for library
-  // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
-  function publishActiveImageTab(t: CorpusTab | null) {
-    storeSet('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
-  }
-  // body.image-tab-active is React-owned now (ImageTabHost toggles it from model presence
-  // — the class ⟺ an image tab is showing). viewer keeps only this local flag for the
-  // re-entrancy guard + the Esc check, so it no longer touches document.body.classList.
-  let imageTabShowing = false;
-  function showImageTab(t: CorpusTab) {
-    imageTabShowing = true;
-    t._g = resolveImageTabGroup(t); // runtime resolution (inspector toggle re-uses it; never persisted)
-    publishActiveImageTab(t); // → ImageTabHost derives the model, adds body.image-tab-active
-    // The inspector opens with the view (Eagle-style detail screen).
-    if (t._g) showDetail(t._g);
-    else closeDetail();
-    document.title = (t.title || MSG.imgTabFallback) + ' — Corpus';
-  }
-  function hideImageTabView() {
-    if (!imageTabShowing) return;
-    imageTabShowing = false;
-    publishActiveImageTab(null); // → ImageTabHost removes the class
-    closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
-  }
-  // Index step / inspector toggle / close-tab commands, dispatched FROM
-  // renderer/image-tab.ts via window.corpusViewer — same event-half shape as
-  // query-chips / TabBarEvents (this file computes the model, viewer keeps the logic).
-  function setImageTabIndex(i: number) {
-    const t = activeTab();
-    if (!t || !isImageTab(t) || !t.img) return;
-    t.img.idx = i;
-    persistTabsDebounced();
-    publishActiveImageTab(t);
-  }
-  function toggleImageTabInspector() {
-    const t = activeTab();
-    if (!t || !isImageTab(t)) return;
-    if (byId('postDetail').hidden) {
-      if (t._g) showDetail(t._g);
-    } else closeDetail();
-    // inspectorOpen derives from corpusStore's 'inspectedKey' reactively — no repaint call needed.
-  }
-  function closeImageTab() {
-    const t = activeTab();
-    if (t) closeTab(t.id);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { setImageTabIndex, toggleImageTabInspector, closeImageTab });
-  // Open a post group as its own tab. Background by default (browser-like:
-  // middle-click / context menu leave you in the grid).
-  function addImageTab(g: CorpusPostGroup, opts?: { activate?: boolean }) {
-    const recs = g.records.map((r) => r.captureId).filter(Boolean);
-    if (!recs.length) return;
-    const id = genTabId();
-    const t = { id, pinned: false, title: imageTabTitleOf(g, MSG.imgTabFallback), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
-    // Insert next to the current tab (browser-like), never inside the pinned run.
-    mutateTabs((arr) => {
-      const ai = arr.findIndex((tt) => tt.id === getActiveTabId());
-      let pos = ai >= 0 ? ai + 1 : arr.length;
-      const lastPinned = arr.reduce((acc, tt, i) => (tt.pinned ? i : acc), -1);
-      if (pos <= lastPinned) pos = lastPinned + 1;
-      arr.splice(pos, 0, t);
-    });
-    if (opts && opts.activate) {
-      saveActiveTabState();
-      setActiveTabId(id);
-      showImageTab(t);
-      nav.adopt(t);
-    }
-    persistTabsDebounced();
-  }
+  // The model/state cluster (resolveImageTabGroup/showImageTab/hideImageTabView/
+  // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
+  // image-tab-builder.ts now (viewer.ts decomposition's V13 slice, Wave27).
+  // showDetail/closeDetail (inspector-builder.ts) are declared far below —
+  // deferred arrows the same TDZ-safe way postGrid's own showDetail/closeDetail
+  // deps already work.
+  const imageTabCtl = makeImageTabController({
+    MSG,
+    getPostById: postGrid.getPostById,
+    showDetail: (g) => showDetail(g),
+    closeDetail: () => closeDetail(),
+    isImageTab,
+    activeTab,
+    closeTab,
+    getActiveTabId,
+    setActiveTabId,
+    mutateTabs,
+    saveActiveTabState,
+    nav,
+    persistTabsDebounced,
+  });
+  const { resolveImageTabGroup, showImageTab, hideImageTabView, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
 
   // initTabs/showTabMenu/tab-rename commit-cancel/tab-bar DOM handlers/the
   // Ctrl+T/W/Tab shortcut all live in tabsCtl now (destructured above); the
@@ -1251,9 +1199,14 @@ import { corpusIpc } from './ipc.ts';
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
+  // onIndexChange/onToggleInspector/onCloseTab are the DI callbacks that replaced
+  // image-tab.ts's former window.corpusViewer dispatch (V13/Wave27, §5).
   corpusImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
     labels: { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo },
+    onIndexChange: setImageTabIndex,
+    onToggleInspector: toggleImageTabInspector,
+    onCloseTab: closeImageTab,
   });
 
   byId('postGrid').addEventListener('click', (e) => {
@@ -1381,7 +1334,7 @@ import { corpusIpc } from './ipc.ts';
     refreshTileSlider: () => gridDensity.refreshTileSlider(),
     getActiveTabId,
     closeTab,
-    imageTabShowing: () => imageTabShowing, // primitive let — read live, not a snapshot
+    imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
   });
   const { closeDetail, showDetail, persistManual, handleEscDismissDetail, handleOutsideClickDismissDetail } = inspector;
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleEscDismissDetail, handleOutsideClickDismissDetail });

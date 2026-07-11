@@ -10,12 +10,13 @@
 // posts-data.ts's doc comment anticipated) and inspectorOpen (corpusStore's
 // 'inspectedKey', already the single source for "is the inspector open" since the
 // state→store phase). Commands (index step / inspector toggle / close tab) dispatch
-// back through window.corpusViewer, mirroring the query-chips / TabBarEvents
+// back to viewer.ts via callbacks handed in through configure() (onIndexChange/
+// onToggleInspector/onCloseTab), mirroring the query-chips / TabBarEvents
 // event-half pattern — this file only computes, it never mutates tab state.
 // Real ES module (named export `corpusImageTabSource`) — imported directly by
-// image-tab/index.tsx (islands) and viewer.ts (configure). window.corpusViewer
-// dispatch below is DI'd away in a later wave (V13/Wave27), once viewer.ts has a
-// hook to receive the callbacks — see memory corpus-react-purity-execution-map §5.
+// image-tab/index.tsx (islands) and viewer.ts (configure). The former
+// window.corpusViewer dispatch was DI'd away in V13/Wave27 (image-tab-builder.ts
+// supplies the callbacks) — see memory corpus-react-purity-execution-map §5.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
@@ -23,6 +24,9 @@ import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean }[] };
 let gallery: Gallery | null = null;
 let labels: Record<string, string> | null = null;
+let onIndexChange: ((i: number) => void) | null = null;
+let onToggleInspector: (() => void) | null = null;
+let onCloseTab: (() => void) | null = null;
 
 const subs = new Set<() => void>();
 const notify = () => {
@@ -42,13 +46,13 @@ function byIdMap() {
 }
 
 function dispatchIndex(i: number) {
-  if (window.corpusViewer && window.corpusViewer.setImageTabIndex) window.corpusViewer.setImageTabIndex(i);
+  if (onIndexChange) onIndexChange(i);
 }
 function dispatchToggleInspector() {
-  if (window.corpusViewer && window.corpusViewer.toggleImageTabInspector) window.corpusViewer.toggleImageTabInspector();
+  if (onToggleInspector) onToggleInspector();
 }
 function dispatchClose() {
-  if (window.corpusViewer && window.corpusViewer.closeImageTab) window.corpusViewer.closeImageTab();
+  if (onCloseTab) onCloseTab();
 }
 
 function get(): CorpusImageTabModel | null {
@@ -74,9 +78,12 @@ function get(): CorpusImageTabModel | null {
 }
 
 export const corpusImageTabSource = {
-  configure(cfg: { gallery: Gallery; labels: Record<string, string> }) {
+  configure(cfg: { gallery: Gallery; labels: Record<string, string>; onIndexChange: (i: number) => void; onToggleInspector: () => void; onCloseTab: () => void }) {
     gallery = cfg.gallery;
     labels = cfg.labels;
+    onIndexChange = cfg.onIndexChange;
+    onToggleInspector = cfg.onToggleInspector;
+    onCloseTab = cfg.onCloseTab;
   },
   get,
   subscribe(cb: () => void): () => void {
