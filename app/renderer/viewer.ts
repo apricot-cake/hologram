@@ -33,6 +33,7 @@ import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
+import { makePostGridBuilder } from './post-grid-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -568,7 +569,7 @@ import { corpusIpc } from './ipc.ts';
     tagLabels: getTagLabels,
     tagGroups: getTagGroups,
     posterTags: getPosterTags,
-    allPosts: () => allPosts,
+    allPosts: () => postGrid.getAllPosts(),
     MSG,
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
@@ -595,7 +596,7 @@ import { corpusIpc } from './ipc.ts';
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
-    allPosts: () => allPosts,
+    allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: CorpusPost) => userKey(p),
     MSG,
@@ -616,7 +617,7 @@ import { corpusIpc } from './ipc.ts';
   // relatedTagCandidates) moved to cooc.ts — 4th extraction slice. Same deferred-
   // getter wiring as facets above (allPosts is a reassigned let; the getters only
   // run when a picker or homonym check fires).
-  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => allPosts, tagKindOf });
+  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOf });
   // renderQfPop/onQfPick/showQfPopAt moved to qf-pop-builder.ts (V4/Wave18) — see
   // the makeQfPop() call near posterQB below.
 
@@ -737,15 +738,15 @@ import { corpusIpc } from './ipc.ts';
       try {
         await postsUpdateTags(r.image || '', r.tags);
       } catch {}
-      const rec = r.captureId ? _postsById.get(r.captureId) : undefined; // O(1) via the delta-cache map (allPosts holds the same record refs)
+      const rec = r.captureId ? postGrid.getPostById(r.captureId) : undefined; // O(1) via the delta-cache map (allPosts holds the same record refs)
       if (rec) rec.tags = r.tags.slice();
     }
-    markPostsMutated();
-    renderPosts(true);
+    postGrid.markPostsMutated();
+    postGrid.renderPosts(true);
     // Keep the inspector in sync if it's showing the affected group (undo isn't fired
     // while typing in the add input, so a full re-render here is safe).
     if (!byId('postDetail').hidden && inspectedKey) {
-      const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+      const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
       if (fresh) showDetail(fresh);
     }
   }
@@ -783,23 +784,9 @@ import { corpusIpc } from './ipc.ts';
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutUndoKey });
 
   // --- State ---
-  let allPosts: CorpusPost[] = [];
-  let _allPostsGeneration = 0; // bumped on every allPosts replacement; invalidates sidebar caches
-  // In-place edits (tag add/remove, single delete) mutate allPosts records without
-  // replacing the array, so the generation counter won't advance on its own. It gates
-  // the sidebar tag/author/instance caches and buildUsers, so mutators must call this —
-  // otherwise a newly-added tag never reaches the sidebar rows (and a removed author /
-  // instance lingers) even though renderPosts redraws the grid and flyouts.
-  // P4-B slice⑪: the SAME choke point now also mirrors allPosts.length into
-  // corpusStore (the post-empty-state selector's input, slice⑩) and syncs the
-  // subscribable posts-data service (renderer/posts-data.ts) — every allPosts
-  // mutation (replace OR in-place edit) is reachable from ONE place instead of
-  // scattered pushes at each call site.
-  function markPostsMutated() {
-    _allPostsGeneration++;
-    storeSet('allPostsCount', allPosts.length);
-    syncPostsData(allPosts);
-  }
+  // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
+  // post-grid-builder.ts (Wave19/V5 "allPosts ownership transfer") — postGrid is
+  // constructed below, after buildUsers/postQB are in scope.
   let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
   // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
@@ -830,14 +817,6 @@ import { corpusIpc } from './ipc.ts';
     }
   })();
   if (SMOKE_CAPTURE) document.documentElement.classList.add('smoke-capture');
-  // Virtualized grid (corpusPostGridSource → islands/grid, P4-B slice⑩): items
-  // + layout are now pulled from corpusStore by the source itself (renderer/grid.ts) —
-  // viewer just pushes 'postGroups' and no longer tracks an itemsKey/isActive here.
-  let _gridAnimT: any = null;
-  // How long .anim-in stays on a grid after a fresh build. Must outlive the
-  // LAST staggered card or its backwards-fill entrance gets cancelled mid-run:
-  // 15 (CSS min() cap) × 34ms (--stagger) + 360ms (--dur-entrance) + buffer.
-  const GRID_ANIM_MS = 950;
 
   // #mode-post is the scroll container (the page itself never scrolls), so scroll
   // position is read/written there, not on window.
@@ -850,10 +829,14 @@ import { corpusIpc } from './ipc.ts';
     const el = contentScrollEl();
     if (el) el.scrollTop = y;
   };
-  // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
-  let manualGroups: string[][] = []; // [[captureId,…],…] — user-built groups (win over auto)
-  let ungrouped = new Set<string>(); // post keys opted out of auto-grouping
-  const stickyRecs = new Set<string>(); // captureIds kept visible after a mutation un-matches the filter
+  // How long .anim-in stays on a grid after a fresh build (post AND poster grids
+  // share this constant). Must outlive the LAST staggered card or its
+  // backwards-fill entrance gets cancelled mid-run: 15 (CSS min() cap) × 34ms
+  // (--stagger) + 360ms (--dur-entrance) + buffer.
+  const GRID_ANIM_MS = 950;
+  // Grouping state (manualGroups/ungrouped/stickyRecs, persisted via main:
+  // manual-groups.json / ungrouped.json) moved to post-grid-builder.ts along with
+  // viewGroups — see postGrid below.
   // postIdKey of the group shown in the inspector (ring marker). Mirrored into
   // corpusStore so the grid/poster cells derive their own '.inspected' ring via
   // useSyncExternalStore — no more manual repaint()/pushPosterModel() calls to
@@ -864,7 +847,6 @@ import { corpusIpc } from './ipc.ts';
     storeSet('inspectedKey', key);
   }
   storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
-  let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
   // Column / slider-track / thumbnail-bucket math lives in geometry.ts now (imported above).
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
@@ -1043,8 +1025,8 @@ import { corpusIpc } from './ipc.ts';
   // query.ts import above), so they pass through directly. corpusSearch
   // is a getter because buildSuggest reads its live fuzzy mode per call.
   const { buildUsers, buildSuggest } = makeUsers({
-    allPosts: () => allPosts,
-    generation: () => _allPostsGeneration,
+    allPosts: () => postGrid.getAllPosts(),
+    generation: () => postGrid.getGeneration(),
     userKey,
     hostOf,
     corpusSearch: () => ({ isFuzzy: searchIsFuzzy, compile: searchCompile }),
@@ -1056,67 +1038,59 @@ import { corpusIpc } from './ipc.ts';
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
-  // and percentileFn moved to records.ts (imported) — 2nd extraction
-  // slice. groupRecords is rebuilt here with the live manualGroups/ungrouped
-  // bindings injected as getters (viewer reassigns them on load/edit).
-  const groupRecords = makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
+  // and percentileFn moved to records.ts (imported).
 
   // hostOf / userKey moved to query.ts (imported above).
 
-  // --- Load posts ---
-  // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
-  // without replaying the entrance animation or resetting the scroll window.
-  // stampPost (sort-timestamp + post-key precompute) lives in records.js.
-  // Authoritative cache keyed by captureId. The renderer holds the full set and
-  // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
-  // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
-  // its order is irrelevant since getFilteredPosts() always re-sorts.
-  let _postsById = new Map<string, CorpusPost>();
-  let _haveBaseline = false; // false until we hold a full snapshot (also reset on reload = fresh module state)
-  let _loadPostsInFlight = false;
-  let _loadPostsPending = false;
-  // changedNames is the fs-watch hint relayed from main (null | [] | [names…]);
-  // it lets the refresh re-stat only the changed sidecars instead of the whole
-  // folder. Absent (explicit reloads: sort change, import) -> full reconcile.
-  async function loadPosts(keepLimit?: boolean, changedNames?: string[] | null) {
-    if (_loadPostsInFlight) {
-      _loadPostsPending = true;
-      return;
-    }
-    _loadPostsInFlight = true;
-    try {
-      const res = await listPostsDelta(_haveBaseline, changedNames);
-      if (!res || res.full) {
-        _postsById = new Map();
-        for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
-      } else {
-        for (const id of res.removed || []) _postsById.delete(id);
-        for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
-      }
-      _haveBaseline = true;
-      allPosts = [..._postsById.values()];
-      markPostsMutated();
-      stickyRecs.clear(); // 画面更新（再読込）でミューテーション生存分を整理
-      if (browseMode === 'posters') renderPosters(keepLimit);
-      else renderPosts(keepLimit);
-      reconcileFolders();
+  // --- Post grid: allPosts/_postsById/loadPosts/renderPosts, the render-reuse
+  // guard, manualGroups/ungrouped/viewGroups/stickyRecs, the fold/card context
+  // menus, and the delete flow all live in post-grid-builder.ts now (Wave19/V5
+  // "allPosts ownership transfer" — the viewer.ts decomposition's biggest slice).
+  // Everything still owned by this closure (density/view state, the inspector,
+  // selection, tabs, poster view, boot orchestration) is injected below; several
+  // are forward references (postQB/buildUsers/showDetail/renderPosters/…
+  // declared later in this closure) — deferred arrows the same TDZ-safe way
+  // every other service wiring in this file already works.
+  const postGrid = makePostGridBuilder({
+    MSG,
+    PF_NAME,
+    smokeCapture: SMOKE_CAPTURE,
+    fileSrc,
+    currentView: () => currentView,
+    tileOverlay: () => tileOverlay,
+    multiOnly: () => multiOnly,
+    tileThumbW,
+    cardThumbW,
+    listThumbW,
+    sortValue: () => sortSelect.value,
+    postShadow: () => postQB.shadow(),
+    getFilteredPosts: () => getFilteredPosts(),
+    buildUsers: () => buildUsers(),
+    snapshotState: () => snapshotState(),
+    syncTitleAndPersist: () => syncTitleAndPersist(),
+    updateSidebarState,
+    syncBrowseBar: () => syncBrowseBar(),
+    applyTileLayout: () => applyTileLayout(),
+    getBrowseMode: () => browseMode,
+    renderPosters: (keepLimit) => renderPosters(keepLimit),
+    onPostsLoaded: () => {
       // An active image tab shows library records — re-resolve it against the fresh
       // set so t._g stays current (inspector re-open); the React model itself
       // re-derives live via renderer/image-tab.ts's posts-data.ts subscription.
       const it = activeTab();
       if (it && isImageTab(it)) it._g = resolveImageTabGroup(it);
-    } finally {
-      _loadPostsInFlight = false;
-      if (_loadPostsPending) {
-        _loadPostsPending = false;
-        loadPosts(true); // background reload missed during in-flight — re-run once
-      }
-    }
-  }
-  function reconcileFolders() {
-    if (!CF()) return;
-    CF().reconcile(new Set(allPosts.map((p) => p.captureId)));
-  }
+    },
+    getInspectedKey: () => inspectedKey,
+    closeDetail: () => closeDetail(),
+    showDetail: (g) => showDetail(g),
+    jumpToPoster: (post) => jumpToPoster(post),
+    addImageTab: (g) => addImageTab(g),
+    getSkipDeleteConfirm: () => skipDeleteConfirm,
+    setSkipDeleteConfirm: (v) => {
+      skipDeleteConfirm = v;
+    },
+  });
+  const { loadPosts, renderPosts, markPostsMutated, reconcileFolders, keepCurrentVisible, showFoldMenu, showCardMenu, requestDeleteGroup } = postGrid;
 
   // The listing pipeline — getFilteredPosts (content gate → query tree → sticky
   // merge → sort), namedPosters/filteredPosters, and the collection derivations —
@@ -1128,8 +1102,8 @@ import { corpusIpc } from './ipc.ts';
   // destructured — collections became a sidebar folder list (2026-07-04), so only the
   // post/poster selection pipeline is used here. cloneTree stays (tab-state serialize).
   const { getFilteredPosts, namedPosters, filteredPosters } = makeListing({
-    allPosts: () => allPosts,
-    postsById: () => _postsById,
+    allPosts: () => postGrid.getAllPosts(),
+    postsById: () => postGrid.getPostsById(),
     mediaFilesOf,
     densityImage,
     percentileFn,
@@ -1137,7 +1111,7 @@ import { corpusIpc } from './ipc.ts';
     treeLeaves,
     postPredOf,
     currentTree,
-    stickyRecs,
+    stickyRecs: postGrid.getStickyRecs(),
     sortValue: () => sortSelect.value,
     searchQuery: () => searchQuery(),
     buildUsers,
@@ -1161,10 +1135,9 @@ import { corpusIpc } from './ipc.ts';
   // this is a bind, not a reimplementation.
   bindNamedPosters(namedPosters);
 
-  let lastRenderedState: any = null;
-  let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
-  let _lastViewGroups: CorpusPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
-  let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
+  // The render-reuse guard (lastRenderedState/_lastRenderGen/_lastViewGroups/
+  // _lastStickySize) lives in post-grid-builder.ts now; syncTitleAndPersist()
+  // below writes lastRenderedState via postGrid.setLastRenderedState.
   let restoringState = false;
   // tabs/activeTabId/tabEditingId moved into corpusStore (P4-B slice⑯) — the SAME
   // "single source of truth" move as selectedSet (⑬): these accessors are the only
@@ -1210,10 +1183,10 @@ import { corpusIpc } from './ipc.ts';
   function syncTitleAndPersist() {
     if (isImageTab(activeTab())) return; // grid renders under an image tab are background refreshes — its title/persistence live on the image-tab path
     const snap = snapshotState();
-    lastRenderedState = JSON.stringify(snap);
+    postGrid.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
     nav.push(snap); // record this view for back/forward (skipped while restoring)
-    document.title = tabTitleOf(snap, { allCount: allPosts.length }).text + ' — Corpus';
+    document.title = tabTitleOf(snap, { allCount: postGrid.getAllPosts().length }).text + ' — Corpus';
     // The active tab's derived title used to need an explicit updateActiveTabTitle()
     // push here — now automatic: renderer/tabs.ts subscribes to postQueryTree/
     // searchQuery/sortPost/multiOnly/allPostsCount directly (P4-B slice⑯), and this
@@ -1233,7 +1206,7 @@ import { corpusIpc } from './ipc.ts';
     renderQueryChips();
     renderPosts();
     restoringState = false;
-    document.title = tabTitleOf(s, { allCount: allPosts.length }).text + ' — Corpus';
+    document.title = tabTitleOf(s, { allCount: postGrid.getAllPosts().length }).text + ' — Corpus';
   }
 
   // --- View history (browser-style back/forward) ---
@@ -1443,7 +1416,7 @@ import { corpusIpc } from './ipc.ts';
   // against the live library on every activation (imageTabGroup, records.ts — the
   // _postsById lookup is injected), so deletions degrade to a "missing" empty state
   // instead of a broken image.
-  const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => _postsById.get(id));
+  const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => postGrid.getPostById(id));
   // Publish the tab's identity to corpusStore — renderer/image-tab.ts (P4-B slice⑮)
   // derives the whole React model from this (crossed with posts-data.ts for library
   // changes, and 'inspectedKey' for the inspector state), so no model push happens here.
@@ -1699,183 +1672,9 @@ import { corpusIpc } from './ipc.ts';
     handleGlobalTabShortcut,
   });
 
-  // Mutations (untag, unfold, ungroup) can make a visible card stop matching the
-  // active filter. Instead of vanishing instantly, the card stays until the next
-  // filter change / data refresh — call this BEFORE the mutation re-render.
-  function keepCurrentVisible() {
-    viewGroups.forEach((g) =>
-      g.records.forEach((r) => {
-        if (r.captureId) stickyRecs.add(r.captureId);
-      }),
-    );
-  }
-
+  // keepCurrentVisible/imgAspect/cardModel/corpusPostGridSource.configure/
+  // renderPosts all moved to post-grid-builder.ts (postGrid above).
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-
-  // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
-  // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
-  // so masonry packs correctly the first time = no settle/jitter and no eager load.
-  let imgAspect: Record<string, string> = {};
-  try {
-    imgAspect = JSON.parse(localStorage.getItem('corpus.imgAspect') || '{}') || {};
-  } catch (e) {}
-  let _aspectT: any = null;
-  function persistAspect() {
-    clearTimeout(_aspectT);
-    _aspectT = setTimeout(() => {
-      try {
-        localStorage.setItem('corpus.imgAspect', JSON.stringify(imgAspect));
-      } catch (e) {}
-    }, 1000);
-  }
-  // Resolve ONE group into a plain, fully-formatted card model: image src,
-  // formatted counts/dates, selection, clip, aspect — everything the markup
-  // needs as primitives. The grid island renders it with the shared PostCard
-  // component (live React cells via corpusPostGridSource). Raw text/names are
-  // passed unescaped — JSX escapes them (was manual escapeHtml/escapeAttr).
-  // Per-card view model (records.js makeCardModel) — the model the grid island
-  // renders. Extracted 1:1 from the old inline cardModel; runtime couplings are
-  // injected (density/aspect cache as getters; the psimg scheme and folder-clip
-  // flag stay viewer-owned via fileSrc / isClipped). Selection is NOT injected —
-  // the grid island's Cell derives .selected from corpusStore's 'selectedSet'.
-  const cardModel = makeCardModel({
-    MSG,
-    PF_NAME,
-    formatCount,
-    formatDate,
-    compactDate,
-    fileSrc,
-    isClipped: (id) => !!(CF() && CF().isClipped(id)),
-    smokeCapture: SMOKE_CAPTURE,
-    currentView: () => currentView,
-    imgAspect: () => imgAspect,
-    tileThumbW,
-    cardThumbW,
-    listThumbW,
-  });
-  // i18n labels are identical for every card — set up once (also keeps them in sync
-  // after a language change, which always full-reloads the app).
-  const cardLabels = {
-    tipSelect: MSG.tipSelect,
-    tipClip: MSG.tipClip,
-    tipInfo: MSG.tipInfo,
-    tipTagEdit: MSG.tipTagEdit,
-    clickToExpand: MSG.clickToExpand,
-  };
-  // Cards whose image has NO reserved height (no shotW/H in the index, no cached
-  // aspect — rare: video poster / unreadable header) report their real aspect on
-  // load; the cache reserves the height on the NEXT render.
-  function onCardAspect(cap: string, ar: string) {
-    if (imgAspect[cap] !== ar) {
-      imgAspect[cap] = ar;
-      persistAspect();
-    }
-  }
-  // P4-B slice⑩: modelOf/keyOf/labels/onAspect never change identity meaningfully
-  // between renders (only items/layout do, and those are corpusStore-derived by the
-  // source itself) — configure once instead of rebuilding + pushing every renderPosts().
-  corpusPostGridSource.configure({
-    modelOf: (g, i) => cardModel(g, i),
-    keyOf: (g) => postIdKey(g.rep),
-    labels: cardLabels,
-    onAspect: onCardAspect,
-  });
-
-  // inPlace (was keepLimit — the renderLimit it kept is gone with the windowed
-  // legacy path): true = in-place mutation re-render — reuse the grouped set
-  // when possible, keep sticky survivors, no entrance animation, and skip the
-  // tab-title/persist sync.
-  function renderPosts(inPlace?: boolean) {
-    // View signature (filter/sort/search/view) — stable across this render, so
-    // compute once and reuse for the sticky-drop and group-reuse checks.
-    const stateSig = JSON.stringify(snapshotState());
-    // A genuine filter/search/sort change drops the sticky survivors (they only
-    // outlive in-place mutations, not user-driven view changes).
-    if (!inPlace && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
-      stickyRecs.clear();
-    }
-    updateSidebarState();
-    syncBrowseBar(); // keep the ライブラリ/投稿者 toggle's glass thumb measured
-    const grid = byId('postGrid');
-    const empty = byId('emptyState');
-    // Group the filtered records (auto by post URL + manual groups); each group
-    // renders as ONE card. multiOnly now means "groups with more than one image".
-    // Reuse the previous build's groups on an in-place re-render: re-filtering +
-    // re-grouping ~9k records for a mutation that can't change the set was wasted
-    // work. Safe only when the view signature, the data generation, AND the
-    // sticky set are all unchanged — the only inputs to getFilteredPosts/
-    // groupRecords (manual grouping bumps the generation via markPostsMutated).
-    // Any mismatch falls through to a fresh build.
-    const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
-    if (canReuseGroups) {
-      viewGroups = _lastViewGroups as CorpusPostGroup[];
-    } else {
-      viewGroups = groupRecords(getFilteredPosts());
-      if (multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
-    }
-
-    if (viewGroups.length === 0) {
-      // P4-B slice⑩: pushing 'postGroups'=null (not just an empty array — see
-      // renderer/grid.ts's computeModel) unmounts the grid island's cells
-      // SYNCHRONOUSLY (corpusStore.set's notify loop is synchronous, and the
-      // island's subscriber flushSync's the unmount — same guarantee the old
-      // pushed render(null) call gave) BEFORE the innerHTML clear
-      // below runs. The EmptyState island derives 'firstRun'/'filtered' itself
-      // from this same key + 'allPostsCount' + 'searchQuery' — one less push.
-      storeSet('postGroups', null);
-      grid.innerHTML = '';
-      grid.style.display = 'none';
-      empty.style.display = 'block';
-      if (!inPlace && !prefersReducedMotion()) {
-        void empty.offsetWidth;
-        empty.classList.add('anim-in');
-        setTimeout(() => empty.classList.remove('anim-in'), 400);
-      }
-      if (!inPlace) syncTitleAndPersist(); // 0件の状態もタイトル・永続化を同期
-      return;
-    }
-
-    // Container-level layout (the old flex column / CSS grid / masonry block) is
-    // dead in the virtualized grid — masonic positions cells absolutely inside
-    // its host. The view classes stay purely for descendant styling (.masonry
-    // keeps card cells content-visibility:visible + width:100%).
-    grid.style.display = 'block';
-    grid.classList.toggle('list-view', currentView === 'list');
-    grid.classList.toggle('tile-view', currentView === 'tile');
-    applyTileLayout();
-    empty.style.display = 'none';
-
-    // Card entrance plays only on a fresh build (filter/sort/search), never on
-    // an in-place mutation re-render. Skipped under prefers-reduced-motion.
-    grid.classList.toggle('anim-in', !inPlace && !prefersReducedMotion());
-    grid.classList.toggle('masonry', currentView === 'card');
-    // Selection mode: rings stay visible on every card, hover actions hide (CSS).
-    grid.classList.toggle('selecting', selection.size() > 0);
-    // Tile overlay (author/❤) is optional; the ❤ count only shows while an
-    // engagement sort or filter is active (otherwise it's noise).
-    grid.classList.toggle('no-overlay', !tileOverlay);
-    grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(sortSelect.value) || postQB.shadow().some((f: { type: string }) => f.type === 'engagement'));
-
-    // THE GRID — fully React-owned (grid island via corpusPostGridSource):
-    // masonic windowing + live cell rendering for all three views. viewer.js keeps
-    // the data pipeline (viewGroups above), the container's classes/CSS vars, and
-    // every delegated #postGrid handler. P4-B slice⑩: layout (view/columnWidth/
-    // rowGutter/itemHeightEstimate/…) is no longer pushed — the source derives it
-    // itself from corpusStore's 'view'/'cardSize'/'tileSize'/'listThumb' (already
-    // there since slice④); modelOf/keyOf/labels/onAspect were configured once,
-    // above. Pushing the SAME array reference (in-place reuse) is a no-op via the
-    // store's identity guard, matching the old itemsKey-doesn't-bump behavior.
-    storeSet('postGroups', viewGroups);
-    // With windowing, cells keep MOUNTING while the user scrolls — drop the
-    // entrance class once the initial animation has played, or every late
-    // cell would replay it mid-scroll.
-    clearTimeout(_gridAnimT);
-    if (grid.classList.contains('anim-in')) _gridAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
-    _lastRenderGen = _allPostsGeneration; // mark the generation of this build
-    _lastViewGroups = viewGroups;
-    _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse
-    if (!inPlace) syncTitleAndPersist(); // keep the tab title + persistence in sync
-  }
 
   // Text expand/collapse on click
   byId('postGrid').addEventListener('click', (e) => {
@@ -1921,7 +1720,7 @@ import { corpusIpc } from './ipc.ts';
     const img = closestOf(e, '.card-img');
     if (img) {
       e.stopPropagation();
-      const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
+      const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
       if (!g) return;
       if (!byId('postDetail').hidden) {
         showDetail(g);
@@ -1933,7 +1732,7 @@ import { corpusIpc } from './ipc.ts';
   byId('postGrid').addEventListener('dblclick', (e) => {
     const img = closestOf(e, '.card-img');
     if (!img || byId('postDetail').hidden) return;
-    const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
     if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
   });
 
@@ -1944,7 +1743,7 @@ import { corpusIpc } from './ipc.ts';
     const img = closestOf(e, '.card-img');
     if (!img) return;
     e.preventDefault();
-    const g = viewGroups[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
     if (g) addImageTab(g);
   });
   // suppress the middle-click autoscroll on card images
@@ -1960,7 +1759,7 @@ import { corpusIpc } from './ipc.ts';
     if (!btn) return;
     e.stopPropagation();
     if (!CF()) return;
-    const g = viewGroups[Number.parseInt(btn.dataset.clip ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.clip ?? '', 10)];
     if (!g || !g.rep.captureId) return;
     keepCurrentVisible(); // removal can un-match an active clip filter
     const res = CF().toggleClip(
@@ -1972,115 +1771,14 @@ import { corpusIpc } from './ipc.ts';
     if (postQB.shadow().some((f: { type: string }) => f.type === 'clip')) renderPosts(true);
   });
 
-  // Folder picker flyout (destinations) — opened from the card context menu
-  // and the bulk 「フォルダに追加」 button.
-  // Folder picker (destinations) — React-owned glass menu (menu.ts);
-  // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
-  // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
-  // 「フォルダに追加」 button.
-  function foldMenuItems(g: CorpusPostGroup) {
-    const list = CF() ? CF().all() : [];
-    const rep = g.rep.captureId;
-    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
-    if (list.length) items.push({ sep: true });
-    items.push({ label: MSG.ctxManage, act: 'manage', manage: true });
-    return items;
-  }
-  function onFoldMenuPick(g: CorpusPostGroup, item: CorpusMenuItem) {
-    if (!CF()) return;
-    if (item.act === 'manage') {
-      CF().openManager();
-      return;
-    }
-    if (item.act === 'fold') {
-      keepCurrentVisible();
-      CF().toggleIn(
-        item.fid,
-        g.records.map((r2) => r2.captureId),
-        g.rep.captureId,
-      );
-      // re-render only if a collection filter could change the visible set
-      if (postQB.shadow().some((f: { type: string }) => f.type === 'collection')) renderPosts(true);
-    }
-  }
-  function showFoldMenu(g: CorpusPostGroup, x: number, y: number) {
-    if (!CF()) return;
-    menuOpen({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
-  }
-
-  // --- Card context menu: the labeled table of contents of per-card actions.
-  // Hover keeps the rapid-fire buttons (📎 clip / ℹ info / 🏷 tag);
-  // everything else (open, folder, poster, delete) lives here.
-  const CM_IC = {
-    open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
-    folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    clip: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
-    info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
-    del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
-    sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-    poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
-    newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
-    reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
-  };
-  // Card context menu — React-owned glass menu (menu.ts); viewer owns
-  // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
-  // spot; the bridge's transition guard keeps that open instead of closing it.
-  function cardMenuItems(g: CorpusPostGroup) {
-    const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
-    // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
-    const canPoster = !!(g.rep.url && buildUsers().some((u) => u.key === userKey(g.rep)));
-    const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
-    const items: any[] = [];
-    if (g.rep.url) items.push({ label: MSG.tipOpen, act: 'open', icon: CM_IC.open });
-    items.push({ label: MSG.ctxOpenNewTab, act: 'newtab', icon: CM_IC.newtab });
-    items.push({ label: MSG.tipFolder, act: 'folder', icon: CM_IC.folder });
-    if (CF()) items.push({ label: inClip ? MSG.ctxClipRemove : MSG.ctxClipAdd, act: 'clip', icon: CM_IC.clip });
-    items.push({ label: MSG.tipInfo, act: 'info', icon: CM_IC.info });
-    if (canPoster) items.push({ label: MSG.ctxViewPoster, act: 'poster', icon: CM_IC.poster });
-    // The file the card is showing right now (capture or artwork per density).
-    const cardFile = densityImage(g.rep, currentView) || g.rep.image || '';
-    if (srcUrl || cardFile) items.push({ sep: true });
-    if (srcUrl) {
-      items.push({ label: MSG.detailSauce, act: 'sauce', icon: CM_IC.sauce });
-      items.push({ label: MSG.detailAscii, act: 'ascii', icon: CM_IC.sauce });
-    }
-    if (cardFile) items.push({ label: MSG.ctxShowInFolder, act: 'reveal', icon: CM_IC.reveal });
-    items.push({ sep: true });
-    items.push({ label: MSG.tipDelete, act: 'delete', icon: CM_IC.del, danger: true });
-    return { items, srcUrl };
-  }
-  function onCardMenuPick(g: CorpusPostGroup, x: number, y: number, srcUrl: string, item: CorpusMenuItem) {
-    const act = item.act;
-    if (act === 'open') {
-      if (g.rep.url) corpusIpc.openExternal(g.rep.url);
-    } else if (act === 'newtab') {
-      addImageTab(g); // background, browser-like
-    } else if (act === 'folder') {
-      showFoldMenu(g, x, y);
-      return;
-    } // opens the folder picker (bridge keeps it open)
-    else if (act === 'clip') {
-      const b = document.querySelector(`.clip-btn[data-clip="${viewGroups.indexOf(g)}"]`) as HTMLElement | null;
-      if (b) b.click();
-    } else if (act === 'info') showDetail(g);
-    else if (act === 'poster') jumpToPoster(g.rep);
-    else if (act === 'sauce') corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
-    else if (act === 'ascii') corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
-    else if (act === 'reveal') {
-      const file = densityImage(g.rep, currentView) || g.rep.image;
-      if (file && corpusIpc.showInFolder) corpusIpc.showInFolder(file);
-    } else if (act === 'delete') requestDeleteGroup(g);
-  }
-  function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
-    const { items, srcUrl } = cardMenuItems(g);
-    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
-  }
+  // foldMenuItems/onFoldMenuPick/showFoldMenu and cardMenuItems/onCardMenuPick/
+  // showCardMenu moved to post-grid-builder.ts (postGrid above).
   byId('postGrid').addEventListener('contextmenu', (e) => {
     const card = closestOf(e, '.post-card');
     if (!card) return;
     e.preventDefault();
     if (byId('postGrid').classList.contains('selecting')) return; // selection bar owns bulk actions
-    const g = viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (g) showCardMenu(g, e.clientX, e.clientY);
   });
 
@@ -2106,7 +1804,7 @@ import { corpusIpc } from './ipc.ts';
   function toggleCardSelection(card: HTMLElement, shiftKey: boolean) {
     const idx = Number.parseInt(card.dataset.index ?? '', 10);
     const key = card.dataset.key as string;
-    selection.toggle(idx, key, shiftKey, viewGroups, postIdKey);
+    selection.toggle(idx, key, shiftKey, postGrid.getViewGroups(), postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
   }
@@ -2144,45 +1842,7 @@ import { corpusIpc } from './ipc.ts';
     true,
   );
 
-  // Delete a card group (reached via the card context menu): confirm unless skipped.
-  function requestDeleteGroup(g: CorpusPostGroup) {
-    if (skipDeleteConfirm) {
-      executeDeleteGroup(g);
-      return;
-    }
-    confirmOpen({
-      message: g.records.length > 1 ? MSG.confirmDeleteGroup(g.records.length) : MSG.confirmDeletePost,
-      okLabel: MSG.confirmOk,
-      cancelLabel: MSG.confirmCancel,
-      skipLabel: MSG.confirmSkip, // "次回から確認しない"
-      onOk: async ({ skip }) => {
-        if (skip) {
-          skipDeleteConfirm = true;
-          corpusIpc.setPref('skipDeleteConfirm', true);
-        }
-        await executeDeleteGroup(g);
-      },
-    });
-  }
-
-  // Delete every record of the group (a group IS one post in the UI).
-  async function executeDeleteGroup(g: CorpusPostGroup) {
-    if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) closeDetail();
-    for (const r of g.records) {
-      try {
-        await deletePost(r.image || r.video);
-      } catch {
-        /* keep going */
-      }
-      _postsById.delete(r.captureId); // optimistic removal from the delta cache
-    }
-    allPosts = [..._postsById.values()]; // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
-    markPostsMutated(); // a deleted author/instance must drop out of the sidebar
-    renderPosts(true);
-    reconcileFolders(); // 削除した captureId をフォルダから即時掃除
-    showToast(MSG.deleted);
-  }
-
+  // requestDeleteGroup/executeDeleteGroup moved to post-grid-builder.ts (postGrid above).
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
@@ -2193,12 +1853,13 @@ import { corpusIpc } from './ipc.ts';
     refreshTileSlider(); // the grid width grew back — re-derive the track
   }
   function persistManual() {
-    persistManualGroups(manualGroups);
+    persistManualGroups(postGrid.getManualGroups());
   }
   // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
   function setGroupKey(key: string, ungroup: boolean) {
     if (!key) return;
     keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
+    const ungrouped = postGrid.getUngrouped();
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
     persistUngrouped(ungrouped);
@@ -2207,6 +1868,7 @@ import { corpusIpc } from './ipc.ts';
     if (ungroup) showToast(MSG.ungroupDone);
   }
   function ungroupManual(idx: number) {
+    const manualGroups = postGrid.getManualGroups();
     if (!(idx >= 0 && idx < manualGroups.length)) return;
     keepCurrentVisible();
     manualGroups.splice(idx, 1);
@@ -2250,7 +1912,7 @@ import { corpusIpc } from './ipc.ts';
       } catch {
         /* keep going */
       }
-      const rec = _postsById.get(r.captureId); // O(1) lookup; allPosts shares the same record refs
+      const rec = postGrid.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
       if (rec) rec.tags = next.slice();
       undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next });
     }
@@ -2258,7 +1920,7 @@ import { corpusIpc } from './ipc.ts';
     pushUndo('tags', undoRecords);
     markPostsMutated();
     renderPosts(true);
-    const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+    const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
     if (fresh) refreshInspectorTagFields(fresh);
   }
 
@@ -2266,13 +1928,13 @@ import { corpusIpc } from './ipc.ts';
   // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
   // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
   async function addInspectorTag(g: CorpusPostGroup, tag: string) {
-    const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
+    const fresh = () => postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
     if (adding) await maybeDistinguishHomonym(fresh(), tag);
   }
   async function toggleInspectorTag(g: CorpusPostGroup, tag: string) {
-    const fresh = () => viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
+    const fresh = () => postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
     if (adding) await maybeDistinguishHomonym(fresh(), tag);
@@ -2335,14 +1997,14 @@ import { corpusIpc } from './ipc.ts';
     // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
     // (same post URL with siblings) toggle via the persisted ungrouped set.
     const gkey = postKeyOf(p.url);
-    const potential = gkey ? allPosts.filter((q) => postKeyOf(q.url) === gkey).length : 0;
+    const potential = gkey ? postGrid.getAllPosts().filter((q) => postKeyOf(q.url) === gkey).length : 0;
     const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
     // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
     // rep's key out stops the self-reply merge at this parent, splitting the card.
     const groupBtn = isManual
       ? { icon: '🔗', label: MSG.groupUngroupManual, onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
       : gkey && (potential > 1 || g.records.length > 1)
-        ? ungrouped.has(gkey)
+        ? postGrid.getUngrouped().has(gkey)
           ? { icon: '🔗', label: MSG.groupRegroup, onClick: () => setGroupKey(gkey, false) }
           : { icon: '✂', label: MSG.groupUngroup, onClick: () => setGroupKey(gkey, true) }
         : null;
@@ -2406,7 +2068,7 @@ import { corpusIpc } from './ipc.ts';
       onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
       onTagContextMenu: (tag: string, x: number, y: number) => {
         showKindMenu(tag, x, y, () => {
-          const g2 = viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey);
+          const g2 = postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey);
           if (g2) refreshInspectorTagFields(g2);
         });
       },
@@ -2436,7 +2098,7 @@ import { corpusIpc } from './ipc.ts';
       } catch {
         /* keep going */
       }
-      const rec = _postsById.get(r.captureId); // O(1) lookup; allPosts shares the same record refs
+      const rec = postGrid.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
       if (rec) rec.tags = newTags.slice();
       undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags });
     }
@@ -2444,7 +2106,7 @@ import { corpusIpc } from './ipc.ts';
     pushUndo('tags', undoRecords);
     markPostsMutated();
     renderPosts(true);
-    const fresh = viewGroups.find((g2) => postIdKey(g2.rep) === inspectedKey);
+    const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
     if (fresh) showDetail(fresh);
     showToast(MSG.tagAdopted(tag));
   }
@@ -2496,7 +2158,7 @@ import { corpusIpc } from './ipc.ts';
     const btn = closestOf(e, '.info-btn');
     if (!btn) return;
     e.stopPropagation();
-    const g = viewGroups[Number.parseInt(btn.dataset.info ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.info ?? '', 10)];
     if (!byId('postDetail').hidden && inspectedKey && g && postIdKey(g.rep) === inspectedKey) {
       closeDetail();
       return;
@@ -2508,7 +2170,7 @@ import { corpusIpc } from './ipc.ts';
     const btn = closestOf(e, '.tag-btn');
     if (!btn) return;
     e.stopPropagation();
-    const g = viewGroups[Number.parseInt(btn.dataset.tagedit ?? '', 10)];
+    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.tagedit ?? '', 10)];
     if (!g) return;
     showDetail(g);
   });
@@ -2594,7 +2256,7 @@ import { corpusIpc } from './ipc.ts';
 
   // Every record of every selected group (bulk actions operate on records).
   function selectedRecords() {
-    return selection.selectedRecords(viewGroups, postIdKey);
+    return selection.selectedRecords(postGrid.getViewGroups(), postIdKey);
   }
 
   // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
@@ -2655,7 +2317,7 @@ import { corpusIpc } from './ipc.ts';
           } catch {
             /* keep going */
           }
-          const rec = _postsById.get(u.captureId); // O(1) lookup; allPosts shares the same record refs
+          const rec = postGrid.getPostById(u.captureId); // O(1) lookup; allPosts shares the same record refs
           if (rec) rec.tags = u.newTags.slice();
         }
         pushUndo('tags', undoRecords);
@@ -2688,10 +2350,11 @@ import { corpusIpc } from './ipc.ts';
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   function groupSelected() {
-    const members = selection.selectedGroups(viewGroups, postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
+    const members = selection.selectedGroups(postGrid.getViewGroups(), postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
-    manualGroups = manualGroups.map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
-    manualGroups.push(members);
+    const nextGroups = postGrid.getManualGroups().map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
+    nextGroups.push(members);
+    postGrid.setManualGroups(nextGroups);
     persistManual();
     markPostsMutated(); // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
     // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
@@ -2703,7 +2366,7 @@ import { corpusIpc } from './ipc.ts';
   }
 
   function toggleSelectAll() {
-    selection.toggleAll(viewGroups, postIdKey);
+    selection.toggleAll(postGrid.getViewGroups(), postIdKey);
     syncSelectionClasses();
     updateSelectionBar();
   }
@@ -2719,9 +2382,9 @@ import { corpusIpc } from './ipc.ts';
     if (window.corpusSettings && window.corpusSettings.isOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     if (browseMode !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
-    if (viewGroups.length === 0) return;
+    if (postGrid.getViewGroups().length === 0) return;
     e.preventDefault();
-    selection.selectAll(viewGroups, postIdKey);
+    selection.selectAll(postGrid.getViewGroups(), postIdKey);
     renderPosts(true);
     updateSelectionBar();
   }
@@ -2753,7 +2416,7 @@ import { corpusIpc } from './ipc.ts';
       cancelLabel: MSG.confirmCancel,
       onOk: async () => {
         // Bulk delete selected groups — every record of each selected group.
-        const toDelete = selection.selectedRecords(viewGroups, postIdKey);
+        const toDelete = selection.selectedRecords(postGrid.getViewGroups(), postIdKey);
         const count = toDelete.length;
         for (const p of toDelete) await deletePost(p.image || p.video);
         selection.clear();
@@ -3230,7 +2893,7 @@ import { corpusIpc } from './ipc.ts';
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
     // Recent works: group this poster's posts (newest first) and preview the lead
     // image of each. Click → open that work in the gallery (over the inspector).
-    posterWorkGroups = groupRecords(allPosts.filter((p) => userKey(p) === u.key))
+    posterWorkGroups = postGrid.groupRecords(postGrid.getAllPosts().filter((p) => userKey(p) === u.key))
       .sort((a, b) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
     const works = posterWorkGroups
@@ -3733,8 +3396,7 @@ import { corpusIpc } from './ipc.ts';
           showToast(MSG.clearBlocked);
           return;
         }
-        _postsById = new Map(); // keep the delta cache in sync with the wipe
-        allPosts = [];
+        postGrid.resetAll(); // keep the delta cache in sync with the wipe
         // P4-B slice⑪: this call was missing before (only the two other allPosts
         // reassignment sites called it) — clear-all never bumped _allPostsGeneration,
         // which left stale tag/author/instance facets around after a wipe until
@@ -3796,9 +3458,9 @@ import { corpusIpc } from './ipc.ts';
     renderQueryChips();
     if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
-    ungrouped = await loadUngrouped();
+    postGrid.setUngrouped(await loadUngrouped());
     await pfStore.load();
-    manualGroups = await loadManualGroups();
+    postGrid.setManualGroups(await loadManualGroups());
     await loadTags();
     // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
     // model on first get() (P4-B slice⑰), so both columns paint immediately with
