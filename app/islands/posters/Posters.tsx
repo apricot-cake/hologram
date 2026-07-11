@@ -76,10 +76,10 @@ function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?:
         </div>
       </div>
       {/* Hover actions: 🏷 tag → ℹ info (L→R). */}
-      <button className="poster-tag" data-ptag={c.index} title={tagTitle} aria-label={tagTitle}>
+      <button className="poster-tag" data-ptag={c.index} data-tip={tagTitle} aria-label={tagTitle}>
         <TagIcon />
       </button>
-      <button className="poster-info" data-pinfo={c.index} title={infoTitle} aria-label={infoTitle}>
+      <button className="poster-info" data-pinfo={c.index} data-tip={infoTitle} aria-label={infoTitle}>
         <InfoIcon />
       </button>
     </div>

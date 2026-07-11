@@ -98,7 +98,7 @@ function Val({ it, delTitle, withGlyph, dispatch }: { it: QbItem; delTitle?: str
         className="qb-del-btn"
         data-act="del"
         data-nid={it.id}
-        title={delTitle}
+        data-tip={delTitle}
         aria-label={delTitle}
         tabIndex={-1}
         onClick={(e) => {
@@ -120,7 +120,7 @@ function Val({ it, delTitle, withGlyph, dispatch }: { it: QbItem; delTitle?: str
 // replaced a lone word chip for exactly this discoverability failure.
 function OptSeg({ c, shared, dispatch }: { c: QbCluster; shared: QbShared; dispatch: Dispatch }) {
   const seg = (op: 'and' | 'or', word?: string, tip?: string) => (
-    <button type="button" className={'qb-opt-btn' + (c.op === op ? ' is-on' : '')} data-act="opt" data-op={op} data-nid={c.id} title={tip} onClick={() => c.id && dispatch({ act: 'opt', nid: c.id, op })}>
+    <button type="button" className={'qb-opt-btn' + (c.op === op ? ' is-on' : '')} data-act="opt" data-op={op} data-nid={c.id} data-tip={tip} onClick={() => c.id && dispatch({ act: 'opt', nid: c.id, op })}>
       {word}
     </button>
   );
@@ -181,7 +181,7 @@ export function Chips({ model, dispatch }: { model?: ChipsModel | null; dispatch
         </>
       )}
       {model.summary ? (
-        <span className="qb-summary" title={model.summary.tip}>
+        <span className="qb-summary" data-tip={model.summary.tip} data-tip-rich="">
           {model.summary.text}
         </span>
       ) : (

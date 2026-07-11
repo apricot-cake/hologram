@@ -99,7 +99,7 @@ function CdateIcon() {
 // Platform source badge on the thumbnail's bottom-left.
 function PfBadge({ platform, name }: { platform: string; name?: string }) {
   return (
-    <div className="pf-badge" title={name}>
+    <div className="pf-badge" data-tip={name}>
       <span className={'pf-dot ' + platform} />
       <span className="pf-badge-name">{name}</span>
     </div>
@@ -188,12 +188,12 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
             )}
             <span className="foot-r">
               {fd.post && (
-                <span className="pdate" title={fd.post.title || undefined}>
+                <span className="pdate" data-tip={fd.post.title || undefined}>
                   {fd.post.label}
                 </span>
               )}
               {fd.cap && (
-                <span className="cdate" title={fd.cap.title || undefined}>
+                <span className="cdate" data-tip={fd.cap.title || undefined}>
                   <CdateIcon />
                   {fd.cap.label}
                 </span>

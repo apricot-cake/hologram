@@ -16,10 +16,6 @@ import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
 // bubble to viewer's delegation on the #filterRows container. Row / Badge / Glyph /
 // ICON are shared with the poster column (PosterSidebar) via parts.tsx.
 
-// クリップ row tooltip: a fixed literal with no i18n key (identical across languages in
-// the old HTML), inlined here to keep the port 1:1.
-const CLIP_TIP = 'あとで見返したい投稿につける一時的な目印。各カードのクリップボタンで付け外しでき、この行を押すと目印付きの投稿だけに絞り込みます。';
-
 // Static row-name i18n keys, keyed by cat (data-qfrow === data-badge). work/character
 // aren't here — their name is the user-renamable 種別 label (see kindLabel below).
 const ROW_LABEL_KEY: Record<string, string> = {
@@ -73,7 +69,7 @@ export function Sidebar() {
       {/* Clip: library-wide ephemeral flag, a 2-state toggle with an inline clear button.
           Badge + clear are SIBLINGS of the button (not inside it) — same as the old HTML. */}
       <div className="clip-row-wrap">
-        <button className={m.clip.active ? 'sb-row clip-row active' : 'sb-row clip-row'} id="clipRow" type="button" data-tip={CLIP_TIP} data-tip-rich="">
+        <button className={m.clip.active ? 'sb-row clip-row active' : 'sb-row clip-row'} id="clipRow" type="button" data-tip={t('clipRowTip')} data-tip-rich="">
           <Glyph className="sb-row-ic" svg={ICON.clip} />
           <span className="sb-row-name" id="sbClipTitle">
             {t('clipTitle')}

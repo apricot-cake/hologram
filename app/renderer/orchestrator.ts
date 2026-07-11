@@ -144,6 +144,9 @@ export let resetPosterFilters: () => void;
   // slice⑰; renderer/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
   setAttr('tileSlider', 'data-tip', getMessage('tileSizeTip')); // shared glass tooltip (was native title)
+  setAttr('tileSlider', 'aria-label', getMessage('tileSizeTip'));
+  setAttr('posterTileSlider', 'data-tip', getMessage('posterSizeTip'));
+  setAttr('posterTileSlider', 'aria-label', getMessage('posterSizeTip'));
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
   // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
   // renderer/activebar.ts is gone — no bridge left) — no static setText here.
