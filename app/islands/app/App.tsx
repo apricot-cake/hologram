@@ -57,12 +57,12 @@ import {
   handlePosterViewStoreChange,
   handleSearchQueryStoreChange,
   handleSearchModeChange,
-} from '../../renderer/viewer.ts';
+} from '../../renderer/orchestrator.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
-// owns only RENDERING and reads its state from a window.corpus* bridge (viewer.js keeps
-// the logic/state). Container-mounted islands portal into their existing viewer-owned
+// owns only RENDERING and reads its state from a window.corpus* bridge (orchestrator.ts keeps
+// the logic/state). Container-mounted islands portal into their existing orchestrator-owned
 // static container (unchanged DOM/CSS contract); body-level overlays render as fixed-
 // positioned children of this root. This component is the source of truth for which
 // islands live under the unified root. root.tsx gates the mount on initI18n() so t() is
@@ -72,7 +72,7 @@ import {
 // Batch 2 (container islands): the sidebar filter-row columns, selection bar, inspector,
 //   bulk-edit overlay, and the search box — each portaled into its static container.
 
-// Portal a subtree into an existing viewer-owned container by id. The containers are
+// Portal a subtree into an existing orchestrator-owned container by id. The containers are
 // static HTML (present before app.js runs), so getElementById resolves synchronously; the
 // wrapper only re-runs the lookup if the App itself re-renders (it doesn't — each child
 // subscribes to its own bridge).
@@ -82,10 +82,10 @@ function Portal({ id, children }: { id: string; children: ReactNode }) {
 }
 
 // App bootstrap: the single React root (this component) is the app's one entry point,
-// so it also owns triggering the initial data load — rather than viewer.ts self-booting
-// in parallel with React's mount. Awaits viewerReady (assigned as viewer.ts's very
+// so it also owns triggering the initial data load — rather than orchestrator.ts self-booting
+// in parallel with React's mount. Awaits viewerReady (assigned as orchestrator.ts's very
 // first synchronous statement, so it's already there by the time this effect runs)
-// before calling bootApp() once; bootApp itself is only assigned once viewer.ts has
+// before calling bootApp() once; bootApp itself is only assigned once orchestrator.ts has
 // finished defining everything it closes over, and viewerReady only resolves after
 // that assignment — so by the time the promise settles, bootApp is guaranteed to be
 // the real function. No cleanup: boot runs exactly once for the app's lifetime, like
@@ -97,11 +97,11 @@ function AppBoot() {
   return null;
 }
 
-// Shell-level body classes that React owns (viewer no longer touches document.body for
-// these). browse-posters is driven by the corpusStore 'browseMode' key (viewer sets the
+// Shell-level body classes that React owns (orchestrator no longer touches document.body for
+// these). browse-posters is driven by the corpusStore 'browseMode' key (orchestrator sets the
 // store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
 // flash. (image-tab-active is owned by ImageTabHost from its model; modal-open stays in
-// viewer — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
+// orchestrator — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => storeGet('browseMode') as string;
 function ShellClasses() {
@@ -115,7 +115,7 @@ function ShellClasses() {
 // Modal chrome: lock background scroll + darken the native titlebar while any full-
 // screen overlay is up (the scrim can't cover the OS window controls or the page
 // scrollbar, so they'd otherwise stay bright). Observes each overlay's visibility so no
-// open/close site can be missed — self-contained (no viewer state), so this is a byte-
+// open/close site can be missed — self-contained (no orchestrator state), so this is a byte-
 // faithful move of the old setupModalChrome IIFE into a React effect. The inspector
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
@@ -145,10 +145,10 @@ function ModalChrome() {
 // Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
 // focus, content-size step). React now owns the DOM listener registration (mounted
 // once for the app's lifetime); each handler's guard + action logic is unchanged and
-// stays in viewer.ts, imported directly as a live binding — "cut out and rewire", not
+// stays in orchestrator.ts, imported directly as a live binding — "cut out and rewire", not
 // reimplemented (Wave32/V17 continued). No boot-readiness guard needed, same reasoning
 // as handleFolderChange/handlePostsChanged below: these only ever fire on a real
-// keydown/mouseup, and viewer.ts's IIFE assigns the real functions well before a human
+// keydown/mouseup, and orchestrator.ts's IIFE assigns the real functions well before a human
 // (or a CDP test) can produce one.
 function GlobalShortcuts() {
   useEffect(() => {
@@ -193,7 +193,7 @@ function DetailDismiss() {
 // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
 // autoscroll suppression, right-click context menu, double-click rename, and the
 // Ctrl+T/W/Tab document shortcuts. React owns the listener registration (mounted once
-// for the app's lifetime); guard + action logic is unchanged and stays in viewer.ts,
+// for the app's lifetime); guard + action logic is unchanged and stays in orchestrator.ts,
 // imported directly as a live binding — same "cut out and rewire" as GlobalShortcuts.
 // #tabBarInner is TabsHost's static portal container (present before app.js runs), so
 // getElementById resolves synchronously, same as the Portal() containers below.
@@ -235,10 +235,10 @@ function TabBarEvents() {
 // posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
 // folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
 // registration (mounted once for the app's lifetime). The store/qf-pop/search-mode
-// handlers are guard+action logic that still lives in viewer.ts, imported directly as
+// handlers are guard+action logic that still lives in orchestrator.ts, imported directly as
 // live bindings — "cut out and rewire", same as the other App.tsx-level effects and
 // handleFolderChange/handlePostsChanged below (Wave31/V17, extended to the rest of
-// this effect in Wave32 — no bridge needed once viewer.ts exports them as real
+// this effect in Wave32 — no bridge needed once orchestrator.ts exports them as real
 // bindings). corpusStore/qf-pop/search all return an unsubscribe (useSyncExternalStore-
 // compatible) and get one on cleanup; corpusFolders.onChange and
 // corpusPosts.onPostsChanged don't (subs.push / raw ipcRenderer.on) — harmless,
@@ -270,7 +270,7 @@ export function App() {
     <>
       {/* Triggers the app's initial data load once, on mount. */}
       <AppBoot />
-      {/* Shell body classes React owns (viewer no longer sets them). */}
+      {/* Shell body classes React owns (orchestrator no longer sets them). */}
       <ShellClasses />
       {/* Modal chrome (body/html .modal-open + native titlebar tint) — observes the
           overlay containers below; must precede them only for readability, not order. */}
@@ -290,7 +290,7 @@ export function App() {
       <FilterPopoverHost />
       <QfPopHost />
       <ConfirmHost />
-      {/* Container-mounted islands — portaled into their viewer-owned static containers. */}
+      {/* Container-mounted islands — portaled into their orchestrator-owned static containers. */}
       <Portal id="filterRows">
         <Sidebar />
       </Portal>
@@ -317,7 +317,7 @@ export function App() {
       </Portal>
       {/* Query-builder frame (nav / title / count / reset / ⓘ help) around each chips
           container — portals into static sub-mounts BESIDE the chips, so those keep
-          viewer's delegated handlers. */}
+          orchestrator's delegated handlers. */}
       <ActivebarHost />
       <Portal id="imageTabView">
         <ImageTabHost />
@@ -342,11 +342,11 @@ export function App() {
       {/* Toolbar controls (search mode / density / browse / section titles / sort selects)
           — Toolbar portals each into its own container. */}
       <Toolbar />
-      {/* Settings modal (open/closed via window.corpusSettings; the gear in viewer opens it). */}
+      {/* Settings modal (open/closed via window.corpusSettings; the gear in orchestrator opens it). */}
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>
-      {/* Empty-state placeholder (grid is empty) + the backup status rail — viewer keeps
+      {/* Empty-state placeholder (grid is empty) + the backup status rail — orchestrator keeps
           each container's show/hide + state derivation; these render the content. */}
       <Portal id="emptyState">
         <EmptyState />
@@ -355,7 +355,7 @@ export function App() {
         <MirrorStatus />
       </Portal>
       {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
-          #posterGrid) with flushSync + host-attach preserved (GridMount), because viewer
+          #posterGrid) with flushSync + host-attach preserved (GridMount), because orchestrator
           still blanket-clears the container on the empty push. */}
       <PostGrid />
       <PosterGrid />

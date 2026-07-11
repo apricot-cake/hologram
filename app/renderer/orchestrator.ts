@@ -1,7 +1,14 @@
-// Renderer services are migrating off the window.corpusX bridge to real ES
-// modules one wave at a time (see memory corpus-react-purity-execution-map);
-// the ones imported below are converted, the rest are still read via
-// window.corpusX at call time.
+// Renamed from viewer.ts (Wave33/V18, 2026-07-11): this file is the app's boot
+// orchestrator — construction + deps-wiring for every V1-V16 controller/builder
+// cluster (see memory corpus-react-purity-execution-map). Kept as its own module
+// by deliberate choice rather than folded into an App.tsx effect (a dedicated
+// bootstrap module is the norm in real React apps). Comments below that say
+// "viewer.ts decomposition" name the historical migration project, not this
+// file's current name — left as-is. Renderer services are migrating off the
+// window.corpusX bridge to real ES modules one wave at a time; the ones
+// imported below are converted, the rest are still read via window.corpusX at
+// call time (corpusLightbox/corpusSettings remain — pending their own V18
+// island conversion).
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
@@ -164,10 +171,10 @@ export let resetPosterFilters: () => void;
   // openTagSelectedOverlay below) — no static DOM to set text on anymore.
 
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
-  // (labels, thumb, on-state) is rendered by the toolbar island; viewer only keeps
+  // (labels, thumb, on-state) is rendered by the toolbar island; orchestrator only keeps
   // the hint text + aria-label (see the wiring block below). The view/layout titles
   // (#sbViewTitle / #sbLayoutTitle / #sbPosterLayoutTitle) are island-owned too now —
-  // they name the current mode/layout from the store (SectionTitle), so viewer no
+  // they name the current mode/layout from the store (SectionTitle), so orchestrator no
   // longer writes them (writing here would race the island after a language reload).
   // #sbSearchTitle / #sbSortTitle are island-owned now too (toolbar SectionTitle) — no
   // static setText (writing here would race the island after a language reload).
@@ -296,7 +303,7 @@ export let resetPosterFilters: () => void;
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
   // Bound onto tags.ts's live bindings so renderer/sidebar.ts's pull sources (P4-B
-  // slice⑰) can read the SAME tagKindOf/posterFilterVocab this viewer instance uses —
+  // slice⑰) can read the SAME tagKindOf/posterFilterVocab this orchestrator instance uses —
   // both close over tags.ts's own getTagTypes()/getPosterTags(), so there's no second
   // implementation to drift.
   bindTagKindOf(tagKindOf);
@@ -446,7 +453,7 @@ export let resetPosterFilters: () => void;
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
-  // Stack semantics + the viewer-owned apply callbacks/shortcut handler moved to
+  // Stack semantics + the orchestrator-owned apply callbacks/shortcut handler moved to
   // undo-builder.ts — viewer.ts decomposition's V11 slice (Wave25). Constructed here
   // (its original spot) so pushUndo is ready in time for inspector/postGrid/posterGrid's
   // own deps below; postGrid/inspector/posterGrid are all declared later, so their
@@ -557,11 +564,11 @@ export let resetPosterFilters: () => void;
   // query-chips island reads a cached model + calls dispatch() directly instead
   // of viewer.js pushing a model and delegating raw DOM events. The postQB/
   // posterQB instance construction (predOf/glyph/createQueryBuilder ctx) itself
-  // moved to query-builder.ts (Wave15/V1); viewer.js keeps the orchestration
+  // moved to query-builder.ts (Wave15/V1); orchestrator.ts keeps the orchestration
   // around a change (onChange/openLeafEditor/onClearSearch) since those still
   // reach into state (renderPosts, searchEditing, popovers) not yet extracted.
   // i18n strings the builder needs for labels/menus — query-builder.ts/
-  // query-chips.ts have no access to viewer.ts's i18n binding, so getMessage
+  // query-chips.ts have no access to orchestrator.ts's i18n binding, so getMessage
   // itself is passed in via ctx.t.
 
   // The post-side builder instance. P4-B slice⑧: badge/tab-title/etc. reads used
@@ -779,7 +786,7 @@ export let resetPosterFilters: () => void;
     filterLabel,
   });
   // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster
-  // source (P4-B スライス⑰) can read the same namedPosters() this viewer instance uses
+  // source (P4-B スライス⑰) can read the same namedPosters() this orchestrator instance uses
   // (poster-instance row disclosure) — see the corpusTags.tagKindOf note above for why
   // this is a bind, not a reimplementation.
   bindNamedPosters(namedPosters);
@@ -901,7 +908,7 @@ export let resetPosterFilters: () => void;
   });
 
   // Image lightbox / gallery (captured screenshot + downloaded originals). The
-  // overlay UI lives in the React island (window.corpusLightbox); viewer.js only
+  // overlay UI lives in the React island (window.corpusLightbox); orchestrator.ts only
   // resolves a post's gallery items below and hands them to open(). Labels are
   // pushed once so the island can set the nav buttons' aria-labels. In dev the
   // island is a deferred module that may not have loaded yet — stash for catch-up.
@@ -912,7 +919,7 @@ export let resetPosterFilters: () => void;
   }
 
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
-  // scheme stays viewer-owned via the injected fileSrc.
+  // scheme stays orchestrator-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
@@ -1000,7 +1007,7 @@ export let resetPosterFilters: () => void;
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); the クリップ
   // + 複数画像 row entries (active state, clip count) are self-derived now by
-  // renderer/sidebar.ts's corpusPostSidebarSource (P4-B slice⑰) — no viewer-side
+  // renderer/sidebar.ts's corpusPostSidebarSource (P4-B slice⑰) — no orchestrator-side
   // re-render call needed after a clip/multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
@@ -1074,7 +1081,7 @@ export let resetPosterFilters: () => void;
     // bulkEdit (bulk-edit.ts, edit-overlay.ts consumer) is constructed just
     // below — deferred since it needs this selectionCtl's own selectedRecords.
     openTagSelectedOverlay: () => bulkEdit.openTagSelectedOverlay(),
-    getBrowseMode: () => browseMode, // viewer.ts `let`, read live
+    getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
   });
   const { toggleCardSelection, selectedRecords } = selectionCtl;
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -1217,9 +1224,9 @@ export let resetPosterFilters: () => void;
     _browseRenderT = setTimeout(render, 0);
   }
   // #browseToggle is rendered by the toolbar island (corpusStore 'browseMode').
-  // React owns the active state + glass thumb; viewer reacts to a mode change by running
+  // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
-  // below, so the loop stays one-way (island → store → viewer, never back). React owns
+  // below, so the loop stays one-way (island → store → orchestrator, never back). React owns
   // the subscribe() registration (StoreSubscriptions, App.tsx), importing this directly;
   // this stays the guard + action logic. Assigned (not a hoisted declaration) so the
   // module-scope `export let` above is what gets set.
@@ -1360,7 +1367,7 @@ export let resetPosterFilters: () => void;
     folderById: posterFolderById,
   });
 
-  // renderPosterFilterRows (the #posterFilterRows model's one viewer-side side
+  // renderPosterFilterRows (the #posterFilterRows model's one orchestrator-side side
   // effect: pruning tag selections whose backing value disappeared) moved to
   // poster-grid-builder.ts (V6/Wave20) along with the rest of the poster cluster —
   // destructured from posterGrid above.
@@ -1599,7 +1606,7 @@ export let resetPosterFilters: () => void;
 
   // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus island now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
-  // itself. viewer no longer holds any of that state (the old setupMirrorStatusRail +
+  // itself. orchestrator no longer holds any of that state (the old setupMirrorStatusRail +
   // window.corpusMirror bridge are gone).
 
   // --- Clear data ---
@@ -1642,8 +1649,8 @@ export let resetPosterFilters: () => void;
   // --- Boot: the app's initial data load + first render. Defined here (needs every
   // function/state above in closure) but NOT self-invoked — React's AppBoot (App.tsx)
   // calls it once on mount, after awaiting viewerReady above. This makes the React
-  // root the single trigger for app startup (React owns WHEN, viewer.ts keeps the
-  // orchestration logic of WHAT), rather than viewer.ts self-booting in parallel
+  // root the single trigger for app startup (React owns WHEN, orchestrator.ts keeps the
+  // orchestration logic of WHAT), rather than orchestrator.ts self-booting in parallel
   // with React's mount.
   bootApp = async function () {
     renderQueryChips();

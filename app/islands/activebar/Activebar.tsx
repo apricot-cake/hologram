@@ -3,20 +3,20 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../renderer/viewer.ts';
+import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../renderer/orchestrator.ts';
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
 // count, the リセット button, and the ⓘ help popover. Self-derived (P4-B slice⑱): every
 // read-only field comes straight from corpusStore ('postQueryTree'/'posterQueryTree'/
 // 'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/'navCanForward' — all already
-// mirrored there by viewer.ts for other consumers) + t(); the 4 actions (nav/reset) import
+// mirrored there by orchestrator.ts for other consumers) + t(); the 4 actions (nav/reset) import
 // navBack/navForward/resetAllFilters/resetPosterFilters directly (Wave32/V17 continued —
 // the window.corpusViewer bridge for these is gone). No more pushed model (the old
 // renderer/activebar.ts bridge is gone too).
 //
 // The chips (#queryChips / #posterQueryChips) are their OWN island (query-chips) and keep
-// viewer's delegated click/contextmenu handlers. So the frame is NOT a single portal into
+// orchestrator's delegated click/contextmenu handlers. So the frame is NOT a single portal into
 // the bar (that would replace the chips container and detach those handlers). Instead each
 // dynamic piece portals into a static sub-mount that sits BESIDE the chips container
 // (#postNavMount / #postFrameLead / #postTrailMount / #posterFrameLead / #posterTrailMount /

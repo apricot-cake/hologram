@@ -4,7 +4,7 @@
 // メモリ corpus-react-purity-execution-map §0/§1/§2 が仕様の真実源）。
 //
 // ① window.corpus[A-Z] 系グローバル参照ゼロ（+ キャスト/ブラケット間接アクセスもゼロ）
-// ② app/renderer/viewer.ts が不在
+// ② app/renderer/viewer.ts という名前が不在（＝app/renderer/orchestrator.tsへ改名済み）
 // ③ git追跡の .js/.mjs/.cjs が許可リスト（最終7件）と完全一致
 // ④ app/renderer/**/*.ts の命令的DOM操作に無注釈の使用がゼロ
 // ⑤ Window拡張が corpus（preload橋）のみ
@@ -75,8 +75,17 @@ function check1(): Violation[] {
   return scanLines(CHECK1_SCOPE, patterns);
 }
 
+// 2026-07-11 (Wave33/V18): viewer.ts を app/renderer/orchestrator.ts へ改名した
+// （ユーザー決定＝boot orchestration層は独立モジュールとして意図的に残す。実React
+// 製品のmain/bootstrapモジュールに相当し、V18の目標は「viewer.tsという名前が消える
+// こと」であって「boot用モジュールが一切存在しないこと」ではない — 詳細は memory
+// corpus-react-purity-execution-map の V18 節）。本チェックはもう「モノリスの消滅」
+// を判定する役目ではなく、改名の巻き戻り（旧ファイル名の再発生）だけを検知する回帰
+// ガードに縮小＝orchestrator.tsが実在しviewer.tsが存在しなければ常にPASSでよい。
 function check2(): boolean {
-  return !fs.existsSync(path.join(repoRoot, 'app', 'renderer', 'viewer.ts'));
+  const viewerGone = !fs.existsSync(path.join(repoRoot, 'app', 'renderer', 'viewer.ts'));
+  const orchestratorPresent = fs.existsSync(path.join(repoRoot, 'app', 'renderer', 'orchestrator.ts'));
+  return viewerGone && orchestratorPresent;
 }
 
 // 最終許可Set＝7件（2026-07-09 ユーザー確定・実プロダクト一致に振り切る）。
@@ -198,8 +207,10 @@ function main() {
     check1().map((v) => `${v.file}:${v.line}: ${v.text}`),
   ) && allPass;
 
-  const viewerGone = check2();
-  allPass = report('check②: app/renderer/viewer.ts 不在', viewerGone ? [] : ['app/renderer/viewer.ts がまだ存在する']) && allPass;
+  const renameIntact = check2();
+  allPass =
+    report('check②: viewer.ts→orchestrator.ts の改名が維持されている', renameIntact ? [] : ['app/renderer/viewer.ts が復活しているか、orchestrator.ts が見当たらない']) &&
+    allPass;
 
   const { extra: c3extra, missing: c3missing } = check3();
   allPass =

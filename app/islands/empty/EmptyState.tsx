@@ -37,7 +37,7 @@ export function EmptyState() {
     // postGroups is undefined before the first renderPosts() ever ran (nothing to
     // show yet), an array while the grid has content (nothing to show), or
     // explicitly null when renderPosts() found the filtered/grouped set empty
-    // (viewer distinguishes these on purpose — see renderer/viewer.ts's
+    // (orchestrator distinguishes these on purpose — see renderer/orchestrator.ts's
     // renderPosts and renderer/grid.ts's computeModel).
     if (postGroups === null) variant = allPostsCount === 0 && !query.trim() ? 'firstRun' : 'filtered';
   } else {

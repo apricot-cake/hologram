@@ -84,7 +84,6 @@ const RENDERER_DIR = path.join(appRoot, 'renderer').replace(/\\/g, '/');
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
   { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },
-  { find: 'corpus-viewer-bundle', replacement: path.join(appRoot, 'renderer', 'viewer.ts') },
   { find: /^corpus-svc:(.+)$/, replacement: `${RENDERER_DIR}/$1.ts` },
 ];
 
