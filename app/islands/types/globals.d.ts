@@ -447,20 +447,12 @@ declare global {
     onConfirmText(): void;
   }
 
-  // ---- island-registered globals (the islands themselves assign these) ----
-  interface CorpusSettings {
-    open(): void;
-    close(): void;
-    isOpen(): boolean;
-  }
+  // ---- renderer/settings.ts / renderer/lightbox.ts — real ES modules now (V18 §4),
+  // imported directly by their islands and by orchestrator.ts / the *-builder.ts
+  // modules — no ambient Window-shaped interface needed.
+
   // renderer/query-chips.ts — a real ES module (named exports: createQueryBuilder/
   // getModel/subscribe/dispatch) now, imported directly by query-chips/index.tsx.
-  interface CorpusLightbox {
-    open(items: any[], start?: number): void;
-    close(): void;
-    isOpen(): boolean;
-    setLabels(l: Record<string, string> | null | undefined): void;
-  }
 
   // ---- renderer/trash.ts — trash domain. A real ES module now; the Settings > Trash
   // island imports its commands directly, so no ambient interface is needed here. ----
@@ -481,17 +473,12 @@ declare global {
 
   interface Window {
     corpus: CorpusPreload;
-    corpusSettings: CorpusSettings;
-    corpusLightbox: CorpusLightbox;
     // vendor-react/index.ts assigns these; every island reaches React through
     // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
     React: typeof import('react');
     ReactDOM: typeof import('react-dom');
     ReactDOMClient: typeof import('react-dom/client');
     ReactJsxRuntime: typeof import('react/jsx-runtime');
-    // Pre-island stash (only the lightbox still replays one — the others load in the
-    // single bundle before viewer runs, so render() always reaches a live subscriber).
-    __corpusLbLabels?: Record<string, string>;
     JSZip?: any;
   }
 }

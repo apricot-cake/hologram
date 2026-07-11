@@ -9,7 +9,7 @@ import { t } from '../_shared/i18n.ts';
 // show as a page; with a query, every matching section is stacked and matches are
 // highlighted (faithful to the old setupSettingsView behavior). Reuses the
 // existing .settings-view / .section / .toc-item CSS from index.html.
-// The tiny open/closed store made in index.tsx (window.corpusSettings drives it).
+// The open/closed store lives in renderer/settings.ts; index.tsx wires it into this shape.
 export interface OpenStore {
   isOpen(): boolean;
   set(v: boolean): void;

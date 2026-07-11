@@ -20,8 +20,10 @@
 // elsewhere in viewer.ts — to keep calling into tab state.
 import { genTabId, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { cloneTree } from './listing.ts';
+import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
+import { isOpen as settingsIsOpen } from './settings.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 import { corpusTabsSource } from './tabs.ts';
 
@@ -145,8 +147,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function navAllowed() {
     if (deps.getBrowseMode() !== 'posts') return false; // history nav is post-view only (posters/collections excluded)
     if (isImageTab(activeTab())) return false; // image tabs have no filter history
-    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return false;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return false;
+    if (document.querySelector('.confirm-overlay.show') || lightboxIsOpen()) return false;
+    if (settingsIsOpen()) return false;
     if (!byId('ivFolderModal').hidden) return false;
     return true;
   }

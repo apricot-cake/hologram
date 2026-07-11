@@ -7,8 +7,7 @@
 // file's current name — left as-is. Renderer services are migrating off the
 // window.corpusX bridge to real ES modules one wave at a time; the ones
 // imported below are converted, the rest are still read via window.corpusX at
-// call time (corpusLightbox/corpusSettings remain — pending their own V18
-// island conversion).
+// call time.
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
@@ -29,7 +28,9 @@ import { listPostsDelta, importComplete, importPosts } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
+import { open as lightboxOpen, setLabels as lightboxSetLabels } from './lightbox.ts';
 import * as selection from './selection.ts';
+import { open as settingsOpen } from './settings.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
@@ -637,10 +638,7 @@ export let resetPosterFilters: () => void;
   // The brand-bar gear opens it; Esc / backdrop close are handled in the island.
   (function wireSettingsGear() {
     const btn = document.getElementById('settingsBtn');
-    if (btn)
-      btn.addEventListener('click', () => {
-        if (window.corpusSettings) window.corpusSettings.open();
-      });
+    if (btn) btn.addEventListener('click', settingsOpen);
   })();
 
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
@@ -911,15 +909,10 @@ export let resetPosterFilters: () => void;
   });
 
   // Image lightbox / gallery (captured screenshot + downloaded originals). The
-  // overlay UI lives in the React island (window.corpusLightbox); orchestrator.ts only
-  // resolves a post's gallery items below and hands them to open(). Labels are
-  // pushed once so the island can set the nav buttons' aria-labels. In dev the
-  // island is a deferred module that may not have loaded yet — stash for catch-up.
-  {
-    const lbLabels = { lbPrev: getMessage('lbPrev'), lbNext: getMessage('lbNext') };
-    if (window.corpusLightbox) window.corpusLightbox.setLabels(lbLabels);
-    else window.__corpusLbLabels = lbLabels;
-  }
+  // overlay UI lives in the React island (renderer/lightbox.ts + islands/lightbox);
+  // orchestrator.ts only resolves a post's gallery items below and hands them to
+  // open(). Labels are pushed once so the island can set the nav buttons' aria-labels.
+  lightboxSetLabels({ lbPrev: getMessage('lbPrev'), lbNext: getMessage('lbNext') });
 
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
   // scheme stays orchestrator-owned via the injected fileSrc.
@@ -949,14 +942,14 @@ export let resetPosterFilters: () => void;
         showDetail(g);
         return;
       }
-      window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
+      lightboxOpen(buildGroupGalleryItems(g), 0);
     }
   });
   byId('postGrid').addEventListener('dblclick', (e) => {
     const img = closestOf(e, '.card-img');
     if (!img || byId('postDetail').hidden) return;
     const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
-    if (g) window.corpusLightbox.open(buildGroupGalleryItems(g), 0);
+    if (g) lightboxOpen(buildGroupGalleryItems(g), 0);
   });
 
   // Middle-click an image → open the post as a background image tab

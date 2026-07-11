@@ -1,18 +1,9 @@
 import { useRef, useLayoutEffect } from 'react';
 import type { Ref } from 'react';
+import type { LightboxState } from '../../renderer/lightbox.ts';
 
-// Gallery slide list viewer.js builds (buildGalleryItems) and the open state the
-// index module owns.
-export interface LightboxItem {
-  src: string;
-  video?: boolean;
-  alt?: string;
-}
-export interface LightboxState {
-  items: LightboxItem[];
-  index: number;
-  open: boolean;
-}
+// Gallery slide list orchestrator.ts builds (buildGroupGalleryItems) and the open
+// state renderer/lightbox.ts owns.
 
 // One gallery slide (image or video) plus prev/next nav and the counter. The
 // slide-in animation restarts on every slide change by toggling .lb-in after a

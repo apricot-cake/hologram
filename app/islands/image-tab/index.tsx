@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { corpusImageTabSource } from '../../renderer/image-tab.ts';
+import { isOpen as lightboxIsOpen } from '../../renderer/lightbox.ts';
+import { isOpen as settingsIsOpen } from '../../renderer/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
 
 // React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object
@@ -37,8 +39,8 @@ document.addEventListener('keydown', (e) => {
   if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
-  if (window.corpusSettings && window.corpusSettings.isOpen()) return;
+  if (lightboxIsOpen()) return;
+  if (settingsIsOpen()) return;
   if (document.querySelector('.confirm-overlay.show')) return;
   const n = model.items.length;
   const d = e.key === 'ArrowLeft' ? -1 : 1;

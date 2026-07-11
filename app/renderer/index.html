@@ -2120,8 +2120,8 @@
        setupModalChrome (modal-open body class) keeps observing #confirmOverlay. -->
   <div class="confirm-overlay" id="confirmOverlay"></div>
 
-  <!-- Image lightbox / gallery — React island (window.corpusLightbox) owns the
-       overlay contents + show/multi classes; viewer.js feeds it gallery items. -->
+  <!-- Image lightbox / gallery — React island (renderer/lightbox.ts + islands/lightbox)
+       owns the overlay contents + show/multi classes; orchestrator.ts feeds it gallery items. -->
   <div class="lightbox-overlay" id="lightbox"></div>
 
   <!-- Edit tags overlay: bulk "add tags to selection" — React island (window.
@@ -2468,15 +2468,14 @@
        externalized) reach window.React/ReactDOM/… instead of each inlining its
        own ~186KB copy. Must precede the first island script. -->
   <script src="islands/vendor-react.js"></script>
-  <!-- All React islands, the renderer service layer, AND the viewer orchestrator in ONE
+  <!-- All React islands, the renderer service layer, AND the boot orchestrator in ONE
        IIFE bundle: islands/build.mjs builds the app/index.tsx barrel, which side-effect-
-       imports every service, every island, then (last) renderer/viewer.ts + shell.ts.
-       viewer owns data/state/event-delegation + the window.corpus* bridges; each island
-       subscribes and renders. Ordering is robust — viewer's body awaits corpusI18n so it
-       stays deferred behind the synchronous island mounts, and islands pull current
-       state / replay stashed models (e.g. lightbox nav labels fall back to
-       window.__corpusLbLabels). Shared code (masonic / react-aria / _shared/*) is
-       bundled once. -->
+       imports every service, every island, then (last) renderer/orchestrator.ts + shell.ts.
+       orchestrator.ts owns data/state/event-delegation + the remaining window.corpus*
+       bridges; each island subscribes and renders. Ordering is robust — orchestrator's
+       body awaits corpusI18n so it stays deferred behind the synchronous island mounts,
+       and islands pull current state on mount. Shared code (masonic / react-aria /
+       _shared/*) is bundled once. -->
   <script src="islands/app.js"></script>
 </body>
 </html>

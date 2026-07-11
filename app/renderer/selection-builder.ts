@@ -12,9 +12,11 @@
 // jumpToPoster/showToast forward-references in inspector-builder.ts.
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
+import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
 import { open as confirmOpen } from './confirm.ts';
+import { isOpen as settingsIsOpen } from './settings.ts';
 
 export interface SelectionBarDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -114,8 +116,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
+    if (document.querySelector('.confirm-overlay.show') || lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     if (deps.getBrowseMode() !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
     if (deps.getViewGroups().length === 0) return;

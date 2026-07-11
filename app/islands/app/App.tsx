@@ -346,7 +346,7 @@ export function App() {
       {/* Toolbar controls (search mode / density / browse / section titles / sort selects)
           — Toolbar portals each into its own container. */}
       <Toolbar />
-      {/* Settings modal (open/closed via window.corpusSettings; the gear in orchestrator opens it). */}
+      {/* Settings modal (open/closed via renderer/settings.ts; the gear in orchestrator opens it). */}
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>

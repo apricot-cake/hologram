@@ -14,7 +14,9 @@
 import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
+import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
+import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
 import { get as filterPopoverGet } from './filter-popover.ts';
@@ -332,8 +334,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (byId('postDetail').hidden && !inImageTab) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
+    if (lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     if (document.querySelector('.confirm-overlay.show')) return;
     if (document.querySelector('.fold-menu.show')) return;
