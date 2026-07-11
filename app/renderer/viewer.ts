@@ -34,6 +34,7 @@ import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-b
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder } from './post-grid-builder.ts';
+import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -2512,7 +2513,8 @@ import { corpusIpc } from './ipc.ts';
   // --- Poster grid (投稿者ビュー) ------------------------------------------
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
-  let posterList: CorpusUserAgg[] = [];
+  // posterList itself is now poster-grid-builder.ts-internal state (exposed via
+  // getPosterList) — V6/Wave20.
   // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in corpusStore
   // 'sortPoster' now (read via the listing dep getter above); a subscription below
   // re-renders on change, replacing the old #posterSortSelect DOM-'change' listener.
@@ -2628,38 +2630,70 @@ import { corpusIpc } from './ipc.ts';
     },
     { passive: true },
   );
-  let posterWorkGroups: any[] = []; // recent works shown in the poster inspector
-  // Per-poster tags (persisted poster-tags.json): { posterKey: [tag, …] }. Shares
-  // the post tag vocabulary but is keyed by poster, NOT stored on the posts.
-  // Owned by tags.js now (P4 "状態→store" tags slice) — posterTagsOf/
-  // posterFilterVocab/setPosterTags/applyPosterTagRecords moved to tags.js
-  // (corpusTags wiring above).
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
-  // --- Named poster folders (poster view) — { id, name, items:[posterKey] } ---
-  // Reuses the shared folder-list store (folders.js createPersistedFolderStore) so the
-  // CRUD/id-minting/toggle/persist/load logic isn't reimplemented; only the
-  // view-specific toast/re-render live here.
-  const pfStore = folders.corpusPosterFolderStore();
-  const posterFolderById = pfStore.byId;
-  const posterFolderHas = pfStore.has;
-  function createPosterFolder(name: string | null) {
-    return pfStore.create(name);
-  }
-  function deletePosterFolder(id: string) {
-    pfStore.remove(id);
-    posterQB.removeByLeaf('folder', id); // drop the filter leaf if its folder is gone
-  }
-  function togglePosterFolderMember(id: string, key: string) {
-    const res = pfStore.toggleIn(id, key);
-    if (!res) return false;
-    const f = posterFolderById(id);
-    showToast((res === 'removed' ? MSG.posterFolderRemoved : MSG.posterFolderAdded)(f?.name ?? ''));
-    renderPosterFilterRows(); // folder badge count changed
-    if (treeLeaves(posterQB.getTree()).some((c) => c.type === 'folder')) renderPosters(); // membership change may add/remove from the filtered grid
-    return res === 'added';
-  }
+  // Poster grid/filter/inspector/folder cluster (posterWorkGroups, the named
+  // poster-folder store, renderPosterFilterRows, renderPosters, openPosterPosts/
+  // jumpToPoster, the poster inspector, and the poster context menu) moved to
+  // poster-grid-builder.ts — viewer.ts decomposition's V6 slice (Wave20). Density/
+  // tile-size slider state (posterView etc.) stays here (V10/Wave24). Wired BEFORE
+  // posterQB below (posterQB's construction needs pfStore/posterFolderById from here
+  // as direct values, not deferred arrows) — posterQB itself is only available to
+  // this builder as deferred arrows (posterQBGetTree etc.), the mirror image.
+  const posterGrid = makePosterGridBuilder({
+    MSG,
+    PF_NAME,
+    fileSrc,
+    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    pushUndo,
+    showKindMenu,
+    buildGroupGalleryItems,
+    posterTagsOf,
+    posterFilterVocab,
+    inspectorTagPickerData,
+    filteredPosters,
+    buildUsers,
+    getAllPosts: postGrid.getAllPosts,
+    groupRecords: postGrid.groupRecords,
+    posterQBGetTree: () => posterQB.getTree(),
+    posterQBResetTree: () => posterQB.resetTree(),
+    posterQBRender: () => posterQB.render(),
+    posterQBRemoveByLeaf: (type, value) => posterQB.removeByLeaf(type, value),
+    posterQBRemoveCondsMatching: (pred) => posterQB.removeCondsMatching(pred),
+    posterQBSyncShadow: () => posterQB.syncShadow(),
+    postQBResetTree: () => postQB.resetTree(),
+    addFilter,
+    setSearchBoxValue: (v) => setSearchBoxValue(v), // makeSearchBox() is wired far below — deferred
+    setBrowseMode,
+    closeDetail,
+    setInspectedKey,
+    posterView: () => posterView,
+    refreshPosterSlider,
+    syncBrowseBar,
+    setPosterReturn: (key) => {
+      posterReturn = key;
+    },
+  });
+  const {
+    getPosterList,
+    pfStore,
+    posterFolderById,
+    posterFolderHas,
+    createPosterFolder,
+    deletePosterFolder,
+    togglePosterFolderMember,
+    renderPosterFilterRows,
+    resetPosterFilters,
+    renderPosters,
+    openPosterPosts,
+    jumpToPoster,
+    refreshPosterTagFields,
+    refreshPosterFolderFields,
+    applyPosterTagChange,
+    showPosterDetail,
+    showPosterMenu,
+  } = posterGrid;
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
@@ -2700,17 +2734,10 @@ import { corpusIpc } from './ipc.ts';
     folderById: posterFolderById,
   });
 
-  // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
-  // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
-  // row wears .qf-open) is self-derived now by renderer/sidebar.ts's
-  // corpusPosterSidebarSource (P4-B slice⑰) — no viewer-side build+push.
-  // Poster sidebar filter rows: prune tag selections that no longer have a backing value
-  // (poster removed/edited). The rows are React-owned; this is the ONE remaining side
-  // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
-  function renderPosterFilterRows() {
-    const present = new Set(posterFilterVocab());
-    if (posterQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
-  }
+  // renderPosterFilterRows (the #posterFilterRows model's one viewer-side side
+  // effect: pruning tag selections whose backing value disappeared) moved to
+  // poster-grid-builder.ts (V6/Wave20) along with the rest of the poster cluster —
+  // destructured from posterGrid above.
 
   // qf-pop (value flyout) + filter-popover (date/eng/poster-date-range) bridges —
   // viewer.ts decomposition's V4 slice (Wave18). Wired here (not where they're
@@ -2752,220 +2779,15 @@ import { corpusIpc } from './ipc.ts';
     posterRefresh: () => posterQB.refresh(),
   });
 
-  // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
-  // with getFilteredPosts above).
-  // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
-  // Poster query reset — the activebar island's #posterResetBtn calls this directly via
-  // window.corpusViewer.resetPosterFilters (P4-B slice⑱).
-  function resetPosterFilters() {
-    posterQB.resetTree();
-    setSearchBoxValue('');
-    renderPosters();
-  }
+  // resetPosterFilters/renderPosters/corpusPosterGridSource.configure/
+  // openPosterPosts/jumpToPoster/refreshPosterTagFields/refreshPosterFolderFields/
+  // applyPosterTagChange/showPosterDetail all moved to poster-grid-builder.ts
+  // (V6/Wave20) — destructured from posterGrid above.
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { resetPosterFilters });
-  function renderPosters(keepLimit?: boolean) {
-    const grid = byId('posterGrid');
-    const empty = byId('emptyState');
-    renderPosterFilterRows();
-    posterQB.render(); // draw the query bar (pills / groups) for the poster tree
-    posterList = filteredPosters();
-    // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
-    // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
-    // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
-    // する（P4-B slice⑱・下の corpusStore.set('posterGroups', …) を購読）。
-    syncBrowseBar();
-    // Density: the classes style the CELLS (descendant selectors); the column
-    // layout itself lives in the masonic model (pushPosterModel).
-    grid.classList.toggle('tile-view', posterView === 'tile');
-    grid.classList.toggle('list-view', posterView === 'list');
-    // (The #posterDensityToggle glass thumb is positioned by the toolbar island, not here.)
-    // Size slider: card + tile (auto-fill grids) have a size axis; list (full-width stack)
-    // doesn't. The track maps to column counts so every step reflows (no dead zones).
-    refreshPosterSlider();
-    if (posterList.length === 0) {
-      empty.style.display = 'block';
-      // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'
-      // vs 'filtered' choice (P4-B slice⑫ — mirrors slice⑩'s allPostsCount). Only
-      // computed here (buildUsers() is the generation-cached poster roll-up — the
-      // OLD code only ever called it in this branch too, so this preserves the
-      // same laziness, not a new cost).
-      storeSet('allUsersCount', buildUsers().length);
-      storeSet('posterGroups', posterList); // [] — React renders an empty grid (no cards)
-      return;
-    }
-    empty.style.display = 'none';
-    grid.classList.toggle('anim-in', !keepLimit && !prefersReducedMotion());
-    storeSet('posterGroups', posterList);
-    // With windowing, cells keep MOUNTING while the user scrolls — drop the
-    // entrance class once the initial animation has played, or every late
-    // cell would replay it mid-scroll (same wiring as the post grid).
-    clearTimeout(_posterAnimT);
-    if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
-  }
-  let _posterAnimT: any = null;
-  // React owns the poster cells (virtualized — corpusPosterGridSource,
-  // P4-B slice⑫); viewer.js keeps posterList, the count badge, the density
-  // classes, and #posterGrid's click/contextmenu delegation. The inspected
-  // highlight is NOT part of this model — the island derives its own ring from
-  // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
-  // item's `.key`. modelOf/keyOf/tagTitle/infoTitle never change identity
-  // meaningfully between renders, so they're configured ONCE (mirrors the post
-  // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
-  corpusPosterGridSource.configure({
-    modelOf: (u, i) => {
-      const hasName = !!u.displayName;
-      const s = (u.displayName || u.screenName || '').trim();
-      return {
-        index: i,
-        avatarSrc: u.avatarFile ? fileSrc(u.avatarFile) : null,
-        monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
-        name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
-        handle: hasName && u.screenName ? u.screenName : null,
-        platform: u.platform || null,
-        pfName: u.platform ? PF_NAME[u.platform] || u.platform : null,
-        countLabel: MSG.posterPosts(formatCount(u.count)),
-      };
-    },
-    keyOf: (u, i) => (u && u.key != null ? 'p:' + u.key : i),
-    tagTitle: MSG.tipTagEdit,
-    infoTitle: MSG.tipInfo,
-  });
-  // Jump from a poster to its posts: posts mode + a single user filter for it.
-  // We want ONLY this poster's posts, so drop every post filter carried over from
-  // the prior posts view (tags/date/media/search/engagement) — not just a previous
-  // user filter — otherwise unrelated leftover filters AND-narrow the result and
-  // hide posts the user expects to see.
-  function openPosterPosts(u: CorpusUserAgg) {
-    if (!u) return;
-    postQB.resetTree();
-    const set = (id: string, v: string) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) el.value = v;
-    };
-    setSearchBoxValue('');
-    set('sbDateFrom', '');
-    set('sbDateTo', '');
-    set('sbEngMin', '');
-    setBrowseMode('posts');
-    addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
-    posterReturn = u.key; // set LAST (setBrowseMode clears it): reset returns to posters while this user filter is active
-  }
-  // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster
-  // view and open that poster's inspector. Only SNS posts have a poster in buildUsers()
-  // (url-less Eagle migrations don't), so callers guard on existence before offering it.
-  function jumpToPoster(p: CorpusPost) {
-    if (!p || !p.url) return;
-    const u = buildUsers().find((x) => x.key === userKey(p));
-    if (!u) return;
-    setBrowseMode('posters'); // clears any stale detail, then we open the poster's
-    showPosterDetail(u);
-  }
-  // --- Poster inspector inline tag editor ---
-  // Mirrors the post inspector's tag editor, but the source of truth is posterTags[key]
-  // (NOT a post's tags), persisted to poster-tags.json. Posters carry no source (pixiv/
-  // SNS) tags, so the picker is fed recordsForSource:[]. The UI shows whenever the
-  // poster inspector is open (no tagging-edit gate — there is no poster tagging mode).
-  function refreshPosterTagFields(key: string) {
-    inspectorRefresh({ tags: posterTagsOf(key), ...inspectorTagPickerData(posterTagsOf(key), [], 'poster') });
-  }
-  function refreshPosterFolderFields(key: string) {
-    inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
-  }
-  // Apply a tag mutation to a poster, persist, and refresh the inspector tag fields
-  // (input keeps focus and the picker keeps its scroll — same openId, no remount).
-  // Records the change on the shared undo stack (type 'poster-tags') so Ctrl+Z works
-  // the same as for posts.
-  function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
-    if (!key) return;
-    const prev = posterTagsOf(key);
-    const next = mutate(prev.slice());
-    if (!next) return;
-    const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
-    if (!changed) return;
-    pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
-    setPosterTags(key, next.length ? next : null);
-    refreshPosterTagFields(key);
-  }
-  function showPosterDetail(u: CorpusUserAgg, opts?: { focusTag?: boolean }) {
-    if (!u) return;
-    const pfName = u.platform ? PF_NAME[u.platform] || u.platform : '';
-    const avatarSrc = u.avatarFile ? fileSrc(u.avatarFile) : null;
-    const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
-    // Recent works: group this poster's posts (newest first) and preview the lead
-    // image of each. Click → open that work in the gallery (over the inspector).
-    posterWorkGroups = postGrid.groupRecords(postGrid.getAllPosts().filter((p) => userKey(p) === u.key))
-      .sort((a, b) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
-      .slice(0, 6);
-    const works = posterWorkGroups
-      .map((g) => {
-        const f = (g.files && g.files[0]) || captureFile(g.rep);
-        return f ? { thumbSrc: fileSrc(f, 200), onClick: () => window.corpusLightbox.open(buildGroupGalleryItems(g), 0) } : null;
-      })
-      .filter(Boolean);
-    const tags = posterTagsOf(u.key);
-    inspectorOpen({
-      kind: 'poster',
-      avatarSrc,
-      name,
-      screenNameLabel: u.screenName ? '@' + u.screenName : '',
-      platformLabel: pfName,
-      postsLabel: formatCount(u.count),
-      followersLabel: u.followers != null ? formatCount(u.followers) : '',
-      joinedLabel: localeDate(u.authorCreatedAt),
-      works,
-      tags,
-      ...inspectorTagPickerData(tags, [], 'poster'),
-      folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
-      autoFocusTag: !!(opts && opts.focusTag),
-      labels: {
-        user: MSG.detailUser,
-        platform: MSG.detailPlatform,
-        posts: MSG.detailPosts,
-        followers: MSG.detailFollowers,
-        joined: MSG.detailJoined,
-        posterFolders: MSG.ivPosterFolders,
-        newFolderPlaceholder: MSG.posterFolderNewPlaceholder,
-        posterViewPosts: MSG.posterViewPosts,
-      },
-      tagLabels: {
-        tagsLabel: MSG.ivPosterTags,
-        newTagPlaceholder: MSG.tagNewName,
-        addBtn: MSG.tagAddBtn,
-        noTags: MSG.editNoTags,
-        noMatch: MSG.tagPalNoMatch,
-        noVocab: MSG.tagNoTags,
-        adoptSource: MSG.editAdoptSource,
-      },
-      onClose: closeDetail,
-      onPosterPosts: () => openPosterPosts(u),
-      onFolderToggle: (id: string) => {
-        togglePosterFolderMember(id, u.key);
-        refreshPosterFolderFields(u.key);
-      },
-      onFolderCreate: () => {
-        const name = window.prompt(MSG.posterFolderRenamePrompt, '');
-        if (name && name.trim()) {
-          const nf = createPosterFolder(name);
-          if (nf) {
-            togglePosterFolderMember(nf.id, u.key);
-            showPosterDetail(u);
-          }
-        }
-      },
-      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
-      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
-      onTagContextMenu: (tag: string, x: number, y: number) => {
-        showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
-      },
-    });
-    byId('postDetail').hidden = false;
-    setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (corpusStore subscribe)
-  }
   byId('posterGrid').addEventListener('click', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
-    const u = posterList[Number.parseInt(card.dataset.index ?? '', 10)];
+    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (!u) return;
     // ℹ opens the inspector (shared idiom with post cards' .info-btn); re-click the
     // inspected poster's ℹ toggles it closed.
@@ -2985,46 +2807,13 @@ import { corpusIpc } from './ipc.ts';
     // A plain card click drills into that poster's posts (posts mode + user filter).
     openPosterPosts(u);
   });
-  // Poster context menu (right-click a card): assign to poster folders + quick actions,
-  // so folder membership no longer requires opening the inspector. Reuses the shared
-  // .fold-menu chrome + clampIntoView; folder rows toggle in place (menu stays open).
-  // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
-  // poster-folders (toggle, stays open). React-owned glass popup via
-  // menu.ts; viewer owns the items + actions here.
-  function posterMenuItems(u: CorpusUserAgg) {
-    const items = [{ label: MSG.posterViewPosts, act: 'posts' }, { sep: true }] as CorpusMenuItem[];
-    for (const f of pfStore.all()) {
-      items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
-    }
-    items.push({ label: MSG.posterMenuNewFolder, act: 'newfolder', manage: true });
-    return items;
-  }
-  function onPosterMenuPick(u: CorpusUserAgg, item: CorpusMenuItem) {
-    if (item.act === 'posts') {
-      openPosterPosts(u);
-      return;
-    } // close
-    if (item.act === 'newfolder') {
-      const name = window.prompt(MSG.posterFolderRenamePrompt, '');
-      if (name && name.trim()) {
-        const nf = createPosterFolder(name);
-        if (nf) togglePosterFolderMember(nf.id, u.key);
-      }
-      return; // close
-    }
-    if (item.act === 'folder') {
-      togglePosterFolderMember(item.fid, u.key);
-      return posterMenuItems(u); // keep open to assign more
-    }
-  }
-  function showPosterMenu(u: CorpusUserAgg, x: number, y: number) {
-    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
-  }
+  // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts
+  // (V6/Wave20) — destructured (showPosterMenu) from posterGrid above.
   byId('posterGrid').addEventListener('contextmenu', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
     e.preventDefault();
-    const u = posterList[Number.parseInt(card.dataset.index ?? '', 10)];
+    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
   // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the GlassSelect
