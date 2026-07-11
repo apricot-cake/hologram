@@ -14,7 +14,6 @@ import { makeSearchEditing } from './search-editing.ts';
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { open as kindMenuOpen } from './kind-menu.ts';
 import { open as menuOpen } from './menu.ts';
 import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
 import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-pop.ts';
@@ -23,7 +22,7 @@ import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { init as initSearchBox } from './searchbox.ts';
 import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setKindLabel as tagsSetKindLabel, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
@@ -33,6 +32,7 @@ import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
+import { makeKindMenu } from './kind-menu-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -605,6 +605,12 @@ import { corpusIpc } from './ipc.ts';
   // implementation to drift.
   bindTagKindOf(tagKindOf);
   bindPosterFilterVocab(posterFilterVocab);
+  // Shared 種別 (kind) menu (right-click a tag chip in the edit picker /
+  // inspector / poster picker) — row model + pick/rename actions moved to
+  // kind-menu-builder.ts (V2 viewer.ts decomposition slice). Wired here (not
+  // where it's first used) so tagKindOf/kindLabel/MSG are all already in
+  // scope — no TDZ workaround needed, unlike the old taggingApi indirection.
+  const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, MSG });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
   // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
@@ -966,16 +972,9 @@ import { corpusIpc } from './ipc.ts';
   // renderer/sidebar.ts's sources now (corpusTags.onChange / posts-data.ts's subscribe
   // — P4-B slice⑰), so a 種別 rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
-  // read kindLabel() live too.
-  // Mutation + persistence live in tags.js (setTagKind/setKindLabel); these wrappers
-  // existed for the view-specific sidebar re-derive/re-push, now unnecessary.
-  async function setTagKind(tag: string, kind: string | null) {
-    await tagsSetTagKind(tag, kind);
-  }
-  // Rename a 種別 (work/character) globally; blank resets to the built-in label.
-  async function setKindLabel(kind: string, label: string | null | undefined) {
-    await tagsSetKindLabel(kind, label);
-  }
+  // read kindLabel() live too. Mutation + persistence for the kind menu itself
+  // live in kind-menu-builder.ts now (V2 slice); tagsSetTagKind below is only
+  // for maybeDistinguishHomonym's own direct write.
   const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
@@ -1121,7 +1120,6 @@ import { corpusIpc } from './ipc.ts';
   }
   storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
   let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
-  let taggingApi: any = null; // shared 種別 (kind) menu API; set by showKindMenu() below
   // Column / slider-track / thumbnail-bucket math lives in geometry.ts now (imported above).
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
   const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
@@ -2440,40 +2438,6 @@ import { corpusIpc } from './ipc.ts';
     showToast(MSG.deleted);
   }
 
-  // === Shared 種別 (kind) menu: right-click a tag chip (edit picker / inspector /
-  // poster) to classify it 作品/キャラ/一般. A tag's 種別 is the TAG's own attribute
-  // (no post is touched), surfaced as a quiet 段階的開示 entry inside tag editing.
-  // Rendering lives in the kind-menu React island (dedicated component — a row's
-  // pick target and its rename button are two independent click targets, which the
-  // generic ContextMenu item shape has no room for); this only builds the row model
-  // and runs the pick/rename actions via kind-menu.ts. ===
-  function showKindMenu(tag: string, x: number, y: number, onChanged?: (() => void) | null) {
-    const cur = tagKindOf(tag);
-    // The work/character pair carries a quiet ✎ to rename the 種別 globally
-    // (段階的開示: only here, in the tag-management kind menu).
-    const row = (k: string, label: string) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
-    kindMenuOpen({
-      x,
-      y,
-      header: MSG.tagKindHeader,
-      renameTitle: MSG.tagKindRename,
-      rows: [row('work', kindLabel('work')), row('character', kindLabel('character')), { sep: true }, row('', MSG.kindGeneral)],
-      async onPick(kind) {
-        if ((tagKindOf(tag) || '') === kind) return; // already that kind — no write
-        await setTagKind(tag, kind);
-        if (onChanged) onChanged();
-        showToast(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
-      },
-      async onRename(kind) {
-        const next = window.prompt(MSG.tagKindRenamePrompt, kindLabel(kind));
-        if (next === null) return; // cancelled (empty string = reset to default)
-        await setKindLabel(kind, next);
-        if (onChanged) onChanged();
-        showToast(MSG.tagKindRenamed);
-      },
-    });
-  }
-  taggingApi = { showKindMenu };
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
@@ -2696,12 +2660,10 @@ import { corpusIpc } from './ipc.ts';
       onTagRemove: (tag: string) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
       onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        if (taggingApi && taggingApi.showKindMenu) {
-          taggingApi.showKindMenu(tag, x, y, () => {
-            const g2 = viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey);
-            if (g2) refreshInspectorTagFields(g2);
-          });
-        }
+        showKindMenu(tag, x, y, () => {
+          const g2 = viewGroups.find((gg) => postIdKey(gg.rep) === inspectedKey);
+          if (g2) refreshInspectorTagFields(g2);
+        });
       },
     });
     byId('postDetail').hidden = false;
@@ -2926,7 +2888,7 @@ import { corpusIpc } from './ipc.ts';
         refreshEditOverlayFields();
       },
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, refreshEditOverlayFields);
+        showKindMenu(tag, x, y, refreshEditOverlayFields);
       },
       onSave: async () => {
         const editingRecords = getRecords();
@@ -3544,7 +3506,7 @@ import { corpusIpc } from './ipc.ts';
       onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
       onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        if (taggingApi && taggingApi.showKindMenu) taggingApi.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
+        showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
     });
     byId('postDetail').hidden = false;
