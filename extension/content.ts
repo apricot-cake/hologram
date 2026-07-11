@@ -5,7 +5,7 @@
 (async () => {
   // --- i18n ---
   // i18n.js is injected alongside this script (see background.js → executeScript).
-  const { getMessage } = await window.corpusI18n;
+  const { getMessage, partialSaveText } = await window.corpusI18n;
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
@@ -413,7 +413,7 @@
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain
         // success (otherwise the save looks like a silent no-op in the grid).
-        text = partial ? MSG.savedNoMeta : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
+        text = partial ? partialSaveText(msg.metaReason) : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
       setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
       if (msg.success && !partial && !G.REDUCED_MOTION) {

@@ -90,6 +90,12 @@ interface PostRecord {
   replyToId: string | null;
   hashtags: string[];
   tags: string[];
+  // WHY the platform API returned no post info ('protected' | 'ageRestricted'
+  // | 'unavailable' | 'fetchFailed'), or null when the fetch succeeded.
+  // Transient: read by background.js to pick the partial-save banner wording
+  // (and to not count a URL-derived screenName as "metadata fetched");
+  // buildRecord() copies explicit fields only, so it never reaches the sidecar.
+  metaError: string | null;
 }
 
 function emptyRecord(url: string | null | undefined, platform: string | null | undefined): PostRecord {
@@ -129,6 +135,7 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     replyToId: null,
     hashtags: [],
     tags: [],
+    metaError: null,
   };
 }
 
@@ -141,6 +148,25 @@ function toIso(s) {
 // --- X / Twitter (syndication) ---
 function xToken(id) {
   return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
+}
+
+// Post date decoded from the tweet id itself (snowflake: ms since the Twitter
+// epoch in the bits above 22). Exact, not fabricated — it survives when the
+// syndication API returns nothing (protected account / age gate / deleted).
+// Pre-snowflake ids (sequential, < ~3e10, before 2010-11-04) don't encode a
+// time; the > 4e10 guard rejects them, and the upper bound rejects garbage
+// that would decode into the future.
+const X_EPOCH_MS = 1288834974657n;
+function xSnowflakeDate(id) {
+  try {
+    const n = BigInt(String(id));
+    if (n <= 40000000000n) return null;
+    const ms = Number((n >> 22n) + X_EPOCH_MS);
+    if (ms > Date.now() + 60000) return null;
+    return new Date(ms).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 function xMediaType(details) {
@@ -176,8 +202,21 @@ async function fetchXTweet(parsed, url) {
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
     const res = await fetch(api);
-    if (!res.ok) return rec;
+    if (!res.ok) {
+      rec.metaError = 'unavailable';
+      rec.date = xSnowflakeDate(parsed.id);
+      return rec;
+    }
     const j = await res.json();
+    // A tombstone means the post exists but the public API won't serve it
+    // (protected account / age-restricted). Classify from the tombstone text so
+    // the partial-save banner can say WHY the post info is missing.
+    if (j && j.__typename === 'TweetTombstone') {
+      const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
+      rec.metaError = /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
+      rec.date = xSnowflakeDate(parsed.id);
+      return rec;
+    }
     rec.text = j.text || null;
     if (j.user) {
       rec.displayName = j.user.name || null;
@@ -217,7 +256,10 @@ async function fetchXTweet(parsed, url) {
     }
   } catch {
     // network/parse failure — keep what we have (URL + screenName)
+    rec.metaError = 'fetchFailed';
   }
+  // The id encodes the post time even when the API gave us nothing.
+  if (!rec.date) rec.date = xSnowflakeDate(parsed.id);
   return rec;
 }
 
@@ -683,6 +725,7 @@ if (typeof module !== 'undefined' && module.exports) {
     fetchMisskeyNote,
     fetchPixivIllust,
     xToken,
+    xSnowflakeDate,
     xMedia,
     bskyMedia,
     misskeyMedia,

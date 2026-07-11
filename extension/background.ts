@@ -165,7 +165,7 @@ async function captureAndSave(tab, rect, postUrl, sendPlatform) {
   // grouped = prior saves of this post this session → the banner says the save
   // merged with them (the app folds same-URL records into one card).
   const grouped = await bumpRecentSave(record.url);
-  notify(tab.id, true, { metaOk, grouped });
+  notify(tab.id, true, { metaOk, metaReason: meta.metaError || null, grouped });
 }
 
 // Build the sidecar record shared by both save paths. The click path adds image +
@@ -371,8 +371,13 @@ function stashLogLocally(entry) {
 // field. An empty record (fetch failed / API down / unparseable URL) has null
 // author/date/text and no media — the screenshot still saved, but the user
 // should be told the post info is missing rather than seeing a plain success.
+// metaError is authoritative when set: screenName is parsed from the URL and
+// date can be decoded from an X snowflake id, so both can be present on a
+// record whose API fetch returned nothing (a protected X account looked like
+// a full success via its URL-derived screenName — 2026-07-12).
 function metaFetched(meta) {
-  return !!(meta && (meta.screenName || meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length)));
+  if (!meta || meta.metaError) return false;
+  return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
 }
 
 function generateCaptureId() {
@@ -471,7 +476,7 @@ async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls) {
   // saved without post info isn't shown as a plain success. grouped = prior
   // saves of this post this session (the overlay says the save merged).
   const grouped = await bumpRecentSave(record.url);
-  return { ...ack, metaOk, grouped };
+  return { ...ack, metaOk, metaReason: meta.metaError || null, grouped };
 }
 
 // Choose which original to save for a dragged image, preferring the platform

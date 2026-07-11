@@ -7,6 +7,8 @@ interface CorpusI18nApi {
   lang: string;
   resolved: string;
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
+  // Partial-save banner/toast wording, reason-specific when metaReason is set.
+  partialSaveText: (reason?: string | null) => string;
 }
 
 // Shared dark-glass visual vocabulary for on-page UI (see glass-ui.ts).

@@ -49,9 +49,11 @@
   // key — overlay text is only set at drag time, long after page load, so the
   // table is populated by the time it's read in practice.
   let t: (key: string, subs?: ReadonlyArray<unknown>) => string = (key) => key;
+  let partialSaveText: (reason?: string | null) => string = () => t('bannerSavedNoMeta');
   if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
     window.corpusI18n.then((api) => {
       if (api && api.getMessage) t = api.getMessage;
+      if (api && api.partialSaveText) partialSaveText = api.partialSaveText;
     });
   }
 
@@ -260,7 +262,7 @@
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
       const text = partial
-        ? t('bannerSavedNoMeta')
+        ? partialSaveText(res.metaReason)
         : grouped
           ? t('bannerSavedGrouped', [res.grouped + 1])
           : ok

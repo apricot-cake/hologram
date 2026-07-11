@@ -22,6 +22,9 @@
       // records into ONE stacked card, so nothing "new" appears in the grid.
       bannerSavedGrouped: '保存しました — さっきの画像とグループ化されます（$1枚目）',
       bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
+      // Reason-specific partial-save wording (metaReason from background.js).
+      bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
+      bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
       bannerFailed: '保存に失敗しました',
       // $1 = reason. Shown when a save fails with a known cause, so the banner
       // says WHY instead of a bare "failed".
@@ -43,6 +46,8 @@
       bannerSaved: 'Image saved',
       bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
       bannerSavedNoMeta: 'Saved (post info unavailable)',
+      bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
+      bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',
       bannerFailed: 'Save failed',
       bannerFailedReason: 'Save failed: $1',
       reasonNoPermalink: 'could not find the post link',
@@ -61,7 +66,7 @@
     const resolved = navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
     const table = MESSAGES[resolved] || MESSAGES.en;
 
-    const getMessage = (key, subs) => {
+    const getMessage = (key, subs?) => {
       let text = table[key];
       if (text == null) return key;
       if (subs && subs.length) {
@@ -72,6 +77,11 @@
       return text;
     };
 
-    return { lang: resolved, resolved, getMessage };
+    // Partial-save wording: pick the reason-specific string when the
+    // background classified WHY the post info is missing (metaReason), fall
+    // back to the generic one for unclassified failures.
+    const partialSaveText = (reason) => getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta');
+
+    return { lang: resolved, resolved, getMessage, partialSaveText };
   })();
 })();
