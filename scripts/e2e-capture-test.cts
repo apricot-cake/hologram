@@ -157,11 +157,12 @@ async function pickBluesky(cells) {
     };
     const isQuote = (p) => ((p.embed && p.embed.$type) || '').includes('app.bsky.embed.record');
     const isReply = (p) => !!(p.record && p.record.reply);
-    const parentDid = (p) => {
-      const u = p.record && p.record.reply && p.record.reply.parent && p.record.reply.parent.uri;
-      const m = u && u.match(/^at:\/\/(did:[^/]+)\//);
+    const refDid = (ref) => {
+      const m = ref && ref.uri && ref.uri.match(/^at:\/\/(did:[^/]+)\//);
       return m ? m[1] : null;
     };
+    const parentDid = (p) => refDid(p.record && p.record.reply && p.record.reply.parent);
+    const rootDid = (p) => refDid(p.record && p.record.reply && p.record.reply.root);
     // The thread/quote detail page renders several postThreadItem nodes (parents
     // above, replies below). Target the anchor post by its AUTHOR handle so a
     // reply isn't confused with its parent. (testid = postThreadItem-by-<handle>)
@@ -169,9 +170,12 @@ async function pickBluesky(cells) {
     const single = posts.find((p) => urlOf(p) && imgs(p).length === 1 && !isReply(p) && !isQuote(p));
     const multi = posts.find((p) => urlOf(p) && imgs(p).length > 1 && !isReply(p));
     const quote = posts.find((p) => urlOf(p) && isQuote(p) && !isReply(p));
-    // reply BY a different author than its parent, so the anchor post's testid is
-    // unique on the page (a self-thread would share the handle with the parent).
-    const reply = posts.find((p) => urlOf(p) && isReply(p) && parentDid(p) && parentDid(p) !== p.author.did);
+    // reply BY a different author than its parent AND the thread root, so the
+    // anchor post's testid is unique on the page (the runner clicks the first
+    // postThreadItem-by-<handle> match; a same-author root above the reply
+    // would be clicked instead — that exact miss happened with a bsky.app
+    // reply whose thread root was also bsky.app).
+    const reply = posts.find((p) => urlOf(p) && isReply(p) && parentDid(p) && parentDid(p) !== p.author.did && rootDid(p) && rootDid(p) !== p.author.did);
     const IMG = '[data-testid^="postThreadItem-by-"] img[src*="/img/feed_"]';
     if (single) cells.push({ id: 'A-2b', platform: 'bluesky', url: urlOf(single), kind: 'click', waitSel: sel(single), clickSel: sel(single) });
     if (multi) cells.push({ id: 'A-2g', platform: 'bluesky', url: urlOf(multi), kind: 'click', waitSel: sel(multi), clickSel: sel(multi) });
@@ -437,7 +441,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
             try {
-              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'site-detect.js', 'content.js'] });
+              await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'glass-ui.js', 'site-detect.js', 'content.js'] });
               return { ok: true, url: tab.url };
             } catch (e) {
               return { ok: false, url: tab.url, err: String(e) };
