@@ -23,7 +23,7 @@ import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, group
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
-import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
+import { listPostsDelta, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -35,6 +35,7 @@ import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
+import { makeSelectionBar } from './selection-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -1800,48 +1801,11 @@ import { corpusIpc } from './ipc.ts';
   // state (accent icon) via the model. The click that flips it is handled by the
   // delegated #filterRows listener.
 
-  // Toggle a card in/out of the selection; Shift additionally selects the range
-  // from the last-selected card (anchor), Google-Photos style.
-  function toggleCardSelection(card: HTMLElement, shiftKey: boolean) {
-    const idx = Number.parseInt(card.dataset.index ?? '', 10);
-    const key = card.dataset.key as string;
-    selection.toggle(idx, key, shiftKey, postGrid.getViewGroups(), postIdKey);
-    syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
-    updateSelectionBar();
-  }
-  // Toggle .selecting on the grid container (viewer-owned, static). Per-card
-  // .selected is no longer pushed through here — the grid island's Cell reads
-  // corpusStore's 'selectedSet' directly (selection.toggle already
-  // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
-  function syncSelectionClasses() {
-    byId('postGrid').classList.toggle('selecting', selection.size() > 0);
-  }
-
-  // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
-  // Clicking the card body does not select while nothing is selected yet.
-  byId('postGrid').addEventListener('click', (e) => {
-    const ring = closestOf(e, '.select-check');
-    if (!ring) return;
-    e.stopPropagation();
-    const card = ring.closest('.post-card') as HTMLElement | null;
-    if (card) toggleCardSelection(card, e.shiftKey);
-  });
-
-  // Selection mode (≥1 selected): a click ANYWHERE on a card toggles it.
-  // Capture phase so it pre-empts every other card action (gallery, text
-  // expand, ℹ/edit/delete/📁/open) until the selection is cleared.
-  byId('postGrid').addEventListener(
-    'click',
-    (e) => {
-      if (selection.size() === 0) return;
-      const card = closestOf(e, '.post-card');
-      if (!card) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleCardSelection(card, e.shiftKey);
-    },
-    true,
-  );
+  // toggleCardSelection/syncSelectionClasses/selectedRecords/clearSelection/
+  // updateSelectionBar/groupSelected/toggleSelectAll/handleShortcutSelectAllKey/
+  // requestDeleteSelected/handleSelectionBarClick moved to selection-builder.ts —
+  // viewer.ts decomposition's V8 slice (Wave22). Constructed below, after the
+  // inspector (needs its persistManual) — see selectionCtl.
 
   // requestDeleteGroup/executeDeleteGroup moved to post-grid-builder.ts (postGrid above).
 
@@ -1880,6 +1844,54 @@ import { corpusIpc } from './ipc.ts';
   });
   const { closeDetail, showDetail, persistManual, handleEscDismissDetail, handleOutsideClickDismissDetail } = inspector;
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleEscDismissDetail, handleOutsideClickDismissDetail });
+
+  // === Selection (click a card to select; the bar appears when 1+ are selected) ===
+  // groupSelected needs inspector's persistManual, so this is constructed here
+  // (after inspector above), not at the cluster's original spot.
+  const selectionCtl = makeSelectionBar({
+    MSG,
+    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    getViewGroups: postGrid.getViewGroups,
+    getManualGroups: postGrid.getManualGroups,
+    setManualGroups: postGrid.setManualGroups,
+    markPostsMutated,
+    renderPosts,
+    loadPosts,
+    persistManual,
+    showFoldMenu,
+    // openTagSelectedOverlay (bulk-edit.ts, edit-overlay.ts consumer) is declared
+    // far below — deferred, V9/Wave23 territory (not yet extracted).
+    openTagSelectedOverlay: () => openTagSelectedOverlay(),
+    getBrowseMode: () => browseMode, // viewer.ts `let`, read live
+  });
+  const { toggleCardSelection, selectedRecords, handleShortcutSelectAllKey } = selectionCtl;
+  // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
+  // Clicking the card body does not select while nothing is selected yet.
+  byId('postGrid').addEventListener('click', (e) => {
+    const ring = closestOf(e, '.select-check');
+    if (!ring) return;
+    e.stopPropagation();
+    const card = ring.closest('.post-card') as HTMLElement | null;
+    if (card) toggleCardSelection(card, e.shiftKey);
+  });
+  // Selection mode (≥1 selected): a click ANYWHERE on a card toggles it.
+  // Capture phase so it pre-empts every other card action (gallery, text
+  // expand, ℹ/edit/delete/📁/open) until the selection is cleared.
+  byId('postGrid').addEventListener(
+    'click',
+    (e) => {
+      if (selection.size() === 0) return;
+      const card = closestOf(e, '.post-card');
+      if (!card) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCardSelection(card, e.shiftKey);
+    },
+    true,
+  );
+  byId('selectionBar').addEventListener('click', selectionCtl.handleSelectionBarClick);
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey });
+
   // ℹ button on card → detail popup (re-click same card toggles close)
   byId('postGrid').addEventListener('click', (e) => {
     const btn = closestOf(e, '.info-btn');
@@ -1938,53 +1950,9 @@ import { corpusIpc } from './ipc.ts';
   });
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
-  // #selectionBar buttons + count are React-owned now — the selection-bar island derives
-  // its own model straight from corpusStore's 'selectedSet' (P4-B slice⑱, reusing
-  // corpusSelection's isAllSelected/selectedGroups; no more viewer-pushed model). viewer
-  // keeps the container (show/hide) and this ONE delegated click handler that dispatches
-  // by data-act — the island reproduces the button IDs so scripts/_verify-select.js's
-  // getElementById(...).click() still bubbles here.
-  const selectionBar = byId('selectionBar');
-  selectionBar.addEventListener('click', (e) => {
-    const btn = closestOf(e, '[data-act]');
-    if (!btn) return;
-    switch (btn.dataset.act) {
-      case 'selectAll':
-        toggleSelectAll();
-        break;
-      case 'tag':
-        openTagSelectedOverlay();
-        break;
-      case 'folder': {
-        // フォルダに追加: open the folder picker for the whole selection (no default
-        // folder anymore — you choose the destination, same as a card's 📁).
-        if (!CF()) return;
-        e.stopPropagation(); // don't let the document outside-click handler close the menu we're opening
-        const recs = selectedRecords();
-        const ids = recs.map((r) => r.captureId).filter(Boolean);
-        if (!ids.length) return;
-        const r = btn.getBoundingClientRect();
-        // Synthetic stand-in group (no real key/files — showFoldMenu's callees only
-        // read .rep.captureId and .records for this bulk "add selection to folder" path).
-        showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as CorpusPostGroup, r.left, r.bottom + 4);
-        break;
-      }
-      case 'group':
-        groupSelected();
-        break;
-      case 'delete':
-        requestDeleteSelected();
-        break;
-      case 'cancel':
-        clearSelection();
-        break;
-    }
-  });
-
-  // Every record of every selected group (bulk actions operate on records).
-  function selectedRecords() {
-    return selection.selectedRecords(postGrid.getViewGroups(), postIdKey);
-  }
+  // Wiring (selectionCtl, its listeners, toggleCardSelection/selectedRecords/
+  // clearSelection/handleShortcutSelectAllKey) moved up next to the inspector —
+  // see the V8/Wave22 comment there.
 
   // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
   // merged into each selected record's existing tags (nothing is replaced).
@@ -2058,64 +2026,6 @@ import { corpusIpc } from './ipc.ts';
     byId('editOverlay').classList.add('show');
   }
 
-  function clearSelection() {
-    selection.clear();
-    syncSelectionClasses(); // class-only (callers that change content re-render themselves)
-    updateSelectionBar();
-  }
-
-  // #selectionBar's container show/hide — the ONE thing that stays viewer's (container
-  // chrome). The buttons/count/labels are self-derived by the selection-bar island
-  // straight from corpusStore's 'selectedSet' + 'postGroups' (P4-B slice⑱) — every
-  // selection.ts mutation site still calls this to keep the container's
-  // visibility in sync (the island re-renders on its own via the store subscription).
-  function updateSelectionBar() {
-    selectionBar.style.display = selection.size() > 0 ? '' : 'none';
-  }
-
-  // Manual grouping: merge every record of the selected cards into one persisted
-  // group (manual-groups.json). Members are first removed from any existing
-  // manual group so a record never belongs to two groups.
-  function groupSelected() {
-    const members = selection.selectedGroups(postGrid.getViewGroups(), postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
-    if (members.length < 2) return;
-    const nextGroups = postGrid.getManualGroups().map((grp) => grp.filter((c) => !members.includes(c))).filter((grp) => grp.length > 1);
-    nextGroups.push(members);
-    postGrid.setManualGroups(nextGroups);
-    persistManual();
-    markPostsMutated(); // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
-    // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
-    // class-only). Clear first so the rebuild shows no stale selection.
-    selection.clear();
-    renderPosts(true);
-    updateSelectionBar();
-    showToast(MSG.grouped);
-  }
-
-  function toggleSelectAll() {
-    selection.toggleAll(postGrid.getViewGroups(), postIdKey);
-    syncSelectionClasses();
-    updateSelectionBar();
-  }
-
-  // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
-  // typing in a field or when a modal/overlay is open (native select-all there).
-  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutSelectAllKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
-    if (browseMode !== 'posts') return; // select-all is post-grid only (posters/collections excluded)
-    if (postGrid.getViewGroups().length === 0) return;
-    e.preventDefault();
-    selection.selectAll(postGrid.getViewGroups(), postIdKey);
-    renderPosts(true);
-    updateSelectionBar();
-  }
-
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A: never steal keys from fields or open overlays.
   function handleShortcutSearchFocusKey(e: KeyboardEvent) {
@@ -2133,26 +2043,7 @@ import { corpusIpc } from './ipc.ts';
     sb.focus();
     sb.select();
   }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSelectAllKey, handleShortcutSearchFocusKey });
-
-  function requestDeleteSelected() {
-    if (selection.size() === 0) return;
-    confirmOpen({
-      message: MSG.confirmDeleteSelected(selection.size()),
-      okLabel: MSG.confirmOk,
-      cancelLabel: MSG.confirmCancel,
-      onOk: async () => {
-        // Bulk delete selected groups — every record of each selected group.
-        const toDelete = selection.selectedRecords(postGrid.getViewGroups(), postIdKey);
-        const count = toDelete.length;
-        for (const p of toDelete) await deletePost(p.image || p.video);
-        selection.clear();
-        updateSelectionBar();
-        await loadPosts(true);
-        showToast(MSG.deletedN(count));
-      },
-    });
-  }
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSearchFocusKey });
 
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
