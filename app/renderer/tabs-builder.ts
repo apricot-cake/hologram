@@ -11,7 +11,7 @@
 // Image tabs (addImageTab/showImageTab/hideImageTabView/setImageTabIndex/
 // toggleImageTabInspector/closeImageTab/resolveImageTabGroup) stay in
 // viewer.ts — that cluster was V13's (Wave27) scope, which also finished
-// image-tab.ts's window.corpusViewer DI (image-tab-builder.ts). This module takes
+// image-tab.ts's DI off the old shared bridge (image-tab-builder.ts). This module takes
 // showImageTab/hideImageTabView as deps (deferred forward references, same
 // shape as undo-builder.ts's showToast/postGrid) and exports enough surface
 // (getTabs/mutateTabs/getActiveTabId/setActiveTabId/isImageTab/activeTab/

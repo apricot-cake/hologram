@@ -57,10 +57,11 @@ declare global {
   // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
   // interface is needed here anymore.
 
-  // ---- viewer.ts — window.corpusViewer is gone (Wave31/Wave32, V17). Every method it
-  // used to carry (global shortcuts, inspector-dismiss, tab-bar events, store/IPC
-  // subscription handlers, boot, nav/reset) is now a real ES export that App.tsx/
-  // Activebar.tsx import directly — no ambient Window-shaped interface needed here.
+  // ---- orchestrator.ts — its old shared bridge is gone (Wave31/Wave32, V17). Every
+  // method it used to carry (global shortcuts, inspector-dismiss, tab-bar events,
+  // store/IPC subscription handlers, boot, nav/reset) is now a real ES export that
+  // App.tsx/Activebar.tsx import directly — no ambient Window-shaped interface
+  // needed here.
 
   // ---- renderer/records.ts — a real ES module now; SelectionBar imports postIdKey
   // directly, so no ambient partial interface is needed here anymore.
@@ -159,7 +160,7 @@ declare global {
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
   // A real ES module (named exports) now — no ambient Window-shaped interface
-  // needed (see backlog memory 「window.corpusXxx → export/import」).
+  // needed (see the corpus-react-purity-execution-map memory for the conversion).
 
   // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
@@ -171,7 +172,7 @@ declare global {
   // post degrades to the missing state live with no viewer push, exactly what
   // the posts-data.ts comment above anticipated). Commands (index step /
   // inspector toggle / close tab) dispatch back to viewer.ts via configure()
-  // callbacks (DI'd off window.corpusViewer in V13/Wave27) —
+  // callbacks (DI'd off its old shared bridge in V13/Wave27) —
   // this file only computes, it never mutates tab state. A real ES module
   // (named export `corpusImageTabSource`) now — no ambient Window-shaped
   // interface needed for it (CorpusImageTabModel stays: the shared data shape
@@ -188,8 +189,8 @@ declare global {
   }
 
   // ---- renderer/tabs.ts — P4-B slice⑯: converts the tab strip (#tabBarInner) off
-  // the old push (viewer.js built a TabsModel via renderTabs() and called
-  // window.corpusTabs.render(model) from ~15 call sites) to a PULLED source, same
+  // the old push (viewer.js built a TabsModel via renderTabs() and pushed it to a
+  // shared render bridge from ~15 call sites) to a PULLED source, same
   // shape as the grid/image-tab sources. viewer.js no longer owns tabs/
   // activeTabId/tabEditingId as closure state — corpusStore's keys of the same
   // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…)

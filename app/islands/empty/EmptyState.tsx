@@ -10,8 +10,8 @@ import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/sto
 //
 // P4-B slice⑩ (post) and slice⑫ (poster) folded BOTH variants into self-derived
 // selectors — corpusStore already carries everything needed reactively — instead
-// of a viewer push. window.corpusEmpty (the old shared bridge) has no callers left
-// anywhere and was deleted.
+// of a viewer push. The old shared push bridge has no callers left anywhere and
+// was deleted.
 const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
 const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
 const subAllPostsCount = (cb: () => void) => storeSubscribe('allPostsCount', cb);

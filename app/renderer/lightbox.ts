@@ -1,7 +1,7 @@
 // Image lightbox / gallery overlay (#lightbox) state — V18 §4: extracted out of
 // islands/lightbox/index.tsx (the "true island-pinned globals" the execution map
 // flagged, alongside settings.ts) so orchestrator.ts and the *-builder.ts modules
-// can import it directly instead of reading window.corpusLightbox. A real ES
+// can import it directly instead of reading a global bridge. A real ES
 // module, imported by islands/lightbox/index.tsx (LightboxHost renders whatever
 // this holds) and by orchestrator.ts / the builders that open it or guard on
 // isOpen(). #lightbox itself is the portal TARGET (orchestrator-owned static

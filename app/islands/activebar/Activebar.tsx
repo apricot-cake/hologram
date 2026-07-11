@@ -12,7 +12,7 @@ import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../
 // 'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/'navCanForward' — all already
 // mirrored there by orchestrator.ts for other consumers) + t(); the 4 actions (nav/reset) import
 // navBack/navForward/resetAllFilters/resetPosterFilters directly (Wave32/V17 continued —
-// the window.corpusViewer bridge for these is gone). No more pushed model (the old
+// the old orchestrator bridge for these is gone). No more pushed model (the old
 // renderer/activebar.ts bridge is gone too).
 //
 // The chips (#queryChips / #posterQueryChips) are their OWN island (query-chips) and keep

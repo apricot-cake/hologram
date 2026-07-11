@@ -4,7 +4,7 @@ import { Tabs } from './Tabs.tsx';
 
 // Presentational island for the tab strip (#tabBarInner) — lives under the single App
 // root. P4-B slice⑯ converts this off the old push (viewer.js built a TabsModel via
-// renderTabs() and called window.corpusTabs.render(model) from ~15 call sites) to a
+// renderTabs() and pushed it to a shared render bridge from ~15 call sites) to a
 // PULLED source (renderer/tabs.ts's corpusTabsSource), the same shape as the
 // grid/image-tab sources. viewer.js no longer owns the tabs array/activeTabId/
 // editingId as closure state — corpusStore's keys of the same names ARE the state;

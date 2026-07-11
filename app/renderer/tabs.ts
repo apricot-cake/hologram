@@ -1,6 +1,6 @@
 // Tab-strip model source (P4-B slice⑯) — converts #tabBarInner off the old push
-// (viewer.js built a full TabsModel via renderTabs() and called
-// window.corpusTabs.render(model) from ~15 call sites) to a PULLED source, the
+// (viewer.js built a full TabsModel via renderTabs() and pushed it to a shared
+// render bridge from ~15 call sites) to a PULLED source, the
 // same shape as the grid sources (renderer/grid.ts) and the image-tab source
 // (renderer/image-tab.ts, ⑮). viewer.js no longer holds tabs/activeTabId/
 // tabEditingId as closure state — corpusStore's 'tabs'/'activeTabId'/

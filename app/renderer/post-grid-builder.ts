@@ -69,7 +69,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
   // owned here since this module is the only reader (requestDeleteGroup below)
   // and the settings island (Danger.tsx) wants a direct live binding instead of
-  // going through window.corpusViewer (viewer.ts decomposition's V16 slice, see
+  // going through the old shared bridge (viewer.ts decomposition's V16 slice, see
   // memory corpus-react-purity-execution-map).
   let skipDeleteConfirm = false;
   function getSkipDeleteConfirm() {
@@ -511,7 +511,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
   // enable the OK button — a stray click can't wipe everything. The confirm modal is
   // React-owned (confirm.ts / the confirm island); this just opens it with the keyword
-  // gate + the wipe as its onOk. Was window.corpusViewer.confirmClearAll — the React
+  // gate + the wipe as its onOk. Was reached through the old shared bridge — the React
   // Danger section now imports the confirmClearAll live binding below directly (V16).
   function confirmClearAll() {
     confirmOpen({
@@ -587,7 +587,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
 // loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm are bound
 // once at boot (viewer.ts, right after constructing postGrid) so the settings
-// island (Danger.tsx/Data.tsx) can reach them directly — no window.corpusViewer
+// island (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
 // detour. See memory corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
 export let loadPosts: ((keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>) | null = null;
 export function bindLoadPosts(fn: (keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>): void {

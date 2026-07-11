@@ -14,9 +14,10 @@
 // onToggleInspector/onCloseTab), mirroring the query-chips / TabBarEvents
 // event-half pattern — this file only computes, it never mutates tab state.
 // Real ES module (named export `corpusImageTabSource`) — imported directly by
-// image-tab/index.tsx (islands) and viewer.ts (configure). The former
-// window.corpusViewer dispatch was DI'd away in V13/Wave27 (image-tab-builder.ts
-// supplies the callbacks) — see memory corpus-react-purity-execution-map §5.
+// image-tab/index.tsx (islands) and viewer.ts (configure). The former dispatch
+// through viewer.ts's old shared bridge was DI'd away in V13/Wave27
+// (image-tab-builder.ts supplies the callbacks) — see memory
+// corpus-react-purity-execution-map §5.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';

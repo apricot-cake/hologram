@@ -205,7 +205,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // Tile overlay lives in the React settings island; this is the apply-and-persist
   // function it calls (islands/settings/ipc.ts's setTileOverlay imports the
-  // `applyTileOverlay` live binding below directly — V16/Wave30, no window.corpusViewer
+  // `applyTileOverlay` live binding below directly — V16/Wave30, no shared-bridge
   // detour) so the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
     tileOverlay = v;
@@ -415,7 +415,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
 // applyTileOverlay is bound once at boot (viewer.ts, right after constructing
 // gridDensity) so the settings island (islands/settings/ipc.ts) can flip the
-// tile-overlay pref directly — no window.corpusViewer detour. See memory
+// tile-overlay pref directly — no shared-bridge detour. See memory
 // corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
 export let applyTileOverlay: ((v: boolean) => void) | null = null;
 export function bindApplyTileOverlay(fn: (v: boolean) => void): void {

@@ -1,7 +1,7 @@
 // Settings modal open/closed state — V18 §4: extracted out of islands/settings/index.tsx
 // (the other "true island-pinned global" the execution map flagged, alongside
 // lightbox.ts) so orchestrator.ts and the *-builder.ts modules can import it directly
-// instead of reading window.corpusSettings. A real ES module: React stays the source of
+// instead of reading a global bridge. A real ES module: React stays the source of
 // truth through useSyncExternalStore (islands/settings/index.tsx wires isOpen/subscribe
 // into the OpenStore the settings App.tsx expects); the brand-bar gear (orchestrator.ts)
 // and the various Esc/shortcut guards (*-builder.ts, image-tab/index.tsx) call open()/

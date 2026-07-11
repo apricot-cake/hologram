@@ -752,10 +752,10 @@ export const corpusI18n = (async () => {
   } catch {
     // prefs unavailable — fall back to auto
   }
-  // Explicit annotation: without a contextual type (the old ambient
-  // `window.corpusI18n: Promise<CorpusI18nApi>` declaration used to provide one),
-  // TS's inferred-return-type widening turns this ternary's "ja"|"en" into a bare
-  // string once it flows through the async function's return statement.
+  // Explicit annotation: without a contextual type (the old ambient global-bridge
+  // declaration used to provide one), TS's inferred-return-type widening turns this
+  // ternary's "ja"|"en" into a bare string once it flows through the async
+  // function's return statement.
   const resolved: 'ja' | 'en' = lang === 'auto' ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en') : lang === 'ja' ? 'ja' : 'en';
   const table = MESSAGES[resolved] || MESSAGES.en;
 

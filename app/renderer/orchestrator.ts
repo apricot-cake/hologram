@@ -4,9 +4,9 @@
 // by deliberate choice rather than folded into an App.tsx effect (a dedicated
 // bootstrap module is the norm in real React apps). Comments below that say
 // "viewer.ts decomposition" name the historical migration project, not this
-// file's current name — left as-is. Renderer services are migrating off the
-// window.corpusX bridge to real ES modules one wave at a time; the ones
-// imported below are converted, the rest are still read via window.corpusX at
+// file's current name — left as-is. Renderer services are migrating off a
+// shared global bridge to real ES modules one wave at a time; the ones
+// imported below are converted, the rest are still read via that bridge at
 // call time.
 import JSZip from 'jszip';
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
@@ -49,7 +49,7 @@ import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '.
 import { corpusIpc } from './ipc.ts';
 
 // Boot readiness signal + the boot/subscription handlers below: real ES exports now
-// (Wave31/V17) instead of a window.corpusViewer bridge — App.tsx's AppBoot/
+// (Wave31/V17) instead of the old shared bridge — App.tsx's AppBoot/
 // StoreSubscriptions import these directly. Declared here, at true module scope, so
 // `export` is legal; each is assigned once by the async IIFE below (viewerReady as
 // its very first synchronous statement, the handlers once everything they close
@@ -62,7 +62,7 @@ export let handleFolderChange: (kind?: string) => void;
 export let handlePostsChanged: (names: string[] | null) => Promise<void>;
 
 // Global keyboard/mouse shortcuts, tab-bar events, inspector-dismiss, and store/IPC
-// subscription handlers: the rest of the window.corpusViewer bridge, converted to real
+// subscription handlers: the rest of the old shared bridge, converted to real
 // ES exports the same way (Wave32/V17 continued — the roadmap's "Object.assign hits
 // zero when V17 completes" undercounted this cluster; see corpus-react-purity-execution-map
 // memory). Each is assigned once, below, at the same construction site the old
@@ -921,7 +921,7 @@ export let resetPosterFilters: () => void;
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
   // onIndexChange/onToggleInspector/onCloseTab are the DI callbacks that replaced
-  // image-tab.ts's former window.corpusViewer dispatch (V13/Wave27, §5).
+  // image-tab.ts's former dispatch through the old shared bridge (V13/Wave27, §5).
   corpusImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
     labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo') },
@@ -1490,7 +1490,7 @@ export let resetPosterFilters: () => void;
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
 
   // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
-  // through window.corpusViewer for the React settings island (Danger.tsx/Data.tsx/
+  // through the old shared bridge for the React settings island (Danger.tsx/Data.tsx/
   // settings/ipc.ts) to reach; those now import the live bindings above directly
   // (viewer.ts decomposition's V16 slice, see memory corpus-react-purity-execution-map).
 
@@ -1604,14 +1604,14 @@ export let resetPosterFilters: () => void;
   // Backup status rail (#mirrorStatus) is fully owned by the MirrorStatus island now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
   // itself. orchestrator no longer holds any of that state (the old setupMirrorStatusRail +
-  // window.corpusMirror bridge are gone).
+  // shared push bridge are gone).
 
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
   // enable the OK button — moved into post-grid-builder.ts's confirmClearAll (viewer.ts
   // decomposition's V16 slice) since that's where postGrid.resetAll()/markPostsMutated()
   // already live; the React Danger section imports the confirmClearAll live binding
-  // directly now instead of going through window.corpusViewer.
+  // directly now instead of going through the old shared bridge.
 
   // --- Utility functions ---
   // Count / date formatters (formatCount / formatDate / compactDate / …) live in

@@ -2115,7 +2115,7 @@
   <!-- Delete confirmation -->
   <!-- Shared confirm modal — React-owned now: the confirm island (app/islands/confirm)
        renders the .confirm-box (message + optional skip/keyword + Cancel/OK) into this
-       container from viewer.js's window.corpusConfirm.open(config), and toggles this
+       container from renderer/confirm.ts's open(config), and toggles this
        element's .show class from model presence. The container stays viewer's so
        setupModalChrome (modal-open body class) keeps observing #confirmOverlay. -->
   <div class="confirm-overlay" id="confirmOverlay"></div>
@@ -2124,16 +2124,16 @@
        owns the overlay contents + show/multi classes; orchestrator.ts feeds it gallery items. -->
   <div class="lightbox-overlay" id="lightbox"></div>
 
-  <!-- Edit tags overlay: bulk "add tags to selection" — React island (window.
-       corpusEditOverlay) owns the label/chips/add-row/picker/cancel/save rendering;
-       viewer.js owns the backdrop show/hide + all business logic (selection,
-       persistence, undo). -->
+  <!-- Edit tags overlay: bulk "add tags to selection" — React island
+       (app/islands/edit-overlay) owns the label/chips/add-row/picker/cancel/save
+       rendering; viewer.js owns the backdrop show/hide + all business logic
+       (selection, persistence, undo). -->
   <div class="confirm-overlay" id="editOverlay">
     <div class="confirm-box edit-box" id="editOverlayBox"></div>
   </div>
 
   <!-- Date / engagement / poster-date-range popovers are the filter-popover React
-       island now (window.corpusFilterPopover) — no static markup here. -->
+       island now (app/islands/filter-popover) — no static markup here. -->
 
   <!-- Styles that began life in the (now-removed) image-view but are reused by the
        unified post-view: ℹ detail popup, AND/OR tag toggle, folder chips +

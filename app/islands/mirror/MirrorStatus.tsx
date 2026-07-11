@@ -7,7 +7,7 @@ import { getBackup, onBackupStart, onBackupDone } from '../../renderer/backup.ts
 // auto-backup state. This island OWNS the state machine (backup config + last result +
 // syncing flag), reading it straight from backup.ts (getBackup + onBackupStart/
 // Done) and deriving the model (kind/text/title/time) with its own t() + format.ts's
-// fmtBackupTime/fmtTime — there is no viewer push (the old window.corpusMirror bridge +
+// fmtBackupTime/fmtTime — there is no viewer push (the old shared push bridge +
 // setupMirrorStatusRail are gone). The status modifier (.is-syncing / .is-error / .is-done)
 // lives on the host <span> itself (the portal target, not a React-owned element), so a
 // useLayoutEffect writes host.className/title there — the inline margin-left:auto style is

@@ -57,8 +57,8 @@ interface CorpusFacetView {
 
 // query.ts's own API surface (emptyTree/evalNode/makePostPredOf/etc.) is a real
 // ES module now — its named exports carry their own types, so no ambient
-// Window-shaped interface is declared for it here anymore (see backlog memory
-// 「window.corpusXxx → export/import」).
+// Window-shaped interface is declared for it here anymore (see the
+// corpus-react-purity-execution-map memory for the conversion).
 
 // ---- renderer/records.ts — record shape helpers + grouping. A real ES module
 // (named exports) now; only the CorpusPostGroup data shape stays here (shared
@@ -75,7 +75,7 @@ interface CorpusPostGroup {
 // anchor (P4-B スライス⑬). corpusStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
 // real ES module (named exports) now — no ambient Window-shaped interface
-// needed (see backlog memory 「window.corpusXxx → export/import」). ----
+// needed (see the corpus-react-purity-execution-map memory for the conversion). ----
 
 // ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
 // (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭).
@@ -150,8 +150,8 @@ interface CorpusCollection {
 // listing.ts's own API surface (makeListing/cloneTree/namedPosters/etc.) is a
 // real ES module now — its named exports (including the exported ListingDeps
 // interface) carry their own types, so no ambient Window-shaped interface is
-// declared for it here anymore (see backlog memory 「window.corpusXxx →
-// export/import」).
+// declared for it here anymore (see the corpus-react-purity-execution-map
+// memory for the conversion).
 
 // ---- renderer/geometry.ts — pure column / slider-track / thumbnail math. A
 // real ES module (named exports) now — no ambient Window-shaped interface

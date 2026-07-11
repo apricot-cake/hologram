@@ -10,10 +10,10 @@
 // This wave also finishes the viewer.ts⇄image-tab.ts circular dependency's
 // DI (memory corpus-react-purity-execution-map §5): image-tab.ts's
 // dispatchIndex/dispatchToggleInspector/dispatchClose used to reach back into
-// window.corpusViewer.setImageTabIndex/toggleImageTabInspector/closeImageTab;
-// they now call callbacks handed in via configure() (see viewer.ts's
-// corpusImageTabSource.configure call), so the dependency is one-way
-// (viewer.ts → image-tab.ts) same as every other renderer service.
+// viewer.ts's old shared bridge (setImageTabIndex/toggleImageTabInspector/
+// closeImageTab); they now call callbacks handed in via configure() (see
+// viewer.ts's corpusImageTabSource.configure call), so the dependency is
+// one-way (viewer.ts → image-tab.ts) same as every other renderer service.
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { genTabId } from './tab-state.ts';
 import { set as storeSet } from './store.ts';
