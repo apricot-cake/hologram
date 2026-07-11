@@ -331,12 +331,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (viewGroups.length === 0) {
       // pushing 'postGroups'=null (not just an empty array — see renderer/grid.ts's
       // computeModel) unmounts the grid island's cells SYNCHRONOUSLY (corpusStore.set's
-      // notify loop is synchronous, and the island's subscriber flushSync's the
-      // unmount — same guarantee the old pushed render(null) call gave) BEFORE the
-      // innerHTML clear below runs. The EmptyState island derives 'firstRun'/'filtered'
-      // itself from this same key + 'allPostsCount' + 'searchQuery' — one less push.
+      // notify loop is synchronous, and the island's subscriber flushSync's the unmount,
+      // removing its own host div — same guarantee the old pushed render(null) call gave).
+      // The EmptyState island derives 'firstRun'/'filtered' itself from this same key +
+      // 'allPostsCount' + 'searchQuery' — one less push.
       storeSet('postGroups', null);
-      grid.innerHTML = '';
       grid.style.display = 'none';
       empty.style.display = 'block';
       if (!inPlace && !prefersReducedMotion()) {
