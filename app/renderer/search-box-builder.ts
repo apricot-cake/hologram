@@ -30,6 +30,8 @@ export interface SearchBoxDeps {
 }
 
 export function makeSearchBox(deps: SearchBoxDeps) {
+  const byId = (id: string) => document.getElementById(id) as HTMLElement;
+
   // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
   // as a controlled react-aria ComboBox input. Typing: island → store → the
   // subscriber below runs the debounced heavy side effects. Programmatic writes
@@ -120,12 +122,37 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     searchEditing.onSearchModeChange();
   }
 
+  // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
+  // Same guards as Ctrl+A (selection-builder.ts): never steal keys from fields
+  // or open overlays. Extracted from viewer.ts as the viewer.ts decomposition's
+  // V14 slice (Wave28/corpus-react-purity-execution-map) — a scope correction:
+  // the other 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size)
+  // had already been absorbed into their natural domain clusters by V8/V10/
+  // V11/V12, leaving only this searchbox-focus handler unmoved. Registration
+  // lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  function handleShortcutSearchFocusKey(e: KeyboardEvent) {
+    const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
+    const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
+    if (!slash && !ctrlK) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
+    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    e.preventDefault();
+    const sb = document.getElementById('searchBox') as HTMLInputElement | null; // the searchbox island's Input (id preserved)
+    if (!sb) return; // island not mounted yet (sub-second boot window)
+    sb.focus();
+    sb.select();
+  }
+
   return {
     searchQuery,
     setSearchBoxValue,
     handleSearchQueryStoreChange,
     rebindEditingTextLeaf,
     handleSearchModeChange,
+    handleShortcutSearchFocusKey,
     searchEditing,
   };
 }

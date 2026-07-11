@@ -109,7 +109,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
   // typing in a field or when a modal/overlay is open (native select-all there).
-  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   function handleShortcutSelectAllKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'a') return;
     const t = e.target as HTMLElement | null;

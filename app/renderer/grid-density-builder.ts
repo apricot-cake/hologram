@@ -189,7 +189,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view
-  // modes). Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  // modes). Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   function handleShortcutSizeKey(e: KeyboardEvent) {
     const sl = inputById('tileSlider');
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;

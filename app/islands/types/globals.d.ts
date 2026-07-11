@@ -73,9 +73,9 @@ declare global {
     reloadPosts?(): void | Promise<void>;
     confirmClearAll?(): void;
     setSkipDeleteConfirm?(v: boolean): void;
-    // Global keyboard/mouse shortcut handlers, wired by useGlobalShortcuts (App.tsx).
-    // Each is a full guard+action handler (viewer keeps the logic); the hook just
-    // registers the raw DOM listener and forwards the event.
+    // Global keyboard/mouse shortcut handlers, wired by the GlobalShortcuts component
+    // (App.tsx). Each is a full guard+action handler (viewer keeps the logic); the
+    // component just registers the raw DOM listener and forwards the event.
     handleShortcutNavKey?(e: KeyboardEvent): void;
     handleShortcutMouseNav?(e: MouseEvent): void;
     handleShortcutUndoKey?(e: KeyboardEvent): void;

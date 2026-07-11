@@ -153,8 +153,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // Back/forward through the per-tab view history: Alt+←/→ + mouse side buttons (the bar
   // buttons themselves route through the island callbacks). Guarded so they never fire
   // while typing, with an overlay open, or in poster mode (mirrors the Ctrl+A guard convention).
-  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx); this stays
-  // the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
+  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx); this
+  // stays the handler + guard logic (viewer keeps the orchestration, React owns the wiring).
   function handleShortcutNavKey(e: KeyboardEvent) {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;

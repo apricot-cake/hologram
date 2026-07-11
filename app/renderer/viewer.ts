@@ -1447,24 +1447,9 @@ import { corpusIpc } from './ipc.ts';
   // clearSelection/handleShortcutSelectAllKey) moved up next to the inspector —
   // see the V8/Wave22 comment there.
 
-  // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
-  // Same guards as Ctrl+A: never steal keys from fields or open overlays.
-  function handleShortcutSearchFocusKey(e: KeyboardEvent) {
-    const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
-    const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';
-    if (!slash && !ctrlK) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || (window.corpusLightbox && window.corpusLightbox.isOpen())) return;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
-    e.preventDefault();
-    const sb = document.getElementById('searchBox') as HTMLInputElement | null; // the searchbox island's Input (id preserved)
-    if (!sb) return; // island not mounted yet (sub-second boot window)
-    sb.focus();
-    sb.select();
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSearchFocusKey });
+  // handleShortcutSearchFocusKey (`/` or Ctrl/Cmd+K focuses the search box) moved
+  // to search-box-builder.ts's makeSearchBox() return — viewer.ts decomposition's
+  // V14 slice (Wave28), wired alongside the rest of that factory's output below.
 
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
@@ -1777,7 +1762,7 @@ import { corpusIpc } from './ipc.ts';
   tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
   tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
-  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
+  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey: gridDensity.handleShortcutSizeKey });
 
   // Tile overlay lives in the React settings island now; grid-density-builder.ts
@@ -1819,6 +1804,7 @@ import { corpusIpc } from './ipc.ts';
     handleSearchQueryStoreChange,
     rebindEditingTextLeaf,
     handleSearchModeChange,
+    handleShortcutSearchFocusKey,
     searchEditing,
   } = makeSearchBox({
     storeGet,
@@ -1838,7 +1824,9 @@ import { corpusIpc } from './ipc.ts';
   });
   // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
   // window.corpusViewer below; this stays the guard + action logic.
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
+  // handleShortcutSearchFocusKey's registration lives in GlobalShortcuts (App.tsx) —
+  // wired here too since both come off the same makeSearchBox() construction site.
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange, handleShortcutSearchFocusKey });
 
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
