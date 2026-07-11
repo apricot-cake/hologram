@@ -11,17 +11,19 @@ export function Toast() {
   const model = useSyncExternalStore(subscribeToast, getToast);
   const [visible, setVisible] = useState(false);
 
-  // Re-fires on every notify() (model.openId bumps even for the identical message twice in
-  // a row), showing the pill and restarting the 1.4s countdown — matching the old
-  // clearTimeout+setTimeout behavior. `visible` is separate from `model` itself so the last
-  // message stays rendered while the pill fades out via CSS, instead of vanishing with it —
-  // the old code left #ivToast's textContent alone and only toggled the .show class.
+  // Re-fires on every notify() (the bridge's open() replaces the model object and bumps
+  // openId even for the identical message twice in a row, so keying on the model ref is
+  // exactly "keying on openId"), showing the pill and restarting the 1.4s countdown —
+  // matching the old clearTimeout+setTimeout behavior. `visible` is separate from `model`
+  // itself so the last message stays rendered while the pill fades out via CSS, instead of
+  // vanishing with it — the old code left #ivToast's textContent alone and only toggled
+  // the .show class.
   useEffect(() => {
     if (!model) return;
     setVisible(true);
     const timer = setTimeout(() => setVisible(false), 1400);
     return () => clearTimeout(timer);
-  }, [model?.openId]);
+  }, [model]);
 
   // #ivToast's CSS keys on a .show class (not [hidden]) — write it on the host span itself
   // (the portal target, not a React element), same idiom as MirrorStatus's className write.

@@ -583,7 +583,7 @@ export let resetPosterFilters: () => void;
   // postQB.shadow() directly instead of maintaining a second copy.
   const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
     t: getMessage,
-    container: document.getElementById('queryChips')!,
+    container: document.getElementById('queryChips') as HTMLElement,
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: filterLabel,
     getSearchVal: () => searchQuery(),
@@ -1319,7 +1319,7 @@ export let resetPosterFilters: () => void;
   // removed outright rather than converted to a read site.
   const { qb: posterQB } = makePosterQueryBuilder({
     t: getMessage,
-    container: document.getElementById('posterQueryChips')!,
+    container: document.getElementById('posterQueryChips') as HTMLElement,
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: posterFilterLabel,
     getSearchVal: () => searchQuery(),
