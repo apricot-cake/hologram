@@ -4,6 +4,7 @@
   "description": "Corpus desktop viewer",
   "main": "main.mts",
   "author": "apricot-cake",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
     "dist": "npm run build:islands && electron-builder",

@@ -299,6 +299,9 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     aboutTitle: 'このアプリについて',
     aboutVersion: 'バージョン $1',
     aboutTagline: '投稿を丸ごと。あなたの SNS ライブラリ。',
+    aboutLinkRepo: 'GitHub リポジトリ',
+    aboutLinkReleases: 'リリースノート',
+    aboutLinkLicense: 'ライセンス（MIT）',
 
     // viewer: export / import toasts
     exporting: 'エクスポート中...',
@@ -658,6 +661,9 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     aboutTitle: 'About',
     aboutVersion: 'Version $1',
     aboutTagline: 'Whole posts, saved. Your own SNS library.',
+    aboutLinkRepo: 'GitHub repository',
+    aboutLinkReleases: 'Release notes',
+    aboutLinkLicense: 'License (MIT)',
 
     exporting: 'Exporting...',
     exported: 'Exported',

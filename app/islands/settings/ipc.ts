@@ -10,6 +10,7 @@ import { applyTileOverlay } from '../../renderer/grid-density-builder.ts';
 export const getPrefs = () => (corpusIpc.getPrefs ? corpusIpc.getPrefs() : Promise.resolve({}));
 export const setPref = (key: string, value: unknown) => (corpusIpc.setPref ? corpusIpc.setPref(key, value) : Promise.resolve());
 export const getAppInfo = () => (corpusIpc.getAppInfo ? corpusIpc.getAppInfo() : Promise.resolve(null));
+export const openExternal = (url: string) => corpusIpc.openExternal(url);
 
 // Theme runtime lives in renderer/theme-api.ts (applies [data-theme], persists via
 // setPref, caches to localStorage, follows the OS). We read/drive it through that module
