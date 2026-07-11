@@ -12,6 +12,7 @@ interface CorpusI18nApi {
 // Shared dark-glass visual vocabulary for on-page UI (see glass-ui.ts).
 interface CorpusGlassUiApi {
   ACCENT: string;
+  ACCENT_FILL: string;
   ACCENT_SOFT: string;
   ACCENT_TEXT: string;
   OK_GREEN: string;
@@ -21,6 +22,10 @@ interface CorpusGlassUiApi {
   CARD_BLUR: string;
   CARD_BORDER: string;
   CARD_SHADOW: string;
+  FONT_SANS: string;
+  EASE_OUT: string;
+  DUR_HOVER: number;
+  DUR_POP: number;
   REDUCED_MOTION: boolean;
   ICONS: {
     drop: readonly string[];

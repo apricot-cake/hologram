@@ -1,17 +1,23 @@
 // Shared visual vocabulary for the extension's on-page UI (capture banner in
 // content.ts + drag drop-zone in drag.ts): the app's dark-glass surface
-// language (design-tokens.css --glass-* / --sky-600 / --green-500 / --red-500
-// / --amber-500) rebuilt for host pages. Everything here is CSP/Trusted-Types
-// safe: styles go through element.style (an injected <style> would be subject
-// to the host page's style-src) and icons are built with createElementNS
-// (string sinks like innerHTML are rejected on Trusted Types-enforcing hosts,
-// e.g. x.com).
+// language (design-tokens.css --glass-* dark values / --sky-* / --green-500 /
+// --red-500 / --amber-500) plus its motion vocabulary (--ease-out /
+// --dur-hover / --dur-pop) rebuilt for host pages, where the app's CSS custom
+// properties don't exist. Values are literal copies of the app's DARK theme —
+// the glass card is dark on any host page theme, so only dark tokens apply.
+// Everything here is CSP/Trusted-Types safe: styles go through element.style
+// (an injected <style> would be subject to the host page's style-src) and
+// icons are built with createElementNS (string sinks like innerHTML are
+// rejected on Trusted Types-enforcing hosts, e.g. x.com).
 //
 // Loaded BEFORE content.js / drag.js in both injection lists (manifest
 // content_scripts and background.js's executeScript) — same isolated world,
 // runs first, so consumers can read window.corpusGlassUi synchronously.
 (() => {
   const SVGNS = 'http://www.w3.org/2000/svg';
+  // App dark --accent-text (sky-300): accent as FOREGROUND on the dark glass.
+  // The fill-tuned sky steps are too dark to read as text/icon color here.
+  const ACCENT_TEXT = '#8ad3ec';
 
   function makeIcon(paths: readonly string[], size = 22): SVGSVGElement {
     const svg = document.createElementNS(SVGNS, 'svg');
@@ -34,22 +40,34 @@
 
   function makeSpinner(size = 22): HTMLDivElement {
     const sp = document.createElement('div');
-    sp.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2.5px solid rgba(255,255,255,0.22);border-top-color:#5ec5ec;box-sizing:border-box;pointer-events:none;`;
+    sp.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2.5px solid rgba(255,255,255,0.22);border-top-color:${ACCENT_TEXT};box-sizing:border-box;pointer-events:none;`;
+    // 0.9s linear — the app's spinner cadence (index.html ms-spin).
     sp.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: 900, iterations: Number.POSITIVE_INFINITY });
     return sp;
   }
 
   window.corpusGlassUi = {
-    ACCENT: '#28a8db',
+    ACCENT: '#28a8db', // sky-500 — OUTLINE/GLOW step (highlight frame, hover ring); nothing rides on it
+    ACCENT_FILL: '#1397cc', // sky-600 — FILL step, white icon rides on it (app --accent: sky-500 failed the white-on-fill contrast tier)
     ACCENT_SOFT: 'rgba(40,168,219,0.18)', // badge tint behind an accent-colored icon
-    ACCENT_TEXT: '#5ec5ec', // accent legible ON the dark glass (icons/spinner)
+    ACCENT_TEXT,
     OK_GREEN: '#30a46c',
     FAIL_RED: '#e5484d',
     WARN_AMBER: '#e8a13a', // saved, but post metadata was unavailable
-    CARD_BG: 'rgba(23,25,30,0.78)',
-    CARD_BLUR: 'blur(20px) saturate(140%)',
-    CARD_BORDER: 'rgba(255,255,255,0.14)',
+    CARD_BG: 'rgba(22,23,26,0.78)', // app dark --glass-bg (= --surface #16171a at 78%)
+    CARD_BLUR: 'blur(24px) saturate(140%)', // app dark --glass-filter
+    CARD_BORDER: 'rgba(255,255,255,0.16)', // app dark --glass-rim
+    // App dark --glass-drop + the toast's bright top-edge inset (the main "glass" cue on dark).
     CARD_SHADOW: '0 12px 36px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)',
+    // App --font-sans: system stack with Japanese fallbacks (banner strings are
+    // Japanese-primary; the host page's own font must not leak in).
+    FONT_SANS: "-apple-system,'Segoe UI','Hiragino Kaku Gothic ProN','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif",
+    // Motion vocabulary (app design-tokens --ease-out / --dur-hover / --dur-pop):
+    // one crisp system on the same curve; hover tier for state/color transitions,
+    // pop tier for toast-style entrances/exits.
+    EASE_OUT: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    DUR_HOVER: 180,
+    DUR_POP: 200,
     REDUCED_MOTION: typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
     ICONS: {
       drop: ['M12 4v9', 'm8.5 9.5 3.5 3.5 3.5-3.5', 'M4.5 15.5v2a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-2'],

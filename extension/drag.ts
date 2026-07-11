@@ -89,21 +89,21 @@
       `backdrop-filter:${G.CARD_BLUR}`,
       `-webkit-backdrop-filter:${G.CARD_BLUR}`,
       'color:#fff',
-      'font:600 13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      `font:600 13px/1.5 ${G.FONT_SANS}`,
       'text-align:center',
       `box-shadow:${G.CARD_SHADOW}`,
       'pointer-events:auto',
-      'transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s, box-shadow .16s',
+      `transition:transform ${G.DUR_HOVER}ms ${G.EASE_OUT}, border-color ${G.DUR_HOVER}ms, box-shadow ${G.DUR_HOVER}ms`,
     ].join(';');
 
     // Dashed inset ring = the "drop target" affordance; hidden on result states.
     // Children are pointer-events:none so dragenter/dragleave never flicker.
     const ring = document.createElement('div');
-    ring.style.cssText = 'position:absolute;inset:7px;border-radius:14px;border:1.5px dashed rgba(255,255,255,0.30);pointer-events:none;transition:border-color .16s,opacity .16s;';
+    ring.style.cssText = `position:absolute;inset:7px;border-radius:14px;border:1.5px dashed rgba(255,255,255,0.30);pointer-events:none;transition:border-color ${G.DUR_HOVER}ms,opacity ${G.DUR_HOVER}ms;`;
     el.appendChild(ring);
 
     const badge = document.createElement('div');
-    badge.style.cssText = `width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background .16s,color .16s;`;
+    badge.style.cssText = `width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
     el.appendChild(badge);
 
     const label = document.createElement('div');
@@ -143,7 +143,7 @@
         z.badge.appendChild(G.makeIcon(G.ICONS.drop));
         break;
       case 'over':
-        z.badge.style.background = G.ACCENT;
+        z.badge.style.background = G.ACCENT_FILL;
         z.badge.style.color = '#fff';
         z.badge.appendChild(G.makeIcon(G.ICONS.drop));
         z.el.style.transform = 'scale(1.04) translateY(-2px)';
@@ -188,7 +188,14 @@
     const wasHidden = z.el.style.display === 'none';
     z.el.style.display = 'flex';
     if (wasHidden && !G.REDUCED_MOTION) {
-      z.el.animate([{ opacity: 0, transform: 'translateY(14px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' });
+      // App toast entrance: rise + slight scale settle at the pop tier.
+      z.el.animate(
+        [
+          { opacity: 0, transform: 'translateY(14px) scale(0.96)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        { duration: G.DUR_POP, easing: G.EASE_OUT },
+      );
     }
   }
   function hideOverlay(fade = false) {
@@ -198,7 +205,9 @@
       z.el.style.display = 'none';
       return;
     }
-    const anim = z.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(8px)' }], { duration: 140, easing: 'ease-in' });
+    // Exit = the entrance played back (app toast hides through the same
+    // rise/settle transition), on the shared pop tier.
+    const anim = z.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
     hideAnim = anim;
     anim.onfinish = () => {
       if (hideAnim === anim) {
@@ -261,8 +270,9 @@
               : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
       if (ok && !G.REDUCED_MOTION) {
-        // Small badge pop so the state flip reads even in peripheral vision.
-        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+        // Small badge pop so the state flip reads even in peripheral vision
+        // (app corpusBadgePop: .3s on the shared ease-out curve).
+        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
       }
       setTimeout(
         () => {
