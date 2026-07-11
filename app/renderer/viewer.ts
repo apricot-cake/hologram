@@ -4,7 +4,7 @@
 // window.corpusX at call time.
 import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
-import { formatCount, formatShortDate, compactDate, formatDate, localeDate, localeDateTime } from './format.ts';
+import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndo } from './undo.ts';
@@ -12,7 +12,6 @@ import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 import { open as confirmOpen } from './confirm.ts';
-import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { open as menuOpen } from './menu.ts';
 import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
 import { get as filterPopoverGet } from './filter-popover.ts';
@@ -20,8 +19,8 @@ import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFilterPopover } from './filter-popover-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
-import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
+import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, deletePost, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
@@ -35,6 +34,7 @@ import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
+import { makeInspector } from './inspector-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -1846,313 +1846,39 @@ import { corpusIpc } from './ipc.ts';
   // requestDeleteGroup/executeDeleteGroup moved to post-grid-builder.ts (postGrid above).
 
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
-  function closeDetail() {
-    byId('postDetail').hidden = true;
-    inspectorClose();
-    setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
-    byId('postGrid').classList.remove('insp-open');
-    refreshTileSlider(); // the grid width grew back — re-derive the track
-  }
-  function persistManual() {
-    persistManualGroups(postGrid.getManualGroups());
-  }
-  // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
-  function setGroupKey(key: string, ungroup: boolean) {
-    if (!key) return;
-    keepCurrentVisible(); // 複数画像のみ等のフィルタから外れても即消えしない
-    const ungrouped = postGrid.getUngrouped();
-    if (ungroup) ungrouped.add(key);
-    else ungrouped.delete(key);
-    persistUngrouped(ungrouped);
-    closeDetail();
-    renderPosts(true);
-    if (ungroup) showToast(MSG.ungroupDone);
-  }
-  function ungroupManual(idx: number) {
-    const manualGroups = postGrid.getManualGroups();
-    if (!(idx >= 0 && idx < manualGroups.length)) return;
-    keepCurrentVisible();
-    manualGroups.splice(idx, 1);
-    persistManual();
-    closeDetail();
-    renderPosts(true);
-    showToast(MSG.ungroupDone);
-  }
-  // --- Inspector inline tag editor (always available while the inspector is open) ---
-  // Source of truth = the records' real tags. Each change saves immediately (mirrors
-  // adoptSourceTag) and refreshes only the tag fields of the inspector.ts model (not
-  // a full re-open) — the React tag editor keeps its own input text/focus and scroll
-  // across a refresh (same openId). The chips + picker live in the panel itself — tag
-  // editing is per-card here, no mode to enter (matches the poster inspector).
-  // sameTags moved to tags.ts (imported).
-
-  // inspectorTagPickerData moved to tags.js (corpusTags wiring above).
-
-  function refreshInspectorTagFields(g: CorpusPostGroup | null | undefined) {
-    if (!g) return;
-    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    const userSet = new Set(tags);
-    const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    inspectorRefresh({ tags, srcTagsView, ...inspectorTagPickerData(tags, g.records, 'post') });
-  }
-
-  // Apply a tag mutation to every record of the inspected group, persist immediately,
-  // record undo, and refresh grid + inspector tag fields (NOT a full showDetail — so the
-  // image/meta don't flicker and the input keeps focus).
-  async function applyInspectorTagChange(g: CorpusPostGroup | null | undefined, mutate: (prev: string[]) => string[] | null | undefined) {
-    if (!g) return;
-    const recs = g.records && g.records.length ? g.records : [g.rep];
-    keepCurrentVisible(); // removing a tag can un-match an active tag filter
-    const undoRecords: CorpusUndoRecord[] = [];
-    for (const r of recs) {
-      const prev = (r.tags || []).slice();
-      const next = mutate(prev.slice());
-      if (!next || sameTags(prev, next)) continue;
-      try {
-        await postsUpdateTags(r.image || r.video, next);
-      } catch {
-        /* keep going */
-      }
-      const rec = postGrid.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = next.slice();
-      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags: next });
-    }
-    if (!undoRecords.length) return;
-    pushUndo('tags', undoRecords);
-    markPostsMutated();
-    renderPosts(true);
-    const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
-    if (fresh) refreshInspectorTagFields(fresh);
-  }
-
-  // Add (typed input / picker click) or toggle (picker click only) a tag on the
-  // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
-  // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
-  async function addInspectorTag(g: CorpusPostGroup, tag: string) {
-    const fresh = () => postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
-    const adding = !(fresh().rep.tags || []).includes(tag);
-    await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(fresh(), tag);
-  }
-  async function toggleInspectorTag(g: CorpusPostGroup, tag: string) {
-    const fresh = () => postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey) || g;
-    const adding = !(fresh().rep.tags || []).includes(tag);
-    await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(fresh(), tag);
-  }
-
-  // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
-  // this character was seen with before, it's likely a same-name character from
-  // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
-  // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
-  async function maybeDistinguishHomonym(g: CorpusPostGroup | null | undefined, addedTag: string) {
-    if (!g || tagKindOf(addedTag) !== 'character') return;
-    const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    const worksNow = cardTags.filter((t) => tagKindOf(t) === 'work');
-    if (!worksNow.length) return; // no 作品 context to distinguish by
-    const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
-    const past = worksCooccurringWith(addedTag, exclude);
-    if (!past.size) return; // no history → stay silent
-    if (worksNow.some((w) => past.has(w))) return; // seen with one of these works → same character
-    const work = worksNow[0];
-    const distinguished = `${addedTag}（${work}）`;
-    if (cardTags.includes(distinguished)) return;
-    if (!window.confirm(MSG.homonymConfirm(addedTag, work))) return;
-    // The distinguished string stays a character (danbooru-style); record its 種別.
-    if (!tagKindOf(distinguished)) {
-      await tagsSetTagKind(distinguished, 'character');
-    }
-    await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
-    showToast(MSG.homonymDistinguished(distinguished));
-  }
-
-  function showDetail(g: CorpusPostGroup) {
-    if (!g) return;
-    const p = g.rep;
-    const eng: string[] = [];
-    if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
-    if (p.reposts != null) eng.push('⇄ ' + formatCount(p.reposts));
-    if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
-    if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
-    if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
-    // Source tags (pixiv / SNS hashtags) get their own row. User tags live in the
-    // always-editable chips block (TagEditor) so they aren't repeated here. Source
-    // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
-    const userTags = Array.isArray(p.tags) ? p.tags : [];
-    const userSet = new Set(userTags);
-    const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h: string) => !userSet.has(h));
-    // Poster row carries the locally-saved avatar (psimg://) when present, so the
-    // inspector keeps its "label: value" rhythm while adding a face to the name.
-    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
-    // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
-    // migrations); when it does, the name+avatar links to it (双方向ナビ: posts ↔ posters).
-    const jumpUser = p.url ? buildUsers().find((u) => u.key === userKey(p)) : null;
-    const heading = p.title || p.text || '';
-    const thumbFile = g.files[0] || captureFile(p);
-    // Reverse image search needs a PUBLIC image URL. media[].url keeps the
-    // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
-    // a screenshot-only post has none, so the search links are hidden then.
-    // pixiv (i.pximg.net) is referer-gated so the fetcher may 403 — but pixiv
-    // IS the source, so reverse search there is moot anyway.
-    const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
-    // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
-    // (same post URL with siblings) toggle via the persisted ungrouped set.
-    const gkey = postKeyOf(p.url);
-    const potential = gkey ? postGrid.getAllPosts().filter((q) => postKeyOf(q.url) === gkey).length : 0;
-    const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
-    // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
-    // rep's key out stops the self-reply merge at this parent, splitting the card.
-    const groupBtn = isManual
-      ? { icon: '🔗', label: MSG.groupUngroupManual, onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
-      : gkey && (potential > 1 || g.records.length > 1)
-        ? postGrid.getUngrouped().has(gkey)
-          ? { icon: '🔗', label: MSG.groupRegroup, onClick: () => setGroupKey(gkey, false) }
-          : { icon: '✂', label: MSG.groupUngroup, onClick: () => setGroupKey(gkey, true) }
-        : null;
-    inspectorOpen({
-      kind: 'post',
-      heading,
-      thumbSrc: thumbFile ? fileSrc(thumbFile, 480) : null,
-      platformLabel: (p.platform || '').toUpperCase(),
-      avatarSrc,
-      authorName: p.displayName || '',
-      jumpable: !!jumpUser,
-      screenNameLabel: p.screenName ? '@' + p.screenName : '',
-      followersLabel: p.followers != null ? formatCount(p.followers) : '',
-      joinedLabel: localeDate(p.authorCreatedAt),
-      engagementLabel: eng.join('   '),
-      postedLabel: localeDateTime(p.date),
-      savedLabel: localeDateTime(p.capturedAt),
-      updatedLabel: localeDateTime(p.updatedAt),
-      imagesLabel: g.files.length > 1 ? MSG.imagesCount(g.files.length) : '',
-      imageOfLabel: p.imageIndex && p.imageCount ? MSG.imageOf(p.imageIndex, p.imageCount) : '',
-      tags: userTags,
-      srcTagsView,
-      groupBtn,
-      ...inspectorTagPickerData(userTags, g.records, 'post'),
-      labels: {
-        platform: MSG.detailPlatform,
-        author: MSG.detailAuthor,
-        user: MSG.detailUser,
-        followers: MSG.detailFollowers,
-        joined: MSG.detailJoined,
-        engagement: MSG.detailEngagement,
-        posted: MSG.detailPosted,
-        saved: MSG.detailSaved,
-        updated: MSG.detailUpdated,
-        images: MSG.detailImages,
-        imageOf: MSG.detailImageOf,
-        sourceTags: MSG.detailSourceTags,
-        tipAdoptTag: MSG.tipAdoptTag,
-        viewPoster: MSG.ctxViewPoster,
-        open: MSG.detailOpen,
-        sauce: MSG.detailSauce,
-        ascii: MSG.detailAscii,
-      },
-      tagLabels: {
-        tagsLabel: MSG.detailTags,
-        newTagPlaceholder: MSG.tagNewName,
-        addBtn: MSG.tagAddBtn,
-        noTags: MSG.editNoTags,
-        noMatch: MSG.tagPalNoMatch,
-        noVocab: MSG.tagNoTags,
-        adoptSource: MSG.editAdoptSource,
-      },
-      onClose: closeDetail,
-      onOpenExternal: p.url ? () => corpusIpc.openExternal(p.url) : null,
-      onSauce: srcImageUrl ? () => corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
-      onAscii: srcImageUrl ? () => corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
-      onPosterJump: jumpUser ? () => jumpToPoster(p) : null,
-      onAdoptSourceTag: (tag: string) => adoptSourceTag(g, tag),
-      onTagAdd: (tag: string) => addInspectorTag(g, tag),
-      onTagRemove: (tag: string) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
-      onTagContextMenu: (tag: string, x: number, y: number) => {
-        showKindMenu(tag, x, y, () => {
-          const g2 = postGrid.getViewGroups().find((gg) => postIdKey(gg.rep) === inspectedKey);
-          if (g2) refreshInspectorTagFields(g2);
-        });
-      },
-    });
-    byId('postDetail').hidden = false;
-    // While open, a card click swaps the panel (not zoom) → plain pointer.
-    byId('postGrid').classList.add('insp-open');
-    // Ring-mark the inspected card so swapping content stays traceable — the grid
-    // cell derives its own ring reactively (corpusStore subscribe), so no manual
-    // DOM classList reach-in / repaint() is needed here.
-    setInspectedKey(postIdKey(p));
-    refreshTileSlider(); // inline column narrows the grid — re-derive the track
-  }
-
-  // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
-  // the inspected group. Persisted + undoable, mirroring the edit overlay's save.
-  async function adoptSourceTag(g: CorpusPostGroup, tag: string) {
-    if (!tag) return;
-    const recs = g.records && g.records.length ? g.records : [g.rep];
-    const undoRecords: CorpusUndoRecord[] = [];
-    for (const r of recs) {
-      const prev = (r.tags || []).slice();
-      if (prev.includes(tag)) continue;
-      const newTags = [...prev, tag];
-      try {
-        await postsUpdateTags(r.image || r.video, newTags);
-      } catch {
-        /* keep going */
-      }
-      const rec = postGrid.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = newTags.slice();
-      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags });
-    }
-    if (!undoRecords.length) return; // all records already had it
-    pushUndo('tags', undoRecords);
-    markPostsMutated();
-    renderPosts(true);
-    const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
-    if (fresh) showDetail(fresh);
-    showToast(MSG.tagAdopted(tag));
-  }
-  // Esc closes the inspector — registered in CAPTURE phase so it can check
-  // what else is open BEFORE those handlers dismiss themselves on the same
-  // press (lightbox/popovers/modals win the first Esc, the panel the next).
-  // Registration lives in the DetailDismiss component (app/islands/app/App.tsx);
-  // this stays the handler + guard logic (viewer keeps the orchestration).
-  function handleEscDismissDetail(e: KeyboardEvent) {
-    if (e.key !== 'Escape') return;
-    const inImageTab = imageTabShowing;
-    if (byId('postDetail').hidden && !inImageTab) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (window.corpusLightbox && window.corpusLightbox.isOpen()) return;
-    if (window.corpusSettings && window.corpusSettings.isOpen()) return;
-    if (!byId('ivFolderModal').hidden) return;
-    if (document.querySelector('.confirm-overlay.show')) return;
-    if (document.querySelector('.fold-menu.show')) return;
-    if (filterPopoverGet()) return;
-    if (inImageTab) {
-      closeTab(getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
-      return;
-    }
-    closeDetail();
-  }
-  // Slide-over mode (narrow window): the panel covers the grid, so it acts
-  // like a scrim-less drawer — ANY click outside it inside the content area
-  // (cards and grid included) dismisses it, and the click is consumed so the
-  // card doesn't also react on the same press. ℹ buttons stay live as the
-  // explicit "show this one instead" entry. Inline mode (wide) keeps clicks:
-  // cards swap the content there since the panel covers nothing. Also
-  // registered from DetailDismiss, in CAPTURE phase like the Esc handler above.
-  function handleOutsideClickDismissDetail(e: MouseEvent) {
-    const insp = byId('postDetail');
-    if (insp.hidden) return;
-    if (!matchMedia('(max-width: 1279px)').matches) return;
-    if (insp.contains(e.target as Node | null)) return;
-    if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
-    if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
-    e.preventDefault();
-    e.stopPropagation();
-    closeDetail();
-  }
+  // Open/close chrome, the inline tag editor (add/toggle/adopt-source-tag +
+  // homonym check), the group dissolve/regroup buttons, and the Esc/outside-click
+  // dismiss guards moved to inspector-builder.ts — viewer.ts decomposition's V7
+  // slice (Wave21). inspectedKey/setInspectedKey stay here — other not-yet-
+  // extracted clusters read/write them too (poster card click below, undo,
+  // browse-mode switch) — inspector-builder.ts only gets the accessor pair.
+  const inspector = makeInspector({
+    MSG,
+    fileSrc,
+    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    showKindMenu,
+    buildUsers,
+    tagKindOf,
+    worksCooccurringWith,
+    jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster (posterGrid) is declared far below — deferred
+    pushUndo,
+    inspectorTagPickerData,
+    getViewGroups: postGrid.getViewGroups,
+    getAllPosts: postGrid.getAllPosts,
+    getPostById: postGrid.getPostById,
+    getUngrouped: postGrid.getUngrouped,
+    getManualGroups: postGrid.getManualGroups,
+    markPostsMutated,
+    renderPosts,
+    keepCurrentVisible,
+    getInspectedKey: () => inspectedKey,
+    setInspectedKey,
+    refreshTileSlider: () => refreshTileSlider(), // refreshTileSlider is declared far below — deferred
+    getActiveTabId,
+    closeTab,
+    imageTabShowing: () => imageTabShowing, // primitive let — read live, not a snapshot
+  });
+  const { closeDetail, showDetail, persistManual, handleEscDismissDetail, handleOutsideClickDismissDetail } = inspector;
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleEscDismissDetail, handleOutsideClickDismissDetail });
   // ℹ button on card → detail popup (re-click same card toggles close)
   byId('postGrid').addEventListener('click', (e) => {
