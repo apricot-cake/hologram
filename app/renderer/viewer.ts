@@ -6,7 +6,7 @@ import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } 
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
 import { sync as syncPostsData } from './posts-data.ts';
-import { makeUndo } from './undo.ts';
+import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
@@ -17,10 +17,10 @@ import { makeFilterPopover } from './filter-popover-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
+import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setPosterTags, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
-import { listPostsDelta, updateTags as postsUpdateTags, importComplete, importPosts, clearAll } from './posts.ts';
+import { listPostsDelta, importComplete, importPosts, clearAll } from './posts.ts';
 import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -726,62 +726,23 @@ import { corpusIpc } from './ipc.ts';
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
-  // Stack semantics (cap / redo discard / prev-next direction) live in undo.ts;
-  // the two apply callbacks below carry the viewer-owned side effects.
-  const _undo = makeUndo({
-    applyTags: (records) => applyTagUndo(records),
-    applyPosterTags: (records) => applyPosterTagUndo(records),
+  // Stack semantics + the viewer-owned apply callbacks/shortcut handler moved to
+  // undo-builder.ts — viewer.ts decomposition's V11 slice (Wave25). Constructed here
+  // (its original spot) so pushUndo is ready in time for inspector/postGrid/posterGrid's
+  // own deps below; postGrid/inspector/posterGrid/showToast are all declared later, so
+  // their accessors are deferred forward references (same shape as inspector-builder.ts's
+  // jumpToPoster/showToast).
+  const undoCtl = makeUndoController({
+    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    getPostById: (id) => postGrid.getPostById(id), // postGrid is declared below — deferred
+    markPostsMutated: () => postGrid.markPostsMutated(),
+    renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
+    getViewGroups: () => postGrid.getViewGroups(),
+    getInspectedKey: () => inspectedKey,
+    showDetail: (g) => showDetail(g), // showDetail (inspector) is declared far below — deferred
+    refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields (posterGrid) is declared far below — deferred
   });
-  const pushUndo = _undo.push;
-
-  async function applyTagUndo(records: { captureId?: string; image?: string; tags: string[] }[]) {
-    for (const r of records) {
-      try {
-        await postsUpdateTags(r.image || '', r.tags);
-      } catch {}
-      const rec = r.captureId ? postGrid.getPostById(r.captureId) : undefined; // O(1) via the delta-cache map (allPosts holds the same record refs)
-      if (rec) rec.tags = r.tags.slice();
-    }
-    postGrid.markPostsMutated();
-    postGrid.renderPosts(true);
-    // Keep the inspector in sync if it's showing the affected group (undo isn't fired
-    // while typing in the add input, so a full re-render here is safe).
-    if (!byId('postDetail').hidden && inspectedKey) {
-      const fresh = postGrid.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
-      if (fresh) showDetail(fresh);
-    }
-  }
-
-  // Poster-tag variant: posterTags[key] (tags.js) is the source of truth (NOT a
-  // post record), so undo/redo re-applies the captured tag list per poster key
-  // and keeps an open poster inspector in sync (mirrors applyTagUndo's inspector
-  // refresh). The bulk mutation + persist now live in tags.js.
-  async function applyPosterTagUndo(records: { key?: string; tags: string[] }[]) {
-    // key is always populated for poster-tags undo entries at runtime (pushUndo's
-    // caller always supplies one); the narrow just satisfies applyPosterTagRecords'
-    // stricter (key required) signature.
-    applyPosterTagRecords(records.filter((r): r is { key: string; tags: string[] } => !!r.key));
-    if (!byId('postDetail').hidden && typeof inspectedKey === 'string' && inspectedKey.indexOf('poster:') === 0) {
-      refreshPosterTagFields(inspectedKey.slice('poster:'.length));
-    }
-  }
-
-  async function doUndo() {
-    if (await _undo.undo()) showToast('Undo');
-  }
-
-  async function doRedo() {
-    if (await _undo.redo()) showToast('Redo');
-  }
-
-  // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutUndoKey(e: KeyboardEvent) {
-    if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) return;
-    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-    e.preventDefault();
-    if (e.shiftKey) doRedo();
-    else doUndo();
-  }
+  const { pushUndo, doUndo, doRedo, handleShortcutUndoKey } = undoCtl;
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutUndoKey });
 
   // --- State ---
