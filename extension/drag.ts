@@ -30,8 +30,17 @@
   if (window.__corpusDragActive) return; // avoid double-binding on re-injection
   window.__corpusDragActive = true;
 
+  interface DropZone {
+    el: HTMLDivElement;
+    ring: HTMLDivElement;
+    badge: HTMLDivElement;
+    label: HTMLDivElement;
+  }
+  type ZoneState = 'idle' | 'over' | 'busy' | 'ok' | 'partial' | 'fail';
+
   let pending: PendingDrag | null = null;
-  let overlay: HTMLDivElement | null = null;
+  let zone: DropZone | null = null;
+  let hideAnim: Animation | null = null; // in-flight exit fade, cancelled if the zone re-shows
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
   // i18n: drag toasts share the banner strings. window.corpusI18n is set by the
@@ -46,71 +55,157 @@
     });
   }
 
-  const BG_IDLE = 'rgba(29,155,240,0.96)';
-  const BG_OVER = 'rgba(0,186,124,0.96)';
-  const BG_BUSY = 'rgba(83,100,113,0.96)';
-  const BG_FAIL = 'rgba(244,33,46,0.96)';
-  const BG_PARTIAL = 'rgba(245,158,11,0.96)'; // saved, but post metadata was unavailable
+  // Visual language: the shared dark-glass vocabulary (glass-ui.js, declared
+  // before this file in the same manifest entry — same isolated world, runs
+  // first, synchronous global). A dark frosted card reads on any host page
+  // theme; state is carried by the badge fill + a tinted card border instead
+  // of repainting the whole card. See glass-ui.ts for the CSP/Trusted Types
+  // constraints that shape how everything is styled and built.
+  const G = window.corpusGlassUi;
 
-  function ensureOverlay(): HTMLDivElement {
-    if (overlay) return overlay;
-    // A local const (never reassigned) instead of reading the outer `overlay`
+  function ensureOverlay(): DropZone {
+    if (zone) return zone;
+    // A local const (never reassigned) instead of reading the outer `zone`
     // let from inside these nested closures — TS's null-narrowing on a
     // closure-captured outer variable doesn't cross a function boundary, but a
     // const captured by the same closures narrows fine.
     const el = document.createElement('div');
-    overlay = el;
     el.id = '__corpusDropZone';
     el.style.cssText = [
       'position:fixed',
       'right:24px',
       'bottom:24px',
       'z-index:2147483647',
-      'width:220px',
-      'min-height:120px',
+      'width:236px',
       'box-sizing:border-box',
       'display:none',
+      'flex-direction:column',
       'align-items:center',
-      'justify-content:center',
-      'padding:20px',
-      'border-radius:16px',
-      'border:3px dashed rgba(255,255,255,0.75)',
-      `background:${BG_IDLE}`,
+      'gap:10px',
+      'padding:22px 18px 18px',
+      'border-radius:20px',
+      `border:1px solid ${G.CARD_BORDER}`,
+      `background:${G.CARD_BG}`,
+      `backdrop-filter:${G.CARD_BLUR}`,
+      `-webkit-backdrop-filter:${G.CARD_BLUR}`,
       'color:#fff',
-      'font:600 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      'font:600 13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
       'text-align:center',
-      'box-shadow:0 8px 28px rgba(0,0,0,0.35)',
+      `box-shadow:${G.CARD_SHADOW}`,
       'pointer-events:auto',
-      'transition:transform .12s, background .12s',
+      'transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s, box-shadow .16s',
     ].join(';');
-    el.textContent = t('dragDropHint');
+
+    // Dashed inset ring = the "drop target" affordance; hidden on result states.
+    // Children are pointer-events:none so dragenter/dragleave never flicker.
+    const ring = document.createElement('div');
+    ring.style.cssText = 'position:absolute;inset:7px;border-radius:14px;border:1.5px dashed rgba(255,255,255,0.30);pointer-events:none;transition:border-color .16s,opacity .16s;';
+    el.appendChild(ring);
+
+    const badge = document.createElement('div');
+    badge.style.cssText = `width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background .16s,color .16s;`;
+    el.appendChild(badge);
+
+    const label = document.createElement('div');
+    label.style.cssText = 'pointer-events:none;max-width:100%;color:rgba(255,255,255,0.92);';
+    el.appendChild(label);
+
+    const z: DropZone = { el, ring, badge, label };
+    zone = z;
     el.addEventListener('dragenter', (e) => {
       e.preventDefault();
-      el.style.transform = 'scale(1.05)';
-      el.style.background = BG_OVER;
+      setState(z, 'over');
     });
     el.addEventListener('dragover', (e) => {
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
     });
     el.addEventListener('dragleave', () => {
-      el.style.transform = '';
-      el.style.background = BG_IDLE;
+      setState(z, 'idle');
     });
     el.addEventListener('drop', onDrop, true);
     document.body.appendChild(el);
-    return el;
+    return z;
+  }
+
+  function setState(z: DropZone, state: ZoneState, text?: string) {
+    if (text !== undefined) z.label.textContent = text;
+    z.badge.replaceChildren();
+    z.el.style.transform = '';
+    z.el.style.borderColor = G.CARD_BORDER;
+    z.el.style.boxShadow = G.CARD_SHADOW;
+    z.ring.style.opacity = state === 'idle' || state === 'over' ? '1' : '0';
+    z.ring.style.borderColor = 'rgba(255,255,255,0.30)';
+    switch (state) {
+      case 'idle':
+        z.badge.style.background = G.ACCENT_SOFT;
+        z.badge.style.color = G.ACCENT_TEXT;
+        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
+        break;
+      case 'over':
+        z.badge.style.background = G.ACCENT;
+        z.badge.style.color = '#fff';
+        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
+        z.el.style.transform = 'scale(1.04) translateY(-2px)';
+        z.el.style.borderColor = 'rgba(40,168,219,0.85)';
+        z.el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 4px rgba(40,168,219,0.22)`;
+        z.ring.style.borderColor = 'rgba(94,197,236,0.85)';
+        break;
+      case 'busy':
+        z.badge.style.background = 'rgba(255,255,255,0.10)';
+        z.badge.style.color = G.ACCENT_TEXT;
+        z.badge.appendChild(G.makeSpinner());
+        break;
+      case 'ok':
+        z.badge.style.background = G.OK_GREEN;
+        z.badge.style.color = '#fff';
+        z.badge.appendChild(G.makeIcon(G.ICONS.check));
+        z.el.style.borderColor = 'rgba(48,164,108,0.65)';
+        break;
+      case 'partial':
+        z.badge.style.background = G.WARN_AMBER;
+        z.badge.style.color = '#fff';
+        z.badge.appendChild(G.makeIcon(G.ICONS.warn));
+        z.el.style.borderColor = 'rgba(232,161,58,0.65)';
+        break;
+      case 'fail':
+        z.badge.style.background = G.FAIL_RED;
+        z.badge.style.color = '#fff';
+        z.badge.appendChild(G.makeIcon(G.ICONS.cross));
+        z.el.style.borderColor = 'rgba(229,72,77,0.65)';
+        break;
+    }
   }
 
   function showOverlay() {
-    const el = ensureOverlay();
-    el.textContent = t('dragDropHint');
-    el.style.background = BG_IDLE;
-    el.style.transform = '';
-    el.style.display = 'flex';
+    const z = ensureOverlay();
+    if (hideAnim) {
+      hideAnim.cancel();
+      hideAnim = null;
+    }
+    z.el.style.opacity = '';
+    setState(z, 'idle', t('dragDropHint'));
+    const wasHidden = z.el.style.display === 'none';
+    z.el.style.display = 'flex';
+    if (wasHidden && !G.REDUCED_MOTION) {
+      z.el.animate([{ opacity: 0, transform: 'translateY(14px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' });
+    }
   }
-  function hideOverlay() {
-    if (overlay) overlay.style.display = 'none';
+  function hideOverlay(fade = false) {
+    const z = zone;
+    if (!z || z.el.style.display === 'none') return;
+    if (!fade || G.REDUCED_MOTION) {
+      z.el.style.display = 'none';
+      return;
+    }
+    const anim = z.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(8px)' }], { duration: 140, easing: 'ease-in' });
+    hideAnim = anim;
+    anim.onfinish = () => {
+      if (hideAnim === anim) {
+        z.el.style.display = 'none';
+        hideAnim = null;
+      }
+    };
   }
 
   document.addEventListener(
@@ -134,7 +229,7 @@
     () => {
       if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
       pending = null;
-      hideOverlay();
+      hideOverlay(true);
     },
     true,
   );
@@ -149,15 +244,13 @@
       return;
     }
     savingViaDrop = true;
-    const el = ensureOverlay();
-    el.textContent = t('bannerSaving');
-    el.style.background = BG_BUSY;
-    el.style.transform = '';
+    const z = ensureOverlay();
+    setState(z, 'busy', t('bannerSaving'));
     chrome.runtime.sendMessage(p, (res: any) => {
       const ok = res && res.ok;
       const partial = ok && res.metaOk === false; // saved, but no post metadata
       const grouped = ok && !partial && res.grouped > 0; // same post saved earlier → merges into one card in the app
-      el.textContent = partial
+      const text = partial
         ? t('bannerSavedNoMeta')
         : grouped
           ? t('bannerSavedGrouped', [res.grouped + 1])
@@ -166,10 +259,14 @@
             : res && res.hostMissing
               ? t('bannerHostMissing') // missing native host → "restart Chrome"
               : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
-      el.style.background = partial ? BG_PARTIAL : ok ? BG_OVER : BG_FAIL;
+      setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
+      if (ok && !G.REDUCED_MOTION) {
+        // Small badge pop so the state flip reads even in peripheral vision.
+        z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+      }
       setTimeout(
         () => {
-          hideOverlay();
+          hideOverlay(true);
           savingViaDrop = false;
         },
         // grouped: hold a beat longer — it explains where the image "went"

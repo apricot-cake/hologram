@@ -9,10 +9,37 @@ interface CorpusI18nApi {
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
 }
 
+// Shared dark-glass visual vocabulary for on-page UI (see glass-ui.ts).
+interface CorpusGlassUiApi {
+  ACCENT: string;
+  ACCENT_SOFT: string;
+  ACCENT_TEXT: string;
+  OK_GREEN: string;
+  FAIL_RED: string;
+  WARN_AMBER: string;
+  CARD_BG: string;
+  CARD_BLUR: string;
+  CARD_BORDER: string;
+  CARD_SHADOW: string;
+  REDUCED_MOTION: boolean;
+  ICONS: {
+    drop: readonly string[];
+    check: readonly string[];
+    cross: readonly string[];
+    warn: readonly string[];
+    target: readonly string[];
+  };
+  makeIcon: (paths: readonly string[], size?: number) => SVGSVGElement;
+  makeSpinner: (size?: number) => HTMLDivElement;
+}
+
 interface Window {
   // Set by i18n.js (content_scripts, injected before content.js/drag.js in the
   // same manifest entry — same isolated world, runs first).
   corpusI18n: Promise<CorpusI18nApi>;
+  // Set by glass-ui.js (injected before content.js/drag.js in both lists —
+  // synchronous, unlike corpusI18n).
+  corpusGlassUi: CorpusGlassUiApi;
   // Re-injection guards (content.js).
   __snsPostSaveActive?: boolean;
   __snsPostSaveCleanup?: () => void;
