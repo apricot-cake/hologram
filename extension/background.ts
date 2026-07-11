@@ -56,7 +56,14 @@ function isAllowedSender(tabUrl, platformId) {
 }
 
 async function activateOnTab(tab) {
-  if (!tab.id || !/^https?:/i.test(tab.url || '')) return;
+  // Log the attempt (and the silent non-http bail) to capture.log: an icon
+  // click that "does nothing" is otherwise diagnosable only from the SW
+  // DevTools console, which nobody has open when it happens.
+  if (!tab.id || !/^https?:/i.test(tab.url || '')) {
+    void logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+    return;
+  }
+  void logCapture({ stage: 'activate', phase: 'click', host: getHostname(tab.url), url: tab.url });
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -64,6 +71,7 @@ async function activateOnTab(tab) {
     });
   } catch (error) {
     console.error('Failed to inject content script:', error);
+    void logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message });
   }
 }
 
