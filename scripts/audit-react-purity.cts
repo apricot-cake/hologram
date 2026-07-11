@@ -89,9 +89,8 @@ function check2(): boolean {
 }
 
 // 最終許可Set＝7件（2026-07-09 ユーザー確定・実プロダクト一致に振り切る）。
-// vendor-react.js と jszip.min.js は framework脱外部化（V18節7）で消滅する想定＝
-// それまではこの2件が「余分」として本チェックにFAIL表示され続けるのが意図どおり
-// （残作業の可視化）。
+// vendor-react.js と jszip.min.js は framework脱外部化（V18節7・2026-07-11完了）で
+// 消滅済み＝Reactはapp.jsへ直接バンドル、JSZipはnpm依存化。
 const CHECK3_ALLOW = new Set([
   'app/preload.js',
   'app/renderer/islands/app.js',

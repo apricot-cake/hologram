@@ -15,15 +15,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 //
 // root is app/ (this directory), NOT renderer/, because the island SOURCES live
 // in app/islands/ — OUTSIDE renderer/. With root=app/ every existing relative URL
-// still resolves: index.html is served at /renderer/index.html, jszip at
-// /vendor/*, and the island sources at /islands/<name>/index.tsx — all under the
-// same root so Vite serves them. renderer/theme.js is the one non-module
-// <script src> left (the pre-paint FOUC boot — must run before first paint, see
-// index.html's load-order comment; the live theme runtime API is renderer/theme-api.ts,
-// folded into app.js). It's a committed Vite lib-IIFE build output of renderer/theme.ts
-// (islands/build.mjs), same as renderer/islands/vendor-react.js — dev serves whatever
-// copy is on disk as a static file, so `npm run build:islands` after editing
-// theme.ts is what refreshes it (dev has no live-reload path for this one file).
+// still resolves: index.html is served at /renderer/index.html, and the island
+// sources at /islands/<name>/index.tsx — all under the same root so Vite serves
+// them. renderer/theme.js is the one non-module <script src> left (the pre-paint
+// FOUC boot — must run before first paint, see index.html's load-order comment;
+// the live theme runtime API is renderer/theme-api.ts, folded into app.js). It's a
+// committed Vite lib-IIFE build output of renderer/theme.ts (islands/build.mjs) —
+// dev serves whatever copy is on disk as a static file, so `npm run build:islands`
+// after editing theme.ts is what refreshes it (dev has no live-reload path for
+// this one file).
 
 // Matches the committed island <script src="islands/NAME.js"> tags in index.html.
 const ISLAND_SCRIPT = /<script src="islands\/([\w-]+)\.js"><\/script>/g;
@@ -42,12 +42,9 @@ function corpusDevHtml() {
     name: 'corpus-dev-html',
     apply: 'serve',
     transformIndexHtml(html) {
-      // The prebuilt shared React runtime is prod-only: dev serves each island's
-      // .tsx as an ES module that imports React straight from node_modules, and
-      // vendor-react has a .ts entry (no .tsx) the island rewrite below could not
-      // resolve anyway. Strip its <script> before the island rewrite so the
-      // ISLAND_SCRIPT regex below doesn't turn it into a dead /index.tsx module.
-      html = html.replace(/[ \t]*<script src="islands\/vendor-react\.js"><\/script>\r?\n?/, '');
+      // Dev serves each island's .tsx as an ES module that imports React straight
+      // from node_modules (same as the prod bundle now inlines it — no separate
+      // runtime script to strip here anymore).
       html = html.replace(ISLAND_SCRIPT, (_m, name) => `<script type="module" src="/islands/${name}/index.tsx"></script>`);
       html = html.replace(/(<meta http-equiv="Content-Security-Policy" content=")[^"]*(">)/, `$1${DEV_CSP}$2`);
       return html;

@@ -473,12 +473,5 @@ declare global {
 
   interface Window {
     corpus: CorpusPreload;
-    // vendor-react/index.ts assigns these; every island reaches React through
-    // them at runtime (build.mjs REACT_GLOBALS) — imports are type-only.
-    React: typeof import('react');
-    ReactDOM: typeof import('react-dom');
-    ReactDOMClient: typeof import('react-dom/client');
-    ReactJsxRuntime: typeof import('react/jsx-runtime');
-    JSZip?: any;
   }
 }

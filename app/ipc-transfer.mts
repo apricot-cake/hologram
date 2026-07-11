@@ -8,22 +8,20 @@
 // watcher + full-resync the renderer). The heavy engines (validateSaveFolder,
 // copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
 // avatar fetch) stay in main.js and arrive via ctx; mutable state is reached through
-// getWin/send/getConfigLastCorrupt/resetDelta accessors. JSZip stays lazily required
-// via the local getJSZip so a normal launch never pulls it in.
+// getWin/send/getConfigLastCorrupt/resetDelta accessors. JSZip (npm dep) stays behind
+// a dynamic import in getJSZip so a normal launch never pulls it in.
 import { ipcMain, dialog } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 
 import * as archive from './lib-archive.mts';
 import { parseJsonLoose } from './lib-json.mts';
 
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-let _JSZip = null;
-function getJSZip() {
-  return _JSZip || (_JSZip = require(path.join(__dirname, 'vendor', 'jszip.min.js')));
+let _JSZip: any = null;
+async function getJSZip() {
+  if (_JSZip) return _JSZip;
+  const mod: any = await import('jszip');
+  return (_JSZip = mod.default ?? mod);
 }
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -239,7 +237,8 @@ function register(ctx) {
     const imagesOnly = mode === 'images';
     let built: any;
     try {
-      built = imagesOnly ? await archive.buildImagesZip(getJSZip(), getSaveFolder()) : await (archive.buildCompleteZip as any)(getJSZip(), getSaveFolder());
+      const JSZip = await getJSZip();
+      built = imagesOnly ? await archive.buildImagesZip(JSZip, getSaveFolder()) : await (archive.buildCompleteZip as any)(JSZip, getSaveFolder());
     } catch (err) {
       return { saved: false, error: err.message };
     }
@@ -262,7 +261,7 @@ function register(ctx) {
   // metadata.json + images/ — keep using the renderer's importPosts path.)
   ipcMain.handle('import-complete', async (_e, bytes) => {
     try {
-      return await archive.importCompleteZip(getJSZip(), getSaveFolder(), Buffer.from(bytes));
+      return await archive.importCompleteZip(await getJSZip(), getSaveFolder(), Buffer.from(bytes));
     } catch (err) {
       return { ok: false, error: err.message };
     }

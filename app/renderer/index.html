@@ -2454,7 +2454,6 @@
        whole overlay into this mount point. The gear (#settingsBtn) opens it. -->
   <div id="settingsRoot"></div>
 
-  <script src="../vendor/jszip.min.js"></script>
   <!-- The entire renderer SERVICE layer (i18n/ui/folders/store/bridge/menu/kind-menu/
        filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
        about-icon/shell, plus the logic-service wave — search/query/records/facets/cooc/
@@ -2463,19 +2462,15 @@
        order these used to load in. theme.js stays its own pre-paint <script> (head,
        above) — it must run before first paint, which app.js (loaded at the end of body)
        cannot guarantee. -->
-  <!-- Shared React runtime (react + react-dom) for every island below. Bundled
-       once by islands/build.mjs and loaded FIRST so islands (built with React
-       externalized) reach window.React/ReactDOM/… instead of each inlining its
-       own ~186KB copy. Must precede the first island script. -->
-  <script src="islands/vendor-react.js"></script>
-  <!-- All React islands, the renderer service layer, AND the boot orchestrator in ONE
-       IIFE bundle: islands/build.mjs builds the app/index.tsx barrel, which side-effect-
-       imports every service, every island, then (last) renderer/orchestrator.ts + shell.ts.
-       orchestrator.ts owns data/state/event-delegation + the remaining window.corpus*
-       bridges; each island subscribes and renders. Ordering is robust — orchestrator's
-       body awaits corpusI18n so it stays deferred behind the synchronous island mounts,
-       and islands pull current state on mount. Shared code (masonic / react-aria /
-       _shared/*) is bundled once. -->
+  <!-- All React islands, React itself, the renderer service layer, AND the boot
+       orchestrator in ONE IIFE bundle: islands/build.mjs builds the app/index.tsx
+       barrel, which side-effect-imports every service, every island, then (last)
+       renderer/orchestrator.ts + shell.ts. orchestrator.ts owns data/state/event-
+       delegation + the remaining window.corpus* bridges; each island subscribes
+       and renders. Ordering is robust — orchestrator's body awaits corpusI18n so it
+       stays deferred behind the synchronous island mounts, and islands pull current
+       state on mount. Shared code (React / masonic / react-aria / _shared/*) is
+       bundled once. -->
   <script src="islands/app.js"></script>
 </body>
 </html>

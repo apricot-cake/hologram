@@ -6,8 +6,8 @@
   // These files run un-built under Electron 43 (Node 24) via native type
   // stripping — no emit, no bundler. They use the .mts extension (unconditionally
   // ESM) rather than .ts + package.json "type":"module", because "type":"module"
-  // would also flip every OTHER app/*.js (the renderer service layer's dual-export
-  // and vendor/jszip.min.js) to ESM and break the CJS unit-test / bundle consumers.
+  // would also flip every OTHER app/*.js (the renderer service layer's dual-export)
+  // to ESM and break the CJS unit-test / bundle consumers.
   // import { app } from 'electron' resolves Electron's ESM builtin (CJS
   // require('electron') does NOT resolve under the type-strip loader — proven on
   // the real binary 2026-07-06). preload stays .js (CJS) because the sandbox

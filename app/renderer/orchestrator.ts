@@ -8,6 +8,7 @@
 // window.corpusX bridge to real ES modules one wave at a time; the ones
 // imported below are converted, the rest are still read via window.corpusX at
 // call time.
+import JSZip from 'jszip';
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';

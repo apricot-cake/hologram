@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, CSSProperties } from 'react';
 import { Hint } from '../components/Hint.tsx';
@@ -199,7 +200,7 @@ export function Data() {
     notify(t('importing'));
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
-      const zip = await window.JSZip.loadAsync(buf);
+      const zip = await JSZip.loadAsync(buf);
       const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
         const res = await importComplete(buf);

@@ -24,7 +24,14 @@
     // ambient module, so unchecked is the correct Vite-project setting.
     "noUncheckedSideEffectImports": false,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // Redirect the 'jszip' type import to a minimal local shim (2026-07-11, V18 §7):
+    // jszip's bundled DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
+    // which — once anything in this browser-only program imports jszip — pulls Node's
+    // globals in and shadows the DOM lib's setTimeout/setInterval (number) with
+    // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
+    // the runtime import still resolves to the real npm package via Vite/Node.
+    "paths": { "jszip": ["./islands/types/jszip-shim.d.ts"] }
   },
   "include": ["islands/**/*", "renderer/**/*"]
 }

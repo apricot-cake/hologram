@@ -38,8 +38,7 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 - `lib-archive.mts` — ZIP入出力
 - `lib-index.mts` — 保存先サイドカーの index＝filename+mtimeMs で記録をキャッシュ。`listPosts` を非同期・O(changed) 化し `.index.json` スナップショットで起動も高速化。更新は差分IPC（list-posts-delta）＋fs.watch の変更ファイル名ヒントで対象サイドカーだけ再走査（applyChanges）＝実測 ~1ms。Electron非依存＝node でテスト可
 - `renderer/`（`index.html`・`.ts`群＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み・`design-tokens.css`）。描画自体は下記`islands/`のReactコンポーネントが100%所有し、orchestrator.tsとは共有ストア`window.corpusStore`経由で連携（push型のモデル注入は撤去済み＝島は自己購読・メモリ`corpus-react-settings-pilot`）
-- `islands/` — React（`.tsx`）コンポーネント群。`islands/build.mjs`（Vite lib-IIFE）で単一バンドル`renderer/islands/app.js`へビルド（`theme.ts`のみ`<script>`直読み・pre-paint実行の制約で別バンドル`renderer/theme.js`）
-- `vendor/jszip.min.js` — vendored
+- `islands/` — React（`.tsx`）コンポーネント群。`islands/build.mjs`（Vite lib-IIFE）で単一バンドル`renderer/islands/app.js`へビルド（React本体・JSZipもこのバンドルへ直接取り込み・`theme.ts`のみ`<script>`直読み・pre-paint実行の制約で別バンドル`renderer/theme.js`）
 - 機能: サイドカー走査で閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Corpus-mirror`）。画像は `psimg://` プロトコルで遅延読込。
 
 ## ビューア機能（内部実装メモ）

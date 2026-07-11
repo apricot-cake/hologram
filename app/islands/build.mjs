@@ -4,17 +4,18 @@
 // these islands are compiled. Replaces the former esbuild bundler.
 //
 //   npm run build:islands   → production: builds every island (imported by the
-//                              app/index.tsx barrel) into ONE renderer/islands/app.js,
-//                              plus two standalone side-effect-only IIFEs that stay
-//                              OUTSIDE that bundle (vendor-react.js, theme.js — see
-//                              each build() call below for why).
+//                              app/index.tsx barrel) — React included — into ONE
+//                              renderer/islands/app.js, plus a standalone
+//                              side-effect-only IIFE that stays OUTSIDE that bundle
+//                              (theme.js — see its build() call below for why).
 //
-// ALL islands are bundled into a single IIFE via one barrel entry (app/index.tsx
-// side-effect-imports every island). rollup CAN emit IIFE for a single entry, so
-// sharing one entry lets masonic / react-aria / _shared/* bundle ONCE instead of
-// duplicating per island (the former per-island loop re-inlined each). IIFE (not
-// ESM) is required so the prod `file://` load never hits the module-from-null-origin
-// CORS block. The barrel (app/index.tsx) is the source of truth for the island set.
+// ALL islands (React included — see the removed vendor-react split below) are
+// bundled into a single IIFE via one barrel entry (app/index.tsx side-effect-imports
+// every island). rollup CAN emit IIFE for a single entry, so sharing one entry lets
+// React / masonic / react-aria / _shared/* bundle ONCE instead of duplicating per
+// island (the former per-island loop re-inlined each). IIFE (not ESM) is required so
+// the prod `file://` load never hits the module-from-null-origin CORS block. The
+// barrel (app/index.tsx) is the source of truth for the island set.
 //
 // dev uses `vite` (serve) with HMR/Fast Refresh instead of this script; its HTML
 // rewrite turns `islands/app.js` into `/islands/app/index.tsx` (the barrel) via
@@ -30,40 +31,6 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // app/islands
 const appRoot = path.join(here, '..'); // app
-
-// React is externalized out of every island and shared via one prebuilt runtime
-// (vendor-react.js, loaded first in index.html). These specifiers map to the
-// globals that vendor-react/index.js assigns on `window` — the two lists MUST
-// stay in sync. Without this, each island re-inlines its own ~186KB React copy.
-const REACT_EXTERNALS = ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'];
-const REACT_GLOBALS = {
-  react: 'React',
-  'react-dom': 'ReactDOM',
-  'react-dom/client': 'ReactDOMClient',
-  'react/jsx-runtime': 'ReactJsxRuntime',
-};
-
-// Build the shared runtime FIRST (react + react-dom bundled in, nothing
-// external) so it exists before the islands that expect its globals at load.
-await build({
-  root: appRoot,
-  configFile: false,
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-  logLevel: 'warn',
-  build: {
-    outDir: path.join(appRoot, 'renderer/islands'),
-    emptyOutDir: false,
-    target: 'chrome130',
-    minify: true,
-    sourcemap: false,
-    lib: {
-      entry: path.join(here, 'vendor-react', 'index.ts'),
-      formats: ['iife'],
-      name: '__corpusReactRuntime', // side-effect only (assigns window.*); no exports read
-      fileName: () => 'vendor-react.js',
-    },
-  },
-});
 
 // The CJS 'use-sync-external-store' shim (react-aria / react-stately transitive
 // dep) keeps a literal require("react") in lib-IIFE output — externals are
@@ -123,7 +90,7 @@ await build({
   logLevel: 'warn',
   build: {
     outDir: path.join(appRoot, 'renderer/islands'),
-    emptyOutDir: false, // shares the dir with vendor-react.js (built above); don't wipe it
+    emptyOutDir: false, // shares the dir with theme.js (built above, under renderer/ though — harmless)
     target: 'chrome130', // Electron 33 ships Chromium 130
     minify: true, // vite 8 (rolldown) uses its built-in oxc minifier; 'esbuild' would require esbuild as a separate dep
     cssCodeSplit: true, // settings imports './styles.css' → emitted as app.css alongside app.js
@@ -135,11 +102,10 @@ await build({
       name: '__corpusIslands', // IIFE needs a name; islands export nothing (side-effect only)
       fileName: () => 'app.js',
     },
-    rollupOptions: {
-      external: REACT_EXTERNALS, // don't inline React; reach it via window globals
-      output: { globals: REACT_GLOBALS },
-    },
+    // React (and jszip) are bundled straight into app.js now — no external/globals
+    // split (see the removed vendor-react step above). file:// is a single-app load
+    // with no cross-page caching to gain from splitting it back out.
   },
 });
 
-console.log('[islands] built renderer/theme.js + renderer/islands/{vendor-react,app}.js via Vite lib IIFE');
+console.log('[islands] built renderer/theme.js + renderer/islands/app.js via Vite lib IIFE');

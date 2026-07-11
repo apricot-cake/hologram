@@ -1,8 +1,7 @@
 // Single-bundle entry — side-effect imports of every React island. islands/build.mjs
 // builds this one barrel into renderer/islands/app.js: ONE IIFE for all islands so
-// shared code (masonic, react-aria-components, _shared/{VirtualGrid,TagEditor,i18n,tip})
-// is bundled ONCE instead of duplicated per island. React stays externalized to
-// vendor-react.js.
+// shared code (React, masonic, react-aria-components, _shared/{VirtualGrid,TagEditor,
+// i18n,tip}) is bundled ONCE instead of duplicated per island.
 //
 // The renderer's single React root (最終形B DoD: 島 root 群の1本統合 — COMPLETE). root.tsx
 // creates ONE createRoot(#corpusAppRoot) and renders app/App.tsx, which is the source of

@@ -6,6 +6,7 @@
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "jsdom": "^29.1.1",
+    "jszip": "3.10.1",
     "puppeteer": "^25.1.0"
   },
   "scripts": {

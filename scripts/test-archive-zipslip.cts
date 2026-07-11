@@ -13,7 +13,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const JSZip = require('../app/vendor/jszip.min.js');
+const JSZip = require('jszip');
 const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts');
 
 (async () => {
