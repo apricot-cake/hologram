@@ -233,7 +233,8 @@ function register(ctx) {
   // One ZIP that mirrors the whole library under library/: every capture file
   // (jpg/json/media) PLUS the organization JSONs (folders/tag-groups/ungrouped/
   // manual-groups). Excludes config.json (machine-specific) and .index.json
-  // (cache). Built in main so both manual export and the scheduled export share it.
+  // (cache). Manual-only: the scheduled path is the incremental mirror (runBackup),
+  // which replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
   ipcMain.handle('export-complete', async (_e, mode) => {
     const imagesOnly = mode === 'images';
     let built: any;
