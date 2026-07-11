@@ -57,6 +57,7 @@ export function Trash() {
     await load();
   };
   const emptyAll = async () => {
+    if (!window.confirm(t('trashEmptyConfirm'))) return;
     try {
       await emptyTrash();
     } catch {
@@ -94,7 +95,7 @@ export function Trash() {
           );
         })}
       </div>
-      <button className="btn-outline" onClick={emptyAll} disabled={!records.length}>
+      <button className="btn-danger" onClick={emptyAll} disabled={!records.length}>
         {t('trashEmptyBtn')}
       </button>
     </>
