@@ -356,4 +356,3 @@ export function subscribe(id: string, cb: () => void) {
 export function dispatch(id: string, action: any) {
   return dispatchers.get(id)?.(action);
 }
-

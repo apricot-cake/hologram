@@ -86,11 +86,7 @@ export function TooltipHost() {
   // frost's 55% fill looked like an opaque chip). The rich variant bumps the
   // fill (index.html) so a whole sentence still reads.
   return createPortal(
-    <div
-      ref={ref}
-      className={`ui-tip glass-lens${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`}
-      role="tooltip"
-    >
+    <div ref={ref} className={`ui-tip glass-lens${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`} role="tooltip">
       {model?.text}
     </div>,
     document.body,

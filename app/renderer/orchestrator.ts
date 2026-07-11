@@ -831,18 +831,7 @@ export let resetPosterFilters: () => void;
     showImageTab: (t) => imageTabCtl.showImageTab(t), // imageTabCtl is constructed just below — deferred
     hideImageTabView: () => imageTabCtl.hideImageTabView(),
   });
-  const {
-    getTabs,
-    mutateTabs,
-    getActiveTabId,
-    setActiveTabId,
-    isImageTab,
-    activeTab,
-    nav,
-    persistTabsDebounced,
-    saveActiveTabState,
-    closeTab,
-  } = tabsCtl;
+  const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, isImageTab, activeTab, nav, persistTabsDebounced, saveActiveTabState, closeTab } = tabsCtl;
   // The rest of tabsCtl's surface only ever gets read through the module-scope exports
   // above (App.tsx/Activebar.tsx import those directly) — assigned by property, not
   // destructured, so there's no local same-named binding shadowing the `export let`s
@@ -1306,24 +1295,8 @@ export let resetPosterFilters: () => void;
       posterReturn = key;
     },
   });
-  const {
-    getPosterList,
-    pfStore,
-    posterFolderById,
-    posterFolderHas,
-    createPosterFolder,
-    deletePosterFolder,
-    togglePosterFolderMember,
-    renderPosterFilterRows,
-    renderPosters,
-    openPosterPosts,
-    jumpToPoster,
-    refreshPosterTagFields,
-    refreshPosterFolderFields,
-    applyPosterTagChange,
-    showPosterDetail,
-    showPosterMenu,
-  } = posterGrid;
+  const { getPosterList, pfStore, posterFolderById, posterFolderHas, createPosterFolder, deletePosterFolder, togglePosterFolderMember, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, refreshPosterFolderFields, applyPosterTagChange, showPosterDetail, showPosterMenu } =
+    posterGrid;
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in

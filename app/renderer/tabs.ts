@@ -99,4 +99,3 @@ export const corpusTabsSource = {
   },
 };
 for (const k of ['tabs', 'activeTabId', 'tabEditingId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount']) storeSubscribe(k, notify);
-

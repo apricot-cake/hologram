@@ -172,4 +172,3 @@ export const corpusPosterSidebarSource = makeSource(computePosterModel, [
   subscribePostsData, // namedPosters()/buildUsers() read allPosts
   // No corpusFolders subscription — poster badges/visible never depend on clip state.
 ]);
-
