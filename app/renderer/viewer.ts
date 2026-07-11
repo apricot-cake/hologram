@@ -10,7 +10,6 @@ import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndo } from './undo.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
-import { makeSearchEditing } from './search-editing.ts';
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
@@ -20,7 +19,6 @@ import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-po
 import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPopoverGet } from './filter-popover.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
-import { init as initSearchBox } from './searchbox.ts';
 import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, sameTags, getTagTypes, getTagLabels, getTagGroups, getPosterTags, setTagKind as tagsSetTagKind, setPosterTags, applyPosterTagRecords, load as loadTags } from './tags.ts';
 import { genTabId, makeTabLabels, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
@@ -33,6 +31,7 @@ import * as selection from './selection.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
+import { makeSearchBox } from './search-box-builder.ts';
 import { corpusTabsSource } from './tabs.ts';
 import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
@@ -789,8 +788,9 @@ import { corpusIpc } from './ipc.ts';
   // this only builds the field model + owns the apply/remove actions.
   let editingDateNode: CorpusQueryLeaf | null = null;
   // The single 'text' leaf bound to the search box (post mode only) is owned by
-  // search-editing.ts now (P4-B slice⑨) — see the searchEditing construction
-  // near syncEditingTextLeaf/confirmEditingTextLeaf/rebindEditingTextLeaf below.
+  // search-editing.ts, wired together with the rest of the search-box plumbing
+  // in search-box-builder.ts now (viewer.ts decomposition's V3 slice, Wave17) —
+  // see the makeSearchBox() call below.
 
   function openDatePopover(node: CorpusQueryLeaf | null) {
     closeAllMenus(); // close the other popover if open (no backdrop anymore)
@@ -1213,7 +1213,7 @@ import { corpusIpc } from './ipc.ts';
     // When the editing text leaf is removed or dragged on the bar, detach it from
     // the box. textInTree (query-builder.ts) suppresses the legacy echo chip (the
     // term is a real leaf). Deferred arrows: searchEditing is constructed later in
-    // this closure (near syncEditingTextLeaf below), same forward-reference
+    // this closure (the makeSearchBox() call below), same forward-reference
     // pattern as postQB/posterQB being referenced from functions defined above
     // their own declarations.
     onLeafMutated: (node: CorpusQueryLeaf) => searchEditing.onLeafMutated(node),
@@ -1394,7 +1394,7 @@ import { corpusIpc } from './ipc.ts';
     currentTree,
     stickyRecs,
     sortValue: () => sortSelect.value,
-    searchQuery,
+    searchQuery: () => searchQuery(),
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
@@ -3821,93 +3821,40 @@ import { corpusIpc } from './ipc.ts';
 
   // --- Search value source -----------------------------------------------------
   // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
-  // as a controlled react-aria ComboBox input. Typing: island → store → the
-  // subscriber below runs the debounced heavy side effects. Programmatic writes
-  // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →
-  // store → island re-renders the input. _searchEcho tells the two apart — every
-  // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
-  // the typing pipeline would double-render and churn the editing text leaf.
-  function searchQuery() {
-    return String(storeGet('searchQuery') || '');
-  }
-  let _searchEcho = '';
-  function setSearchBoxValue(v: string | null | undefined) {
-    _searchEcho = String(v ?? '');
-    storeSet('searchQuery', _searchEcho);
-  }
-
-  // Search / sort events
-  // Typing arrives via the store (the searchbox island pushes every keystroke).
-  // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
-  // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
-  // no args — a truthy arg would be taken as keepLimit and skip the history push.
-  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer below; this stays the guard + action logic.
-  let _searchRenderTimer: any = null;
-  function handleSearchQueryStoreChange() {
-    const v = searchQuery();
-    if (v === _searchEcho) return; // setSearchBoxValue echo — its caller re-renders itself
-    _searchEcho = v;
-    clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = setTimeout(() => {
-      if (browseMode === 'posters') {
-        renderPosters();
-        return;
-      }
-      syncEditingTextLeaf(); // posts: the box edits a 'text' leaf in the query tree
-    }, 150);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
-  // Search box ↔ query-tree text-leaf state machine + suggestion-pick handling —
-  // extracted to search-editing.ts (P4-B slice⑨).
-  // The functions below are thin wrappers keeping the existing call-site names
-  // (handleSearchQueryStoreChange/onConfirmText/postQB ctx/window.corpusViewer
-  // all reference these by name) — same "wrapper preserves names" shape as the
-  // postQB.addFilter/removeFilter/removeNode module-level wrappers above.
-  const searchEditing = makeSearchEditing({
+  // as a controlled react-aria ComboBox input. The query-tree text-leaf state
+  // machine (search-editing.ts, Wave2), the suggestion-pick bridge to the
+  // searchbox island (searchbox.ts, Wave5), and the store plumbing/debounced
+  // re-render around them are wired together in search-box-builder.ts now
+  // (viewer.ts decomposition's V3 slice, Wave17). searchEditing itself stays a
+  // local const here — resetAllFilters (above) and postQB's onLeafMutated/
+  // isEditingLeaf deps still reference it directly.
+  const {
+    searchQuery,
+    setSearchBoxValue,
+    handleSearchQueryStoreChange,
+    rebindEditingTextLeaf,
+    handleSearchModeChange,
+    searchEditing,
+  } = makeSearchBox({
+    storeGet,
+    storeSet,
     getTree: () => postQB.getTree(),
     addFilter: (f) => postQB.addFilter(f),
     removeNode: (n) => postQB.removeNode(n),
     treeLeaves,
-    searchQuery: () => searchQuery(),
-    setSearchBoxValue: (v) => setSearchBoxValue(v),
     isFuzzy: () => searchIsFuzzy(),
-    isPostsMode: () => browseMode === 'posts',
+    getBrowseMode: () => browseMode,
     afterQueryChange: () => afterQueryChange(),
     renderPosts: () => renderPosts(),
+    renderPosters: () => renderPosters(),
     updateSidebarState: () => updateSidebarState(),
+    buildSuggest: (q) => buildSuggest(q),
+    searchModeTitle: MSG.searchModeTitle,
   });
-  function syncEditingTextLeaf() {
-    searchEditing.sync();
-  }
-  function confirmEditingTextLeaf() {
-    clearTimeout(_searchRenderTimer); // beat the debounce so the leaf holds the latest value
-    searchEditing.confirm();
-  }
-  function rebindEditingTextLeaf() {
-    searchEditing.rebind();
-  }
+  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
+  // window.corpusViewer below; this stays the guard + action logic.
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchQueryStoreChange });
 
-  // --- リアルタイム検索サジェスト -------------------------------------------
-  // タイプのたびに、本文検索と並行してタグ/作者の候補を検索ボックス直下に表示。
-  // クリック/Enter でそのままフィルタ化（タイプした文字は消す）。
-  // The searchbox island (react-aria ComboBox) owns the input + dropdown UI:
-  // rendering, keyboard nav, open/close, positioning. The suggestion DATA comes
-  // from buildSuggest (users.js — wired above with buildUsers); what a pick DOES
-  // is searchEditing.pick (wired through the searchbox bridge registered below).
-  function applySuggest(it: { kind: string; value: string; label?: string } | null | undefined) {
-    searchEditing.pick(it);
-  }
-  // Register the island's data callbacks. onConfirmText replicates the old bare-
-  // Enter behavior: only posts mode confirms a text leaf (posters/collections
-  // filter live off the box value, Enter is a no-op there).
-  initSearchBox({
-    getSuggestions: (q) => buildSuggest(q),
-    onPick: applySuggest,
-    onConfirmText: () => {
-      if (browseMode === 'posts' && searchQuery().trim()) confirmEditingTextLeaf();
-    },
-  });
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
     // separate global pref — that double-storage raced on load. renderPosts captures it.
@@ -3917,19 +3864,10 @@ import { corpusIpc } from './ipc.ts';
   // 検索方式の切替（おおまか / ぴったり）＝macOS 風セグメント。両方を常に見せ、
   // 状態と切替手段がひと目で分かる。corpusSearch がモードを集約＝メイン検索と
   // フライアウト絞り込みで共有する。UI は toolbar 島（#searchModeSeg）が描画し、
-  // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。viewer
-  // はコンテナの aria-label とモード変更時の副作用（編集中リーフ追従 / 再描画）だけ持つ。
-  {
-    const sms = document.getElementById('searchModeSeg');
-    if (sms) sms.setAttribute('aria-label', MSG.searchModeTitle);
-  }
-  // The toggle now sets the mode for the NEXT term. The editing (un-confirmed)
-  // leaf follows it; confirmed leaves keep their own frozen mode (postPredOf reads
-  // f.mode). Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer below; this stays the guard + action logic.
-  function handleSearchModeChange() {
-    searchEditing.onSearchModeChange();
-  }
+  // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。コンテナの
+  // aria-label 設定とhandleSearchModeChange本体はsearch-box-builder.tsへ移設済み
+  // （Wave17/V3）。Subscribe registration lives in React (StoreSubscriptions,
+  // App.tsx) via window.corpusViewer below; this stays the guard + action logic.
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleSearchModeChange });
 
   // --- Import from ZIP ---
