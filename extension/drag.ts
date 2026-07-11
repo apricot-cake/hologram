@@ -55,53 +55,13 @@
     });
   }
 
-  // Visual language mirrors the app's dark glass surfaces (design-tokens.css:
-  // --glass-* / --sky-600 accent / --green-500 / --red-500 / --amber-500). A
-  // dark frosted card reads on any host page theme; state is carried by the
-  // badge fill + a tinted card border instead of repainting the whole card.
-  // All styling is inline via element.style (no injected <style> — the host
-  // page's CSP style-src would apply to it) and icons are built with
-  // createElementNS (no innerHTML — Trusted Types-enforcing hosts like x.com
-  // reject string sinks even from the isolated world).
-  const ACCENT = '#28a8db';
-  const OK_GREEN = '#30a46c';
-  const FAIL_RED = '#e5484d';
-  const WARN_AMBER = '#e8a13a'; // saved, but post metadata was unavailable
-  const CARD_BORDER = 'rgba(255,255,255,0.14)';
-  const CARD_SHADOW = '0 12px 36px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)';
-  const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  const SVGNS = 'http://www.w3.org/2000/svg';
-  const ICON_DROP = ['M12 4v9', 'm8.5 9.5 3.5 3.5 3.5-3.5', 'M4.5 15.5v2a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-2'];
-  const ICON_CHECK = ['m6 12.5 4.2 4.2L18 8'];
-  const ICON_CROSS = ['M7 7l10 10', 'M17 7 7 17'];
-  const ICON_WARN = ['M12 6.5v6.5', 'M12 17.2v.05'];
-
-  function makeIcon(paths: readonly string[]): SVGSVGElement {
-    const svg = document.createElementNS(SVGNS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '22');
-    svg.setAttribute('height', '22');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    for (const d of paths) {
-      const p = document.createElementNS(SVGNS, 'path');
-      p.setAttribute('d', d);
-      svg.appendChild(p);
-    }
-    svg.style.pointerEvents = 'none';
-    return svg;
-  }
-
-  function makeSpinner(): HTMLDivElement {
-    const sp = document.createElement('div');
-    sp.style.cssText = 'width:22px;height:22px;border-radius:50%;border:2.5px solid rgba(255,255,255,0.22);border-top-color:#5ec5ec;box-sizing:border-box;pointer-events:none;';
-    sp.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: 900, iterations: Number.POSITIVE_INFINITY });
-    return sp;
-  }
+  // Visual language: the shared dark-glass vocabulary (glass-ui.js, declared
+  // before this file in the same manifest entry — same isolated world, runs
+  // first, synchronous global). A dark frosted card reads on any host page
+  // theme; state is carried by the badge fill + a tinted card border instead
+  // of repainting the whole card. See glass-ui.ts for the CSP/Trusted Types
+  // constraints that shape how everything is styled and built.
+  const G = window.corpusGlassUi;
 
   function ensureOverlay(): DropZone {
     if (zone) return zone;
@@ -124,14 +84,14 @@
       'gap:10px',
       'padding:22px 18px 18px',
       'border-radius:20px',
-      `border:1px solid ${CARD_BORDER}`,
-      'background:rgba(23,25,30,0.78)',
-      'backdrop-filter:blur(20px) saturate(140%)',
-      '-webkit-backdrop-filter:blur(20px) saturate(140%)',
+      `border:1px solid ${G.CARD_BORDER}`,
+      `background:${G.CARD_BG}`,
+      `backdrop-filter:${G.CARD_BLUR}`,
+      `-webkit-backdrop-filter:${G.CARD_BLUR}`,
       'color:#fff',
       'font:600 13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
       'text-align:center',
-      `box-shadow:${CARD_SHADOW}`,
+      `box-shadow:${G.CARD_SHADOW}`,
       'pointer-events:auto',
       'transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s, box-shadow .16s',
     ].join(';');
@@ -143,7 +103,7 @@
     el.appendChild(ring);
 
     const badge = document.createElement('div');
-    badge.style.cssText = 'width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(40,168,219,0.18);color:#5ec5ec;pointer-events:none;transition:background .16s,color .16s;';
+    badge.style.cssText = `width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};pointer-events:none;transition:background .16s,color .16s;`;
     el.appendChild(badge);
 
     const label = document.createElement('div');
@@ -172,46 +132,46 @@
     if (text !== undefined) z.label.textContent = text;
     z.badge.replaceChildren();
     z.el.style.transform = '';
-    z.el.style.borderColor = CARD_BORDER;
-    z.el.style.boxShadow = CARD_SHADOW;
+    z.el.style.borderColor = G.CARD_BORDER;
+    z.el.style.boxShadow = G.CARD_SHADOW;
     z.ring.style.opacity = state === 'idle' || state === 'over' ? '1' : '0';
     z.ring.style.borderColor = 'rgba(255,255,255,0.30)';
     switch (state) {
       case 'idle':
-        z.badge.style.background = 'rgba(40,168,219,0.18)';
-        z.badge.style.color = '#5ec5ec';
-        z.badge.appendChild(makeIcon(ICON_DROP));
+        z.badge.style.background = G.ACCENT_SOFT;
+        z.badge.style.color = G.ACCENT_TEXT;
+        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
         break;
       case 'over':
-        z.badge.style.background = ACCENT;
+        z.badge.style.background = G.ACCENT;
         z.badge.style.color = '#fff';
-        z.badge.appendChild(makeIcon(ICON_DROP));
+        z.badge.appendChild(G.makeIcon(G.ICONS.drop));
         z.el.style.transform = 'scale(1.04) translateY(-2px)';
         z.el.style.borderColor = 'rgba(40,168,219,0.85)';
-        z.el.style.boxShadow = `${CARD_SHADOW}, 0 0 0 4px rgba(40,168,219,0.22)`;
+        z.el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 4px rgba(40,168,219,0.22)`;
         z.ring.style.borderColor = 'rgba(94,197,236,0.85)';
         break;
       case 'busy':
         z.badge.style.background = 'rgba(255,255,255,0.10)';
-        z.badge.style.color = '#5ec5ec';
-        z.badge.appendChild(makeSpinner());
+        z.badge.style.color = G.ACCENT_TEXT;
+        z.badge.appendChild(G.makeSpinner());
         break;
       case 'ok':
-        z.badge.style.background = OK_GREEN;
+        z.badge.style.background = G.OK_GREEN;
         z.badge.style.color = '#fff';
-        z.badge.appendChild(makeIcon(ICON_CHECK));
+        z.badge.appendChild(G.makeIcon(G.ICONS.check));
         z.el.style.borderColor = 'rgba(48,164,108,0.65)';
         break;
       case 'partial':
-        z.badge.style.background = WARN_AMBER;
+        z.badge.style.background = G.WARN_AMBER;
         z.badge.style.color = '#fff';
-        z.badge.appendChild(makeIcon(ICON_WARN));
+        z.badge.appendChild(G.makeIcon(G.ICONS.warn));
         z.el.style.borderColor = 'rgba(232,161,58,0.65)';
         break;
       case 'fail':
-        z.badge.style.background = FAIL_RED;
+        z.badge.style.background = G.FAIL_RED;
         z.badge.style.color = '#fff';
-        z.badge.appendChild(makeIcon(ICON_CROSS));
+        z.badge.appendChild(G.makeIcon(G.ICONS.cross));
         z.el.style.borderColor = 'rgba(229,72,77,0.65)';
         break;
     }
@@ -227,14 +187,14 @@
     setState(z, 'idle', t('dragDropHint'));
     const wasHidden = z.el.style.display === 'none';
     z.el.style.display = 'flex';
-    if (wasHidden && !REDUCED_MOTION) {
+    if (wasHidden && !G.REDUCED_MOTION) {
       z.el.animate([{ opacity: 0, transform: 'translateY(14px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' });
     }
   }
   function hideOverlay(fade = false) {
     const z = zone;
     if (!z || z.el.style.display === 'none') return;
-    if (!fade || REDUCED_MOTION) {
+    if (!fade || G.REDUCED_MOTION) {
       z.el.style.display = 'none';
       return;
     }
@@ -300,7 +260,7 @@
               ? t('bannerHostMissing') // missing native host → "restart Chrome"
               : t('bannerFailed') + (res && res.error ? `: ${res.error}` : '');
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
-      if (ok && !REDUCED_MOTION) {
+      if (ok && !G.REDUCED_MOTION) {
         // Small badge pop so the state flip reads even in peripheral vision.
         z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
       }

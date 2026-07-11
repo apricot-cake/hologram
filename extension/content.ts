@@ -39,28 +39,101 @@
 
   // === UI elements ===
 
-  // Top banner
+  // Visual language: the shared dark-glass vocabulary (glass-ui.js, injected
+  // before this file — same isolated world, runs first, synchronous global).
+  // State is carried by the badge fill + a tinted pill border; see glass-ui.ts
+  // for the CSP/Trusted Types constraints that shape how everything is built.
+  const G = window.corpusGlassUi;
+
+  // Top banner — glass pill: leading icon badge + label.
   const banner = document.createElement('div');
-  banner.style.cssText = `
-    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
-    background: #1d9bf0; color: #fff; padding: 8px 20px; border-radius: 24px;
-    font: 600 14px/1.4 -apple-system, sans-serif; z-index: 2147483647;
-    pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    transition: opacity 0.2s;
-  `;
-  banner.textContent = MSG.select;
+  banner.style.cssText = [
+    'position:fixed',
+    'top:12px',
+    'left:50%',
+    'transform:translateX(-50%)',
+    'z-index:2147483647',
+    'display:flex',
+    'align-items:center',
+    'gap:9px',
+    'padding:6px 16px 6px 7px',
+    'max-width:calc(100vw - 48px)',
+    'box-sizing:border-box',
+    'border-radius:999px',
+    `border:1px solid ${G.CARD_BORDER}`,
+    `background:${G.CARD_BG}`,
+    `backdrop-filter:${G.CARD_BLUR}`,
+    `-webkit-backdrop-filter:${G.CARD_BLUR}`,
+    'color:rgba(255,255,255,0.92)',
+    'font:600 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    `box-shadow:${G.CARD_SHADOW}`,
+    'pointer-events:none',
+    'transition:border-color .16s',
+  ].join(';');
+  const bannerBadge = document.createElement('div');
+  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};transition:background .16s,color .16s;`;
+  banner.appendChild(bannerBadge);
+  const bannerLabel = document.createElement('div');
+  banner.appendChild(bannerLabel);
+
+  type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail';
+  function setBanner(state: BannerState, text: string) {
+    bannerLabel.textContent = text;
+    bannerBadge.replaceChildren();
+    banner.style.borderColor = G.CARD_BORDER;
+    switch (state) {
+      case 'select':
+        bannerBadge.style.background = G.ACCENT_SOFT;
+        bannerBadge.style.color = G.ACCENT_TEXT;
+        bannerBadge.appendChild(G.makeIcon(G.ICONS.target, 15));
+        break;
+      case 'busy':
+        bannerBadge.style.background = 'rgba(255,255,255,0.10)';
+        bannerBadge.style.color = G.ACCENT_TEXT;
+        bannerBadge.appendChild(G.makeSpinner(15));
+        break;
+      case 'ok':
+        bannerBadge.style.background = G.OK_GREEN;
+        bannerBadge.style.color = '#fff';
+        bannerBadge.appendChild(G.makeIcon(G.ICONS.check, 15));
+        banner.style.borderColor = 'rgba(48,164,108,0.65)';
+        break;
+      case 'partial':
+        bannerBadge.style.background = G.WARN_AMBER;
+        bannerBadge.style.color = '#fff';
+        bannerBadge.appendChild(G.makeIcon(G.ICONS.warn, 15));
+        banner.style.borderColor = 'rgba(232,161,58,0.65)';
+        break;
+      case 'fail':
+        bannerBadge.style.background = G.FAIL_RED;
+        bannerBadge.style.color = '#fff';
+        bannerBadge.appendChild(G.makeIcon(G.ICONS.cross, 15));
+        banner.style.borderColor = 'rgba(229,72,77,0.65)';
+        break;
+    }
+  }
+
+  setBanner('select', MSG.select);
   document.body.appendChild(banner);
+  if (!G.REDUCED_MOTION) {
+    // transform carries the permanent translateX(-50%) — keyframes must too.
+    banner.animate([{ opacity: 0, transform: 'translateX(-50%) translateY(-10px)' }, { opacity: 1, transform: 'translateX(-50%)' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' });
+  }
 
   // Highlight frame
   const highlight = document.createElement('div');
-  highlight.style.cssText = `
-    position: absolute; pointer-events: none; z-index: 2147483646;
-    box-sizing: border-box;
-    border: 3px solid #1d9bf0; border-radius: 4px;
-    background: rgba(29, 155, 240, 0.06);
-    transition: top 0.08s, left 0.08s, width 0.08s, height 0.08s;
-    display: none;
-  `;
+  highlight.style.cssText = [
+    'position:absolute',
+    'pointer-events:none',
+    'z-index:2147483646',
+    'box-sizing:border-box',
+    `border:2px solid ${G.ACCENT}`,
+    'border-radius:10px',
+    'background:rgba(40,168,219,0.08)',
+    'box-shadow:0 0 0 4px rgba(40,168,219,0.18)',
+    'transition:top 0.08s, left 0.08s, width 0.08s, height 0.08s',
+    'display:none',
+  ].join(';');
   document.body.appendChild(highlight);
 
   let captureStyle: HTMLStyleElement | null = null;
@@ -150,8 +223,7 @@
     // cause can be pinned down quickly.
     if (!postUrl) {
       logCaptureFailure('permalink', post);
-      banner.textContent = getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]);
-      banner.style.background = '#f4212e';
+      setBanner('fail', getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]));
       setTimeout(cleanup, 2800);
       return;
     }
@@ -182,9 +254,11 @@
       requestAnimationFrame(() => {
         const rect = getPostRect(post);
 
-        banner.style.display = '';
-        banner.textContent = MSG.saving;
-        banner.style.background = '#536471';
+        // 'flex' explicitly — display lives only in the inline cssText, so
+        // resetting to '' after the display:none hide would fall back to block
+        // (badge and label would stack).
+        banner.style.display = 'flex';
+        setBanner('busy', MSG.saving);
 
         chrome.runtime.sendMessage({
           type: 'captureAndSend',
@@ -308,18 +382,23 @@
       // Saved but the post-info API returned nothing → amber "partial" state so
       // the user notices (rather than a plain green success). Held longer.
       const partial = msg.success && msg.metaOk === false;
+      let text: string;
       if (!msg.success) {
         // Show WHY it failed (the background passes the stage error), so a broken
         // save is actionable instead of a bare "failed". A missing native host gets
         // a specific "restart Chrome" hint (the registry is read at startup).
-        banner.textContent = msg.hostMissing ? getMessage('bannerHostMissing') : msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
+        text = msg.hostMissing ? getMessage('bannerHostMissing') : msg.error ? getMessage('bannerFailedReason', [msg.error]) : MSG.failed;
       } else {
         // grouped > 0: this post was already saved this session — the app folds
         // same-post saves into one stacked card, so say so instead of a plain
         // success (otherwise the save looks like a silent no-op in the grid).
-        banner.textContent = partial ? MSG.savedNoMeta : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
+        text = partial ? MSG.savedNoMeta : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved;
       }
-      banner.style.background = partial ? '#f59e0b' : msg.success ? '#00ba7c' : '#f4212e';
+      setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
+      if (msg.success && !partial && !G.REDUCED_MOTION) {
+        // Small badge pop so the state flip reads even in peripheral vision.
+        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+      }
       // Hold failures (and partials) longer so the reason is readable.
       setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
     }

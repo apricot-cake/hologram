@@ -60,7 +60,7 @@ async function activateOnTab(tab) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ['i18n.js', 'site-detect.js', 'content.js'],
+      files: ['i18n.js', 'glass-ui.js', 'site-detect.js', 'content.js'],
     });
   } catch (error) {
     console.error('Failed to inject content script:', error);
