@@ -17,7 +17,7 @@ import { deletePost } from './posts.ts';
 import { open as confirmOpen } from './confirm.ts';
 
 export interface SelectionBarDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   showToast(msg: unknown): void;
   getViewGroups(): CorpusPostGroup[];
   getManualGroups(): string[][];
@@ -98,7 +98,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     selection.clear();
     deps.renderPosts(true);
     updateSelectionBar();
-    deps.showToast(deps.MSG.grouped);
+    deps.showToast(deps.t('grouped'));
   }
 
   function toggleSelectAll() {
@@ -128,9 +128,9 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
-      message: deps.MSG.confirmDeleteSelected(selection.size()),
-      okLabel: deps.MSG.confirmOk,
-      cancelLabel: deps.MSG.confirmCancel,
+      message: deps.t('confirmDeleteSelected', [selection.size()]),
+      okLabel: deps.t('confirmOk'),
+      cancelLabel: deps.t('confirmCancel'),
       onOk: async () => {
         // Bulk delete selected groups — every record of each selected group.
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
@@ -139,7 +139,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         selection.clear();
         updateSelectionBar();
         await deps.loadPosts(true);
-        deps.showToast(deps.MSG.deletedN(count));
+        deps.showToast(deps.t('deletedN', [count]));
       },
     });
   }

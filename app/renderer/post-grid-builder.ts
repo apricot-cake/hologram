@@ -27,7 +27,7 @@ import * as selection from './selection.ts';
 // Callbacks/state still owned by viewer.ts — injected the same way
 // query-builder.ts/qf-pop-builder.ts's ctx objects are.
 export interface PostGridBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   smokeCapture: boolean;
   fileSrc(file: string, w?: number): string;
@@ -262,7 +262,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // injected — the grid island's Cell derives .selected from corpusStore's
   // 'selectedSet'.
   const cardModel = makeCardModel({
-    MSG: deps.MSG,
+    t: deps.t,
     PF_NAME: deps.PF_NAME,
     formatCount,
     formatDate,
@@ -279,11 +279,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // i18n labels are identical for every card — set up once (also keeps them in sync
   // after a language change, which always full-reloads the app).
   const cardLabels = {
-    tipSelect: deps.MSG.tipSelect,
-    tipClip: deps.MSG.tipClip,
-    tipInfo: deps.MSG.tipInfo,
-    tipTagEdit: deps.MSG.tipTagEdit,
-    clickToExpand: deps.MSG.clickToExpand,
+    tipSelect: deps.t('tipSelect'),
+    tipClip: deps.t('tipClip'),
+    tipInfo: deps.t('tipInfo'),
+    tipTagEdit: deps.t('tipTagEdit'),
+    clickToExpand: deps.t('clickToExpand'),
   };
   // modelOf/keyOf/labels/onAspect never change identity meaningfully between
   // renders (only items/layout do, and those are corpusStore-derived by the
@@ -399,7 +399,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     const rep = g.rep.captureId;
     const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
     if (list.length) items.push({ sep: true });
-    items.push({ label: deps.MSG.ctxManage, act: 'manage', manage: true });
+    items.push({ label: deps.t('ctxManage'), act: 'manage', manage: true });
     return items;
   }
   function onFoldMenuPick(g: CorpusPostGroup, item: CorpusMenuItem) {
@@ -447,22 +447,22 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
-    if (g.rep.url) items.push({ label: deps.MSG.tipOpen, act: 'open', icon: CM_IC.open });
-    items.push({ label: deps.MSG.ctxOpenNewTab, act: 'newtab', icon: CM_IC.newtab });
-    items.push({ label: deps.MSG.tipFolder, act: 'folder', icon: CM_IC.folder });
-    if (CF()) items.push({ label: inClip ? deps.MSG.ctxClipRemove : deps.MSG.ctxClipAdd, act: 'clip', icon: CM_IC.clip });
-    items.push({ label: deps.MSG.tipInfo, act: 'info', icon: CM_IC.info });
-    if (canPoster) items.push({ label: deps.MSG.ctxViewPoster, act: 'poster', icon: CM_IC.poster });
+    if (g.rep.url) items.push({ label: deps.t('tipOpen'), act: 'open', icon: CM_IC.open });
+    items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
+    items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
+    if (CF()) items.push({ label: inClip ? deps.t('ctxClipRemove') : deps.t('ctxClipAdd'), act: 'clip', icon: CM_IC.clip });
+    items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
+    if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // The file the card is showing right now (capture or artwork per density).
     const cardFile = densityImage(g.rep, deps.currentView()) || g.rep.image || '';
     if (srcUrl || cardFile) items.push({ sep: true });
     if (srcUrl) {
-      items.push({ label: deps.MSG.detailSauce, act: 'sauce', icon: CM_IC.sauce });
-      items.push({ label: deps.MSG.detailAscii, act: 'ascii', icon: CM_IC.sauce });
+      items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
+      items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
     }
-    if (cardFile) items.push({ label: deps.MSG.ctxShowInFolder, act: 'reveal', icon: CM_IC.reveal });
+    if (cardFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
     items.push({ sep: true });
-    items.push({ label: deps.MSG.tipDelete, act: 'delete', icon: CM_IC.del, danger: true });
+    items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
   }
   function onCardMenuPick(g: CorpusPostGroup, x: number, y: number, srcUrl: string, item: CorpusMenuItem) {
@@ -498,10 +498,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       return;
     }
     confirmOpen({
-      message: g.records.length > 1 ? deps.MSG.confirmDeleteGroup(g.records.length) : deps.MSG.confirmDeletePost,
-      okLabel: deps.MSG.confirmOk,
-      cancelLabel: deps.MSG.confirmCancel,
-      skipLabel: deps.MSG.confirmSkip, // "次回から確認しない"
+      message: g.records.length > 1 ? deps.t('confirmDeleteGroup', [g.records.length]) : deps.t('confirmDeletePost'),
+      okLabel: deps.t('confirmOk'),
+      cancelLabel: deps.t('confirmCancel'),
+      skipLabel: deps.t('confirmSkip'), // "次回から確認しない"
       onOk: async ({ skip }) => {
         if (skip) setSkipDeleteConfirm(true);
         await executeDeleteGroup(g);
@@ -509,31 +509,31 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     });
   }
 
-  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
+  // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
   // enable the OK button — a stray click can't wipe everything. The confirm modal is
   // React-owned (confirm.ts / the confirm island); this just opens it with the keyword
   // gate + the wipe as its onOk. Was window.corpusViewer.confirmClearAll — the React
   // Danger section now imports the confirmClearAll live binding below directly (V16).
   function confirmClearAll() {
     confirmOpen({
-      message: deps.MSG.confirmClear,
-      okLabel: deps.MSG.confirmOk,
-      cancelLabel: deps.MSG.confirmCancel,
-      keywordPlaceholder: deps.MSG.confirmKeywordPh,
-      keywordRequired: deps.MSG.deleteKeyword, // OK stays disabled until this is typed
+      message: deps.t('confirmClear'),
+      okLabel: deps.t('confirmOk'),
+      cancelLabel: deps.t('confirmCancel'),
+      keywordPlaceholder: deps.t('confirmKeywordPh'),
+      keywordRequired: deps.t('deleteKeyword'), // OK stays disabled until this is typed
       onOk: async () => {
         // Clear all data (deletes every image + sidecar in the save folder).
         const res = await clearAll();
         // Main refuses the wipe if config is degraded — keep the library on screen and
         // tell the user to restart (initSaveFolderRedundancy repairs on launch).
         if (res && res.blocked) {
-          notify(deps.MSG.clearBlocked);
+          notify(deps.t('clearBlocked'));
           return;
         }
         resetAll(); // keep the delta cache in sync with the wipe
         markPostsMutated(); // drop stale tag/author/instance facets left over from the wipe
         renderPosts();
-        notify(deps.MSG.cleared);
+        notify(deps.t('cleared'));
       },
     });
   }
@@ -554,7 +554,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     markPostsMutated(); // a deleted author/instance must drop out of the sidebar
     renderPosts(true);
     reconcileFolders(); // 削除した captureId をフォルダから即時掃除
-    notify(deps.MSG.deleted);
+    notify(deps.t('deleted'));
   }
 
   return {

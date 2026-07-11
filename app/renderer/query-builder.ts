@@ -8,7 +8,7 @@
 // predicate construction (query.ts's makePostPredOf/makePosterPredOf, wired
 // to the now-real folders.ts/search.ts/records.ts modules), and the two
 // createQueryBuilder(ctx) call sites. Everything still owned by viewer.ts
-// (MSG/i18n, DOM containers, the render/searchbox/tag callbacks) is injected
+// (t/i18n, DOM containers, the render/searchbox/tag callbacks) is injected
 // as deps — the same ctx pattern createQueryBuilder itself uses.
 import { createQueryBuilder } from './query-chips.ts';
 import { makePostPredOf, makePosterPredOf } from './query.ts';
@@ -45,7 +45,7 @@ export const qcGlyph = (type: string) => {
 export interface PostQueryBuilderDeps {
   container: HTMLElement;
   barEl: HTMLElement | null;
-  msg: { [k: string]: string };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   labelOf: (f: CorpusQueryLeaf) => string;
   getSearchVal: () => string;
   onClearSearch: () => void;
@@ -65,7 +65,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     postKeyOf,
   });
   const qb = createQueryBuilder({
-    msg: deps.msg,
+    t: deps.t,
     container: deps.container,
     storeKey: 'postQueryTree',
     barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the island's)
@@ -99,7 +99,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
 export interface PosterQueryBuilderDeps {
   container: HTMLElement;
   barEl: HTMLElement | null;
-  msg: { [k: string]: string };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   labelOf: (f: CorpusQueryLeaf) => string;
   getSearchVal: () => string;
   onClearSearch: () => void;
@@ -118,7 +118,7 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     folderById: deps.folderById,
   });
   const qb = createQueryBuilder({
-    msg: deps.msg,
+    t: deps.t,
     container: deps.container,
     storeKey: 'posterQueryTree',
     barEl: deps.barEl, // reveal + --activebar-h measure (empty/reset are the island's)

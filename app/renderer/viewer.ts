@@ -39,328 +39,34 @@ import { corpusImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { corpusIpc } from './ipc.ts';
 
+// Boot readiness signal + the boot/subscription handlers below: real ES exports now
+// (Wave31/V17) instead of a window.corpusViewer bridge — App.tsx's AppBoot/
+// StoreSubscriptions import these directly. Declared here, at true module scope, so
+// `export` is legal; each is assigned once by the async IIFE below (viewerReady as
+// its very first synchronous statement, the handlers once everything they close
+// over is defined) — an ESM import always finishes evaluating this module before
+// the importer's own code can read these bindings, so by the time React acts on
+// them the real functions are already in place.
+export let viewerReady: Promise<void>;
+export let bootApp: () => Promise<void>;
+export let handleFolderChange: (kind?: string) => void;
+export let handlePostsChanged: (names: string[] | null) => Promise<void>;
+
 (async () => {
-  // Boot readiness signal: React (App.tsx's AppBoot) awaits this before calling
-  // bootApp() below, instead of viewer self-invoking its own init sequence — the
-  // app's single entry point (React mount) now also owns triggering data load,
-  // matching how a real app's root component drives its own bootstrap. Assigned as
-  // the very first synchronous statement (before the i18n await) so it exists
-  // before any microtask — including root.tsx's initI18n().then(mount) — can run;
-  // resolved once bootApp is defined at the tail, so by the time React can act on
-  // it, the function it calls already exists. See docs at the bootApp definition.
   // The Promise executor runs synchronously, so this is assigned before any other
   // code executes — the `!` tells tsc what the executor already guarantees.
   let resolveViewerReady!: () => void;
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, {
-    ready: new Promise<void>((r) => {
-      resolveViewerReady = r;
-    }),
+  viewerReady = new Promise<void>((r) => {
+    resolveViewerReady = r;
   });
 
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { lang, getMessage } = await corpusI18n;
-  const _s = (key: string) => getMessage(key);
-  const _f1 = (key: string) => (a: string | number) => getMessage(key, [a]);
-  const _f2 = (key: string) => (a: string | number, b: string | number) => getMessage(key, [a, b]);
   // Count / date display formatters live in format.ts now (imported above).
   // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
   // MirrorStatus island now, which imports format.ts directly.)
-  // Back-compat shim so existing call sites (MSG.key / MSG.key(args)) keep working.
-  // Static keys are pre-resolved strings; interpolated keys are bound functions.
-  const MSG = {
-    // tabs / search / sort
-    tabTags: _s('tabTags'),
-    tabSettings: _s('tabSettings'),
-    aboutVersion: _f1('aboutVersion'),
-    searchPlaceholder: _s('searchPlaceholder'),
-    sidebarAuthors: _s('sidebarAuthors'),
-    kindPost: _s('kindPost'),
-    kindImage: _s('kindImage'),
-    confirmDeleteGroup: _f1('confirmDeleteGroup'),
-    tipInfo: _s('tipInfo'),
-    tipTagEdit: _s('tipTagEdit'),
-    tipSelect: _s('tipSelect'),
-    tagSelected: _s('tagSelected'),
-    folderSelected: _s('folderSelected'),
-    tagSelectedTitle: _s('tagSelectedTitle'),
-    sbViewTitle: _s('sbViewTitle'),
-    sbLayoutTitle: _s('sbLayoutTitle'),
-    sbSearchTitle: _s('sbSearchTitle'),
-    sbSortTitle: _s('sbSortTitle'),
-    tipTagCycle: _s('tipTagCycle'),
-    sbFilterTitle: _s('sbFilterTitle'),
-    activebarLabel: _s('activebarLabel'),
-    qbEmptyHint: _s('qbEmptyHint'),
-    ctxManage: _s('ctxManage'),
-    ctxClipAdd: _s('ctxClipAdd'),
-    ctxClipRemove: _s('ctxClipRemove'),
-    qcJoinAnd: _s('qcJoinAnd'),
-    qcJoinOr: _s('qcJoinOr'),
-    qbOptAll: _s('qbOptAll'),
-    qbOptAny: _s('qbOptAny'),
-    qbOptAllTip: _s('qbOptAllTip'),
-    qbOptAnyTip: _s('qbOptAnyTip'),
-    qbExclLabel: _s('qbExclLabel'),
-    qbMenuExclude: _s('qbMenuExclude'),
-    qbMenuInclude: _s('qbMenuInclude'),
-    qbSummaryTip: _s('qbSummaryTip'),
-    qbHelpTitle: _s('qbHelpTitle'),
-    qbHelp1: _s('qbHelp1'),
-    qbHelp2: _s('qbHelp2'),
-    qbHelp3: _s('qbHelp3'),
-    qbHelp4: _s('qbHelp4'),
-    qbHelp5: _s('qbHelp5'),
-    qfCatFolder: _s('qfCatFolder'),
-    sbTopTip: _s('sbTopTip'),
-    ungroupDone: _s('ungroupDone'),
-    tagGroupOther: _s('tagGroupOther'),
-    qfAllTags: _s('qfAllTags'),
-    qfFindPh: _s('qfFindPh'),
-    deleteKeyword: _s('deleteKeyword'),
-    confirmKeywordPh: _s('confirmKeywordPh'),
-    detailPlatform: _s('detailPlatform'),
-    detailAuthor: _s('detailAuthor'),
-    detailUser: _s('detailUser'),
-    detailFollowers: _s('detailFollowers'),
-    detailJoined: _s('detailJoined'),
-    detailEngagement: _s('detailEngagement'),
-    detailPosted: _s('detailPosted'),
-    detailSaved: _s('detailSaved'),
-    detailUpdated: _s('detailUpdated'),
-    detailImages: _s('detailImages'),
-    detailImageOf: _s('detailImageOf'),
-    imageOf: _f2('imageOf'),
-    detailTags: _s('detailTags'),
-    detailSourceTags: _s('detailSourceTags'),
-    tipAdoptTag: _s('tipAdoptTag'),
-    ctxViewPoster: _s('ctxViewPoster'),
-    ctxShowInFolder: _s('ctxShowInFolder'),
-    ctxOpenNewTab: _s('ctxOpenNewTab'),
-    imgTabFallback: _s('imgTabFallback'),
-    imgTabMissing: _s('imgTabMissing'),
-    imgTabCloseBtn: _s('imgTabCloseBtn'),
-    tagAdopted: _f1('tagAdopted'),
-    editAdoptSource: _s('editAdoptSource'),
-    editCoocCharsOf: _f1('editCoocCharsOf'),
-    editCoocChars: _s('editCoocChars'),
-    editCoocWhy: _f2('editCoocWhy'),
-    editCoocRelated: _s('editCoocRelated'),
-    detailOpen: _s('detailOpen'),
-    detailSauce: _s('detailSauce'),
-    detailAscii: _s('detailAscii'),
-    tagPalNoMatch: _s('tagPalNoMatch'),
-    editNoTags: _s('editNoTags'),
-    tagAddBtn: _s('tagAddBtn'),
-    tagNewName: _s('tagNewName'),
-    tagNoTags: _s('tagNoTags'),
-    tagKindHeader: _s('tagKindHeader'),
-    kindWork: _s('kindWork'),
-    kindCharacter: _s('kindCharacter'),
-    kindGeneral: _s('kindGeneral'),
-    tagKindSet: _f1('tagKindSet'),
-    tagKindCleared: _s('tagKindCleared'),
-    tagKindRename: _s('tagKindRename'),
-    tagKindRenamePrompt: _s('tagKindRenamePrompt'),
-    tagKindRenamed: _s('tagKindRenamed'),
-    homonymConfirm: _f2('homonymConfirm'),
-    homonymDistinguished: _f1('homonymDistinguished'),
-    imagesCount: _f1('imagesCount'),
-    tagsSaved: _s('tagsSaved'),
-    tagsSavedN: _f1('tagsSavedN'),
-    tipClip: _s('tipClip'),
-    tipFolder: _s('tipFolder'),
-    clipTitle: _s('clipTitle'),
-    clipEmpty: _s('clipEmpty'),
-    clipEmptyTip: _s('clipEmptyTip'),
-    clipEmptyConfirm: _s('clipEmptyConfirm'),
-    groupUngroup: _s('groupUngroup'),
-    groupRegroup: _s('groupRegroup'),
-    groupUngroupManual: _s('groupUngroupManual'),
-    groupSelected: _s('groupSelected'),
-    grouped: _s('grouped'),
-    sortDateDesc: _s('sortDateDesc'),
-    sortDateAsc: _s('sortDateAsc'),
-    sortLikes: _s('sortLikes'),
-    sortReposts: _s('sortReposts'),
-    sortReplies: _s('sortReplies'),
-    sortCaptured: _s('sortCaptured'),
-    sortLikesPct: _s('sortLikesPct'),
-    filterAll: _s('filterAll'),
-    reset: _s('reset'),
-    tileSizeTip: _s('tileSizeTip'),
-    postCount: _f1('postCount'),
-
-    // ライブラリ/投稿者 モード切替・投稿者ビュー
-    browsePosts: _s('browsePosts'),
-    browsePosters: _s('browsePosters'),
-    // Smart-collection foundation (保存した検索/動的コレクション再導入用・BACKLOG「スマート
-    // コレクション」の土台＝現状未使用だが意図的に保持・dead ではない)。第3ビューのコレクション
-    // UI 文字列（browseCollections/collNew/coll*Sort/collEmpty* 等）は撤去済み（2026-07-07）。
-    collSavePrompt: _s('collSavePrompt'),
-    collSaved: _s('collSaved'),
-    collSaveEmpty: _s('collSaveEmpty'),
-    collDynamicTitle: _s('collDynamicTitle'),
-    collUpdateQuery: _s('collUpdateQuery'),
-    collUpdated: _s('collUpdated'),
-    posterCount: _f1('posterCount'),
-    posterPosts: _f1('posterPosts'),
-    posterViewPosts: _s('posterViewPosts'),
-    posterEmptyTitle: _s('posterEmptyTitle'),
-    posterEmptyDesc: _s('posterEmptyDesc'),
-    detailPosts: _s('detailPosts'),
-    sbPosterSortTitle: _s('sbPosterSortTitle'),
-    sbPosterPlatformTitle: _s('sbPosterPlatformTitle'),
-    posterSortCount: _s('posterSortCount'),
-    posterSortName: _s('posterSortName'),
-    posterSortNewest: _s('posterSortNewest'),
-    posterSortOldest: _s('posterSortOldest'),
-    posterSortRecent: _s('posterSortRecent'),
-    sbPosterFoldersTitle: _s('sbPosterFoldersTitle'),
-    posterFolderNewPlaceholder: _s('posterFolderNewPlaceholder'),
-    posterFolderCreate: _s('posterFolderCreate'),
-    posterFolderDeleteConfirm: _f1('posterFolderDeleteConfirm'),
-    posterFolderRenamePrompt: _s('posterFolderRenamePrompt'),
-    posterMenuNewFolder: _s('posterMenuNewFolder'),
-    ivPosterFolders: _s('ivPosterFolders'),
-    ivPosterTags: _s('ivPosterTags'),
-    posterFolderAdded: _f1('posterFolderAdded'),
-    posterFolderRemoved: _f1('posterFolderRemoved'),
-    sbPosterTagsTitle: _s('sbPosterTagsTitle'),
-    posterDateLastPost: _s('posterDateLastPost'),
-    posterDateLastCapture: _s('posterDateLastCapture'),
-    posterDateCreated: _s('posterDateCreated'),
-    posterDateClear: _s('posterDateClear'),
-    posterDateDimLabel: _s('posterDateDimLabel'),
-    posterDateRangeLabel: _s('posterDateRangeLabel'),
-
-    // empty states
-    emptyTitle: _s('emptyTitle'),
-    emptyDesc: _s('emptyDesc'),
-    emptySearchTitle: _s('emptySearchTitle'),
-    emptySearchDesc: _s('emptySearchDesc'),
-    emptyCaptureHint: _s('emptyCaptureHint'),
-    emptyResetBtn: _s('emptyResetBtn'),
-
-    save: _s('save'), // tag editor save button
-    // settings > appearance / language / shortcut
-    settingsSearch: _s('settingsSearch'),
-    settingsNoMatch: _s('settingsNoMatch'),
-
-    // settings > data / danger
-    saveFolderMoving: _s('saveFolderMoving'),
-    saveFolderMoved: _f1('saveFolderMoved'),
-    logCopyStart: _f1('logCopyStart'),
-    logSwitch: _s('logSwitch'),
-    logCleanup: _s('logCleanup'),
-    logMoveDone: _f1('logMoveDone'),
-    saveFolderErrSame: _s('saveFolderErrSame'),
-    saveFolderErrNested: _s('saveFolderErrNested'),
-    saveFolderErrOverlap: _s('saveFolderErrOverlap'),
-    saveFolderErrCollision: _s('saveFolderErrCollision'),
-    saveFolderErrNotWritable: _s('saveFolderErrNotWritable'),
-    saveFolderErrCopyFailed: _s('saveFolderErrCopyFailed'),
-    saveFolderErrGeneric: _s('saveFolderErrGeneric'),
-    importZip: _s('importZip'),
-    confirmClear: _s('confirmClear'),
-    confirmOk: _s('confirmOk'),
-    confirmCancel: _s('confirmCancel'),
-    cleared: _s('cleared'),
-    clearBlocked: _s('clearBlocked'),
-
-    // settings > backup（指定フォルダへの増分エクスポート）
-    backupDirNone: _s('backupDirNone'),
-    backupOverlap: _s('backupOverlap'),
-    // (backup-rail strings moved to the MirrorStatus island, which reads them via t())
-
-    // settings > trash
-    trashEmpty: _s('trashEmpty'),
-    trashCount: _f1('trashCount'),
-    trashRestoreBtn: _s('trashRestoreBtn'),
-    trashDeleteBtn: _s('trashDeleteBtn'),
-
-    // export/import toasts
-    exporting: _s('exporting'),
-    exported: _s('exported'),
-    importing: _s('importing'),
-    imported: _f1('imported'),
-    importSkipped: _f2('importSkipped'),
-    noData: _s('noData'),
-    importFailed: _s('importFailed'),
-    exportFailed: _s('exportFailed'),
-
-    // engagement labels
-
-    // view toggle + selection
-    viewCard: _s('viewCard'),
-    viewTile: _s('viewTile'),
-    viewList: _s('viewList'),
-    selectAll: _s('selectAll'),
-    deselectAll: _s('deselectAll'),
-    cancelSelect: _s('cancelSelect'),
-    deleteSelected: _s('deleteSelected'),
-    selectedCount: _f1('selectedCount'),
-    confirmDeleteSelected: _f1('confirmDeleteSelected'),
-    deletedN: _f1('deletedN'),
-    confirmDeletePost: _s('confirmDeletePost'),
-    confirmSkip: _s('confirmSkip'),
-    deleted: _s('deleted'),
-
-    // post card
-    clickToExpand: _s('clickToExpand'),
-    tipOpen: _s('tipOpen'),
-    lbPrev: _s('lbPrev'),
-    lbNext: _s('lbNext'),
-    tipDelete: _s('tipDelete'),
-    postedOn: _f1('postedOn'),
-    captured: _f1('captured'),
-
-    // stats formatters (pure formatting, no translation)
-    likes: (n: number | null | undefined) => (n != null ? `${formatCount(n)}` : ''),
-
-    // query/sidebar filters
-    qfPlatform: _s('qfPlatform'),
-    qfPlatformNone: _s('qfPlatformNone'),
-    qfPostType: _s('qfPostType'),
-    qfDate: _s('qfDate'),
-    qfEngagement: _s('qfEngagement'),
-    qfTag: _s('qfTag'),
-    qfMediaTitle: _s('qfMediaTitle'),
-    qfInstance: _s('qfInstance'),
-    qfPost: _s('qfPost'),
-    qfReply: _s('qfReply'),
-    qfQuote: _s('qfQuote'),
-    qfThread: _s('qfThread'),
-    qfImage: _s('qfImage'),
-    qfVideo: _s('qfVideo'),
-    qfGif: _s('qfGif'),
-    qfMultiImage: _s('qfMultiImage'),
-    qfApply: _s('qfApply'),
-    qfDelete: _s('qfDelete'),
-    qfDatePost: _s('qfDatePost'),
-    qfDateCaptured: _s('qfDateCaptured'),
-    qfEngLikes: _s('qfEngLikes'),
-    qfEngReposts: _s('qfEngReposts'),
-    qfEngReplies: _s('qfEngReplies'),
-    qfEngBookmarks: _s('qfEngBookmarks'),
-    qfEngViews: _s('qfEngViews'),
-    qfEngGte: _s('qfEngGte'),
-    qfEngLte: _s('qfEngLte'),
-    searchExact: _s('searchExact'),
-    searchFuzzy: _s('searchFuzzy'),
-    searchModeTitle: _s('searchModeTitle'),
-    searchHintExact: _s('searchHintExact'),
-    searchHintLoose: _s('searchHintLoose'),
-    // window tabs
-    tabNew: _s('tabNew'),
-    tabClose: _s('tabClose'),
-    tabPin: _s('tabPin'),
-    tabUnpin: _s('tabUnpin'),
-    tabRename: _s('tabRename'),
-    tabDuplicate: _s('tabDuplicate'),
-    tabCloseOthers: _s('tabCloseOthers'),
-  };
 
   // Nudge an already-shown, cursor-positioned popup back inside the viewport (8px
   // margin). Shared by the cursor-placed context menus (query-builder / folder /
@@ -391,13 +97,13 @@ import { corpusIpc } from './ipc.ts';
     if (el) el.setAttribute(attr, val);
   };
 
-  setAttr('settingsBtn', 'data-tip', MSG.tabSettings); // shared glass tooltip (was native title)
-  setAttr('settingsBtn', 'aria-label', MSG.tabSettings);
+  setAttr('settingsBtn', 'data-tip', getMessage('tabSettings')); // shared glass tooltip (was native title)
+  setAttr('settingsBtn', 'aria-label', getMessage('tabSettings'));
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource (P4-B
   // slice⑰; renderer/sidebar.ts) — no static setText here.
-  setAttr('contentTop', 'aria-label', MSG.sbTopTip);
-  setAttr('tileSlider', 'data-tip', MSG.tileSizeTip); // shared glass tooltip (was native title)
+  setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
+  setAttr('tileSlider', 'data-tip', getMessage('tileSizeTip')); // shared glass tooltip (was native title)
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
   // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
   // renderer/activebar.ts is gone — no bridge left) — no static setText here.
@@ -437,7 +143,7 @@ import { corpusIpc } from './ipc.ts';
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource — no
   // static setText here.
-  byId('sbTop').dataset.tip = MSG.sbTopTip; // shared glass tooltip (was native title)
+  byId('sbTop').dataset.tip = getMessage('sbTopTip'); // shared glass tooltip (was native title)
 
   // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
   // by the GlassSelect island from i18n keys, so writing option textContent here was dead.
@@ -452,11 +158,11 @@ import { corpusIpc } from './ipc.ts';
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
-    likes: MSG.qfEngLikes,
-    reposts: MSG.qfEngReposts,
-    replies: MSG.qfEngReplies,
-    bookmarks: MSG.qfEngBookmarks,
-    views: MSG.qfEngViews,
+    likes: getMessage('qfEngLikes'),
+    reposts: getMessage('qfEngReposts'),
+    replies: getMessage('qfEngReplies'),
+    bookmarks: getMessage('qfEngBookmarks'),
+    views: getMessage('qfEngViews'),
   };
 
   // filterLabel (query-chip renderer + tab titles share it) and tabTitleOf moved
@@ -466,7 +172,7 @@ import { corpusIpc } from './ipc.ts';
   // render time. formatShortDate / formatCount are hoisted function declarations
   // (direct refs are fine).
   const { filterLabel, tabTitleOf, posterFilterLabel } = makeTabLabels({
-    MSG,
+    t: getMessage,
     engTypeLabels: ENG_TYPE_LABELS,
     platformName: (v: string) => PF_NAME[v] || v,
     formatShortDate,
@@ -550,7 +256,7 @@ import { corpusIpc } from './ipc.ts';
     tagGroups: getTagGroups,
     posterTags: getPosterTags,
     allPosts: () => postGrid.getAllPosts(),
-    MSG,
+    t: getMessage,
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
@@ -563,9 +269,9 @@ import { corpusIpc } from './ipc.ts';
   // Shared 種別 (kind) menu (right-click a tag chip in the edit picker /
   // inspector / poster picker) — row model + pick/rename actions moved to
   // kind-menu-builder.ts (V2 viewer.ts decomposition slice). Wired here (not
-  // where it's first used) so tagKindOf/kindLabel/MSG are all already in
+  // where it's first used) so tagKindOf/kindLabel/getMessage are all already in
   // scope — no TDZ workaround needed, unlike the old taggingApi indirection.
-  const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, MSG });
+  const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, t: getMessage });
   // Facet aggregation (facetCounts) + value-flyout row models (qfValues) moved to
   // facets.ts — 3rd extraction slice. Runtime couplings are injected: reassigned
   // lets (allPosts/multiOnly) + tags.ts's own getter (tagGroups) as getters, and
@@ -579,7 +285,7 @@ import { corpusIpc } from './ipc.ts';
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: CorpusPost) => userKey(p),
-    MSG,
+    t: getMessage,
     PF_NAME,
     tagKindOf,
     tagGroups: getTagGroups,
@@ -626,7 +332,7 @@ import { corpusIpc } from './ipc.ts';
     // toggle the filter — was e.stopPropagation() on the old direct listener).
     if (closestOf(e, '#clipClear')) {
       if (!CF()) return;
-      if (!window.confirm(MSG.clipEmptyConfirm)) return;
+      if (!window.confirm(getMessage('clipEmptyConfirm'))) return;
       keepCurrentVisible();
       CF().clearClips();
       renderPosts(true);
@@ -708,11 +414,12 @@ import { corpusIpc } from './ipc.ts';
   // Stack semantics + the viewer-owned apply callbacks/shortcut handler moved to
   // undo-builder.ts — viewer.ts decomposition's V11 slice (Wave25). Constructed here
   // (its original spot) so pushUndo is ready in time for inspector/postGrid/posterGrid's
-  // own deps below; postGrid/inspector/posterGrid/showToast are all declared later, so
-  // their accessors are deferred forward references (same shape as inspector-builder.ts's
-  // jumpToPoster/showToast).
+  // own deps below; postGrid/inspector/posterGrid are all declared later, so their
+  // accessors are deferred forward references (same shape as inspector-builder.ts's
+  // jumpToPoster). showToast itself is notify, imported directly at the top —
+  // no forward reference needed there.
   const undoCtl = makeUndoController({
-    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    showToast: notify,
     getPostById: (id) => postGrid.getPostById(id), // postGrid is declared below — deferred
     markPostsMutated: () => postGrid.markPostsMutated(),
     renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
@@ -818,22 +525,9 @@ import { corpusIpc } from './ipc.ts';
   // moved to query-builder.ts (Wave15/V1); viewer.js keeps the orchestration
   // around a change (onChange/openLeafEditor/onClearSearch) since those still
   // reach into state (renderPosts, searchEditing, popovers) not yet extracted.
-  // i18n strings the builder needs for labels/menus — resolved once here (MSG
-  // is a viewer.js-local construct) and passed in via ctx.msg since
-  // query-builder.ts has no access to viewer.js's i18n binding.
-  const qbMsg = {
-    qcJoinAnd: MSG.qcJoinAnd,
-    qcJoinOr: MSG.qcJoinOr,
-    qbExclLabel: MSG.qbExclLabel,
-    qbSummaryTip: MSG.qbSummaryTip,
-    qfDelete: MSG.qfDelete,
-    qbOptAll: MSG.qbOptAll,
-    qbOptAny: MSG.qbOptAny,
-    qbOptAllTip: MSG.qbOptAllTip,
-    qbOptAnyTip: MSG.qbOptAnyTip,
-    qbMenuInclude: MSG.qbMenuInclude,
-    qbMenuExclude: MSG.qbMenuExclude,
-  };
+  // i18n strings the builder needs for labels/menus — query-builder.ts/
+  // query-chips.ts have no access to viewer.ts's i18n binding, so getMessage
+  // itself is passed in via ctx.t.
 
   // The post-side builder instance. P4-B slice⑧: badge/tab-title/etc. reads used
   // to mirror the tree shadow into a module-level `activeFilters` global via an
@@ -841,7 +535,7 @@ import { corpusIpc } from './ipc.ts';
   // instance already exposes the same cached array) — every read site now calls
   // postQB.shadow() directly instead of maintaining a second copy.
   const { qb: postQB, predOf: postPredOf } = makePostQueryBuilder({
-    msg: qbMsg,
+    t: getMessage,
     container: document.getElementById('queryChips')!,
     barEl: document.getElementById('postActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: filterLabel,
@@ -972,7 +666,7 @@ import { corpusIpc } from './ipc.ts';
   // declared later in this closure) — deferred arrows the same TDZ-safe way
   // every other service wiring in this file already works.
   const postGrid = makePostGridBuilder({
-    MSG,
+    t: getMessage,
     PF_NAME,
     smokeCapture: SMOKE_CAPTURE,
     fileSrc,
@@ -1066,7 +760,7 @@ import { corpusIpc } from './ipc.ts';
   // scope — and receive tabsCtl's tab-state surface as deferred deps/direct
   // references (imageTabCtl is constructed just below, after tabsCtl).
   const tabsCtl = makeTabsController({
-    MSG,
+    t: getMessage,
     tabTitleOf,
     postQB,
     getSortValue: () => sortSelect.value,
@@ -1141,7 +835,7 @@ import { corpusIpc } from './ipc.ts';
   // deferred arrows the same TDZ-safe way postGrid's own showDetail/closeDetail
   // deps already work.
   const imageTabCtl = makeImageTabController({
-    MSG,
+    t: getMessage,
     getPostById: postGrid.getPostById,
     showDetail: (g) => showDetail(g),
     closeDetail: () => closeDetail(),
@@ -1188,7 +882,7 @@ import { corpusIpc } from './ipc.ts';
   // pushed once so the island can set the nav buttons' aria-labels. In dev the
   // island is a deferred module that may not have loaded yet — stash for catch-up.
   {
-    const lbLabels = { lbPrev: MSG.lbPrev, lbNext: MSG.lbNext };
+    const lbLabels = { lbPrev: getMessage('lbPrev'), lbNext: getMessage('lbNext') };
     if (window.corpusLightbox) window.corpusLightbox.setLabels(lbLabels);
     else window.__corpusLbLabels = lbLabels;
   }
@@ -1202,7 +896,7 @@ import { corpusIpc } from './ipc.ts';
   // image-tab.ts's former window.corpusViewer dispatch (V13/Wave27, §5).
   corpusImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
-    labels: { missing: MSG.imgTabMissing, closeTab: MSG.imgTabCloseBtn, prev: MSG.lbPrev, next: MSG.lbNext, info: MSG.tipInfo },
+    labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo') },
     onIndexChange: setImageTabIndex,
     onToggleInspector: toggleImageTabInspector,
     onCloseTab: closeImageTab,
@@ -1310,9 +1004,9 @@ import { corpusIpc } from './ipc.ts';
   // extracted clusters read/write them too (poster card click below, undo,
   // browse-mode switch) — inspector-builder.ts only gets the accessor pair.
   const inspector = makeInspector({
-    MSG,
+    t: getMessage,
     fileSrc,
-    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    showToast: notify,
     showKindMenu,
     buildUsers,
     tagKindOf,
@@ -1342,8 +1036,8 @@ import { corpusIpc } from './ipc.ts';
   // groupSelected needs inspector's persistManual, so this is constructed here
   // (after inspector above), not at the cluster's original spot.
   const selectionCtl = makeSelectionBar({
-    MSG,
-    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    t: getMessage,
+    showToast: notify,
     getViewGroups: postGrid.getViewGroups,
     getManualGroups: postGrid.getManualGroups,
     setManualGroups: postGrid.setManualGroups,
@@ -1414,8 +1108,8 @@ import { corpusIpc } from './ipc.ts';
   // selectionCtl above) since groupSelected's sibling openTagSelectedOverlay needs
   // this cluster's own selectedRecords — see the deferred dep on selectionCtl above.
   const bulkEdit = makeBulkEdit({
-    MSG,
-    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    t: getMessage,
+    showToast: notify,
     showKindMenu,
     inspectorTagPickerData,
     pushUndo,
@@ -1550,10 +1244,10 @@ import { corpusIpc } from './ipc.ts';
   // arrows) — posterQB itself is only available to this builder as deferred
   // arrows (posterQBGetTree etc.), the mirror image.
   const posterGrid = makePosterGridBuilder({
-    MSG,
+    t: getMessage,
     PF_NAME,
     fileSrc,
-    showToast: (msg) => showToast(msg), // showToast is declared far below — deferred
+    showToast: notify,
     pushUndo,
     showKindMenu,
     buildGroupGalleryItems,
@@ -1623,7 +1317,7 @@ import { corpusIpc } from './ipc.ts';
   // 'posterQueryTree' store key via query.ts's buildShadow instead), so it's
   // removed outright rather than converted to a read site.
   const { qb: posterQB } = makePosterQueryBuilder({
-    msg: qbMsg,
+    t: getMessage,
     container: document.getElementById('posterQueryChips')!,
     barEl: document.getElementById('posterActiveBar'), // reveal + --activebar-h measure (empty/reset are the island's)
     labelOf: posterFilterLabel,
@@ -1655,7 +1349,7 @@ import { corpusIpc } from './ipc.ts';
   const qfPop = makeQfPop({
     qfValues,
     kindLabel,
-    MSG,
+    t: getMessage,
     pfStore,
     postShadow: () => postQB.shadow(),
     posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
@@ -1675,7 +1369,7 @@ import { corpusIpc } from './ipc.ts';
   window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange: qfPop.handleQfPopChange });
 
   const filterPopover = makeFilterPopover({
-    MSG,
+    t: getMessage,
     engTypeLabels: ENG_TYPE_LABELS,
     addFilter,
     removeNode,
@@ -1810,7 +1504,7 @@ import { corpusIpc } from './ipc.ts';
     renderPosters: () => renderPosters(),
     updateSidebarState: () => updateSidebarState(),
     buildSuggest: (q) => buildSuggest(q),
-    searchModeTitle: MSG.searchModeTitle,
+    searchModeTitle: getMessage('searchModeTitle'),
   });
   // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
   // window.corpusViewer below; this stays the guard + action logic.
@@ -1840,7 +1534,7 @@ import { corpusIpc } from './ipc.ts';
   byId('importZipInput').addEventListener('change', async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
-    showToast(MSG.importing);
+    notify(getMessage('importing'));
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const zip = await JSZip.loadAsync(buf);
@@ -1850,16 +1544,16 @@ import { corpusIpc } from './ipc.ts';
         await loadPosts();
         (e.target as HTMLInputElement).value = '';
         if (!res || !res.ok) {
-          showToast(MSG.importFailed);
+          notify(getMessage('importFailed'));
           return;
         }
-        if (res.skipped > 0) showToast(MSG.importSkipped(res.imported, res.skipped));
-        else showToast(MSG.imported(res.imported));
+        if (res.skipped > 0) notify(getMessage('importSkipped', [res.imported, res.skipped]));
+        else notify(getMessage('imported', [res.imported]));
         return;
       }
       const metaEntry = zip.file('metadata.json');
       if (!metaEntry) {
-        showToast(MSG.importFailed);
+        notify(getMessage('importFailed'));
         (e.target as HTMLInputElement).value = '';
         return;
       }
@@ -1874,10 +1568,10 @@ import { corpusIpc } from './ipc.ts';
       const { imported, skipped } = await importPosts(posts);
       await loadPosts();
       (e.target as HTMLInputElement).value = '';
-      if (skipped > 0) showToast(MSG.importSkipped(imported, skipped));
-      else showToast(MSG.imported(imported));
+      if (skipped > 0) notify(getMessage('importSkipped', [imported, skipped]));
+      else notify(getMessage('imported', [imported]));
     } catch {
-      showToast(MSG.importFailed);
+      notify(getMessage('importFailed'));
       (e.target as HTMLInputElement).value = '';
     }
   });
@@ -1888,7 +1582,7 @@ import { corpusIpc } from './ipc.ts';
   // window.corpusMirror bridge are gone).
 
   // --- Clear data ---
-  // Destroying the whole library requires typing the keyword (MSG.deleteKeyword) to
+  // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
   // enable the OK button — moved into post-grid-builder.ts's confirmClearAll (viewer.ts
   // decomposition's V16 slice) since that's where postGrid.resetAll()/markPostsMutated()
   // already live; the React Danger section imports the confirmClearAll live binding
@@ -1899,20 +1593,15 @@ import { corpusIpc } from './ipc.ts';
   // format.js now. escapeHtml/escapeAttr no longer have any callers here — the
   // remaining HTML construction is JSX (which escapes automatically, see L2013);
   // ui.ts's escapeHtml is still used directly by folders.ts's own modal markup.
-
-  // Delegates to the shared glass toast (ui.js). Was a dynamically-created solid
-  // #333 #toast; unified to #ivToast so viewer + folders share one look.
-  function showToast(msg: unknown) {
-    return notify(msg);
-  }
+  // Toast (notify) calls go straight to ui.ts's export now — no local wrapper.
 
   // Shared folder changes: refresh chips on any change; re-render cards (📁 states)
   // when the folder list/default changes. Registration lives in React
-  // (StoreSubscriptions, App.tsx) via window.corpusViewer below (CF().onChange has no
+  // (StoreSubscriptions, App.tsx), imported directly (CF().onChange has no
   // unsubscribe — subs.push — so the effect there has no cleanup, harmless since it
   // mounts once for the app's lifetime like every other App.tsx-level effect); this
   // stays the guard + action logic.
-  function handleFolderChange(kind?: string) {
+  handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
     if (postQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'collection' && !CF().byId(c.value))) {
       postQB.syncShadow();
@@ -1921,22 +1610,21 @@ import { corpusIpc } from './ipc.ts';
     // The clip row / sidebar collection state (counts/active) self-derives from the
     // corpusFolders.onChange subscription in renderer/sidebar.ts (P4-B slice⑰).
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
-  }
+  };
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
-  // lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer below
-  // (posts.ts's onPostsChanged has no unsubscribe either — same reasoning).
-  async function handlePostsChanged(names: string[] | null) {
+  // lives in React (StoreSubscriptions, App.tsx), imported directly (posts.ts's
+  // onPostsChanged has no unsubscribe either — same reasoning).
+  handlePostsChanged = async function (names: string[] | null) {
     await loadPosts(true, names);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleFolderChange, handlePostsChanged });
+  };
 
   // --- Boot: the app's initial data load + first render. Defined here (needs every
   // function/state above in closure) but NOT self-invoked — React's AppBoot (App.tsx)
-  // calls it once on mount, after awaiting window.corpusViewer.ready above. This makes
-  // the React root the single trigger for app startup (the "cut out and rewire" shape
-  // used for the control→hooks phase: React owns WHEN, viewer.ts keeps the orchestration
-  // logic of WHAT), rather than viewer.ts self-booting in parallel with React's mount.
-  async function bootApp() {
+  // calls it once on mount, after awaiting viewerReady above. This makes the React
+  // root the single trigger for app startup (React owns WHEN, viewer.ts keeps the
+  // orchestration logic of WHAT), rather than viewer.ts self-booting in parallel
+  // with React's mount.
+  bootApp = async function () {
     renderQueryChips();
     if (CF()) await CF().load(); // load folders before first render so 📁/chips are correct
     // Grouping persistence (shared with the old image-view): manual groups + opt-outs.
@@ -1995,7 +1683,6 @@ import { corpusIpc } from './ipc.ts';
     // set-tabs writes synchronously in main, so the payload only has to reach the
     // IPC queue before renderer teardown.
     window.addEventListener('pagehide', tabsCtl.persistTabsNow);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { bootApp });
+  };
   resolveViewerReady();
 })();

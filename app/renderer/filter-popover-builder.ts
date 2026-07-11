@@ -17,7 +17,7 @@ import { treeLeaves } from './query.ts';
 import { open as filterPopoverOpen, close as filterPopoverClose } from './filter-popover.ts';
 
 export interface FilterPopoverDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   engTypeLabels: Record<string, string>;
   addFilter(filter: { type: string; [k: string]: any }): void;
   removeNode(node: CorpusQueryLeaf): void;
@@ -48,7 +48,7 @@ export function makeFilterPopover(deps: FilterPopoverDeps) {
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!editingDateNode,
       fields: { dateField: existing?.dateField || 'date', from: existing?.from || '', to: existing?.to || '' },
-      labels: { typeDate: deps.MSG.qfDatePost, typeCaptured: deps.MSG.qfDateCaptured, removeLabel: deps.MSG.qfDelete, applyLabel: deps.MSG.qfApply },
+      labels: { typeDate: deps.t('qfDatePost'), typeCaptured: deps.t('qfDateCaptured'), removeLabel: deps.t('qfDelete'), applyLabel: deps.t('qfApply') },
       onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
         if (!from && !to) return;
         if (editingDateNode) {
@@ -82,11 +82,11 @@ export function makeFilterPopover(deps: FilterPopoverDeps) {
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!existing,
       fields: { dateField: (existing && existing.dateField) || 'latest', from: (existing && existing.from) || '', to: (existing && existing.to) || '' },
-      labels: { dimLabel: deps.MSG.posterDateDimLabel, rangeLabel: deps.MSG.posterDateRangeLabel, removeLabel: deps.MSG.posterDateClear, applyLabel: deps.MSG.qfApply },
+      labels: { dimLabel: deps.t('posterDateDimLabel'), rangeLabel: deps.t('posterDateRangeLabel'), removeLabel: deps.t('posterDateClear'), applyLabel: deps.t('qfApply') },
       dimOptions: [
-        { value: 'latest', label: deps.MSG.posterDateLastPost },
-        { value: 'lastCapture', label: deps.MSG.posterDateLastCapture },
-        { value: 'authorCreatedAt', label: deps.MSG.posterDateCreated },
+        { value: 'latest', label: deps.t('posterDateLastPost') },
+        { value: 'lastCapture', label: deps.t('posterDateLastCapture') },
+        { value: 'authorCreatedAt', label: deps.t('posterDateCreated') },
       ],
       onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
         if (!from && !to) return;
@@ -115,7 +115,7 @@ export function makeFilterPopover(deps: FilterPopoverDeps) {
       anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
       editing: !!editingEngNode,
       fields: { engType: existing?.engType || 'likes', min: existing?.min || '', op: existing?.op || 'gte' },
-      labels: { removeLabel: deps.MSG.qfDelete, applyLabel: deps.MSG.qfApply, opGte: deps.MSG.qfEngGte, opLte: deps.MSG.qfEngLte },
+      labels: { removeLabel: deps.t('qfDelete'), applyLabel: deps.t('qfApply'), opGte: deps.t('qfEngGte'), opLte: deps.t('qfEngLte') },
       typeOptions: Object.entries(deps.engTypeLabels).map(([value, label]) => ({ value, label })),
       onApply({ engType, min, op }: { engType?: string; min?: string | number; op?: string }) {
         if (!min || Number(min) <= 0) return;

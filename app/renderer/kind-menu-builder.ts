@@ -5,7 +5,7 @@
 // (Wave3) — this module is the view-specific glue that used to live inline in
 // viewer.ts: building the work/character/general row model from the current
 // 種別 state and wiring the pick/rename actions to tags.ts's mutators.
-// tagKindOf/kindLabel/MSG are still owned by viewer.ts's own makeTags()/i18n
+// tagKindOf/kindLabel/t are still owned by viewer.ts's own makeTags()/i18n
 // wiring, so they're injected as deps — same ctx pattern as query-builder.ts.
 import { open as kindMenuOpen } from './kind-menu.ts';
 import { setTagKind, setKindLabel } from './tags.ts';
@@ -14,11 +14,11 @@ import { notify } from './ui.ts';
 export interface KindMenuDeps {
   tagKindOf: (tag: string) => string | null;
   kindLabel: (kind: string) => string;
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
 }
 
 export function makeKindMenu(deps: KindMenuDeps) {
-  const { tagKindOf, kindLabel, MSG } = deps;
+  const { tagKindOf, kindLabel, t } = deps;
 
   // Right-click a tag chip (edit picker / inspector / poster) to classify it
   // 作品/キャラ/一般. A tag's 種別 is the TAG's own attribute (no post is
@@ -36,21 +36,21 @@ export function makeKindMenu(deps: KindMenuDeps) {
     kindMenuOpen({
       x,
       y,
-      header: MSG.tagKindHeader,
-      renameTitle: MSG.tagKindRename,
-      rows: [row('work', kindLabel('work')), row('character', kindLabel('character')), { sep: true }, row('', MSG.kindGeneral)],
+      header: t('tagKindHeader'),
+      renameTitle: t('tagKindRename'),
+      rows: [row('work', kindLabel('work')), row('character', kindLabel('character')), { sep: true }, row('', t('kindGeneral'))],
       async onPick(kind) {
         if ((tagKindOf(tag) || '') === kind) return; // already that kind — no write
         await setTagKind(tag, kind);
         if (onChanged) onChanged();
-        notify(kind ? MSG.tagKindSet(kindLabel(kind)) : MSG.tagKindCleared);
+        notify(kind ? t('tagKindSet', [kindLabel(kind)]) : t('tagKindCleared'));
       },
       async onRename(kind) {
-        const next = window.prompt(MSG.tagKindRenamePrompt, kindLabel(kind));
+        const next = window.prompt(t('tagKindRenamePrompt'), kindLabel(kind));
         if (next === null) return; // cancelled (empty string = reset to default)
         await setKindLabel(kind, next);
         if (onChanged) onChanged();
-        notify(MSG.tagKindRenamed);
+        notify(t('tagKindRenamed'));
       },
     });
   }

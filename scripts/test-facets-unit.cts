@@ -62,7 +62,7 @@ async function main() {
       }
     },
     userKey: (p) => p.platform + ':' + (p.userId || '@' + (p.screenName || '')),
-    MSG: { kindPost: 'SNS投稿', kindImage: '画像', qfPost: '投稿', qfReply: 'リプライ', qfQuote: '引用', qfThread: 'スレッド', qfImage: '画像', qfVideo: '動画', qfGif: 'GIF', qfMultiImage: '複数画像', qfPlatformNone: 'なし', tagGroupOther: 'その他' },
+    t: (key) => ({ kindPost: 'SNS投稿', kindImage: '画像', qfPost: '投稿', qfReply: 'リプライ', qfQuote: '引用', qfThread: 'スレッド', qfImage: '画像', qfVideo: '動画', qfGif: 'GIF', qfMultiImage: '複数画像', qfPlatformNone: 'なし', tagGroupOther: 'その他' })[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
     tagKindOf: (t) => KIND[t],
     tagGroups: () => tagGroups,

@@ -18,7 +18,7 @@ export function genTabId() {
 }
 
 // deps contract:
-//   MSG — resolved i18n message map (static after boot)
+//   t(key,subs?) — i18n message lookup (getMessage)
 //   engTypeLabels — engagement-type label map (viewer keeps the const: the
 //                   filter popover shares it for its type <select>)
 //   platformName(v) — PF_NAME lookup with raw-value fallback
@@ -26,7 +26,7 @@ export function genTabId() {
 //   collectionName(id) — resolves a collection id to its display name
 //                        (null/undefined when unknown → caller falls back)
 export function makeTabLabels(deps: {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   engTypeLabels: { [k: string]: string };
   platformName(v: string): string;
   formatShortDate(dateStr: string): string;
@@ -34,20 +34,20 @@ export function makeTabLabels(deps: {
   collectionName(id: string): string | null | undefined;
   posterFolderName(id: string): string | null | undefined;
 }) {
-  const { MSG, engTypeLabels, platformName, formatShortDate, formatCount, collectionName } = deps;
+  const { t, engTypeLabels, platformName, formatShortDate, formatCount, collectionName } = deps;
 
   // Returns the human-readable label for a single active filter. Shared by
   // the query-chip renderer and the tab title generator.
   function filterLabel(f: { type: string; [k: string]: any }): string {
     switch (f.type) {
       case 'kind':
-        return f.value === 'post' ? MSG.kindPost : MSG.kindImage;
+        return f.value === 'post' ? t('kindPost') : t('kindImage');
       case 'platform':
-        return f.value === '__none' ? MSG.qfPlatformNone : platformName(f.value);
+        return f.value === '__none' ? t('qfPlatformNone') : platformName(f.value);
       case 'postType':
-        return f.value === 'post' ? MSG.qfPost : f.value === 'reply' ? MSG.qfReply : f.value === 'quote' ? MSG.qfQuote : MSG.qfThread;
+        return f.value === 'post' ? t('qfPost') : f.value === 'reply' ? t('qfReply') : f.value === 'quote' ? t('qfQuote') : t('qfThread');
       case 'date': {
-        const typeName = f.dateField === 'capturedAt' ? MSG.qfDateCaptured : MSG.qfDatePost;
+        const typeName = f.dateField === 'capturedAt' ? t('qfDateCaptured') : t('qfDatePost');
         const fromStr = f.from ? formatShortDate(f.from) : '';
         const toStr = f.to ? formatShortDate(f.to) : '';
         return `${typeName}: ${fromStr}〜${toStr}`;
@@ -61,9 +61,9 @@ export function makeTabLabels(deps: {
       case 'collection':
         return collectionName(f.value) || f.value;
       case 'clip':
-        return MSG.clipTitle;
+        return t('clipTitle');
       case 'media':
-        return f.value === 'image' ? MSG.qfImage : f.value === 'video' ? MSG.qfVideo : MSG.qfGif;
+        return f.value === 'image' ? t('qfImage') : f.value === 'video' ? t('qfVideo') : t('qfGif');
       case 'instance':
         return f.value;
       case 'user':
@@ -84,7 +84,7 @@ export function makeTabLabels(deps: {
     const allCount = ctx && ctx.allCount != null ? ctx.allCount : 0;
 
     if (!filters.length && !search && !multi) {
-      return { text: MSG.filterAll + '(' + formatCount(allCount) + ')', iconType: 'all' };
+      return { text: t('filterAll') + '(' + formatCount(allCount) + ')', iconType: 'all' };
     }
 
     const parts: string[] = [];
@@ -110,7 +110,7 @@ export function makeTabLabels(deps: {
     if (byType.user) byType.user.forEach((f) => add(filterLabel(f), 'user'));
     filters.filter((f) => f.type === 'platform' || f.type === 'instance').forEach((f) => add(filterLabel(f), f.type));
     filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
-    if (multi && !byType.media) add(MSG.qfMultiImage, 'media');
+    if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
@@ -129,7 +129,7 @@ export function makeTabLabels(deps: {
       return name != null ? name : f.value;
     }
     if (f.type === 'date') {
-      const dimName = f.dateField === 'lastCapture' ? MSG.posterDateLastCapture : f.dateField === 'authorCreatedAt' ? MSG.posterDateCreated : MSG.posterDateLastPost;
+      const dimName = f.dateField === 'lastCapture' ? t('posterDateLastCapture') : f.dateField === 'authorCreatedAt' ? t('posterDateCreated') : t('posterDateLastPost');
       const fromStr = f.from ? formatShortDate(f.from) : '';
       const toStr = f.to ? formatShortDate(f.to) : '';
       return `${dimName}: ${fromStr}〜${toStr}`;

@@ -28,7 +28,8 @@ import { corpusIpc } from './ipc.ts';
 // deps contract:
 //   tagTypes() / tagLabels() / tagGroups() / posterTags() / allPosts() —
 //     getters (viewer reassigns these lets on load/import)
-//   MSG — pre-resolved message table (finalized before makeTags runs)
+//   t(key,subs?) — i18n message lookup (getMessage; aliased t18n internally —
+//     this file uses bare `t` pervasively as a tag-string loop variable)
 //   charCandidatesFor(workTags) / relatedTagCandidates(sel, opts) — cooc.js
 //     products (deferred arrows — consts declared after the wiring point)
 export function makeTags(deps: {
@@ -37,12 +38,12 @@ export function makeTags(deps: {
   tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
   posterTags(): Record<string, string[]>;
   allPosts(): CorpusPost[];
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
 }) {
-  const { tagTypes, tagLabels, tagGroups, posterTags, allPosts, MSG, charCandidatesFor, relatedTagCandidates } = deps;
-  const KIND_LABEL: Record<string, string> = { work: MSG.kindWork, character: MSG.kindCharacter }; // MSG is finalized at load
+  const { tagTypes, tagLabels, tagGroups, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates } = deps;
+  const KIND_LABEL: Record<string, string> = { work: t18n('kindWork'), character: t18n('kindCharacter') }; // resolved once at load
 
   function tagKindOf(tag: string): string | null {
     return tagTypes()[tag] || null;
@@ -101,7 +102,7 @@ export function makeTags(deps: {
       const applied = new Set<string>();
       for (const arr of Object.values(posterTags())) for (const t of Array.isArray(arr) ? arr : []) if (!tagKindOf(t)) applied.add(t);
       const general = [...applied].filter(ok).sort(byJa);
-      if (general.length) out.push({ name: MSG.tagGroupOther, tags: general });
+      if (general.length) out.push({ name: t18n('tagGroupOther'), tags: general });
       return out;
     }
     for (const g of groups) {
@@ -114,7 +115,7 @@ export function makeTags(deps: {
     const applied = new Set<string>();
     for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!grouped.has(t) && !tagKindOf(t)) applied.add(t);
     const ungrouped = [...applied].filter(ok).sort(byJa);
-    if (ungrouped.length) out.push({ name: MSG.tagGroupOther, tags: ungrouped });
+    if (ungrouped.length) out.push({ name: t18n('tagGroupOther'), tags: ungrouped });
     return out;
   }
 
@@ -147,8 +148,8 @@ export function makeTags(deps: {
       if (cands.length) {
         const who = workTags.join('・');
         coocGroups.push({
-          name: workTags.length === 1 ? MSG.editCoocCharsOf(workTags[0]) : MSG.editCoocChars,
-          items: cands.map(([t, n]: [string, number]) => ({ tag: t, title: MSG.editCoocWhy(who, n) })),
+          name: workTags.length === 1 ? t18n('editCoocCharsOf', [workTags[0]]) : t18n('editCoocChars'),
+          items: cands.map(([t, n]: [string, number]) => ({ tag: t, title: t18n('editCoocWhy', [who, n]) })),
         });
         for (const [t] of cands) strong.add(t);
       }
@@ -157,8 +158,8 @@ export function makeTags(deps: {
       const rel = relatedTagCandidates([...sel], { exclude: strong });
       if (rel.length) {
         coocGroups.push({
-          name: MSG.editCoocRelated,
-          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOf(r.tag) || null, title: MSG.editCoocWhy(r.withTag, r.count) })),
+          name: t18n('editCoocRelated'),
+          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOf(r.tag) || null, title: t18n('editCoocWhy', [r.withTag, r.count]) })),
         });
       }
     }

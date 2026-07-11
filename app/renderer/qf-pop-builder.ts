@@ -15,7 +15,7 @@ import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-po
 export interface QfPopDeps {
   qfValues(cat: string): CorpusQfPopItem[];
   kindLabel(kind: string): string;
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   pfStore: CorpusPersistedFolderStore;
   postShadow(): { type: string; value?: string }[];
   posterQHasValue(type: string, value: string): boolean;
@@ -85,14 +85,14 @@ export function makeQfPop(deps: QfPopDeps) {
       sessionId: qfSession,
       items,
       showFind,
-      allGroupLabel: deps.MSG.qfAllTags,
-      findPlaceholder: deps.MSG.qfFindPh,
-      searchModeTitle: deps.MSG.searchModeTitle,
-      exactLabel: deps.MSG.searchExact,
-      fuzzyLabel: deps.MSG.searchFuzzy,
-      exactHint: deps.MSG.searchHintExact,
-      fuzzyHint: deps.MSG.searchHintLoose,
-      footerLabel: showManage ? deps.MSG.ctxManage : null,
+      allGroupLabel: deps.t('qfAllTags'),
+      findPlaceholder: deps.t('qfFindPh'),
+      searchModeTitle: deps.t('searchModeTitle'),
+      exactLabel: deps.t('searchExact'),
+      fuzzyLabel: deps.t('searchFuzzy'),
+      exactHint: deps.t('searchHintExact'),
+      fuzzyHint: deps.t('searchHintLoose'),
+      footerLabel: showManage ? deps.t('ctxManage') : null,
       onManage: showManage
         ? () => {
             hideQfPop();

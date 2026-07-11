@@ -42,14 +42,11 @@ async function main() {
     { captureId: 'p2', tags: ['WorkA'] }, // kinded → NOT in the ungrouped pool
     { captureId: 'p3' }, // no tags — must not throw
   ];
-  const MSG = {
-    kindWork: '作品',
-    kindCharacter: 'キャラ',
-    tagGroupOther: '未分類',
-    editCoocChars: 'このキャラたち',
-    editCoocCharsOf: (w) => `${w} のキャラ`,
-    editCoocWhy: (who, n) => `${who} と ${n} 回共起`,
-    editCoocRelated: 'よく一緒に付くタグ',
+  const STATIC_MSG = { kindWork: '作品', kindCharacter: 'キャラ', tagGroupOther: '未分類', editCoocChars: 'このキャラたち', editCoocRelated: 'よく一緒に付くタグ' };
+  const t = (key, subs) => {
+    if (key === 'editCoocCharsOf') return `${subs[0]} のキャラ`;
+    if (key === 'editCoocWhy') return `${subs[0]} と ${subs[1]} 回共起`;
+    return STATIC_MSG[key];
   };
   let coocCalls: any[] = [];
   let charCands: any[] = [];
@@ -60,7 +57,7 @@ async function main() {
     tagGroups: () => tagGroups,
     posterTags: () => posterTags,
     allPosts: () => allPosts,
-    MSG,
+    t,
     charCandidatesFor: (w) => {
       coocCalls.push(['char', w]);
       return charCands;

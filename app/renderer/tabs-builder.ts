@@ -26,7 +26,7 @@ import { get as storeGet, set as storeSet } from './store.ts';
 import { corpusTabsSource } from './tabs.ts';
 
 export interface TabsBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
   postQB: { getTree(): CorpusQueryGroup; setTree(t: CorpusQueryGroup | null | undefined): void; shadow(): CorpusQueryLeaf[] };
   getSortValue(): string;
@@ -229,7 +229,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // tab's derived title), so nothing here builds a model or pushes one. The
   // pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-  corpusTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.MSG.tabClose, newTitle: deps.MSG.tabNew });
+  corpusTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew') });
   function switchTab(id: string) {
     if (id === getActiveTabId()) return;
     saveActiveTabState();
@@ -381,13 +381,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
     const items: any[] = [
-      { label: t.pinned ? deps.MSG.tabUnpin : deps.MSG.tabPin, act: 'pin' },
-      { label: deps.MSG.tabRename, act: 'rename' },
-      { label: deps.MSG.tabDuplicate, act: 'duplicate' },
+      { label: t.pinned ? deps.t('tabUnpin') : deps.t('tabPin'), act: 'pin' },
+      { label: deps.t('tabRename'), act: 'rename' },
+      { label: deps.t('tabDuplicate'), act: 'duplicate' },
     ];
     if (getTabs().length > 1) {
-      items.push({ label: deps.MSG.tabClose, act: 'close' });
-      items.push({ label: deps.MSG.tabCloseOthers, act: 'close-others', danger: true });
+      items.push({ label: deps.t('tabClose'), act: 'close' });
+      items.push({ label: deps.t('tabCloseOthers'), act: 'close-others', danger: true });
     }
     menuOpen({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
       const tid = id;

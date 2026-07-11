@@ -193,21 +193,16 @@ async function main() {
 
   // --- makeCardModel: per-card view model（濃度/学習アスペクト/選択/クリップ/フラグ/両日付） ---
   {
-    const MSG = {
-      postedOn: (d) => 'posted ' + d,
-      captured: (d) => 'cap ' + d,
-      qfThread: 'THREAD',
-      qfReply: 'REPLY',
-      qfQuote: 'QUOTE',
-      qfImage: 'IMG',
-      qfVideo: 'VID',
-      qfGif: 'GIF',
-      likes: (n) => n + ' likes',
+    const STATIC_MSG = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
+    const t = (key, subs) => {
+      if (key === 'postedOn') return 'posted ' + subs[0];
+      if (key === 'captured') return 'cap ' + subs[0];
+      return STATIC_MSG[key];
     };
     let view = 'card';
     const aspect = { capX: '4/3' };
     const cardModel = R.makeCardModel({
-      MSG,
+      t,
       PF_NAME: { x: 'X' },
       formatCount: (n) => 'N' + n,
       formatDate: (d) => 'D' + d,
@@ -254,7 +249,7 @@ async function main() {
     assert('cardModel 同日は cap 日付を去重（post のみ残る）', m.footDates.post && m.footDates.post.label === '2026-04-01' && m.footDates.cap === null);
     assert('cardModel pfName/userName/handle', m.pfName === 'X' && m.userName === 'Alice' && m.handle === '@alice');
     assert('cardModel flags（thread/quote のみ・reply は false）', m.flags.join() === 'THREAD,QUOTE');
-    assert('cardModel mediaLabel=IMG / likesOv=MSG.likes', m.mediaLabel === 'IMG' && m.likesOv === '12 likes');
+    assert('cardModel mediaLabel=IMG / likesOv=formatCount(likes)', m.mediaLabel === 'IMG' && m.likesOv === 'N12');
     assert('cardModel aspRatio=shotW/shotH（card・masonry 高さ予約）', m.aspRatio === '800/600');
     assert('cardModel nImg=4 / stackSrcs は2・3枚目のみ（幅=cardThumbW）', m.nImg === 4 && m.stackSrcs.join() === 'b.jpg@200,c.jpg@200');
     assert('cardModel imgSrc=fileSrc(shot.jpg, cardThumbW) / hasThumb', m.imgSrc === 'shot.jpg@200' && m.hasThumb === true);

@@ -9,7 +9,7 @@
 // openLeafEditor popovers, onClearSearch) — only the tree/model/event-routing
 // domain itself moved.
 //
-// ctx: { container, storeKey?, barEl?, predOf, labelOf, glyphOf, msg,
+// ctx: { container, storeKey?, barEl?, predOf, labelOf, glyphOf, t,
 //        getSearchVal?, onClearSearch?, onChange, openLeafEditor?,
 //        editableLeafTypes?, singleValueTypes?, noDupTypes?, multiValueTypes?,
 //        standaloneTypes? }  (barEl = the bar's static container: reveal +
@@ -68,7 +68,7 @@ interface QbCtx {
   predOf: (f: CorpusQueryLeaf) => (item: any) => boolean;
   labelOf: (f: CorpusQueryLeaf) => string;
   glyphOf: (type: string) => string;
-  msg: { [k: string]: string };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   getSearchVal?: () => string;
   onClearSearch?: () => void;
   onChange: () => void;
@@ -126,7 +126,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // the rebuild path.
   function summaryOf(node: CorpusQueryNode, isRoot: boolean): string {
     if (node.kind === 'cond') return (node.neg ? '≠' : '') + ctx.labelOf(node);
-    const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${ctx.msg.qcJoinOr} ` : ` ${ctx.msg.qcJoinAnd} `);
+    const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${ctx.t('qcJoinOr')} ` : ` ${ctx.t('qcJoinAnd')} `);
     return isRoot ? inner : `${node.neg ? '≠' : ''}(${inner})`;
   }
 
@@ -195,24 +195,24 @@ export function createQueryBuilder(ctx: QbCtx) {
         });
       }
       for (const l of view.singles) clusters.push({ id: null, typeCls: 'qc-' + l.type, glyph: ctx.glyphOf(l.type), items: [itemModel(l)], op: null });
-      if (view.excl.length) excl = { label: ctx.msg.qbExclLabel, items: view.excl.map(itemModel) };
+      if (view.excl.length) excl = { label: ctx.t('qbExclLabel'), items: view.excl.map(itemModel) };
     } else {
-      summary = { text: summaryOf(tree, true), tip: ctx.msg.qbSummaryTip };
+      summary = { text: summaryOf(tree, true), tip: ctx.t('qbSummaryTip') };
     }
     // Posts fold the search term into the tree as a real 'text' leaf (textInTree),
     // so suppress the echo chip there. Posters still echo their box term.
     const model = {
       searchSeg: searchVal && !ctx.textInTree ? { glyph: ctx.glyphOf('search'), text: searchVal } : null,
       searchJoin: hasQuery,
-      joinAndWord: ctx.msg.qcJoinAnd,
+      joinAndWord: ctx.t('qcJoinAnd'),
       clusters,
       excl,
       summary,
-      delTitle: ctx.msg.qfDelete,
-      optAll: ctx.msg.qbOptAll,
-      optAny: ctx.msg.qbOptAny,
-      optAllTip: ctx.msg.qbOptAllTip,
-      optAnyTip: ctx.msg.qbOptAnyTip,
+      delTitle: ctx.t('qfDelete'),
+      optAll: ctx.t('qbOptAll'),
+      optAny: ctx.t('qbOptAny'),
+      optAllTip: ctx.t('qbOptAllTip'),
+      optAnyTip: ctx.t('qbOptAnyTip'),
     };
     pushModel(container.id, model);
   }
@@ -254,7 +254,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   function showQbMenu(node: CorpusQueryLeaf, x: number, y: number) {
     const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
     const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-    const items = [{ label: node.neg ? ctx.msg.qbMenuInclude : ctx.msg.qbMenuExclude, act: 'neg', icon: NEG }, { sep: true }, { label: ctx.msg.qfDelete, act: 'del', icon: DEL, danger: true }];
+    const items = [{ label: node.neg ? ctx.t('qbMenuInclude') : ctx.t('qbMenuExclude'), act: 'neg', icon: NEG }, { sep: true }, { label: ctx.t('qfDelete'), act: 'del', icon: DEL, danger: true }];
     menuOpen({ items, x, y }, (item) => {
       if (item.act === 'neg') {
         if (ctx.onLeafMutated) ctx.onLeafMutated(node); // an editing text leaf moving to 除く is confirmed

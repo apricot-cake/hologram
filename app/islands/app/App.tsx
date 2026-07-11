@@ -30,6 +30,7 @@ import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
 import { onChange as foldersOnChange } from '../../renderer/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
+import { viewerReady, bootApp, handleFolderChange, handlePostsChanged } from '../../renderer/viewer.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
@@ -55,16 +56,16 @@ function Portal({ id, children }: { id: string; children: ReactNode }) {
 
 // App bootstrap: the single React root (this component) is the app's one entry point,
 // so it also owns triggering the initial data load — rather than viewer.ts self-booting
-// in parallel with React's mount. Awaits window.corpusViewer.ready (assigned as
-// viewer.ts's very first synchronous statement, so it's already there by the time this
-// effect runs) before calling bootApp() once; bootApp itself is only assigned once
-// viewer.ts has finished defining everything it closes over, and ready only resolves
-// after that assignment — so by the time the promise settles, bootApp is guaranteed to
-// exist. No cleanup: boot runs exactly once for the app's lifetime, like the other
-// App.tsx-level effects that never actually unmount in this single-page app.
+// in parallel with React's mount. Awaits viewerReady (assigned as viewer.ts's very
+// first synchronous statement, so it's already there by the time this effect runs)
+// before calling bootApp() once; bootApp itself is only assigned once viewer.ts has
+// finished defining everything it closes over, and viewerReady only resolves after
+// that assignment — so by the time the promise settles, bootApp is guaranteed to be
+// the real function. No cleanup: boot runs exactly once for the app's lifetime, like
+// the other App.tsx-level effects that never actually unmount in this single-page app.
 function AppBoot() {
   useEffect(() => {
-    window.corpusViewer?.ready?.then(() => window.corpusViewer?.bootApp?.());
+    viewerReady.then(() => bootApp());
   }, []);
   return null;
 }
@@ -205,13 +206,15 @@ function TabBarEvents() {
 // External-store / IPC subscriptions: corpusStore keys (view / browseMode /
 // posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
 // folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
-// registration (mounted once for the app's lifetime); each handler's guard + action
-// logic is unchanged and stays in viewer.ts, reached through window.corpusViewer —
-// same "cut out and rewire" as the other App.tsx-level effects. corpusStore/qf-pop/
-// search all return an unsubscribe (useSyncExternalStore-compatible) and get one on
-// cleanup; corpusFolders.onChange and corpusPosts.onPostsChanged don't (subs.push /
-// raw ipcRenderer.on) — harmless, since this effect never actually unmounts in this
-// single-page app.
+// registration (mounted once for the app's lifetime). The store/qf-pop/search-mode
+// handlers are guard+action logic that still lives in viewer.ts, reached through
+// window.corpusViewer — "cut out and rewire", same as the other App.tsx-level
+// effects. handleFolderChange/handlePostsChanged are imported directly instead
+// (Wave31/V17 — no bridge needed once viewer.ts exports them as real bindings).
+// corpusStore/qf-pop/search all return an unsubscribe (useSyncExternalStore-
+// compatible) and get one on cleanup; corpusFolders.onChange and
+// corpusPosts.onPostsChanged don't (subs.push / raw ipcRenderer.on) — harmless,
+// since this effect never actually unmounts in this single-page app.
 function StoreSubscriptions() {
   useEffect(() => {
     const unsubView = storeSubscribe('view', () => window.corpusViewer?.handleViewStoreChange?.());
@@ -220,8 +223,8 @@ function StoreSubscriptions() {
     const unsubSearchQuery = storeSubscribe('searchQuery', () => window.corpusViewer?.handleSearchQueryStoreChange?.());
     const unsubQfPop = subscribeQfPop(() => window.corpusViewer?.handleQfPopChange?.());
     const unsubSearchMode = subscribeSearch(() => window.corpusViewer?.handleSearchModeChange?.());
-    foldersOnChange((kind) => window.corpusViewer?.handleFolderChange?.(kind));
-    onPostsChanged((names) => window.corpusViewer?.handlePostsChanged?.(names));
+    foldersOnChange((kind) => handleFolderChange(kind));
+    onPostsChanged((names) => handlePostsChanged(names));
     return () => {
       unsubView();
       unsubBrowseMode();

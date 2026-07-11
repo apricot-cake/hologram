@@ -250,7 +250,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 //   NOT here — the grid island derives .selected straight from corpusStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
-  MSG: any;
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   formatCount(n: number): string;
   formatDate(d: string): string;
@@ -264,7 +264,7 @@ export function makeCardModel(deps: {
   cardThumbW(): number;
   listThumbW(): number;
 }) {
-  const { MSG, PF_NAME, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+  const { t, PF_NAME, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
   return function cardModel(g: CorpusPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = currentView();
@@ -279,8 +279,8 @@ export function makeCardModel(deps: {
     };
     // Both dates: post date bare (primary) + capture date with a 📷 mark
     // (secondary). Deduped when they land on the same day.
-    const dateStr = p.date ? MSG.postedOn(formatDate(p.date)) : '';
-    const capturedStr = p.capturedAt ? MSG.captured(formatDate(p.capturedAt)) : '';
+    const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';
+    const capturedStr = p.capturedAt ? t('captured', [formatDate(p.capturedAt)]) : '';
     const postCompact = p.date ? compactDate(p.date) : '';
     const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
     const footDates = {
@@ -303,10 +303,10 @@ export function makeCardModel(deps: {
     const aspRatio = view !== 'card' ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : '';
     // Post-type + media flags (grid view only; CSS hides them in compact list).
     const flags: string[] = [];
-    if (p.isThread) flags.push(MSG.qfThread);
-    if (p.isReply) flags.push(MSG.qfReply);
-    if (p.isQuote) flags.push(MSG.qfQuote);
-    const mediaLabel = p.mediaType === 'image' ? MSG.qfImage : p.mediaType === 'video' ? MSG.qfVideo : p.mediaType === 'gif' ? MSG.qfGif : '';
+    if (p.isThread) flags.push(t('qfThread'));
+    if (p.isReply) flags.push(t('qfReply'));
+    if (p.isQuote) flags.push(t('qfQuote'));
+    const mediaLabel = p.mediaType === 'image' ? t('qfImage') : p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
     const postKey = postIdKey(p);
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
@@ -329,7 +329,7 @@ export function makeCardModel(deps: {
       nImg: g.files.length,
       stackSrcs,
       userName,
-      likesOv: p.likes != null ? MSG.likes(p.likes) : null,
+      likesOv: p.likes != null ? formatCount(p.likes) : null,
       handle,
       flags,
       mediaLabel,

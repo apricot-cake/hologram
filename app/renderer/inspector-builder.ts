@@ -21,7 +21,7 @@ import { get as filterPopoverGet } from './filter-popover.ts';
 import { corpusIpc } from './ipc.ts';
 
 export interface InspectorBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
@@ -79,7 +79,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     persistUngrouped(ungrouped);
     closeDetail();
     deps.renderPosts(true);
-    if (ungroup) deps.showToast(deps.MSG.ungroupDone);
+    if (ungroup) deps.showToast(deps.t('ungroupDone'));
   }
   function ungroupManual(idx: number) {
     const manualGroups = deps.getManualGroups();
@@ -89,7 +89,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     persistManual();
     closeDetail();
     deps.renderPosts(true);
-    deps.showToast(deps.MSG.ungroupDone);
+    deps.showToast(deps.t('ungroupDone'));
   }
   // --- Inspector inline tag editor (always available while the inspector is open) ---
   // Source of truth = the records' real tags. Each change saves immediately (mirrors
@@ -167,13 +167,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const work = worksNow[0];
     const distinguished = `${addedTag}（${work}）`;
     if (cardTags.includes(distinguished)) return;
-    if (!window.confirm(deps.MSG.homonymConfirm(addedTag, work))) return;
+    if (!window.confirm(deps.t('homonymConfirm', [addedTag, work]))) return;
     // The distinguished string stays a character (danbooru-style); record its 種別.
     if (!deps.tagKindOf(distinguished)) {
       await tagsSetTagKind(distinguished, 'character');
     }
     await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
-    deps.showToast(deps.MSG.homonymDistinguished(distinguished));
+    deps.showToast(deps.t('homonymDistinguished', [distinguished]));
   }
 
   function showDetail(g: CorpusPostGroup) {
@@ -213,11 +213,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
     // rep's key out stops the self-reply merge at this parent, splitting the card.
     const groupBtn = isManual
-      ? { icon: '🔗', label: deps.MSG.groupUngroupManual, onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
+      ? { icon: '🔗', label: deps.t('groupUngroupManual'), onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
       : gkey && (potential > 1 || g.records.length > 1)
         ? deps.getUngrouped().has(gkey)
-          ? { icon: '🔗', label: deps.MSG.groupRegroup, onClick: () => setGroupKey(gkey, false) }
-          : { icon: '✂', label: deps.MSG.groupUngroup, onClick: () => setGroupKey(gkey, true) }
+          ? { icon: '🔗', label: deps.t('groupRegroup'), onClick: () => setGroupKey(gkey, false) }
+          : { icon: '✂', label: deps.t('groupUngroup'), onClick: () => setGroupKey(gkey, true) }
         : null;
     inspectorOpen({
       kind: 'post',
@@ -234,39 +234,39 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       postedLabel: localeDateTime(p.date),
       savedLabel: localeDateTime(p.capturedAt),
       updatedLabel: localeDateTime(p.updatedAt),
-      imagesLabel: g.files.length > 1 ? deps.MSG.imagesCount(g.files.length) : '',
-      imageOfLabel: p.imageIndex && p.imageCount ? deps.MSG.imageOf(p.imageIndex, p.imageCount) : '',
+      imagesLabel: g.files.length > 1 ? deps.t('imagesCount', [g.files.length]) : '',
+      imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
       tags: userTags,
       srcTagsView,
       groupBtn,
       ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
       labels: {
-        platform: deps.MSG.detailPlatform,
-        author: deps.MSG.detailAuthor,
-        user: deps.MSG.detailUser,
-        followers: deps.MSG.detailFollowers,
-        joined: deps.MSG.detailJoined,
-        engagement: deps.MSG.detailEngagement,
-        posted: deps.MSG.detailPosted,
-        saved: deps.MSG.detailSaved,
-        updated: deps.MSG.detailUpdated,
-        images: deps.MSG.detailImages,
-        imageOf: deps.MSG.detailImageOf,
-        sourceTags: deps.MSG.detailSourceTags,
-        tipAdoptTag: deps.MSG.tipAdoptTag,
-        viewPoster: deps.MSG.ctxViewPoster,
-        open: deps.MSG.detailOpen,
-        sauce: deps.MSG.detailSauce,
-        ascii: deps.MSG.detailAscii,
+        platform: deps.t('detailPlatform'),
+        author: deps.t('detailAuthor'),
+        user: deps.t('detailUser'),
+        followers: deps.t('detailFollowers'),
+        joined: deps.t('detailJoined'),
+        engagement: deps.t('detailEngagement'),
+        posted: deps.t('detailPosted'),
+        saved: deps.t('detailSaved'),
+        updated: deps.t('detailUpdated'),
+        images: deps.t('detailImages'),
+        imageOf: deps.t('detailImageOf'),
+        sourceTags: deps.t('detailSourceTags'),
+        tipAdoptTag: deps.t('tipAdoptTag'),
+        viewPoster: deps.t('ctxViewPoster'),
+        open: deps.t('detailOpen'),
+        sauce: deps.t('detailSauce'),
+        ascii: deps.t('detailAscii'),
       },
       tagLabels: {
-        tagsLabel: deps.MSG.detailTags,
-        newTagPlaceholder: deps.MSG.tagNewName,
-        addBtn: deps.MSG.tagAddBtn,
-        noTags: deps.MSG.editNoTags,
-        noMatch: deps.MSG.tagPalNoMatch,
-        noVocab: deps.MSG.tagNoTags,
-        adoptSource: deps.MSG.editAdoptSource,
+        tagsLabel: deps.t('detailTags'),
+        newTagPlaceholder: deps.t('tagNewName'),
+        addBtn: deps.t('tagAddBtn'),
+        noTags: deps.t('editNoTags'),
+        noMatch: deps.t('tagPalNoMatch'),
+        noVocab: deps.t('tagNoTags'),
+        adoptSource: deps.t('editAdoptSource'),
       },
       onClose: closeDetail,
       onOpenExternal: p.url ? () => corpusIpc.openExternal(p.url) : null,
@@ -319,7 +319,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.renderPosts(true);
     const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === deps.getInspectedKey());
     if (fresh) showDetail(fresh);
-    deps.showToast(deps.MSG.tagAdopted(tag));
+    deps.showToast(deps.t('tagAdopted', [tag]));
   }
   // Esc closes the inspector — registered in CAPTURE phase so it can check
   // what else is open BEFORE those handlers dismiss themselves on the same

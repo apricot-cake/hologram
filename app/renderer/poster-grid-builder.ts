@@ -24,7 +24,7 @@ import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
 
 export interface PosterGridBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
@@ -95,7 +95,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const res = pfStore.toggleIn(id, key);
     if (!res) return false;
     const f = posterFolderById(id);
-    deps.showToast((res === 'removed' ? deps.MSG.posterFolderRemoved : deps.MSG.posterFolderAdded)(f?.name ?? ''));
+    deps.showToast(deps.t(res === 'removed' ? 'posterFolderRemoved' : 'posterFolderAdded', [f?.name ?? '']));
     renderPosterFilterRows(); // folder badge count changed
     if (treeLeaves(deps.posterQBGetTree()).some((c) => c.type === 'folder')) renderPosters(); // membership change may add/remove from the filtered grid
     return res === 'added';
@@ -181,12 +181,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         handle: hasName && u.screenName ? u.screenName : null,
         platform: u.platform || null,
         pfName: u.platform ? deps.PF_NAME[u.platform] || u.platform : null,
-        countLabel: deps.MSG.posterPosts(formatCount(u.count)),
+        countLabel: deps.t('posterPosts', [formatCount(u.count)]),
       };
     },
     keyOf: (u: CorpusUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
-    tagTitle: deps.MSG.tipTagEdit,
-    infoTitle: deps.MSG.tipInfo,
+    tagTitle: deps.t('tipTagEdit'),
+    infoTitle: deps.t('tipInfo'),
   });
 
   // Jump from a poster to its posts: posts mode + a single user filter for it.
@@ -281,23 +281,23 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
       autoFocusTag: !!(opts && opts.focusTag),
       labels: {
-        user: deps.MSG.detailUser,
-        platform: deps.MSG.detailPlatform,
-        posts: deps.MSG.detailPosts,
-        followers: deps.MSG.detailFollowers,
-        joined: deps.MSG.detailJoined,
-        posterFolders: deps.MSG.ivPosterFolders,
-        newFolderPlaceholder: deps.MSG.posterFolderNewPlaceholder,
-        posterViewPosts: deps.MSG.posterViewPosts,
+        user: deps.t('detailUser'),
+        platform: deps.t('detailPlatform'),
+        posts: deps.t('detailPosts'),
+        followers: deps.t('detailFollowers'),
+        joined: deps.t('detailJoined'),
+        posterFolders: deps.t('ivPosterFolders'),
+        newFolderPlaceholder: deps.t('posterFolderNewPlaceholder'),
+        posterViewPosts: deps.t('posterViewPosts'),
       },
       tagLabels: {
-        tagsLabel: deps.MSG.ivPosterTags,
-        newTagPlaceholder: deps.MSG.tagNewName,
-        addBtn: deps.MSG.tagAddBtn,
-        noTags: deps.MSG.editNoTags,
-        noMatch: deps.MSG.tagPalNoMatch,
-        noVocab: deps.MSG.tagNoTags,
-        adoptSource: deps.MSG.editAdoptSource,
+        tagsLabel: deps.t('ivPosterTags'),
+        newTagPlaceholder: deps.t('tagNewName'),
+        addBtn: deps.t('tagAddBtn'),
+        noTags: deps.t('editNoTags'),
+        noMatch: deps.t('tagPalNoMatch'),
+        noVocab: deps.t('tagNoTags'),
+        adoptSource: deps.t('editAdoptSource'),
       },
       onClose: deps.closeDetail,
       onPosterPosts: () => openPosterPosts(u),
@@ -306,7 +306,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         refreshPosterFolderFields(u.key);
       },
       onFolderCreate: () => {
-        const name = window.prompt(deps.MSG.posterFolderRenamePrompt, '');
+        const name = window.prompt(deps.t('posterFolderRenamePrompt'), '');
         if (name && name.trim()) {
           const nf = createPosterFolder(name);
           if (nf) {
@@ -330,11 +330,11 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // poster-folders (toggle, stays open). React-owned glass popup via
   // menu.ts; viewer owns the items + actions here.
   function posterMenuItems(u: CorpusUserAgg) {
-    const items = [{ label: deps.MSG.posterViewPosts, act: 'posts' }, { sep: true }] as CorpusMenuItem[];
+    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { sep: true }] as CorpusMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
     }
-    items.push({ label: deps.MSG.posterMenuNewFolder, act: 'newfolder', manage: true });
+    items.push({ label: deps.t('posterMenuNewFolder'), act: 'newfolder', manage: true });
     return items;
   }
   function onPosterMenuPick(u: CorpusUserAgg, item: CorpusMenuItem) {
@@ -343,7 +343,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       return;
     } // close
     if (item.act === 'newfolder') {
-      const name = window.prompt(deps.MSG.posterFolderRenamePrompt, '');
+      const name = window.prompt(deps.t('posterFolderRenamePrompt'), '');
       if (name && name.trim()) {
         const nf = createPosterFolder(name);
         if (nf) togglePosterFolderMember(nf.id, u.key);

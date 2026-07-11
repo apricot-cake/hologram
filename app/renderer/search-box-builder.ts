@@ -6,7 +6,7 @@
 // glue that used to live inline in viewer.ts: the corpusStore 'searchQuery'
 // getter/setter (with the echo guard that tells typing apart from programmatic
 // writes), the debounced re-render on typing, and the 検索方式(fuzzy/exact)
-// toggle handling. postQB/browseMode/MSG and the render/sidebar callbacks are
+// toggle handling. postQB/browseMode/i18n and the render/sidebar callbacks are
 // still owned by viewer.ts, so they're injected as deps — same ctx pattern as
 // query-builder.ts/kind-menu-builder.ts.
 import { makeSearchEditing } from './search-editing.ts';

@@ -14,7 +14,7 @@ import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOv
 import { updateTags as postsUpdateTags } from './posts.ts';
 
 export interface BulkEditBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
@@ -51,20 +51,20 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
     open(records);
     const tags = getTags();
     editOverlayOpen({
-      titleLabel: deps.MSG.tagSelectedTitle,
+      titleLabel: deps.t('tagSelectedTitle'),
       tags,
       ...deps.inspectorTagPickerData(tags, records, 'post'),
       tagLabels: {
-        tagsLabel: deps.MSG.detailTags,
-        newTagPlaceholder: deps.MSG.tagNewName,
-        addBtn: deps.MSG.tagAddBtn,
-        noTags: deps.MSG.editNoTags,
-        noMatch: deps.MSG.tagPalNoMatch,
-        noVocab: deps.MSG.tagNoTags,
-        adoptSource: deps.MSG.editAdoptSource,
+        tagsLabel: deps.t('detailTags'),
+        newTagPlaceholder: deps.t('tagNewName'),
+        addBtn: deps.t('tagAddBtn'),
+        noTags: deps.t('editNoTags'),
+        noMatch: deps.t('tagPalNoMatch'),
+        noVocab: deps.t('tagNoTags'),
+        adoptSource: deps.t('editAdoptSource'),
       },
-      cancelLabel: deps.MSG.confirmCancel,
-      saveLabel: deps.MSG.save,
+      cancelLabel: deps.t('confirmCancel'),
+      saveLabel: deps.t('save'),
       onCancel: closeEditOverlay,
       onTagAdd: (tag: string) => {
         add(tag);
@@ -109,7 +109,7 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
         deps.renderPosts(true); // keepLimit: selection (if any) stays put, no anim replay
         const n = editingRecords.length;
         closeEditOverlay();
-        deps.showToast(n > 1 ? deps.MSG.tagsSavedN(n) : deps.MSG.tagsSaved);
+        deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'));
       },
     });
     byId('editOverlay').classList.add('show');

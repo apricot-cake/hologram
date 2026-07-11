@@ -19,7 +19,7 @@ import { genTabId } from './tab-state.ts';
 import { set as storeSet } from './store.ts';
 
 export interface ImageTabBuilderDeps {
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   getPostById(id: string): CorpusPost | undefined;
   showDetail(g: CorpusPostGroup): void;
   closeDetail(): void;
@@ -63,7 +63,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     // The inspector opens with the view (Eagle-style detail screen).
     if (t._g) deps.showDetail(t._g);
     else deps.closeDetail();
-    document.title = (t.title || deps.MSG.imgTabFallback) + ' — Corpus';
+    document.title = (t.title || deps.t('imgTabFallback')) + ' — Corpus';
   }
   function hideImageTabView() {
     if (!imageTabShowing) return;
@@ -101,7 +101,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
-    const t = { id, pinned: false, title: imageTabTitleOf(g, deps.MSG.imgTabFallback), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
+    const t = { id, pinned: false, title: imageTabTitleOf(g, deps.t('imgTabFallback')), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
     // Insert next to the current tab (browser-like), never inside the pinned run.
     deps.mutateTabs((arr) => {
       const ai = arr.findIndex((tt) => tt.id === deps.getActiveTabId());

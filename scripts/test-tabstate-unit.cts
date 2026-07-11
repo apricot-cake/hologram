@@ -24,7 +24,7 @@ async function main() {
   }
 
   // --- makeTabLabels: stub deps (only the keys filterLabel/tabTitleOf read) ---
-  const MSG = {
+  const STATIC_MSG = {
     kindPost: '投稿',
     kindImage: '画像',
     qfPlatformNone: 'PFなし',
@@ -44,8 +44,9 @@ async function main() {
     posterDateLastCapture: '最終取得',
     posterDateCreated: 'アカウント作成',
   };
+  const t = (key) => STATIC_MSG[key];
   const { filterLabel, tabTitleOf, posterFilterLabel } = T.makeTabLabels({
-    MSG,
+    t,
     engTypeLabels: { likes: 'いいね' },
     platformName: (v) => ({ x: 'X', pixiv: 'pixiv' })[v] || v,
     formatShortDate: (s) => 'D:' + s,

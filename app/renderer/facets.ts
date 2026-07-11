@@ -16,7 +16,7 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 //   qHasValue(type,v) / posterQHasValue(type,v) — "is this value active" per tree
 //   allPosts() — full library (facet vocabulary; getter — viewer reassigns it)
 //   hostOf(url) / userKey(p) — from query.js (wrapped: destructured after wiring)
-//   MSG (value) / PF_NAME (value) — label tables (const by the wiring point)
+//   t(key,subs?) — message lookup / PF_NAME (value) — label table (const by the wiring point)
 //   tagKindOf(tag) — 用語帳 kind ('work'/'character'/undefined)
 //   tagGroups() — live viewer state getter
 //   posterTagsOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
@@ -29,7 +29,7 @@ export function makeFacets(deps: {
   allPosts(): CorpusPost[];
   hostOf(url: string | null | undefined): string;
   userKey(p: CorpusPost): string;
-  MSG: { [k: string]: any };
+  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   tagKindOf(tag: string): string | null | undefined;
   tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
@@ -41,7 +41,7 @@ export function makeFacets(deps: {
   postFolders(): CorpusFolder[];
   buildUsers(): CorpusUserAgg[];
 }) {
-  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, MSG, PF_NAME, tagKindOf, tagGroups, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
+  const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagGroups, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
 
   // Facet counts: how many CURRENT-QUERY matches fall under each value of a facet.
   // Population = getFilteredPosts() (every active condition incl. the search term),
@@ -76,8 +76,8 @@ export function makeFacets(deps: {
     switch (cat) {
       case 'kind':
         return [
-          ['post', MSG.kindPost],
-          ['image', MSG.kindImage],
+          ['post', t('kindPost')],
+          ['image', t('kindImage')],
         ].map(([v, l]) => ({ v, l, on: act('kind', v) }));
       case 'platform': {
         // Misskey/Mastodon の直下に各インスタンスをサブ行で展開（独立に選択可）
@@ -101,7 +101,7 @@ export function makeFacets(deps: {
         }
         // 「プラットフォームなし」= platform 未設定の投稿（取り込み画像など）。
         // 該当が1件もなければ出さない（空振りする項目を並べない）。
-        if (allPosts().some((p) => !p.platform)) out.push({ v: '__none', l: MSG.qfPlatformNone, on: act('platform', '__none'), count: pcnt.get('__none') || 0 });
+        if (allPosts().some((p) => !p.platform)) out.push({ v: '__none', l: t('qfPlatformNone'), on: act('platform', '__none'), count: pcnt.get('__none') || 0 });
         return out;
       }
       case 'postType': {
@@ -114,18 +114,18 @@ export function makeFacets(deps: {
           return a;
         });
         return [
-          ['post', MSG.qfPost],
-          ['reply', MSG.qfReply],
-          ['quote', MSG.qfQuote],
-          ['thread', MSG.qfThread],
+          ['post', t('qfPost')],
+          ['reply', t('qfReply')],
+          ['quote', t('qfQuote')],
+          ['thread', t('qfThread')],
         ].map(([v, l]) => ({ v, l, on: act('postType', v), count: cnt.get(v) || 0 }));
       }
       case 'media': {
         const cnt = facetCounts((p) => p.mediaType);
         const out: CorpusQfRow[] = [
-          ['image', MSG.qfImage],
-          ['video', MSG.qfVideo],
-          ['gif', MSG.qfGif],
+          ['image', t('qfImage')],
+          ['video', t('qfVideo')],
+          ['gif', t('qfGif')],
         ].map(([v, l]) => ({ v, l, on: act('media', v), count: cnt.get(v) || 0 }));
         // (複数画像 was folded in here as __multi; it's now a first-class sidebar
         //  toggle row — setupMultiSidebar in viewer.js — so the メディア flyout is
@@ -218,7 +218,7 @@ export function makeFacets(deps: {
         }
         const rest = allTags.filter((t) => !grouped.has(t));
         if (rest.length) {
-          out.push({ ghead: MSG.tagGroupOther });
+          out.push({ ghead: t('tagGroupOther') });
           rest
             .map(item)
             .sort(byCount)
