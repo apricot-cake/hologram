@@ -15,8 +15,9 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { open as menuOpen } from './menu.ts';
 import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
-import { open as qfPopOpen, close as qfPopClose, get as qfPopGet } from './qf-pop.ts';
-import { open as filterPopoverOpen, close as filterPopoverClose, get as filterPopoverGet } from './filter-popover.ts';
+import { get as filterPopoverGet } from './filter-popover.ts';
+import { makeQfPop } from './qf-pop-builder.ts';
+import { makeFilterPopover } from './filter-popover-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, isScreenshot, captureFile, artworkFile, densityImage, postIdKey, postKeyOf, groupFilesOf, imageTabGroup, imageTabTitleOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, persistManualGroups, persistUngrouped, loadUngrouped, loadManualGroups } from './records.ts';
@@ -549,36 +550,10 @@ import { corpusIpc } from './ipc.ts';
   });
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
-  // Rendering lives in the qf-pop React island (QfPop.tsx, via qf-pop.ts); this only builds
-  // the row model (qfValues — bespoke facet logic, unchanged) and routes picks. The
-  // find-input's "no re-render, just toggle row visibility" trick from the old
-  // implementation is no longer needed: the island keeps its own local filter state,
-  // so typing never touches this bridge (only a pick or a fresh open does). ----
-  let qfCat: any = null;
-  let qfAnchor: HTMLElement | null = null; // 同じ行をもう一度押したら閉じる（トグル）
-  // Bumped only on a FRESH open (showQfPopAt), NOT on the re-render after a pick. The
-  // island keys its root on this, so a value pick re-renders in place (preserving the
-  // selected tag group + find text) while opening a different row remounts fresh.
-  let qfSession = 0;
-  function hideQfPop() {
-    qfPopClose();
-  }
-  // The island may close itself (outside-click / Escape) without going through
-  // hideQfPop() — this handler keeps the anchor highlight + bookkeeping in sync with
-  // whoever closed it. Registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer below; this stays the guard + action logic (viewer keeps the
-  // orchestration, React owns the wiring) — same "cut out and rewire" as the tab bar.
-  function handleQfPopChange() {
-    if (!qfPopGet()) {
-      qfCat = null;
-      qfAnchor = null;
-      // Both columns own .qf-open through corpusStore's 'qfCat' now (renderer/sidebar.ts
-      // derives openCat from it), so clearing the highlight is a store write, not an
-      // imperative classList sweep or a model re-push.
-      storeSet('qfCat', null);
-    }
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange });
+  // State (どのカテゴリが開いているか) + row-model building (qfValues — bespoke facet
+  // logic, unchanged) + pick routing moved to qf-pop-builder.ts (viewer.ts
+  // decomposition's V4 slice, Wave18) — the makeQfPop() call lives further down,
+  // once postQB/posterQB/pfStore/buildUsers all exist (see near posterQB below).
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
   // (imported) — 8th extraction slice. The 4 tag stores themselves
@@ -642,250 +617,20 @@ import { corpusIpc } from './ipc.ts';
   // getter wiring as facets above (allPosts is a reassigned let; the getters only
   // run when a picker or homonym check fires).
   const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => allPosts, tagKindOf });
-  // Push the current category's row model to the qf-pop bridge. Called on every open
-  // AND after every pick (the bridge bumps openId each call, which keys the island's
-  // root and remounts its find-input local state — matching the old rebuild-on-every-
-  // change behavior, incl. the reset+refocus of the find box after a pick).
-  function renderQfPop() {
-    if (!qfCat) return;
-    const cat = qfCat; // capture: hideQfPop() (called from onManage) clears qfCat
-    const rawItems = qfValues(cat);
-    // 種別 dot (用語帳): a tag carrying it.kind ('work'/'character') wears the shared
-    // category dot, so resolve its (possibly custom) label here — the island only draws.
-    const items = rawItems.map((it) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind) } : it));
-    // 長いリスト（タグ/作者など）はその場で絞り込める入力を付ける。Find box only for
-    // genuinely long, open-ended lists (tags/authors). The platform list is short +
-    // fixed (5 PFs + their instances), so no find box.
-    const valueCount = items.filter((it) => it.ghead == null).length;
-    const showFind = !['platform', 'poster-platform'].includes(cat) && valueCount > 8;
-    // The タグ flyout carries user tag-groups (facets emits ghead markers). When
-    // present, the island lays them out Eagle-style — group list on the LEFT,
-    // the selected group's tags as rows on the RIGHT (2026-07-04, replacing the
-    // one-flyout wrapped-chip layout). Everything else stays a single row column.
-    // No heading row: the user already clicked the category row, so repeating its name
-    // as a (hover-highlighted, seemingly-clickable) row was noise.
-    // The folder flyouts (library 'collection' + poster 'poster-folder') carry a
-    // 「フォルダを管理」 footer that opens the shared folder-manager modal — the create/
-    // rename/delete home now that folders live in a flyout, not a sidebar list.
-    const showManage = (cat === 'poster-folder' || cat === 'collection') && !!CF();
-    qfPopOpen({
-      anchorRect: (qfAnchor as HTMLElement).getBoundingClientRect(),
-      sessionId: qfSession,
-      items,
-      showFind,
-      allGroupLabel: MSG.qfAllTags,
-      findPlaceholder: MSG.qfFindPh,
-      searchModeTitle: MSG.searchModeTitle,
-      exactLabel: MSG.searchExact,
-      fuzzyLabel: MSG.searchFuzzy,
-      exactHint: MSG.searchHintExact,
-      fuzzyHint: MSG.searchHintLoose,
-      footerLabel: showManage ? MSG.ctxManage : null,
-      onManage: showManage
-        ? () => {
-            hideQfPop();
-            if (cat === 'poster-folder') {
-              // Poster folder store — refresh the poster sidebar/grid on change.
-              CF().openManager({
-                store: pfStore,
-                onChange: () => {
-                  renderPosterFilterRows();
-                  renderPosters();
-                },
-              });
-            } else {
-              // Library folder store (default) — its onChange runs the shared refresh below.
-              CF().openManager();
-            }
-          }
-        : null,
-      onPick: (it: CorpusQfPopItem) => onQfPick(cat, it),
-    });
-  }
-  // Route a value pick to the right business action, then refresh (the flyout stays
-  // open so several values can be picked in a row).
-  function onQfPick(cat: string, it: CorpusQfPopItem) {
-    const v = it.v;
-    // (複数画像 moved to its own sidebar toggle row — see setupMultiSidebar. It's no
-    //  longer emitted into the メディア flyout, so there's no __multi case here.)
-    // Poster flyouts toggle a top-level leaf in the poster query tree (addFilter /
-    // removeByLeaf both refresh rows + bar + grid). 作品/キャラ/タグ all map to one tag
-    // leaf type (種別 only scopes which the row offers).
-    if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
-      if (posterQB.qHasValue('tag', v)) posterQB.removeByLeaf('tag', v);
-      else posterQB.addFilter({ type: 'tag', value: v });
-      renderQfPop();
-      return;
-    }
-    if (cat === 'poster-platform') {
-      if (posterQB.qHasValue('platform', v)) posterQB.removeByLeaf('platform', v);
-      else posterQB.addFilter({ type: 'platform', value: v });
-      renderQfPop();
-      return;
-    }
-    if (cat === 'poster-instance') {
-      if (posterQB.qHasValue('instance', v)) posterQB.removeByLeaf('instance', v);
-      else posterQB.addFilter({ type: 'instance', value: v });
-      renderQfPop();
-      return;
-    }
-    if (cat === 'poster-folder') {
-      // folder is single-valued (singleValueTypes): addFilter replaces any existing folder leaf.
-      if (posterQB.qHasValue('folder', v)) posterQB.removeByLeaf('folder', v);
-      else posterQB.addFilter({ type: 'folder', value: v });
-      renderQfPop();
-      return;
-    }
-    const vtype = it.type || cat; // sub-rows (instances) override the type
-    const i = postQB.shadow().findIndex((f: { type: string; value?: string }) => f.type === vtype && f.value === v);
-    if (i >= 0) {
-      removeFilter(i);
-    } else if (vtype === 'tag' || vtype === 'hashtag') {
-      addFilter({ type: vtype, value: v });
-    } else if (vtype === 'user') {
-      const u = buildUsers().find((x) => x.key === v);
-      addFilter({ type: 'user', value: v, label: u ? u.displayName || u.screenName : v });
-    } else {
-      addFilter({ type: vtype, value: v });
-    }
-    updateSidebarState();
-    renderQfPop();
-  }
-  // 行の横にフライアウトを開く（同じアンカー再クリックで閉じる）
-  function showQfPopAt(cat: string, anchorEl: HTMLElement) {
-    // Re-clicking the open row toggles it closed (cat, not node identity — robust to the
-    // island re-rendering the row on a badge change).
-    if (qfPopGet() && qfCat === cat) {
-      hideQfPop();
-      return;
-    }
-    // .qf-open is derived from corpusStore's 'qfCat' on BOTH columns now (React owns each
-    // container's className, so an imperative classList.add would be clobbered on the next
-    // render; renderer/sidebar.ts's openCat picks post- vs poster-side by the cat's
-    // 'poster-' prefix). A cat is post- or poster-side; the matching column lights its
-    // row, the other clears — both re-derive from the single store write below.
-    qfCat = cat;
-    qfAnchor = anchorEl;
-    qfSession++; // fresh open → island remounts (resets group/find); picks keep it
-    storeSet('qfCat', qfCat);
-    renderQfPop();
-  }
+  // renderQfPop/onQfPick/showQfPopAt moved to qf-pop-builder.ts (V4/Wave18) — see
+  // the makeQfPop() call near posterQB below.
 
   // The ⓘ クエリビルダの使い方 hover popover is the activebar island now (HelpPop) — its
   // content (title + 5 rows) rides the model's `help` field; hover/positioning live there.
 
-  // 日付/エンゲージのポップオーバーは値フライアウト(qfPop)と同じ「行クリックで開閉・
-  // 外側クリックで閉じる」挙動に統一する。旧実装は全画面 .qf-backdrop(z999) が
-  // クリックを奪い、開いている間は他の行へワンクリックで切り替えられなかった
-  // （クリックが backdrop に吸われて closeAllMenus するだけ＝ユーザー報告のバグ）。
-  // backdrop は撤去し、下の document クリックハンドラ + 行ハンドラで開閉する。
-  function closeAllMenus() {
-    filterPopoverClose();
-  }
-
-  // Date popover. editingDateNode = the date cond being edited (null = new). Rendering
-  // is the filter-popover React island now (FilterPopover.tsx, via filter-popover.ts) —
-  // this only builds the field model + owns the apply/remove actions.
-  let editingDateNode: CorpusQueryLeaf | null = null;
+  // closeAllMenus/openDatePopover/openPosterDatePopover/openEngPopover (the date/
+  // engagement/poster-date-range popovers — unified with qf-pop's "click row to
+  // open/close, no backdrop" behavior) moved to filter-popover-builder.ts
+  // (V4/Wave18) — see the makeFilterPopover() call near posterQB below.
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts, wired together with the rest of the search-box plumbing
   // in search-box-builder.ts now (viewer.ts decomposition's V3 slice, Wave17) —
   // see the makeSearchBox() call below.
-
-  function openDatePopover(node: CorpusQueryLeaf | null) {
-    closeAllMenus(); // close the other popover if open (no backdrop anymore)
-    editingDateNode = node || null;
-    const existing = editingDateNode;
-    const anchor = document.querySelector('#filterRows [data-qfrow="date"]') as HTMLElement;
-    const r = anchor.getBoundingClientRect();
-    filterPopoverOpen({
-      kind: 'date',
-      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-      editing: !!editingDateNode,
-      fields: { dateField: existing?.dateField || 'date', from: existing?.from || '', to: existing?.to || '' },
-      labels: { typeDate: MSG.qfDatePost, typeCaptured: MSG.qfDateCaptured, removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply },
-      onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
-        if (!from && !to) return;
-        if (editingDateNode) {
-          Object.assign(editingDateNode, { dateField, from, to });
-          afterQueryChange();
-        } // edit in place (keeps its position / group in the tree)
-        else addFilter({ type: 'date', dateField, from, to }); // replaces any existing date
-      },
-      onRemove() {
-        if (editingDateNode) removeNode(editingDateNode);
-      },
-    });
-  }
-
-  // Poster date-range popover (3 dims: 最終投稿日 / 最終取得日 / アカウント作成日).
-  // Separate from the post date popover — writes the transient posterDate state.
-  // arg = the date leaf to edit (from openLeafEditor) OR the row element (from the row click).
-  // Range only — the 並べ替え方向 moved to the sort select (フィルタとソートの分離).
-  function openPosterDatePopover(arg: any) {
-    closeAllMenus();
-    const editNode = arg && arg.kind === 'cond' ? arg : null;
-    editingPosterDateNode = editNode;
-    const anchor = document.querySelector('#posterFilterRows [data-qfrow="poster-date"]') as HTMLElement;
-    if (!anchor) return;
-    const existing = editNode || treeLeaves(posterQB.getTree()).find((c) => c.type === 'date');
-    const r = anchor.getBoundingClientRect();
-    filterPopoverOpen({
-      kind: 'posterDate',
-      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-      editing: !!existing,
-      fields: { dateField: (existing && existing.dateField) || 'latest', from: (existing && existing.from) || '', to: (existing && existing.to) || '' },
-      labels: { dimLabel: MSG.posterDateDimLabel, rangeLabel: MSG.posterDateRangeLabel, removeLabel: MSG.posterDateClear, applyLabel: MSG.qfApply },
-      dimOptions: [
-        { value: 'latest', label: MSG.posterDateLastPost },
-        { value: 'lastCapture', label: MSG.posterDateLastCapture },
-        { value: 'authorCreatedAt', label: MSG.posterDateCreated },
-      ],
-      onApply({ dateField, from, to }: { dateField?: string; from?: string; to?: string }) {
-        if (!from && !to) return;
-        if (editingPosterDateNode) {
-          Object.assign(editingPosterDateNode, { dateField, from, to });
-          posterQB.refresh();
-        } else posterQB.addFilter({ type: 'date', dateField, from, to }); // date is single-valued (replaces)
-      },
-      onRemove() {
-        posterQB.removeByType('date');
-      },
-    });
-  }
-
-  // Engagement popover. editingEngNode = the engagement cond being edited (null = new).
-  let editingEngNode: CorpusQueryLeaf | null = null;
-
-  function openEngPopover(node: CorpusQueryLeaf | null) {
-    closeAllMenus(); // close the other popover if open (no backdrop anymore)
-    editingEngNode = node || null;
-    const existing = editingEngNode;
-    const anchor = document.querySelector('#filterRows [data-qfrow="engagement"]') as HTMLElement;
-    const r = anchor.getBoundingClientRect();
-    filterPopoverOpen({
-      kind: 'eng',
-      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-      editing: !!editingEngNode,
-      fields: { engType: existing?.engType || 'likes', min: existing?.min || '', op: existing?.op || 'gte' },
-      labels: { removeLabel: MSG.qfDelete, applyLabel: MSG.qfApply, opGte: MSG.qfEngGte, opLte: MSG.qfEngLte },
-      typeOptions: Object.entries(ENG_TYPE_LABELS).map(([value, label]) => ({ value, label })),
-      onApply({ engType, min, op }: { engType?: string; min?: string | number; op?: string }) {
-        if (!min || Number(min) <= 0) return;
-        if (editingEngNode) {
-          Object.assign(editingEngNode, { engType, min, op });
-          afterQueryChange();
-        } // edit in place (keeps its position / group in the tree)
-        else {
-          removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType); // no gte+lte on one type
-          addFilter({ type: 'engagement', engType, min, op });
-        }
-      },
-      onRemove() {
-        if (editingEngNode) removeNode(editingEngNode);
-      },
-    });
-  }
 
   // --- Sidebar filter controls ---
   // (#filterRows row labels are rendered by the sidebar island, self-deriving from
@@ -928,25 +673,25 @@ import { corpusIpc } from './ipc.ts';
     const openKind = filterPopoverGet()?.kind;
     // Re-clicking the row whose popover is already open = toggle it closed.
     if (cat === 'date' && openKind === 'date') {
-      closeAllMenus();
+      filterPopover.closeAll();
       return;
     }
     if (cat === 'engagement' && openKind === 'eng') {
-      closeAllMenus();
+      filterPopover.closeAll();
       return;
     }
-    closeAllMenus(); // switching rows closes any open date/eng popover first
+    filterPopover.closeAll(); // switching rows closes any open date/eng popover first
     if (cat === 'date') {
-      hideQfPop();
-      openDatePopover(null);
+      qfPop.hideQfPop();
+      filterPopover.openDate(null);
       return;
     }
     if (cat === 'engagement') {
-      hideQfPop();
-      openEngPopover(null);
+      qfPop.hideQfPop();
+      filterPopover.openEng(null);
       return;
     }
-    showQfPopAt(cat, row);
+    qfPop.showQfPopAt(cat, row);
   });
 
   // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
@@ -1207,8 +952,8 @@ import { corpusIpc } from './ipc.ts';
       renderPosts();
     },
     openLeafEditor: (n: CorpusQueryLeaf) => {
-      if (n.type === 'date') openDatePopover(n);
-      else if (n.type === 'engagement') openEngPopover(n);
+      if (n.type === 'date') filterPopover.openDate(n);
+      else if (n.type === 'engagement') filterPopover.openEng(n);
     },
     // When the editing text leaf is removed or dragged on the bar, detach it from
     // the box. textInTree (query-builder.ts) suppresses the legacy echo chip (the
@@ -3261,7 +3006,8 @@ import { corpusIpc } from './ipc.ts';
   // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
   // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
   // tab-state.js's makeTabLabels (destructured near filterLabel).
-  let editingPosterDateNode: CorpusQueryLeaf | null = null; // the date leaf being edited via the popover (null = new)
+  // editingPosterDateNode (the date leaf being edited via the popover) moved into
+  // filter-popover-builder.ts's internal state (V4/Wave18).
   // The poster-side builder instance (predOf/glyph/instance construction moved to
   // query-builder.ts, Wave15/V1 — see that file's makePosterQueryBuilder).
   // transient (no tabs / nav history for posters); onChange → renderPosters
@@ -3285,7 +3031,7 @@ import { corpusIpc } from './ipc.ts';
       renderPosters();
     },
     openLeafEditor: (n: CorpusQueryLeaf) => {
-      if (n.type === 'date') openPosterDatePopover(n);
+      if (n.type === 'date') filterPopover.openPosterDate(n);
     },
     posterTagsOf,
     folderById: posterFolderById,
@@ -3302,6 +3048,47 @@ import { corpusIpc } from './ipc.ts';
     const present = new Set(posterFilterVocab());
     if (posterQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'tag' && !present.has(c.value))) posterQB.syncShadow();
   }
+
+  // qf-pop (value flyout) + filter-popover (date/eng/poster-date-range) bridges —
+  // viewer.ts decomposition's V4 slice (Wave18). Wired here (not where they're
+  // first used, further up) so postQB/posterQB/pfStore/buildUsers are all
+  // already real consts — no deferred-getter indirection needed, same reasoning
+  // as makeSearchBox() being wired late (search-box-builder.ts).
+  const qfPop = makeQfPop({
+    qfValues,
+    kindLabel,
+    MSG,
+    pfStore,
+    postShadow: () => postQB.shadow(),
+    posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
+    posterAddFilter: (filter) => posterQB.addFilter(filter),
+    posterRemoveByLeaf: (type, v) => posterQB.removeByLeaf(type, v),
+    addFilter,
+    removeFilter,
+    buildUsers: () => buildUsers(),
+    storeSet,
+    updateSidebarState,
+    renderPosterFilterRows,
+    renderPosters,
+  });
+  // The island may close itself (outside-click / Escape) without going through
+  // qfPop.hideQfPop() — subscribe registration lives in React (StoreSubscriptions,
+  // App.tsx) via window.corpusViewer below; this stays the guard + action logic.
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleQfPopChange: qfPop.handleQfPopChange });
+
+  const filterPopover = makeFilterPopover({
+    MSG,
+    engTypeLabels: ENG_TYPE_LABELS,
+    addFilter,
+    removeNode,
+    removeCondsMatching,
+    afterQueryChange,
+    posterGetTree: () => posterQB.getTree(),
+    posterAddFilter: (filter) => posterQB.addFilter(filter),
+    posterRemoveByType: (type) => posterQB.removeByType(type),
+    posterRefresh: () => posterQB.refresh(),
+  });
+
   // namedPosters / filteredPosters moved to listing.js (7th slice — destructured
   // with getFilteredPosts above).
   // (PF_ORDER — the platform display order — moved to facets.js with qfValues.)
@@ -3591,16 +3378,16 @@ import { corpusIpc } from './ipc.ts';
     if (!row) return;
     const cat = row.dataset.qfrow as string;
     if (cat === 'poster-date' && filterPopoverGet()?.kind === 'posterDate') {
-      closeAllMenus();
+      filterPopover.closeAll();
       return;
     } // re-click closes
-    closeAllMenus(); // switching rows closes any open date popover first
+    filterPopover.closeAll(); // switching rows closes any open date popover first
     if (cat === 'poster-date') {
-      hideQfPop();
-      openPosterDatePopover(row);
+      qfPop.hideQfPop();
+      filterPopover.openPosterDate(row);
       return;
     }
-    showQfPopAt(cat, row);
+    qfPop.showQfPopAt(cat, row);
   });
 
   // Collections are a sidebar folder list now (renderCollectionSidebar), not a
