@@ -14,5 +14,33 @@
   "cmdActivate": {
     "message": "Start capturing a post",
     "description": "Keyboard command description (Alt+S)"
+  },
+  "optionsTitle": {
+    "message": "Corpus Settings",
+    "description": "Options page heading and document title"
+  },
+  "optionsThemeLabel": {
+    "message": "Theme",
+    "description": "Theme setting label"
+  },
+  "optionsThemeAuto": {
+    "message": "Match system",
+    "description": "Theme option: follow the OS"
+  },
+  "optionsThemeLight": {
+    "message": "Light",
+    "description": "Theme option: light"
+  },
+  "optionsThemeDark": {
+    "message": "Dark",
+    "description": "Theme option: dark"
+  },
+  "optionsThemeHint": {
+    "message": "Applies to on-page UI (save banner, drag-and-drop panel) and this extension's pages.",
+    "description": "Theme setting explanation"
+  },
+  "optionsOpenDiag": {
+    "message": "Open diagnostics page",
+    "description": "Link to the diagnostics page"
   }
 }

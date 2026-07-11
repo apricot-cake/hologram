@@ -1,17 +1,14 @@
 <!doctype html>
 <html lang="ja">
 <meta charset="utf-8">
-<title>Corpus 診断</title>
+<title>Corpus 設定</title>
 <script src="page-theme.js"></script>
 <style>
-  /* App design language (design-tokens.css), ported as literals: this page is
-     extension-origin so the app's custom properties don't exist here. Theme
-     follows the extension's own pref (options page → chrome.storage 'theme';
-     the app's theme setting lives in config.json, which this page cannot
-     read): page-theme.js stamps [data-theme] for an explicit light/dark pref,
-     and 'auto' leaves it unstamped so prefers-color-scheme decides. The dark
-     token block therefore appears twice — once under the media query (auto
-     path, correct before JS runs) and once under [data-theme="dark"]. */
+  /* App design language (design-tokens.css), ported as literals — same token
+     set and theming scheme as diag.html (see its header comment: [data-theme]
+     stamped by page-theme.js beats the prefers-color-scheme auto path, hence
+     the duplicated dark block). Static text is Japanese fallback; options.js
+     swaps it for the browser-locale _locales strings (chrome.i18n). */
   :root {
     --bg: #f6f7f9;            /* gray-50 */
     --surface: #ffffff;       /* gray-0 */
@@ -21,11 +18,10 @@
     --border: #e4e7ec;        /* gray-150 */
     --border-strong: #d8dce2; /* gray-200 */
     --hover: #eceef2;         /* gray-100 */
-    --active: #e4e7ec;        /* gray-150 */
     --field-bg: #eceef2;      /* gray-100 */
+    --accent-text: #0a6e96;   /* sky-800 */
     --focus-ring: rgba(40, 168, 219, 0.45); /* sky-500 @45% */
     --font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --dur-hover: 0.18s;
     color-scheme: light;
@@ -40,8 +36,8 @@
       --border: #282a2e;
       --border-strong: #36383d;
       --hover: #2a2d33;
-      --active: #34373d;
       --field-bg: #1a1c20;
+      --accent-text: #8ad3ec; /* sky-300 */
       --focus-ring: rgba(40, 168, 219, 0.55);
       color-scheme: dark;
     }
@@ -55,69 +51,81 @@
     --border: #282a2e;
     --border-strong: #36383d;
     --hover: #2a2d33;
-    --active: #34373d;
     --field-bg: #1a1c20;
+    --accent-text: #8ad3ec;
     --focus-ring: rgba(40, 168, 219, 0.55);
     color-scheme: dark;
   }
 
   body {
     margin: 0;
-    padding: 24px;
+    padding: 20px 24px 24px;
+    min-width: 360px;
     background: var(--bg);
     color: var(--text);
     font: 400 13px/1.55 var(--font-sans);
   }
-  .diag-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
   h1 {
-    margin: 0;
-    margin-right: auto;
+    margin: 0 0 16px;
     font-size: 16px;
     font-weight: 600;
     color: var(--text-strong);
     letter-spacing: -0.012em;
   }
-  button {
-    height: 28px; /* app --control-sm */
-    padding: 0 12px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px; /* app --radius-sm */
-    background: var(--surface);
-    color: var(--text);
-    font: 600 12px/1 var(--font-sans);
-    cursor: pointer;
-    transition: background var(--dur-hover) var(--ease-out), border-color var(--dur-hover);
-  }
-  button:hover { background: var(--hover); }
-  button:active { background: var(--active); }
-  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
-
-  pre {
-    margin: 0;
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     padding: 14px 16px;
-    background: var(--field-bg);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px; /* app --radius-lg */
-    font: 400 12px/1.55 var(--font-mono);
-    color: var(--text);
-    white-space: pre-wrap;
-    word-break: break-all;
-    overflow: auto;
   }
-  pre:empty::before { content: '…'; color: var(--text-muted); }
+  .field > label {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  select {
+    align-self: flex-start;
+    height: 28px; /* app --control-sm */
+    padding: 0 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px; /* app --radius-sm */
+    background: var(--field-bg);
+    color: var(--text);
+    font: 600 12px/1 var(--font-sans);
+    transition: background var(--dur-hover) var(--ease-out), border-color var(--dur-hover);
+  }
+  select:hover { background: var(--hover); }
+  select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+  .hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .foot {
+    margin-top: 16px;
+  }
+  .foot a {
+    color: var(--accent-text);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .foot a:hover { text-decoration: underline; }
+  .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
-  <div class="diag-head">
-    <h1>Corpus 診断</h1>
-    <button id="rerun">再実行</button>
-    <button id="clear">退避ログを消去</button>
+  <h1 id="title">Corpus 設定</h1>
+  <div class="field">
+    <label for="theme" id="themeLabel">テーマ</label>
+    <select id="theme">
+      <option value="auto">システムに合わせる</option>
+      <option value="light">ライト</option>
+      <option value="dark">ダーク</option>
+    </select>
+    <p class="hint" id="themeHint">保存バナーやドラッグ保存パネルなど、ページ上の表示とこの拡張機能のページに適用されます。</p>
   </div>
-  <pre id="out">running…</pre>
-  <script src="diag.js"></script>
+  <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
+  <script src="options.js"></script>
 </body>
 </html>

@@ -39,8 +39,10 @@
 
   // === UI elements ===
 
-  // Visual language: the shared dark-glass vocabulary (glass-ui.js, injected
+  // Visual language: the shared glass vocabulary (glass-ui.js, injected
   // before this file — same isolated world, runs first, synchronous global).
+  // Light/dark follows the extension theme pref via glass-ui's live getters;
+  // the banner is rebuilt per activation, so creation-time reads are current.
   // State is carried by the badge fill + a tinted pill border; see glass-ui.ts
   // for the CSP/Trusted Types constraints that shape how everything is built.
   const G = window.corpusGlassUi;
@@ -64,7 +66,7 @@
     `background:${G.CARD_BG}`,
     `backdrop-filter:${G.CARD_BLUR}`,
     `-webkit-backdrop-filter:${G.CARD_BLUR}`,
-    'color:rgba(255,255,255,0.92)',
+    `color:${G.TEXT}`,
     `font:600 13px/1.4 ${G.FONT_SANS}`,
     `box-shadow:${G.CARD_SHADOW}`,
     'pointer-events:none',
@@ -88,7 +90,7 @@
         bannerBadge.appendChild(G.makeIcon(G.ICONS.target, 15));
         break;
       case 'busy':
-        bannerBadge.style.background = 'rgba(255,255,255,0.10)';
+        bannerBadge.style.background = G.BADGE_NEUTRAL;
         bannerBadge.style.color = G.ACCENT_TEXT;
         bannerBadge.appendChild(G.makeSpinner(15));
         break;

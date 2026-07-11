@@ -11,7 +11,9 @@ interface CorpusI18nApi {
   partialSaveText: (reason?: string | null) => string;
 }
 
-// Shared dark-glass visual vocabulary for on-page UI (see glass-ui.ts).
+// Shared glass visual vocabulary for on-page UI (see glass-ui.ts). Color
+// tokens are live getters: they follow the extension theme pref (light/dark/
+// follow-OS), so read them at style-application time, not into constants.
 interface CorpusGlassUiApi {
   ACCENT: string;
   ACCENT_FILL: string;
@@ -20,6 +22,10 @@ interface CorpusGlassUiApi {
   OK_GREEN: string;
   FAIL_RED: string;
   WARN_AMBER: string;
+  TEXT: string;
+  BADGE_NEUTRAL: string;
+  RING: string;
+  RING_ACCENT: string;
   CARD_BG: string;
   CARD_BLUR: string;
   CARD_BORDER: string;

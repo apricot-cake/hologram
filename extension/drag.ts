@@ -57,12 +57,15 @@
     });
   }
 
-  // Visual language: the shared dark-glass vocabulary (glass-ui.js, declared
+  // Visual language: the shared glass vocabulary (glass-ui.js, declared
   // before this file in the same manifest entry — same isolated world, runs
-  // first, synchronous global). A dark frosted card reads on any host page
-  // theme; state is carried by the badge fill + a tinted card border instead
-  // of repainting the whole card. See glass-ui.ts for the CSP/Trusted Types
-  // constraints that shape how everything is styled and built.
+  // first, synchronous global). Light/dark follows the extension theme pref
+  // via glass-ui's live getters; the zone element persists across saves, so
+  // every themed surface property is (re)applied in setState — which runs
+  // before each show — rather than baked into creation-time cssText. State
+  // is carried by the badge fill + a tinted card border instead of repainting
+  // the whole card. See glass-ui.ts for the CSP/Trusted Types constraints
+  // that shape how everything is styled and built.
   const G = window.corpusGlassUi;
 
   function ensureOverlay(): DropZone {
@@ -86,14 +89,9 @@
       'gap:10px',
       'padding:22px 18px 18px',
       'border-radius:20px',
-      `border:1px solid ${G.CARD_BORDER}`,
-      `background:${G.CARD_BG}`,
-      `backdrop-filter:${G.CARD_BLUR}`,
-      `-webkit-backdrop-filter:${G.CARD_BLUR}`,
-      'color:#fff',
+      'border:1px solid transparent', // themed surface props (border-color/background/…) land in setState
       `font:600 13px/1.5 ${G.FONT_SANS}`,
       'text-align:center',
-      `box-shadow:${G.CARD_SHADOW}`,
       'pointer-events:auto',
       `transition:transform ${G.DUR_HOVER}ms ${G.EASE_OUT}, border-color ${G.DUR_HOVER}ms, box-shadow ${G.DUR_HOVER}ms`,
     ].join(';');
@@ -101,7 +99,7 @@
     // Dashed inset ring = the "drop target" affordance; hidden on result states.
     // Children are pointer-events:none so dragenter/dragleave never flicker.
     const ring = document.createElement('div');
-    ring.style.cssText = `position:absolute;inset:7px;border-radius:14px;border:1.5px dashed rgba(255,255,255,0.30);pointer-events:none;transition:border-color ${G.DUR_HOVER}ms,opacity ${G.DUR_HOVER}ms;`;
+    ring.style.cssText = `position:absolute;inset:7px;border-radius:14px;border:1.5px dashed transparent;pointer-events:none;transition:border-color ${G.DUR_HOVER}ms,opacity ${G.DUR_HOVER}ms;`;
     el.appendChild(ring);
 
     const badge = document.createElement('div');
@@ -109,7 +107,7 @@
     el.appendChild(badge);
 
     const label = document.createElement('div');
-    label.style.cssText = 'pointer-events:none;max-width:100%;color:rgba(255,255,255,0.92);';
+    label.style.cssText = 'pointer-events:none;max-width:100%;'; // ink color inherits from the card (set in setState)
     el.appendChild(label);
 
     const z: DropZone = { el, ring, badge, label };
@@ -134,10 +132,14 @@
     if (text !== undefined) z.label.textContent = text;
     z.badge.replaceChildren();
     z.el.style.transform = '';
+    z.el.style.background = G.CARD_BG;
+    z.el.style.setProperty('backdrop-filter', G.CARD_BLUR);
+    z.el.style.setProperty('-webkit-backdrop-filter', G.CARD_BLUR);
+    z.el.style.color = G.TEXT;
     z.el.style.borderColor = G.CARD_BORDER;
     z.el.style.boxShadow = G.CARD_SHADOW;
     z.ring.style.opacity = state === 'idle' || state === 'over' ? '1' : '0';
-    z.ring.style.borderColor = 'rgba(255,255,255,0.30)';
+    z.ring.style.borderColor = G.RING;
     switch (state) {
       case 'idle':
         z.badge.style.background = G.ACCENT_SOFT;
@@ -151,10 +153,10 @@
         z.el.style.transform = 'scale(1.04) translateY(-2px)';
         z.el.style.borderColor = 'rgba(40,168,219,0.85)';
         z.el.style.boxShadow = `${G.CARD_SHADOW}, 0 0 0 4px rgba(40,168,219,0.22)`;
-        z.ring.style.borderColor = 'rgba(94,197,236,0.85)';
+        z.ring.style.borderColor = G.RING_ACCENT;
         break;
       case 'busy':
-        z.badge.style.background = 'rgba(255,255,255,0.10)';
+        z.badge.style.background = G.BADGE_NEUTRAL;
         z.badge.style.color = G.ACCENT_TEXT;
         z.badge.appendChild(G.makeSpinner());
         break;

@@ -21,7 +21,7 @@ const tsc = path.join(here, 'node_modules', 'typescript', 'bin', 'tsc');
 execFileSync(process.execPath, [tsc, '-p', path.join(here, 'tsconfig.build.json')], { stdio: 'inherit', cwd: here });
 
 // Static assets referenced by manifest.json / diag.html that tsc doesn't touch.
-const STATIC_FILES = ['manifest.json', 'diag.html'];
+const STATIC_FILES = ['manifest.json', 'diag.html', 'options.html'];
 const STATIC_DIRS = ['_locales', 'icons'];
 
 function copyDir(src, dest) {
