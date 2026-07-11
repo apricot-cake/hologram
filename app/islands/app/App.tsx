@@ -23,6 +23,7 @@ import { SettingsHost } from '../settings/index.tsx';
 import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+import { Toast } from '../toast/Toast.tsx';
 import { Toolbar } from '../toolbar/index.tsx';
 import { t } from '../_shared/i18n.ts';
 import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
@@ -355,6 +356,9 @@ export function App() {
       </Portal>
       <Portal id="mirrorStatus">
         <MirrorStatus />
+      </Portal>
+      <Portal id="ivToast">
+        <Toast />
       </Portal>
       {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
           #posterGrid) with flushSync + host-attach preserved (GridMount), because orchestrator
