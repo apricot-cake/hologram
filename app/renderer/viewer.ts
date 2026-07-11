@@ -5,7 +5,6 @@
 import { treeLeaves, facetTreeFrom, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
 import { makeListing, cloneTree, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
-import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndo } from './undo.ts';
 import { makeUsers } from './users.ts';
@@ -32,6 +31,7 @@ import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
+import { makeGridDensity } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
@@ -788,7 +788,6 @@ import { corpusIpc } from './ipc.ts';
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
   // post-grid-builder.ts (Wave19/V5 "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
-  let currentView = 'card'; // 'card' | 'tile' | 'list' (display density)
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
   // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
   // A query reset bounces back to the poster grid AS LONG AS that user filter is still
@@ -796,16 +795,6 @@ import { corpusIpc } from './ipc.ts';
   // added). Removing the user filter or switching mode ends it. null = no pending return.
   let posterReturn: any = null;
   let multiOnly = false; // show only items with more than one image
-  let tileOverlay = true; // tile view: show the author/❤ info overlay (pref)
-  let tileSize = 180; // tile view: edge px (pref imageTileSize)
-  let cardSize = 280; // card view: min column width px (pref cardSize)
-  let listThumb = 88; // list view: thumbnail width px (pref listThumb)
-  const TILE_MIN = 120,
-    TILE_MAX = 400;
-  const CARD_MIN = 240,
-    CARD_MAX = 560;
-  const LIST_MIN = 56,
-    LIST_MAX = 200;
   // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
   // so content-visibility:auto skips painting every card and loading=lazy images
   // never fetch → blank grid. Launched via ?smoke=1, we flip both off (CSS class
@@ -848,29 +837,19 @@ import { corpusIpc } from './ipc.ts';
     storeSet('inspectedKey', key);
   }
   storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
-  // Column / slider-track / thumbnail-bucket math lives in geometry.ts now (imported above).
-  // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
-  const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
-  // card/list serve a thumbnail too now (they used to load the full original —
-  // multi-MB pixiv/X art decoded on every scroll and stuttered). DPR-aware, 60px
-  // buckets, capped at the thumbnailer's 720px max (main.js getThumbnail).
-  const _dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cardThumbW = () => thumbW(cardSize * 1.3 * _dpr, 240, 720);
-  const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
-  function applyTileLayout(syncSlider = true) {
-    const grid = byId('postGrid');
-    if (grid) {
-      grid.style.setProperty('--tile-size', tileSize + 'px');
-      grid.style.setProperty('--card-size', cardSize + 'px');
-      grid.style.setProperty('--list-thumb', listThumb + 'px');
-    }
-    const row = document.getElementById('tileSizeRow');
-    if (row) row.style.display = ''; // every density has a size slider now
-    // refreshTileSlider reads getBoundingClientRect; calling it right after the
-    // CSS-var writes above forces a sync reflow. Skip it during a live drag
-    // (syncSlider=false) — the user is already holding the thumb.
-    if (syncSlider) refreshTileSlider(); // hoisted; keeps the track in sync with the view
-  }
+  // Display density (card/tile/list) + tile/card/list size slider, for both the
+  // post grid and the poster grid, moved to grid-density-builder.ts — viewer.ts
+  // decomposition's V10 slice (Wave24). renderPosts/renderPosters are forward
+  // references (declared later via postGrid/posterGrid below) — deferred arrows
+  // the same TDZ-safe way every other service wiring in this file already works.
+  const gridDensity = makeGridDensity({
+    corpusIpc,
+    corpusPostGridSource,
+    renderPosts: () => renderPosts(),
+    renderPosters: () => renderPosters(),
+    getBrowseMode: () => browseMode,
+  });
+  const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
   let skipDeleteConfirm = false;
   // Post-grid selection state (Set + shift-range anchor) lives in
   // renderer/selection.ts (P4-B slice⑬) — corpusStore's
@@ -1057,8 +1036,8 @@ import { corpusIpc } from './ipc.ts';
     PF_NAME,
     smokeCapture: SMOKE_CAPTURE,
     fileSrc,
-    currentView: () => currentView,
-    tileOverlay: () => tileOverlay,
+    currentView: gridDensity.getCurrentView,
+    tileOverlay: gridDensity.getTileOverlay,
     multiOnly: () => multiOnly,
     tileThumbW,
     cardThumbW,
@@ -1071,7 +1050,7 @@ import { corpusIpc } from './ipc.ts';
     syncTitleAndPersist: () => syncTitleAndPersist(),
     updateSidebarState,
     syncBrowseBar: () => syncBrowseBar(),
-    applyTileLayout: () => applyTileLayout(),
+    applyTileLayout: () => gridDensity.applyTileLayout(),
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: () => {
@@ -1836,7 +1815,7 @@ import { corpusIpc } from './ipc.ts';
     keepCurrentVisible,
     getInspectedKey: () => inspectedKey,
     setInspectedKey,
-    refreshTileSlider: () => refreshTileSlider(), // refreshTileSlider is declared far below — deferred
+    refreshTileSlider: () => gridDensity.refreshTileSlider(),
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabShowing, // primitive let — read live, not a snapshot
@@ -1974,28 +1953,12 @@ import { corpusIpc } from './ipc.ts';
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
   // collapses rapid clicks to a single render.
-  let _browseRenderT: any = null,
-    _densityRenderT: any = null,
-    _posterDensityRenderT: any = null;
-  // #densityToggle is rendered by the toolbar island (corpusStore 'view').
-  // React owns the active state + glass thumb; viewer reacts to a view change:
-  // mirror it into currentView, persist it, and re-render the grid (deferred past a
-  // paint with a view transition, like the old optimistic handler). The idempotent
-  // guard skips the no-op set from pref restore below, so the loop stays one-way.
-  // Subscribe registration lives in React (StoreSubscriptions, App.tsx) via
-  // window.corpusViewer below; this stays the guard + action logic.
-  function handleViewStoreChange() {
-    const v = storeGet('view');
-    if (v === currentView) return;
-    currentView = v;
-    corpusIpc.setPref('viewMode', currentView);
-    clearTimeout(_densityRenderT);
-    _densityRenderT = setTimeout(() => {
-      if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => renderPosts());
-      else renderPosts();
-    }, 0);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleViewStoreChange });
+  let _browseRenderT: any = null;
+  // #densityToggle is rendered by the toolbar island (corpusStore 'view'); the
+  // reaction (mirror into currentView, persist, re-render with a view transition)
+  // lives in grid-density-builder.ts now (V10/Wave24) — this just bridges React's
+  // subscribe registration (StoreSubscriptions, App.tsx) to it.
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleViewStoreChange: gridDensity.handleViewStoreChange });
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
   // Switches the content area between the post grid and the poster grid (same tab).
@@ -2061,118 +2024,19 @@ import { corpusIpc } from './ipc.ts';
   // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in corpusStore
   // 'sortPoster' now (read via the listing dep getter above); a subscription below
   // re-renders on change, replacing the old #posterSortSelect DOM-'change' listener.
-  // Poster grid density — kept SEPARATE from the post-side currentView (its masonry /
-  // tile / list layouts are bound to post-card markup). Tile view leads with avatars.
-  let posterView = 'card'; // 'card' | 'tile' | 'list'
-  let posterTileSize = 132; // tile view: avatar tile edge px
-  let posterCardSize = 200; // card view: min column width px
-  const PTILE_MIN = 96,
-    PTILE_MAX = 220;
-  const PCARD_MIN = 150,
-    PCARD_MAX = 340;
-  // Which size the slider drives, per density (mirrors the post viewSizeState).
-  // The size feeds masonic's columnWidth (minimum — columns stretch to fill, the
-  // same math as the old CSS auto-fill minmax); list is a full-width stack with
-  // no size axis, so it returns null (slider hidden).
-  function posterSizeState() {
-    if (posterView === 'tile')
-      return {
-        get: () => posterTileSize,
-        set: (v: number) => {
-          posterTileSize = v;
-        },
-        min: PTILE_MIN,
-        max: PTILE_MAX,
-        pref: 'posterTileSize',
-      };
-    if (posterView === 'card')
-      return {
-        get: () => posterCardSize,
-        set: (v: number) => {
-          posterCardSize = v;
-        },
-        min: PCARD_MIN,
-        max: PCARD_MAX,
-        pref: 'posterCardSize',
-      };
-    return null;
-  }
-  // The slider track maps to COLUMN COUNTS (like the post tile slider), not raw px:
-  // the auto-fill minmax(size,1fr) grid stretches columns, so changing the min only
-  // moves the layout at column-count thresholds. Mapping each detent to one column
-  // count makes every step visible (no dead zones). Right = larger = fewer columns.
-  function posterGridMetrics() {
-    const grid = byId('posterGrid');
-    if (!grid) return null;
-    const W = Math.floor(grid.getBoundingClientRect().width);
-    if (!W) return null;
-    // Gutters live in the masonic model now (pushPosterModel), not container CSS —
-    // keep this math in lockstep with the rowGutter pushed there.
-    return { W, g: posterView === 'tile' ? 10 : 14 };
-  }
-  function refreshPosterSlider() {
-    const sl = inputById('posterTileSlider');
-    const row = document.getElementById('posterTileSizeRow');
-    if (!sl) return;
-    const st = posterSizeState();
-    if (!st) {
-      if (row) row.style.display = 'none';
-      return;
-    }
-    const m = posterGridMetrics();
-    if (!m) return;
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m);
-    if (row) row.style.display = tr.single ? 'none' : 'flex'; // single stop conveys nothing → hide
-    sl.step = '1';
-    sl.min = String(tr.nBig);
-    sl.max = String(tr.nSmall);
-    sl.value = String(tr.value); // inverted: right = larger
-  }
-  // Poster grid density (card / tile / list) — rendered by the toolbar island
-  // (corpusStore 'posterView'). React owns the active state + glass thumb;
-  // viewer reacts to a change: mirror it into posterView, persist it, and re-render
-  // the poster grid (deferred past a paint, like the old optimistic handler).
-  // renderPosters re-applies the layout classes and refreshes the size slider. The
-  // idempotent guard skips the no-op set from pref restore below. Subscribe
-  // registration lives in React (StoreSubscriptions, App.tsx) via window.corpusViewer
-  // below; this stays the guard + action logic.
-  function handlePosterViewStoreChange() {
-    const v = storeGet('posterView');
-    if (v === posterView) return;
-    posterView = v;
-    corpusIpc.setPref('posterViewMode', posterView);
-    clearTimeout(_posterDensityRenderT);
-    _posterDensityRenderT = setTimeout(() => renderPosters(), 0);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handlePosterViewStoreChange });
+  // Poster grid density + tile/card size slider (kept SEPARATE from the post-side
+  // currentView — its masonry/tile/list layouts are bound to poster-card markup)
+  // lives in grid-density-builder.ts now (V10/Wave24), alongside the post-side
+  // equivalent above. This just bridges React's subscribe registration
+  // (StoreSubscriptions, App.tsx) and the slider's DOM 'input' listener to it.
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handlePosterViewStoreChange: gridDensity.handlePosterViewStoreChange });
   (function setupPosterSizeSlider() {
     const sl = inputById('posterTileSlider');
     if (!sl) return;
-    sl.addEventListener('input', () => {
-      const st = posterSizeState();
-      const m = posterGridMetrics();
-      if (!st || !m) return;
-      const n = trackCols(Number.parseInt(sl.value, 10), Number.parseInt(sl.min, 10), Number.parseInt(sl.max, 10)); // un-invert → target column count
-      const size = Math.max(st.min, Math.min(st.max, sizeFor(n, m)));
-      st.set(size);
-      // Mirror into corpusStore (P4-B slice⑫) — the poster grid source derives
-      // columnWidth from it, same as the post grid does with cardSize/tileSize.
-      // Unlike the post slider there's no separate mid-drag/commit split here (this
-      // handler already commits corpusIpc.setPref on every 'input' tick below), so
-      // writing the store on every tick too costs nothing extra — masonic still
-      // recreates its positioner on the resulting columnWidth change either way.
-      storeSet(st.pref, size);
-      corpusIpc.setPref(st.pref, size);
-    });
+    sl.addEventListener('input', () => gridDensity.onPosterSliderInput());
   })();
-  // The column counts depend on the grid width — re-derive the track on resize.
-  window.addEventListener(
-    'resize',
-    () => {
-      if (browseMode === 'posters') refreshPosterSlider();
-    },
-    { passive: true },
-  );
+  // The column counts depend on the grid width — re-derive both tracks on resize.
+  window.addEventListener('resize', () => gridDensity.handleWindowResize(), { passive: true });
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
@@ -2180,10 +2044,11 @@ import { corpusIpc } from './ipc.ts';
   // poster-folder store, renderPosterFilterRows, renderPosters, openPosterPosts/
   // jumpToPoster, the poster inspector, and the poster context menu) moved to
   // poster-grid-builder.ts — viewer.ts decomposition's V6 slice (Wave20). Density/
-  // tile-size slider state (posterView etc.) stays here (V10/Wave24). Wired BEFORE
-  // posterQB below (posterQB's construction needs pfStore/posterFolderById from here
-  // as direct values, not deferred arrows) — posterQB itself is only available to
-  // this builder as deferred arrows (posterQBGetTree etc.), the mirror image.
+  // tile-size slider state (posterView etc.) moved to grid-density-builder.ts
+  // (V10/Wave24, above). Wired BEFORE posterQB below (posterQB's construction
+  // needs pfStore/posterFolderById from here as direct values, not deferred
+  // arrows) — posterQB itself is only available to this builder as deferred
+  // arrows (posterQBGetTree etc.), the mirror image.
   const posterGrid = makePosterGridBuilder({
     MSG,
     PF_NAME,
@@ -2211,8 +2076,8 @@ import { corpusIpc } from './ipc.ts';
     setBrowseMode,
     closeDetail,
     setInspectedKey,
-    posterView: () => posterView,
-    refreshPosterSlider,
+    posterView: gridDensity.getPosterView,
+    refreshPosterSlider: gridDensity.refreshPosterSlider,
     syncBrowseBar,
     setPosterReturn: (key) => {
       posterReturn = key;
@@ -2389,164 +2254,23 @@ import { corpusIpc } from './ipc.ts';
   // browse view. The old third-mode grid, its context menu, and dynamic collections
   // (saved searches) were removed 2026-07-04 — see the collection sidebar above.
 
-  // View-size slider — every density has one. The auto-fill grids (tile/card)
-  // quantize the real width to "how many columns fit", so their track maps to
-  // COLUMN COUNTS (one detent = exactly one column, no dead notches). The
-  // list is a full-width stack, so its track maps straight to the thumbnail
-  // px. Right = larger. While dragging only the CSS
-  // vars update; persisting + re-requesting thumbnails happens on release.
-  function viewSizeState() {
-    if (currentView === 'card')
-      return {
-        get: () => cardSize,
-        set: (v: number) => {
-          cardSize = v;
-        },
-        min: CARD_MIN,
-        max: CARD_MAX,
-        pref: 'cardSize',
-        storeKey: 'cardSize',
-        columns: true,
-      };
-    if (currentView === 'list')
-      return {
-        get: () => listThumb,
-        set: (v: number) => {
-          listThumb = v;
-        },
-        min: LIST_MIN,
-        max: LIST_MAX,
-        pref: 'listThumb',
-        storeKey: 'listThumb',
-        columns: false,
-      };
-    return {
-      get: () => tileSize,
-      set: (v: number) => {
-        tileSize = v;
-      },
-      min: TILE_MIN,
-      max: TILE_MAX,
-      pref: 'imageTileSize',
-      storeKey: 'tileSize',
-      columns: true,
-    };
-  }
-  function setViewSize(px: number, commit = true) {
-    const st = viewSizeState();
-    st.set(Math.max(st.min, Math.min(st.max, px)));
-    applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
-    if (!commit) {
-      // Live re-flow while dragging (masonic recreates its positioner on columnWidth
-      // change) via a deliberate side channel, NOT corpusStore — writing every drag
-      // input to the store would recompute+notify on every pointermove for no
-      // benefit (P4-B slice④'s reasoning, carried into slice⑩'s pulled source).
-      if (st.columns) corpusPostGridSource.setLiveColumnWidth(st.get());
-      return;
-    }
-    corpusIpc.setPref(st.pref, st.get());
-    // The settled size mirrors into corpusStore (P4-B slice④) — the post-grid
-    // source (slice⑩) derives columnWidth/itemHeightEstimate from it. Clear the
-    // live-drag override so a later VIEW change (which reads a different
-    // storeKey) can't see a stale value from this one.
-    storeSet(st.storeKey, st.get());
-    corpusPostGridSource.setLiveColumnWidth(null);
-    renderPosts(); // re-request thumbnails at the new size
-  }
-  function tileGridMetrics() {
-    const grid = byId('postGrid');
-    if (!grid) return null;
-    // floor of the FRACTIONAL width: clientWidth rounds up half-pixels, which
-    // makes an exact-fill size 1px too wide and silently drops a column.
-    const W = Math.floor(grid.getBoundingClientRect().width);
-    if (!W) return null;
-    const gv = Number.parseFloat(getComputedStyle(grid).columnGap);
-    return { W, g: Number.isFinite(gv) ? gv : 8 };
-  }
-  function refreshTileSlider() {
-    const sl = inputById('tileSlider');
-    if (!sl) return;
-    const st = viewSizeState();
-    if (!st.columns) {
-      // list: direct px track
-      sl.step = '8';
-      sl.min = String(st.min);
-      sl.max = String(st.max);
-      sl.disabled = false;
-      sl.value = String(st.get());
-      return;
-    }
-    const m = tileGridMetrics();
-    if (!m) return;
-    sl.step = '1';
-    // Card view: always allow 1 column — CSS auto-fill handles width naturally.
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentView === 'card' ? { minCols: 1 } : undefined);
-    // Hide the row when only one column count is geometrically possible — the
-    // slider would have a single stop and convey nothing.
-    const sizeRow = document.getElementById('tileSizeRow');
-    if (sizeRow) sizeRow.style.display = tr.single ? 'none' : '';
-    sl.min = String(tr.nBig);
-    sl.max = String(tr.nSmall);
-    sl.disabled = false;
-    sl.value = String(tr.value); // inverted: right = larger
-  }
+  // View-size slider (post grid) — every density has one; the logic (track math,
+  // mid-drag vs commit) lives in grid-density-builder.ts now, alongside the
+  // poster-side equivalent above. This just wires the #tileSlider DOM events to it.
   const tileSlider = inputById('tileSlider');
-  function sliderCols() {
-    return trackCols(Number.parseInt(tileSlider.value, 10), Number.parseInt(tileSlider.min, 10), Number.parseInt(tileSlider.max, 10));
-  }
-  let _dragMetrics: CorpusGridMetrics | null = null; // grid geometry cached for the duration of one size drag
-  function onSliderMove(commit: boolean) {
-    if (!viewSizeState().columns) {
-      setViewSize(Number.parseInt(tileSlider.value, 10), commit);
-      return;
-    }
-    // The grid container width and column gap don't change while only --tile-size
-    // does, so measure once at the drag's first input and reuse it. Re-reading
-    // getBoundingClientRect each input would force a reflow against the previous
-    // input's CSS-var write. Cleared on commit (the slider's change event).
-    const m = (!commit && _dragMetrics) || tileGridMetrics();
-    if (!m) return;
-    _dragMetrics = commit ? null : m;
-    setViewSize(sizeFor(sliderCols(), m), commit);
-  }
-  tileSlider.addEventListener('input', () => onSliderMove(false));
-  tileSlider.addEventListener('change', () => onSliderMove(true));
+  tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
+  tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
   // Registration lives in the useGlobalShortcuts hook (app/islands/app/App.tsx).
-  function handleShortcutSizeKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault();
-    if (tileSlider.disabled) return;
-    const step = Number.parseInt(tileSlider.step, 10) || 1;
-    tileSlider.value = String(Math.max(Number.parseInt(tileSlider.min, 10), Math.min(Number.parseInt(tileSlider.max, 10), Number.parseInt(tileSlider.value, 10) + (e.key === '-' ? -step : step))));
-    onSliderMove(true);
-  }
-  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey });
-  // Window resizes change how many columns fit → re-derive the track range.
-  let tileResizeT = 0;
-  window.addEventListener('resize', () => {
-    clearTimeout(tileResizeT);
-    tileResizeT = setTimeout(refreshTileSlider, 150);
-  });
+  window.corpusViewer = Object.assign(window.corpusViewer || {}, { handleShortcutSizeKey: gridDensity.handleShortcutSizeKey });
 
-  // Tile overlay lives in the React settings island now; expose an apply-and-
-  // persist bridge it can call so the post grid updates immediately.
-  function applyTileOverlay(v: boolean) {
-    tileOverlay = v;
-    corpusIpc.setPref('tileOverlay', tileOverlay);
-    // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
-    // via CSS), so flip the class directly instead of re-grouping + rebuilding the
-    // grid (a full renderPosts reloaded every tile image = flicker).
-    const grid = byId('postGrid');
-    if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
-  }
+  // Tile overlay lives in the React settings island now; grid-density-builder.ts
+  // exposes the apply-and-persist bridge it calls (via window.corpusViewer.setTileOverlay
+  // below) so the post grid updates immediately.
   // Bridges the React settings island calls into (the controls live there now,
   // but these effects touch viewer.js-owned state / the post grid).
   window.corpusViewer = Object.assign(window.corpusViewer || {}, {
-    setTileOverlay: applyTileOverlay,
+    setTileOverlay: gridDensity.applyTileOverlay,
     reloadPosts: () => loadPosts(),
     setSkipDeleteConfirm: (v: boolean) => {
       skipDeleteConfirm = v;
@@ -2556,44 +2280,7 @@ import { corpusIpc } from './ipc.ts';
 
   // Load saved view mode and skipDeleteConfirm
   corpusIpc.getPrefs().then((prefs) => {
-    if (['card', 'tile', 'list'].includes(prefs.viewMode)) {
-      currentView = prefs.viewMode;
-      // Push the restored view into the store so the toolbar island renders the right
-      // button active. currentView is already set, so the subscribe above no-ops
-      // (idempotent guard) — no double render, no echo.
-      storeSet('view', currentView);
-    }
-    if (['card', 'tile', 'list'].includes(prefs.posterViewMode)) {
-      posterView = prefs.posterViewMode;
-      // Push into the store so the island renders the right button active; posterView
-      // is already set, so the subscribe above no-ops (idempotent guard).
-      storeSet('posterView', posterView);
-    }
-    // Poster-grid view sizes mirror into corpusStore (P4-B slice⑫, mirrors slice④'s post-side treatment below).
-    if (Number.isFinite(prefs.posterTileSize)) {
-      posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize));
-      storeSet('posterTileSize', posterTileSize);
-    }
-    if (Number.isFinite(prefs.posterCardSize)) {
-      posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize));
-      storeSet('posterCardSize', posterCardSize);
-    }
-    // Post-grid view sizes also mirror into corpusStore (P4-B slice④ — see setViewSize).
-    if (Number.isFinite(prefs.imageTileSize)) {
-      tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize));
-      storeSet('tileSize', tileSize);
-    }
-    if (Number.isFinite(prefs.cardSize)) {
-      cardSize = Math.max(CARD_MIN, Math.min(CARD_MAX, prefs.cardSize));
-      storeSet('cardSize', cardSize);
-    }
-    if (Number.isFinite(prefs.listThumb)) {
-      listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb));
-      storeSet('listThumb', listThumb);
-    }
-    if (prefs.tileOverlay === false) {
-      tileOverlay = false;
-    }
+    gridDensity.restorePrefs(prefs);
     skipDeleteConfirm = !!prefs.skipDeleteConfirm;
     // Re-render once after applying the saved view mode. Sort is NOT read here anymore
     // — it comes from the tab state (applied by initTabs), so the old prefs/initTabs
