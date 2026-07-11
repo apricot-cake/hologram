@@ -2314,8 +2314,9 @@
     }
 
     /* The single shared hover-hint surface (.ui-tip + .glass-lens, singleton div
-       owned by islands/_shared/tip.ts). EVERY hover hint drives it — React
-       tipProps(), the [data-tip] delegation, and window.corpusTip — so tooltips
+       owned by islands/tooltip/TooltipHost.tsx, portaled onto document.body; the
+       store + tipProps() live in islands/_shared/tip.ts). EVERY hover hint drives
+       it — React tipProps() and the [data-tip] delegation — so tooltips
        can't drift apart. Replaces native `title` on custom controls (the OS
        tooltip is ~1s delayed and OS-styled = チープ). Shows immediately on
        hover/focus with a fast fade+rise; glass-lens supplies the material.

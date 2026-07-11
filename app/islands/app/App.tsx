@@ -25,6 +25,7 @@ import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { Toast } from '../toast/Toast.tsx';
 import { Toolbar } from '../toolbar/index.tsx';
+import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { t } from '../_shared/i18n.ts';
 import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
 import { applyTitleBar } from '../../renderer/theme-api.ts';
@@ -360,6 +361,9 @@ export function App() {
       <Portal id="ivToast">
         <Toast />
       </Portal>
+      {/* Shared glass tooltip (.ui-tip) — portals its own singleton div onto document.body
+          (no static container) and wires the [data-tip] delegation; see tooltip/TooltipHost.tsx. */}
+      <TooltipHost />
       {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
           #posterGrid) with flushSync + host-attach preserved (GridMount), because orchestrator
           still blanket-clears the container on the empty push. */}
