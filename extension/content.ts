@@ -65,13 +65,13 @@
     `backdrop-filter:${G.CARD_BLUR}`,
     `-webkit-backdrop-filter:${G.CARD_BLUR}`,
     'color:rgba(255,255,255,0.92)',
-    'font:600 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    `font:600 13px/1.4 ${G.FONT_SANS}`,
     `box-shadow:${G.CARD_SHADOW}`,
     'pointer-events:none',
-    'transition:border-color .16s',
+    `transition:border-color ${G.DUR_HOVER}ms`,
   ].join(';');
   const bannerBadge = document.createElement('div');
-  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};transition:background .16s,color .16s;`;
+  bannerBadge.style.cssText = `width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:${G.ACCENT_SOFT};color:${G.ACCENT_TEXT};transition:background ${G.DUR_HOVER}ms,color ${G.DUR_HOVER}ms;`;
   banner.appendChild(bannerBadge);
   const bannerLabel = document.createElement('div');
   banner.appendChild(bannerLabel);
@@ -116,8 +116,16 @@
   setBanner('select', MSG.select);
   document.body.appendChild(banner);
   if (!G.REDUCED_MOTION) {
-    // transform carries the permanent translateX(-50%) — keyframes must too.
-    banner.animate([{ opacity: 0, transform: 'translateX(-50%) translateY(-10px)' }, { opacity: 1, transform: 'translateX(-50%)' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' });
+    // App toast entrance mirrored from the top edge: drop + slight scale settle
+    // at the pop tier. transform carries the permanent translateX(-50%) — the
+    // keyframes must too.
+    banner.animate(
+      [
+        { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
+        { opacity: 1, transform: 'translateX(-50%)' },
+      ],
+      { duration: G.DUR_POP, easing: G.EASE_OUT },
+    );
   }
 
   // Highlight frame
@@ -308,6 +316,19 @@
     }
   }
 
+  // The pill leaves the way it arrived (rise back + settle, pop tier) — an
+  // abrupt remove() reads as a glitch next to the app's toast. The listeners
+  // are already gone when this runs, so the lingering element is inert.
+  function dismissBanner() {
+    if (G.REDUCED_MOTION || !banner.isConnected || banner.style.display === 'none') {
+      banner.remove();
+      return;
+    }
+    const anim = banner.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' }], { duration: G.DUR_POP, easing: G.EASE_OUT });
+    anim.onfinish = () => banner.remove();
+    anim.oncancel = () => banner.remove();
+  }
+
   function cleanup() {
     if (isCleanedUp) return;
     isCleanedUp = true;
@@ -320,7 +341,7 @@
     restoreCaptureState?.();
     restoreCaptureState = null;
     restoreScroll();
-    banner.remove();
+    dismissBanner();
     highlight.remove();
     captureStyle?.remove();
     window.__snsPostSaveActive = false;
@@ -396,8 +417,9 @@
       }
       setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
       if (msg.success && !partial && !G.REDUCED_MOTION) {
-        // Small badge pop so the state flip reads even in peripheral vision.
-        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+        // Small badge pop so the state flip reads even in peripheral vision
+        // (app corpusBadgePop: .3s on the shared ease-out curve).
+        bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
       }
       // Hold failures (and partials) longer so the reason is readable.
       setTimeout(cleanup, partial || !msg.success ? 2800 : 1500);
