@@ -3,13 +3,14 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
-// Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) changes the
-// scale by ~1 — fine enough to stop on a target zoom (the old 0.15 library
-// step swung ~15x scale per notch). Each notch animates for WHEEL_ZOOM_MS.
+// Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) MULTIPLIES the
+// scale by WHEEL_FACTOR. Multiplicative so a notch feels equally strong at 1x
+// and 30x — the old additive step (+1 per notch) doubled the image at 1x but
+// barely moved it at high zoom. Each notch eases for WHEEL_ZOOM_MS.
 const MIN_SCALE = 1;
 const MAX_SCALE = 40;
-const WHEEL_STEP = 0.01;
-const WHEEL_ZOOM_MS = 110;
+const WHEEL_FACTOR = 1.25;
+const WHEEL_ZOOM_MS = 200;
 
 // Model built by viewer.js (renderImageTabView): the gallery items of ONE post
 // group, the controlled index, and the tab-level actions. Zoom/pan state stays
@@ -51,6 +52,12 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
   // ignore the double-click that tails one.
   const downPos = useRef<{ x: number; y: number } | null>(null);
   const dragEndAt = useRef(0);
+  // Accumulated wheel-zoom target. Steps chain off this, NOT the live scale:
+  // the live value is mid-tween while the wheel is still spinning, so stepping
+  // from it swallowed part of each notch and the total zoom depended on how
+  // fast the wheel was turned. null = out of sync (double-click jumps the
+  // scale outside the wheel path) → re-seed from the live scale.
+  const wheelTarget = useRef<number | null>(null);
   const onDouble = () => {
     if (performance.now() - dragEndAt.current < 400) return;
     const tw = twRef.current;
@@ -62,6 +69,7 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     // screen px. Images smaller than the viewport get a plain zoom step instead.
     const actual = img.offsetWidth ? img.naturalWidth / img.offsetWidth : 1;
     const target = actual > 1.05 ? actual : 2.5;
+    wheelTarget.current = null;
     if (scale > 1.02) tw.resetTransform(180);
     else tw.centerView(target, 180);
   };
@@ -80,8 +88,10 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
       if (!tw) return;
       e.preventDefault();
       const { scale, positionX, positionY } = tw.instance.state;
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale + (e.deltaY < 0 ? 1 : -1) * WHEEL_STEP * Math.abs(e.deltaY)));
-      if (next === scale) return;
+      const base = wheelTarget.current ?? scale;
+      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, base * WHEEL_FACTOR ** (-e.deltaY / 100)));
+      if (next === base) return;
+      wheelTarget.current = next;
       // Keep the content point under the cursor fixed across the scale change.
       const wr = wrapper.getBoundingClientRect(); // static element — transition-safe
       const cx = (e.clientX - wr.left - positionX) / scale;
