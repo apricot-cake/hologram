@@ -1847,10 +1847,9 @@
     color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;
     pointer-events: none;
   }
-  /* Flyout arrows: hover-only. */
-  #filterRows .sb-row .sb-row-arrow { opacity: 0; transition: opacity .12s; }
-  #filterRows .sb-row:hover .sb-row-arrow,
-  #filterRows .sb-row.qf-open .sb-row-arrow { opacity: 1; }
+  /* Always-visible (#112): posterFilterRows never hid this arrow, so the
+     library rows were the odd one out — same "opens a popover" affordance,
+     inconsistent visual language between the two sidebars. */
   /* Sub-section block (開始日/終了日 etc.): indented with a guide line sitting on
      the 23px text axis, labels at readable contrast. */
   .sb-sub {
