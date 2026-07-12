@@ -272,33 +272,29 @@ declare global {
   // CorpusFilterPopover (the open/close/get/subscribe API) removed — filter-popover.ts
   // is a real ES module now, imported directly by its consumers.
 
-  // ---- renderer/inspector.js / renderer/edit-overlay.js — model mechanics
-  // shared; the deep field lists live in viewer.js's model builders. ----
+  // ---- renderer/inspector.js — model mechanics; the deep field lists live in
+  // viewer.js's model builders. ----
   // Tag-editing callbacks TagEditor.tsx (_shared) requires — its onAdd/onRemove/
-  // onToggle/onContextMenu props are all required. Used by CorpusTagPopModel
-  // (tag-pop.ts, the ONLY place TagEditor renders post-#22) and — until step 4
-  // (poster) lands — still by the poster half of CorpusInspectorModel below
-  // (falling through that interface's index signature, same shape
-  // CorpusEditOverlayModel's comment already described for the bulk modal).
+  // onToggle/onContextMenu props are all required. TagEditor.tsx now renders in
+  // exactly ONE place: CorpusTagPopModel below (Issue #22 retired both the
+  // inspector's always-live editor and the bulk edit-overlay modal in favor of
+  // one shared pop).
   interface CorpusTagEditorCallbacks {
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagToggle(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
   }
-  // NOT extending CorpusTagEditorCallbacks: post (Inspector.tsx) is read-only now
-  // (Issue #22) and only needs onTagContextMenu (right-click still opens the
-  // kind-menu — a read operation) + onEditTags (opens tag-pop for this card).
-  // Poster still has the always-live TagEditor for now, so its onTagAdd/
-  // onTagRemove/onTagToggle keep falling through the index signature below.
+  // NOT extending CorpusTagEditorCallbacks: the inspector (post AND poster,
+  // Inspector.tsx) is read-only (Issue #22) and only needs onTagContextMenu
+  // (right-click still opens the kind-menu — a read operation) + onEditTags
+  // (opens tag-pop for this card/poster).
   interface CorpusInspectorModel {
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
-    // Optional only because poster (step 4) hasn't wired its own tag-pop yet —
-    // post (Inspector.tsx PostInspector) always supplies it.
-    onEditTags?(anchorRect: CorpusAnchorRect): void;
+    onEditTags(anchorRect: CorpusAnchorRect): void;
     // Post-only (Inspector.tsx renders these when present).
     onOpenExternal?(): void;
     onSauce?(): void;
@@ -312,22 +308,17 @@ declare global {
   }
   // CorpusInspector (the open/refresh/close/get/subscribe API) removed —
   // inspector.ts is a real ES module now, imported directly by its consumers.
-  interface CorpusEditOverlayModel {
-    openId: number;
-    onCancel?(): void;
-    onSave?(): void;
-    [extra: string]: any;
-  }
+  // CorpusEditOverlayModel removed with edit-overlay.ts/EditOverlay.tsx (Issue #22
+  // retired the bulk modal — see CorpusTagPopModel's mode:'bulk' below).
 
   // ---- renderer/tag-pop.ts — tag picker pop (Issue #22): the single popup that
-  // replaces both the inspector's always-live TagEditor and the bulk edit-overlay
+  // replaced both the inspector's always-live TagEditor and the bulk edit-overlay
   // modal. 'single' mode wires straight to the SAME onTagAdd/onTagRemove/onTagToggle
   // persistence orchestrator.ts's inspector builder already had (immediate save +
   // undo); 'bulk' mode wires to bulk-edit.ts's staging list instead and adds
   // applyLabel/additiveHint/onApply (the staged "N件に適用" commit). Extends
-  // CorpusTagEditorCallbacks (unlike CorpusInspectorModel/CorpusEditOverlayModel
-  // above) because TagEditor.tsx is tag-pop's ONLY content now — every caller must
-  // supply all four.
+  // CorpusTagEditorCallbacks (unlike CorpusInspectorModel above) because
+  // TagEditor.tsx is tag-pop's ONLY content now — every caller must supply all four.
   interface CorpusTagPopModel extends CorpusTagEditorCallbacks {
     openId: number;
     anchorRect: CorpusAnchorRect;

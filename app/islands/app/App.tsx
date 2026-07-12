@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { ActivebarHost } from '../activebar/Activebar.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
-import { EditOverlay } from '../edit-overlay/EditOverlay.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -124,7 +123,7 @@ function ShellClasses() {
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
   useEffect(() => {
-    const ids = ['editOverlay', 'confirmOverlay', 'ivFolderModal', 'lightbox'];
+    const ids = ['confirmOverlay', 'ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
       const open = ids.some((id) => visible(document.getElementById(id)));
@@ -308,9 +307,6 @@ export function App() {
       </Portal>
       <Portal id="postDetailBox">
         <Inspector />
-      </Portal>
-      <Portal id="editOverlayBox">
-        <EditOverlay />
       </Portal>
       {/* Query-builder active bars (post / poster) + the image-tab detail view — each
           was its own createRoot with an imperative render(model); now they store+notify

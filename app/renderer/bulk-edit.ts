@@ -1,14 +1,15 @@
 // Bulk "add tags to selection" staging list — the single owner of the records/
-// tags/additive-flag staged while #editOverlay is open (P4-B スライス⑭). These
-// were previously plain viewer.js closure variables (editingRecords/editTags/
-// editAdditive) reachable only by re-pushing a fresh edit-overlay.ts model —
-// now a dedicated module holds them, addressable directly instead of via push.
-// viewer.ts still owns everything around a mutation: the edit-overlay.ts
-// model/labels, picker-data recompute (inspectorTagPickerData closes over
-// viewer-local tag vocab, so it stays there), selection lookup, IPC
-// persistence, undo, render, and toast on save. additive is always true today
+// tags/additive-flag staged while the tag-pop is open in mode:'bulk' (Issue #22;
+// P4-B スライス⑭ originally staged this for the now-retired edit-overlay.ts modal
+// instead). These were previously plain viewer.js closure variables
+// (editingRecords/editTags/editAdditive) reachable only by re-pushing a fresh
+// model — now a dedicated module holds them, addressable directly instead of via
+// push. bulk-edit-builder.ts still owns everything around a mutation: the
+// tag-pop.ts model/labels, picker-data recompute (inspectorTagPickerData closes
+// over viewer-local tag vocab, so it stays there), selection lookup, IPC
+// persistence, undo, render, and toast on apply. additive is always true today
 // (merge into each record's existing tags — no replace UI exists) but stays an
-// explicit gettable flag, same as before, so onSave's undo-diff ternary is
+// explicit gettable flag, same as before, so onApply's undo-diff ternary is
 // unchanged.
 let records: CorpusPost[] = [];
 let tags: string[] = [];

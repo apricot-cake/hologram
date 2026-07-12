@@ -23,7 +23,7 @@ const Pencil = () => (
 // chips (right-click still opens the kind-menu, a read operation) + a trailing ✎
 // that opens the tag picker pop (Issue #22) anchored to itself. Editing moved OUT
 // of the inspector entirely — see tag-pop.ts / TagPop.tsx.
-function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags?: (anchorRect: CorpusAnchorRect) => void }) {
+function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags: (anchorRect: CorpusAnchorRect) => void }) {
   return (
     <div className="iv-insp-row iv-tags-row">
       <span className="iv-insp-k">{label}</span>
@@ -47,11 +47,9 @@ function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTag
           )}
         </div>
       </span>
-      {onEditTags ? (
-        <button type="button" className="icon-btn icon-btn--ghost iv-tag-edit-btn" aria-label={editTip} data-tip={editTip} onClick={(e) => onEditTags(e.currentTarget.getBoundingClientRect())}>
-          <Pencil />
-        </button>
-      ) : null}
+      <button type="button" className="icon-btn icon-btn--ghost iv-tag-edit-btn" aria-label={editTip} data-tip={editTip} onClick={(e) => onEditTags(e.currentTarget.getBoundingClientRect())}>
+        <Pencil />
+      </button>
     </div>
   );
 }

@@ -1324,10 +1324,9 @@
     /* タグ編集ダイアログ: チップクリック＝削除なので、ホバーで控えめな赤に
        （srgb 混合 — oklch でサーフェスと混ぜると紫に寄って見える） */
     #editTagsList .tag-chip:hover { background: color-mix(in srgb, var(--red-500) 20%, transparent); color: var(--danger); }
-    /* Card-edit dialog: current tags (removable) + a grouped, searchable picker of
-       every existing tag (recognition over recall) + free-text create. */
-    .edit-box { max-width: 480px; width: 100%; text-align: left; }
-    .edit-label { font-size: 13px; font-weight: 600; color: var(--text-strong); display: block; }
+    /* Tag chips (removable) + a grouped, searchable picker of every existing tag
+       (recognition over recall) + free-text create — shared by TagEditor.tsx's
+       callers (tag-pop is the only one left, Issue #22). */
     .edit-current { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 10px; }
     .edit-addrow { display: flex; gap: 6px; }
     .edit-addrow input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); outline: none; }
@@ -2112,13 +2111,9 @@
        owns the overlay contents + show/multi classes; orchestrator.ts feeds it gallery items. -->
   <div class="lightbox-overlay" id="lightbox"></div>
 
-  <!-- Edit tags overlay: bulk "add tags to selection" — React island
-       (app/islands/edit-overlay) owns the label/chips/add-row/picker/cancel/save
-       rendering; viewer.js owns the backdrop show/hide + all business logic
-       (selection, persistence, undo). -->
-  <div class="confirm-overlay" id="editOverlay">
-    <div class="confirm-box edit-box" id="editOverlayBox"></div>
-  </div>
+  <!-- Bulk "add tags to selection" is the tag-pop React island now (Issue #22,
+       app/islands/tag-pop) — no static markup here (it portals onto document.body
+       like qf-pop/context-menu). -->
 
   <!-- Date / engagement / poster-date-range popovers are the filter-popover React
        island now (app/islands/filter-popover) — no static markup here. -->

@@ -1,17 +1,19 @@
-// Bulk "add tags to selection" overlay — extracted from viewer.ts as the
-// viewer.ts decomposition's V9 slice (see memory
-// corpus-react-purity-execution-map, Wave23/V9 "一括編集オーバーレイ"). Mirrors
-// inspector-builder.ts (V7) / selection-builder.ts (V8): open/close chrome +
-// the onSave persistence/undo flow move here. bulk-edit.ts (Wave2, the staging
-// list of records/tags/additive) and edit-overlay.ts (Wave3, the
-// open/refresh/close/get/subscribe bridge to the EditOverlay React island)
-// stay untouched — this module is their consumer, replacing viewer.ts.
-// selectedRecords (selection-builder.ts, V8) is a dep, same shape as the
-// deferred forward-reference selection-builder.ts itself takes for
-// openTagSelectedOverlay.
+// Bulk "add tags to selection" — extracted from viewer.ts as the viewer.ts
+// decomposition's V9 slice (see memory corpus-react-purity-execution-map,
+// Wave23/V9 "一括編集オーバーレイ"). Mirrors inspector-builder.ts's tag-pop
+// wiring (Issue #22): openTagPopForSelection opens the SAME tag-pop singleton in
+// mode:'bulk' instead of the retired edit-overlay.ts modal — records/tags/
+// additive-flag staging (bulk-edit.ts, Wave2) and the onApply persistence/undo
+// flow are unchanged, only the surface they render into moved.
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
-import { open as editOverlayOpen, refresh as editOverlayRefresh, close as editOverlayClose } from './edit-overlay.ts';
+import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
+
+// Sentinel forKey for the bulk pop — distinct from any real post/poster key
+// (postIdKey values and 'poster:'+key never start with this), so the toggle/
+// dismiss-guard checks shared with inspector-builder.ts/poster-grid-builder.ts
+// (tagPopGet()?.forKey === ...) can't collide with a single-card pop.
+const BULK_FOR_KEY = '__bulk-selection__';
 
 export interface BulkEditBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -27,31 +29,36 @@ export interface BulkEditBuilderDeps {
 }
 
 export function makeBulkEdit(deps: BulkEditBuilderDeps) {
-  const byId = (id: string) => document.getElementById(id) as HTMLElement;
-
-  // Recompute the bulk edit modal's tag fields (chips + picker vocab/cooc) after a
-  // staging-list mutation. Not persisted yet — Save (see openTagSelectedOverlay
-  // below) is the only thing that writes the staged tags out to the records.
-  function refreshEditOverlayFields() {
+  // Recompute the bulk pop's tag fields (chips + picker vocab/cooc) after a
+  // staging-list mutation. Not persisted yet — onApply (below) is the only thing
+  // that writes the staged tags out to the records.
+  function refreshTagPopFields() {
     const tags = getTags();
-    editOverlayRefresh({ tags, ...deps.inspectorTagPickerData(tags, getRecords(), 'post') });
+    tagPopRefresh({ tags, ...deps.inspectorTagPickerData(tags, getRecords(), 'post') });
   }
 
-  function closeEditOverlay() {
-    close();
-    byId('editOverlay').classList.remove('show');
-    editOverlayClose();
+  // Guarded by forKey — same "stale close" pattern as inspector-builder.ts's
+  // dismissTagPopFor: a card's single-mode pop may have already superseded this
+  // one via the same singleton bridge.
+  function dismissBulkTagPop() {
+    if (tagPopGet()?.forKey !== BULK_FOR_KEY) return;
+    close(); // discard the staging list — Cancel/outside-click never wrote anything
+    tagPopClose();
   }
 
-  // タグを追加: reuse the edit overlay in ADDITIVE mode — entered tags are
-  // merged into each selected record's existing tags (nothing is replaced).
-  function openTagSelectedOverlay() {
+  function openTagPopForSelection(anchorRect: CorpusAnchorRect) {
+    if (tagPopGet()?.forKey === BULK_FOR_KEY) {
+      dismissBulkTagPop(); // re-click "タグを追加" while already open → close
+      return;
+    }
     const records = deps.selectedRecords();
     if (!records.length) return;
     open(records);
     const tags = getTags();
-    editOverlayOpen({
-      titleLabel: deps.t('tagSelectedTitle'),
+    tagPopOpen({
+      anchorRect,
+      mode: 'bulk',
+      forKey: BULK_FOR_KEY,
       tags,
       ...deps.inspectorTagPickerData(tags, records, 'post'),
       tagLabels: {
@@ -63,36 +70,36 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
         noVocab: deps.t('tagNoTags'),
         adoptSource: deps.t('editAdoptSource'),
       },
-      cancelLabel: deps.t('confirmCancel'),
-      saveLabel: deps.t('save'),
-      onCancel: closeEditOverlay,
+      applyLabel: deps.t('tagApplyN', [records.length]),
+      additiveHint: deps.t('additiveHint'),
       onTagAdd: (tag: string) => {
         add(tag);
-        refreshEditOverlayFields();
+        refreshTagPopFields();
       },
       onTagRemove: (tag: string) => {
         remove(tag);
-        refreshEditOverlayFields();
+        refreshTagPopFields();
       },
       onTagToggle: (tag: string) => {
         toggle(tag);
-        refreshEditOverlayFields();
+        refreshTagPopFields();
       },
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        deps.showKindMenu(tag, x, y, refreshEditOverlayFields);
+        deps.showKindMenu(tag, x, y, refreshTagPopFields);
       },
-      onSave: async () => {
+      onDismiss: dismissBulkTagPop,
+      onApply: async () => {
         const editingRecords = getRecords();
         if (!editingRecords.length) {
-          closeEditOverlay();
+          dismissBulkTagPop();
           return;
         }
         deps.keepCurrentVisible(); // removing a tag can un-match an active tag filter
-        const tags = [...getTags()];
+        const applyTags = [...getTags()];
         const editAdditive = isAdditive();
         // Capture before-state for undo, then persist.
         const undoRecords = editingRecords.map((r) => {
-          const newTags = editAdditive ? [...new Set([...(r.tags || []), ...tags])] : tags.slice();
+          const newTags = editAdditive ? [...new Set([...(r.tags || []), ...applyTags])] : applyTags.slice();
           return { captureId: r.captureId, image: r.image || r.video, prevTags: (r.tags || []).slice(), newTags };
         });
         for (const u of undoRecords) {
@@ -108,15 +115,14 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
         deps.markPostsMutated();
         deps.renderPosts(true); // keepLimit: selection (if any) stays put, no anim replay
         const n = editingRecords.length;
-        closeEditOverlay();
+        close();
+        tagPopClose();
         deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'));
       },
     });
-    byId('editOverlay').classList.add('show');
   }
 
   return {
-    closeEditOverlay,
-    openTagSelectedOverlay,
+    openTagPopForSelection,
   };
 }

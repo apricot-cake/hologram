@@ -172,9 +172,6 @@ export let resetPosterFilters: () => void;
   // settings island; the confirm modal is the React confirm island (labels come through
   // confirmOpen's config), so no static confirm setText here either.
 
-  // Edit overlay labels are now passed directly in the edit-overlay.ts model (see
-  // openTagSelectedOverlay below) — no static DOM to set text on anymore.
-
   // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
   // (labels, thumb, on-state) is rendered by the toolbar island; orchestrator only keeps
   // the hint text + aria-label (see the wiring block below). The view/layout titles
@@ -1064,9 +1061,9 @@ export let resetPosterFilters: () => void;
     loadPosts,
     persistManual,
     showFoldMenu,
-    // bulkEdit (bulk-edit.ts, edit-overlay.ts consumer) is constructed just
-    // below — deferred since it needs this selectionCtl's own selectedRecords.
-    openTagSelectedOverlay: () => bulkEdit.openTagSelectedOverlay(),
+    // bulkEdit (bulk-edit.ts consumer) is constructed just below — deferred
+    // since it needs this selectionCtl's own selectedRecords.
+    openTagPopForSelection: (anchorRect) => bulkEdit.openTagPopForSelection(anchorRect),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
   });
   const { toggleCardSelection, selectedRecords } = selectionCtl;
@@ -1119,12 +1116,13 @@ export let resetPosterFilters: () => void;
     openTagPopForGroup(g, btn.getBoundingClientRect());
   });
 
-  // --- Edit overlay (bulk "add tags to selection") ---
+  // --- Bulk "add tags to selection" (tag-pop, mode:'bulk' — Issue #22) ---
   // The staging list itself (selected records / tags-in-progress / additive flag)
-  // lives in bulk-edit.ts — nothing persists until Save (see openTagSelectedOverlay/
-  // onSave inside bulk-edit-builder.ts) writes it out. Constructed here (after
-  // selectionCtl above) since groupSelected's sibling openTagSelectedOverlay needs
-  // this cluster's own selectedRecords — see the deferred dep on selectionCtl above.
+  // lives in bulk-edit.ts — nothing persists until Apply (see
+  // openTagPopForSelection/onApply inside bulk-edit-builder.ts) writes it out.
+  // Constructed here (after selectionCtl above) since groupSelected's sibling
+  // openTagPopForSelection needs this cluster's own selectedRecords — see the
+  // deferred dep on selectionCtl above.
   const bulkEdit = makeBulkEdit({
     t: getMessage,
     showToast: notify,
@@ -1136,21 +1134,6 @@ export let resetPosterFilters: () => void;
     keepCurrentVisible,
     getPostById: postGrid.getPostById,
     selectedRecords,
-  });
-  const { closeEditOverlay } = bulkEdit;
-
-  // Modal chrome (lock background scroll + darken the native titlebar while any
-  // full-screen overlay is up) moved to the ModalChrome hook in app/islands/app/App.tsx
-  // — same observe-each-overlay logic, just registered by React instead of this IIFE.
-
-  // Inspector inline tag editors (post ivTag* / poster pdTag*) are now the React
-  // TagEditor component inside the inspector island — it owns its own input/
-  // click/contextmenu handling directly via the callbacks in the model (see
-  // showDetail/showPosterDetail), so no delegated #postDetail listeners are needed.
-
-  // Background click (outside the box) cancels, same as editCancel/onCancel below.
-  byId('editOverlay').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeEditOverlay();
   });
 
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---

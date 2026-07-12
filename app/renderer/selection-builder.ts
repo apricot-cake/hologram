@@ -6,10 +6,11 @@
 // just wires the returned functions in. selection.ts (Wave10, the corpusStore-backed
 // selectedSet/anchor bridge) stays untouched — this module is one of its consumers
 // (the selection-bar island's own model derivation is the other, unaffected here).
-// タグを追加 (openTagSelectedOverlay) is bulk-edit-builder.ts territory (V9/Wave23).
-// It's constructed right after this module in viewer.ts (needs this module's own
-// selectedRecords), so this module only calls it via a deferred dep, same shape as
-// jumpToPoster/showToast forward-references in inspector-builder.ts.
+// タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory (V9/Wave23,
+// re-targeted at tag-pop for Issue #22). It's constructed right after this module
+// in viewer.ts (needs this module's own selectedRecords), so this module only
+// calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
+// references in inspector-builder.ts.
 import * as selection from './selection.ts';
 import * as folders from './folders.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -29,9 +30,9 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: CorpusPostGroup, x: number, y: number): void;
-  // openTagSelectedOverlay lives in bulk-edit-builder.ts (V9/Wave23) — a
+  // openTagPopForSelection lives in bulk-edit-builder.ts (V9/Wave23) — a
   // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
-  openTagSelectedOverlay(): void;
+  openTagPopForSelection(anchorRect: CorpusAnchorRect): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
   // getter since its value changes over the module's lifetime.
   getBrowseMode(): string;
@@ -160,7 +161,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         toggleSelectAll();
         break;
       case 'tag':
-        deps.openTagSelectedOverlay();
+        deps.openTagPopForSelection(btn.getBoundingClientRect());
         break;
       case 'folder': {
         // フォルダに追加: open the folder picker for the whole selection (no default

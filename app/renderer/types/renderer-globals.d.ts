@@ -78,8 +78,9 @@ interface CorpusPostGroup {
 // needed (see the corpus-react-purity-execution-map memory for the conversion). ----
 
 // ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
-// (records/tags/additive-flag) held while #editOverlay is open (P4-B スライス⑭).
-// A real ES module (named exports) now — no ambient Window-shaped interface needed.
+// (records/tags/additive-flag) held while tag-pop is open in mode:'bulk' (Issue
+// #22). A real ES module (named exports) now — no ambient Window-shaped
+// interface needed.
 
 // ---- renderer/facets.ts — facet counts + value-flyout row models. makeFacets
 // (facets.ts) and makeCooc (cooc.ts) are real ES modules (named exports) now; only
