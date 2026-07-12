@@ -1543,7 +1543,9 @@
     .qb-nav { flex: none; display: flex; align-items: center; gap: 2px; align-self: flex-start; }
     .qb-nav .icon-btn { width: 28px; height: 28px; }
     .qb-nav .icon-btn svg { width: 17px; height: 17px; }
-    .qb-nav .icon-btn:disabled { opacity: .3; cursor: default; }
+    /* #113: opacity:.3 on top of the already-muted ghost color made the shape
+       nearly invisible — "can't press" only needs to read, not "can't see". */
+    .qb-nav .icon-btn:disabled { cursor: default; }
     .qb-nav .icon-btn:disabled:hover { background: none; color: var(--text-subtle); border-color: transparent; }
     .qb-body {
       flex: 1 1 auto; min-width: 0;
