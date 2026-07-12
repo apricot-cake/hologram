@@ -32,5 +32,5 @@
     "skipLibCheck": true,
     "types": ["chrome"]
   },
-  "files": ["background.ts", "content.ts", "diag.ts", "drag.ts", "glass-ui.ts", "i18n.ts", "metadata.ts", "options.ts", "page-theme.ts", "site-detect.ts", "types/globals.d.ts"]
+  "files": ["background.ts", "content.ts", "diag.ts", "drag.ts", "glass-ui.ts", "i18n.ts", "metadata.ts", "options.ts", "site-detect.ts", "types/globals.d.ts"]
 }

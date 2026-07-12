@@ -2,64 +2,35 @@
 <html lang="ja">
 <meta charset="utf-8">
 <title>Corpus 設定</title>
-<script src="page-theme.js"></script>
 <style>
   /* App design language (design-tokens.css), ported as literals — same token
-     set and theming scheme as diag.html (see its header comment: [data-theme]
-     stamped by page-theme.js beats the prefers-color-scheme auto path, hence
-     the duplicated dark block). Static text is Japanese fallback; options.js
-     swaps it for the browser-locale _locales strings (chrome.i18n). */
+     set as diag.html, trimmed to what this page uses. Light/dark follows the
+     browser via prefers-color-scheme alone: the extension has no theme pref
+     of its own (the on-page capture UI is a theme-independent scrim solid,
+     and extension pages tracking the browser is exactly the no-mismatch
+     behavior a pref could only break). Static text is Japanese fallback;
+     options.js swaps it for the browser-locale _locales strings (chrome.i18n). */
   :root {
     --bg: #f6f7f9;            /* gray-50 */
-    --surface: #ffffff;       /* gray-0 */
     --text: #24282f;          /* gray-800 */
-    --text-strong: #0c0e12;   /* gray-950 */
     --text-muted: #606673;    /* gray-550 */
-    --border: #e4e7ec;        /* gray-150 */
-    --border-strong: #d8dce2; /* gray-200 */
-    --hover: #eceef2;         /* gray-100 */
-    --field-bg: #eceef2;      /* gray-100 */
-    --accent-text: #0a6e96;   /* sky-800 */
     --focus-ring: rgba(40, 168, 219, 0.45); /* sky-500 @45% */
     --font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
-    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-    --dur-hover: 0.18s;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #0e0f11;
-      --surface: #16171a;
       --text: #dadce0;
-      --text-strong: #f4f5f7;
       --text-muted: #8e9298;
-      --border: #282a2e;
-      --border-strong: #36383d;
-      --hover: #2a2d33;
-      --field-bg: #1a1c20;
-      --accent-text: #8ad3ec; /* sky-300 */
       --focus-ring: rgba(40, 168, 219, 0.55);
       color-scheme: dark;
     }
   }
-  :root[data-theme="dark"] {
-    --bg: #0e0f11;
-    --surface: #16171a;
-    --text: #dadce0;
-    --text-strong: #f4f5f7;
-    --text-muted: #8e9298;
-    --border: #282a2e;
-    --border-strong: #36383d;
-    --hover: #2a2d33;
-    --field-bg: #1a1c20;
-    --accent-text: #8ad3ec;
-    --focus-ring: rgba(40, 168, 219, 0.55);
-    color-scheme: dark;
-  }
 
   body {
     /* Opens as a full tab (manifest options_ui open_in_tab): a centered
-       column at the app Settings pane's scale keeps the lone row from
+       column at the app Settings pane's scale keeps the sparse content from
        stranding in the viewport. */
     max-width: 560px;
     margin: 0 auto;
@@ -71,45 +42,11 @@
   /* The body background must still paint the whole viewport around the
      centered column. */
   html { background: var(--bg); }
-  /* App Settings idiom (.setting-row / .hint in renderer/index.html): label
-     left, control right, muted explanation underneath — no card chrome, so
-     label / hint / footer link share one left axis. No page heading either:
-     the tab title carries "Corpus 設定", and a lone setting under a banner
-     heading reads as filler. */
-  /* Two columns like Chrome's own settings rows: label + sub-caption stacked
-     in the flexible left cell, control in the right cell — so the hint wraps
-     inside the left column and never runs under the pulldown. */
-  .setting-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .setting-text {
-    flex: 1;
-    min-width: 0;
-  }
-  select {
-    height: 28px; /* app --control-sm */
-    padding: 0 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px; /* app --radius-sm */
-    background: var(--field-bg);
-    color: var(--text);
-    font: 600 12px/1 var(--font-sans);
-    transition: background var(--dur-hover) var(--ease-out), border-color var(--dur-hover);
-  }
-  select:hover { background: var(--hover); }
-  select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
-  .hint {
-    margin: 4px 0 0;
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  /* Support escape hatch, deliberately quiet: normal users never need diag,
-     so it reads like a footnote until you look for it. */
+  /* No settings yet — the page is the diagnostics escape hatch and the future
+     home for capture settings. The link keeps its footnote-quiet styling:
+     normal users never need diag, so it shouldn't read as a call to action. */
   .foot {
-    margin: 20px 0 0;
+    margin: 0;
     font-size: 12px;
   }
   .foot a {
@@ -121,17 +58,6 @@
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
-  <div class="setting-row">
-    <div class="setting-text">
-      <label for="theme" id="themeLabel">テーマ</label>
-      <p class="hint" id="themeHint">保存バナーなど、SNSページ上の表示にも適用されます。</p>
-    </div>
-    <select id="theme">
-      <option value="auto">システムに合わせる</option>
-      <option value="light">ライト</option>
-      <option value="dark">ダーク</option>
-    </select>
-  </div>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   <script src="options.js"></script>
 </body>

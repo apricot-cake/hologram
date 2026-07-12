@@ -17,27 +17,7 @@
   },
   "optionsTitle": {
     "message": "Corpus 設定",
-    "description": "Options page heading and document title"
-  },
-  "optionsThemeLabel": {
-    "message": "テーマ",
-    "description": "Theme setting label"
-  },
-  "optionsThemeAuto": {
-    "message": "システムに合わせる",
-    "description": "Theme option: follow the OS"
-  },
-  "optionsThemeLight": {
-    "message": "ライト",
-    "description": "Theme option: light"
-  },
-  "optionsThemeDark": {
-    "message": "ダーク",
-    "description": "Theme option: dark"
-  },
-  "optionsThemeHint": {
-    "message": "保存バナーなど、SNSページ上の表示にも適用されます。",
-    "description": "Theme setting explanation"
+    "description": "Options page document title"
   },
   "optionsOpenDiag": {
     "message": "診断ページを開く",

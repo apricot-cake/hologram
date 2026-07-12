@@ -2,16 +2,11 @@
 <html lang="ja">
 <meta charset="utf-8">
 <title>Corpus 診断</title>
-<script src="page-theme.js"></script>
 <style>
   /* App design language (design-tokens.css), ported as literals: this page is
-     extension-origin so the app's custom properties don't exist here. Theme
-     follows the extension's own pref (options page → chrome.storage 'theme';
-     the app's theme setting lives in config.json, which this page cannot
-     read): page-theme.js stamps [data-theme] for an explicit light/dark pref,
-     and 'auto' leaves it unstamped so prefers-color-scheme decides. The dark
-     token block therefore appears twice — once under the media query (auto
-     path, correct before JS runs) and once under [data-theme="dark"]. */
+     extension-origin so the app's custom properties don't exist here.
+     Light/dark follows the browser via prefers-color-scheme alone — the
+     extension has no theme pref of its own (see options.html). */
   :root {
     --bg: #f6f7f9;            /* gray-50 */
     --surface: #ffffff;       /* gray-0 */
@@ -31,7 +26,7 @@
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #0e0f11;
       --surface: #16171a;
       --text: #dadce0;
@@ -45,20 +40,6 @@
       --focus-ring: rgba(40, 168, 219, 0.55);
       color-scheme: dark;
     }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0e0f11;
-    --surface: #16171a;
-    --text: #dadce0;
-    --text-strong: #f4f5f7;
-    --text-muted: #8e9298;
-    --border: #282a2e;
-    --border-strong: #36383d;
-    --hover: #2a2d33;
-    --active: #34373d;
-    --field-bg: #1a1c20;
-    --focus-ring: rgba(40, 168, 219, 0.55);
-    color-scheme: dark;
   }
 
   body {
