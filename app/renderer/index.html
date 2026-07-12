@@ -2408,8 +2408,9 @@
        filter-popover/qf-pop/inspector/edit-overlay/searchbox/grid/sidebar/confirm/
        about-icon/shell, plus the logic-service wave — search/query/records/facets/cooc/
        tags/users/tab-state/listing/geometry/format/undo) is folded into the app.js bundle
-       (P2): see the `corpus-svc:*` imports in app/islands/app/index.tsx, in the same
-       order these used to load in. theme.js stays its own pre-paint <script> (head,
+       (P2): each service is a real ES module imported directly by its consumers
+       (shell.ts last via app/islands/app/index.tsx, mirroring the old script
+       order). theme.js stays its own pre-paint <script> (head,
        above) — it must run before first paint, which app.js (loaded at the end of body)
        cannot guarantee. -->
   <!-- All React islands, React itself, the renderer service layer, AND the boot

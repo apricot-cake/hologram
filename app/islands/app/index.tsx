@@ -30,10 +30,10 @@
 //     kind-menu/menu/edit-overlay/bridge/filter-popover/qf-pop/cooc/facets/about-icon/
 //     searchbox/theme/records/tags/tab-state/trash/backup/posts/search/i18n/folders/
 //     selection/grid/query-chips/sidebar/tabs are all real ES modules now, imported
-//     directly by their consumers — no barrel entry needed. shell.ts (below) is the
-//     only entry left here, and only because it's a side-effect-only IIFE with nothing
-//     to import; order mirrors the old index.html scripts (it precedes root.tsx so
-//     islands read its side effects at render). ---
+//     directly by their consumers — no barrel entry needed, and the corpus-svc alias
+//     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts (below)
+//     is the only entry left here, and only because it's a side-effect-only IIFE with
+//     nothing to import — now a plain relative import like everything else. ---
 import './root.tsx';
 // The boot orchestrator (renderer/orchestrator.ts, renamed from viewer.ts — Wave33/V18,
 // 2026-07-11) no longer needs a side-effect-only import here: App.tsx (rendered via
@@ -46,4 +46,4 @@ import './root.tsx';
 // kept last here to preserve that ordering. Its only load-time work is an async IIFE
 // that awaits corpusIpc.getPrefs() then calls applyMode(...) (search.ts, imported
 // directly by shell.ts now).
-import 'corpus-svc:shell';
+import '../../renderer/shell.ts';

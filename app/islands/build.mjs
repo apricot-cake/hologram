@@ -39,21 +39,13 @@ const appRoot = path.join(here, '..'); // app
 // global-mapped only for ESM imports — and throws at load. React 18+ has the
 // hook natively; point both import specifiers at a 1-line ESM re-export.
 const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.ts');
-// Forward slashes so the regex-alias replacement below (which substitutes $1 into a
-// path string) doesn't inject backslash escapes on Windows.
-const RENDERER_DIR = path.join(appRoot, 'renderer').replace(/\\/g, '/');
-// Array form (order matters: the more specific shim/index.js must precede shim). The
-// `corpus-svc:NAME` regex folds the renderer SERVICE layer into this one bundle — each
-// former <script src="NAME.js"> is now `import 'corpus-svc:NAME'` from app/index.tsx,
-// resolved here to renderer/NAME.ts. Bare specifiers (not relative paths) because these
-// are still window-global side-effect imports, not real ES module imports (pending
-// conversion — see backlog memory). They no longer serve a type-isolation purpose:
-// tsc now type-checks the renderer service layer as part of the SAME tsconfig.json
-// program as islands (merged 2026-07-09; formerly a separate tsconfig.renderer.json).
+// Array form (order matters: the more specific shim/index.js must precede shim).
+// The former `corpus-svc:NAME` regex (which folded the renderer service layer into
+// this bundle via bare specifiers) is gone — every service, shell.ts included, is
+// now imported by plain relative path (V18 item 7).
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
   { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },
-  { find: /^corpus-svc:(.+)$/, replacement: `${RENDERER_DIR}/$1.ts` },
 ];
 
 // theme.ts is the pre-paint FOUC boot (set [data-theme] before first paint). It stays
