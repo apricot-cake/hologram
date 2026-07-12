@@ -2,7 +2,7 @@
 Corpus = SNS投稿を画像・メタデータごとローカル保存し検索・整理できる「自分だけのSNSライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし）。
 
 # ドキュメント
-詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Corpus Backlog」（apricot-cake/corpus・2026-07-11 メモリ`corpus-backlog`から移行）。実装のhow・私的文脈はメモリ`corpus-backlog`に残置（ポインタ化・repo外）
+詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Corpus Backlog」（apricot-cake/corpus・project番号#3・https://github.com/users/apricot-cake/projects/3・2026-07-11 メモリ`corpus-backlog`から移行）。実装のhow・私的文脈はメモリ`corpus-backlog`に残置（ポインタ化・repo外）
 
 # ストレージと実行環境
 - 配置は`~/.corpus`(config/ログ)と`saveFolder`(既定`~/Corpus/library`)＝**AppData外必須**（MSIX仮想化でのライブラリ消失事故対策・2026-06-23）
