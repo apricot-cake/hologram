@@ -249,7 +249,10 @@ async function main() {
     assert('cardModel 同日は cap 日付を去重（post のみ残る）', m.footDates.post && m.footDates.post.label === '2026-04-01' && m.footDates.cap === null);
     assert('cardModel pfName/userName/handle', m.pfName === 'X' && m.userName === 'Alice' && m.handle === '@alice');
     assert('cardModel flags（thread/quote のみ・reply は false）', m.flags.join() === 'THREAD,QUOTE');
-    assert('cardModel mediaLabel=IMG / likesOv=formatCount(likes)', m.mediaLabel === 'IMG' && m.likesOv === 'N12');
+    // mediaType 'image' is the default → no label (#110); video/gif still labeled.
+    assert('cardModel mediaLabel: image は空 / likesOv=formatCount(likes)', m.mediaLabel === '' && m.likesOv === 'N12');
+    const pvid = { ...p, mediaType: 'video' };
+    assert('cardModel mediaLabel: video はラベルあり', cardModel({ rep: pvid, records: [pvid], files: ['a.jpg'] }, 0).mediaLabel !== '');
     assert('cardModel aspRatio=shotW/shotH（card・masonry 高さ予約）', m.aspRatio === '800/600');
     assert('cardModel nImg=4 / stackSrcs は2・3枚目のみ（幅=cardThumbW）', m.nImg === 4 && m.stackSrcs.join() === 'b.jpg@200,c.jpg@200');
     assert('cardModel imgSrc=fileSrc(shot.jpg, cardThumbW) / hasThumb', m.imgSrc === 'shot.jpg@200' && m.hasThumb === true);
