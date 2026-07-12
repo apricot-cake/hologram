@@ -49,7 +49,12 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     else tw.centerView(target, 180);
   };
   return (
-    <TransformWrapper ref={twRef} minScale={1} maxScale={40} centerOnInit doubleClick={{ disabled: true }} wheel={{ step: 0.15 }}>
+    // wheel.step: smooth mode (library default) scales the per-event zoom delta by
+    // the wheel event's raw deltaY, so 0.15 (10x the library's own 0.015 default)
+    // meant a single mouse-wheel notch (deltaY~100) could jump the scale by ~15 —
+    // most of the whole 1-40 range in one click. 0.01 keeps a standard notch to
+    // roughly +1 scale (fit -> 2x), fine enough to stop on a target zoom (#134).
+    <TransformWrapper ref={twRef} minScale={1} maxScale={40} centerOnInit doubleClick={{ disabled: true }} wheel={{ step: 0.01 }}>
       <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <img ref={imgRef} className="itv-media" src={src} alt={alt} draggable={false} onDoubleClick={onDouble} />
       </TransformComponent>
