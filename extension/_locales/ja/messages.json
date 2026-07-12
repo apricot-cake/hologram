@@ -36,7 +36,7 @@
     "description": "Theme option: dark"
   },
   "optionsThemeHint": {
-    "message": "保存バナーやドラッグ保存パネルなど、ページ上の表示とこの拡張機能のページに適用されます。",
+    "message": "保存バナーなど、SNSページ上の表示にも適用されます。",
     "description": "Theme setting explanation"
   },
   "optionsOpenDiag": {

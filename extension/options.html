@@ -59,34 +59,23 @@
 
   body {
     margin: 0;
-    padding: 20px 24px 24px;
-    min-width: 360px;
+    padding: 18px 20px 20px;
+    min-width: 340px;
     background: var(--bg);
     color: var(--text);
     font: 400 13px/1.55 var(--font-sans);
   }
-  h1 {
-    margin: 0 0 16px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-strong);
-    letter-spacing: -0.012em;
-  }
-  .field {
+  /* App Settings idiom (.setting-row / .hint in renderer/index.html): label
+     left, control right, muted explanation underneath — no card chrome, so
+     label / hint / footer link share one left axis. No page heading either:
+     the chrome://extensions dialog already titles this "Corpus". */
+  .setting-row {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px; /* app --radius-lg */
-  }
-  .field > label {
-    font-weight: 600;
-    color: var(--text-strong);
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
   select {
-    align-self: flex-start;
     height: 28px; /* app --control-sm */
     padding: 0 8px;
     border: 1px solid var(--border-strong);
@@ -99,12 +88,14 @@
   select:hover { background: var(--hover); }
   select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
   .hint {
-    margin: 0;
+    margin: 6px 0 0;
     color: var(--text-muted);
     font-size: 12px;
   }
   .foot {
-    margin-top: 16px;
+    margin: 16px 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
   }
   .foot a {
     color: var(--accent-text);
@@ -115,16 +106,15 @@
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
-  <h1 id="title">Corpus 設定</h1>
-  <div class="field">
+  <div class="setting-row">
     <label for="theme" id="themeLabel">テーマ</label>
     <select id="theme">
       <option value="auto">システムに合わせる</option>
       <option value="light">ライト</option>
       <option value="dark">ダーク</option>
     </select>
-    <p class="hint" id="themeHint">保存バナーやドラッグ保存パネルなど、ページ上の表示とこの拡張機能のページに適用されます。</p>
   </div>
+  <p class="hint" id="themeHint">保存バナーなど、SNSページ上の表示にも適用されます。</p>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   <script src="options.js"></script>
 </body>

@@ -36,7 +36,7 @@
     "description": "Theme option: dark"
   },
   "optionsThemeHint": {
-    "message": "Applies to on-page UI (save banner, drag-and-drop panel) and this extension's pages.",
+    "message": "Also applies to the on-page save UI (banner, drop panel).",
     "description": "Theme setting explanation"
   },
   "optionsOpenDiag": {
