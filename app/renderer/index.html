@@ -217,7 +217,7 @@
     /* Master-detail: the TOC is the persistent left nav; the right pane shows
        only the selected section as its own "page" (no long scroll). */
     .settings-body { display: flex; align-items: stretch; gap: 0; }
-    .settings-toc { flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 1px; padding-right: 22px; border-right: 1px solid var(--border-subtle); }
+    .settings-toc { flex-shrink: 0; width: max-content; min-width: 150px; display: flex; flex-direction: column; gap: 1px; padding-right: 22px; border-right: 1px solid var(--border-subtle); }
     .settings-toc .toc-item { text-align: left; border: none; background: transparent; color: var(--text-muted); font-size: 13px; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .settings-toc .toc-item:hover { background: var(--hover); color: var(--text); }
     .settings-toc .toc-item.active { color: var(--text-strong); font-weight: 600; background: var(--hover); }
