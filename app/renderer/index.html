@@ -1381,6 +1381,15 @@
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
     .fold-menu.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out) both; }
     .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
+    /* Tag picker pop (Issue #22): the single popup for 🏷 / inspector ✎ / selection
+       bar "タグを追加". Fixed width (chip wrap assumes it, unlike qf-pop's
+       max-content). TagPop.tsx caps the pop's own max-height (viewport clamp) but
+       does NOT make the pop itself scroll — .edit-picker (below) already owns the
+       one scroll region, so chips/input stay put and only the vocab list scrolls. */
+    .fold-menu.tag-pop { width: 320px; max-width: 320px; }
+    .tag-pop-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .tag-pop-hint { font-size: 11px; color: var(--text-subtle); }
+    .tag-pop-apply { flex-shrink: 0; padding: 6px 12px; background: var(--accent); color: #fff; border-color: var(--accent); }
     .fold-menu .fm-row {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);

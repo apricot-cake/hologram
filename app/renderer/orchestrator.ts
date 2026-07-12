@@ -1046,7 +1046,7 @@ export let resetPosterFilters: () => void;
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
   });
-  const { closeDetail, showDetail, persistManual } = inspector;
+  const { closeDetail, showDetail, persistManual, openTagPopForGroup } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
   handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
@@ -1109,14 +1109,14 @@ export let resetPosterFilters: () => void;
     }
     showDetail(g);
   });
-  // 🏷 button on card → open the inspector (tags are editable inline there)
+  // 🏷 button on card → tag picker pop (Issue #22), anchored to the button itself.
   byId('postGrid').addEventListener('click', (e) => {
     const btn = closestOf(e, '.tag-btn');
     if (!btn) return;
     e.stopPropagation();
     const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.tagedit ?? '', 10)];
     if (!g) return;
-    showDetail(g);
+    openTagPopForGroup(g, btn.getBoundingClientRect());
   });
 
   // --- Edit overlay (bulk "add tags to selection") ---

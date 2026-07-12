@@ -23,6 +23,7 @@ import { SettingsHost } from '../settings/index.tsx';
 import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { Toast } from '../toast/Toast.tsx';
 import { Toolbar } from '../toolbar/index.tsx';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
@@ -292,6 +293,7 @@ export function App() {
       <KindMenuHost />
       <FilterPopoverHost />
       <QfPopHost />
+      <TagPopHost />
       <ConfirmHost />
       <FolderManagerHost />
       {/* Container-mounted islands — portaled into their orchestrator-owned static containers. */}

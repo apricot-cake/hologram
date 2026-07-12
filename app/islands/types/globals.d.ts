@@ -322,6 +322,31 @@ declare global {
     [extra: string]: any;
   }
 
+  // ---- renderer/tag-pop.ts — tag picker pop (Issue #22): the single popup that
+  // replaces both the inspector's always-live TagEditor and the bulk edit-overlay
+  // modal. 'single' mode wires straight to the SAME onTagAdd/onTagRemove/onTagToggle
+  // persistence orchestrator.ts's inspector builder already had (immediate save +
+  // undo); 'bulk' mode wires to bulk-edit.ts's staging list instead and adds
+  // applyLabel/additiveHint/onApply (the staged "N件に適用" commit). Extends
+  // CorpusTagEditorCallbacks (unlike CorpusInspectorModel/CorpusEditOverlayModel
+  // above) because TagEditor.tsx is tag-pop's ONLY content now — every caller must
+  // supply all four.
+  interface CorpusTagPopModel extends CorpusTagEditorCallbacks {
+    openId: number;
+    anchorRect: CorpusAnchorRect;
+    mode: 'single' | 'bulk';
+    tags: string[];
+    tagLabels: Record<string, string>;
+    // bulk-only.
+    applyLabel?: string;
+    additiveHint?: string;
+    onApply?(): void;
+    // Outside-click / Esc — the caller decides what "closing" means (single: just
+    // close the pop; bulk: also discard the staging list).
+    onDismiss(): void;
+    [extra: string]: any;
+  }
+
   // ---- renderer/sidebar.ts — the two filter-row columns (P4-B slice⑰: converted
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
