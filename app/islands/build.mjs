@@ -44,7 +44,10 @@ const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.t
 // The former `corpus-svc:NAME` regex (which folded the renderer service layer into
 // this bundle via bare specifiers) is gone — every service, shell.ts included, is
 // now imported by plain relative path (V18 item 7).
+const USE_SYNC_WITH_SELECTOR_SHIM = path.join(here, '_shared', 'use-sync-external-store-with-selector-shim.ts');
 const RESOLVE_ALIAS = [
+  { find: 'use-sync-external-store/shim/with-selector.js', replacement: USE_SYNC_WITH_SELECTOR_SHIM },
+  { find: 'use-sync-external-store/shim/with-selector', replacement: USE_SYNC_WITH_SELECTOR_SHIM },
   { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
   { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },
   // shadcn/ui standard import alias — islands/ plays the role of src/.

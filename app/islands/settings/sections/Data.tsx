@@ -362,7 +362,7 @@ export function Data() {
         <CardContent className="space-y-4">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <Select value={exportMode} onValueChange={setExportMode}>
+              <Select items={{ full: t('exportModeFull'), images: t('exportModeImages') }} value={exportMode} onValueChange={(v) => v !== null && setExportMode(v)}>
                 <SelectTrigger size="sm" className="w-auto">
                   <SelectValue />
                 </SelectTrigger>
@@ -427,7 +427,7 @@ export function Data() {
               }}
               className="h-8 w-16 text-xs"
             />
-            <Select value={(backup && backup.intervalUnit) || 'day'} onValueChange={(v) => saveBackup({ intervalUnit: v })}>
+            <Select items={{ day: t('unitDay'), week: t('unitWeek'), month: t('unitMonth') }} value={(backup && backup.intervalUnit) || 'day'} onValueChange={(v) => v !== null && saveBackup({ intervalUnit: v })}>
               <SelectTrigger size="sm" className="w-auto">
                 <SelectValue />
               </SelectTrigger>

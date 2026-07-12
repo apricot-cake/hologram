@@ -61,6 +61,8 @@ export default defineConfig({
     // prod build does). Order matters: shim/index.js before shim.
     alias: [
       // The CJS use-sync-external-store shim → a 1-line ESM re-export (React 18+ has the hook).
+      { find: 'use-sync-external-store/shim/with-selector.js', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-with-selector-shim.ts') },
+      { find: 'use-sync-external-store/shim/with-selector', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-with-selector-shim.ts') },
       { find: 'use-sync-external-store/shim/index.js', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
       { find: 'use-sync-external-store/shim', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
       // shadcn/ui standard import alias — islands/ plays the role of src/.

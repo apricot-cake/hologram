@@ -30,8 +30,10 @@ export function Appearance() {
     <div>
       <SettingRow label={t('themeMode')} hint={t('hintTheme')}>
         <Select
+          items={{ auto: t('themeAuto'), light: t('themeLight'), dark: t('themeDark') }}
           value={theme}
           onValueChange={(v) => {
+            if (v === null) return;
             setTheme(v);
             ipc.theme.set(v);
           }}

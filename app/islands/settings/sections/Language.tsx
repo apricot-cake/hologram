@@ -21,8 +21,10 @@ export function Language() {
   return (
     <>
       <Select
+        items={{ auto: t('langAuto'), ja: '日本語', en: 'English' }}
         value={lang}
         onValueChange={(v) => {
+          if (v === null) return;
           setLang(v);
           Promise.resolve(ipc.setPref('language', v)).then(() => location.reload());
         }}

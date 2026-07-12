@@ -98,11 +98,7 @@ export function Trash() {
       )}
 
       <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="destructive" disabled={!records.length}>
-            {t('trashEmptyBtn')}
-          </Button>
-        </AlertDialogTrigger>
+        <AlertDialogTrigger render={<Button variant="destructive" disabled={!records.length} />}>{t('trashEmptyBtn')}</AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('trashEmptyBtn')}</AlertDialogTitle>

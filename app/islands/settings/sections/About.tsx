@@ -51,16 +51,22 @@ export function About() {
       <Separator className="my-4 max-w-48" />
       <div className="flex items-center gap-5">
         {LINKS.map(({ key, url }) => (
-          <Button key={key} variant="link" size="sm" className="h-auto p-0" asChild>
-            <a
-              href={url}
-              onClick={(e) => {
-                e.preventDefault();
-                ipc.openExternal(url);
-              }}
-            >
-              {t(key)}
-            </a>
+          <Button
+            key={key}
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            render={
+              <a
+                href={url}
+                onClick={(e) => {
+                  e.preventDefault();
+                  ipc.openExternal(url);
+                }}
+              />
+            }
+          >
+            {t(key)}
           </Button>
         ))}
       </div>
