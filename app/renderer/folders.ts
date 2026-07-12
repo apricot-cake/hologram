@@ -3,7 +3,7 @@
 // the unified container for folders (collections). Clip is a separate library-wide
 // ephemeral flag set (a captureId Set), persisted alongside the collections. This
 // module owns the data, the management-modal state (rendering is the FolderManagerModal
-// island, #ivFolderModal), membership toggling, and the toast (#ivToast); the "which
+// island, #ivFolderModal), membership toggling, and the toast (sonner via ui.ts); the "which
 // folder is filtered" state stays per-view. Subscribers (onChange) are notified after
 // any mutation so each view refreshes its own chips.
 //
@@ -328,7 +328,7 @@ export function toggleIn(fid: string | null | undefined, captureIds: string[] | 
   return res;
 }
 
-// --- toast (shared, top-level #ivToast) ---
+// --- toast (shared — sonner via ui.ts notify()) ---
 export function toast(msg: unknown) {
   return uiNotify(msg);
 }

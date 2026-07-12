@@ -23,7 +23,7 @@ import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { TagPopHost } from '../tag-pop/TagPop.tsx';
-import { Toast } from '../toast/Toast.tsx';
+import { Toaster } from '@/components/ui/sonner';
 import { Toolbar } from '../toolbar/index.tsx';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -356,9 +356,8 @@ export function App() {
       <Portal id="mirrorStatus">
         <MirrorStatus />
       </Portal>
-      <Portal id="ivToast">
-        <Toast />
-      </Portal>
+      {/* Toast outlet (sonner) — renders in its own portal; renderer/ui.ts notify() feeds it. */}
+      <Toaster />
       {/* Shared glass tooltip (.ui-tip) — portals its own singleton div onto document.body
           (no static container) and wires the [data-tip] delegation; see tooltip/TooltipHost.tsx. */}
       <TooltipHost />

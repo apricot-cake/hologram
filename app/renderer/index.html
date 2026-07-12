@@ -2112,9 +2112,6 @@
   <!-- Back-to-top for the content area (the post grid scrolls with the window) -->
   <button id="contentTop" class="icon-btn glass-chrome" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
 
-  <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
-  <div id="ivToast" class="iv-toast"></div>
-
   <!-- Folder management modal (shared by both modes) — React island (FolderManagerModal,
        app/islands/folders) owns the content + [hidden] visibility; folders.ts's
        openManager()/closeManager() drive it. -->
@@ -2251,19 +2248,6 @@
     .iv-fold-n { color: var(--muted); font-size: 11px; }
     .iv-fold-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 5px; color: var(--muted); }
     .iv-fold-btn:hover { background: var(--hover); }
-
-    /* transient toast (e.g. "added to folder") — shared, top-level, fixed.
-       Scrim solid (#136: text over content = near-opaque dark, no blur);
-       entrance = rise + slight scale settle (motion-study canvas 2026-07-05). */
-    .iv-toast {
-      position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(14px) scale(.96);
-      background: var(--scrim-bg); color: var(--scrim-ink); padding: 9px 18px; border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.12);
-      font-size: 13px; z-index: 12000; opacity: 0; pointer-events: none;
-      transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out);
-      box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,0.10);
-    }
-    .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 
     /* ============================================================
        === Floating-surface materials (#136 readability policy) ===
