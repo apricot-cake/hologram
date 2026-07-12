@@ -69,11 +69,18 @@
      left, control right, muted explanation underneath — no card chrome, so
      label / hint / footer link share one left axis. No page heading either:
      the chrome://extensions dialog already titles this "Corpus". */
+  /* Two columns like Chrome's own settings rows: label + sub-caption stacked
+     in the flexible left cell, control in the right cell — so the hint wraps
+     inside the left column and never runs under the pulldown. */
   .setting-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
+  }
+  .setting-text {
+    flex: 1;
+    min-width: 0;
   }
   select {
     height: 28px; /* app --control-sm */
@@ -88,7 +95,7 @@
   select:hover { background: var(--hover); }
   select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
   .hint {
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     color: var(--text-muted);
     font-size: 12px;
   }
@@ -108,14 +115,16 @@
 </style>
 <body>
   <div class="setting-row">
-    <label for="theme" id="themeLabel">テーマ</label>
+    <div class="setting-text">
+      <label for="theme" id="themeLabel">テーマ</label>
+      <p class="hint" id="themeHint">保存バナーなど、SNSページ上の表示にも適用されます。</p>
+    </div>
     <select id="theme">
       <option value="auto">システムに合わせる</option>
       <option value="light">ライト</option>
       <option value="dark">ダーク</option>
     </select>
   </div>
-  <p class="hint" id="themeHint">保存バナーなど、SNSページ上の表示にも適用されます。</p>
   <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   <script src="options.js"></script>
 </body>
