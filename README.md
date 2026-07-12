@@ -54,7 +54,7 @@ Active filters gather at the top of the screen; **Reset** clears them all at onc
 
 - **Tags** — right-click a card → "Edit tags." There's also a "tagging session" to tag untagged posts one after another.
 - **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
-- **Workspace** — hover a card and hit 🔖 to collect items into a temporary tray for comparison.
+- **Clip** — hover a card and hit 📎 to collect items into a temporary tray for comparison.
 - **Bulk actions** — select multiple posts with the ○ at the top-left of each card, then tag, add to a folder, group, or delete them all at once.
 
 ### 5. Backup & portability
