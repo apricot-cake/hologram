@@ -1,4 +1,4 @@
-// The single shared hover-hint surface (.ui-tip) — one glass tooltip that EVERY
+// The single shared hover-hint surface (.ui-tip) — one tooltip that EVERY
 // hover hint drives, so tooltips can't drift apart in material/timing/placement.
 // Two ways to trigger it, both feeding the same TooltipHost island:
 //   1. React:      spread tipProps(text) onto a trigger (hover + keyboard focus).
@@ -7,7 +7,7 @@
 //      in with just an attribute, replacing native `title` (OS-delayed, OS-styled).
 // data-tip-rich (or the rich arg) switches to the multi-line variant (wraps, wider)
 // for explanatory hints; the default is a single-line label. Styling lives in
-// index.html (.ui-tip / .ui-tip--rich + the glass material); this module only owns
+// index.html (.ui-tip / .ui-tip--rich + the hint-glass material); this module only owns
 // the show/hide store — rendering, placement, and the [data-tip] delegation live in
 // tooltip/TooltipHost.tsx (App.tsx mounts it onto document.body).
 

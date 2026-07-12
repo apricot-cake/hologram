@@ -79,7 +79,7 @@ function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
     // reruns per open. No reactive deps (ref/document/window aren't dependencies).
   }, []);
   return (
-    <div ref={ref} className="qb-help-pop glass-lens show">
+    <div ref={ref} className="qb-help-pop hint-glass show">
       <div className="qh-title">{help.title}</div>
       {help.rows.map((row) => (
         <div className="qh-row" key={row}>

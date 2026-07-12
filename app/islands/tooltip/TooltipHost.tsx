@@ -81,12 +81,13 @@ export function TooltipHost() {
     d.style.top = y + 'px';
   }, [model, shown]);
 
-  // glass-lens (high-transparency), NOT glass-frost: the tooltip floats over
-  // sidebar text and should read as see-through glass (user 2026-07-04 —
-  // frost's 55% fill looked like an opaque chip). The rich variant bumps the
-  // fill (index.html) so a whole sentence still reads.
+  // hint-glass (near-solid), NOT glass-lens: text is the tooltip's whole
+  // content, and the see-through lens let the backdrop bleed through until the
+  // chip read muddy/dark (user 2026-07-12 — supersedes the 2026-07-04 lens
+  // pick). The material lives in index.html's glass utility layer, shared by
+  // the whole hover-hint family (.kb-hint-pop / .qb-help-pop).
   return createPortal(
-    <div ref={ref} className={`ui-tip glass-lens${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`} role="tooltip">
+    <div ref={ref} className={`ui-tip hint-glass${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`} role="tooltip">
       {model?.text}
     </div>,
     document.body,
