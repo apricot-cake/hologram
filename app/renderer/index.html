@@ -1003,6 +1003,11 @@
       display: flex; gap: 10px; font-size: 11.5px; color: var(--text-subtle);
     }
     .post-meta .stats .st { display: inline-flex; align-items: center; gap: 3px; }
+    /* Engagement counts / capture date are library noise at rest — show them only
+       while a sort or filter makes them relevant (.show-eng / .show-cap on the
+       grid, same gate the tile ♡ overlay already uses). */
+    .post-grid:not(.show-eng) .post-meta .stats { display: none; }
+    .post-grid:not(.show-cap) .post-foot .cdate { display: none; }
     /* footer right corner: post date (primary) + 📷 capture date (secondary) */
     .post-foot .foot-r { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
     .post-foot .pdate { font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
