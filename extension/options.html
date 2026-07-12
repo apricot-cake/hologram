@@ -100,9 +100,10 @@
   }
   .foot a {
     color: var(--text-muted);
-    text-decoration: none;
+    text-decoration: underline; /* the one link affordance kept, so it can't be read as body text */
+    text-underline-offset: 2px;
   }
-  .foot a:hover { color: var(--text); text-decoration: underline; }
+  .foot a:hover { color: var(--text); }
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
