@@ -39,18 +39,15 @@
 
   // === UI elements ===
 
-  // Visual language: the shared glass vocabulary (glass-ui.js, injected
+  // Visual language: the shared scrim-solid vocabulary (glass-ui.js, injected
   // before this file — same isolated world, runs first, synchronous global).
-  // Light/dark follows the extension theme pref via glass-ui's live getters;
-  // the pref read is async, so wait for it before painting anything — this
-  // script runs immediately after glass-ui.js on activation, early enough to
-  // otherwise beat the read and paint a fresh instance's OS-default palette.
-  // State is carried by the badge fill + a tinted pill border; see glass-ui.ts
-  // for the CSP/Trusted Types constraints that shape how everything is built.
+  // The palette is theme-independent (#136: near-opaque dark scrim + white
+  // ink), so there is no async pref read to wait for. State is carried by the
+  // badge fill + a tinted pill border; see glass-ui.ts for the CSP/Trusted
+  // Types constraints that shape how everything is built.
   const G = window.corpusGlassUi;
-  await G.ready;
 
-  // Top banner — glass pill: leading icon badge + label.
+  // Top banner — scrim-solid pill: leading icon badge + label.
   const banner = document.createElement('div');
   banner.style.cssText = [
     'position:fixed',
@@ -67,8 +64,6 @@
     'border-radius:999px',
     `border:1px solid ${G.CARD_BORDER}`,
     `background:${G.CARD_BG}`,
-    `backdrop-filter:${G.CARD_BLUR}`,
-    `-webkit-backdrop-filter:${G.CARD_BLUR}`,
     `color:${G.TEXT}`,
     `font:600 13px/1.4 ${G.FONT_SANS}`,
     `box-shadow:${G.CARD_SHADOW}`,
@@ -82,22 +77,10 @@
   banner.appendChild(bannerLabel);
 
   type BannerState = 'select' | 'busy' | 'ok' | 'partial' | 'fail';
-  // Last-applied args kept so a theme flip while the banner is on screen
-  // (the 'select' state can sit there indefinitely) can replay the paint.
-  let bannerState: BannerState = 'select';
-  let bannerText = MSG.select;
   function setBanner(state: BannerState, text: string) {
-    bannerState = state;
-    bannerText = text;
     bannerLabel.textContent = text;
     bannerBadge.replaceChildren();
-    // Theme-dependent surface tokens re-applied on every transition (same
-    // idiom as drag.ts's zone setter) so a palette flip is never baked in.
-    banner.style.background = G.CARD_BG;
-    banner.style.setProperty('backdrop-filter', G.CARD_BLUR);
-    banner.style.setProperty('-webkit-backdrop-filter', G.CARD_BLUR);
-    banner.style.color = G.TEXT;
-    banner.style.boxShadow = G.CARD_SHADOW;
+    // Reset the state-tinted border (ok/partial/fail override it below).
     banner.style.borderColor = G.CARD_BORDER;
     switch (state) {
       case 'select':
@@ -132,7 +115,6 @@
   }
 
   setBanner('select', MSG.select);
-  const offThemeChange = G.onThemeChange(() => setBanner(bannerState, bannerText));
   document.body.appendChild(banner);
   if (!G.REDUCED_MOTION) {
     // App toast entrance mirrored from the top edge: drop + slight scale settle
@@ -357,7 +339,6 @@
     document.removeEventListener('contextmenu', onContextMenu, true);
     document.removeEventListener('keydown', onKeyDown, true);
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
-    offThemeChange();
     restoreCaptureState?.();
     restoreCaptureState = null;
     restoreScroll();

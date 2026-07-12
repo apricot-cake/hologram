@@ -3,18 +3,18 @@ import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
-// Glass dropdown for the sidebar sort selects (post / poster / collection). Replaces
-// viewer.js's hand-rolled enhanceSelect machinery (custom button + body-level glass
+// Custom dropdown for the sidebar sort selects (post / poster / collection). Replaces
+// viewer.js's hand-rolled enhanceSelect machinery (custom button + body-level
 // popup), now React-owned. One component, three mounts — the options/storeKey props
 // parameterize it (mirrors DensityToggle's storeKey sharing). A native <select> popup
-// is OS-drawn and can't be glassed, so the native element stays hidden (.cs-host) as
+// is OS-drawn and can't be restyled, so the native element stays hidden (.cs-host) as
 // viewer's value source: on pick we drive it (set value + dispatch 'change') so the
 // existing change handlers (renderPosts / renderPosters / renderCollections, and the
 // per-tab sort persistence) fire UNCHANGED. The active value is mirrored into
 // corpusStore so the trigger label updates without reading the hidden select.
 //
 // Emits the SAME DOM the old enhanceSelect did (.cs-btn trigger + a .fold-menu.cs-pop
-// glass popup with .fm-row.cs-opt rows) so the CSS is unchanged. Option LABELS come
+// popup with .fm-row.cs-opt rows) so the CSS is unchanged. Option LABELS come
 // from i18n keys here (not the native <select>'s textContent), so the component never
 // races viewer's option-text setup and survives a language reload by re-mounting.
 
@@ -115,7 +115,7 @@ export function GlassSelect({ sel, storeKey, options }: { sel: HTMLSelectElement
       </button>
       {open &&
         createPortal(
-          <div className="fold-menu cs-pop glass-frost show" ref={popRef}>
+          <div className="fold-menu cs-pop show" ref={popRef}>
             {options.map((o) => {
               const on = o.value === current.value;
               return (

@@ -11,16 +11,9 @@ interface CorpusI18nApi {
   partialSaveText: (reason?: string | null) => string;
 }
 
-// Shared glass visual vocabulary for on-page UI (see glass-ui.ts). Color
-// tokens are live getters: they follow the extension theme pref (light/dark/
-// follow-OS), so read them at style-application time, not into constants.
+// Shared scrim-solid visual vocabulary for on-page UI (see glass-ui.ts).
+// Theme-independent (#136): one static palette, no pref plumbing.
 interface CorpusGlassUiApi {
-  // Resolves once the initial theme-pref read has landed — await before the
-  // first paint (the read is async; UI built earlier races it).
-  ready: Promise<void>;
-  // Fires when the live palette flips (pref change / OS switch). Returns the
-  // unsubscribe function.
-  onThemeChange: (cb: () => void) => () => void;
   ACCENT: string;
   ACCENT_FILL: string;
   ACCENT_SOFT: string;
@@ -33,7 +26,6 @@ interface CorpusGlassUiApi {
   RING: string;
   RING_ACCENT: string;
   CARD_BG: string;
-  CARD_BLUR: string;
   CARD_BORDER: string;
   CARD_SHADOW: string;
   FONT_SANS: string;

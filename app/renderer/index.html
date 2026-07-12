@@ -151,7 +151,7 @@
       display: flex; flex-direction: column; padding: 14px 10px 0; gap: 2px;
       overflow: hidden;   /* スクロールは内側の .sb-scroll が担当（角丸でクリップ） */
       /* Window-like: a defined rim + lift (replaces the old 1px content hairline). */
-      border: 1px solid var(--glass-border);
+      border: 1px solid var(--float-border);
       border-radius: 14px;
       box-shadow: var(--shadow-md);
     }
@@ -179,9 +179,9 @@
       border-radius: 10px; padding: 12px 14px; z-index: 12000; white-space: nowrap;
     }
     .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
-    /* Glass material system (.glass-lens / .glass-frost / .glass-relief) is defined
-       as a utility layer at the END of this stylesheet so it wins source-order over
-       component rules like .fold-menu. See "=== Glass material system ===" there. */
+    /* Floating-surface materials (.pop-solid / .glass-chrome) are defined as a
+       utility layer at the END of this stylesheet so they win source-order over
+       component rules like .fold-menu. See "=== Floating-surface materials ===". */
     .kb-hint-head { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
     .kb-hint-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; }
     .kb-hint-grid kbd {
@@ -204,9 +204,9 @@
     .settings-view:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
     .settings-view-inner {
       width: 100%; max-width: 880px; max-height: 100%; overflow-y: auto;
-      background: var(--glass-bg-panel); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter);
-      border: 1px solid var(--glass-border); border-radius: 16px;
-      box-shadow: var(--shadow-lg), var(--glass-edge);
+      background: var(--surface);
+      border: 1px solid var(--float-border); border-radius: 16px;
+      box-shadow: var(--shadow-lg);
       padding: 4px 32px 40px;
     }
     /* Settings search (in the sticky head) + side TOC + scrollable panel. */
@@ -495,18 +495,17 @@
        stays put (the raised thumb is the only fill that moves). */
     #sidebar .view-toggle button:not(.active):hover { background: transparent; color: var(--text); }
     #sidebar .icon-btn:hover { background: var(--hover); color: var(--text); }
-    /* Back-to-top: floats above content → glass. NB `#sidebar .icon-btn` (1,1,0)
-       outweighs a bare `#sbTop` (1,0,0) and was forcing the ghost transparent fill
-       (+ transparent border) → the button was invisible on the light sidebar (user).
-       Qualify with #sidebar so the glass fill + a defined rim actually win. */
-    #sidebar #sbTop { background: var(--glass-bg-panel); border: 1px solid var(--glass-border); backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%); box-shadow: var(--glass-edge), var(--shadow-md); }
-    #sidebar #sbTop:hover { background: var(--glass-bg); color: var(--text); }
-    /* Content back-to-top (glass-relief over the content area): the relief rim
-       (10% black) is too faint on the light --bg → give it the same defined edge. */
-    #contentTop { border: 1px solid var(--border-strong); }
-    @media (prefers-reduced-transparency: reduce) {
-      #sidebar #sbTop { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--shadow-md); }
+    /* Back-to-top: glass-chrome (icon-only, floats above content). NB `#sidebar
+       .icon-btn` (1,1,0) outweighs a bare `#sbTop` (1,0,0) and was forcing the
+       ghost transparent fill (+ transparent border) → the button was invisible on
+       the light sidebar (user). Qualify with #sidebar so the chrome fill wins. */
+    #sidebar #sbTop {
+      background: var(--chrome-glass-bg); color: #fff;
+      border: 1px solid var(--chrome-glass-rim);
+      backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
+      box-shadow: var(--shadow-md);
     }
+    #sidebar #sbTop:hover { background: rgba(20,22,26,0.6); color: #fff; }
     #sidebar .search-box:focus, #sidebar .date-input:focus, #sidebar input[type="number"]:focus { border-color: var(--accent); }
     /* Sidebar controls run slimmer than the dialog defaults: the column is a
        dense list, so tall bars waste vertical room (vertical padding only —
@@ -966,8 +965,9 @@
       display: inline-flex; align-items: center; gap: 5px;
       max-width: calc(100% - 16px); box-sizing: border-box;
       padding: 2px 7px; border-radius: 999px;
-      background: rgba(0,0,0,0.58); color: #fff;
-      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      /* Scrim solid (#136): text over a thumbnail = near-opaque dark, no blur
+         (also drops one always-on backdrop pass per card). */
+      background: var(--scrim-bg); color: var(--scrim-ink);
       font-size: 10px; font-weight: 600; line-height: 1.4; letter-spacing: .01em;
       pointer-events: none;
     }
@@ -1351,17 +1351,17 @@
     .clip-btn {
       position: absolute; top: 8px; right: 40px;
       width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(20,22,26,0.42); color: #fff; border: none;
+      background: var(--chrome-glass-bg); color: #fff; border: none;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
       z-index: 1;
     }
-    /* Hover buttons are glass (they float OVER the thumbnail = transient over
-       content). The blur layer is enabled only on the hovered card so 150
+    /* Hover buttons are glass-chrome (icon-only, floating OVER the thumbnail).
+       The blur layer is enabled only on the hovered card so 150
        offscreen-invisible buttons don't each cost a backdrop pass. */
     .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn {
-      backdrop-filter: blur(10px) saturate(150%); -webkit-backdrop-filter: blur(10px) saturate(150%);
+      backdrop-filter: var(--chrome-glass-blur); -webkit-backdrop-filter: var(--chrome-glass-blur);
     }
     .post-card:hover .clip-btn { opacity: 1; }
     /* Clipped = active: the button fills with the accent (the "on" toggle idiom,
@@ -1375,12 +1375,8 @@
        picker it opens share one look. */
     .fold-menu {
       position: fixed; z-index: 12000; min-width: 180px; max-width: 260px;
-      background: var(--glass-bg); border: 1px solid var(--glass-border);
-      /* EXPERIMENT: real refraction — warp the backdrop via the SVG displacement filter
-         (was just blur+saturate). The filter does displacement + a light blur; saturate
-         stays in CSS. Falls back to no-filter if url() unsupported (bg still translucent). */
-      backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
-      border-radius: 8px; box-shadow: var(--shadow-pop), var(--glass-edge); padding: 4px; display: none;
+      background: var(--surface); border: 1px solid var(--float-border);
+      border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px; display: none;
     }
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
     .fold-menu.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out) both; }
@@ -1389,13 +1385,7 @@
       display: flex; align-items: center; gap: 6px; padding: 5px 8px;
       border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text);
     }
-    /* Glass-friendly hover: a TRANSLUCENT highlight (reuses the sidebar's row-hover
-       token = darken in light / lighten in dark) so the glass shows through instead of
-       an opaque block floating on it. */
-    .fold-menu .fm-row:hover { background: var(--sidebar-row-hover); }
-    /* Light flyout text a touch darker — better contrast over the now-translucent
-       refracted backdrop (dark is fine as-is). */
-    html:not([data-theme="dark"]) .fold-menu .fm-row { color: var(--gray-900); }
+    .fold-menu .fm-row:hover { background: var(--hover); }
     .fm-name { flex: 1; word-break: break-word; }
     /* High-contrast monotone check (was thin accent ✓ that read as cursive). */
     .fm-check { color: var(--text-strong); flex-shrink: 0; display: inline-flex; align-items: center; }
@@ -1443,7 +1433,7 @@
     .tag-btn {
       position: absolute; top: 8px; right: 72px;
       width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(20,22,26,0.42); color: #fff; border: none;
+      background: var(--chrome-glass-bg); color: #fff; border: none;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
@@ -1476,9 +1466,8 @@
 
     /* --- Popovers --- */
     .qf-popover {
-      position: fixed; background: var(--glass-bg); border-radius: 10px;
-      backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
-      box-shadow: var(--shadow-pop), var(--glass-edge); border: 1px solid var(--glass-border); padding: 16px;
+      position: fixed; background: var(--surface); border-radius: 10px;
+      box-shadow: var(--shadow-pop); border: 1px solid var(--float-border); padding: 16px;
       z-index: 1001; min-width: 260px;
       /* Entrance pop. Placement code must keep measuring via offsetWidth/Height —
          getBoundingClientRect mid-pop reads ~4% small (scale .96 start). */
@@ -1538,7 +1527,7 @@
       flex-shrink: 0;
       display: flex; align-items: center; gap: 10px;
       padding: 7px 16px;
-      background: var(--sidebar-bg); border-bottom: 1px solid var(--glass-border);
+      background: var(--sidebar-bg); border-bottom: 1px solid var(--float-border);
     }
     /* Nav + lead glyph anchor to the FIRST row of chips — otherwise they float
        to the block's middle when the chips wrap to multiple rows. */
@@ -1642,25 +1631,22 @@
     .poster-tag-clear { color: var(--text-muted); }
     .poster-tag-clear:hover { color: var(--text-strong); }
 
-    /* Active-filter pills = one uniform GLASS material (monotone). The old
+    /* Active-filter pills = one uniform SOLID material (monotone). The old
        per-type rainbow tints (qc-platform/postType/date/…) read as "color groups
-       floating" against the monotone UI (報告) — dropped for a single glass pill;
-       the leading icon/label still tells the type apart. */
+       floating" against the monotone UI (報告) — dropped for a single pill; the
+       leading icon/label still tells the type apart. Solid, not glass (#136):
+       the pill sits on the solid activebar, so a backdrop blur had nothing to
+       sample — the chip tokens give the same clear step above the bar as the
+       sidebar chips get. */
     .sb-active-chip {
       display: inline-flex; align-items: center; gap: 4px;
       border-radius: 999px; padding: 3px 10px; font-size: 12px;
       cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
       color: var(--text);
-      background: color-mix(in srgb, var(--surface) 48%, transparent);
-      backdrop-filter: blur(8px) saturate(160%); -webkit-backdrop-filter: blur(8px) saturate(160%);
-      border: 1px solid var(--glass-rim);
-      box-shadow: inset 0 1px 0.5px var(--glass-hi);
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
     }
     .sb-active-chip:hover { opacity: 0.7; }
-    /* Dark's white glass rim (--glass-rim .16) read fainter than light's dark rim
-       over the bar, so the pill looked edge-less in dark (BACKLOG). Lift dark only
-       so both themes show a matching edge. */
-    [data-theme="dark"] .sb-active-chip { border-color: rgba(255, 255, 255, 0.24); }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
     .sb-active-chip.chip-new, .qb-val.chip-new { animation: corpusPillIn var(--dur-pop) var(--ease-out) both; }
     /* Chip exit: the query-chips island keeps removed values as .leaving ghosts
@@ -1723,7 +1709,7 @@
     .qb-help:hover { color: var(--accent-text); }
     .qb-help-pop {
       position: fixed; z-index: 12000; display: none; max-width: 360px;
-      border-radius: 10px; padding: 12px 14px;   /* material (bg/border/shadow) = shared hint-glass */
+      border-radius: 10px; padding: 12px 14px;   /* material (bg/border/shadow) = shared pop-solid */
       font-size: 12px; line-height: 1.7; color: var(--text);
     }
     .qb-help-pop.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
@@ -1867,16 +1853,6 @@
   </style>
 </head>
 <body>
-  <!-- "Real" Liquid Glass refraction (experiment): an SVG displacement filter that
-       actually WARPS the backdrop through the glass (vs CSS blur which only softens).
-       Applied to overlays that float over content (flyouts). Hidden defs. -->
-  <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
-    <filter id="glassRefract" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
-      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="13" result="turb"/>
-      <feDisplacementMap in="SourceGraphic" in2="turb" scale="14" xChannelSelector="R" yChannelSelector="G" result="disp"/>
-      <feGaussianBlur in="disp" stdDeviation="6"/>
-    </filter>
-  </svg>
   <header id="tabBar">
     <div id="tabBarInner">
       <!-- Phase 2 でタブ実装。スケルトン: ドラッグ領域の確保のみ -->
@@ -2050,7 +2026,7 @@
         <button class="icon-btn icon-btn--ghost" type="button" aria-label="キーボードショートカット">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M8 15h8"/></svg>
         </button>
-        <div class="kb-hint-pop hint-glass">
+        <div class="kb-hint-pop pop-solid">
           <div class="kb-hint-head">ショートカット</div>
           <div class="kb-hint-grid">
             <kbd>/</kbd><span>検索</span>
@@ -2105,7 +2081,7 @@
   </div><!-- /appBody -->
 
   <!-- Back-to-top for the content area (the post grid scrolls with the window) -->
-  <button id="contentTop" class="icon-btn glass-relief" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
+  <button id="contentTop" class="icon-btn glass-chrome" type="button" aria-label="最上部へ戻る" style="position:fixed; right:24px; bottom:24px; width:36px; height:36px; display:none; z-index:40;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg></button>
 
   <!-- Transient toast (folder add/remove feedback, etc.) — top-level so any mode can use it -->
   <div id="ivToast" class="iv-toast"></div>
@@ -2202,13 +2178,10 @@
     @media (max-width: 1279px) {
       .inspector {
         position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0; bottom: 0; height: auto;
-        border-left: 1px solid var(--glass-border); box-shadow: var(--shadow-lg), var(--glass-edge);
+        border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
         z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
-        /* Floating over the grid -> glass. The inline (wide) column stays
-           solid: it sits BESIDE content, nothing to blur. High tint (88%)
-           because the panel is text-dense. */
-        background: var(--glass-bg-panel);
-        backdrop-filter: url(#glassRefract) saturate(150%); -webkit-backdrop-filter: url(#glassRefract) saturate(150%);
+        /* Text-dense panel → solid, same as the inline (wide) column (#136). */
+        background: var(--surface);
       }
       /* Image tab: the inspector is part of the detail view (Eagle-style), so
          it stays an inline column even below the breakpoint — a slide-over
@@ -2216,7 +2189,6 @@
       body.image-tab-active .inspector {
         position: static; height: 100%; box-shadow: none;
         background: var(--surface);
-        backdrop-filter: none; -webkit-backdrop-filter: none;
         border-left: 1px solid var(--border);
       }
     }
@@ -2255,12 +2227,11 @@
     .iv-fold-btn:hover { background: var(--hover); }
 
     /* transient toast (e.g. "added to folder") — shared, top-level, fixed.
-       Glass material stays (DESIGN: toast = floating surface); entrance = rise
-       + slight scale settle (motion-study canvas 2026-07-05). */
+       Scrim solid (#136: text over content = near-opaque dark, no blur);
+       entrance = rise + slight scale settle (motion-study canvas 2026-07-05). */
     .iv-toast {
       position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(14px) scale(.96);
-      background: rgba(20,22,26,0.68); color: #fff; padding: 9px 18px; border-radius: 20px;
-      backdrop-filter: blur(16px) saturate(130%); -webkit-backdrop-filter: blur(16px) saturate(130%);
+      background: var(--scrim-bg); color: var(--scrim-ink); padding: 9px 18px; border-radius: 20px;
       border: 1px solid rgba(255,255,255,0.12);
       font-size: 13px; z-index: 12000; opacity: 0; pointer-events: none;
       transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out);
@@ -2269,74 +2240,42 @@
     .iv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 
     /* ============================================================
-       === Glass material system — pick the tier by WHAT IS BEHIND ===
+       === Floating-surface materials (#136 readability policy) ===
        Utility layer (defined LAST so it wins source-order over component
-       rules like .fold-menu). Host must set its own `position` so the
-       ::before sheen anchors to it.
-         A .glass-lens  — rich content behind (over cards): read THROUGH it.
-                          High transparency + light blur.
-         D .hint-glass  — hover-hint family (tooltip / shortcut grid / builder
-                          help): text IS the content, so near-solid fill and a
-                          crisp edge with no sheen — the see-through lens read
-                          muddy/dark under text (user 2026-07-12).
-         B .glass-frost — sparse/low-contrast behind (pulldown over sidebar):
-                          mid opacity + strong blur MANUFACTURES the frost so
-                          it reads as glass without busy content behind it.
-         C .glass-relief— nothing behind (toggle on the flat Mica sidebar):
-                          a baked top-light gradient + the shared specular
-                          sell the glass with almost no help from the backdrop.
+       rules like .fold-menu). Three materials, chosen by CONTENT:
+         1 .pop-solid    — text-bearing floats on UI: themed solid. Menus/
+                           popovers/panels/settings restate the same recipe in
+                           their component rules; this class is the shared hook
+                           for hosts without one (hint family).
+         2 scrim solid   — text-bearing floats over CONTENT (toast, thumbnail
+                           badges): --scrim-bg/--scrim-ink inline in the
+                           component rules (shapes differ too much for a class).
+         3 .glass-chrome — the ONLY glass. Icon-only chrome floating over
+                           content (hover card buttons, back-to-top). Dark veil
+                           + white ink = contrast guaranteed over any image,
+                           so it is theme-INDEPENDENT. Never carries text.
        ============================================================ */
-    /* All material values come from --glass-* tokens (design-tokens.css), which
-       are defined in BOTH themes — so light & dark can never drift apart. No
-       hardcoded rgba here. */
-    .glass-lens, .glass-frost, .glass-relief { isolation: isolate; }
-    .glass-lens::before, .glass-frost::before, .glass-relief::before {
-      content: ''; position: absolute; inset: 0; border-radius: inherit;
-      pointer-events: none; z-index: -1;
-      background: var(--glass-sheen);
+    .pop-solid {
+      background: var(--surface);
+      border: 1px solid var(--float-border);
+      box-shadow: var(--shadow-pop);
     }
-    .glass-lens {
-      background: color-mix(in srgb, var(--surface) 14%, transparent);
-      backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
-      -webkit-backdrop-filter: blur(8px) saturate(185%) brightness(1.05);
-      border: 1px solid var(--glass-rim);
-      box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop);
+    .glass-chrome {
+      background: var(--chrome-glass-bg); color: #fff;
+      backdrop-filter: var(--chrome-glass-blur);
+      -webkit-backdrop-filter: var(--chrome-glass-blur);
+      border: 1px solid var(--chrome-glass-rim);
+      box-shadow: var(--shadow-md);
     }
-    .glass-frost {
-      background: color-mix(in srgb, var(--surface) 55%, transparent);
-      backdrop-filter: blur(18px) saturate(165%) brightness(1.04);
-      -webkit-backdrop-filter: blur(18px) saturate(165%) brightness(1.04);
-      border: 1px solid var(--glass-rim);
-      box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop);
-    }
-    .glass-relief {
-      /* baked light gradient = the refraction a backdrop would give, painted in
-         so the glass works on a flat surface (no backdrop needed) */
-      background: var(--glass-relief-bg);
-      backdrop-filter: blur(6px) saturate(150%);
-      -webkit-backdrop-filter: blur(6px) saturate(150%);
-      border: 1px solid var(--glass-rim);
-      box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop-sm);
-    }
-    .hint-glass {
-      /* near-solid: enough backdrop bleed to feel material, never enough to
-         muddy the text on top (no ::before sheen for the same reason) */
-      background: color-mix(in srgb, var(--surface) 92%, transparent);
-      backdrop-filter: blur(16px) saturate(140%);
-      -webkit-backdrop-filter: blur(16px) saturate(140%);
-      border: 1px solid var(--glass-rim);
-      box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop-sm);
-    }
-    /* the two larger hint floats sit further off the page → fuller drop shadow */
-    .kb-hint-pop.hint-glass, .qb-help-pop.hint-glass { box-shadow: inset 0 1px 0.5px var(--glass-hi), var(--glass-drop); }
+    .glass-chrome:hover { background: rgba(20,22,26,0.6); color: #fff; }
 
-    /* The single shared hover-hint surface (.ui-tip + .glass-lens, singleton div
+    /* The single shared hover-hint surface (.ui-tip + .pop-solid, singleton div
        owned by islands/tooltip/TooltipHost.tsx, portaled onto document.body; the
        store + tipProps() live in islands/_shared/tip.ts). EVERY hover hint drives
        it — React tipProps() and the [data-tip] delegation — so tooltips
        can't drift apart. Replaces native `title` on custom controls (the OS
        tooltip is ~1s delayed and OS-styled = チープ). Shows immediately on
-       hover/focus with a fast fade+rise; hint-glass supplies the material.
+       hover/focus with a fast fade+rise; pop-solid supplies the material.
        Topmost surface (above every fold-menu/popover at ≤13500). */
     .ui-tip {
       position: fixed; z-index: 14000; pointer-events: none;
@@ -2350,27 +2289,22 @@
     .ui-tip.show { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
     @media (prefers-reduced-motion: reduce) { .ui-tip { transition: none; translate: 0 0; } }
     /* Rich variant: a multi-line explanatory hint (clip row etc.) — wraps, wider,
-       left-aligned, roomier corners/padding. Material = the same .hint-glass as
-       the single-line tip (2026-07-12: the whole hover-hint family moved off the
-       translucent lens onto the near-solid hint-glass; no per-host fill bumps). */
+       left-aligned, roomier corners/padding. Material = the same .pop-solid as
+       the single-line tip (#136: the whole hover-hint family is solid now;
+       no per-host fill bumps). */
     .ui-tip--rich {
       white-space: normal; max-width: 260px; text-align: left;
       padding: 9px 12px; border-radius: 8px;
       line-height: 1.6;
     }
 
-    /* a11y escape hatch: solid surfaces when the OS asks for less transparency */
+    /* a11y escape hatch: text faces are already solid (#136), so only the two
+       remaining backdrop-filter users need a fallback here. */
     @media (prefers-reduced-transparency: reduce) {
-      .fold-menu, .qf-popover { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .glass-lens, .glass-frost, .glass-relief, .hint-glass { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .glass-lens::before, .glass-frost::before, .glass-relief::before { background: none; }
-      .sb-active-chip { background: var(--surface-3); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: var(--border); }
-      .content-activebar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .inspector { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .glass-chrome, .clip-btn, .info-btn, .tag-btn, #sidebar #sbTop { background: rgba(20,22,26,0.86); }
+      .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn,
+      .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .iv-toast { background: rgba(0,0,0,0.86); backdrop-filter: none; -webkit-backdrop-filter: none; }
-      .clip-btn, .info-btn, .tag-btn { background: rgba(0,0,0,0.6); }
-      .post-card:hover .clip-btn, .post-card:hover .info-btn, .post-card:hover .tag-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
   </style>
 

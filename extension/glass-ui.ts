@@ -1,22 +1,16 @@
 // Shared visual vocabulary for the extension's on-page UI (capture banner in
-// content.ts + drag drop-zone in drag.ts): the app's glass surface language
-// (design-tokens.css --glass-* / --sky-* / --green-500 / --red-500 /
+// content.ts + drag drop-zone in drag.ts): the app's floating-surface
+// materials (design-tokens.css --scrim-* / --sky-* / --green-500 / --red-500 /
 // --amber-500) plus its motion vocabulary (--ease-out / --dur-hover /
 // --dur-pop) rebuilt for host pages, where the app's CSS custom properties
-// don't exist. Both the LIGHT and DARK theme values are ported as literals;
-// which palette is live follows the extension's theme pref (chrome.storage
-// .local 'theme': 'light' | 'dark', anything else = follow the OS via
-// prefers-color-scheme — same auto/light/dark model as the app's config
-// theme, which this origin cannot read).
+// don't exist.
 //
-// Color tokens are exposed as GETTERS so consumers always read the palette
-// that is current at call time: the storage read below is async, and the
-// pref may also change mid-session (options page / OS switch). Consumers
-// build their UI lazily (banner on activation, drop zone on dragstart) and
-// re-apply colors on every state transition; `ready` covers the build-time
-// gap (don't paint before the initial pref read lands) and onThemeChange
-// covers a flip while UI is already showing (the banner's 'select' state can
-// sit on screen indefinitely).
+// The card is the app's SCRIM SOLID material (#136): text over arbitrary host
+// content rides a near-opaque dark veil with white ink, no backdrop blur.
+// Contrast is guaranteed by the scrim itself, so the palette is
+// theme-INDEPENDENT — one set of literals, no theme pref plumbing (the old
+// light/dark card followed the extension theme pref; #136 removed the
+// translucent card that made that necessary).
 //
 // Everything here is CSP/Trusted-Types safe: styles go through element.style
 // (an injected <style> would be subject to the host page's style-src) and
@@ -27,101 +21,12 @@
 // content_scripts and background.js's executeScript) — same isolated world,
 // runs first, so consumers can read window.corpusGlassUi synchronously.
 // On sites where the manifest already injected this file, every activation
-// re-runs it via executeScript: keep the live instance (its pref read landed
-// long ago and its storage listener keeps it current) instead of resetting
-// to the OS palette and re-racing the async read.
+// re-runs it via executeScript: the guard keeps the live instance.
 (() => {
   if (window.corpusGlassUi) return;
   const SVGNS = 'http://www.w3.org/2000/svg';
-
-  // App DARK theme literals (design-tokens.css [data-theme="dark"] block).
-  // ACCENT_TEXT is --accent-text (sky-300): accent as FOREGROUND on the dark
-  // glass — the fill-tuned sky steps are too dark to read as text/icon color.
-  const DARK = {
-    ACCENT: '#28a8db', // sky-500 — OUTLINE/GLOW step (highlight frame, hover ring); nothing rides on it
-    ACCENT_FILL: '#1397cc', // sky-600 — FILL step, white icon rides on it (app --accent: sky-500 failed the white-on-fill contrast tier)
-    ACCENT_SOFT: 'rgba(40,168,219,0.18)', // badge tint behind an accent-colored icon
-    ACCENT_TEXT: '#8ad3ec', // sky-300
-    OK_GREEN: '#30a46c',
-    FAIL_RED: '#e5484d',
-    WARN_AMBER: '#e8a13a', // saved, but post metadata was unavailable
-    TEXT: 'rgba(255,255,255,0.92)', // card label/text ink
-    BADGE_NEUTRAL: 'rgba(255,255,255,0.10)', // badge tint with no state color (busy)
-    RING: 'rgba(255,255,255,0.30)', // dashed drop-target ring, resting
-    RING_ACCENT: 'rgba(94,197,236,0.85)', // dashed ring while dragging over (sky-300 tier)
-    SPINNER_TRACK: 'rgba(255,255,255,0.22)',
-    CARD_BG: 'rgba(22,23,26,0.78)', // app dark --glass-bg (= --surface #16171a at 78%)
-    CARD_BLUR: 'blur(24px) saturate(140%)', // app dark --glass-filter
-    CARD_BORDER: 'rgba(255,255,255,0.16)', // app dark --glass-rim
-    // App dark --glass-drop + the toast's bright top-edge inset (the main "glass" cue on dark).
-    CARD_SHADOW: '0 12px 36px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)',
-  };
-
-  // App LIGHT theme literals (design-tokens.css :root block). Status fills
-  // (green/red/amber) and the sky outline/fill steps hold their contrast on
-  // the white glass, so only the surface + foreground tokens diverge.
-  const LIGHT = {
-    ACCENT: DARK.ACCENT,
-    ACCENT_FILL: DARK.ACCENT_FILL,
-    ACCENT_SOFT: 'rgba(40,168,219,0.15)',
-    ACCENT_TEXT: '#0a6e96', // app light --accent-text (sky-800)
-    OK_GREEN: DARK.OK_GREEN,
-    FAIL_RED: DARK.FAIL_RED,
-    WARN_AMBER: DARK.WARN_AMBER,
-    TEXT: 'rgba(20,24,31,0.92)', // app light --text (gray-800) tier
-    BADGE_NEUTRAL: 'rgba(0,0,0,0.06)',
-    RING: 'rgba(0,0,0,0.22)',
-    RING_ACCENT: 'rgba(19,151,204,0.85)', // sky-600 (the sky-300 tier washes out on white)
-    SPINNER_TRACK: 'rgba(0,0,0,0.15)',
-    CARD_BG: 'rgba(255,255,255,0.72)', // app light --glass-bg (= --surface #ffffff at 72%)
-    CARD_BLUR: 'blur(24px) saturate(180%)', // app light --glass-filter
-    CARD_BORDER: 'rgba(0,0,0,0.10)', // app light --glass-rim
-    CARD_SHADOW: '0 12px 32px -8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.6)', // --glass-drop + --glass-edge
-  };
-
-  // Theme resolution. Before the async storage read lands, matchMedia alone
-  // decides — for the default 'auto' pref that is already the final answer.
-  // Consumers that build UI right at injection time (the capture banner)
-  // await `ready` so a forced pref never loses the race to the read.
-  const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
-  let pref: 'auto' | 'light' | 'dark' = 'auto';
-  let palette = DARK;
-  const themeListeners = new Set<() => void>();
-  function recompute() {
-    // No matchMedia (shouldn't happen in Chrome) → keep dark, the historical default.
-    const dark = pref === 'dark' || (pref === 'auto' && (!mq || mq.matches));
-    const next = dark ? DARK : LIGHT;
-    if (next === palette) return;
-    palette = next;
-    for (const cb of themeListeners) cb();
-  }
-  function cleanPref(v: unknown): 'auto' | 'light' | 'dark' {
-    return v === 'light' || v === 'dark' ? v : 'auto';
-  }
-  recompute();
-  if (mq) {
-    mq.addEventListener('change', recompute);
-  }
-  let readyResolve: () => void = () => {};
-  const ready = new Promise<void>((resolve) => {
-    readyResolve = resolve;
-  });
-  try {
-    chrome.storage.local.get('theme', (r) => {
-      pref = cleanPref(r && r.theme);
-      recompute();
-      readyResolve();
-    });
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.theme) {
-        pref = cleanPref(changes.theme.newValue);
-        recompute();
-      }
-    });
-  } catch {
-    /* storage unavailable — stay on the OS-driven palette */
-    readyResolve();
-  }
+  const ACCENT_TEXT = '#8ad3ec'; // sky-300
+  const SPINNER_TRACK = 'rgba(255,255,255,0.22)';
 
   function makeIcon(paths: readonly string[], size = 22): SVGSVGElement {
     const svg = document.createElementNS(SVGNS, 'svg');
@@ -144,65 +49,30 @@
 
   function makeSpinner(size = 22): HTMLDivElement {
     const sp = document.createElement('div');
-    sp.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2.5px solid ${palette.SPINNER_TRACK};border-top-color:${palette.ACCENT_TEXT};box-sizing:border-box;pointer-events:none;`;
+    sp.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;border:2.5px solid ${SPINNER_TRACK};border-top-color:${ACCENT_TEXT};box-sizing:border-box;pointer-events:none;`;
     // 0.9s linear — the app's spinner cadence (index.html ms-spin).
     sp.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: 900, iterations: Number.POSITIVE_INFINITY });
     return sp;
   }
 
   window.corpusGlassUi = {
-    ready,
-    onThemeChange(cb: () => void) {
-      themeListeners.add(cb);
-      return () => {
-        themeListeners.delete(cb);
-      };
-    },
-    get ACCENT() {
-      return palette.ACCENT;
-    },
-    get ACCENT_FILL() {
-      return palette.ACCENT_FILL;
-    },
-    get ACCENT_SOFT() {
-      return palette.ACCENT_SOFT;
-    },
-    get ACCENT_TEXT() {
-      return palette.ACCENT_TEXT;
-    },
-    get OK_GREEN() {
-      return palette.OK_GREEN;
-    },
-    get FAIL_RED() {
-      return palette.FAIL_RED;
-    },
-    get WARN_AMBER() {
-      return palette.WARN_AMBER;
-    },
-    get TEXT() {
-      return palette.TEXT;
-    },
-    get BADGE_NEUTRAL() {
-      return palette.BADGE_NEUTRAL;
-    },
-    get RING() {
-      return palette.RING;
-    },
-    get RING_ACCENT() {
-      return palette.RING_ACCENT;
-    },
-    get CARD_BG() {
-      return palette.CARD_BG;
-    },
-    get CARD_BLUR() {
-      return palette.CARD_BLUR;
-    },
-    get CARD_BORDER() {
-      return palette.CARD_BORDER;
-    },
-    get CARD_SHADOW() {
-      return palette.CARD_SHADOW;
-    },
+    // Accent steps (app sky ramp). ACCENT_TEXT is --accent-text's dark-theme
+    // value (sky-300): accent as FOREGROUND on the dark scrim — the fill-tuned
+    // sky steps are too dark to read as text/icon color there.
+    ACCENT: '#28a8db', // sky-500 — OUTLINE/GLOW step (highlight frame, hover ring); nothing rides on it
+    ACCENT_FILL: '#1397cc', // sky-600 — FILL step, white icon rides on it (app --accent: sky-500 failed the white-on-fill contrast tier)
+    ACCENT_SOFT: 'rgba(40,168,219,0.18)', // badge tint behind an accent-colored icon
+    ACCENT_TEXT,
+    OK_GREEN: '#30a46c',
+    FAIL_RED: '#e5484d',
+    WARN_AMBER: '#e8a13a', // saved, but post metadata was unavailable
+    TEXT: 'rgba(255,255,255,0.92)', // card label/text ink (white on the scrim)
+    BADGE_NEUTRAL: 'rgba(255,255,255,0.10)', // badge tint with no state color (busy)
+    RING: 'rgba(255,255,255,0.30)', // dashed drop-target ring, resting
+    RING_ACCENT: 'rgba(94,197,236,0.85)', // dashed ring while dragging over (sky-300 tier)
+    CARD_BG: 'rgba(20, 22, 26, 0.86)', // app --scrim-bg (scrim solid, no blur)
+    CARD_BORDER: 'rgba(255,255,255,0.16)',
+    CARD_SHADOW: '0 12px 36px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)',
     // App --font-sans: system stack with Japanese fallbacks (banner strings are
     // Japanese-primary; the host page's own font must not leak in).
     FONT_SANS: "-apple-system,'Segoe UI','Hiragino Kaku Gothic ProN','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif",

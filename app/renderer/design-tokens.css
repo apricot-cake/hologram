@@ -346,61 +346,40 @@
   --dur-entrance: 0.36s;
   --stagger: 34ms;
 
-  /* ---- Glass (frosted) — TRANSIENT floating surfaces only (menus/flyouts/
-     activebar/slide-over/toast). Persistent surfaces (sidebar, cards, inline
-     inspector) stay solid: glass needs rich content BEHIND it to read as
-     glass, and a flat --bg behind the sidebar gives nothing to blur.
-     Tint stays >=70% for 12px text legibility over busy thumbnails
-     (Fluent acrylic: 70-85% tint on menus). srgb mix per the red-mix rule. */
-  /* Light reads less "see-through" than dark at equal alpha (dark text on a light
-     veil over light cards = low local contrast), so light gets a touch more
-     transparency to compensate (72 vs dark's 78 — user request). Floor kept ~70% so
-     dark body text stays legible over busy thumbnails. Per-theme: dark value is in
-     the dark glass block below (this token is NOT shared anymore). */
-  --glass-bg:      color-mix(in srgb, var(--surface) 72%, transparent);
-  --glass-bg-bar:  color-mix(in srgb, var(--bg) 70%, transparent);
-  --glass-bg-panel:color-mix(in srgb, var(--surface) 88%, transparent);
-  /* Light pushes saturate harder (180 vs dark's 140): a light veil over light
-     content has little to "refract", so popping the blurred backdrop colours is
-     what sells the glass in light. Per-theme (dark override below). */
-  --glass-filter:  blur(24px) saturate(180%);
-  --glass-edge:    inset 0 1px 0 rgba(255,255,255,0.6);
+  /* ---- Floating-surface materials (#136 readability policy) ----
+     Every floating surface is one of THREE materials:
+       1. pop-solid    — themed solid (--surface + --float-border + --shadow-*):
+                         ALL text-bearing floats on UI (menus, popovers, panels,
+                         hints, settings). No backdrop-filter, ever.
+       2. scrim solid  — --scrim-bg/--scrim-ink below: text-bearing floats over
+                         CONTENT (toast, thumbnail badges, extension cards).
+                         Near-opaque dark + white ink, no blur.
+       3. glass-chrome — --chrome-glass-* below: the ONLY glass. Icon-only
+                         chrome floating over content (hover save/info/tag
+                         buttons, back-to-top). Never carries text.
+     Materials 2/3 sit over arbitrary images, so they are theme-INDEPENDENT
+     (defined once here; exempt from test-token-parity). */
 
-  /* Glass MATERIAL tokens for the 3-tier .glass-* classes (lens/frost/relief)
-     + toggle thumb + active chips. **Defined in BOTH themes on purpose** so a
-     glass surface can never be styled for one theme only (the recurring bug:
-     white rims/sheen are invisible on light, so light needs a subtle DARK rim).
-     Any new glass value goes here, not inline — that forces both themes. */
-  --glass-rim:       rgba(0,0,0,0.10);
-  /* Outer hairline for glass PANELS/POPS (flyouts, popovers, settings, inspector).
-     Light can't show dark's bright top-edge rim (white-on-near-white is invisible),
-     so the light "ふち" is a defined cool hairline a touch darker than --border-strong
-     (gray-200). Dark = border-strong (#36383d) so dark's look is unchanged. */
-  --glass-border:    color-mix(in srgb, var(--gray-500) 42%, transparent);
-  --glass-hi:        rgba(255,255,255,0.85);
-  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.22) 26%, transparent 52%);
-  --glass-drop:      0 12px 32px -8px rgba(0,0,0,0.18);
-  --glass-drop-sm:   0 2px 8px -2px rgba(0,0,0,0.16);
-  --glass-relief-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 82%, #fff) 0%, var(--surface) 100%);
+  /* Outer hairline for floating panels/pops AND the window-like sidebar rim.
+     Light can't show dark's bright top-edge rim (white-on-near-white is
+     invisible), so the light "ふち" is a defined cool hairline a touch darker
+     than --border-strong (gray-200). Dark = border-strong (see dark block). */
+  --float-border:    color-mix(in srgb, var(--gray-500) 42%, transparent);
+
+  /* Scrim solid (material 2). .86 = the proven prefers-reduced-transparency
+     fallback opacity; base color matches the old toast (20,22,26). */
+  --scrim-bg:        rgba(20, 22, 26, 0.86);
+  --scrim-ink:       #ffffff;
+
+  /* Glass chrome (material 3). Promoted from the card hover buttons: dark veil
+     + white ink guarantees icon contrast over any thumbnail. */
+  --chrome-glass-bg:   rgba(20, 22, 26, 0.42);
+  --chrome-glass-blur: blur(12px) saturate(150%);
+  --chrome-glass-rim:  rgba(255, 255, 255, 0.14);
 }
 
 [data-theme="dark"] {
-  /* Dark glass: the white top-edge highlight is the main "glass" cue. */
-  --glass-edge: inset 0 1px 0 rgba(255,255,255,0.07);
-  /* Dark keeps the heavier 78% tint (light is lighter at 72%, see :root note):
-     light text survives a thinner dark veil, so dark needs no extra opacity. */
-  --glass-bg:   color-mix(in srgb, var(--surface) 78%, transparent);
-  /* Dark keeps saturate 140 (the dark veil already reads as glass via its bright
-     edge; light needs the extra 180 pop — see :root note). */
-  --glass-filter: blur(24px) saturate(140%);
-  /* Dark counterparts of the material tokens above (white edges read on dark). */
-  --glass-rim:       rgba(255,255,255,0.16);
-  --glass-border:    var(--border-strong);
-  --glass-hi:        rgba(255,255,255,0.55);
-  --glass-sheen:     linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 24%, transparent 48%);
-  --glass-drop:      0 12px 36px -8px rgba(0,0,0,0.5);
-  --glass-drop-sm:   0 2px 6px -2px rgba(0,0,0,0.35);
-  --glass-relief-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface) 86%, #fff) 0%, color-mix(in srgb, var(--surface) 90%, transparent) 100%);
+  --float-border: var(--border-strong);
 }
 
 [data-theme="dark"] {

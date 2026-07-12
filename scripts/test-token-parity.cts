@@ -2,7 +2,7 @@
 // Theme-parity guard for app/renderer/design-tokens.css.
 //
 // The token system is two parallel blocks: :root (light) + [data-theme="dark"].
-// Per-theme SEMANTIC tokens (colors, shadows, glass material) MUST be defined in
+// Per-theme SEMANTIC tokens (colors, shadows, panel hairline) MUST be defined in
 // BOTH — if you add one to :root and forget dark, dark silently falls back to the
 // light value (a "片テーマだけ変更" bug, e.g. white glass rims that vanish on light).
 // This test fails when the two blocks drift, so the omission can't ship unnoticed.
@@ -46,13 +46,15 @@ const SHARED_EXACT = new Set([
   '--muted',
   '--muted2',
   '--border-soft',
-  // Glass tint that themes itself: --glass-bg-bar/-panel are color-mix(var(--bg)/
-  // var(--surface) …) so they flip via the per-theme base. (--glass-bg AND
-  // --glass-filter are now per-theme — light is more transparent / more saturated
-  // than dark — so both are defined in BOTH blocks and are NOT shared.
-  // --glass-edge/rim/hi/sheen/drop*/relief-bg also differ per theme.)
-  '--glass-bg-bar',
-  '--glass-bg-panel',
+  // #136 materials over CONTENT (scrim solid + glass chrome): what's behind
+  // them is arbitrary imagery, not the themed UI, so they are deliberately
+  // theme-INDEPENDENT — defined once in :root. (--float-border stays
+  // per-theme and is checked normally.)
+  '--scrim-bg',
+  '--scrim-ink',
+  '--chrome-glass-bg',
+  '--chrome-glass-blur',
+  '--chrome-glass-rim',
   // Motion timing, theme-agnostic like --dur-*/--ease-* (just no --dur- prefix):
   // the card-entrance stagger step (34ms) is the same in both themes.
   '--stagger',

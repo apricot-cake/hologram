@@ -7,7 +7,7 @@
 //      in with just an attribute, replacing native `title` (OS-delayed, OS-styled).
 // data-tip-rich (or the rich arg) switches to the multi-line variant (wraps, wider)
 // for explanatory hints; the default is a single-line label. Styling lives in
-// index.html (.ui-tip / .ui-tip--rich + the hint-glass material); this module only owns
+// index.html (.ui-tip / .ui-tip--rich + the pop-solid material); this module only owns
 // the show/hide store — rendering, placement, and the [data-tip] delegation live in
 // tooltip/TooltipHost.tsx (App.tsx mounts it onto document.body).
 

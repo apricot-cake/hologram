@@ -81,13 +81,14 @@ export function TooltipHost() {
     d.style.top = y + 'px';
   }, [model, shown]);
 
-  // hint-glass (near-solid), NOT glass-lens: text is the tooltip's whole
-  // content, and the see-through lens let the backdrop bleed through until the
-  // chip read muddy/dark (user 2026-07-12 — supersedes the 2026-07-04 lens
-  // pick). The material lives in index.html's glass utility layer, shared by
-  // the whole hover-hint family (.kb-hint-pop / .qb-help-pop).
+  // pop-solid: text is the tooltip's whole content, so it gets the solid
+  // text-float material (#136 — any translucency muddied the text: the 2026-07-12
+  // near-solid hint-glass step superseded the 2026-07-04 lens pick, then #136
+  // made the whole family fully solid). The material lives in index.html's
+  // floating-surface utility layer, shared by the whole hover-hint family
+  // (.kb-hint-pop / .qb-help-pop).
   return createPortal(
-    <div ref={ref} className={`ui-tip hint-glass${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`} role="tooltip">
+    <div ref={ref} className={`ui-tip pop-solid${model?.rich ? ' ui-tip--rich' : ''}${shown ? ' show' : ''}`} role="tooltip">
       {model?.text}
     </div>,
     document.body,

@@ -57,15 +57,14 @@
     });
   }
 
-  // Visual language: the shared glass vocabulary (glass-ui.js, declared
+  // Visual language: the shared scrim-solid vocabulary (glass-ui.js, declared
   // before this file in the same manifest entry — same isolated world, runs
-  // first, synchronous global). Light/dark follows the extension theme pref
-  // via glass-ui's live getters; the zone element persists across saves, so
-  // every themed surface property is (re)applied in setState — which runs
-  // before each show — rather than baked into creation-time cssText. State
-  // is carried by the badge fill + a tinted card border instead of repainting
-  // the whole card. See glass-ui.ts for the CSP/Trusted Types constraints
-  // that shape how everything is styled and built.
+  // first, synchronous global). The palette is theme-independent (#136:
+  // near-opaque dark scrim + white ink). The zone element persists across
+  // saves; setState re-applies the surface properties before each show so a
+  // state-tinted border/shadow from the previous save is never baked in.
+  // See glass-ui.ts for the CSP/Trusted Types constraints that shape how
+  // everything is styled and built.
   const G = window.corpusGlassUi;
 
   function ensureOverlay(): DropZone {
@@ -133,8 +132,6 @@
     z.badge.replaceChildren();
     z.el.style.transform = '';
     z.el.style.background = G.CARD_BG;
-    z.el.style.setProperty('backdrop-filter', G.CARD_BLUR);
-    z.el.style.setProperty('-webkit-backdrop-filter', G.CARD_BLUR);
     z.el.style.color = G.TEXT;
     z.el.style.borderColor = G.CARD_BORDER;
     z.el.style.boxShadow = G.CARD_SHADOW;

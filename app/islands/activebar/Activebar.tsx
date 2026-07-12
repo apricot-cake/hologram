@@ -61,7 +61,7 @@ function NavBtn({ dir, disabled, onClick }: { dir: 'back' | 'fwd'; disabled: boo
   );
 }
 
-// ⓘ help hover popover — glass-lens material (shared hover-hint), positioned under the
+// ⓘ help hover popover — pop-solid material (shared hover-hint), positioned under the
 // button and clamped to the viewport's right edge (1:1 port of viewer's showQbHelp). Only
 // rendered while open, so `show` is always present (its CSS gives display:block + pop-in).
 function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
@@ -79,7 +79,7 @@ function HelpPop({ help }: { help: { title: string; rows: string[] } }) {
     // reruns per open. No reactive deps (ref/document/window aren't dependencies).
   }, []);
   return (
-    <div ref={ref} className="qb-help-pop hint-glass show">
+    <div ref={ref} className="qb-help-pop pop-solid show">
       <div className="qh-title">{help.title}</div>
       {help.rows.map((row) => (
         <div className="qh-row" key={row}>
