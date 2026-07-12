@@ -15,6 +15,12 @@ interface CorpusI18nApi {
 // tokens are live getters: they follow the extension theme pref (light/dark/
 // follow-OS), so read them at style-application time, not into constants.
 interface CorpusGlassUiApi {
+  // Resolves once the initial theme-pref read has landed — await before the
+  // first paint (the read is async; UI built earlier races it).
+  ready: Promise<void>;
+  // Fires when the live palette flips (pref change / OS switch). Returns the
+  // unsubscribe function.
+  onThemeChange: (cb: () => void) => () => void;
   ACCENT: string;
   ACCENT_FILL: string;
   ACCENT_SOFT: string;

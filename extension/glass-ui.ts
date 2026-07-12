@@ -13,8 +13,10 @@
 // that is current at call time: the storage read below is async, and the
 // pref may also change mid-session (options page / OS switch). Consumers
 // build their UI lazily (banner on activation, drop zone on dragstart) and
-// re-apply colors on every state transition, so getter reads are enough —
-// no repaint callback is needed.
+// re-apply colors on every state transition; `ready` covers the build-time
+// gap (don't paint before the initial pref read lands) and onThemeChange
+// covers a flip while UI is already showing (the banner's 'select' state can
+// sit on screen indefinitely).
 //
 // Everything here is CSP/Trusted-Types safe: styles go through element.style
 // (an injected <style> would be subject to the host page's style-src) and
@@ -24,7 +26,12 @@
 // Loaded BEFORE content.js / drag.js in both injection lists (manifest
 // content_scripts and background.js's executeScript) — same isolated world,
 // runs first, so consumers can read window.corpusGlassUi synchronously.
+// On sites where the manifest already injected this file, every activation
+// re-runs it via executeScript: keep the live instance (its pref read landed
+// long ago and its storage listener keeps it current) instead of resetting
+// to the OS palette and re-racing the async read.
 (() => {
+  if (window.corpusGlassUi) return;
   const SVGNS = 'http://www.w3.org/2000/svg';
 
   // App DARK theme literals (design-tokens.css [data-theme="dark"] block).
@@ -73,15 +80,20 @@
   };
 
   // Theme resolution. Before the async storage read lands, matchMedia alone
-  // decides — for the default 'auto' pref that is already the final answer,
-  // and no consumer builds UI that early (banner/zone are user-action-lazy).
+  // decides — for the default 'auto' pref that is already the final answer.
+  // Consumers that build UI right at injection time (the capture banner)
+  // await `ready` so a forced pref never loses the race to the read.
   const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
   let pref: 'auto' | 'light' | 'dark' = 'auto';
   let palette = DARK;
+  const themeListeners = new Set<() => void>();
   function recompute() {
     // No matchMedia (shouldn't happen in Chrome) → keep dark, the historical default.
     const dark = pref === 'dark' || (pref === 'auto' && (!mq || mq.matches));
-    palette = dark ? DARK : LIGHT;
+    const next = dark ? DARK : LIGHT;
+    if (next === palette) return;
+    palette = next;
+    for (const cb of themeListeners) cb();
   }
   function cleanPref(v: unknown): 'auto' | 'light' | 'dark' {
     return v === 'light' || v === 'dark' ? v : 'auto';
@@ -90,10 +102,15 @@
   if (mq) {
     mq.addEventListener('change', recompute);
   }
+  let readyResolve: () => void = () => {};
+  const ready = new Promise<void>((resolve) => {
+    readyResolve = resolve;
+  });
   try {
     chrome.storage.local.get('theme', (r) => {
       pref = cleanPref(r && r.theme);
       recompute();
+      readyResolve();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.theme) {
@@ -103,6 +120,7 @@
     });
   } catch {
     /* storage unavailable — stay on the OS-driven palette */
+    readyResolve();
   }
 
   function makeIcon(paths: readonly string[], size = 22): SVGSVGElement {
@@ -133,6 +151,13 @@
   }
 
   window.corpusGlassUi = {
+    ready,
+    onThemeChange(cb: () => void) {
+      themeListeners.add(cb);
+      return () => {
+        themeListeners.delete(cb);
+      };
+    },
     get ACCENT() {
       return palette.ACCENT;
     },
