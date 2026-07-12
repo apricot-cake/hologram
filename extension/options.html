@@ -92,17 +92,17 @@
     color: var(--text-muted);
     font-size: 12px;
   }
+  /* Support escape hatch, deliberately quiet: normal users never need diag,
+     so it reads like a footnote until you look for it. */
   .foot {
-    margin: 16px 0 0;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
+    margin: 20px 0 0;
+    font-size: 12px;
   }
   .foot a {
-    color: var(--accent-text);
-    font-weight: 600;
+    color: var(--text-muted);
     text-decoration: none;
   }
-  .foot a:hover { text-decoration: underline; }
+  .foot a:hover { color: var(--text); text-decoration: underline; }
   .foot a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-radius: 4px; }
 </style>
 <body>
