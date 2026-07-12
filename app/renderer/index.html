@@ -1277,10 +1277,7 @@
     #imageTabView { display: none; }
     body.image-tab-active #postActiveBar, body.image-tab-active #posterActiveBar,
     body.image-tab-active #sidebar, body.image-tab-active #mode-post { display: none; }
-    /* Flat fill (no grid texture): unlike the library, the artwork itself is the
-       subject here, so the paper-grid backdrop competes with it instead of framing
-       it (photo viewers like Windows Photo / Lightroom use a plain canvas). */
-    body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; background: var(--bg); }
+    body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; }
     .itv-stage { flex: 1; position: relative; overflow: hidden; display: flex; min-width: 0; }
     .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
     img.itv-media { cursor: grab; }
