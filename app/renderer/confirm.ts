@@ -1,15 +1,15 @@
-// Confirm-overlay bridge — the imperative→declarative bridge for the shared confirm modal
-// (#confirmOverlay). viewer.ts calls open(config) with a message + optional skip checkbox
+// Confirm bridge — the imperative→declarative bridge for the shared confirm modal
+// (a shadcn AlertDialog). Callers pass open(config) a message + optional skip checkbox
 // or keyword gate + onOk/onCancel callbacks; the React island (ConfirmHost) renders the
-// modal, owns the keyword/skip local state, toggles #confirmOverlay's .show class (the
-// CSS + setupModalChrome key on it), and calls the callbacks. The destructive LOGIC stays
-// in viewer's onOk closures — this only moves WHEN it runs (callback vs the old flag-
-// branching #confirmOk handler). Callbacks aren't serializable, so this is a dedicated
-// bridge (like menu.ts / kind-menu.ts), NOT corpusStore. A real ES module (named
-// exports), imported directly by its consumers (viewer.ts / Confirm.tsx).
+// dialog, owns the keyword/skip local state, and calls the callbacks. The destructive
+// LOGIC stays in the caller's onOk closures — this only moves WHEN it runs. Callbacks
+// aren't serializable, so this is a dedicated bridge (like menu.ts / kind-menu.ts), NOT
+// corpusStore. A real ES module (named exports), imported directly by its consumers
+// (post-grid-builder.ts / selection-builder.ts / Confirm.tsx). ModalChrome (App.tsx)
+// reads get()/subscribe() for the modal-open body class + titlebar tint.
 //
-// config: { message, okLabel, cancelLabel, skipLabel?, keywordPlaceholder?, keywordRequired?,
-//           onOk(result:{skip}), onCancel? }  — see viewer.ts's three open sites.
+// config: { message, description?, okLabel, cancelLabel, skipLabel?, keywordPlaceholder?,
+//           keywordRequired?, onOk(result:{skip}), onCancel? }
 let current: CorpusConfirmModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();

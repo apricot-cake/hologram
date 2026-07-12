@@ -1319,20 +1319,6 @@
 
     /* --- Original-media thumbnail strip (grid view) --- */
 
-    /* --- Delete confirm --- */
-    .confirm-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.4); z-index: 13000;   /* above the settings overlay (11000) */
-      justify-content: center; align-items: center;
-    }
-    .confirm-overlay.show { display: flex; }
-    .confirm-box {
-      background: var(--surface); border-radius: 12px;
-      padding: 24px; max-width: 360px; text-align: center;
-      border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-    }
-    .confirm-box p { margin-bottom: 16px; font-size: 14px; }
-    .confirm-box .confirm-actions { display: flex; gap: 8px; justify-content: center; }
     /* While a modal scrim is up, lock background scroll so the page scrollbar (which
        paints above the overlay) doesn't stay visible. JS toggles .modal-open. */
     html.modal-open, body.modal-open { overflow: hidden; }
@@ -2116,14 +2102,6 @@
        app/islands/folders) owns the content + [hidden] visibility; folders.ts's
        openManager()/closeManager() drive it. -->
   <div id="ivFolderModal" class="iv-detail-overlay" hidden></div>
-
-  <!-- Delete confirmation -->
-  <!-- Shared confirm modal — React-owned now: the confirm island (app/islands/confirm)
-       renders the .confirm-box (message + optional skip/keyword + Cancel/OK) into this
-       container from renderer/confirm.ts's open(config), and toggles this
-       element's .show class from model presence. The container stays viewer's so
-       setupModalChrome (modal-open body class) keeps observing #confirmOverlay. -->
-  <div class="confirm-overlay" id="confirmOverlay"></div>
 
   <!-- Image lightbox / gallery — React island (renderer/lightbox.ts + islands/lightbox)
        owns the overlay contents + show/multi classes; orchestrator.ts feeds it gallery items. -->

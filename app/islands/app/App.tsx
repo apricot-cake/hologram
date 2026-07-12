@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { ActivebarHost } from '../activebar/Activebar.tsx';
+import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
@@ -122,11 +123,14 @@ function ShellClasses() {
 // faithful move of the old setupModalChrome IIFE into a React effect. The inspector
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
+  // The confirm modal is a shadcn AlertDialog now (renders through a portal, no static
+  // overlay div to observe) — read its open state straight from the confirm bridge.
+  const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
   useEffect(() => {
-    const ids = ['confirmOverlay', 'ivFolderModal', 'lightbox'];
+    const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
-      const open = ids.some((id) => visible(document.getElementById(id)));
+      const open = confirmOpen || ids.some((id) => visible(document.getElementById(id)));
       document.documentElement.classList.toggle('modal-open', open);
       document.body.classList.toggle('modal-open', open);
       applyTitleBar(open);
@@ -141,7 +145,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, []);
+  }, [confirmOpen]);
   return null;
 }
 

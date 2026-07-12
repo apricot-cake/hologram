@@ -1,20 +1,23 @@
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import { TriangleAlertIcon } from 'lucide-react';
+import { useRef, useState, useSyncExternalStore } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogMedia, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { close, get, subscribe as subscribeConfirm } from '../../renderer/confirm.ts';
 
-// Shared confirm modal (#confirmOverlay) — React-owned. viewer.ts pushes a config via
-// confirm.ts's open({message, okLabel, cancelLabel, skipLabel?, keyword?, onOk,
-// onCancel}); this host renders the .confirm-box into #confirmOverlay (the container stays
-// viewer's — CSS + setupModalChrome key on #confirmOverlay.show, which this toggles from
-// model presence, like the lightbox owns #lightbox's classes). Local state (skip checkbox,
-// keyword value) lives here; OK is gated until the keyword matches. The destructive work
-// runs in viewer's onOk closure — this only decides when to call it. Same DOM (ids/classes)
-// as the old static HTML so styling is unchanged.
+// Shared confirm modal — shadcn AlertDialog. Callers push a config via confirm.ts's
+// open({message, description?, okLabel, cancelLabel, skipLabel?, keyword?, onOk,
+// onCancel}); this host renders it. Local state (skip checkbox, keyword value) lives
+// here; OK is gated until the keyword matches. The destructive work runs in the
+// caller's onOk closure — this only decides when to call it. Esc/Cancel cancel;
+// backdrop clicks don't dismiss (AlertDialog semantics — a stray click can't discard
+// the decision, unlike the old hand-rolled overlay).
 
 const subscribe = (cb: () => void) => subscribeConfirm(cb);
 const getSnapshot = () => get();
 
-function ConfirmBox({ model }: { model: CorpusConfirmModel }) {
+function ConfirmContent({ model }: { model: CorpusConfirmModel }) {
   const [skip, setSkip] = useState(false);
   const [kw, setKw] = useState('');
   const okDisabled = model.keywordRequired != null && kw.trim() !== model.keywordRequired;
@@ -23,58 +26,56 @@ function ConfirmBox({ model }: { model: CorpusConfirmModel }) {
     close();
     model.onOk({ skip });
   };
-  const doCancel = () => {
-    close();
-    model.onCancel?.();
-  };
   return (
-    <div className="confirm-box">
-      <p id="confirmMsg">{model.message}</p>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogMedia>
+          <TriangleAlertIcon />
+        </AlertDialogMedia>
+        <AlertDialogTitle>{model.message}</AlertDialogTitle>
+        {model.description != null && <AlertDialogDescription>{model.description}</AlertDialogDescription>}
+      </AlertDialogHeader>
       {model.skipLabel != null && (
-        <label id="confirmSkipLabel" style={{ display: 'flex', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', cursor: 'pointer', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
-          <input type="checkbox" id="confirmSkip" checked={skip} onChange={(e) => setSkip(e.target.checked)} />
-          <span id="confirmSkipText">{model.skipLabel}</span>
-        </label>
+        <Label className="justify-center font-normal text-muted-foreground">
+          <Checkbox checked={skip} onCheckedChange={(v) => setSkip(v === true)} />
+          {model.skipLabel}
+        </Label>
       )}
       {model.keywordPlaceholder != null && (
-        // keyword-gated wipe: the input is the sole focus target the moment the modal opens (matches the old openClearAllConfirm focus()).
-        <input type="text" id="confirmKeyword" className="search-box" style={{ marginBottom: '14px', fontSize: '13px' }} autoComplete="off" placeholder={model.keywordPlaceholder} value={kw} onChange={(e) => setKw(e.target.value)} autoFocus />
+        // keyword-gated wipe: the input is the sole focus target the moment the modal opens.
+        <Input type="text" autoComplete="off" placeholder={model.keywordPlaceholder} value={kw} onChange={(e) => setKw(e.target.value)} autoFocus />
       )}
-      <div className="confirm-actions">
-        <button className="btn-outline" id="confirmCancel" type="button" onClick={doCancel}>
-          {model.cancelLabel}
-        </button>
-        <button className="btn-danger" id="confirmOk" type="button" onClick={doOk} disabled={okDisabled}>
+      <AlertDialogFooter>
+        <AlertDialogCancel>{model.cancelLabel}</AlertDialogCancel>
+        <AlertDialogAction variant="destructive" disabled={okDisabled} onClick={doOk}>
           {model.okLabel}
-        </button>
-      </div>
-    </div>
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 
 export function ConfirmHost() {
   const m = useSyncExternalStore(subscribe, getSnapshot);
-  // #confirmOverlay is the portal target (viewer-owned): toggle its .show class from model
-  // presence (CSS shows/hides the modal; setupModalChrome observes it for the modal-open
-  // body class + titlebar). useLayoutEffect = before paint.
-  useLayoutEffect(() => {
-    const el = document.getElementById('confirmOverlay');
-    if (el) el.classList.toggle('show', !!m);
-  }, [m]);
-  // Backdrop click (on #confirmOverlay itself, outside .confirm-box) cancels — attached
-  // once on the static element, like the lightbox's backdrop.
-  useEffect(() => {
-    const el = document.getElementById('confirmOverlay');
-    if (!el) return;
-    const onClick = (e: MouseEvent) => {
-      if (e.target !== el) return;
-      const cur = get();
-      close();
-      cur?.onCancel?.();
-    };
-    el.addEventListener('click', onClick);
-    return () => el.removeEventListener('click', onClick);
-  }, []);
-  const host = document.getElementById('confirmOverlay');
-  return m && host ? createPortal(<ConfirmBox key={m.openId} model={m} />, host) : null;
+  // Keep the last model around while the dialog animates closed, so the content
+  // doesn't blank out mid-exit (m is already null by then).
+  const lastRef = useRef<CorpusConfirmModel | null>(null);
+  if (m) lastRef.current = m;
+  const model = m ?? lastRef.current;
+  return (
+    <AlertDialog
+      open={!!m}
+      onOpenChange={(open) => {
+        if (open) return;
+        // Fires for Esc and the Cancel button. doOk closes the bridge first, so
+        // get() is already null on that path — don't double-fire onCancel.
+        const cur = get();
+        if (!cur) return;
+        close();
+        cur.onCancel?.();
+      }}
+    >
+      {model && <ConfirmContent key={model.openId} model={model} />}
+    </AlertDialog>
+  );
 }

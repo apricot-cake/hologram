@@ -516,6 +516,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   function confirmClearAll() {
     confirmOpen({
       message: deps.t('confirmClear'),
+      description: deps.t('confirmClearDesc'),
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
       keywordPlaceholder: deps.t('confirmKeywordPh'),

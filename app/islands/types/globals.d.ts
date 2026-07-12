@@ -392,10 +392,11 @@ declare global {
   // bridge was deleted — no callers left). Portaled into sub-mounts BESIDE the chips
   // containers, which stay their own island. ----
 
-  // ---- renderer/confirm.js — shared confirm modal (#confirmOverlay). viewer opens it with
-  // a message + optional skip/keyword gate + callbacks; the island renders it. ----
+  // ---- renderer/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
+  // with a message + optional skip/keyword gate + callbacks; the island renders it. ----
   interface CorpusConfirmConfig {
     message: string;
+    description?: string; // present → secondary line under the title (AlertDialogDescription)
     okLabel: string;
     cancelLabel: string;
     skipLabel?: string; // present → show the "don't ask again" checkbox
