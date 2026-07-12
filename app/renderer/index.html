@@ -962,16 +962,14 @@
     }
     .pf-badge {
       position: absolute; left: 8px; bottom: 8px; z-index: 1;
-      display: inline-flex; align-items: center; gap: 5px;
-      max-width: calc(100% - 16px); box-sizing: border-box;
-      padding: 2px 7px; border-radius: 999px;
-      /* Scrim solid (#136): text over a thumbnail = near-opaque dark, no blur
-         (also drops one always-on backdrop pass per card). */
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; box-sizing: border-box; border-radius: 999px;
+      /* Scrim solid (#136): a lone dot over a thumbnail still needs contrast
+         (also drops one always-on backdrop pass per card). Name is hover-only
+         (data-tip) — the always-visible dot+"X" text read as a close button (#109). */
       background: var(--scrim-bg); color: var(--scrim-ink);
-      font-size: 10px; font-weight: 600; line-height: 1.4; letter-spacing: .01em;
       pointer-events: none;
     }
-    .pf-badge .pf-badge-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pf-badge .pf-dot { width: 6px; height: 6px; }
     .post-grid.tile-view .pf-badge { display: none; }   /* tile stays a clean image */
     .pf-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }

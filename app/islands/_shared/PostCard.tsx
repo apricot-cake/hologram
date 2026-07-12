@@ -96,12 +96,12 @@ function CdateIcon() {
   );
 }
 
-// Platform source badge on the thumbnail's bottom-left.
+// Platform source badge on the thumbnail's bottom-left. Color-only (name on
+// hover via data-tip) — a dot + "X" text read as a close/delete control (#109).
 function PfBadge({ platform, name }: { platform: string; name?: string }) {
   return (
     <div className="pf-badge" data-tip={name}>
       <span className={'pf-dot ' + platform} />
-      <span className="pf-badge-name">{name}</span>
     </div>
   );
 }
