@@ -15,7 +15,7 @@ cd app && npm install
 
 ## 開発ルール：コード変更の反映（確認なし再起動）
 
-main プロセス（`main.mts`/`ipc-*`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer は自動ホットリロード／native-host は `~/.corpus` へコピーで反映＝再起動不要）。preload の変更は `preload.cts` を編集 → `npm run build:islands` で `preload.js` を再生成してから再起動（preload だけビルドを経る＝docs/architecture.md 参照）。
+main プロセス（`main.mts`/`ipc-*`/`lib-*`）の変更を反映するときは、確認を取らずに再起動する（renderer/islands は `npm run build:islands` で再ビルド→アプリのリロードで反映＝再起動不要。Vite dev サーバー `npm run dev:renderer`＋`CORPUS_DEV_SERVER` 使用時のみ自動反映／native-host は `~/.corpus` へコピーで反映＝再起動不要）。preload の変更は `preload.cts` を編集 → `npm run build:islands` で `preload.js` を再生成してから再起動（preload だけビルドを経る＝docs/architecture.md 参照）。
 
 **再起動は「停止 ＋ タスクスケジューラ経由の起動」で行う**。Claude が実行する最小形:
 
@@ -58,9 +58,9 @@ electron-builder, win/nsis。
 
 これで以下が一括更新される（`scripts/make-icons.cts` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
-- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.js` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
+- `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.mts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
 - `extension/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（manifest の `icons`/`action.default_icon`）。差し替え後は拡張の再読み込みでツールバーに反映。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `corpus`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 
-Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。ロゴの設計根拠はデザイン規約（メモリ `corpus-design`・旧 DESIGN.md）「ブランド／ロゴ」。
+Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。
