@@ -19,8 +19,8 @@
     if (el && text) el.textContent = text;
   }
   try {
-    // No on-page heading — the chrome://extensions embed dialog already
-    // titles this "Corpus"; the document title covers the open-in-tab case.
+    // No on-page heading — the page opens as a tab (manifest options_ui
+    // open_in_tab) and the localized document title set here carries the name.
     const title = chrome.i18n && chrome.i18n.getMessage('optionsTitle');
     if (title) document.title = title;
     localize('themeLabel', 'optionsThemeLabel');

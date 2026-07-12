@@ -58,20 +58,24 @@
   }
 
   body {
-    margin: 0;
-    padding: 20px 24px 22px;
-    /* The chrome://extensions embed dialog sizes itself to the document's
-       preferred width — 560px gives the row room to breathe (the 340px
-       minimum rendered as a cramped ~400px dialog). */
-    min-width: 560px;
+    /* Opens as a full tab (manifest options_ui open_in_tab): a centered
+       column at the app Settings pane's scale keeps the lone row from
+       stranding in the viewport. */
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 48px 24px;
     background: var(--bg);
     color: var(--text);
     font: 400 13px/1.55 var(--font-sans);
   }
+  /* The body background must still paint the whole viewport around the
+     centered column. */
+  html { background: var(--bg); }
   /* App Settings idiom (.setting-row / .hint in renderer/index.html): label
      left, control right, muted explanation underneath — no card chrome, so
      label / hint / footer link share one left axis. No page heading either:
-     the chrome://extensions dialog already titles this "Corpus". */
+     the tab title carries "Corpus 設定", and a lone setting under a banner
+     heading reads as filler. */
   /* Two columns like Chrome's own settings rows: label + sub-caption stacked
      in the flexible left cell, control in the right cell — so the hint wraps
      inside the left column and never runs under the pulldown. */
