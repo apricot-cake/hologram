@@ -28,7 +28,6 @@ import * as selection from './selection.ts';
 // query-builder.ts/qf-pop-builder.ts's ctx objects are.
 export interface PostGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  PF_NAME: Record<string, string>;
   smokeCapture: boolean;
   fileSrc(file: string, w?: number): string;
   currentView(): string;
@@ -263,7 +262,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // 'selectedSet'.
   const cardModel = makeCardModel({
     t: deps.t,
-    PF_NAME: deps.PF_NAME,
     formatCount,
     formatDate,
     compactDate,

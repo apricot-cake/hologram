@@ -2,8 +2,8 @@
 // island (islands/grid). Emits the same DOM contract the old string-template
 // path did — `.post-card[data-url/data-index/data-key]` with the
 // `.select-check`, `.act-pill`, `.clip-btn[data-clip]` / `.info-btn[data-info]`
-// / `.tag-btn[data-tagedit]` hover buttons, `.card-thumb > .card-img`
-// (+ `.pf-badge`), `.card-ntag`, `.card-overlay`, and the `.post-meta` block.
+// / `.tag-btn[data-tagedit]` hover buttons, `.card-thumb > .card-img`,
+// `.card-ntag`, `.card-overlay`, and the `.post-meta` block.
 // That contract is LOAD-BEARING: every delegated click/contextmenu/dblclick
 // handler on #postGrid and all grid CSS key off these class names + data attrs.
 //
@@ -32,8 +32,6 @@ export interface PostCardModel {
   captureId?: string;
   aspRatio?: string | null;
   eager?: boolean;
-  platform?: string | null;
-  pfName?: string;
   nImg?: number;
   /** Thumb srcs for the 2nd/3rd images of a multi-image group — they ride the
       back stack sheets (real thumbnails, not placeholders). */
@@ -96,16 +94,6 @@ function CdateIcon() {
   );
 }
 
-// Platform source badge on the thumbnail's bottom-left. Color-only (name on
-// hover via data-tip) — a dot + "X" text read as a close/delete control (#109).
-function PfBadge({ platform, name }: { platform: string; name?: string }) {
-  return (
-    <div className="pf-badge" data-tip={name}>
-      <span className={'pf-dot ' + platform} />
-    </div>
-  );
-}
-
 // onImgLoad reports a loaded image's natural aspect for cards without a
 // reserved height (viewer.js caches it so the NEXT render reserves correctly).
 export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Record<string, string>; cellRef?: Ref<HTMLDivElement>; onImgLoad?: ReactEventHandler<HTMLImageElement> }) {
@@ -144,10 +132,7 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
         <TagIcon />
       </button>
       {m.hasThumb && (
-        <div className="card-thumb">
-          {m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}
-          {m.platform && <PfBadge platform={m.platform} name={m.pfName} />}
-        </div>
+        <div className="card-thumb">{m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}</div>
       )}
       {(m.nImg as number) > 1 && <div className="card-ntag">{'×' + m.nImg}</div>}
       <div className="card-overlay">

@@ -251,7 +251,6 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  PF_NAME: Record<string, string>;
   formatCount(n: number): string;
   formatDate(d: string): string;
   compactDate(d: string): string;
@@ -264,7 +263,7 @@ export function makeCardModel(deps: {
   cardThumbW(): number;
   listThumbW(): number;
 }) {
-  const { t, PF_NAME, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
   return function cardModel(g: CorpusPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = currentView();
@@ -287,7 +286,6 @@ export function makeCardModel(deps: {
       post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
       cap: capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
     };
-    const pfName = p.platform ? PF_NAME[p.platform] || p.platform : '';
     const userName = p.displayName || p.screenName || p.title || '';
     const handle = p.screenName ? `@${p.screenName}` : '';
     // Library images carry the filename as BOTH title and text — drop the
@@ -326,8 +324,6 @@ export function makeCardModel(deps: {
       captureId: p.captureId || '',
       aspRatio,
       eager: !!smokeCapture,
-      platform: p.platform || '',
-      pfName,
       nImg: g.files.length,
       stackSrcs,
       userName,

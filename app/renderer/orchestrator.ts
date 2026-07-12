@@ -708,7 +708,6 @@ export let resetPosterFilters: () => void;
   // every other service wiring in this file already works.
   const postGrid = makePostGridBuilder({
     t: getMessage,
-    PF_NAME,
     smokeCapture: SMOKE_CAPTURE,
     fileSrc,
     currentView: gridDensity.getCurrentView,
