@@ -59,8 +59,11 @@
 
   body {
     margin: 0;
-    padding: 18px 20px 20px;
-    min-width: 340px;
+    padding: 20px 24px 22px;
+    /* The chrome://extensions embed dialog sizes itself to the document's
+       preferred width — 560px gives the row room to breathe (the 340px
+       minimum rendered as a cramped ~400px dialog). */
+    min-width: 560px;
     background: var(--bg);
     color: var(--text);
     font: 400 13px/1.55 var(--font-sans);
