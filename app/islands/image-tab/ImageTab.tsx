@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
@@ -35,7 +36,16 @@ const INFO_ICON = (
 function Zoomable({ src, alt }: { src: string; alt: string }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const wheelEaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Double-click fit-toggle guard (#134 follow-up): two quick pan strokes can
+  // land inside Chrome's double-click counter (~4px between presses, 500ms),
+  // which used to yank a zoomed view back to fit mid-pan. A "click" that moved
+  // is a pan stroke, not half of a double-click — record it and have onDouble
+  // ignore the double-click that tails one.
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  const dragEndAt = useRef(0);
   const onDouble = () => {
+    if (performance.now() - dragEndAt.current < 400) return;
     const tw = twRef.current;
     const img = imgRef.current;
     if (!tw || !img) return;
@@ -48,15 +58,43 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     if (scale > 1.02) tw.resetTransform(180);
     else tw.centerView(target, 180);
   };
+  // The library applies wheel-zoom instantly (no built-in per-tick easing) — add
+  // a short CSS transition, but ONLY while a wheel-zoom gesture is in flight, so
+  // panning/dragging (a different code path) stays 1:1 with the pointer.
+  const onWheelStart = (ref: ReactZoomPanPinchRef) => {
+    if (wheelEaseTimer.current) clearTimeout(wheelEaseTimer.current);
+    ref.instance.contentComponent?.classList.add('itv-wheel-ease');
+  };
+  const onWheelStop = (ref: ReactZoomPanPinchRef) => {
+    // Let the in-flight transition finish before dropping the class, else the
+    // last step in a fast scroll snaps instead of easing out.
+    wheelEaseTimer.current = setTimeout(() => {
+      ref.instance.contentComponent?.classList.remove('itv-wheel-ease');
+    }, 120);
+  };
+  const onPointerDown = (e: ReactPointerEvent<HTMLImageElement>) => {
+    downPos.current = { x: e.clientX, y: e.clientY };
+  };
+  const onPointerUp = (e: ReactPointerEvent<HTMLImageElement>) => {
+    const d = downPos.current;
+    downPos.current = null;
+    if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) dragEndAt.current = performance.now();
+  };
   return (
     // wheel.step: smooth mode (library default) scales the per-event zoom delta by
     // the wheel event's raw deltaY, so 0.15 (10x the library's own 0.015 default)
     // meant a single mouse-wheel notch (deltaY~100) could jump the scale by ~15 —
     // most of the whole 1-40 range in one click. 0.01 keeps a standard notch to
     // roughly +1 scale (fit -> 2x), fine enough to stop on a target zoom (#134).
-    <TransformWrapper ref={twRef} minScale={1} maxScale={40} centerOnInit doubleClick={{ disabled: true }} wheel={{ step: 0.01 }}>
+    //
+    // disablePadding: without it the elastic padding lets cursor-anchored wheel
+    // zoom-out drift the image sideways out of bounds, and the wheel-stop
+    // alignment then animates it back ("slides away, then gets pulled home");
+    // dragging past the image edge bounced back to center on release the same
+    // way. Per-tick bounds clamping makes both motions dead straight.
+    <TransformWrapper ref={twRef} minScale={1} maxScale={40} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ step: 0.01 }} onWheelStart={onWheelStart} onWheelStop={onWheelStop}>
       <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <img ref={imgRef} className="itv-media" src={src} alt={alt} draggable={false} onDoubleClick={onDouble} />
+        <img ref={imgRef} className="itv-media" src={src} alt={alt} draggable={false} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
       </TransformComponent>
     </TransformWrapper>
   );
