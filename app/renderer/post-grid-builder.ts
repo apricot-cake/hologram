@@ -363,10 +363,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     grid.classList.toggle('masonry', deps.currentView() === 'card');
     // Selection mode: rings stay visible on every card, hover actions hide (CSS).
     grid.classList.toggle('selecting', selection.size() > 0);
-    // Tile overlay (author/❤) is optional; the ❤ count only shows while an
-    // engagement sort or filter is active (otherwise it's noise).
+    // Tile overlay (author/❤) is optional; engagement counts (tile ❤ overlay +
+    // card/list stats row) and the capture date only show while a sort or
+    // filter makes them relevant (otherwise they're noise — CSS gates them).
     grid.classList.toggle('no-overlay', !deps.tileOverlay());
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'));
+    grid.classList.toggle('show-cap', deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'));
 
     // THE GRID — fully React-owned (grid island via corpusPostGridSource):
     // masonic windowing + live cell rendering for all three views. viewer.js keeps
