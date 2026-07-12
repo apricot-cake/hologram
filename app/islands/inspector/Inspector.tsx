@@ -13,6 +13,50 @@ function Row({ k, v }: { k?: string; v?: ReactNode }) {
   );
 }
 
+const Pencil = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+  </svg>
+);
+
+// Read-only tag row shared by the post/poster inspector — tags are display-only
+// chips (right-click still opens the kind-menu, a read operation) + a trailing ✎
+// that opens the tag picker pop (Issue #22) anchored to itself. Editing moved OUT
+// of the inspector entirely — see tag-pop.ts / TagPop.tsx.
+function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags?: (anchorRect: CorpusAnchorRect) => void }) {
+  return (
+    <div className="iv-insp-row iv-tags-row">
+      <span className="iv-insp-k">{label}</span>
+      <span className="iv-insp-v">
+        <div className="iv-insp-tags">
+          {tags.length ? (
+            tags.map((t) => (
+              <span
+                key={t}
+                className="iv-insp-tag"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onTagContextMenu(t, e.clientX, e.clientY);
+                }}
+              >
+                {t}
+              </span>
+            ))
+          ) : (
+            <span className="edit-empty">{emptyLabel}</span>
+          )}
+        </div>
+      </span>
+      {onEditTags ? (
+        <button type="button" className="icon-btn icon-btn--ghost iv-tag-edit-btn" aria-label={editTip} data-tip={editTip} onClick={(e) => onEditTags(e.currentTarget.getBoundingClientRect())}>
+          <Pencil />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 // Post detail — mirrors the old showDetail() innerHTML build. m carries every field
 // already resolved/localized by viewer.js (dates formatted, MSG strings picked).
 function PostInspector({ m }: { m: CorpusInspectorModel }) {
@@ -51,23 +95,21 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
       <Row k={m.labels.updated} v={m.updatedLabel} />
       <Row k={m.labels.images} v={m.imagesLabel} />
       <Row k={m.labels.imageOf} v={m.imageOfLabel} />
-      <TagEditor idPrefix="iv" className="iv-tag-edit" tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onToggle={m.onTagToggle} onContextMenu={m.onTagContextMenu} />
-      <div id="ivTagView" className="iv-tag-view">
-        {m.srcTagsView.length ? (
-          <div className="iv-insp-row">
-            <span className="iv-insp-k">{m.labels.sourceTags}</span>
-            <span className="iv-insp-v">
-              <div className="iv-insp-tags">
-                {m.srcTagsView.map((t: string) => (
-                  <button key={t} type="button" className="iv-insp-tag iv-insp-tag-src" data-tip={m.labels.tipAdoptTag} onClick={() => m.onAdoptSourceTag(t)}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </span>
-          </div>
-        ) : null}
-      </div>
+      <TagsRow tags={m.tags} label={m.labels.tags} emptyLabel={m.labels.tagsEmpty} editTip={m.labels.editTags} onTagContextMenu={m.onTagContextMenu} onEditTags={m.onEditTags} />
+      {m.srcTagsView.length ? (
+        <div className="iv-insp-row">
+          <span className="iv-insp-k">{m.labels.sourceTags}</span>
+          <span className="iv-insp-v">
+            <div className="iv-insp-tags">
+              {m.srcTagsView.map((t: string) => (
+                <span key={t} className="iv-insp-tag iv-insp-tag-src">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </span>
+        </div>
+      ) : null}
       <div className="iv-insp-actions">
         {m.onOpenExternal ? (
           <a className="iv-insp-open" onClick={m.onOpenExternal}>

@@ -274,33 +274,36 @@ declare global {
 
   // ---- renderer/inspector.js / renderer/edit-overlay.js — model mechanics
   // shared; the deep field lists live in viewer.js's model builders. ----
-  // Tag-editing callbacks the post/poster inspector wires to TagEditor.tsx
-  // (_shared) — its onAdd/onRemove/onToggle/onContextMenu props are all
-  // required, so these mirror that exactly (Inspector.tsx invokes
-  // onAdoptSourceTag/onFolderToggle directly too, same "always provided"
-  // shape). Kept OFF CorpusEditOverlayModel below: EditOverlay.tsx wires the
-  // very same TagEditor props from that model, but renderer/edit-overlay.ts's
-  // open() spreads Omit<CorpusEditOverlayModel,'openId'> without the narrowing
-  // cast renderer/inspector.ts's open() already has, so required members there
-  // would need a cast this pass doesn't add (out of scope: viewer.ts /
-  // globals.d.ts only) — it keeps falling through the index signature instead,
-  // same as before this pass.
+  // Tag-editing callbacks TagEditor.tsx (_shared) requires — its onAdd/onRemove/
+  // onToggle/onContextMenu props are all required. Used by CorpusTagPopModel
+  // (tag-pop.ts, the ONLY place TagEditor renders post-#22) and — until step 4
+  // (poster) lands — still by the poster half of CorpusInspectorModel below
+  // (falling through that interface's index signature, same shape
+  // CorpusEditOverlayModel's comment already described for the bulk modal).
   interface CorpusTagEditorCallbacks {
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagToggle(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
   }
-  interface CorpusInspectorModel extends CorpusTagEditorCallbacks {
+  // NOT extending CorpusTagEditorCallbacks: post (Inspector.tsx) is read-only now
+  // (Issue #22) and only needs onTagContextMenu (right-click still opens the
+  // kind-menu — a read operation) + onEditTags (opens tag-pop for this card).
+  // Poster still has the always-live TagEditor for now, so its onTagAdd/
+  // onTagRemove/onTagToggle keep falling through the index signature below.
+  interface CorpusInspectorModel {
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
+    onTagContextMenu(tag: string, x: number, y: number): void;
+    // Optional only because poster (step 4) hasn't wired its own tag-pop yet —
+    // post (Inspector.tsx PostInspector) always supplies it.
+    onEditTags?(anchorRect: CorpusAnchorRect): void;
     // Post-only (Inspector.tsx renders these when present).
     onOpenExternal?(): void;
     onSauce?(): void;
     onAscii?(): void;
     onPosterJump?(): void;
-    onAdoptSourceTag(tag: string): void;
     // Poster-only.
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
@@ -309,12 +312,6 @@ declare global {
   }
   // CorpusInspector (the open/refresh/close/get/subscribe API) removed —
   // inspector.ts is a real ES module now, imported directly by its consumers.
-  // NOT extending CorpusTagEditorCallbacks — see the comment above that
-  // interface for why (renderer/edit-overlay.ts's open() needs a narrowing
-  // cast this pass doesn't add; onTagAdd/onTagRemove/onTagToggle/
-  // onTagContextMenu keep falling through the index signature below, same as
-  // before this pass). viewer.ts's own onTagAdd/etc. literals stay directly
-  // annotated at their call sites regardless.
   interface CorpusEditOverlayModel {
     openId: number;
     onCancel?(): void;

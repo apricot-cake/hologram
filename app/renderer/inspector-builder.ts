@@ -112,19 +112,18 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.renderPosts(true);
     deps.showToast(deps.t('ungroupDone'));
   }
-  // --- Inspector inline tag editor (always available while the inspector is open) ---
-  // Source of truth = the records' real tags. Each change saves immediately (mirrors
-  // adoptSourceTag) and refreshes only the tag fields of the inspector.ts model (not
-  // a full re-open) — the React tag editor keeps its own input text/focus and scroll
-  // across a refresh (same openId). The chips + picker live in the panel itself — tag
-  // editing is per-card here, no mode to enter (matches the poster inspector).
+  // --- Inspector tag mutations (Issue #22: editing lives in tag-pop now, not the
+  // inspector) --- Source of truth = the records' real tags. Each change saves
+  // immediately and refreshes the inspector's read-only tag row (not a full re-open,
+  // so the image/meta don't flicker) plus, while a tag-pop is open for this same
+  // card, that pop's own model (refreshTagViews, below).
 
   function refreshInspectorTagFields(g: CorpusPostGroup | null | undefined) {
     if (!g) return;
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
     const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    inspectorRefresh({ tags, srcTagsView, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
+    inspectorRefresh({ tags, srcTagsView });
   }
 
   // Apply a tag mutation to every record of the inspected group, persist immediately,
@@ -274,7 +273,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       tags: userTags,
       srcTagsView,
       groupBtn,
-      ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
       labels: {
         platform: deps.t('detailPlatform'),
         author: deps.t('detailAuthor'),
@@ -287,29 +285,27 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         updated: deps.t('detailUpdated'),
         images: deps.t('detailImages'),
         imageOf: deps.t('detailImageOf'),
+        tags: deps.t('detailTags'),
+        tagsEmpty: deps.t('tagsEmpty'),
+        editTags: deps.t('tipEditTags'),
         sourceTags: deps.t('detailSourceTags'),
-        tipAdoptTag: deps.t('tipAdoptTag'),
         viewPoster: deps.t('ctxViewPoster'),
         open: deps.t('detailOpen'),
         sauce: deps.t('detailSauce'),
         ascii: deps.t('detailAscii'),
       },
-      tagLabels: tagLabels(),
       onClose: closeDetail,
       onOpenExternal: p.url ? () => corpusIpc.openExternal(p.url) : null,
       onSauce: srcImageUrl ? () => corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
       onAscii: srcImageUrl ? () => corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
-      onAdoptSourceTag: (tag: string) => adoptSourceTag(g, tag),
-      onTagAdd: (tag: string) => addInspectorTag(g, tag),
-      onTagRemove: (tag: string) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => {
           const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey());
           if (g2) refreshInspectorTagFields(g2);
         });
       },
+      onEditTags: (anchorRect: CorpusAnchorRect) => openTagPopForGroup(g, anchorRect),
     });
     byId('postDetail').hidden = false;
     // While open, a card click swaps the panel (not zoom) → plain pointer.
@@ -319,34 +315,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // DOM classList reach-in / repaint() is needed here.
     deps.setInspectedKey(postIdKey(p));
     deps.refreshTileSlider(); // inline column narrows the grid — re-derive the track
-  }
-
-  // Promote a source tag (pixiv / SNS hashtag) into a user tag on every record of
-  // the inspected group. Persisted + undoable, mirroring the edit overlay's save.
-  async function adoptSourceTag(g: CorpusPostGroup, tag: string) {
-    if (!tag) return;
-    const recs = g.records && g.records.length ? g.records : [g.rep];
-    const undoRecords: CorpusUndoRecord[] = [];
-    for (const r of recs) {
-      const prev = (r.tags || []).slice();
-      if (prev.includes(tag)) continue;
-      const newTags = [...prev, tag];
-      try {
-        await postsUpdateTags(r.image || r.video, newTags);
-      } catch {
-        /* keep going */
-      }
-      const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
-      if (rec) rec.tags = newTags.slice();
-      undoRecords.push({ captureId: r.captureId, image: r.image || r.video, prevTags: prev, newTags });
-    }
-    if (!undoRecords.length) return; // all records already had it
-    deps.pushUndo('tags', undoRecords);
-    deps.markPostsMutated();
-    deps.renderPosts(true);
-    const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === deps.getInspectedKey());
-    if (fresh) showDetail(fresh);
-    deps.showToast(deps.t('tagAdopted', [tag]));
   }
 
   // Tag picker pop (Issue #22) opened straight from a card's 🏷 — a lighter-weight
