@@ -1269,10 +1269,6 @@
     body.image-tab-active #sidebar, body.image-tab-active #mode-post { display: none; }
     body.image-tab-active #imageTabView { display: flex; flex: 1; min-width: 0; min-height: 0; }
     .itv-stage { flex: 1; position: relative; overflow: hidden; display: flex; min-width: 0; }
-    /* Wheel zoom is applied instantly by the library (no built-in per-tick
-       easing) — this class is toggled on only while a wheel-zoom gesture is in
-       flight (#134), so drag panning stays untransitioned (1:1). */
-    .itv-tc.itv-wheel-ease { transition: transform 110ms ease-out; }
     .itv-media { max-width: 100%; max-height: 100%; object-fit: contain; }
     /* react-zoom-pan-pinch's own stylesheet sets pointer-events:none on every
        img inside the content box (native img-drag protection), which silently

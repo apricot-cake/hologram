@@ -1,7 +1,15 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
+
+// Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) changes the
+// scale by ~1 — fine enough to stop on a target zoom (the old 0.15 library
+// step swung ~15x scale per notch). Each notch animates for WHEEL_ZOOM_MS.
+const MIN_SCALE = 1;
+const MAX_SCALE = 40;
+const WHEEL_STEP = 0.01;
+const WHEEL_ZOOM_MS = 110;
 
 // Model built by viewer.js (renderImageTabView): the gallery items of ONE post
 // group, the controlled index, and the tab-level actions. Zoom/pan state stays
@@ -36,7 +44,6 @@ const INFO_ICON = (
 function Zoomable({ src, alt }: { src: string; alt: string }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const wheelEaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Double-click fit-toggle guard (#134 follow-up): two quick pan strokes can
   // land inside Chrome's double-click counter (~4px between presses, 500ms),
   // which used to yank a zoomed view back to fit mid-pan. A "click" that moved
@@ -58,20 +65,38 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     if (scale > 1.02) tw.resetTransform(180);
     else tw.centerView(target, 180);
   };
-  // The library applies wheel-zoom instantly (no built-in per-tick easing) — add
-  // a short CSS transition, but ONLY while a wheel-zoom gesture is in flight, so
-  // panning/dragging (a different code path) stays 1:1 with the pointer.
-  const onWheelStart = (ref: ReactZoomPanPinchRef) => {
-    if (wheelEaseTimer.current) clearTimeout(wheelEaseTimer.current);
-    ref.instance.contentComponent?.classList.add('itv-wheel-ease');
-  };
-  const onWheelStop = (ref: ReactZoomPanPinchRef) => {
-    // Let the in-flight transition finish before dropping the class, else the
-    // last step in a fast scroll snaps instead of easing out.
-    wheelEaseTimer.current = setTimeout(() => {
-      ref.instance.contentComponent?.classList.remove('itv-wheel-ease');
-    }, 120);
-  };
+  // Custom wheel zoom, animated by the library's own setTransform (#134). The
+  // library applies wheel deltas instantly; easing them with a CSS transition
+  // corrupted its cursor-anchor math — it reads the content's LIVE bounding
+  // rect per tick, which mid-transition lags the state, so the anchor drifted
+  // hundreds of px off the cursor. Computing the anchored target from instance
+  // STATE is exact even mid-animation (the animator keeps state and paint in
+  // sync per frame), and setTransform both eases and cancels the prior tween.
+  useEffect(() => {
+    const wrapper = twRef.current?.instance.wrapperComponent;
+    if (!wrapper) return undefined;
+    const onWheel = (e: WheelEvent) => {
+      const tw = twRef.current;
+      if (!tw) return;
+      e.preventDefault();
+      const { scale, positionX, positionY } = tw.instance.state;
+      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale + (e.deltaY < 0 ? 1 : -1) * WHEEL_STEP * Math.abs(e.deltaY)));
+      if (next === scale) return;
+      // Keep the content point under the cursor fixed across the scale change.
+      const wr = wrapper.getBoundingClientRect(); // static element — transition-safe
+      const cx = (e.clientX - wr.left - positionX) / scale;
+      const cy = (e.clientY - wr.top - positionY) / scale;
+      // The content box fills the wrapper 1:1 (contentStyle 100%), so bounds
+      // clamp directly against the wrapper size (mirrors disablePadding).
+      const nx = Math.min(0, Math.max(wr.width - wr.width * next, e.clientX - wr.left - cx * next));
+      const ny = Math.min(0, Math.max(wr.height - wr.height * next, e.clientY - wr.top - cy * next));
+      tw.setTransform(nx, ny, next, WHEEL_ZOOM_MS, 'easeOut');
+    };
+    // React attaches wheel passively — a native non-passive listener is needed
+    // for preventDefault (else the page scrolls behind the zoom).
+    wrapper.addEventListener('wheel', onWheel, { passive: false });
+    return () => wrapper.removeEventListener('wheel', onWheel);
+  }, []);
   const onPointerDown = (e: ReactPointerEvent<HTMLImageElement>) => {
     downPos.current = { x: e.clientX, y: e.clientY };
   };
@@ -81,18 +106,15 @@ function Zoomable({ src, alt }: { src: string; alt: string }) {
     if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) dragEndAt.current = performance.now();
   };
   return (
-    // wheel.step: smooth mode (library default) scales the per-event zoom delta by
-    // the wheel event's raw deltaY, so 0.15 (10x the library's own 0.015 default)
-    // meant a single mouse-wheel notch (deltaY~100) could jump the scale by ~15 —
-    // most of the whole 1-40 range in one click. 0.01 keeps a standard notch to
-    // roughly +1 scale (fit -> 2x), fine enough to stop on a target zoom (#134).
+    // wheel.disabled: the wheel is handled by the custom anchored-zoom effect
+    // above; the library's own instant wheel path stays off.
     //
     // disablePadding: without it the elastic padding lets cursor-anchored wheel
     // zoom-out drift the image sideways out of bounds, and the wheel-stop
     // alignment then animates it back ("slides away, then gets pulled home");
     // dragging past the image edge bounced back to center on release the same
     // way. Per-tick bounds clamping makes both motions dead straight.
-    <TransformWrapper ref={twRef} minScale={1} maxScale={40} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ step: 0.01 }} onWheelStart={onWheelStart} onWheelStop={onWheelStop}>
+    <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }}>
       <TransformComponent wrapperClass="itv-tw" contentClass="itv-tc" wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <img ref={imgRef} className="itv-media" src={src} alt={alt} draggable={false} onDoubleClick={onDouble} onPointerDown={onPointerDown} onPointerUp={onPointerUp} />
       </TransformComponent>
