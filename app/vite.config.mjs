@@ -62,8 +62,6 @@ export default defineConfig({
       // The CJS use-sync-external-store shim → a 1-line ESM re-export (React 18+ has the hook).
       { find: 'use-sync-external-store/shim/index.js', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
       { find: 'use-sync-external-store/shim', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
-      // The renderer service layer, folded into the bundle: `corpus-svc:NAME` → renderer/NAME.ts.
-      { find: /^corpus-svc:(.+)$/, replacement: path.join(here, 'renderer').replace(/\\/g, '/') + '/$1.ts' },
     ],
   },
   plugins: [react(), corpusDevHtml()],

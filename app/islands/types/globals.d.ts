@@ -12,16 +12,11 @@ export {};
 // only modules (settings imports './styles.css').
 declare module '*.css' {}
 
-// The barrel (app/index.tsx) folds the renderer service layer into this bundle via
-// `import 'corpus-svc:NAME'` specifiers, aliased to renderer/NAME.ts by build.mjs /
-// vite.config.mjs (Vite-only alias — tsc has no path mapping for the bare specifier
-// literal). This ambient declaration lets tsc treat those side-effect imports as
-// resolved (empty module) instead of erroring "Cannot find module". The service .ts
-// files themselves ARE type-checked in this same program (merged 2026-07-09 into one
-// tsconfig.json — formerly a separate tsconfig.renderer.json), via the `renderer/**/*`
-// include; this wildcard only covers the import *specifier string*, not the module
-// graph it happens to route through outside of tsc's view.
-declare module 'corpus-svc:*';
+// The former `declare module 'corpus-svc:*'` ambient is gone: the barrel
+// (app/index.tsx) imports the renderer service layer by plain relative path now
+// (V18 item 7 removed the last bare-specifier alias), so tsc resolves the real
+// modules directly. The service .ts files are type-checked in this same program
+// (merged 2026-07-09 into one tsconfig.json), via the `renderer/**/*` include.
 
 declare global {
   type CorpusUnsubscribe = () => void;
