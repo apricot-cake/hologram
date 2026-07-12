@@ -83,16 +83,19 @@ export function TagPopHost() {
   // Dismiss on outside-click (capture) / Escape — the caller's onDismiss decides what
   // closing means (single: just close; bulk: also discard the staging list) and is
   // responsible for calling tag-pop.ts's close() itself, same division of labor as
-  // EditOverlay's onCancel. Exempt the buttons that open this same pop (🏷/✎/"タグを
-  // 追加"): their own click handlers already do open-or-close-if-already-open (a
-  // same-card 🏷 re-click toggles shut), so letting this outside-click handler also
-  // fire would double-close-then-reopen — same exemption shape as QfPopHost's .sb-row.
+  // EditOverlay's onCancel. Exempt the buttons that open this same pop (post 🏷 /
+  // poster 🏷 / inspector ✎ / selection bar "タグを追加"): their own click handlers
+  // already do open-or-close-if-already-open (a same-card 🏷 re-click toggles shut),
+  // so letting this CAPTURE-phase handler also fire first would close the pop before
+  // that bubble-phase click handler even runs — its own "already open, so close
+  // instead" check then reads a closed bridge and reopens, same exemption shape as
+  // QfPopHost's .sb-row.
   useEffect(() => {
     if (!model) return;
     const onDoc = (e: MouseEvent) => {
       if (!document.contains(e.target as Node)) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      if ((e.target as Element).closest('.tag-btn, .iv-tag-edit-btn, [data-act="tag"]')) return;
+      if ((e.target as Element).closest('.tag-btn, .poster-tag, .iv-tag-edit-btn, [data-act="tag"]')) return;
       model.onDismiss();
     };
     const onKey = (e: KeyboardEvent) => {

@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import { TagEditor } from '../_shared/TagEditor.tsx';
 import { get, subscribe } from '../../renderer/inspector.ts';
 import type { ReactNode } from 'react';
 
@@ -174,20 +173,7 @@ function PosterInspector({ m }: { m: CorpusInspectorModel }) {
           </div>
         </span>
       </div>
-      <TagEditor
-        idPrefix="pd"
-        className="iv-tag-edit iv-tag-edit-poster"
-        tags={m.tags}
-        vocabGroups={m.vocabGroups}
-        coocGroups={m.coocGroups}
-        srcTags={m.srcTagsForPicker}
-        labels={m.tagLabels}
-        onAdd={m.onTagAdd}
-        onRemove={m.onTagRemove}
-        onToggle={m.onTagToggle}
-        onContextMenu={m.onTagContextMenu}
-        autoFocus={m.autoFocusTag}
-      />
+      <TagsRow tags={m.tags} label={m.labels.tags} emptyLabel={m.labels.tagsEmpty} editTip={m.labels.editTags} onTagContextMenu={m.onTagContextMenu} onEditTags={m.onEditTags} />
       <div className="iv-insp-actions">
         <a className="iv-insp-open" onClick={m.onPosterPosts}>
           {m.labels.posterViewPosts} &#8594;

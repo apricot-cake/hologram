@@ -14,7 +14,7 @@
 import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose } from './tag-pop.ts';
+import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
@@ -74,11 +74,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       adoptSource: deps.t('editAdoptSource'),
     };
   }
-  // Which post key the tag-pop is currently open for (null = closed) — the 🏷
-  // toggle check (openTagPopForGroup) and dismiss both key off this, same shape as
-  // the ℹ button's own `!byId('postDetail').hidden && inspectedKey === key` check.
-  let tagPopFor: string | null = null;
-
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   function closeDetail() {
     byId('postDetail').hidden = true;
@@ -156,14 +151,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
 
   // Push a mutated group's tags into whichever tag surfaces are showing it: the
-  // always-live inspector TagEditor (refreshInspectorTagFields) and — while step 3
-  // (Inspector read-only + EditOverlay removal) is still in flight — a tag-pop the
-  // 🏷 button opened for the SAME group (tagPopFor match). Re-render in place (same
-  // openId/model identity), not a remount, so input text/scroll survive.
+  // inspector's read-only row (refreshInspectorTagFields) and — if tag-pop is
+  // currently open for this SAME group (tagPopGet().forKey match; tag-pop.ts is a
+  // singleton bridge poster-grid-builder.ts's own openTagPopForPoster also opens,
+  // so the live model is the only thing both builders can agree is current) — that
+  // pop's own model. Re-render in place (same openId), not a remount, so the pop's
+  // input text/scroll survive.
   function refreshTagViews(fresh: CorpusPostGroup | null | undefined) {
     if (!fresh) return;
     refreshInspectorTagFields(fresh);
-    if (tagPopFor === postIdKey(fresh.rep)) {
+    if (tagPopGet()?.forKey === postIdKey(fresh.rep)) {
       const tags = Array.isArray(fresh.rep.tags) ? fresh.rep.tags : [];
       tagPopRefresh({ tags, ...deps.inspectorTagPickerData(tags, fresh.records, 'post') });
     }
@@ -323,10 +320,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // card via setInspectedKey (same as showDetail) so addInspectorTag/
   // applyInspectorTagChange's "fresh" re-lookup keeps working unchanged, and so the
   // grid shows which card is being tag-edited.
-  function dismissTagPop() {
-    if (!tagPopFor) return;
+  // Guarded by forKey (not called unconditionally): if a DIFFERENT open() already
+  // superseded this one (poster-grid-builder.ts's openTagPopForPoster opens the
+  // SAME singleton bridge), this dismiss is stale — do nothing, the new owner is
+  // responsible for its own close.
+  function dismissTagPopFor(key: string) {
+    if (tagPopGet()?.forKey !== key) return;
     tagPopClose();
-    tagPopFor = null;
     // Only drop the ring if the full inspector isn't ALSO showing this card —
     // closing the pop shouldn't blank out an independently-open detail panel.
     if (byId('postDetail').hidden) deps.setInspectedKey(null);
@@ -334,16 +334,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   function openTagPopForGroup(g: CorpusPostGroup, anchorRect: CorpusAnchorRect) {
     if (!g) return;
     const key = postIdKey(g.rep);
-    if (tagPopFor === key) {
-      dismissTagPop(); // re-click the same card's 🏷 → close (ℹ button's toggle shape)
+    if (tagPopGet()?.forKey === key) {
+      dismissTagPopFor(key); // re-click the same card's 🏷 → close (ℹ button's toggle shape)
       return;
     }
-    tagPopFor = key;
     deps.setInspectedKey(key);
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     tagPopOpen({
       anchorRect,
       mode: 'single',
+      forKey: key,
       tags,
       ...deps.inspectorTagPickerData(tags, g.records, 'post'),
       tagLabels: tagLabels(),
@@ -356,7 +356,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
           refreshTagViews(g2);
         });
       },
-      onDismiss: dismissTagPop,
+      onDismiss: () => dismissTagPopFor(key),
     });
   }
 

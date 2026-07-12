@@ -1295,8 +1295,25 @@ export let resetPosterFilters: () => void;
       posterReturn = key;
     },
   });
-  const { getPosterList, pfStore, posterFolderById, posterFolderHas, createPosterFolder, deletePosterFolder, togglePosterFolderMember, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, refreshPosterFolderFields, applyPosterTagChange, showPosterDetail, showPosterMenu } =
-    posterGrid;
+  const {
+    getPosterList,
+    pfStore,
+    posterFolderById,
+    posterFolderHas,
+    createPosterFolder,
+    deletePosterFolder,
+    togglePosterFolderMember,
+    renderPosterFilterRows,
+    renderPosters,
+    openPosterPosts,
+    jumpToPoster,
+    refreshPosterTagFields,
+    refreshPosterFolderFields,
+    applyPosterTagChange,
+    showPosterDetail,
+    openTagPopForPoster,
+    showPosterMenu,
+  } = posterGrid;
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
@@ -1404,9 +1421,11 @@ export let resetPosterFilters: () => void;
       showPosterDetail(u);
       return;
     }
-    // 🏷 → open the inspector and focus its tag input (mirrors the library 🏷 button).
-    if (closestOf(e, '.poster-tag')) {
-      showPosterDetail(u, { focusTag: true });
+    // 🏷 → tag picker pop (Issue #22), anchored to the button itself (mirrors the
+    // library 🏷 button — no longer opens the full inspector).
+    const tagBtn = closestOf(e, '.poster-tag');
+    if (tagBtn) {
+      openTagPopForPoster(u, tagBtn.getBoundingClientRect());
       return;
     }
     // A plain card click drills into that poster's posts (posts mode + user filter).

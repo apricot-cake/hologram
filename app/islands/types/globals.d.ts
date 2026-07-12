@@ -332,6 +332,16 @@ declare global {
     openId: number;
     anchorRect: CorpusAnchorRect;
     mode: 'single' | 'bulk';
+    // Which target this pop is currently showing (inspectedKey's format for single —
+    // postIdKey(g.rep) / 'poster:'+key — a fixed sentinel for bulk). The SOLE source
+    // of truth for "is the pop open for X": inspector-builder.ts and
+    // poster-grid-builder.ts each track their own group/poster but must agree on
+    // ONE answer to "is tag-pop open for MY card" even though tag-pop.ts is a
+    // singleton bridge shared by both — reading it back off the live model (via
+    // tag-pop.ts's get()) instead of two independent local booleans is what keeps
+    // them from going stale against each other (post opens → poster opens →
+    // post's own tracking would otherwise still think it owns the pop).
+    forKey: string;
     tags: string[];
     tagLabels: Record<string, string>;
     // bulk-only.

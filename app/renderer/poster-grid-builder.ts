@@ -16,6 +16,7 @@
 import { treeLeaves, userKey } from './query.ts';
 import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
+import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { captureFile } from './records.ts';
@@ -222,21 +223,34 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     showPosterDetail(u);
   }
 
-  // --- Poster inspector inline tag editor ---
-  // Mirrors the post inspector's tag editor, but the source of truth is posterTags[key]
-  // (NOT a post record), persisted to poster-tags.json. Posters carry no source (pixiv/
-  // SNS) tags, so the picker is fed recordsForSource:[]. The UI shows whenever the
-  // poster inspector is open (no tagging-edit gate — there is no poster tagging mode).
+  // --- Poster inspector tags (Issue #22: editing lives in tag-pop now, not the
+  // inspector) --- Source of truth is posterTags[key] (NOT a post record),
+  // persisted to poster-tags.json. Posters carry no source (pixiv/SNS) tags.
   function refreshPosterTagFields(key: string) {
-    inspectorRefresh({ tags: deps.posterTagsOf(key), ...deps.inspectorTagPickerData(deps.posterTagsOf(key), [], 'poster') });
+    inspectorRefresh({ tags: deps.posterTagsOf(key) });
   }
   function refreshPosterFolderFields(key: string) {
     inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
   }
-  // Apply a tag mutation to a poster, persist, and refresh the inspector tag fields
-  // (input keeps focus and the picker keeps its scroll — same openId, no remount).
-  // Records the change on the shared undo stack (type 'poster-tags') so Ctrl+Z works
-  // the same as for posts.
+  // Tag-pop labels — mirrors inspector-builder.ts's own tagLabels() (same strings,
+  // duplicated rather than shared: two 7-line closures, not worth a module for).
+  function tagLabels() {
+    return {
+      tagsLabel: deps.t('ivPosterTags'),
+      newTagPlaceholder: deps.t('tagNewName'),
+      addBtn: deps.t('tagAddBtn'),
+      noTags: deps.t('editNoTags'),
+      noMatch: deps.t('tagPalNoMatch'),
+      noVocab: deps.t('tagNoTags'),
+      adoptSource: deps.t('editAdoptSource'),
+    };
+  }
+  // Apply a tag mutation to a poster, persist, and refresh whichever tag surfaces
+  // are showing it: the inspector's read-only row, and — if tag-pop is open for
+  // this SAME poster (tagPopGet().forKey match, same singleton-bridge reasoning as
+  // inspector-builder.ts's refreshTagViews) — that pop's own model. Records the
+  // change on the shared undo stack (type 'poster-tags') so Ctrl+Z works the same
+  // as for posts.
   function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!key) return;
     const prev = deps.posterTagsOf(key);
@@ -247,9 +261,49 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deps.pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
     setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
+    if (tagPopGet()?.forKey === 'poster:' + key) {
+      const tags = deps.posterTagsOf(key);
+      tagPopRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
+    }
+  }
+  // Guarded by forKey (not called unconditionally) — same "stale close" guard as
+  // inspector-builder.ts's dismissTagPopFor: openTagPopForGroup (post) may have
+  // already superseded this pop via the same singleton bridge.
+  function dismissTagPopForPoster(forKey: string) {
+    if (tagPopGet()?.forKey !== forKey) return;
+    tagPopClose();
+    if (byId('postDetail').hidden) deps.setInspectedKey(null);
+  }
+  // Tag picker pop (Issue #22) opened straight from a poster card's 🏷 — mirrors
+  // inspector-builder.ts's openTagPopForGroup, keyed by 'poster:'+key (matching
+  // setInspectedKey's own format below) instead of a post group's key.
+  function openTagPopForPoster(u: CorpusUserAgg, anchorRect: CorpusAnchorRect) {
+    if (!u) return;
+    const forKey = 'poster:' + u.key;
+    if (tagPopGet()?.forKey === forKey) {
+      dismissTagPopForPoster(forKey); // re-click the same poster's 🏷 → close (ℹ button's toggle shape)
+      return;
+    }
+    deps.setInspectedKey(forKey);
+    const tags = deps.posterTagsOf(u.key);
+    tagPopOpen({
+      anchorRect,
+      mode: 'single',
+      forKey,
+      tags,
+      ...deps.inspectorTagPickerData(tags, [], 'poster'),
+      tagLabels: tagLabels(),
+      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
+      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
+      onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
+      onTagContextMenu: (tag: string, x: number, y: number) => {
+        deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
+      },
+      onDismiss: () => dismissTagPopForPoster(forKey),
+    });
   }
 
-  function showPosterDetail(u: CorpusUserAgg, opts?: { focusTag?: boolean }) {
+  function showPosterDetail(u: CorpusUserAgg) {
     if (!u) return;
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
@@ -278,9 +332,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       joinedLabel: localeDate(u.authorCreatedAt),
       works,
       tags,
-      ...deps.inspectorTagPickerData(tags, [], 'poster'),
       folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
-      autoFocusTag: !!(opts && opts.focusTag),
       labels: {
         user: deps.t('detailUser'),
         platform: deps.t('detailPlatform'),
@@ -290,15 +342,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         posterFolders: deps.t('ivPosterFolders'),
         newFolderPlaceholder: deps.t('posterFolderNewPlaceholder'),
         posterViewPosts: deps.t('posterViewPosts'),
-      },
-      tagLabels: {
-        tagsLabel: deps.t('ivPosterTags'),
-        newTagPlaceholder: deps.t('tagNewName'),
-        addBtn: deps.t('tagAddBtn'),
-        noTags: deps.t('editNoTags'),
-        noMatch: deps.t('tagPalNoMatch'),
-        noVocab: deps.t('tagNoTags'),
-        adoptSource: deps.t('editAdoptSource'),
+        tags: deps.t('ivPosterTags'),
+        tagsEmpty: deps.t('tagsEmpty'),
+        editTags: deps.t('tipEditTags'),
       },
       onClose: deps.closeDetail,
       onPosterPosts: () => openPosterPosts(u),
@@ -316,12 +362,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
           }
         }
       },
-      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
-      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
+      onEditTags: (anchorRect: CorpusAnchorRect) => openTagPopForPoster(u, anchorRect),
     });
     byId('postDetail').hidden = false;
     deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (corpusStore subscribe)
@@ -377,6 +421,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     refreshPosterFolderFields,
     applyPosterTagChange,
     showPosterDetail,
+    openTagPopForPoster,
     showPosterMenu,
   };
 }
