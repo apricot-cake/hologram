@@ -306,7 +306,9 @@ export function makeCardModel(deps: {
     if (p.isThread) flags.push(t('qfThread'));
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
-    const mediaLabel = p.mediaType === 'image' ? t('qfImage') : p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
+    // 'image' is the default media type for the vast majority of cards — an
+    // always-on "画像" label is pure noise there (#110: mark exceptions only).
+    const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
     const postKey = postIdKey(p);
     // Multi-image stack: the 2nd/3rd images ride the back sheets (real
     // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
