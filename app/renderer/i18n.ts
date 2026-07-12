@@ -196,7 +196,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     emptyResetBtn: 'フィルタをリセット',
 
     // viewer: common
-    save: '保存',
     saved: '保存しました',
 
     // viewer: settings > language / shortcut
@@ -563,7 +562,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     emptyCaptureHint: 'Press <kbd>Alt</kbd>+<kbd>S</kbd> in your browser, then click a post to save it.',
     emptyResetBtn: 'Reset filters',
 
-    save: 'Save',
     saved: 'Saved',
 
     settingsSearch: 'Search settings…',
