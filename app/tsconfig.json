@@ -34,7 +34,17 @@
     // 'electron' gets the same treatment (same node-globals hazard) for preload.cts,
     // which this program pulls in via globals.d.ts's CorpusPreload import type —
     // see islands/types/electron-shim.d.ts.
-    "paths": { "jszip": ["./islands/types/jszip-shim.d.ts"], "electron": ["./islands/types/electron-shim.d.ts"] }
+    // '@/*' → islands/* : shadcn/ui standard import alias; islands/ is this
+    // project's equivalent of a conventional src/ (components/ui, lib/utils live
+    // under it). Mirrored in vite.config.mjs and islands/build.mjs resolve.alias.
+    // NOTE: '@/*' must stay FIRST — the shadcn CLI treats the first paths entry
+    // as the project's import alias when (re)generating components.json.
+    // (No baseUrl — deprecated in TS6; these paths resolve relative to this file.)
+    "paths": {
+      "@/*": ["./islands/*"],
+      "jszip": ["./islands/types/jszip-shim.d.ts"],
+      "electron": ["./islands/types/electron-shim.d.ts"]
+    }
   },
   "include": ["islands/**/*", "renderer/**/*"]
 }

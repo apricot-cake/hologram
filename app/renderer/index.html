@@ -4,11 +4,20 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
   <title>Corpus</title>
+  <!-- Cascade-layer order for the shadcn/Tailwind coexistence (trial branch):
+       every legacy <style> below is wrapped in @layer legacy, slotted BETWEEN
+       Tailwind's base (preflight) and components/utilities. So legacy rules
+       still beat the preflight reset (legacy screens keep their look), while
+       shadcn component utilities beat the legacy universal reset. This first
+       declaration pins the relative order; the Tailwind sheet injected by
+       islands/app.js declares the same names minus `legacy` and merges in. -->
+  <style>@layer theme, base, legacy, components, utilities;</style>
   <link rel="stylesheet" href="design-tokens.css">
   <!-- Island CSS (settings layout) is bundled into islands/app.js and injected at
        runtime as a <style> (CSP style-src allows unsafe-inline) — no <link> needed. -->
   <script src="theme.js"></script>
   <style>
+    @layer legacy {
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     /* --- Design tokens (colours, type, spacing, light/dark) live in
@@ -1869,6 +1878,7 @@
     border-left: 2px solid var(--border-strong);
   }
   .sb-sub .date-input { width: 100%; }
+  } /* @layer legacy */
   </style>
 </head>
 <body>
@@ -2135,6 +2145,7 @@
        The image-view tile grid, sidebar layout and fullscreen lightbox CSS went
        away with that view. -->
   <style>
+    @layer legacy {
     .iv-tagn { opacity: .55; margin-left: 4px; font-size: 10px; }
     .iv-htbtn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--fg); transition: all .15s; }
     .iv-htbtn:hover { border-color: var(--accent); color: var(--accent-text); }
@@ -2321,6 +2332,7 @@
       .glass-chrome, #sidebar #sbTop { backdrop-filter: none; -webkit-backdrop-filter: none; }
       .lightbox-overlay { background: rgba(0,0,0,0.85); backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
+    } /* @layer legacy */
   </style>
 
   <!-- Motion: tasteful, fast entrance/open animations layered on top of the
@@ -2328,6 +2340,7 @@
        (viewer.js adds .anim-in; load-more / reduced-motion skip it). Everything
        is neutralized under prefers-reduced-motion. -->
   <style>
+    @layer legacy {
     @keyframes corpusCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
     @keyframes corpusFadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
@@ -2409,6 +2422,7 @@
         transition-duration: .001ms !important;
       }
     }
+    } /* @layer legacy */
   </style>
 
   <!-- Settings modal is a React island (app/islands/settings); it renders the

@@ -28,6 +28,7 @@
 // it explicitly so production builds strip them.
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +47,9 @@ const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.t
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/index.js', replacement: USE_SYNC_SHIM },
   { find: 'use-sync-external-store/shim', replacement: USE_SYNC_SHIM },
+  // shadcn/ui standard import alias — islands/ plays the role of src/.
+  // Mirrored in tsconfig.json "paths" and vite.config.mjs.
+  { find: '@', replacement: here },
 ];
 
 // theme.ts is the pre-paint FOUC boot (set [data-theme] before first paint). It stays
@@ -108,7 +112,7 @@ await build({
   configFile: false, // self-contained; vite.config.mjs is dev-serve only
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   resolve: { alias: RESOLVE_ALIAS },
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   logLevel: 'warn',
   build: {
     outDir: path.join(appRoot, 'renderer/islands'),

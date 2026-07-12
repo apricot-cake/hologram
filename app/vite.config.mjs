@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -62,7 +63,10 @@ export default defineConfig({
       // The CJS use-sync-external-store shim → a 1-line ESM re-export (React 18+ has the hook).
       { find: 'use-sync-external-store/shim/index.js', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
       { find: 'use-sync-external-store/shim', replacement: path.join(here, 'islands', '_shared', 'use-sync-external-store-shim.ts') },
+      // shadcn/ui standard import alias — islands/ plays the role of src/.
+      // Mirrored in tsconfig.json "paths" and islands/build.mjs.
+      { find: '@', replacement: path.join(here, 'islands') },
     ],
   },
-  plugins: [react(), corpusDevHtml()],
+  plugins: [react(), tailwindcss(), corpusDevHtml()],
 });

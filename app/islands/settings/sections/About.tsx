@@ -1,4 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 import { mount as mountAboutIcon } from '../../../renderer/about-icon.ts';
@@ -38,26 +40,28 @@ export function About() {
   }, []);
 
   return (
-    <div className="about-card">
-      <div className="about-icon">
-        <canvas ref={canvasRef} width={352} height={352} aria-hidden="true" />
+    <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+      <div className="mb-3">
+        <canvas ref={canvasRef} width={352} height={352} className="size-32" aria-hidden="true" />
       </div>
-      <div className="about-name">Corpus</div>
-      <div className="about-version">{info ? t('aboutVersion', [info.version || '']) : ''}</div>
-      <div className="about-tagline">{t('aboutTagline')}</div>
-      <div className="about-meta">{info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}</div>
-      <div className="about-links">
+      <div className="text-2xl font-semibold tracking-tight">Corpus</div>
+      <div className="text-muted-foreground text-sm">{info ? t('aboutVersion', [info.version || '']) : ''}</div>
+      <div className="mt-1 max-w-sm text-sm text-balance">{t('aboutTagline')}</div>
+      <div className="text-muted-foreground/70 mt-2 text-xs">{info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}</div>
+      <Separator className="my-4 max-w-48" />
+      <div className="flex items-center gap-5">
         {LINKS.map(({ key, url }) => (
-          <a
-            key={key}
-            href={url}
-            onClick={(e) => {
-              e.preventDefault();
-              ipc.openExternal(url);
-            }}
-          >
-            {t(key)}
-          </a>
+          <Button key={key} variant="link" size="sm" className="h-auto p-0" asChild>
+            <a
+              href={url}
+              onClick={(e) => {
+                e.preventDefault();
+                ipc.openExternal(url);
+              }}
+            >
+              {t(key)}
+            </a>
+          </Button>
         ))}
       </div>
     </div>

@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 import { SearchContext } from '../search-context.ts';
 
 // React-native replacement for the old DOM tree-walk highlighter: wraps every
-// occurrence of the active query in <mark class="set-hl">. Use for user-visible
+// occurrence of the active query in a highlighted <mark>. Use for user-visible
 // label text only (not <select>/<option>), mirroring the original which skipped
-// form controls. The .set-hl style is reused from index.html.
+// form controls.
 export function Highlight({ text }: { text?: string | number | null }) {
   const q = useContext(SearchContext);
   const s = text == null ? '' : String(text);
@@ -19,7 +19,7 @@ export function Highlight({ text }: { text?: string | number | null }) {
   while ((idx = low.indexOf(q, i)) !== -1) {
     if (idx > i) out.push(s.slice(i, idx));
     out.push(
-      <mark className="set-hl" key={idx}>
+      <mark className="bg-primary/20 text-foreground rounded-xs px-0.5" key={idx}>
         {s.slice(idx, idx + q.length)}
       </mark>,
     );

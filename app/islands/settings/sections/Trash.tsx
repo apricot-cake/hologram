@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { CSSProperties } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
 import { listTrash, restorePost, deleteFromTrash, emptyTrash } from '../../../renderer/trash.ts';
@@ -24,7 +25,7 @@ const fmtDate = (iso?: string) => {
 };
 
 // ゴミ箱: soft-deleted records with restore / permanent-delete / empty-all.
-// Port of viewer.js setupTrash — rendered as JSX instead of an innerHTML string.
+// The empty-all confirm is a shadcn AlertDialog (replaces window.confirm).
 export function Trash() {
   const [records, setRecords] = useState<TrashRecord[]>([]);
 
@@ -57,7 +58,6 @@ export function Trash() {
     await load();
   };
   const emptyAll = async () => {
-    if (!window.confirm(t('trashEmptyConfirm'))) return;
     try {
       await emptyTrash();
     } catch {
@@ -66,38 +66,54 @@ export function Trash() {
     await load();
   };
 
-  const thumbStyle: CSSProperties = { width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0 };
-
   return (
-    <>
-      <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+    <div className="space-y-3">
+      <div className="text-muted-foreground text-sm">
         <Highlight text={records.length ? t('trashCount', [records.length]) : t('trashEmpty')} />
       </div>
-      <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '10px' }}>
-        {records.map((r) => {
-          const title = r.title || r.screenName || r.captureId || '';
-          const platform = r.platform || '';
-          const date = fmtDate(r.trashedAt);
-          return (
-            <div key={r.captureId || r.image || r.video} className="trash-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)' }}>
-              {r.image ? <img src={'psimg://' + r.image} style={thumbStyle} loading="lazy" alt="" /> : <span style={{ ...thumbStyle, background: 'var(--surface-3)', display: 'inline-block' }} />}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '12px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{`${platform} ${date}`}</div>
+
+      {records.length > 0 && (
+        <div className="max-h-64 divide-y overflow-y-auto rounded-lg border">
+          {records.map((r) => {
+            const title = r.title || r.screenName || r.captureId || '';
+            const platform = r.platform || '';
+            const date = fmtDate(r.trashedAt);
+            return (
+              <div key={r.captureId || r.image || r.video} className="flex items-center gap-3 p-2.5">
+                {r.image ? <img src={'psimg://' + r.image} className="size-9 shrink-0 rounded-md object-cover" loading="lazy" alt="" /> : <span className="bg-muted size-9 shrink-0 rounded-md" />}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium">{title}</div>
+                  <div className="text-muted-foreground text-xs">{`${platform} ${date}`}</div>
+                </div>
+                <Button variant="outline" size="xs" className="shrink-0" onClick={() => restore(r)}>
+                  {t('trashRestoreBtn')}
+                </Button>
+                <Button variant="destructive" size="xs" className="shrink-0" onClick={() => perma(r)}>
+                  {t('trashDeleteBtn')}
+                </Button>
               </div>
-              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0 }} onClick={() => restore(r)}>
-                {t('trashRestoreBtn')}
-              </button>
-              <button className="btn-outline" style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0, color: 'var(--danger)' }} onClick={() => perma(r)}>
-                {t('trashDeleteBtn')}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <button className="btn-danger" onClick={emptyAll} disabled={!records.length}>
-        {t('trashEmptyBtn')}
-      </button>
-    </>
+            );
+          })}
+        </div>
+      )}
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="destructive" disabled={!records.length}>
+            {t('trashEmptyBtn')}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('trashEmptyBtn')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('trashEmptyConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('confirmCancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={emptyAll}>{t('trashEmptyBtn')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

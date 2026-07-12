@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Hint } from '../components/Hint.tsx';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
@@ -19,19 +20,22 @@ export function Language() {
 
   return (
     <>
-      <select
+      <Select
         value={lang}
-        style={{ width: '100%' }}
-        onChange={(e) => {
-          const v = e.target.value;
+        onValueChange={(v) => {
           setLang(v);
           Promise.resolve(ipc.setPref('language', v)).then(() => location.reload());
         }}
       >
-        <option value="auto">{t('langAuto')}</option>
-        <option value="ja">日本語</option>
-        <option value="en">English</option>
-      </select>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">{t('langAuto')}</SelectItem>
+          <SelectItem value="ja">日本語</SelectItem>
+          <SelectItem value="en">English</SelectItem>
+        </SelectContent>
+      </Select>
       <Hint text={t('hintLang')} />
     </>
   );

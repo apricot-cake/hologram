@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { SettingRow } from '../components/SettingRow.tsx';
-import { Hint } from '../components/Hint.tsx';
-import { Switch } from '../components/Switch.tsx';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 
@@ -26,31 +27,35 @@ export function Appearance() {
   }, []);
 
   return (
-    <>
-      <SettingRow label={t('themeMode')}>
-        <select
+    <div>
+      <SettingRow label={t('themeMode')} hint={t('hintTheme')}>
+        <Select
           value={theme}
-          style={{ width: 'auto', minWidth: '140px' }}
-          onChange={(e) => {
-            setTheme(e.target.value);
-            ipc.theme.set(e.target.value);
+          onValueChange={(v) => {
+            setTheme(v);
+            ipc.theme.set(v);
           }}
         >
-          <option value="auto">{t('themeAuto')}</option>
-          <option value="light">{t('themeLight')}</option>
-          <option value="dark">{t('themeDark')}</option>
-        </select>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">{t('themeAuto')}</SelectItem>
+            <SelectItem value="light">{t('themeLight')}</SelectItem>
+            <SelectItem value="dark">{t('themeDark')}</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingRow>
-      <Hint text={t('hintTheme')} />
-      <SettingRow label={t('tileOverlay')} style={{ marginTop: '10px' }}>
+      <Separator />
+      <SettingRow label={t('tileOverlay')}>
         <Switch
           checked={tileOverlay}
-          onChange={(v) => {
+          onCheckedChange={(v) => {
             setTileOverlay(v);
             ipc.setTileOverlay(v);
           }}
         />
       </SettingRow>
-    </>
+    </div>
   );
 }

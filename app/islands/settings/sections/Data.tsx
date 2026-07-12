@@ -1,6 +1,14 @@
 import JSZip from 'jszip';
 import { useState, useEffect, useRef } from 'react';
-import type { ChangeEvent, CSSProperties } from 'react';
+import type { ChangeEvent } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
@@ -93,6 +101,11 @@ const fmtTime = (iso?: string | null) => {
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 };
+
+// Filesystem path shown as an inline code chip.
+function PathChip({ children }: { children?: string | null }) {
+  return <code className="bg-muted min-w-0 flex-1 rounded-md px-2.5 py-1.5 font-mono text-xs break-all">{children}</code>;
+}
 
 // データ: save-folder (with live migration progress), export/import, auto backup.
 // Port of viewer.js setupSaveFolder + the export/import handlers + setupBackup —
@@ -294,133 +307,141 @@ export function Data() {
     const r = backup.lastResult;
     if (!r) return null;
     if (r.ok === false && r.error) {
-      return <div className="hint" style={{ marginTop: '6px', color: 'var(--danger)' }}>{`⚠ ${r.error}`}</div>;
+      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${r.error}`}</div>;
     }
     if (r.pruneSkipped) {
       const msg = r.pruneSkipped === 'shrink' ? t('backupPruneShrink') : t('backupPruneEmpty');
-      return <div className="hint" style={{ marginTop: '6px', color: 'var(--danger)' }}>{`⚠ ${msg}`}</div>;
+      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${msg}`}</div>;
     }
     let s = `${t('backupLastLabel')} ${fmtTime(r.at)}`;
     if (r.written) s += `（+${r.written}${t('backupItemsUnit')}）`;
     else if (r.fileCount) s += `（${r.fileCount}${t('backupItemsUnit')}）`;
-    return (
-      <div className="hint" style={{ marginTop: '6px' }}>
-        {s}
-      </div>
-    );
-  };
-
-  const codeStyle: CSSProperties = {
-    flex: 1,
-    minWidth: '200px',
-    fontSize: '12px',
-    color: 'var(--text)',
-    background: 'var(--surface-2)',
-    padding: '6px 10px',
-    borderRadius: '6px',
-    wordBreak: 'break-all',
+    return <div className="text-muted-foreground mt-2 text-[0.8rem]">{s}</div>;
   };
 
   return (
-    <>
+    <div className="space-y-6">
       {/* 保存先フォルダ */}
-      <div className="data-section">
-        <div style={{ fontSize: '13px', fontWeight: 600 }}>
-          <Highlight text={t('saveFolderSubTitle')} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '8px 0' }}>
-          <code style={codeStyle}>{saveFolder}</code>
-          <button className="btn-outline" onClick={chooseSaveFolder} disabled={migrating}>
-            {migrating ? t('saveFolderMoving') : t('saveFolderChange')}
-          </button>
-        </div>
-        <Hint text={t('saveFolderHint')} />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            <Highlight text={t('saveFolderSubTitle')} />
+          </CardTitle>
+          <CardDescription>
+            <Highlight text={t('saveFolderHint')} />
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <PathChip>{saveFolder}</PathChip>
+            <Button variant="outline" onClick={chooseSaveFolder} disabled={migrating}>
+              {migrating ? t('saveFolderMoving') : t('saveFolderChange')}
+            </Button>
+          </div>
 
-      {/* 移行の進捗（移動中以外は非表示） */}
-      {progress && (
-        <div className="data-section" style={{ marginTop: '14px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600 }}>{t('saveFolderProgressTitle')}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '8px 0' }}>
-            <div style={{ flex: 1, height: '8px', background: 'var(--surface-3)', borderRadius: '999px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: progress.pct + '%', background: 'var(--accent)', borderRadius: '999px', transition: 'width .15s ease' }} />
+          {/* 移行の進捗（移動中以外は非表示） */}
+          {progress && (
+            <div className="space-y-2.5">
+              <div className="text-sm font-medium">{t('saveFolderProgressTitle')}</div>
+              <div className="flex items-center gap-3">
+                <Progress value={progress.pct} className="flex-1" />
+                <span className="text-muted-foreground min-w-10 text-right text-xs tabular-nums">{progress.pct}%</span>
+              </div>
+              <div className="bg-muted text-muted-foreground max-h-36 overflow-y-auto rounded-md p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+                {progress.log.map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </div>
             </div>
-            <span style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', minWidth: '42px', textAlign: 'right', color: 'var(--text-muted)' }}>{progress.pct}%</span>
-          </div>
-          <div style={{ fontSize: '11px', fontFamily: 'ui-monospace,SFMono-Regular,Menlo,monospace', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: '6px', padding: '8px 10px', maxHeight: '140px', overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
-            {progress.log.map((line, i) => (
-              <div key={i}>{line}</div>
-            ))}
-          </div>
-        </div>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Export / Import ZIP */}
-      <div className="data-section" style={{ marginTop: '14px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* mode select + export button are one joined control */}
-          <span style={{ display: 'inline-flex', alignItems: 'stretch' }}>
-            <select value={exportMode} onChange={(e) => setExportMode(e.target.value)} style={{ width: 'auto', fontSize: '12px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}>
-              <option value="full">{t('exportModeFull')}</option>
-              <option value="images">{t('exportModeImages')}</option>
-            </select>
-            <button className="btn-outline" onClick={exportZip} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
-              {t('exportZip')}
-            </button>
-          </span>
-          <button className="btn-outline" onClick={() => zipInputRef.current && zipInputRef.current.click()} style={{ marginLeft: '10px' }}>
-            {t('importZip')}
-          </button>
-        </div>
-        <Hint text={t('hintZip')} />
-        <input type="file" ref={zipInputRef} hidden accept=".zip" onChange={onZipPicked} />
-      </div>
-
-      {/* Import media */}
-      <div className="data-section" style={{ marginTop: '14px' }}>
-        <button className="btn-outline" onClick={importMedia}>
-          {t('importImages')}
-        </button>
-        <Hint text={t('hintMedia')} />
-      </div>
+      {/* Export / Import ZIP + import media */}
+      <Card>
+        <CardContent className="space-y-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Select value={exportMode} onValueChange={setExportMode}>
+                <SelectTrigger size="sm" className="w-auto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">{t('exportModeFull')}</SelectItem>
+                  <SelectItem value="images">{t('exportModeImages')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={exportZip}>
+                {t('exportZip')}
+              </Button>
+              <Button variant="outline" onClick={() => zipInputRef.current && zipInputRef.current.click()}>
+                {t('importZip')}
+              </Button>
+            </div>
+            <Hint text={t('hintZip')} />
+            <input type="file" ref={zipInputRef} hidden accept=".zip" onChange={onZipPicked} />
+          </div>
+          <Separator />
+          <div>
+            <Button variant="outline" onClick={importMedia}>
+              {t('importImages')}
+            </Button>
+            <Hint text={t('hintMedia')} />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 自動バックアップ */}
-      <div className="data-section" style={{ marginTop: '14px' }}>
-        <div style={{ fontSize: '13px', fontWeight: 600 }}>
-          <Highlight text={t('backupSubTitle')} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '8px 0' }}>
-          <code style={codeStyle}>{(backup && backup.dir) || t('backupDirNone')}</code>
-          <button className="btn-outline" onClick={chooseBackupDir}>
-            {t('backupChoose')}
-          </button>
-          <button className="btn-outline" onClick={() => saveBackup({ dir: null })}>
-            {t('backupClear')}
-          </button>
-        </div>
-        <label className="radio-line">
-          <input type="checkbox" checked={!!(backup && backup.interval)} onChange={(e) => saveBackup({ interval: e.target.checked })} /> <span>{t('backupInterval')}</span>{' '}
-          <input
-            type="number"
-            min="1"
-            max="999"
-            value={(backup && backup.intervalValue) || 1}
-            onChange={(e) => {
-              const v = Math.max(1, Math.min(999, Number.parseInt(e.target.value, 10) || 1));
-              saveBackup({ intervalValue: v });
-            }}
-            style={{ width: '56px', fontSize: '12px', padding: '2px 4px' }}
-          />{' '}
-          <select value={(backup && backup.intervalUnit) || 'day'} onChange={(e) => saveBackup({ intervalUnit: e.target.value })} style={{ fontSize: '12px', padding: '2px 4px' }}>
-            <option value="day">{t('unitDay')}</option>
-            <option value="week">{t('unitWeek')}</option>
-            <option value="month">{t('unitMonth')}</option>
-          </select>{' '}
-          <span>{t('backupIntervalUnit')}</span>
-        </label>
-        <Hint text={t('hintBackup')} />
-        {renderBackupStatus()}
-      </div>
-    </>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            <Highlight text={t('backupSubTitle')} />
+          </CardTitle>
+          <CardDescription>
+            <Highlight text={t('hintBackup')} />
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <PathChip>{(backup && backup.dir) || t('backupDirNone')}</PathChip>
+            <Button variant="outline" onClick={chooseBackupDir}>
+              {t('backupChoose')}
+            </Button>
+            <Button variant="ghost" onClick={() => saveBackup({ dir: null })}>
+              {t('backupClear')}
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Checkbox id="backup-interval" checked={!!(backup && backup.interval)} onCheckedChange={(v) => saveBackup({ interval: v === true })} />
+            <Label htmlFor="backup-interval" className="font-normal">
+              {t('backupInterval')}
+            </Label>
+            <Input
+              type="number"
+              min={1}
+              max={999}
+              value={(backup && backup.intervalValue) || 1}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(999, Number.parseInt(e.target.value, 10) || 1));
+                saveBackup({ intervalValue: v });
+              }}
+              className="h-8 w-16 text-xs"
+            />
+            <Select value={(backup && backup.intervalUnit) || 'day'} onValueChange={(v) => saveBackup({ intervalUnit: v })}>
+              <SelectTrigger size="sm" className="w-auto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">{t('unitDay')}</SelectItem>
+                <SelectItem value="week">{t('unitWeek')}</SelectItem>
+                <SelectItem value="month">{t('unitMonth')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm">{t('backupIntervalUnit')}</span>
+          </div>
+          {renderBackupStatus()}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

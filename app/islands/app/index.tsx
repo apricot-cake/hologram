@@ -34,6 +34,10 @@
 //     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts (below)
 //     is the only entry left here, and only because it's a side-effect-only IIFE with
 //     nothing to import — now a plain relative import like everything else. ---
+// Tailwind v4 + shadcn/ui theme (islands/globals.css) — imported FIRST so the
+// generated stylesheet (runtime-injected by the lib bundle) precedes any
+// component-level CSS in cascade order.
+import '../globals.css';
 import './root.tsx';
 // The boot orchestrator (renderer/orchestrator.ts, renamed from viewer.ts — Wave33/V18,
 // 2026-07-11) no longer needs a side-effect-only import here: App.tsx (rendered via
