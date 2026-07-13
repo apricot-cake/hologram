@@ -1,46 +1,27 @@
-import { useSyncExternalStore, useRef, useLayoutEffect, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import type { RefObject } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
+import { get, subscribe } from '../../renderer/tag-pop.ts';
 import { TagEditor } from '../_shared/TagEditor.tsx';
-import { subscribe, get } from '../../renderer/tag-pop.ts';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent } from '@/components/ui/popover';
 
-// One always-mounted host that renders whatever tag-pop.ts's bridge currently holds
-// (or nothing) — same shape as QfPopHost/ContextMenu. Solid material (.fold-menu,
-// NOT glass): #136's readability policy reserves glass for icon-only chrome, and
-// this pop carries text (chips/labels) throughout — same call qf-popover/fold-menu
-// already made. Reusing the .fold-menu.show class also gets tag-pop the existing
-// Esc-priority guard for free: DetailDismiss's handleEscDismissDetail (inspector-
-// builder.ts) already bails when `.fold-menu.show` is in the DOM, so the inspector's
-// own Esc never fires while this pop is open — no separate guard entry needed.
-
-// Right-anchored beside the triggering card/button, flipping to its LEFT when the
-// pop would overflow the right edge (unlike qf-pop's sidebar rows, which are always
-// flush against the left edge and never need to flip). Vertical: clamp to the
-// viewport and cap max-height so the picker's own internal scroll (.edit-picker)
-// takes over instead of the pop running off-screen. Measures via offsetWidth/Height,
-// NOT getBoundingClientRect — this effect runs mid corpusPopIn scale(.96), which
-// would under-measure by ~4% (same trap QfPop.tsx's usePlaceFlyout documents).
-function usePlaceTagPop(popRef: RefObject<HTMLDivElement | null>, anchorRect: CorpusAnchorRect | null | undefined) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: popRef is a stable ref — anchorRect is the only reposition trigger
-  useLayoutEffect(() => {
-    if (!anchorRect) return;
-    const pop = popRef.current;
-    if (!pop) return;
-    pop.style.maxHeight = '';
-    const w = pop.offsetWidth;
-    let left = anchorRect.right + 8;
-    if (left + w > innerWidth - 8) left = Math.max(8, anchorRect.left - 8 - w);
-    pop.style.left = left + 'px';
-    pop.style.top = anchorRect.top + 'px';
-    const h = pop.offsetHeight;
-    let top = anchorRect.top;
-    if (top + h > innerHeight - 8) {
-      top = Math.max(8, innerHeight - h - 8);
-      pop.style.top = top + 'px';
-    }
-    pop.style.maxHeight = innerHeight - top - 8 + 'px';
-  }, [anchorRect]);
-}
+// Tag-picker pop host — ONE always-mounted instance that renders whatever
+// tag-pop.ts's bridge currently holds (or nothing), now on the shadcn Popover.
+// The orchestrator side owns every business rule (persistence, undo, homonym
+// detection, bulk staging); this island only draws the popup. The popup has no
+// trigger element (it opens programmatically beside a card's 🏷 / the
+// inspector's ✎ / the selection bar's "タグを追加"), so the content anchors to
+// a virtual element wrapping the bridge's anchorRect — Base UI positions and
+// viewport-flips it (the old hand-rolled usePlaceTagPop is gone).
+//
+// Dismissal: outside-press / Escape arrive via onOpenChange; the caller's
+// onDismiss decides what closing means (single: just close; bulk: also discard
+// the staging list) and calls tag-pop.ts's close() itself. Presses on the
+// buttons that open this same pop are exempted: their own click handlers
+// already do open-or-close-if-already-open (a same-card 🏷 re-click toggles
+// shut), so letting the outside-press close first would leave that handler
+// reading a closed bridge and reopening — same exemption the old capture-phase
+// listener carried.
+const TOGGLE_BUTTONS = '.tag-btn, .poster-tag, .iv-tag-edit-btn, [data-act="tag"]';
 
 function TagPopBody({ model }: { model: CorpusTagPopModel }) {
   return (
@@ -64,11 +45,11 @@ function TagPopBody({ model }: { model: CorpusTagPopModel }) {
         autoFocus
       />
       {model.mode === 'bulk' ? (
-        <div className="tag-pop-footer">
-          <span className="tag-pop-hint">{model.additiveHint}</span>
-          <button type="button" className="btn-outline tag-pop-apply" onClick={model.onApply}>
+        <div className="flex items-center justify-between gap-2.5 border-t pt-2.5">
+          <span className="text-xs text-muted-foreground">{model.additiveHint}</span>
+          <Button size="sm" className="shrink-0" onClick={model.onApply}>
             {model.applyLabel}
-          </button>
+          </Button>
         </div>
       ) : null}
     </>
@@ -77,43 +58,34 @@ function TagPopBody({ model }: { model: CorpusTagPopModel }) {
 
 export function TagPopHost() {
   const model = useSyncExternalStore(subscribe, get);
-  const popRef = useRef<HTMLDivElement | null>(null);
-  usePlaceTagPop(popRef, model && model.anchorRect);
 
-  // Dismiss on outside-click (capture) / Escape — the caller's onDismiss decides what
-  // closing means (single: just close; bulk: also discard the staging list) and is
-  // responsible for calling tag-pop.ts's close() itself, same division of labor as
-  // EditOverlay's onCancel. Exempt the buttons that open this same pop (post 🏷 /
-  // poster 🏷 / inspector ✎ / selection bar "タグを追加"): their own click handlers
-  // already do open-or-close-if-already-open (a same-card 🏷 re-click toggles shut),
-  // so letting this CAPTURE-phase handler also fire first would close the pop before
-  // that bubble-phase click handler even runs — its own "already open, so close
-  // instead" check then reads a closed bridge and reopens, same exemption shape as
-  // QfPopHost's .sb-row.
-  useEffect(() => {
-    if (!model) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!document.contains(e.target as Node)) return;
-      if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      if ((e.target as Element).closest('.tag-btn, .poster-tag, .iv-tag-edit-btn, [data-act="tag"]')) return;
-      model.onDismiss();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') model.onDismiss();
-    };
-    document.addEventListener('click', onDoc, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onDoc, true);
-      document.removeEventListener('keydown', onKey);
-    };
+  // Virtual anchor over the bridge's anchorRect (recreated whenever the model
+  // changes, so a different card repositions in place without remounting the root).
+  const anchor = useMemo(() => {
+    if (!model) return null;
+    const r = model.anchorRect;
+    return { getBoundingClientRect: () => new DOMRect(r.left, r.top, r.right - r.left, r.bottom - r.top) };
   }, [model]);
 
   if (!model) return null;
-  return createPortal(
-    <div className="fold-menu tag-pop show" ref={popRef} key={model.openId}>
-      <TagPopBody model={model} />
-    </div>,
-    document.body,
+  return (
+    <Popover
+      open
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (details.reason === 'outside-press') {
+          const t = details.event.target as Element | null;
+          if (t && t.closest(TOGGLE_BUTTONS)) return; // that button's own handler decides close-vs-reopen
+        }
+        model.onDismiss();
+      }}
+    >
+      {/* Key the BODY on openId (bumped on open(), stable across refresh()): a fresh
+          card/selection remounts the TagEditor (resets + refocuses its input) while a
+          tag mutation re-renders in place — input text and picker scroll survive. */}
+      <PopoverContent anchor={anchor} side="right" align="start" sideOffset={8} collisionPadding={8} className="w-80 max-h-(--available-height) overflow-y-auto">
+        <TagPopBody key={model.openId} model={model} />
+      </PopoverContent>
+    </Popover>
   );
 }
