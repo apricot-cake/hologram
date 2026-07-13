@@ -32,6 +32,7 @@ import * as folders from './folders.ts';
 import { open as lightboxOpen, setLabels as lightboxSetLabels } from './lightbox.ts';
 import * as selection from './selection.ts';
 import { open as settingsOpen } from './settings.ts';
+import { shellReady } from './shell-ready.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
@@ -106,6 +107,12 @@ export let resetPosterFilters: () => void;
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
   const { lang, getMessage } = await corpusI18n;
+  // The shell is React-owned now (AppShell.tsx): its DOM (#postGrid / #posterGrid /
+  // #emptyState / #importZipInput / #searchBox / #sortSelect …) is rendered on mount,
+  // not present as static index.html markup. Wait for that mount before any of the
+  // shell-DOM setup below runs, so getElementById/byId resolve. (viewerReady still
+  // resolves at the end of this IIFE → AppBoot's bootApp fires after, unchanged.)
+  await shellReady;
   // Count / date display formatters live in format.ts now (imported above).
   // (The backup-rail time formatters fmtTime/fmtBackupTime are used only by the
   // MirrorStatus island now, which imports format.ts directly.)
@@ -185,7 +192,7 @@ export let resetPosterFilters: () => void;
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource — no
   // static setText here.
-  byId('sbTop').dataset.tip = getMessage('sbTopTip'); // shared glass tooltip (was native title)
+  setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
 
   // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
   // by the SortSelect island from i18n keys, so writing option textContent here was dead.
@@ -371,7 +378,7 @@ export let resetPosterFilters: () => void;
   // Sidebar chip toggle (platform, postType, media)
   // Filter rows: click a row → flyout with that category's values beside it.
   // 日付/エンゲージはパラメータ入力付きの専用ポップオーバーへ委譲。
-  byId('filterRows').addEventListener('click', (e) => {
+  document.getElementById('filterRows')?.addEventListener('click', (e) => {
     // クリップ: 空にする clears every flag (kept before the row check so it doesn't also
     // toggle the filter — was e.stopPropagation() on the old direct listener).
     if (closestOf(e, '#clipClear')) {
@@ -1090,7 +1097,7 @@ export let resetPosterFilters: () => void;
     },
     true,
   );
-  byId('selectionBar').addEventListener('click', selectionCtl.handleSelectionBarClick);
+  document.getElementById('selectionBar')?.addEventListener('click', selectionCtl.handleSelectionBarClick);
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
 
   // ℹ button on card → detail popup (re-click same card toggles close)
@@ -1431,7 +1438,7 @@ export let resetPosterFilters: () => void;
   // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
   // flyout (poster-* categories); the date row opens the date popover.
   // Selections live in the transient posterXxx state.
-  byId('posterFilterRows').addEventListener('click', (e) => {
+  document.getElementById('posterFilterRows')?.addEventListener('click', (e) => {
     const row = closestOf(e, '[data-qfrow]');
     if (!row) return;
     const cat = row.dataset.qfrow as string;
@@ -1455,9 +1462,11 @@ export let resetPosterFilters: () => void;
   // View-size slider (post grid) — every density has one; the logic (track math,
   // mid-drag vs commit) lives in grid-density-builder.ts now, alongside the
   // poster-side equivalent above. This just wires the #tileSlider DOM events to it.
-  const tileSlider = inputById('tileSlider');
-  tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
-  tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
+  const tileSlider = document.getElementById('tileSlider') as HTMLInputElement | null; // retired UI; hidden #sortSelect stays but the size slider is gone until the display popover (P2②)
+  if (tileSlider) {
+    tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
+    tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
+  }
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
   // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
   // imports this directly.

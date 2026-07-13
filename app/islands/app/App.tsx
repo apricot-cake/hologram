@@ -1,33 +1,17 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { ActivebarHost } from '../activebar/Activebar.tsx';
+import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
-import { EmptyState } from '../empty/EmptyState.tsx';
-import { FilterPopoverHost } from '../filter-popover/FilterPopover.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
-import { ImageTabHost } from '../image-tab/index.tsx';
-import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
-import { Inspector } from '../inspector/Inspector.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
-import { PosterGrid } from '../posters/index.tsx';
-import { QfPopHost } from '../qf-pop/QfPop.tsx';
-import { PostGrid } from '../grid/index.tsx';
-import { ChipsHost } from '../query-chips/index.tsx';
-import { SearchBox } from '../searchbox/SearchBox.tsx';
-import { SelectionBar } from '../selection-bar/SelectionBar.tsx';
 import { SettingsHost } from '../settings/index.tsx';
-import { PosterSidebar } from '../sidebar/PosterSidebar.tsx';
-import { Sidebar } from '../sidebar/Sidebar.tsx';
-import { TabsHost } from '../tabs/index.tsx';
 import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { Toaster } from '@/components/ui/sonner';
-import { Toolbar } from '../toolbar/index.tsx';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { t } from '../_shared/i18n.ts';
 import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
 import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { subscribe as subscribeSearch } from '../../renderer/search.ts';
@@ -291,85 +275,29 @@ export function App() {
       {/* External-store / IPC subscriptions (corpusStore keys, qf-pop, search mode,
           folder changes, posts-changed fs-watch hint). */}
       <StoreSubscriptions />
-      {/* Body-level overlays (position:fixed, so viewport-relative regardless of parent). */}
+      {/* The React-owned app shell: tab bar + left nav + content inset + right inspector,
+          with the shell-embedded islands (tabs / grids / inspector / image-tab / search /
+          chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
+      <AppShell />
+      {/* Body-level overlays. Menus / confirm / tag-pop / toaster / tooltip self-portal onto
+          document.body; the lightbox / settings / folder-modal still portal into the three
+          overlay containers kept static in index.html (folded into the shell when those
+          surfaces are reworked — lightbox P2⑦ / settings P2⑩ / folders P2⑧). */}
       <ContextMenuHost />
       <KindMenuHost />
-      <FilterPopoverHost />
-      <QfPopHost />
       <TagPopHost />
       <ConfirmHost />
       <FolderManagerHost />
-      {/* Container-mounted islands — portaled into their orchestrator-owned static containers. */}
-      <Portal id="filterRows">
-        <Sidebar />
-      </Portal>
-      <Portal id="posterFilterRows">
-        <PosterSidebar />
-      </Portal>
-      <Portal id="selectionBar">
-        <SelectionBar />
-      </Portal>
-      <Portal id="postDetailBox">
-        <Inspector />
-      </Portal>
-      {/* Query-builder active bars (post / poster) + the image-tab detail view — each
-          was its own createRoot with an imperative render(model); now they store+notify
-          and their hosts subscribe here. */}
-      <Portal id="queryChips">
-        <ChipsHost id="queryChips" />
-      </Portal>
-      <Portal id="posterQueryChips">
-        <ChipsHost id="posterQueryChips" />
-      </Portal>
-      {/* Query-builder frame (nav / title / count / reset / ⓘ help) around each chips
-          container — portals into static sub-mounts BESIDE the chips, so those keep
-          orchestrator's delegated handlers. */}
-      <ActivebarHost />
-      <Portal id="imageTabView">
-        <ImageTabHost />
-      </Portal>
-      {/* Tab strip + the gallery lightbox — also imperative render/open before, now
-          store+subscribe. Lightbox toggles #lightbox's show/multi classes imperatively
-          (that element is the portal target, not React-owned content). */}
-      <Portal id="tabBarInner">
-        <TabsHost />
-      </Portal>
       <Portal id="lightbox">
         <LightboxHost />
       </Portal>
-      <Portal id="searchWrap">
-        {/* Leading magnifier icon + the react-aria ComboBox (input + suggest). */}
-        <svg className="search-ico" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <line x1="16.5" y1="16.5" x2="21" y2="21" />
-        </svg>
-        <SearchBox placeholder={t('searchPlaceholder')} />
-      </Portal>
-      {/* Toolbar controls (search mode / density / browse / section titles / sort selects)
-          — Toolbar portals each into its own container. */}
-      <Toolbar />
-      {/* Settings modal (open/closed via renderer/settings.ts; the gear in orchestrator opens it). */}
       <Portal id="settingsRoot">
         <SettingsHost />
       </Portal>
-      {/* Empty-state placeholder (grid is empty) + the backup status rail — orchestrator keeps
-          each container's show/hide + state derivation; these render the content. */}
-      <Portal id="emptyState">
-        <EmptyState />
-      </Portal>
-      <Portal id="mirrorStatus">
-        <MirrorStatus />
-      </Portal>
-      {/* Toast outlet (sonner) — renders in its own portal; renderer/ui.ts notify() feeds it. */}
+      {/* Toast outlet (sonner) — renderer/ui.ts notify() feeds it. */}
       <Toaster />
-      {/* Shared glass tooltip (.ui-tip) — portals its own singleton div onto document.body
-          (no static container) and wires the [data-tip] delegation; see tooltip/TooltipHost.tsx. */}
+      {/* Legacy [data-tip] glass tooltip singleton (retired with the Tip overhaul, P3). */}
       <TooltipHost />
-      {/* Virtualized grids — each renders into its OWN host div (portaled into #postGrid /
-          #posterGrid) with flushSync + host-attach preserved (GridMount), because orchestrator
-          still blanket-clears the container on the empty push. */}
-      <PostGrid />
-      <PosterGrid />
     </>
   );
 }

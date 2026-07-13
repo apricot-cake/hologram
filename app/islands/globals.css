@@ -154,3 +154,13 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* App shell (AppShell.tsx): the tab bar is a full-width band ABOVE the sidebar.
+   shadcn's fixed sidebar-container assumes it owns the whole viewport height, so
+   offset it below the band using the legacy titlebar height var (--tabbar-h). Unlayered
+   so it beats the h-svh / inset-y-0 utilities (layer order: utilities is a layer, this
+   isn't → wins). Retired when the tab bar is folded into the React shell tokens. */
+[data-slot="sidebar-container"] {
+  top: var(--tabbar-h, 0px);
+  height: calc(100svh - var(--tabbar-h, 0px));
+}
