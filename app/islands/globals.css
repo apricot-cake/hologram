@@ -10,6 +10,14 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    /* Motion tokens (§3-10a): the single knob for the whole redesign's motion tone.
+       Restrained/calm (Linear / Claude Desktop). Every animated surface reads these
+       via var() instead of hard-coding ms/curves, so the tone tunes in one place.
+       Curves are the standard decelerate (enter) / accelerate (exit) pair. */
+    --motion-duration-base: 180ms; /* enter (open, appear) */
+    --motion-duration-fast: 120ms; /* exit (close) + micro-feedback */
+    --motion-ease-out: cubic-bezier(0, 0, 0.2, 1); /* enter — decelerate */
+    --motion-ease-in: cubic-bezier(0.4, 0, 1, 1); /* exit — accelerate */
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -130,4 +138,19 @@
   html {
     @apply font-sans;
     }
+}
+
+/* Reduced-motion: one global short-circuit for the whole redesign (§3-10a #4) — no
+   per-component branches. Sits outside @layer so it wins over both shadcn utilities
+   and the legacy layer. Near-zero (not 0) keeps transitionend/animationend firing so
+   state machines that await them don't stall. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

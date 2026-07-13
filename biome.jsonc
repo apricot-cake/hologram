@@ -38,6 +38,19 @@
       // tsconfig.*.json（main プロセス用等）は名前で認識されない＝コメント可を明示。
       "include": ["**/tsconfig.*.json"],
       "json": { "parser": { "allowComments": true, "allowTrailingCommas": true } }
+    },
+    {
+      // shadcn/ui の生成部品は vendored 扱い（app/vendor/** と同格）。upstream は
+      // useState の安定 setter を dep 配列へ防御的に含める書き方で、Biome は
+      // useExhaustiveDependencies で「余分」と赤にする。無害な余剰 dep のために
+      // 再生成のたび upstream から fork するのは保守負債＝この規則だけこの配下で
+      // 無効化する（他の正しさ系は有効のまま）。§8-2 手当ての対象ディレクトリと同じ。
+      "include": ["app/islands/components/ui/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "useExhaustiveDependencies": "off" }
+        }
+      }
     }
   ],
   "formatter": {
