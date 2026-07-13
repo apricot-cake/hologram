@@ -1,54 +1,77 @@
-import { useSyncExternalStore, useRef, useLayoutEffect, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import type { CSSProperties, RefObject } from 'react';
-import { subscribe, get, close } from '../../renderer/filter-popover.ts';
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import { close, get, subscribe } from '../../renderer/filter-popover.ts';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type Commit = (fn?: () => void) => void;
 interface FormProps {
   model: CorpusFilterPopoverModel;
   commit: Commit;
 }
+type Option = { value: string; label: string };
 
-// Glass date / engagement / poster-date-range popover — ONE always-mounted host that
-// renders whatever filter-popover.ts's bridge currently holds (or nothing). viewer.ts
-// owns the field values (open) + apply/remove actions; this island owns the form's
-// local input state (controlled inputs) and draws the glass popup. Emits the SAME DOM
-// the old imperative builders did (.qf-popover with .chip / .date-input /
-// .engagement-select / .engagement-input / .btn-outline.qf-popover-delete / .pd-field)
-// so the existing CSS is unchanged. Labels are provided already-localized by viewer (no
-// i18n here); numeric/date validation ("apply with nothing entered = no-op") stays in
-// viewer's onApply — this component only collects and hands off the raw field values.
+// Date / engagement / poster-date-range filter forms — ONE always-mounted host that
+// renders whatever filter-popover.ts's bridge currently holds (or nothing), now on
+// the shadcn Popover + form controls. viewer.ts owns the field values (open) +
+// apply/remove actions; this island owns the form's local input state (controlled
+// inputs). Labels arrive already-localized from viewer (no i18n here);
+// numeric/date validation ("apply with nothing entered = no-op") stays in viewer's
+// onApply — this component only collects and hands off the raw field values.
+//
+// The old chip-toggles (投稿日/保存日, ≧/≦) became Selects: two-state cycle buttons
+// aren't a shadcn pattern, and a Select states the current choice AND the
+// alternative instead of making the user guess what a click would do.
 
-// Positions to the right of the anchor (top-aligned), clamped into the viewport —
-// mirrors viewer.js placeFlyout() with no maxHeight cap (these are compact forms, not
-// the scrolling value list qf-pop caps itself to).
-function usePlaceFlyout(popRef: RefObject<HTMLDivElement | null>, anchorRect: CorpusAnchorRect | null | undefined) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: popRef is a stable ref — anchorRect is the only reposition trigger
-  useLayoutEffect(() => {
-    if (!anchorRect) return;
-    const pop = popRef.current;
-    if (!pop) return;
-    pop.style.left = anchorRect.right + 8 + 'px';
-    pop.style.top = anchorRect.top + 'px';
-    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
-    const w = pop.offsetWidth;
-    const h = pop.offsetHeight;
-    if (anchorRect.right + 8 + w > innerWidth - 8) pop.style.left = Math.max(8, innerWidth - w - 8) + 'px';
-    if (anchorRect.top + h > innerHeight - 8) pop.style.top = Math.max(8, innerHeight - h - 8) + 'px';
-  }, [anchorRect]);
+// Enumerated field as a small Select. `items` must be passed to the Root: Base UI's
+// Select.Value renders the raw value string otherwise.
+function OptionSelect({ value, onChange, options, triggerClassName = 'w-full' }: { value: string; onChange: (v: string) => void; options: Option[]; triggerClassName?: string }) {
+  const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, o.label])), [options]);
+  return (
+    <Select
+      items={items}
+      value={value}
+      onValueChange={(v) => {
+        if (v != null) onChange(v); // Base UI passes null on clear — never our case
+      }}
+    >
+      <SelectTrigger size="sm" className={triggerClassName}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
-function RemoveApplyRow({ model, commit, applyStyle, onApply }: FormProps & { applyStyle: CSSProperties; onApply: () => void }) {
+function DateRangeRow({ from, to, onFrom, onTo }: { from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void }) {
   return (
-    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+    <div className="flex items-center gap-1.5">
+      <Input type="date" className="flex-1" value={from} onChange={(e) => onFrom(e.target.value)} />
+      <span className="text-xs text-muted-foreground">〜</span>
+      <Input type="date" className="flex-1" value={to} onChange={(e) => onTo(e.target.value)} />
+    </div>
+  );
+}
+
+function RemoveApplyRow({ model, commit, onApply }: FormProps & { onApply: () => void }) {
+  return (
+    <div className="flex justify-end gap-1.5">
       {model.editing && (
-        <button type="button" className="btn-outline qf-popover-delete" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => commit(model.onRemove)}>
+        <Button size="sm" variant="destructive" onClick={() => commit(model.onRemove)}>
           {model.labels.removeLabel}
-        </button>
+        </Button>
       )}
-      <button type="button" className="btn-outline" style={applyStyle} onClick={() => commit(onApply)}>
+      <Button size="sm" onClick={() => commit(onApply)}>
         {model.labels.applyLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -57,19 +80,15 @@ function DateForm({ model, commit }: FormProps) {
   const [dateField, setDateField] = useState(model.fields.dateField);
   const [from, setFrom] = useState(model.fields.from);
   const [to, setTo] = useState(model.fields.to);
+  const fieldOptions: Option[] = [
+    { value: 'date', label: model.labels.typeDate },
+    { value: 'capturedAt', label: model.labels.typeCaptured },
+  ];
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
-        <button type="button" className={'chip' + (dateField === 'capturedAt' ? ' active' : '')} onClick={() => setDateField(dateField === 'date' ? 'capturedAt' : 'date')}>
-          {dateField === 'capturedAt' ? model.labels.typeCaptured : model.labels.typeDate}
-        </button>
-      </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-        <input type="date" className="date-input" value={from} onChange={(e) => setFrom(e.target.value)} />
-        <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>〜</span>
-        <input type="date" className="date-input" value={to} onChange={(e) => setTo(e.target.value)} />
-      </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }} onApply={() => model.onApply({ dateField, from, to })} />
+      <OptionSelect value={dateField} onChange={setDateField} options={fieldOptions} />
+      <DateRangeRow from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      <RemoveApplyRow model={model} commit={commit} onApply={() => model.onApply({ dateField, from, to })} />
     </>
   );
 }
@@ -78,24 +97,18 @@ function EngForm({ model, commit }: FormProps) {
   const [engType, setEngType] = useState(model.fields.engType);
   const [min, setMin] = useState(model.fields.min);
   const [op, setOp] = useState(model.fields.op);
+  const opOptions: Option[] = [
+    { value: 'gte', label: model.labels.opGte },
+    { value: 'lte', label: model.labels.opLte },
+  ];
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
-        <select className="engagement-select" style={{ width: '100%' }} value={engType} onChange={(e) => setEngType(e.target.value)}>
-          {(model.typeOptions as { value: string; label: string }[]).map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+      <OptionSelect value={engType} onChange={setEngType} options={model.typeOptions as Option[]} />
+      <div className="flex items-center gap-1.5">
+        <Input type="number" min="0" placeholder="0" className="flex-1" value={min} onChange={(e) => setMin(e.target.value)} />
+        <OptionSelect value={op} onChange={setOp} options={opOptions} triggerClassName="shrink-0" />
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-        <input type="number" className="engagement-input" min="0" placeholder="0" style={{ flex: 1 }} value={min} onChange={(e) => setMin(e.target.value)} />
-        <button type="button" className={'chip' + (op === 'lte' ? ' active' : '')} style={{ minWidth: 40, textAlign: 'center' }} onClick={() => setOp(op === 'gte' ? 'lte' : 'gte')}>
-          {op === 'lte' ? model.labels.opLte : model.labels.opGte}
-        </button>
-      </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--indigo-600)', color: '#fff', borderColor: 'var(--indigo-600)' }} onApply={() => model.onApply({ engType, min: Number.parseInt(min, 10), op })} />
+      <RemoveApplyRow model={model} commit={commit} onApply={() => model.onApply({ engType, min: Number.parseInt(min, 10), op })} />
     </>
   );
 }
@@ -106,25 +119,15 @@ function PosterDateForm({ model, commit }: FormProps) {
   const [to, setTo] = useState(model.fields.to);
   return (
     <>
-      <div className="pd-field">
-        <span className="pd-label">{model.labels.dimLabel}</span>
-        <select className="engagement-select" style={{ width: '100%' }} value={dateField} onChange={(e) => setDateField(e.target.value)}>
-          {(model.dimOptions as { value: string; label: string }[]).map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">{model.labels.dimLabel}</Label>
+        <OptionSelect value={dateField} onChange={setDateField} options={model.dimOptions as Option[]} />
       </div>
-      <div className="pd-field">
-        <span className="pd-label">{model.labels.rangeLabel}</span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input type="date" className="date-input" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>〜</span>
-          <input type="date" className="date-input" value={to} onChange={(e) => setTo(e.target.value)} />
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">{model.labels.rangeLabel}</Label>
+        <DateRangeRow from={from} to={to} onFrom={setFrom} onTo={setTo} />
       </div>
-      <RemoveApplyRow model={model} commit={commit} applyStyle={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }} onApply={() => model.onApply({ dateField, from, to })} />
+      <RemoveApplyRow model={model} commit={commit} onApply={() => model.onApply({ dateField, from, to })} />
     </>
   );
 }
@@ -133,29 +136,14 @@ const FORMS = { date: DateForm, eng: EngForm, posterDate: PosterDateForm };
 
 export function FilterPopoverHost() {
   const model = useSyncExternalStore(subscribe, get);
-  const popRef = useRef<HTMLDivElement | null>(null);
-  usePlaceFlyout(popRef, model && model.anchorRect);
 
-  // Dismiss on outside-click (capture) / Escape, like the old popovers' shared document
-  // listener — but excluding .sb-row clicks, which the row handler already
-  // closes-and-reopens itself (avoids a double-close race).
-  useEffect(() => {
-    if (!model) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!document.contains(e.target as Node)) return;
-      if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      if ((e.target as Element).closest('.sb-row')) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('click', onDoc, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onDoc, true);
-      document.removeEventListener('keydown', onKey);
-    };
+  // Virtual anchor over the bridge's anchorRect — the popup opens programmatically
+  // beside a sidebar row, with no trigger element. Base UI positions and
+  // viewport-clamps it (the old hand-rolled usePlaceFlyout is gone).
+  const anchor = useMemo(() => {
+    if (!model) return null;
+    const r = model.anchorRect;
+    return { getBoundingClientRect: () => new DOMRect(r.left, r.top, r.right - r.left, r.bottom - r.top) };
   }, [model]);
 
   if (!model) return null;
@@ -164,10 +152,24 @@ export function FilterPopoverHost() {
     if (fn) fn();
   };
   const Form = FORMS[model.kind];
-  return createPortal(
-    <div className="qf-popover" ref={popRef} key={model.openId}>
-      <Form model={model} commit={commit} />
-    </div>,
-    document.body,
+  return (
+    <Popover
+      open
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (details.reason === 'outside-press') {
+          const t = details.event.target as Element | null;
+          if (t && t.closest('.sb-row')) return; // the row handler closes-and-reopens itself (avoids a double-close race)
+        }
+        close();
+      }}
+    >
+      {/* Key on openId: every open() remounts the form, resetting its local input
+          state to the bridge's field values — including re-opening the SAME kind
+          to edit a different node. */}
+      <PopoverContent key={model.openId} anchor={anchor} side="right" align="start" sideOffset={8} collisionPadding={8}>
+        <Form model={model} commit={commit} />
+      </PopoverContent>
+    </Popover>
   );
 }
