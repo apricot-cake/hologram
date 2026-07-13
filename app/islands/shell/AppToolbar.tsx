@@ -72,20 +72,18 @@ export function AppToolbar() {
           </Button>
         </div>
       </div>
-      {/* Active-filter chips. One chip container per browse mode (the QB is per-mode).
-          The Chips island renders INTO the container (returns null when empty, so the
-          row is 0-height with no chips — no visible gap). The .sb-chips class keeps the
-          legacy chip layout/CSS until the filter bar rewrite (P2③). */}
+      {/* Active-filter chips. BOTH containers stay mounted (the post/poster query-chips
+          builders each resolve their container id once at boot — a conditionally-rendered
+          container would be null for the inactive mode and crash render()). The inactive
+          one is just hidden. The Chips island renders into each (null when empty). The
+          .sb-chips class keeps the legacy chip layout/CSS until the filter bar rewrite (P2③). */}
       <div className="px-3">
-        {isPosters ? (
-          <div id="posterQueryChips" className="sb-chips">
-            <ChipsHost id="posterQueryChips" />
-          </div>
-        ) : (
-          <div id="queryChips" className="sb-chips">
-            <ChipsHost id="queryChips" />
-          </div>
-        )}
+        <div id="queryChips" className="sb-chips" hidden={isPosters}>
+          <ChipsHost id="queryChips" />
+        </div>
+        <div id="posterQueryChips" className="sb-chips" hidden={!isPosters}>
+          <ChipsHost id="posterQueryChips" />
+        </div>
       </div>
     </div>
   );
