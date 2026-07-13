@@ -41,7 +41,10 @@ function SelectTrigger({
 function SelectContent({ className, children, side = 'bottom', sideOffset = 4, align = 'center', alignOffset = 0, alignItemWithTrigger = true, ...props }: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'>) {
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} alignItemWithTrigger={alignItemWithTrigger} className="isolate z-50">
+      {/* z-[13500]: select popups must stack above the legacy overlay scale (modals 11000,
+          tooltips 12000) while the @layer-legacy coexistence lasts — same slot the old
+          .fold-menu.cs-pop occupied. Drop back to z-50 once the legacy z-scale is gone. */}
+      <SelectPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} alignItemWithTrigger={alignItemWithTrigger} className="isolate z-[13500]">
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}

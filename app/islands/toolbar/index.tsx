@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowseToggle } from './BrowseToggle.tsx';
 import { DensityToggle } from './DensityToggle.tsx';
-import { GlassSelect } from './GlassSelect.tsx';
+import { SortSelect } from './SortSelect.tsx';
 import { SearchModeSeg } from './SearchModeSeg.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 
@@ -12,7 +12,7 @@ import { SectionTitle } from './SectionTitle.tsx';
 // portals into its EXISTING, now-empty container so the DOM/CSS contract is unchanged.
 // Lives under the single App root now: app/App.tsx renders <Toolbar/>, which portals every
 // control. i18n is resolved by the unified root before it renders (SearchModeSeg /
-// SectionTitle / GlassSelect use t() synchronously).
+// SectionTitle / SortSelect use t() synchronously).
 
 const SORT_POST = [
   { value: 'date-desc', key: 'sortDateDesc' },
@@ -48,9 +48,9 @@ function BrowseMount() {
 }
 
 // Sort selects: the native <select> stays as viewer's value source (hidden via .cs-host);
-// React renders the glass trigger + popup into a display:contents span inserted right after
-// it (so .cs-btn lays out against the .sb-section, like the old afterend-inserted button).
-// The span is created once (idempotent) and reused as the portal target.
+// React renders the shadcn Select into a display:contents span inserted right after it
+// (so the trigger lays out against the .sb-section, like the old afterend-inserted
+// button). The span is created once (idempotent) and reused as the portal target.
 function sortHost(id: string): { sel: HTMLSelectElement; host: HTMLSpanElement } | null {
   const sel = document.getElementById(id) as HTMLSelectElement | null;
   if (!sel) return null;
@@ -66,7 +66,7 @@ function sortHost(id: string): { sel: HTMLSelectElement; host: HTMLSpanElement }
 }
 function SortMount({ id, storeKey, options }: { id: string; storeKey: string; options: { value: string; key: string }[] }) {
   const h = sortHost(id);
-  return h ? createPortal(<GlassSelect sel={h.sel} storeKey={storeKey} options={options} />, h.host) : null;
+  return h ? createPortal(<SortSelect sel={h.sel} storeKey={storeKey} options={options} />, h.host) : null;
 }
 
 export function Toolbar() {

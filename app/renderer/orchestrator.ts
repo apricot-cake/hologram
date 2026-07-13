@@ -163,7 +163,7 @@ export let resetPosterFilters: () => void;
   // #posterFilterRows title + row labels are rendered by the poster sidebar island,
   // self-deriving from corpusPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
-  // #posterSortSelect option labels are the GlassSelect island now (rendered from i18n
+  // #posterSortSelect option labels are the SortSelect island now (rendered from i18n
   // keys) — the native <select> stays hidden (.cs-host) as the value source, so writing
   // its option textContent here was dead (never shown). No static setText.
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
@@ -188,11 +188,11 @@ export let resetPosterFilters: () => void;
   byId('sbTop').dataset.tip = getMessage('sbTopTip'); // shared glass tooltip (was native title)
 
   // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
-  // by the GlassSelect island from i18n keys, so writing option textContent here was dead.
+  // by the SortSelect island from i18n keys, so writing option textContent here was dead.
   const sortSelect = selectById('sortSelect');
 
   // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
-  // #collectionSortSelect) is React-owned now — the toolbar island's GlassSelect hides
+  // #collectionSortSelect) is React-owned now — the toolbar island's SortSelect hides
   // the native <select> (.cs-host), renders the glass trigger + popup, and drives the
   // select on pick so the change handlers below still fire. The active value is mirrored
   // into corpusStore ('sortPost' etc.) so the island reflects programmatic changes
@@ -771,7 +771,7 @@ export let resetPosterFilters: () => void;
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
-    // Poster sort's single source is corpusStore 'sortPoster' (the GlassSelect writes it);
+    // Poster sort's single source is corpusStore 'sortPoster' (the SortSelect writes it);
     // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
     // as the old closure default).
     posterSort: () => (storeGet('sortPoster') as string) || 'count',
@@ -806,7 +806,7 @@ export let resetPosterFilters: () => void;
     getSortValue: () => sortSelect.value,
     setSortValue: (v) => {
       sortSelect.value = v;
-      storeSet('sortPost', sortSelect.value); // mirror into the store so the GlassSelect island reflects it
+      storeSet('sortPost', sortSelect.value); // mirror into the store so the SortSelect island reflects it
     },
     getMultiOnly: () => multiOnly,
     setMultiOnly: (v) => {
@@ -1422,7 +1422,7 @@ export let resetPosterFilters: () => void;
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
-  // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the GlassSelect
+  // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the SortSelect
   // writes it on pick); re-render when it changes. This replaces the old #posterSortSelect
   // DOM-'change' listener — the store is now the one trigger (no dual source).
   storeSubscribe('sortPoster', () => renderPosters());

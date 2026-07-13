@@ -14,7 +14,7 @@
 // posts-data/listing services directly. Labels are NOT part of the model — the islands
 // resolve their own row names via t() and the 作品/キャラ custom label via
 // corpusTags.getTagLabels(), the same "island resolves its own i18n" pattern
-// GlassSelect/SectionTitle use (buildSidebarModel used to carry MSG-resolved strings
+// SortSelect/SectionTitle use (buildSidebarModel used to carry MSG-resolved strings
 // because it ran inside viewer.ts; that reason is gone once the derivation moves here).
 //
 // tagKindOf/posterFilterVocab/namedPosters are NOT reimplemented here — they're the

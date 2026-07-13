@@ -345,7 +345,7 @@ declare global {
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
   // tabs sources. Labels are NOT in the model: the islands resolve their own static
   // row names via t() and the 作品/キャラ custom label via corpusTags.getTagLabels(),
-  // the same "island resolves its own i18n" pattern GlassSelect/SectionTitle use.
+  // the same "island resolves its own i18n" pattern SortSelect/SectionTitle use.
   // Everything else (badges/visible/clip/multi/openCat) is derived from corpusStore
   // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + corpusTags/corpusFolders/
   // posts-data.ts/corpusListing — no viewer push needed, so viewer's mutation call
