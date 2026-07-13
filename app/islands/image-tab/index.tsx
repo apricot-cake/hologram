@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { corpusImageTabSource } from '../../renderer/image-tab.ts';
+import { get as confirmGet } from '../../renderer/confirm.ts';
 import { isOpen as lightboxIsOpen } from '../../renderer/lightbox.ts';
 import { isOpen as settingsIsOpen } from '../../renderer/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
@@ -41,7 +42,7 @@ document.addEventListener('keydown', (e) => {
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
   if (lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
-  if (document.querySelector('.confirm-overlay.show')) return;
+  if (confirmGet()) return;
   const n = model.items.length;
   const d = e.key === 'ArrowLeft' ? -1 : 1;
   model.onIndexChange((Math.max(0, Math.min(model.idx, n - 1)) + d + n) % n);

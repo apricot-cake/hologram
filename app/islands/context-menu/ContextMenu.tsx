@@ -1,86 +1,60 @@
-import { useSyncExternalStore, useRef, useLayoutEffect, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, pick, subscribe } from '../../renderer/menu.ts';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-// Glass context-menu host — ONE always-mounted instance that renders whatever
-// menu.ts currently holds (or nothing). viewer.ts owns the menu's
-// data + actions; this island only draws the glass popup and dispatches clicks back
-// through menu.ts's pick(). Replaces the per-menu hand-rolled builders in
-// viewer.ts (innerHTML template + show/hide/clamp/outside-click/Escape), which were
-// duplicated across the collection / poster / … context menus.
+// Context-menu host — ONE always-mounted instance that renders whatever menu.ts
+// currently holds (or nothing). The orchestrator side owns the menu's data +
+// actions; this island only draws a shadcn DropdownMenu anchored at the click
+// point and dispatches clicks back through menu.ts's pick().
 //
-// Emits the SAME DOM the old builders did (.fold-menu > .fm-row/.fm-sep, with
-// .fm-name + optional .fm-check, and .fm-danger / .fm-manage modifiers) so the menu
-// CSS is unchanged. Labels are provided already-localized by viewer (no i18n here).
-
-// Geometric check, matching viewer.js CHECK_SVG (used for toggle/assignment rows).
-const Check = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <polyline points="5 12.5 10 17 19 7" />
-  </svg>
-);
+// The menu opens programmatically at (x, y) — there is no trigger element — so
+// the content is anchored to a virtual element at those coordinates (Base UI
+// positions + viewport-clamps it; the old hand-rolled clampIntoView is gone).
+//
+// closeOnClick is false on EVERY row: the bridge alone decides whether a pick
+// closes the menu (default), keeps it open re-rendered (folder-assignment
+// toggle rows return a fresh items array), or replaces it with another menu
+// (card menu → folder picker). Letting Base UI self-close on click would race
+// those stay-open paths. Outside-click / Escape close via onOpenChange.
+//
+// Row mapping: `checked` present → CheckboxItem (right-side indicator),
+// `danger` → destructive variant, `manage` → muted "manage…" styling.
 
 export function ContextMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
-  const popRef = useRef<HTMLDivElement | null>(null);
 
-  // Position at (x, y); clamp into the viewport once the size is known (mirrors
-  // viewer.js clampIntoView). Re-runs whenever the menu model changes.
-  useLayoutEffect(() => {
-    if (!menu) return;
-    const pop = popRef.current;
-    if (!pop) return;
-    let left = menu.x,
-      top = menu.y;
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
-    const w = pop.offsetWidth;
-    const h = pop.offsetHeight;
-    if (left + w > innerWidth - 8) left = Math.max(8, innerWidth - w - 8);
-    if (top + h > innerHeight - 8) top = Math.max(8, innerHeight - h - 8);
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-  }, [menu]);
-
-  // Dismiss on outside-click (capture) / Escape, like the old per-menu listeners.
-  useEffect(() => {
-    if (!menu) return;
-    const onDoc = (e: MouseEvent) => {
-      if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('click', onDoc, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onDoc, true);
-      document.removeEventListener('keydown', onKey);
-    };
+  // Virtual anchor at the click point (recreated whenever the model changes).
+  const anchor = useMemo(() => {
+    if (!menu) return null;
+    const { x, y } = menu;
+    return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
   }, [menu]);
 
   if (!menu) return null;
-  return createPortal(
-    <div className="fold-menu show" ref={popRef}>
-      {menu.items.map((it, i) =>
-        it.sep ? (
-          <div key={i} className="fm-sep" />
-        ) : (
-          <div key={i} className={'fm-row' + (it.danger ? ' fm-danger' : '') + (it.manage ? ' fm-manage' : '')} onClick={() => pick(it)}>
-            {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from viewer.js, never user content */}
-            {it.icon && <span className="fm-ic" dangerouslySetInnerHTML={{ __html: it.icon }} />}
-            <span className="fm-name">{it.label}</span>
-            {it.checked && (
-              <span className="fm-check">
-                <Check />
-              </span>
-            )}
-          </div>
-        ),
-      )}
-    </div>,
-    document.body,
+  return (
+    <DropdownMenu
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <DropdownMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
+        {menu.items.map((it, i) =>
+          it.sep ? (
+            <DropdownMenuSeparator key={i} />
+          ) : it.checked !== undefined ? (
+            <DropdownMenuCheckboxItem key={i} checked={!!it.checked} closeOnClick={false} onClick={() => pick(it)}>
+              {it.label}
+            </DropdownMenuCheckboxItem>
+          ) : (
+            <DropdownMenuItem key={i} variant={it.danger ? 'destructive' : 'default'} className={it.manage ? 'text-muted-foreground' : undefined} closeOnClick={false} onClick={() => pick(it)}>
+              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from the orchestrator, never user content */}
+              {it.icon && <span className="flex items-center" dangerouslySetInnerHTML={{ __html: it.icon }} />}
+              {it.label}
+            </DropdownMenuItem>
+          ),
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

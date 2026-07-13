@@ -1,74 +1,36 @@
-import { useSyncExternalStore, useRef, useLayoutEffect, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { PencilIcon } from 'lucide-react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, subscribe } from '../../renderer/kind-menu.ts';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-// Glass 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
-// kind-menu.ts currently holds (or nothing). viewer.ts owns the row model +
-// pick/rename actions; this island only draws the glass popup and calls back through
-// kind-menu.ts's model callbacks. A DEDICATED component (not the generic
-// ContextMenu) because each row carries TWO independent click targets — the row
-// itself (pick a kind) and a nested rename button (relabel that kind) — plus a
-// header, none of which fit ContextMenu's item shape.
+// 種別 (tag-kind) menu — ONE always-mounted instance that renders whatever
+// kind-menu.ts currently holds (or nothing). The orchestrator side builds the
+// row model (current kind, already-localized labels) and owns the pick/rename
+// actions; this island draws a shadcn DropdownMenu anchored at the click point.
+// A DEDICATED component (not the generic ContextMenu) because each row carries
+// TWO independent click targets — the row itself (pick a kind) and a nested
+// rename button (relabel that kind) — plus a header, none of which fit
+// ContextMenu's item shape.
 //
-// Emits the SAME DOM the old imperative builder did (.fold-menu.kind-menu > .fm-head
-// + .fm-row > .fm-ic/.fm-name/.fm-rename/.fm-check) so the existing CSS is unchanged.
-// Labels are provided already-localized by viewer (no i18n here).
-
-const Check = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <polyline points="5 12.5 10 17 19 7" />
-  </svg>
-);
-const Pencil = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M12 20h9" />
-    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-  </svg>
-);
+// Kind selection is one-of-N, so rows are a RadioGroup (right-side indicator
+// marks the current kind — the shadcn idiom for single-choice menus). The
+// colored kind dot keeps its legacy tk-dot classes: kind colors are app domain,
+// not ui-kit styling. closeOnClick stays false / close() is called explicitly,
+// same bridge-owned lifecycle as ContextMenu.
 
 export function KindMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
-  const popRef = useRef<HTMLDivElement | null>(null);
 
-  // Position at (x, y); clamp into the viewport once the size is known (mirrors
-  // viewer.js clampIntoView / the context-menu island). Re-runs whenever the model changes.
-  useLayoutEffect(() => {
-    if (!menu) return;
-    const pop = popRef.current;
-    if (!pop) return;
-    let left = menu.x,
-      top = menu.y;
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-    // offsetWidth/Height, not the rect — measured mid-corpusPopIn the rect is scaled .96
-    const w = pop.offsetWidth;
-    const h = pop.offsetHeight;
-    if (left + w > innerWidth - 8) left = Math.max(8, innerWidth - w - 8);
-    if (top + h > innerHeight - 8) top = Math.max(8, innerHeight - h - 8);
-    pop.style.left = left + 'px';
-    pop.style.top = top + 'px';
-  }, [menu]);
-
-  // Dismiss on outside-click (capture) / Escape, like the old menu's listeners.
-  useEffect(() => {
-    if (!menu) return;
-    const onDoc = (e: MouseEvent) => {
-      if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('click', onDoc, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onDoc, true);
-      document.removeEventListener('keydown', onKey);
-    };
+  // Virtual anchor at the click point (recreated whenever the model changes).
+  const anchor = useMemo(() => {
+    if (!menu) return null;
+    const { x, y } = menu;
+    return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) };
   }, [menu]);
 
   if (!menu) return null;
 
+  const current = menu.rows.find((r) => !r.sep && r.checked);
   const pick = (row: CorpusKindMenuRow) => {
     close();
     menu.onPick(row.kind as string);
@@ -79,30 +41,34 @@ export function KindMenuHost() {
     menu.onRename(kind as string);
   };
 
-  return createPortal(
-    <div className="fold-menu kind-menu show" ref={popRef}>
-      <div className="fm-head">{menu.header}</div>
-      {menu.rows.map((row, i) =>
-        row.sep ? (
-          <div key={i} className="fm-sep" />
-        ) : (
-          <div key={i} className="fm-row" onClick={() => pick(row)}>
-            <span className="fm-ic">{row.dot && <span className={'tk-dot tk-' + row.kind} />}</span>
-            <span className="fm-name">{row.label}</span>
-            {row.renameable && (
-              <button type="button" className="fm-rename" aria-label={menu.renameTitle} data-tip={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
-                <Pencil />
-              </button>
-            )}
-            {row.checked && (
-              <span className="fm-check">
-                <Check />
-              </span>
-            )}
-          </div>
-        ),
-      )}
-    </div>,
-    document.body,
+  return (
+    <DropdownMenu
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <DropdownMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
+        {/* label INSIDE the RadioGroup — Base UI GroupLabel throws outside <Menu.Group>/<Menu.RadioGroup> */}
+        <DropdownMenuRadioGroup value={(current && (current.kind as string)) || ''}>
+          <DropdownMenuLabel>{menu.header}</DropdownMenuLabel>
+          {menu.rows.map((row, i) =>
+            row.sep ? (
+              <DropdownMenuSeparator key={i} />
+            ) : (
+              <DropdownMenuRadioItem key={i} value={row.kind as string} closeOnClick={false} onClick={() => pick(row)}>
+                {row.dot && <span className={'tk-dot tk-' + row.kind} />}
+                {row.label}
+                {row.renameable && (
+                  <button type="button" className="ml-auto flex items-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label={menu.renameTitle} data-tip={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
+                    <PencilIcon className="size-3.5" />
+                  </button>
+                )}
+              </DropdownMenuRadioItem>
+            ),
+          )}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

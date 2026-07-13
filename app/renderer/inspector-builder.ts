@@ -15,7 +15,10 @@ import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
+import { get as confirmGet } from './confirm.ts';
+import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { get as menuGet } from './menu.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
@@ -374,8 +377,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
-    if (document.querySelector('.confirm-overlay.show')) return;
-    if (document.querySelector('.fold-menu.show')) return;
+    if (confirmGet()) return;
+    if (menuGet() || kindMenuGet()) return;
+    if (document.querySelector('.fold-menu.show')) return; // qf-pop / tag-pop / GlassSelect still render the legacy class
     if (filterPopoverGet()) return;
     if (inImageTab) {
       deps.closeTab(deps.getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it

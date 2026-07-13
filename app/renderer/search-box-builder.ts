@@ -9,6 +9,7 @@
 // toggle handling. postQB/browseMode/i18n and the render/sidebar callbacks are
 // still owned by viewer.ts, so they're injected as deps — same ctx pattern as
 // query-builder.ts/kind-menu-builder.ts.
+import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
 import { init as initSearchBox } from './searchbox.ts';
@@ -139,7 +140,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     if (!slash && !ctrlK) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (document.querySelector('.confirm-overlay.show') || lightboxIsOpen()) return;
+    if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     e.preventDefault();
