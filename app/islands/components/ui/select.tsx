@@ -1,10 +1,29 @@
-import type * as React from 'react';
+import * as React from 'react';
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 
 import { cn } from '@/lib/utils';
+import { setSelectOpen } from '../../../renderer/open-select-registry.ts';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
-const Select = SelectPrimitive.Root;
+// Root wrapper: mirror each instance's open/close into open-select-registry so
+// the renderer's Esc cascade (inspector-builder.ts) can defer to an open Select
+// without sniffing the DOM (§0-0 item 5). Per-instance symbol + unmount cleanup
+// keeps the registry leak-free. HAND-APPLIED — `shadcn add select` regenerates
+// this file as `const Select = SelectPrimitive.Root`, dropping the mirror; re-add.
+function Select<Value, Multiple extends boolean | undefined = false>({ onOpenChange, ...props }: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const idRef = React.useRef<symbol | null>(null);
+  if (idRef.current === null) idRef.current = Symbol('select');
+  React.useEffect(() => () => setSelectOpen(idRef.current as symbol, false), []);
+  return (
+    <SelectPrimitive.Root
+      onOpenChange={(open, details) => {
+        setSelectOpen(idRef.current as symbol, open);
+        onOpenChange?.(open, details);
+      }}
+      {...props}
+    />
+  );
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return <SelectPrimitive.Group data-slot="select-group" className={cn('scroll-my-1 p-1', className)} {...props} />;
