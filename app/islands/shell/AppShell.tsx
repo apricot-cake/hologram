@@ -17,8 +17,8 @@
 // - The right inspector keeps the legacy #postDetail element: its .inspector CSS
 //   already implements the #143 model (wide = fixed 320px column, narrow = slide-over),
 //   so P1 inherits that behavior; the content is reworked in P2⑦.
-import { useEffect } from 'react';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { useEffect, useRef } from 'react';
+import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { signalShellReady } from '../../renderer/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
@@ -29,6 +29,31 @@ import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid } from '../grid/index.tsx';
 import { PosterGrid } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+
+// The sidebar obeys the same width discipline as the inspector: horizontal width is a
+// contested resource (the inspector detaches to a slide-over below 1280px), so a sparse
+// nav column must not hold persistent width. Below 1024px the sidebar auto-collapses to
+// the icon rail (shadcn's collapsible="icon"); below 768px it becomes the mobile Sheet
+// (useIsMobile). The manual SidebarTrigger + Ctrl/Cmd+B still override within a band —
+// this only re-applies on a breakpoint crossing, so a manual toggle persists until the
+// next crossing. See the trial memory: "幅規律の対称ルール".
+const SIDEBAR_EXPANDED_QUERY = '(min-width: 1024px)';
+
+function SidebarAutoCollapse() {
+  const { setOpen } = useSidebar();
+  const setOpenRef = useRef(setOpen);
+  useEffect(() => {
+    setOpenRef.current = setOpen;
+  }, [setOpen]);
+  useEffect(() => {
+    const mql = window.matchMedia(SIDEBAR_EXPANDED_QUERY);
+    setOpenRef.current(mql.matches);
+    const onChange = (e: MediaQueryListEvent) => setOpenRef.current(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+  return null;
+}
 
 export function AppShell() {
   // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
@@ -46,7 +71,8 @@ export function AppShell() {
             <TabsHost />
           </div>
         </header>
-        <SidebarProvider className="min-h-0 flex-1">
+        <SidebarProvider defaultOpen={window.innerWidth >= 1024} className="min-h-0 flex-1">
+          <SidebarAutoCollapse />
           <LeftSidebar />
           <SidebarInset className="min-w-0">
             <AppToolbar />
