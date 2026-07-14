@@ -94,6 +94,10 @@ export let navBack: () => void;
 export let navForward: () => void;
 export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
+// Apply a library folder as a place filter (redesign §3-1): replace the post query's
+// folder ('collection') facet with the clicked folder, then re-render. The new left
+// sidebar's folder rows call this directly (no qf-pop flyout). Renamed with #42.
+export let applyFolderFilter: (id: string) => void;
 
 (async () => {
   // The Promise executor runs synchronously, so this is assigned before any other
@@ -636,6 +640,12 @@ export let resetPosterFilters: () => void;
   function afterQueryChange() {
     postQB.refresh();
   }
+  // Folder-as-place: clear any existing folder ('collection') leaves, then add the clicked
+  // one. addFilter goes through facetAdd + the qb's re-render, so the grid + chips refresh.
+  applyFolderFilter = (id) => {
+    removeCondsMatching((c) => c.type === 'collection');
+    addFilter({ type: 'collection', value: id });
+  };
 
   const CF = () => folders; // shared folder module
 
