@@ -35,11 +35,14 @@ const TARGETS = [
 ];
 
 // README banners: the wordmark + tagline are kept verbatim; only the leading mark
-// (the single <g>…</g> group) is swapped for the holographic square as an embedded
-// raster. GitHub renders the banner via <img>, which blocks external refs, so the
-// square must be inlined as a base64 data URI.
+// is swapped for the holographic square as an embedded raster. GitHub renders the
+// banner via <img>, which blocks external refs, so the square must be inlined as a
+// base64 data URI. The mark is a <g>…</g> on a pristine banner and the substituted
+// <image …/> on every later run, so match either — otherwise a re-run silently
+// skips the banner (leaving the old icon) once the <g> has been replaced.
 const BANNERS = ['banner-light.svg', 'banner-dark.svg', 'banner-en-light.svg', 'banner-en-dark.svg'];
 const BANNER_ICON = { x: 10, y: 14, size: 76, render: 200 }; // placement in the 480x104 viewBox
+const BANNER_MARK = /<g\b[\s\S]*?<\/g>|<image\b[\s\S]*?\/>/; // first run: <g>, re-run: <image/>
 
 function fail(msg) {
   console.error('make-icons: ' + msg);
@@ -74,11 +77,11 @@ function run() {
       continue;
     }
     let svg = fs.readFileSync(abs, 'utf8');
-    if (!/<g\b[\s\S]*?<\/g>/.test(svg)) {
-      console.warn('skip ' + name + ' (no <g> mark to replace)');
+    if (!BANNER_MARK.test(svg)) {
+      console.warn('skip ' + name + ' (no <g> or <image> mark to replace)');
       continue;
     }
-    svg = svg.replace(/<g\b[\s\S]*?<\/g>/, imageTag);
+    svg = svg.replace(BANNER_MARK, imageTag);
     fs.writeFileSync(abs, svg);
     console.log('wrote assets/' + name);
   }

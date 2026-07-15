@@ -12,8 +12,9 @@
 
 // Tweak defaults baked from the design (色相36° / 彩度0.85 / パステル0.2 / 粒度1.2 / 滲み0).
 const P = { hue: 36 / 360, sat: 0.85, pastel: 0.2, grain: 1.2, disp: 0 };
-// Frame shown when motion is reduced — a developed swirl rather than the flat t=0.
-const STATIC_T = 6.0;
+// Frame shown when motion is reduced — the exact moment captured for the static
+// brand icon (assets/icon-master.png), so the reduced-motion render matches the mark.
+const STATIC_T = 52.0;
 const MAX_DPR = 2; // cap retina cost; the icon is small
 
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }';
