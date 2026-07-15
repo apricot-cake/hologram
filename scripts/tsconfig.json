@@ -41,12 +41,13 @@
     "typeRoots": ["../app/node_modules/@types"],
     "types": ["node"]
   },
+  // make-icons and inject-dummy are the two ELECTRON-entry scripts; they are .cjs
+  // (not .cts) so Electron's require('electron') injection works — see their headers.
+  // Being plain JS with no type annotations, they lose no coverage by sitting outside tsc.
   "files": [
     "backfill-metadata.cts",
     "cdp-verify.cts",
     "e2e-capture-test.cts",
-    "inject-dummy.cts",
-    "make-icons.cts",
     "run-app-tests.cts",
     "run-tests.cts",
     "self-test.cts",

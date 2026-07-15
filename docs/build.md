@@ -54,13 +54,13 @@ electron-builder, win/nsis。
 ブランドの実体はホログラフィック虹色スクエア（ラスター）。**マスター 1 枚から全アイコンを再生成**する＝差し替えが半端にならない仕組み:
 
 1. `assets/icon-master.png` を差し替える（正方・512px 以上推奨）
-2. `app/node_modules/.bin/electron scripts/make-icons.cts` を実行
+2. `app/node_modules/.bin/electron scripts/make-icons.cjs` を実行
 
-これで以下が一括更新される（`scripts/make-icons.cts` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
+これで以下が一括更新される（`scripts/make-icons.cjs` の `TARGETS`/`BANNERS` が配置先の単一真実源＝増えたらここに足す）:
 
 - `app/assets/icon.png`（512）＝Electron ウィンドウ/タスクバーアイコン。`app/package.json` の `build.win.icon` がこれを指し、electron-builder が配布時に `.ico` 化（PNG→ICO 自動変換）。dev では `main.mts` の `BrowserWindow({icon})`＋`app.setAppUserModelId` で反映。
 - `extension/icons/icon{16,32,48,128,256}.png`＝Chrome 拡張（manifest の `icons`/`action.default_icon`）。差し替え後は拡張の再読み込みでツールバーに反映。
 - `assets/icon.png`（256）＝汎用ブランドラスター/ファビコン。
 - `assets/banner-{light,dark,en-light,en-dark}.svg`＝README バナー。ワードマーク `corpus`＋タグラインは保持し、先頭マークだけ虹色スクエアの埋め込み画像（base64）に差し替え。
 
-Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。
+Electron 経由で実行するのは nativeImage の高品質リサンプラを使うため（ウィンドウもネットワークも無し・リポへのファイル出力のみ）。拡張子が `.cjs`（周囲の `scripts/*.cts` と異なる）のは、Electron 43／Node 22 が `.cts` エントリを ESM 経由で読み `require('electron')` の注入が効かなくなるため＝classic CommonJS ローダを強制する必要がある（詳細はスクリプト冒頭コメント）。`.cts` へ戻さないこと。

@@ -5,9 +5,16 @@
 // hashtags, tags). Runs via Electron because it renders placeholder images with
 // a canvas.
 //
-//   app/node_modules/.bin/electron scripts/inject-dummy.cts  [saveFolder]
+//   app/node_modules/.bin/electron scripts/inject-dummy.cjs  [saveFolder]
 //
 // With no folder argument it writes to the configured save folder.
+//
+// Why .cjs (not .cts): as the ELECTRON entry it must load via the classic CommonJS
+// loader so Electron's require('electron') injection applies — a .ts/.cts entry goes
+// through Node 22's ESM CJS-translator where that injection is absent (require dies
+// with ERR_MODULE_NOT_FOUND). require('../native-host/paths.cts') below still works:
+// a classic require() of a .cts sibling type-strips it fine. Plain JS anyway, so .cjs
+// costs no type coverage. Do NOT rename back to .cts. (See make-icons.cjs for detail.)
 
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
