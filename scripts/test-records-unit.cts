@@ -103,7 +103,8 @@ async function main() {
     let gs = groupRecords([a2, a1, b]);
     assert('同一URLは1グループに集約', gs.length === 2 && gs.find((g) => g.records.length === 2));
     const ga = gs.find((g) => g.records.length === 2);
-    assert('records は captureId 順', ga.records[0].captureId === 'a1' && ga.records[1].captureId === 'a2');
+    // No replyToId + equal (unset) dates → captureId tiebreak keeps a1 before a2.
+    assert('records 並び（連鎖なし＝date/captureId フォールバック）', ga.records[0].captureId === 'a1' && ga.records[1].captureId === 'a2');
     assert('rep はスクショ優先', ga.rep === a1);
     assert('files はグループ集約（drag は artwork 扱い）', ga.files.join(',') === 'a2.png');
 
@@ -128,6 +129,31 @@ async function main() {
     const merged = gs.find((g) => g.records.length === 2);
     assert('セルフリプは親グループへ合流', merged && merged.records.some((r) => r.captureId === 'p1') && merged.records.some((r) => r.captureId === 'p2'));
     assert('他人のリプは合流しない', gs.length === 2);
+
+    // Page order (#89): a self-reply thread whose captureIds run REVERSE of the
+    // reply chain must still page root→leaf. The old captureId sort produced the
+    // reverse (the actual-harm bug). captureId here is 'z'>'m'>'a' while reply
+    // order is root(1)→r1(2)→r2(3), so a captureId sort would give [a,m,z].
+    {
+      const root = mk({ captureId: 'z_root', url: 'https://x.com/u/status/1', userId: 'u1', image: 'z.jpg', text: '本編1' });
+      const r1 = mk({ captureId: 'm_rep1', url: 'https://x.com/u/status/2', userId: 'u1', replyToId: '1', image: 'm.jpg', text: '本編2' });
+      const r2 = mk({ captureId: 'a_rep2', url: 'https://x.com/u/status/3', userId: 'u1', replyToId: '2', image: 'a.jpg', text: '本編3' });
+      // Feed them in a scrambled order to prove the sort, not the input, decides.
+      gs = groupRecords([r2, root, r1]);
+      const thread = gs.find((g) => g.records.length === 3);
+      assert('連鎖順（根→葉）でページ送り＝captureId 逆順でも正しい', thread && thread.records.map((r) => r.captureId).join(',') === 'z_root,m_rep1,a_rep2');
+    }
+
+    // Auto-group (same-URL re-captures, no replyToId): date ascending decides, with
+    // captureId only as the final tiebreak. Later date must sort after despite a
+    // smaller captureId.
+    {
+      const early = mk({ captureId: 'zz', url: 'https://x.com/u/status/50', userId: 'u1', image: 'e.jpg', text: '', date: '2026-01-01T00:00:00Z' });
+      const late = mk({ captureId: 'aa', url: 'https://x.com/u/status/50', userId: 'u1', image: 'l.jpg', text: '', date: '2026-06-01T00:00:00Z' });
+      gs = groupRecords([late, early]);
+      const g = gs.find((x) => x.records.length === 2);
+      assert('連鎖なしは date 昇順（captureId より date 優先）', g && g.records.map((r) => r.captureId).join(',') === 'zz,aa');
+    }
 
     // Long self-reply chain: each post aliases to its IMMEDIATE parent's key, so
     // alias depth equals thread length. The old fixed depth-10 cap split threads
@@ -203,7 +229,6 @@ async function main() {
     const aspect = { capX: '4/3' };
     const cardModel = R.makeCardModel({
       t,
-      PF_NAME: { x: 'X' },
       formatCount: (n) => 'N' + n,
       formatDate: (d) => 'D' + d,
       compactDate: (d) => d.slice(0, 10),
@@ -247,7 +272,9 @@ async function main() {
     assert('cardModel noUrl=false', m.noUrl === false);
     assert('cardModel engagement は非ゼロのみ（0 は null）', m.stats.likes === 'N12' && m.stats.replies === 'N3' && m.stats.reposts === null && m.stats.bookmarks === null);
     assert('cardModel 同日は cap 日付を去重（post のみ残る）', m.footDates.post && m.footDates.post.label === '2026-04-01' && m.footDates.cap === null);
-    assert('cardModel pfName/userName/handle', m.pfName === 'X' && m.userName === 'Alice' && m.handle === '@alice');
+    // The platform badge was removed from thumbnails entirely (1423e65); cardModel
+    // no longer emits pfName. Author identity (userName/handle) stays.
+    assert('cardModel userName/handle', m.userName === 'Alice' && m.handle === '@alice');
     assert('cardModel flags（thread/quote のみ・reply は false）', m.flags.join() === 'THREAD,QUOTE');
     // mediaType 'image' is the default → no label (#110); video/gif still labeled.
     assert('cardModel mediaLabel: image は空 / likesOv=formatCount(likes)', m.mediaLabel === '' && m.likesOv === 'N12');

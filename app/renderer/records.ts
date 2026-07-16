@@ -165,10 +165,50 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       }
       g.records.push(e.p);
     }
+    // Member order within a group = the reading order the image tab / gallery pages
+    // through. Reply-chain topology first (root→leaf, so a self-reply thread reads
+    // top-to-bottom even when its posts were saved out of order), then post date
+    // ascending, then captureId as a stable tiebreak. The old plain-captureId sort
+    // put self-replies and re-captures in save order — frequently the reverse of how
+    // they should read (#89 めくり順バグ). Imported records carry no replyToId, so
+    // they fall through to date/captureId (a known v1 limit).
     for (const g of order) {
-      g.records.sort((a, b) => String(a.captureId || '').localeCompare(String(b.captureId || '')));
+      // Reply-chain depth = hops up replyToId to an in-group ancestor by the SAME
+      // author (mirrors the idIndex keying used for merging above). byOwnId is built
+      // per group, so a manual group mixing authors simply doesn't chain — its
+      // members order by date/captureId, which is what we want there.
+      const byOwnId = new Map<string, CorpusPost>();
+      for (const p of g.records) {
+        const id = pidOf(p);
+        if (id && p.userId) byOwnId.set(p.userId + '|' + id, p);
+      }
+      const depthCache = new Map<CorpusPost, number>();
+      const depthOf = (start: CorpusPost): number => {
+        const cached = depthCache.get(start);
+        if (cached !== undefined) return cached;
+        let d = 0;
+        let cur: CorpusPost | undefined = start;
+        const seen = new Set<CorpusPost>(); // guard corrupt mutual-reply cycles
+        while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
+          seen.add(cur);
+          const parent: CorpusPost | undefined = byOwnId.get(cur.userId + '|' + String(cur.replyToId));
+          if (!parent || parent === cur) break;
+          d++;
+          cur = parent;
+        }
+        depthCache.set(start, d);
+        return d;
+      };
+      g.records.sort((a, b) => {
+        const dd = depthOf(a) - depthOf(b);
+        if (dd) return dd;
+        const md = (a._dateMs || 0) - (b._dateMs || 0);
+        if (md) return md;
+        return String(a.captureId || '').localeCompare(String(b.captureId || ''));
+      });
       // Card rep: prefer the click-capture (screenshot+full meta), then any record
-      // with text, then the earliest — drags often carry no text/stats.
+      // with text, then the earliest — drags often carry no text/stats. Independent
+      // of the member order above (the card face stays screenshot-first).
       g.rep = g.records.find(isScreenshot) || g.records.find((r) => r.text) || g.records[0];
       g.files = g.records.flatMap(groupFilesOf);
     }
