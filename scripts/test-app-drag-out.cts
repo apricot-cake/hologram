@@ -5,9 +5,10 @@
 //  - a drag started on a card image is INTERCEPTED (preventDefault) — otherwise
 //    the browser's own drag runs and carries the psimg:// thumbnail URL instead
 //    of the original files
-//  - dragging a card OUTSIDE the current selection re-points the selection at
-//    that card (the Explorer/Eagle rule), while dragging one INSIDE it leaves
-//    the selection alone
+//  - a drag NEVER writes the selection, inside it or outside it. Explorer looks
+//    like it selects what you drag, but that's its mousedown; and Corpus's
+//    selection is a working set built by hand across a scroll, not Explorer's
+//    throwaway cursor, so a gesture that leaves the app must not rewrite it
 //  - a drag started off the image (post text) is left to the browser
 //
 // What each drag HANDS OVER can't be observed from here: window.corpus is deep
@@ -85,23 +86,25 @@ const evalJs = `(async () => {
   };
   const out = {};
 
-  // 1. no selection: dragging a card image is intercepted and selects that card
+  // 1. nothing selected: the drag is intercepted and selects NOTHING — an export
+  //    gesture leaves the library as it found it
   out.prevented1 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
   out.selAfter1 = selectedKeys();
 
-  // 2. dragging a card already IN the selection leaves the selection alone
-  out.prevented2 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
-  out.selAfter2 = selectedKeys();
-
-  // 3. add d2 via the ○ ring, then drag d1 (inside the selection) → both stay
+  // 2. build a real selection by hand (the ○ ring), the way a user does
+  cardOf('dummy-d1').querySelector('.select-check').click();
   cardOf('dummy-d2').querySelector('.select-check').click();
   await sleep(80);
-  out.selBefore3 = selectedKeys();
-  await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
+  out.selBuilt = selectedKeys();
+
+  // 3. drag a card INSIDE that selection → selection untouched
+  out.prevented3 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
   out.selAfter3 = selectedKeys();
 
-  // 4. drag d3 — OUTSIDE the selection → selection collapses onto d3 (Explorer rule)
-  await dragFrom(cardOf('dummy-d3').querySelector('.card-img'));
+  // 4. drag a card OUTSIDE it → still untouched. The hand-built working set is not
+  //    Explorer's throwaway cursor; dragging one card must not wipe it (which files
+  //    actually leave is records.ts's dragFilesOf — test-records-unit).
+  out.prevented4 = await dragFrom(cardOf('dummy-d3').querySelector('.card-img'));
   out.selAfter4 = selectedKeys();
 
   // 5. a drag started on the post text is NOT ours — the browser keeps it
@@ -141,13 +144,12 @@ child.on('close', () => {
   }
   const checks = [
     ['card image drag is intercepted', r.prevented1 === true],
-    ['drag with nothing selected selects the dragged card', r.selAfter1 === 'dummy-d1'],
-    ['re-dragging the selected card keeps the selection', r.prevented2 === true && r.selAfter2 === 'dummy-d1'],
-    ['ring click adds to the selection', r.selBefore3 === 'dummy-d1,dummy-d2'],
-    ['dragging inside the selection leaves it alone', r.selAfter3 === 'dummy-d1,dummy-d2'],
-    ['dragging outside the selection collapses it onto that card', r.selAfter4 === 'dummy-d3'],
+    ['a drag selects nothing (export must not change the library)', r.selAfter1 === ''],
+    ['ring clicks build the selection', r.selBuilt === 'dummy-d1,dummy-d2'],
+    ['dragging inside the selection leaves it alone', r.prevented3 === true && r.selAfter3 === 'dummy-d1,dummy-d2'],
+    ['dragging outside the selection leaves it alone too', r.prevented4 === true && r.selAfter4 === 'dummy-d1,dummy-d2'],
     ['a drag off the image is left to the browser', r.preventedText === false],
-    ['a drag off the image leaves the selection alone', r.selAfterText === 'dummy-d3'],
+    ['a drag off the image leaves the selection alone', r.selAfterText === 'dummy-d1,dummy-d2'],
     // The one that would have caught the shipped bug: no drag may throw, or the
     // ipc call after the throw silently never happens.
     ['no drag threw (a throw skips the IPC after it)', Array.isArray(r.errors) && r.errors.length === 0],

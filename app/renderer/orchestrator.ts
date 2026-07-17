@@ -757,7 +757,6 @@ export let applyFolderFilter: (id: string) => void;
     showDetail: (g) => showDetail(g),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
-    selectOnlyCard: (card) => selectionCtl.selectOnly(card), // selectionCtl is constructed below — deferred
   });
   const { loadPosts, renderPosts, markPostsMutated, reconcileFolders, keepCurrentVisible, showFoldMenu, showCardMenu, requestDeleteGroup } = postGrid;
   bindLoadPosts(postGrid.loadPosts);

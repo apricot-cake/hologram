@@ -304,7 +304,10 @@ async function main() {
     assert('cardModel tile は aspRatio 空・clip 反映（isClipped）', mt.aspRatio === '' && mt.clipped === true);
   }
 
-  // --- dragFilesOf: ドラッグアウトが何を渡すか（#132 の Explorer/Eagle 規則） ---
+  // --- dragFilesOf: ドラッグアウトが何を渡すか（#132） ---
+  // 掴んだものが選択内なら選択全体・選択外ならそれだけ。選択は読むだけで書き換えない
+  // （Explorer の「ドラッグで選択が変わる」は mousedown の仕業＝ドラッグ側の設計ではない・
+  // Corpus の選択は手で作る作業セット＝持ち出しで壊さない。2026-07-17 ユーザー確定）。
   // DOM/IPC 配線（handleCardDragStart）はここを呼ぶだけ＝規則の正はこの純関数。
   {
     const G = (key, files) => ({ key, files, records: [], rep: {} });
@@ -312,34 +315,33 @@ async function main() {
     const b = G('b', ['b1.jpg', 'b2.jpg']); // 複数画像投稿
     const c = G('c', ['c1.jpg']);
 
-    // 選択が空＝掴んだカードだけ。fromSelection=false で呼び出し側が単一選択へ置換する
-    const r0 = R.dragFilesOf(a, []);
-    assert('dragFilesOf 選択なし → そのカードだけ', r0.files.join(',') === 'a1.jpg');
-    assert('dragFilesOf 選択なし → fromSelection=false（＝単一選択へ置換させる）', r0.fromSelection === false);
+    // 選択が空＝掴んだカードだけ
+    assert('dragFilesOf 選択なし → そのカードだけ', R.dragFilesOf(a, []).join(',') === 'a1.jpg');
 
     // 選択内を掴む＝選択全体（複数画像投稿は全ファイル）
-    const r1 = R.dragFilesOf(a, [a, b]);
-    assert('dragFilesOf 選択内を掴む → 選択全体', r1.files.join(',') === 'a1.jpg,b1.jpg,b2.jpg');
-    assert('dragFilesOf 選択内を掴む → fromSelection=true（選択は触らない）', r1.fromSelection === true);
+    assert('dragFilesOf 選択内を掴む → 選択全体', R.dragFilesOf(a, [a, b]).join(',') === 'a1.jpg,b1.jpg,b2.jpg');
 
-    // 選択外を掴む＝選択を無視してそのカードだけ（Explorer/Eagle）
-    const r2 = R.dragFilesOf(c, [a, b]);
-    assert('dragFilesOf 選択外を掴む → そのカードだけ（選択は無視）', r2.files.join(',') === 'c1.jpg');
-    assert('dragFilesOf 選択外を掴む → fromSelection=false', r2.fromSelection === false);
+    // 選択外を掴む＝選択を無視してそのカードだけ（選択自体は呼び出し側も書き換えない）
+    assert('dragFilesOf 選択外を掴む → そのカードだけ（選択は無視）', R.dragFilesOf(c, [a, b]).join(',') === 'c1.jpg');
 
     // 単一選択でそれを掴む＝1件だけ
-    assert('dragFilesOf 単一選択を掴む → その1件', R.dragFilesOf(b, [b]).files.join(',') === 'b1.jpg,b2.jpg');
+    assert('dragFilesOf 単一選択を掴む → その1件', R.dragFilesOf(b, [b]).join(',') === 'b1.jpg,b2.jpg');
 
     // 同じファイルを持つグループが2つ選択されていても1回だけ渡す（startDrag の重複回避）
     const dup1 = G('d1', ['same.jpg', 'x.jpg']);
     const dup2 = G('d2', ['same.jpg', 'y.jpg']);
-    assert('dragFilesOf 重複ファイルは1回だけ', R.dragFilesOf(dup1, [dup1, dup2]).files.join(',') === 'same.jpg,x.jpg,y.jpg');
+    assert('dragFilesOf 重複ファイルは1回だけ', R.dragFilesOf(dup1, [dup1, dup2]).join(',') === 'same.jpg,x.jpg,y.jpg');
 
     // 選択順を保つ（ドロップ先の並びが選択順に従う）
-    assert('dragFilesOf 選択順を保つ', R.dragFilesOf(b, [b, a]).files.join(',') === 'b1.jpg,b2.jpg,a1.jpg');
+    assert('dragFilesOf 選択順を保つ', R.dragFilesOf(b, [b, a]).join(',') === 'b1.jpg,b2.jpg,a1.jpg');
+
+    // 引数の選択配列を破壊しない（読み取り専用＝呼び出し側の作業セットを壊さない）
+    const sel = [a, b];
+    R.dragFilesOf(a, sel);
+    assert('dragFilesOf 渡された選択を変更しない', sel.length === 2 && sel[0] === a && sel[1] === b);
 
     // ファイルを持たないグループ（原本が無い）→ 空＝呼び出し側は dragOut を呼ばない
-    assert('dragFilesOf ファイル無しは空（dragOut を呼ばせない）', R.dragFilesOf(G('e', []), []).files.length === 0);
+    assert('dragFilesOf ファイル無しは空（dragOut を呼ばせない）', R.dragFilesOf(G('e', []), []).length === 0);
   }
 
   if (failed) {

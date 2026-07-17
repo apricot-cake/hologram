@@ -70,16 +70,23 @@ export const groupFilesOf = (p: CorpusPost): string[] => {
   return a ? [a] : [];
 };
 
-// What dragging a card hands to the OS (#132), given what's selected right now.
-// The Explorer/Eagle rule: a card that IS in the selection drags the WHOLE
-// selection; one that isn't drags only itself (and the caller then makes it the
-// selection — `fromSelection: false` is that signal). Multi-image posts hand over
-// every original they hold, and a file shared by two selected groups ships once.
+// What dragging a card hands to the OS (#132), given what's selected right now:
+// a card that IS in the selection drags the WHOLE selection, one that isn't drags
+// only itself. Multi-image posts hand over every original they hold, and a file
+// shared by two selected groups ships once.
+//
+// Reading the selection is ALL this does with it — a drag never writes it back.
+// Explorer looks like it selects what you drag, but that's its mousedown, not its
+// drag; the grabbed-or-selection rule above is the whole of what it does with a
+// drag, and it needs no write. Corpus's selection is also a working set built by
+// hand across a scroll (the batch tag/folder ops act on it), not Explorer's
+// throwaway cursor, so an export gesture must not rewrite it (2026-07-17, user).
+//
 // Pure so the rule is unit-testable without a real drag: the DOM/IPC glue around
 // it is post-grid-builder.ts's handleCardDragStart.
-export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): { fromSelection: boolean; files: string[] } {
-  const fromSelection = selected.some((s) => s.key === g.key);
-  return { fromSelection, files: [...new Set((fromSelection ? selected : [g]).flatMap((x) => x.files))] };
+export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): string[] {
+  const grabbedSelection = selected.some((s) => s.key === g.key);
+  return [...new Set((grabbedSelection ? selected : [g]).flatMap((x) => x.files))];
 }
 
 // Image-tab (type:'image') record resolution. The tab persists { img:{ recs:[captureId…],

@@ -53,10 +53,6 @@ export interface PostGridBuilderDeps {
   showDetail(g: CorpusPostGroup): void;
   jumpToPoster(post: CorpusPost): void;
   addImageTab(g: CorpusPostGroup): void;
-  // Selection mutation is selection-builder.ts's (it owns the anchor + the bar),
-  // and it's constructed after this module — so this is a deferred dep, the same
-  // shape as jumpToPoster/showToast in inspector-builder.ts.
-  selectOnlyCard(card: HTMLElement): void;
 }
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
@@ -518,16 +514,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     const g = card && viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
     if (!g) return;
     e.preventDefault();
-    // Which files leave, and whether this card was part of the selection, is the
-    // Explorer/Eagle rule in records.ts (pure — see test-records-unit).
-    const { fromSelection, files } = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
-    // Hand the files over BEFORE touching the selection: the drag is what the user
-    // asked for and the selection update is a side effect, so the side effect must
-    // never be able to take the drag down with it. It did exactly that once — a
-    // TypeError thrown deep inside the selection update skipped this call, and
-    // dragging an unselected card silently started no drag at all (#132/#185).
+    // Which files leave is records.ts's rule (pure — see test-records-unit). The
+    // selection is only READ: a drag leaves the library exactly as it found it.
+    const files = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
     if (files.length) corpusIpc.dragOut(files);
-    if (!fromSelection && card) deps.selectOnlyCard(card); // dragging outside the selection re-points it at this card
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);
