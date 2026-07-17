@@ -70,6 +70,13 @@ const evalJs = `(async () => {
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
   const cardOf = (key) => document.querySelector('#postGrid .post-card[data-key="' + key + '"]');
   const selectedKeys = () => [...document.querySelectorAll('#postGrid .post-card.selected')].map(c => c.dataset.key).sort().join(',');
+  // A handler that throws is the failure mode this suite exists for: dispatchEvent
+  // does NOT rethrow, so a dead line after the throw is invisible from the page —
+  // it only surfaces as an uncaught error. That's how drag-out shipped broken with
+  // this suite green (#132/#185): everything asserted below happened BEFORE the
+  // throw, and the corpusIpc.dragOut() after it never ran.
+  const errors = [];
+  window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const dragFrom = async (el) => {
     const ev = new DragEvent('dragstart', { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
@@ -101,6 +108,7 @@ const evalJs = `(async () => {
   const txt = cardOf('dummy-d3').querySelector('.text') || cardOf('dummy-d3').querySelector('.post-meta');
   out.preventedText = await dragFrom(txt);
   out.selAfterText = selectedKeys();
+  out.errors = errors;
   return JSON.stringify(out);
 })()`;
 
@@ -140,6 +148,9 @@ child.on('close', () => {
     ['dragging outside the selection collapses it onto that card', r.selAfter4 === 'dummy-d3'],
     ['a drag off the image is left to the browser', r.preventedText === false],
     ['a drag off the image leaves the selection alone', r.selAfterText === 'dummy-d3'],
+    // The one that would have caught the shipped bug: no drag may throw, or the
+    // ipc call after the throw silently never happens.
+    ['no drag threw (a throw skips the IPC after it)', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
   for (const [name, ok] of checks) {

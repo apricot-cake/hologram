@@ -521,8 +521,13 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // Which files leave, and whether this card was part of the selection, is the
     // Explorer/Eagle rule in records.ts (pure — see test-records-unit).
     const { fromSelection, files } = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
-    if (!fromSelection && card) deps.selectOnlyCard(card); // dragging outside the selection re-points it at this card
+    // Hand the files over BEFORE touching the selection: the drag is what the user
+    // asked for and the selection update is a side effect, so the side effect must
+    // never be able to take the drag down with it. It did exactly that once — a
+    // TypeError thrown deep inside the selection update skipped this call, and
+    // dragging an unselected card silently started no drag at all (#132/#185).
     if (files.length) corpusIpc.dragOut(files);
+    if (!fromSelection && card) deps.selectOnlyCard(card); // dragging outside the selection re-points it at this card
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);

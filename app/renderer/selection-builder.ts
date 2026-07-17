@@ -55,7 +55,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     const key = card.dataset.key as string;
     selection.toggle(idx, key, shiftKey, deps.getViewGroups(), postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
-    updateSelectionBar();
   }
 
   // Make this card the whole selection — a drag that starts outside the current
@@ -63,7 +62,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // rings follow on their own: the cells subscribe to corpusStore's selectedSet.
   function selectOnly(card: HTMLElement) {
     selection.clear();
-    toggleCardSelection(card, false); // reuses the anchor + class + bar sync of a plain ring click
+    toggleCardSelection(card, false); // reuses the anchor + class sync of a plain ring click
   }
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
@@ -81,17 +80,19 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   function clearSelection() {
     selection.clear();
     syncSelectionClasses(); // class-only (callers that change content re-render themselves)
-    updateSelectionBar();
   }
 
-  // #selectionBar's container show/hide — the ONE thing that stays viewer's (container
-  // chrome). The buttons/count/labels are self-derived by the selection-bar island
-  // straight from corpusStore's 'selectedSet' + 'postGroups' (P4-B slice⑱) — every
-  // selection.ts mutation site still calls this to keep the container's
-  // visibility in sync (the island re-renders on its own via the store subscription).
-  function updateSelectionBar() {
-    byId('selectionBar').style.display = selection.size() > 0 ? '' : 'none';
-  }
+  // updateSelectionBar() lived here: it drove #selectionBar's container show/hide
+  // while the island owned only the children. Both are gone — the redesign removed
+  // the container from the shell AND unmounted the island (its replacement is the
+  // bottom floating bar), so every call was `null.style` = a thrown TypeError on
+  // EVERY selection change. It read as harmless (the store write happens first, so
+  // the rings still updated), until it took out drag-out: the throw escaped
+  // selectOnly() and skipped the corpusIpc.dragOut() after it, so dragging an
+  // UNSELECTED card never started the OS drag (2026-07-17, reported from the real
+  // app — #132/#185). If a selection bar returns, it derives its own visibility
+  // from corpusStore like SelectionBar.tsx already does (count === 0 → null); it
+  // does not come back through here.
 
   // Manual grouping: merge every record of the selected cards into one persisted
   // group (manual-groups.json). Members are first removed from any existing
@@ -111,14 +112,12 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     // class-only). Clear first so the rebuild shows no stale selection.
     selection.clear();
     deps.renderPosts(true);
-    updateSelectionBar();
     deps.showToast(deps.t('grouped'));
   }
 
   function toggleSelectAll() {
     selection.toggleAll(deps.getViewGroups(), postIdKey);
     syncSelectionClasses();
-    updateSelectionBar();
   }
 
   // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
@@ -136,7 +135,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     e.preventDefault();
     selection.selectAll(deps.getViewGroups(), postIdKey);
     deps.renderPosts(true);
-    updateSelectionBar();
   }
 
   // Ctrl/Cmd+C copies the selected image (#132). Single selection only: the
@@ -173,7 +171,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         const count = toDelete.length;
         for (const p of toDelete) await deletePost(p.image || p.video);
         selection.clear();
-        updateSelectionBar();
         await deps.loadPosts(true);
         deps.showToast(deps.t('deletedN', [count]));
       },
