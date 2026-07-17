@@ -1,6 +1,8 @@
 Chrome Web Store listing (English). Japanese version: store-description.ja.txt
 The SUMMARY must match extension/_locales/en/messages.json extDesc (the store
 summary is taken from the manifest description; max 132 characters).
+Before submission, re-verify every feature claim against the shipped UI
+(features and terminology may change before release).
 
 === SUMMARY (max 132 chars) ===
 
@@ -32,7 +34,6 @@ FIND IT AGAIN
 ORGANIZE
 - Tags, plus a "tagging session" mode to tag untagged posts one after another
 - Folders for themes and favorites
-- A clip tray for temporarily gathering posts to compare
 - Bulk actions: select many posts and tag, file, group, or delete them at once
 
 SUPPORTED PLATFORMS
