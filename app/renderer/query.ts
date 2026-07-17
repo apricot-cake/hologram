@@ -338,6 +338,31 @@ export function textHaystackOf(p: CorpusPost): string[] {
     .map((x) => (x == null ? '' : String(x)));
 }
 
+// --- Saved-leaf schema normalization (pre-release migration) ---------------
+// The single place to record retired leaf-type renames. sanitizeSavedTabs runs
+// every persisted tree + shadow (state.tree / state.f) through normalizeTree /
+// normalizeLeaf on load, so an old tabs.json self-heals on the next write — no
+// bulk rewrite script and no permanent predicate alias to carry (pre-release,
+// there is no third-party data whose old shape must be supported forever). Add a
+// row here whenever a leaf `type` is renamed; unknown types pass through and the
+// predicate fail-opens (default → () => true), so the chip still shows its type.
+const LEAF_TYPE_RENAMES: Record<string, string> = { collection: 'folder' };
+export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
+  if (leaf && typeof (leaf as any).type === 'string') {
+    const to = LEAF_TYPE_RENAMES[(leaf as any).type];
+    if (to) (leaf as any).type = to;
+  }
+  return leaf;
+}
+// Recursively normalize every leaf in a query tree, in place. A group carries
+// children; anything else is treated as a leaf.
+export function normalizeTree(node: any): any {
+  if (!node || typeof node !== 'object') return node;
+  if (node.kind === 'group' && Array.isArray(node.children)) node.children.forEach(normalizeTree);
+  else normalizeLeaf(node);
+  return node;
+}
+
 // --- Post-side leaf predicate factory: a leaf condition → (post)=>bool. ---
 // deps carry the runtime couplings the engine must not own:
 //   isInFolder(id, captureId) / isClipped(captureId) — folders.ts state
@@ -367,7 +392,7 @@ export function makePostPredOf(deps: {
         return (p) => (p.tags || []).includes(f.value);
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
-      case 'collection':
+      case 'folder':
         return (p) => deps.isInFolder(f.value, p.captureId);
       case 'clip':
         return (p) => deps.isClipped(p.captureId);

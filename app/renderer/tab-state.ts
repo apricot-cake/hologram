@@ -12,6 +12,7 @@
 // which touches window.corpus lazily inside its arrow functions — the import
 // itself is side-effect free, so it stays harmless under Node.
 import { corpusIpc } from './ipc.ts';
+import { normalizeLeaf, normalizeTree } from './query.ts';
 
 export function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
@@ -23,7 +24,7 @@ export function genTabId() {
 //                   filter popover shares it for its type <select>)
 //   platformName(v) — PF_NAME lookup with raw-value fallback
 //   formatShortDate(dateStr) / formatCount(n) — viewer formatting helpers
-//   folderName(id) — resolves a collection id to its display name
+//   folderName(id) — resolves a folder id to its display name
 //                        (null/undefined when unknown → caller falls back)
 export function makeTabLabels(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -58,7 +59,7 @@ export function makeTabLabels(deps: {
         return f.value;
       case 'hashtag':
         return `#${f.value}`;
-      case 'collection':
+      case 'folder':
         return folderName(f.value) || f.value;
       case 'clip':
         return t('clipTitle');
@@ -114,7 +115,7 @@ export function makeTabLabels(deps: {
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
     if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
-    filters.filter((f) => f.type === 'clip' || f.type === 'collection').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'clip' || f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
 
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
@@ -210,6 +211,17 @@ export function serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { 
   return { activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, type: t.type, img: t.img })) };
 }
 
+// Normalize a persisted tab state's leaf-type names to the current schema (see
+// query.ts normalizeLeaf). Both the query tree (state.tree — what applyState
+// restores from) and the title shadow (state.f) are run through it, in place.
+function normalizeSavedState(state: any): any {
+  if (state && typeof state === 'object') {
+    if (state.tree) normalizeTree(state.tree);
+    if (Array.isArray(state.f)) state.f.forEach(normalizeLeaf);
+  }
+  return state || null;
+}
+
 // Restore-side sanitizer for a persisted tabs.json payload. Returns null when
 // nothing usable was saved (the caller seeds a fresh single tab). Image tabs:
 // sanitize the persisted shape (unknown/older files just yield a filter tab;
@@ -224,7 +236,10 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
     id: t.id || genId(),
     pinned: !!t.pinned,
     title: t.title || null,
-    state: t.state || null,
+    // Self-heal retired leaf-type names in the persisted query tree + its title
+    // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
+    // both are normalized; the next tab-switch write persists the healed shape.
+    state: normalizeSavedState(t.state),
     type: t.type === 'image' ? 'image' : undefined,
     img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x: any) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
     _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,

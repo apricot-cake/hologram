@@ -76,10 +76,10 @@ export function makeQfPop(deps: QfPopDeps) {
     // fixed (5 PFs + their instances), so no find box.
     const valueCount = items.filter((it) => it.ghead == null).length;
     const showFind = !['platform', 'poster-platform'].includes(cat) && valueCount > 8;
-    // The フォルダ flyouts (library 'collection' + poster 'poster-folder') carry a
+    // The フォルダ flyouts (library 'folder' + poster 'poster-folder') carry a
     // 「フォルダを管理」 footer that opens the shared folder-manager modal — the create/
     // rename/delete home now that folders live in a flyout, not a sidebar list.
-    const showManage = cat === 'poster-folder' || cat === 'collection';
+    const showManage = cat === 'poster-folder' || cat === 'folder';
     qfPopOpen({
       anchorRect: (qfAnchor as HTMLElement).getBoundingClientRect(),
       sessionId: qfSession,

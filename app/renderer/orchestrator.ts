@@ -96,8 +96,8 @@ export let navForward: () => void;
 export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
 // Apply a library folder as a place filter (redesign §3-1): replace the post query's
-// folder ('collection') facet with the clicked folder, then re-render. The new left
-// sidebar's folder rows call this directly (no qf-pop flyout). Renamed with #42.
+// folder facet with the clicked folder, then re-render. The new left sidebar's
+// folder rows call this directly (no qf-pop flyout).
 export let applyFolderFilter: (id: string) => void;
 
 (async () => {
@@ -641,11 +641,11 @@ export let applyFolderFilter: (id: string) => void;
   function afterQueryChange() {
     postQB.refresh();
   }
-  // Folder-as-place: clear any existing folder ('collection') leaves, then add the clicked
+  // Folder-as-place: clear any existing folder leaves, then add the clicked
   // one. addFilter goes through facetAdd + the qb's re-render, so the grid + chips refresh.
   applyFolderFilter = (id) => {
-    removeCondsMatching((c) => c.type === 'collection');
-    addFilter({ type: 'collection', value: id });
+    removeCondsMatching((c) => c.type === 'folder');
+    addFilter({ type: 'folder', value: id });
   };
 
   const CF = () => folders; // shared folder module
@@ -1629,7 +1629,7 @@ export let applyFolderFilter: (id: string) => void;
   // stays the guard + action logic.
   handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'collection' && !CF().byId(c.value))) {
+    if (postQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'folder' && !CF().byId(c.value))) {
       postQB.syncShadow();
       postQB.render();
     }

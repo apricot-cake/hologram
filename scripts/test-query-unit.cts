@@ -77,10 +77,40 @@ async function main() {
   assert('tag: 含む', predOf({ type: 'tag', value: '作画' })(post()));
   assert('tag: tags 欠損は不一致(クラッシュしない)', !predOf({ type: 'tag', value: '作画' })(post({ tags: undefined })));
   assert('hashtag: 含む', predOf({ type: 'hashtag', value: 'drawing' })(post()));
-  assert('collection: 注入依存で判定', predOf({ type: 'collection', value: 'col-1' })(post({ captureId: 'cap-in' })));
-  assert('collection: 非所属', !predOf({ type: 'collection', value: 'col-1' })(post()));
+  assert('folder: 注入依存で判定', predOf({ type: 'folder', value: 'col-1' })(post({ captureId: 'cap-in' })));
+  assert('folder: 非所属', !predOf({ type: 'folder', value: 'col-1' })(post()));
   assert('clip: 注入依存で判定', predOf({ type: 'clip' })(post({ captureId: 'cap-clip' })));
   assert('workspace: clip の legacy 別名', predOf({ type: 'workspace' })(post({ captureId: 'cap-clip' })));
+
+  // --- normalizeLeaf / normalizeTree: retired leaf-type self-heal (#42) ---
+  assert('normalizeLeaf: collection→folder', Q.normalizeLeaf({ kind: 'cond', type: 'collection', value: 'x' }).type === 'folder');
+  assert('normalizeLeaf: 未知型は素通し', Q.normalizeLeaf({ kind: 'cond', type: 'tag', value: 'x' }).type === 'tag');
+  {
+    const tree = {
+      kind: 'group',
+      op: 'and',
+      neg: false,
+      children: [
+        { kind: 'cond', type: 'collection', value: 'a' },
+        {
+          kind: 'group',
+          op: 'or',
+          neg: false,
+          children: [
+            { kind: 'cond', type: 'collection', value: 'b' },
+            { kind: 'cond', type: 'tag', value: 't' },
+          ],
+        },
+      ],
+    };
+    Q.normalizeTree(tree);
+    const types: string[] = [];
+    (function walk(n: any) {
+      if (n.kind === 'group') n.children.forEach(walk);
+      else types.push(n.type);
+    })(tree);
+    assert('normalizeTree: 全深さの collection→folder', types.filter((t) => t === 'folder').length === 2 && types.includes('tag') && !types.includes('collection'));
+  }
 
   // --- date: ローカル日境界（to は翌日 0時「未満」＝単日レンジがその日全体を覆う）---
   const may10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };

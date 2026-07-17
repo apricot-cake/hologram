@@ -66,8 +66,8 @@ async function main() {
   assert('engagement gte', filterLabel({ type: 'engagement', engType: 'likes', op: 'gte', min: 100 }) === 'いいね ≥ C100');
   assert('engagement lte＋未知 engType は素通し', filterLabel({ type: 'engagement', engType: 'quotes', op: 'lte', min: 5 }) === 'quotes ≤ C5');
   assert('tag は値そのまま・hashtag は # 付与', filterLabel({ type: 'tag', value: '風景' }) === '風景' && filterLabel({ type: 'hashtag', value: 'art' }) === '#art');
-  assert('collection 解決', filterLabel({ type: 'collection', value: 'c1' }) === 'お気に入り');
-  assert('collection 未知は id フォールバック', filterLabel({ type: 'collection', value: 'c9' }) === 'c9');
+  assert('folder 解決', filterLabel({ type: 'folder', value: 'c1' }) === 'お気に入り');
+  assert('folder 未知は id フォールバック', filterLabel({ type: 'folder', value: 'c9' }) === 'c9');
   assert('clip', filterLabel({ type: 'clip' }) === 'クリップ');
   assert('media 3分岐', filterLabel({ type: 'media', value: 'image' }) === '画像のみ' && filterLabel({ type: 'media', value: 'video' }) === '動画' && filterLabel({ type: 'media', value: 'gif' }) === 'GIF');
   assert('instance は値・user は label 優先', filterLabel({ type: 'instance', value: 'misskey.io' }) === 'misskey.io' && filterLabel({ type: 'user', value: 'x:u1', label: 'アリス' }) === 'アリス');
@@ -209,6 +209,29 @@ async function main() {
     assert('activeTabId 不在は先頭タブへフォールバック', st2.activeTabId === 'a');
     const st3 = T.sanitizeSavedTabs({ tabs: [{ id: 'a', type: 'image', img: { idx: 1 } }] }, genId);
     assert('recs 非配列は img を落とす（画像タブのまま missing 表示へ）', st3.tabs[0].type === 'image' && st3.tabs[0].img === undefined);
+
+    // Retired leaf-type self-heal (#42): an old 'collection' leaf in both the saved
+    // query tree and the title shadow is normalized to 'folder' on load.
+    const stMig = T.sanitizeSavedTabs(
+      {
+        tabs: [
+          {
+            id: 'm',
+            state: {
+              f: [
+                { type: 'collection', value: 'x' },
+                { type: 'tag', value: 't' },
+              ],
+              tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
+            },
+          },
+        ],
+      },
+      genId,
+    );
+    const mst = stMig.tabs[0].state;
+    assert('sanitize: state.f の collection→folder（他型は不変）', mst.f[0].type === 'folder' && mst.f[1].type === 'tag');
+    assert('sanitize: state.tree の collection→folder', mst.tree.children[0].type === 'folder');
   }
 
   if (failed) {

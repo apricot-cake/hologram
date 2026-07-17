@@ -6,7 +6,7 @@
 //  - add a card to the folder via the real 📁 picker (card context menu → 「フォルダに追加…」
 //    → folder row) — the data + filter + persistence path is what this smoke pins;
 //    folder ids/membership counts are read back through window.corpus.getFolders()
-//  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="collection"]
+//  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="folder"]
 //    → .qf-pop row), the same entry every other facet uses — only the member card remains
 //  - folders.json persists { folders, clip }, no defaultId
 //  - 📎 clip one-click flags the card (library-wide ephemeral set), sidebar count + filter,
@@ -90,7 +90,7 @@ const evalJs = `(async () => {
 
   // --- create a folder via the shared management modal, opened through the sidebar
   //     folder flyout's 「フォルダを管理…」 footer link (no auto-default ★ anymore) ---
-  click(document.querySelector('#filterRows [data-qfrow="collection"]'));
+  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
   await waitFor(() => !!document.querySelector('.qf-footer-link'));
   click(document.querySelector('.qf-footer-link')); await sleep(40);
   const modalOpen = !$('ivFolderModal').hidden;
@@ -112,8 +112,8 @@ const evalJs = `(async () => {
   const c2 = await getFolders();
   const memberCount = ((c2.folders.find((c) => c.id === fid) || {}).items || []).length; // 1 (the card joined)
 
-  // --- filter by the folder via the sidebar folder flyout (data-qfrow="collection") ---
-  click(document.querySelector('#filterRows [data-qfrow="collection"]'));
+  // --- filter by the folder via the sidebar folder flyout (data-qfrow="folder") ---
+  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
   const flyoutHasFolder = await waitFor(() => !!qfRow('一次資料'));
   click(qfRow('一次資料')); await sleep(180);
   const filteredCount = cards();                            // 1 (only the member card)
@@ -140,7 +140,7 @@ const evalJs = `(async () => {
   const rb2 = await getFolders();
   const clipPersist = Array.isArray(rb2.clip) && rb2.clip.length === 1;
   // clip is NOT a folder: the manager still lists only the real folder
-  click(document.querySelector('#filterRows [data-qfrow="collection"]'));
+  click(document.querySelector('#filterRows [data-qfrow="folder"]'));
   await waitFor(() => !!document.querySelector('.qf-footer-link'));
   click(document.querySelector('.qf-footer-link')); await sleep(50);
   const mgrRows = document.querySelectorAll('#ivFolderList .iv-folder-row').length;

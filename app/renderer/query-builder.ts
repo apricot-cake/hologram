@@ -86,7 +86,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     // (both すべて/どれか meaningful, default すべて); date/engagement/clip/text
     // (+ the legacy 'workspace' alias) stay standalone chips. Everything else
     // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
-    multiValueTypes: ['tag', 'hashtag', 'collection'],
+    multiValueTypes: ['tag', 'hashtag', 'folder'],
     standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'],
   });
   // Establish an initial value (emptyTree()) before any mutation, so a future

@@ -415,7 +415,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
         g.rep.captureId,
       );
       // re-render only if a collection filter could change the visible set
-      if (deps.postShadow().some((f: { type: string }) => f.type === 'collection')) renderPosts(true);
+      if (deps.postShadow().some((f: { type: string }) => f.type === 'folder')) renderPosts(true);
     }
   }
   function showFoldMenu(g: CorpusPostGroup, x: number, y: number) {

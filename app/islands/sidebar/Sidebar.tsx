@@ -19,7 +19,7 @@ import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
 // Static row-name i18n keys, keyed by cat (data-qfrow === data-badge). work/character
 // aren't here — their name is the user-renamable 種別 label (see kindLabel below).
 const ROW_LABEL_KEY: Record<string, string> = {
-  collection: 'qfCatFolder',
+  folder: 'qfCatFolder',
   platform: 'qfPlatform',
   postType: 'qfPostType',
   media: 'qfMediaTitle',
@@ -43,7 +43,7 @@ function rowLabel(cat: string): string {
 // Ordered flyout/popover rows (identical DOM; viewer's delegation decides behavior).
 // key === data-qfrow === data-badge. `multi` is inserted between media and date, and
 // `work`/`character` are progressively disclosed, so they're handled outside this list.
-const FLYOUT_ROWS = ['collection', 'platform', 'postType', 'media'] as const;
+const FLYOUT_ROWS = ['folder', 'platform', 'postType', 'media'] as const;
 const AFTER_MULTI = ['date', 'engagement', 'user'] as const;
 const TAIL_ROWS = ['hashtag', 'tag'] as const;
 

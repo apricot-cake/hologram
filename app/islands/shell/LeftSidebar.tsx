@@ -6,8 +6,8 @@
 //
 // P1 scope: the two browse destinations, the library folders (flat, click = apply
 // the folder as a place filter), and the footer (settings gear + mirror rail). Still
-// to come (P1-3 continuation): folder HIERARCHY + create/rename/delete (#41), the
-// 保存した検索 group (#40) — both blocked on the #42 'collection'→'folder' rename.
+// to come (P1-3 continuation): folder HIERARCHY + create/rename/delete (#41) and the
+// 保存した検索 group (#40) — the #42 'collection'→'folder' store rename they waited on is done.
 import { Folder, LayoutGrid, Settings, Users } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';

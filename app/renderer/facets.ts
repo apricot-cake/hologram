@@ -226,12 +226,12 @@ export function makeFacets(deps: {
         }
         return out;
       }
-      case 'collection': {
-        // Library folders (collections.json). Each row toggles a 'collection' leaf
+      case 'folder': {
+        // Library folders (folders.json). Each row toggles a 'folder' leaf
         // (folder membership, CF().has). Count = current-query posts in that folder.
         const folders = postFolders();
         const cnt = facetCounts((p) => folders.filter((f) => (f.items || []).includes(p.captureId)).map((f) => f.id));
-        return folders.map((f) => ({ v: f.id, l: f.name, on: act('collection', f.id), count: cnt.get(f.id) || 0 }));
+        return folders.map((f) => ({ v: f.id, l: f.name, on: act('folder', f.id), count: cnt.get(f.id) || 0 }));
       }
       case 'hashtag': {
         const cnt = facetCounts((p) => p.hashtags);
