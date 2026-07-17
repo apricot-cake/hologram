@@ -24,6 +24,7 @@ interface PosterCardModel {
   inspected?: boolean;
   avatarSrc?: string | null;
   monogram?: string;
+  monoHue?: number | null;
   name?: string;
   handle?: string | null;
   platform?: string | null;
@@ -61,7 +62,17 @@ function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?:
       // --card-i drives the entrance stagger delay (CSS caps it via min()).
       style={{ '--card-i': c.index } as CSSProperties}
     >
-      <div className="poster-av">{c.avatarSrc ? <img src={c.avatarSrc} alt="" loading="lazy" /> : c.monogram}</div>
+      <div className="poster-av">
+        {c.avatarSrc ? (
+          <img src={c.avatarSrc} alt="" loading="lazy" />
+        ) : (
+          // Circular monogram, not a card-filling letter (#107) — --mono-h carries the
+          // per-poster hue the CSS tints the disc with (poster-grid-builder's monoHue).
+          <span className="poster-mono" style={{ '--mono-h': c.monoHue ?? undefined } as CSSProperties}>
+            {c.monogram}
+          </span>
+        )}
+      </div>
       <div className="poster-meta">
         <div className="poster-name">{c.name}</div>
         {c.handle && <div className="poster-handle">@{c.handle}</div>}
