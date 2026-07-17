@@ -12,14 +12,23 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// test-parse-url (and the other extension/metadata.ts-touching test-*.js
-// scripts, not all wired into this aggregator) require extension/dist/
-// directly — build it first so a stale/missing dist/ can't silently fail them.
+// test-parse-url and the other extension/metadata.ts-touching suites require
+// extension/dist/ directly — build it first so a stale/missing dist/ can't
+// silently fail them.
 execFileSync(process.execPath, [path.join(__dirname, '..', 'extension', 'build.mjs')], { stdio: 'inherit', cwd: path.join(__dirname, '..', 'extension') });
 
+// Every network-/Electron-free scripts/test-*.cts belongs here — the list was
+// seeded (2026-07-02) from the suites that were red at the time, so the ones
+// predating it sat unregistered for weeks (test-backup-guard, the prune safety
+// valve docs/testing.md calls a pillar of the 2026-06-23 loss defense, among
+// them). Deliberately NOT here, and the only valid reasons to leave a suite out:
+//   - needs network: test-metadata, test-select-posts, test-watch-verify
+//     (capture-flow CLIs; see docs/testing.md)
+//   - needs Electron: test-app-*.cts → run-app-tests.cts globs them
 const TESTS = [
   'test-typecheck',
   'test-index',
+  'test-imgsize',
   'test-search-unit',
   'test-query-unit',
   'test-records-unit',
@@ -34,13 +43,25 @@ const TESTS = [
   'test-undo-unit',
   'test-migrate-unit',
   'test-save-folder-guard',
+  'test-backup-guard',
+  'test-config-recovery',
   'test-collections-merge',
+  'test-tag-types',
   'test-token-parity',
   'test-contrast-parity',
   'test-i18n-parity',
   'test-parse-url',
+  'test-pixiv',
+  'test-mastodon-url',
+  'test-metadata-correctness',
+  'test-metadata-origin',
   'test-content-fixtures',
+  'test-bridge',
   'test-bridge-ssrf',
+  'test-media',
+  'test-drag',
+  'test-avatar-fill',
+  'test-backfill-metadata',
   'test-archive-zipslip',
   'test-archive-zipbomb',
 ];
