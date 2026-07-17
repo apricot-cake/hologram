@@ -36,6 +36,9 @@ export interface SelectionBarDeps {
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
   // getter since its value changes over the module's lifetime.
   getBrowseMode(): string;
+  // Copying an image is post-grid-builder.ts's (it owns the density → file
+  // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
+  copyGroupImage(g: CorpusPostGroup): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -53,6 +56,14 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     selection.toggle(idx, key, shiftKey, deps.getViewGroups(), postIdKey);
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
     updateSelectionBar();
+  }
+
+  // Make this card the whole selection — a drag that starts outside the current
+  // selection grabs only the dragged card (Explorer/Eagle rule, #132). The grid's
+  // rings follow on their own: the cells subscribe to corpusStore's selectedSet.
+  function selectOnly(card: HTMLElement) {
+    selection.clear();
+    toggleCardSelection(card, false); // reuses the anchor + class + bar sync of a plain ring click
   }
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
@@ -128,6 +139,28 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     updateSelectionBar();
   }
 
+  // Ctrl/Cmd+C copies the selected image (#132). Single selection only: the
+  // clipboard holds ONE bitmap, and dragging out is the path for several files.
+  // Same guard shape as select-all above, plus two of its own: a real text
+  // selection stays the browser's to copy, and the image tab / quick view own
+  // their copy gesture (v1 = the grid only). Registration lives in the
+  // GlobalShortcuts component (app/islands/app/App.tsx).
+  function handleShortcutCopyKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'c') return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (confirmGet() || lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    if (document.body.classList.contains('image-tab-active')) return;
+    if (deps.getBrowseMode() !== 'posts') return;
+    if (String(window.getSelection() || '')) return; // the user highlighted post text — that's what they mean to copy
+    const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
+    if (groups.length !== 1) return;
+    e.preventDefault();
+    deps.copyGroupImage(groups[0]);
+  }
+
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
@@ -191,9 +224,11 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   return {
     toggleCardSelection,
+    selectOnly,
     selectedRecords,
     clearSelection,
     handleShortcutSelectAllKey,
+    handleShortcutCopyKey,
     handleSelectionBarClick,
   };
 }

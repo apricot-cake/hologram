@@ -43,6 +43,7 @@ const TESTS = [
   'test-undo-unit',
   'test-migrate-unit',
   'test-save-folder-guard',
+  'test-library-files',
   'test-backup-guard',
   'test-config-recovery',
   'test-collections-merge',

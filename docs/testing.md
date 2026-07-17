@@ -22,7 +22,7 @@
 
 ### スモーク／退行・セキュリティ・正しさ
 
-- 実Electron main は `CORPUS_SMOKE` harness で起動。`scripts/test-*.cts` 群がカバーする領域＝ブリッジ・原寸メディア・IPC・ハッシュタグ・自動更新・ユーザー/インスタンス・タグ用語帳・クエリビルダー（text 葉化／保存検索）・クエリエンジン純ユニット（`test-query-unit`＝`renderer/query.ts` の述語/ツリー評価/日付境界/ファセット・ドメイン＝改訂④）・保存先移行エンジン純ユニット（`test-migrate-unit`＝`lib-migrate.mts` の差分追いコピー/検証付き削除/落ち穂拾いスイープ/crash-safe順序）・import 重複検出（`test-app-import-dedup`＝URL＋eagleName/capturedAt/サイズ複合キー・.trash 復活防止）・タブ・カード脚注ゲート（`test-app-cardfoot`＝エンゲージメント数/取込日はソート・フィルタが関係するときだけ表示）・コレクション/フォルダ移行・自動バックアップ・Zip-Slip/zip爆弾(展開上限)/SSRF・メタ正しさ・index 再利用・テーマトークン/コントラストのパリティ。
+- 実Electron main は `CORPUS_SMOKE` harness で起動。`scripts/test-*.cts` 群がカバーする領域＝ブリッジ・原寸メディア・IPC・ハッシュタグ・自動更新・ユーザー/インスタンス・タグ用語帳・クエリビルダー（text 葉化／保存検索）・クエリエンジン純ユニット（`test-query-unit`＝`renderer/query.ts` の述語/ツリー評価/日付境界/ファセット・ドメイン＝改訂④）・保存先移行エンジン純ユニット（`test-migrate-unit`＝`lib-migrate.mts` の差分追いコピー/検証付き削除/落ち穂拾いスイープ/crash-safe順序）・import 重複検出（`test-app-import-dedup`＝URL＋eagleName/capturedAt/サイズ複合キー・.trash 復活防止）・タブ・カード脚注ゲート（`test-app-cardfoot`＝エンゲージメント数/取込日はソート・フィルタが関係するときだけ表示）・コレクション/フォルダ移行・自動バックアップ・Zip-Slip/zip爆弾(展開上限)/SSRF・メタ正しさ・index 再利用・テーマトークン/コントラストのパリティ・送り出し（`test-library-files`＝drag-out のファイル名ガード/欠損除外の純ユニット、`test-app-copy-image`＝実 Electron で nativeImage が読めない形式を拒否しクリップボードを空で潰さないこと）。
 - **復旧系は 2026-06-23 ライブラリ消失対策の多重防御**＝`test-app-recovery`（冗長ポインタ→config 復元）・`test-backup-guard`（prune 安全弁）・`test-config-recovery`（degraded 時の clear-all 拒否）。安全弁の意図はこの3本を正本とする。
 - **一括実行**: `npm test`（`run-tests.cts`）＝Electron 不要の純ユニットのみ（TS 型検査 `test-typecheck`＝app(islands+renderer)・main・native-host・extension・scripts の5プロジェクトの `tsc --noEmit` を含む）。アプリ実起動系（`test-app-*.cts`）は含まれないので `node scripts/run-app-tests.cts` で一括実行する（1本≈10秒と重い＝節目で回す。renderer 再構築後の「npm test では見えない無音の赤」をここで検出する。引数でサフィックス指定のサブセット実行可）。
 

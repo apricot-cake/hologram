@@ -26,6 +26,8 @@ electron.contextBridge.exposeInMainWorld("corpus", {
 	openExternal: (url) => electron.ipcRenderer.invoke("open-external", url),
 	openImageWindow: (image) => electron.ipcRenderer.invoke("open-image-window", image),
 	showInFolder: (file) => electron.ipcRenderer.invoke("show-in-folder", file),
+	dragOut: (files) => electron.ipcRenderer.send("drag-out", files),
+	copyImage: (file) => electron.ipcRenderer.invoke("copy-image", file),
 	getAppInfo: () => electron.ipcRenderer.invoke("app-info"),
 	getPrefs: () => electron.ipcRenderer.invoke("get-prefs"),
 	setPref: (key, value) => electron.ipcRenderer.invoke("set-pref", key, value),
