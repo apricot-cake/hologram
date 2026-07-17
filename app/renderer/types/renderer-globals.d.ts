@@ -136,18 +136,9 @@ interface CorpusTab {
 }
 
 // ---- renderer/listing.js — the "what is visible, in what order" pipeline for
-// all three browse modes (post filter+sort / poster filter+sort / collection
-// derivations incl. the per-render-pass record cache) ----
-interface CorpusCollection {
-  id: string;
-  name?: string;
-  kind?: 'dynamic';
-  items?: string[];
-  tree?: CorpusQueryGroup | null;
-  q?: string;
-  created?: number;
-  [k: string]: any;
-}
+// all three browse modes (post filter+sort / poster filter+sort / folder
+// derivations incl. the per-render-pass record cache). The folder shape is
+// CorpusFolder (below); dynamic folders carry a saved-search (tree + q). ----
 // listing.ts's own API surface (makeListing/cloneTree/namedPosters/etc.) is a
 // real ES module now — its named exports (including the exported ListingDeps
 // interface) carry their own types, so no ambient Window-shaped interface is
@@ -182,13 +173,13 @@ interface CorpusUndoRecord {
 // exports) now — SearchEditingDeps is exported directly from search-editing.ts,
 // no ambient Window-shaped interface needed.
 
-// ---- renderer/folders.ts — library collections store + management modal +
+// ---- renderer/folders.ts — library folders store + management modal +
 // library-wide clip set. A real ES module (named exports) now — no ambient
 // CorpusFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
-// shared internally by the library collections store (isCollections) and, via
+// shared internally by the library folders store (isLibrary) and, via
 // createPersistedFolderStore's persist/load wiring, the corpusPosterFolderStore()
-// factory (used by viewer.js pfStore, no isCollections). A folder always has an
-// id/name/items; collections additionally carry kind/created and a dynamic
+// factory (used by viewer.js pfStore, no isLibrary). A folder always has an
+// id/name/items; folders additionally carry kind/created and a dynamic
 // saved-search (tree+q). ----
 interface CorpusFolder {
   id: string;
@@ -215,7 +206,7 @@ interface CorpusFolderStore {
   reconcile(existing: Set<string>): boolean;
   /** Drag-reorder: place draggedId before/after targetId; true when the order changed. */
   move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean): boolean;
-  /** Present only on the collections store (isCollections): re-save a dynamic collection's search. */
+  /** Present only on the folders store (isLibrary): re-save a dynamic folder's search. */
   update?(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
 }
 /** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */

@@ -151,14 +151,14 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
-    // Smart-collection foundation (保存した検索・動的コレクション再導入用・意図的に保持)。
-    // 第3ビューのコレクション UI 文字列は撤去済み（2026-07-07）。
-    collSavePrompt: '保存する検索の名前',
-    collSaved: '検索をコレクションに保存しました',
-    collSaveEmpty: '保存できる絞り込みがありません',
-    collDynamicTitle: '動的コレクション（保存した検索・条件で自動集計）',
-    collUpdateQuery: '条件を今の絞り込みで更新',
-    collUpdated: '条件を更新しました',
+    // Smart-folder foundation (保存した検索・動的フォルダ再導入用・意図的に保持)。
+    // 第3ビューのフォルダ UI 文字列は撤去済み（2026-07-07）。
+    folderSavePrompt: '保存する検索の名前',
+    folderSaved: '検索をフォルダに保存しました',
+    folderSaveEmpty: '保存できる絞り込みがありません',
+    folderDynamicTitle: '動的フォルダ（保存した検索・条件で自動集計）',
+    folderUpdateQuery: '条件を今の絞り込みで更新',
+    folderUpdated: '条件を更新しました',
     posterCount: '$1 人',
     posterPosts: '投稿 $1 件',
     posterViewPosts: 'この投稿者の投稿を見る',
@@ -526,14 +526,14 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: Library/Posters view toggle + poster view
     browsePosts: 'Library',
     browsePosters: 'Posters',
-    // Smart-collection foundation (kept intentionally; the 3rd-view collection UI
+    // Smart-folder foundation (kept intentionally; the 3rd-view folder UI
     // strings were removed 2026-07-07).
-    collSavePrompt: 'Name this saved search',
-    collSaved: 'Saved as a collection',
-    collSaveEmpty: 'No active filter to save',
-    collDynamicTitle: 'Dynamic collection (saved search)',
-    collUpdateQuery: 'Update from current filter',
-    collUpdated: 'Condition updated',
+    folderSavePrompt: 'Name this saved search',
+    folderSaved: 'Saved as a folder',
+    folderSaveEmpty: 'No active filter to save',
+    folderDynamicTitle: 'Dynamic folder (saved search)',
+    folderUpdateQuery: 'Update from current filter',
+    folderUpdated: 'Condition updated',
     posterCount: '$1 posters',
     posterPosts: '$1 posts',
     posterViewPosts: "View this poster's posts",

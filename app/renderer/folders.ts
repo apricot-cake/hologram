@@ -1,7 +1,7 @@
 // Shared folder store + management-modal state + toast, used by the post-view
 // (orchestrator.ts). The library data lives in folders.json (keyed by captureId) —
-// the unified container for folders (collections). Clip is a separate library-wide
-// ephemeral flag set (a captureId Set), persisted alongside the collections. This
+// the unified container for folders (folders). Clip is a separate library-wide
+// ephemeral flag set (a captureId Set), persisted alongside the folders. This
 // module owns the data, the management-modal state (rendering is the FolderManagerModal
 // island, #ivFolderModal), membership toggling, and the toast (sonner via ui.ts); the "which
 // folder is filtered" state stays per-view. Subscribers (onChange) are notified after
@@ -10,29 +10,29 @@
 // A real ES module (named exports) now: load, all, byId, has, toggleIn, isClipped,
 // toggleClip, clearClips, clippedItems, clipCount, reconcile, openManager,
 // closeManager, isManagerOpen, getManager, subscribeManager, managerCreate,
-// managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allCollections,
-// createCollection, updateCollection, renameCollection, removeCollection — plus the
+// managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allFolders,
+// createFolder, updateFolder, renameFolder, removeFolder — plus the
 // corpusPosterFolderStore() factory (orchestrator.ts's poster-folder store).
 import { notify as uiNotify } from './ui.ts';
 import { corpusI18n } from './i18n.ts';
 import { corpusIpc } from './ipc.ts';
 
-// Folder-list store shared by the library collections (below, isCollections) and the
-// poster folders (viewer.js, via the corpusPosterFolderStore() factory below, no isCollections). Owns the
+// Folder-list store shared by the library folders (below, isLibrary) and the
+// poster folders (viewer.js, via the corpusPosterFolderStore() factory below, no isLibrary). Owns the
 // {id,name,items[]} array + id minting + membership toggling. The caller supplies
 // persist() and does its own toast / re-render, since those differ per view. Pure
 // data layer — no DOM.
-// isCollections (library only) generalizes folders into "collections": each carries
-// kind/created, and dynamic collections carry a saved-search payload (tree + q). The
-// poster store omits isCollections, so its surface/behavior is exactly as before.
-function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: string; persist: () => void; isCollections?: boolean }): CorpusFolderStore {
+// isLibrary (library only) generalizes folders into "folders": each carries
+// kind/created, and dynamic folders carry a saved-search payload (tree + q). The
+// poster store omits isLibrary, so its surface/behavior is exactly as before.
+function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): CorpusFolderStore {
   let folders: CorpusFolder[] = [];
   const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   const allRaw = () => folders;
   const all = () => folders;
   function setAll(list: unknown) {
     folders = Array.isArray(list) ? (list as CorpusFolder[]) : [];
-    if (isCollections) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
+    if (isLibrary) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
   }
   const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
   const has = (id: string | null | undefined, key: string) => {
@@ -43,7 +43,7 @@ function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: str
     const nm = (name || '').trim();
     if (!nm) return null;
     const f: CorpusFolder = { id: genId(), name: nm, items: [] };
-    if (isCollections) {
+    if (isLibrary) {
       f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
       f.created = Date.now();
       if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (tree + free-text)
@@ -53,14 +53,14 @@ function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: str
     return f;
   }
   // Copy a saved-search condition (boolean tree + free-text q) onto a dynamic
-  // collection; clears either when absent. Static collections never carry these.
+  // folder; clears either when absent. Static folders never carry these.
   function setQuery(f: CorpusFolder, src?: { tree?: unknown; q?: string } | null) {
     if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree));
     else delete f.tree;
     if (src && typeof src.q === 'string' && src.q) f.q = src.q;
     else delete f.q;
   }
-  // Update a dynamic collection's saved condition in place (= re-save the search).
+  // Update a dynamic folder's saved condition in place (= re-save the search).
   function update(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
     const f = byId(id);
     if (!f || f.kind !== 'dynamic') return false;
@@ -132,12 +132,12 @@ function createFolderStore({ idPrefix, persist, isCollections }: { idPrefix: str
     toggleIn,
     reconcile,
     move,
-    ...(isCollections ? { update } : {}),
+    ...(isLibrary ? { update } : {}),
   };
 }
 
 // Persist/load-wired variant of createFolderStore, for callers that just want a ready
-// store backed by a get/set IPC pair (the same load-caching idiom as the collections
+// store backed by a get/set IPC pair (the same load-caching idiom as the folders
 // store's own load()/persist() below, generalized). Currently used for the poster
 // folder store (viewer.js pfStore used to hand-assemble this: its own persist()
 // closure + a manual getPosterFolders/setAll block in boot — both now live here).
@@ -180,10 +180,10 @@ export function corpusPosterFolderStore(): CorpusPersistedFolderStore {
   });
 }
 
-// Library collections [{ id, name, kind, created, items:[captureId] }] — the unified
-// folders container. isCollections enables kind/created + dynamic saved-search.
-const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isCollections: true });
-// Clip = a library-wide ephemeral flag set (captureId Set), separate from collections.
+// Library folders [{ id, name, kind, created, items:[captureId] }] — the unified
+// folders container. isLibrary enables kind/created + dynamic saved-search.
+const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isLibrary: true });
+// Clip = a library-wide ephemeral flag set (captureId Set), separate from folders.
 // Persisted alongside the folders in folders.json (the `clip` array).
 let clipSet = new Set<string>();
 // The management modal (FolderManagerModal island, #ivFolderModal) is shared: by
@@ -244,8 +244,8 @@ async function doLoad() {
   try {
     const r = corpusIpc && corpusIpc.getFolders ? await corpusIpc.getFolders() : null;
     store.setAll((r && r.folders) || []);
-    // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
-    // just stays as a normal collection. Clip loads from the persisted `clip` array.
+    // activeId is legacy (the old 🔖 target) — ignore it; the old active folder
+    // just stays as a normal folder. Clip loads from the persisted `clip` array.
     clipSet = new Set(r && Array.isArray(r.clip) ? r.clip.map(String) : []);
   } catch {
     store.setAll([]);
@@ -262,7 +262,7 @@ export const byId = store.byId;
 export const has = store.has;
 
 // --- Clip = a library-wide ephemeral flag set (a captureId Set), separate from
-// collections. One-click 📎 on a card flags it; the sidebar clip row filters by it;
+// folders. One-click 📎 on a card flags it; the sidebar clip row filters by it;
 // flags persist until explicitly cleared. ---
 export function isClipped(cid: string) {
   return clipSet.has(cid);
@@ -301,7 +301,7 @@ export function clearClips() {
 }
 
 // Drop captureIds no longer present (deleted items), persisting + notifying once.
-// store.reconcile cleans every collection; the clip set is swept separately.
+// store.reconcile cleans every folder; the clip set is swept separately.
 export function reconcile(existing: Set<string>) {
   let changed = store.reconcile(existing);
   for (const c of clipSet)
@@ -390,28 +390,28 @@ export function all() {
   return store.all();
 }
 
-// Collection view (第3モード): expose the store's CRUD so the grid can list every
-// collection and create/rename/delete from cards. Thin wrappers persist + notify so
+// Folder view (第3モード): expose the store's CRUD so the grid can list every
+// folder and create/rename/delete from cards. Thin wrappers persist + notify so
 // all views refresh (store.create/remove/rename persist).
-export function allCollections() {
+export function allFolders() {
   return store.allRaw();
 }
-export function createCollection(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) {
+export function createFolder(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) {
   const f = store.create(name, opts);
   if (f) notify('list');
   return f;
 }
-export function updateCollection(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
-  const ok = store.update ? store.update(id, patch) : false; // update exists only on the collections store (isCollections)
+export function updateFolder(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
+  const ok = store.update ? store.update(id, patch) : false; // update exists only on the folders store (isLibrary)
   if (ok) notify('list');
   return ok;
 }
-export function renameCollection(id: string | null | undefined, name: string | null | undefined) {
+export function renameFolder(id: string | null | undefined, name: string | null | undefined) {
   const ok = store.rename(id, name);
   if (ok) notify('list');
   return ok;
 }
-export function removeCollection(id: string | null | undefined) {
+export function removeFolder(id: string | null | undefined) {
   store.remove(id);
   notify('list');
 }

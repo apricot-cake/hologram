@@ -340,10 +340,10 @@ export function textHaystackOf(p: CorpusPost): string[] {
 
 // --- Post-side leaf predicate factory: a leaf condition → (post)=>bool. ---
 // deps carry the runtime couplings the engine must not own:
-//   isInCollection(id, captureId) / isClipped(captureId) — folders.ts state
+//   isInFolder(id, captureId) / isClipped(captureId) — folders.ts state
 //   fuzzyCompile(q) → matcher(string)=>bool, or null to fall back to exact
 export function makePostPredOf(deps: {
-  isInCollection(id: string, captureId: string): boolean;
+  isInFolder(id: string, captureId: string): boolean;
   isClipped(captureId: string): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
@@ -368,7 +368,7 @@ export function makePostPredOf(deps: {
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
       case 'collection':
-        return (p) => deps.isInCollection(f.value, p.captureId);
+        return (p) => deps.isInFolder(f.value, p.captureId);
       case 'clip':
         return (p) => deps.isClipped(p.captureId);
       case 'workspace':

@@ -6,7 +6,7 @@
 // for the same change on its sibling). Drives getFilteredPosts (content gate →
 // query tree → sticky merge → sort), namedPosters/filteredPosters, the collection
 // derivations (legacy-q folding / dynamic matching / per-pass record cache /
-// thumbs / counts / cond chips / filteredCollections) and cloneTree with stub deps.
+// thumbs / counts / cond chips / filteredFolders) and cloneTree with stub deps.
 //
 //   node scripts/test-listing-unit.cts
 
@@ -85,8 +85,8 @@ async function main() {
     posterQBEval: (u) => posterEval(u),
     posterQBTree: () => posterTree,
     posterSort: () => posterSortV,
-    collectionSort: () => collectionSortV,
-    allCollections: () => collections,
+    folderSort: () => collectionSortV,
+    allFolders: () => collections,
     filterLabel: (f) => `${f.type}:${f.value}`,
   });
 
@@ -160,7 +160,7 @@ async function main() {
   folded = api.treeWithLegacyQ(null, 'cat');
   assert('legacy q: q alone builds a fresh root group', folded && folded.children.length === 1 && folded.children[0].value === 'cat');
 
-  // --- dynamicMatches / collectionRecords / cache ---------------------------
+  // --- dynamicMatches / folderRecords / cache ---------------------------
   const dynColl = { id: 'c1', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'text', value: 'post' }] }, q: '' };
   out = api.dynamicMatches(dynColl);
   assert('dynamicMatches: content gate + tree eval', ids(out) === 'p1,p3');
@@ -168,27 +168,27 @@ async function main() {
   assert('dynamicMatches: no tree → every content-bearing post', out.length === 4);
 
   const statColl = { id: 'c3', items: ['p2', 'gone', 'p5'] };
-  out = api.collectionRecords(statColl);
-  assert('static collectionRecords resolves via postsById, skipping missing ids', ids(out) === 'p2,p5');
+  out = api.folderRecords(statColl);
+  assert('static folderRecords resolves via postsById, skipping missing ids', ids(out) === 'p2,p5');
 
-  const before = api.collectionRecords(dynColl);
-  assert('no cache before reset: fresh array per call', api.collectionRecords(dynColl) !== before);
-  api.resetCollectionCache();
-  const cached = api.collectionRecords(dynColl);
-  assert('after reset: per-pass memo returns the same array', api.collectionRecords(dynColl) === cached);
+  const before = api.folderRecords(dynColl);
+  assert('no cache before reset: fresh array per call', api.folderRecords(dynColl) !== before);
+  api.resetFolderCache();
+  const cached = api.folderRecords(dynColl);
+  assert('after reset: per-pass memo returns the same array', api.folderRecords(dynColl) === cached);
 
   // --- thumbs / count / cond chips ------------------------------------------
   const recs = [{ thumb: 't1' }, {}, { thumb: 't2' }, { thumb: 't3' }, { thumb: 't4' }, { thumb: 't5' }];
-  assert('collectionThumbsFrom skips thumbless records and caps at 4', api.collectionThumbsFrom(recs).join(',') === 't1,t2,t3,t4');
-  assert('collectionItemCount = records length', api.collectionItemCount(statColl) === 2);
+  assert('folderThumbsFrom skips thumbless records and caps at 4', api.folderThumbsFrom(recs).join(',') === 't1,t2,t3,t4');
+  assert('folderItemCount = records length', api.folderItemCount(statColl) === 2);
 
-  const chips = api.collCondLabels({ id: 'c4', tree: t0, q: 'neko' });
-  assert('collCondLabels: leaf labels via filterLabel + quoted legacy q', chips.length === 2 && chips[0] === 'platform:x' && chips[1] === '“neko”');
+  const chips = api.folderCondLabels({ id: 'c4', tree: t0, q: 'neko' });
+  assert('folderCondLabels: leaf labels via filterLabel + quoted legacy q', chips.length === 2 && chips[0] === 'platform:x' && chips[1] === '“neko”');
   const manyLeaves = { kind: 'group', op: 'and', neg: false, children: [1, 2, 3, 4, 5].map((i) => ({ kind: 'cond', type: 't', value: i })) };
-  assert('collCondLabels caps at 4 (q dropped when full)', api.collCondLabels({ id: 'c5', tree: manyLeaves, q: 'x' }).length === 4);
-  assert('collCondLabels swallows a malformed tree', api.collCondLabels({ id: 'c6', tree: BAD_TREE, q: 'q' }).join(',') === '“q”');
+  assert('folderCondLabels caps at 4 (q dropped when full)', api.folderCondLabels({ id: 'c5', tree: manyLeaves, q: 'x' }).length === 4);
+  assert('folderCondLabels swallows a malformed tree', api.folderCondLabels({ id: 'c6', tree: BAD_TREE, q: 'q' }).join(',') === '“q”');
 
-  // --- filteredCollections ---------------------------------------------------
+  // --- filteredFolders ---------------------------------------------------
   collections = [
     { id: 'a', name: 'Beta', created: 300, items: ['p1', 'p2'] },
     { id: 'b', name: 'alpha', created: 100, items: ['p1'] },
@@ -196,16 +196,16 @@ async function main() {
   ];
   const cnames = (list) => list.map((c) => c.name).join(',');
   collectionSortV = 'name';
-  assert('collections sort by name', cnames(api.filteredCollections()) === 'alpha,Beta,Gamma');
+  assert('collections sort by name', cnames(api.filteredFolders()) === 'alpha,Beta,Gamma');
   collectionSortV = 'recent';
-  assert('collections sort by created desc', cnames(api.filteredCollections()) === 'Beta,Gamma,alpha');
+  assert('collections sort by created desc', cnames(api.filteredFolders()) === 'Beta,Gamma,alpha');
   collectionSortV = 'count';
-  api.resetCollectionCache();
-  assert('collections sort by item count desc', cnames(api.filteredCollections()) === 'Gamma,Beta,alpha');
+  api.resetFolderCache();
+  assert('collections sort by item count desc', cnames(api.filteredFolders()) === 'Gamma,Beta,alpha');
   search = 'gam';
-  assert('collection search matches name (case-folded)', cnames(api.filteredCollections()) === 'Gamma');
+  assert('collection search matches name (case-folded)', cnames(api.filteredFolders()) === 'Gamma');
   search = '';
-  assert('filteredCollections does not mutate the source list order', collections[0].name === 'Beta');
+  assert('filteredFolders does not mutate the source list order', collections[0].name === 'Beta');
 
   // --- cloneTree --------------------------------------------------------------
   const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] };

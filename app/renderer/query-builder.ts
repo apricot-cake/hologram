@@ -59,7 +59,7 @@ export interface PostQueryBuilderDeps {
 // listing.ts wiring (getFilteredPosts) needs the same predicate function.
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   const predOf = makePostPredOf({
-    isInCollection: (id, cap) => folders.has(id, cap),
+    isInFolder: (id, cap) => folders.has(id, cap),
     isClipped: (cap) => folders.isClipped(cap),
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,

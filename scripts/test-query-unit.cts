@@ -30,7 +30,7 @@ async function main() {
   const collections = new Map([['col-1', new Set(['cap-in'])]]);
   const fuzzyCalls: any[] = []; // 注入された compile が「いつ・何で」呼ばれたかの記録
   const predOf = Q.makePostPredOf({
-    isInCollection: (id, cap) => !!collections.get(id)?.has(cap),
+    isInFolder: (id, cap) => !!collections.get(id)?.has(cap),
     isClipped: (cap) => clipped.has(cap),
     // exact では絶対に当たらない照合を返す簡易 fuzzy＝経路が本当に注入側を通った証明
     fuzzyCompile: (q) => {
@@ -112,7 +112,7 @@ async function main() {
   // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・fuzzy 不適用）---
   const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
   const predOfU = Q.makePostPredOf({
-    isInCollection: () => false,
+    isInFolder: () => false,
     isClipped: () => false,
     // exact では絶対に当たらない fuzzy スタブ＝URL ヒットが OR 経路である証明に使う
     fuzzyCompile: () => (s) => s.includes('ネコ'),

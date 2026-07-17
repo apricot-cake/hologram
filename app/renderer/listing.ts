@@ -1,8 +1,8 @@
 // Listing pipeline service — "what is visible, in what order" for all three
 // browse modes: getFilteredPosts (post grid = content gate → query tree →
 // sticky merge → sort), namedPosters/filteredPosters (poster grid), and the
-// collection derivations (dynamic saved-search matching, per-pass record cache,
-// cover thumbs, counts, condition chips, filteredCollections). Extracted 1:1
+// folder derivations (dynamic saved-search matching, per-pass record cache,
+// cover thumbs, counts, condition chips, filteredFolders). Extracted 1:1
 // from viewer.js as the seventh "pure logic → service" slice of the viewer
 // decomposition (最終形B). A real ES module (named exports), imported directly
 // by viewer.ts / sidebar.ts. Touches no DOM. Runtime couplings are injected via
@@ -22,8 +22,8 @@
 //   searchQuery() — the search-box term (corpusStore-backed)
 //   buildUsers() — poster roll-up (users.ts product)
 //   posterQBEval(u) / posterQBTree() — the poster query builder (deferred — later const)
-//   posterSort() / collectionSort() — mode sort keys (getters — reassigned lets)
-//   allCollections() — CF().allCollections() or [] before folders load
+//   posterSort() / folderSort() — mode sort keys (getters — reassigned lets)
+//   allFolders() — CF().allFolders() or [] before folders load
 //   filterLabel(f) — leaf pill label (tab-state.ts makeTabLabels product)
 export interface ListingDeps {
   allPosts(): CorpusPost[];
@@ -42,14 +42,14 @@ export interface ListingDeps {
   posterQBEval(u: CorpusUserAgg): boolean;
   posterQBTree(): CorpusQueryGroup;
   posterSort(): string;
-  collectionSort(): string;
-  allCollections(): CorpusCollection[];
+  folderSort(): string;
+  allFolders(): CorpusFolder[];
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 export function makeListing(deps: ListingDeps) {
-  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, collectionSort, allCollections, filterLabel } = deps;
+  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
 
-  // Content gate shared by the post grid and dynamic collections: only records
+  // Content gate shared by the post grid and dynamic folders: only records
   // with something to show (image / media / text / title) enter a listing.
   const hasContent = (p: CorpusPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
@@ -146,13 +146,13 @@ export function makeListing(deps: ListingDeps) {
     return list;
   }
 
-  // Records backing a collection's cover + count. Static = its explicit items
+  // Records backing a folder's cover + count. Static = its explicit items
   // (existing ones only); dynamic = posts matching the saved search (tree + q)
-  // against the CURRENT library (= 開けば最新). Memoized per renderCollections pass
-  // (resetCollectionCache) so the sort + the card map don't each re-scan allPosts.
-  let _collRecCache: Map<string, any> | null = null;
-  function resetCollectionCache() {
-    _collRecCache = new Map();
+  // against the CURRENT library (= 開けば最新). Memoized per renderFolders pass
+  // (resetFolderCache) so the sort + the card map don't each re-scan allPosts.
+  let _folderRecCache: Map<string, any> | null = null;
+  function resetFolderCache() {
+    _folderRecCache = new Map();
   }
   // Fold a legacy free-text q into a tree as a confirmed 'text' leaf (pre-text-leaf
   // saves stored the search term separately in coll.q). Returns the tree to evaluate —
@@ -162,7 +162,7 @@ export function makeListing(deps: ListingDeps) {
     if (!q || !q.trim() || (t && treeLeaves(t).some((c) => c.type === 'text'))) return t;
     return { kind: 'group', op: 'and', neg: false, children: [...((t && t.children) || []), { kind: 'cond', type: 'text', value: q.trim(), mode: 'exact' }] };
   }
-  function dynamicMatches(coll: CorpusCollection): CorpusPost[] {
+  function dynamicMatches(coll: CorpusFolder): CorpusPost[] {
     const tree = treeWithLegacyQ(coll.tree, coll.q); // text term lives in the tree now (q = legacy only)
     const out: CorpusPost[] = [];
     for (const p of allPosts()) {
@@ -172,8 +172,8 @@ export function makeListing(deps: ListingDeps) {
     }
     return out;
   }
-  function collectionRecords(coll: CorpusCollection): CorpusPost[] {
-    if (_collRecCache && _collRecCache.has(coll.id)) return _collRecCache.get(coll.id);
+  function folderRecords(coll: CorpusFolder): CorpusPost[] {
+    if (_folderRecCache && _folderRecCache.has(coll.id)) return _folderRecCache.get(coll.id);
     let recs: CorpusPost[];
     if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
     else {
@@ -183,10 +183,10 @@ export function makeListing(deps: ListingDeps) {
         if (r) recs.push(r);
       }
     }
-    if (_collRecCache) _collRecCache.set(coll.id, recs);
+    if (_folderRecCache) _folderRecCache.set(coll.id, recs);
     return recs;
   }
-  function collectionThumbsFrom(recs: CorpusPost[]) {
+  function folderThumbsFrom(recs: CorpusPost[]) {
     const files: string[] = [];
     for (const rec of recs) {
       const f = densityImage(rec, 'card');
@@ -195,12 +195,12 @@ export function makeListing(deps: ListingDeps) {
     }
     return files;
   }
-  function collectionItemCount(coll: CorpusCollection) {
-    return collectionRecords(coll).length;
+  function folderItemCount(coll: CorpusFolder) {
+    return folderRecords(coll).length;
   }
   // Small condition chips under a dynamic card's name (saved tree leaves + the
   // free-text q). Capped; purely informational (the mock's optional 条件チップ).
-  function collCondLabels(coll: CorpusCollection) {
+  function folderCondLabels(coll: CorpusFolder) {
     const chips: string[] = [];
     try {
       for (const leaf of treeLeaves(coll.tree)) {
@@ -211,15 +211,15 @@ export function makeListing(deps: ListingDeps) {
       /* ignore malformed tree */
     }
     if (coll.q && coll.q.trim() && chips.length < 4) chips.push('“' + coll.q.trim() + '”');
-    return chips; // React renders the .collection-cond chips from these labels
+    return chips; // React renders the .folder-cond chips from these labels
   }
-  function filteredCollections() {
+  function filteredFolders() {
     const q = searchQuery().trim().toLowerCase();
-    let list = allCollections().slice();
+    let list = allFolders().slice();
     if (q) list = list.filter((c) => (c.name || '').toLowerCase().includes(q));
-    const cSort = collectionSort();
+    const cSort = folderSort();
     if (cSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
-    else if (cSort === 'count') list.sort((a, b) => collectionItemCount(b) - collectionItemCount(a) || (a.name || '').localeCompare(b.name || ''));
+    else if (cSort === 'count') list.sort((a, b) => folderItemCount(b) - folderItemCount(a) || (a.name || '').localeCompare(b.name || ''));
     else list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     return list;
   }
@@ -228,7 +228,7 @@ export function makeListing(deps: ListingDeps) {
   // namedPosters live binding below (bindNamedPosters), so sidebar.ts — which
   // has no access to this closure — reads the SAME bound instance rather than
   // a second copy that could drift.
-  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, treeWithLegacyQ, dynamicMatches, resetCollectionCache, collectionRecords, collectionThumbsFrom, collectionItemCount, collCondLabels, filteredCollections };
+  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, treeWithLegacyQ, dynamicMatches, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, folderCondLabels, filteredFolders };
 }
 
 // Deep-clone a query tree for persistence, dropping transient memo fields (_compiled…).

@@ -231,12 +231,12 @@ export let applyFolderFilter: (id: string) => void;
     platformName: (v: string) => PF_NAME[v] || v,
     formatShortDate,
     formatCount,
-    collectionName: (id: string) => {
+    folderName: (id: string) => {
       const fobj = CF() && CF().byId(id);
       return fobj ? fobj.name : null;
     },
     // Deferred arrow (posterFolderById is a const declared far below — same TDZ
-    // dance as CF()/collectionName; the wrapper only runs at render time).
+    // dance as CF()/folderName; the wrapper only runs at render time).
     posterFolderName: (id: string) => {
       const fo = posterFolderById(id);
       return fo ? fo.name : null;
@@ -768,9 +768,9 @@ export let applyFolderFilter: (id: string) => void;
   // merge → sort), namedPosters/filteredPosters, and the collection derivations —
   // moved to listing.ts (imported above), 7th extraction slice. Runtime
   // couplings are injected: reassigned lets (allPosts/_postsById/posterSort/
-  // collectionSort) as getters; posterQB is a const declared later — arrow
+  // folderSort) as getters; posterQB is a const declared later — arrow
   // wrappers defer the read past TDZ (they only run once posters render).
-  // Collection derivations (filteredCollections / dynamicMatches / …) are no longer
+  // Collection derivations (filteredFolders / dynamicMatches / …) are no longer
   // destructured — collections became a sidebar folder list (2026-07-04), so only the
   // post/poster selection pipeline is used here.
   const { getFilteredPosts, namedPosters, filteredPosters } = makeListing({
@@ -794,11 +794,11 @@ export let applyFolderFilter: (id: string) => void;
     // as the old closure default).
     posterSort: () => (storeGet('sortPoster') as string) || 'count',
     // Collections migrated to sidebar folders; the collection-sort UI is gone, so
-    // listing.js's filteredCollections() is dormant smart-collection foundation and
+    // listing.js's filteredFolders() is dormant smart-collection foundation and
     // is never called here. This getter satisfies its contract with the default
     // (alphabetical) sort — never actually invoked in the current build.
-    collectionSort: () => 'name',
-    allCollections: () => (CF() ? CF().allCollections() : []) as CorpusCollection[],
+    folderSort: () => 'name',
+    allFolders: () => (CF() ? CF().allFolders() : []) as CorpusFolder[],
     filterLabel,
   });
   // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster

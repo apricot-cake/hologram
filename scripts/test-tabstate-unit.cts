@@ -51,7 +51,7 @@ async function main() {
     platformName: (v) => ({ x: 'X', pixiv: 'pixiv' })[v] || v,
     formatShortDate: (s) => 'D:' + s,
     formatCount: (n) => 'C' + n,
-    collectionName: (id) => (id === 'c1' ? 'お気に入り' : null),
+    folderName: (id) => (id === 'c1' ? 'お気に入り' : null),
     posterFolderName: (id) => (id === 'fo1' ? 'イラスト' : null),
   });
 

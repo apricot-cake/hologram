@@ -23,7 +23,7 @@ export function genTabId() {
 //                   filter popover shares it for its type <select>)
 //   platformName(v) — PF_NAME lookup with raw-value fallback
 //   formatShortDate(dateStr) / formatCount(n) — viewer formatting helpers
-//   collectionName(id) — resolves a collection id to its display name
+//   folderName(id) — resolves a collection id to its display name
 //                        (null/undefined when unknown → caller falls back)
 export function makeTabLabels(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -31,10 +31,10 @@ export function makeTabLabels(deps: {
   platformName(v: string): string;
   formatShortDate(dateStr: string): string;
   formatCount(n: number | null | undefined): string;
-  collectionName(id: string): string | null | undefined;
+  folderName(id: string): string | null | undefined;
   posterFolderName(id: string): string | null | undefined;
 }) {
-  const { t, engTypeLabels, platformName, formatShortDate, formatCount, collectionName } = deps;
+  const { t, engTypeLabels, platformName, formatShortDate, formatCount, folderName } = deps;
 
   // Returns the human-readable label for a single active filter. Shared by
   // the query-chip renderer and the tab title generator.
@@ -59,7 +59,7 @@ export function makeTabLabels(deps: {
       case 'hashtag':
         return `#${f.value}`;
       case 'collection':
-        return collectionName(f.value) || f.value;
+        return folderName(f.value) || f.value;
       case 'clip':
         return t('clipTitle');
       case 'media':
@@ -122,7 +122,7 @@ export function makeTabLabels(deps: {
   // Poster query-chip / row label. folder name + date dimension are
   // poster-specific; platform / instance / tag reuse the shared filterLabel.
   // deps.posterFolderName resolves a poster-folder id → name (or null) from
-  // the viewer-owned pfStore, mirroring collectionName above.
+  // the viewer-owned pfStore, mirroring folderName above.
   function posterFilterLabel(f: { type: string; [k: string]: any }): string {
     if (f.type === 'folder') {
       const name = deps.posterFolderName(f.value);

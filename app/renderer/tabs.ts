@@ -18,7 +18,7 @@
 // sortPost). allPostsCount (⑩) covers the tab title's item count.
 //
 // tabTitleOf itself stays viewer-constructed (tab-state.ts's makeTabLabels
-// with viewer's t/collectionName/etc deps, which this file has no access to) —
+// with viewer's t/folderName/etc deps, which this file has no access to) —
 // configure() takes the already-built function, plus the static icon map + pin
 // glyph, as invariant callbacks (same "configure once" shape as the grid
 // sources' modelOf/keyOf/labels/onAspect).
