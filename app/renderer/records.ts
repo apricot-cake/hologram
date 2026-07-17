@@ -70,6 +70,18 @@ export const groupFilesOf = (p: CorpusPost): string[] => {
   return a ? [a] : [];
 };
 
+// What dragging a card hands to the OS (#132), given what's selected right now.
+// The Explorer/Eagle rule: a card that IS in the selection drags the WHOLE
+// selection; one that isn't drags only itself (and the caller then makes it the
+// selection — `fromSelection: false` is that signal). Multi-image posts hand over
+// every original they hold, and a file shared by two selected groups ships once.
+// Pure so the rule is unit-testable without a real drag: the DOM/IPC glue around
+// it is post-grid-builder.ts's handleCardDragStart.
+export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): { fromSelection: boolean; files: string[] } {
+  const fromSelection = selected.some((s) => s.key === g.key);
+  return { fromSelection, files: [...new Set((fromSelection ? selected : [g]).flatMap((x) => x.files))] };
+}
+
 // Image-tab (type:'image') record resolution. The tab persists { img:{ recs:[captureId…],
 // idx } }; recs resolve against the live library on every activation via the injected byId
 // lookup, so deletions degrade to a "missing" empty state instead of a broken image. Same

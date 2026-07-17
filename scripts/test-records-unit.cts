@@ -304,6 +304,44 @@ async function main() {
     assert('cardModel tile は aspRatio 空・clip 反映（isClipped）', mt.aspRatio === '' && mt.clipped === true);
   }
 
+  // --- dragFilesOf: ドラッグアウトが何を渡すか（#132 の Explorer/Eagle 規則） ---
+  // DOM/IPC 配線（handleCardDragStart）はここを呼ぶだけ＝規則の正はこの純関数。
+  {
+    const G = (key, files) => ({ key, files, records: [], rep: {} });
+    const a = G('a', ['a1.jpg']);
+    const b = G('b', ['b1.jpg', 'b2.jpg']); // 複数画像投稿
+    const c = G('c', ['c1.jpg']);
+
+    // 選択が空＝掴んだカードだけ。fromSelection=false で呼び出し側が単一選択へ置換する
+    const r0 = R.dragFilesOf(a, []);
+    assert('dragFilesOf 選択なし → そのカードだけ', r0.files.join(',') === 'a1.jpg');
+    assert('dragFilesOf 選択なし → fromSelection=false（＝単一選択へ置換させる）', r0.fromSelection === false);
+
+    // 選択内を掴む＝選択全体（複数画像投稿は全ファイル）
+    const r1 = R.dragFilesOf(a, [a, b]);
+    assert('dragFilesOf 選択内を掴む → 選択全体', r1.files.join(',') === 'a1.jpg,b1.jpg,b2.jpg');
+    assert('dragFilesOf 選択内を掴む → fromSelection=true（選択は触らない）', r1.fromSelection === true);
+
+    // 選択外を掴む＝選択を無視してそのカードだけ（Explorer/Eagle）
+    const r2 = R.dragFilesOf(c, [a, b]);
+    assert('dragFilesOf 選択外を掴む → そのカードだけ（選択は無視）', r2.files.join(',') === 'c1.jpg');
+    assert('dragFilesOf 選択外を掴む → fromSelection=false', r2.fromSelection === false);
+
+    // 単一選択でそれを掴む＝1件だけ
+    assert('dragFilesOf 単一選択を掴む → その1件', R.dragFilesOf(b, [b]).files.join(',') === 'b1.jpg,b2.jpg');
+
+    // 同じファイルを持つグループが2つ選択されていても1回だけ渡す（startDrag の重複回避）
+    const dup1 = G('d1', ['same.jpg', 'x.jpg']);
+    const dup2 = G('d2', ['same.jpg', 'y.jpg']);
+    assert('dragFilesOf 重複ファイルは1回だけ', R.dragFilesOf(dup1, [dup1, dup2]).files.join(',') === 'same.jpg,x.jpg,y.jpg');
+
+    // 選択順を保つ（ドロップ先の並びが選択順に従う）
+    assert('dragFilesOf 選択順を保つ', R.dragFilesOf(b, [b, a]).files.join(',') === 'b1.jpg,b2.jpg,a1.jpg');
+
+    // ファイルを持たないグループ（原本が無い）→ 空＝呼び出し側は dragOut を呼ばない
+    assert('dragFilesOf ファイル無しは空（dragOut を呼ばせない）', R.dragFilesOf(G('e', []), []).files.length === 0);
+  }
+
   if (failed) {
     console.error(`FAIL test-records-unit: ${failed} assertion(s) red`);
     process.exit(1);
