@@ -9,7 +9,7 @@
 //  - get-collections is idempotent (2nd call reads collections.json, no re-migrate)
 // Seeds real captures so the renderer's reconcile keeps the referenced ids.
 //
-//   node scripts/test-collections-migrate.cts
+//   node scripts/test-app-collections-migrate.cts
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
