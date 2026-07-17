@@ -38,6 +38,7 @@ electron.contextBridge.exposeInMainWorld("corpus", {
 	exportComplete: (mode) => electron.ipcRenderer.invoke("export-complete", mode),
 	importComplete: (bytes) => electron.ipcRenderer.invoke("import-complete", bytes),
 	pickSaveFolder: () => electron.ipcRenderer.invoke("pick-save-folder"),
+	moveSaveFolder: (dest) => electron.ipcRenderer.invoke("move-save-folder", dest),
 	onSaveFolderProgress: (cb) => {
 		electron.ipcRenderer.on("save-folder-progress", (_e, p) => cb(p));
 	},

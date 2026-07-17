@@ -27,6 +27,19 @@ async function main() {
   assert('normalize: 全角英数→半角+小文字', S.normalize('ＡB１２') === 'ab12');
   assert('normalize: 半角カナ→ひらがな', S.normalize('ﾈｺ') === 'ねこ');
 
+  // --- B: 濁点・半濁点の同一視（#96）---
+  assert('normalize: 濁点を落とす', S.normalize('バッグ') === 'はっく');
+  assert('normalize: 半濁点を落とす', S.normalize('パン') === 'はん');
+  assert('normalize: 半角カナ＋半角濁点も落とす', S.normalize('ﾊﾞｯｸﾞ') === 'はっく');
+  assert('normalize: ヴ→う', S.normalize('ヴ') === 'う');
+  // ラテン系の分音記号は落とさない（NFC へ戻す＝合成形のまま・語長も従来どおり）。
+  assert('normalize: é は分解したままにしない', S.normalize('café') === 'café');
+  assert('normalize: é の語長は1文字のまま', S.normalize('é').length === 1);
+
+  const mDaku = S.compile('ハック');
+  assert('B: "ハック" が "バッグ" に一致（濁点同一視）', mDaku('バッグ') === true);
+  assert('B: 濁点同一視でも無関係語には不一致', mDaku('いぬのおさんぽ') === false);
+
   // --- B 経由のマッチ（ひらがなクエリ↔カタカナ本文）---
   const mKana = S.compile('ねこ');
   assert('B: "ねこ" が "ネコかわいい" に一致', mKana('ネコかわいい') === true);

@@ -14,7 +14,8 @@ import { Highlight } from '../components/Highlight.tsx';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../../renderer/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../../renderer/backup.ts';
-import { onSaveFolderProgress, pickSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
+import { onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
+import { open as confirmOpen } from '../../../renderer/confirm.ts';
 import { loadPosts } from '../../../renderer/post-grid-builder.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
@@ -168,6 +169,17 @@ export function Data() {
     };
   }, []);
 
+  // Apply the outcome of a pick/move round-trip (both return the same shape).
+  const applyMoveResult = (res: any) => {
+    if (res && res.ok) {
+      setSaveFolder(res.saveFolder);
+      notify(t('saveFolderMoved', [res.moved]));
+      reloadPosts();
+    } else {
+      notify(saveFolderErr(res && res.error));
+    }
+  };
+
   const chooseSaveFolder = async () => {
     setMigrating(true);
     setProgress(null); // box appears on the first progress event (after a folder is picked)
@@ -177,13 +189,29 @@ export function Data() {
         setProgress(null);
         return;
       }
-      if (res.ok) {
-        setSaveFolder(res.saveFolder);
-        notify(t('saveFolderMoved', [res.moved]));
-        reloadPosts();
-      } else {
-        notify(saveFolderErr(res.error));
+      // A destination that looks cloud-synced is a warning, not a rejection (#95) —
+      // ask, then move if the user still wants it.
+      if (res.confirm === 'cloud-sync') {
+        setProgress(null);
+        confirmOpen({
+          message: t('saveFolderCloudWarn', [res.provider]),
+          description: t('saveFolderCloudWarnDesc'),
+          okLabel: t('saveFolderCloudWarnOk'),
+          cancelLabel: t('confirmCancel'),
+          onOk: async () => {
+            setMigrating(true);
+            try {
+              applyMoveResult(await moveSaveFolder(res.dest));
+            } catch {
+              notify(t('saveFolderErrGeneric'));
+            } finally {
+              setMigrating(false);
+            }
+          },
+        });
+        return;
       }
+      applyMoveResult(res);
     } catch {
       notify(t('saveFolderErrGeneric'));
     } finally {

@@ -16,6 +16,7 @@ import path from 'node:path';
 
 import * as archive from './lib-archive.mts';
 import { parseJsonLoose } from './lib-json.mts';
+import { cloudSyncProviderOf } from './save-folder-guard.mts';
 
 let _JSZip: any = null;
 async function getJSZip() {
@@ -271,15 +272,13 @@ function register(ctx) {
   // there (crash-safe: copy → flip config → delete old), then re-points the watcher
   // and forces the renderer to resync. The native host reads saveFolder from the
   // same config.json, so new captures follow automatically.
-  ipcMain.handle('pick-save-folder', async () => {
-    const res = await dialog.showOpenDialog(getWin(), { properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
-    const chosen = res.filePaths[0];
-    // Treat the picked folder as a PARENT and put the library in a named subfolder
-    // — never dump sidecars/images flat into a folder that may hold the user's own
-    // files. If they re-pick an existing Corpus-library folder, use it as-is (no
-    // double nesting).
-    const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
+  //
+  // Split in two so a non-blocking warning can sit between picking and moving (#95):
+  // pick-save-folder resolves + validates a destination and reports anything the user
+  // should see first; move-save-folder does the actual relocation once they accept.
+  // The move re-validates from scratch — the renderer round-trip is a UI step, not a
+  // trust boundary.
+  function moveLibraryTo(dest) {
     const src = getSaveFolder();
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
@@ -298,6 +297,34 @@ function register(ctx) {
       // The sweep fires a minute later — skip it if the library moved yet again.
       stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
     });
+  }
+
+  ipcMain.handle('pick-save-folder', async () => {
+    const res = await dialog.showOpenDialog(getWin(), { properties: ['openDirectory', 'createDirectory'] });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    const chosen = res.filePaths[0];
+    // Treat the picked folder as a PARENT and put the library in a named subfolder
+    // — never dump sidecars/images flat into a folder that may hold the user's own
+    // files. If they re-pick an existing Corpus-library folder, use it as-is (no
+    // double nesting).
+    const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
+    const v = validateSaveFolder(dest);
+    if (!v.ok) return { ok: false, error: v.error };
+
+    // Warn (never block) when the destination looks like it sits under a cloud-sync
+    // root: the library is written live, and a sync client racing those writes can
+    // corrupt it. Heuristic → the user decides; the mirror is the supported cloud spot.
+    const cloudProvider = cloudSyncProviderOf(dest);
+    if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
+
+    return moveLibraryTo(dest);
+  });
+
+  // Second half of the pick flow: relocate to a destination the user already
+  // accepted a warning for. Not a general "move anywhere" entry point.
+  ipcMain.handle('move-save-folder', async (_e, dest) => {
+    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+    return moveLibraryTo(dest);
   });
 
   ipcMain.handle('import-images', async () => {

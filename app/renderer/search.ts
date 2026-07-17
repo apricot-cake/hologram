@@ -42,12 +42,19 @@ function kataToHira(s: string) {
 }
 
 // 表記ゆれ正規化（B）。NFKC で全角英数→半角・半角カナ→全角カナ等を吸収し、
-// 小文字化＋カナ統一する。
+// 濁点・半濁点を落として（が→か・ぱ→は）小文字化＋カナ統一する。
+// NFKC → NFD の順は必須（先に NFD だと半角カナの互換分解と干渉する）。除去するのは
+// 結合濁点/半濁点だけで、最後に NFC へ戻す＝ラテン系の分音記号（é 等）は合成形のまま
+// ＝濁点以外の編集距離・語長の勘定は従来どおり。
 export function normalize(s: unknown) {
   if (s == null) return '';
   let t = String(s);
   try {
-    t = t.normalize('NFKC');
+    t = t
+      .normalize('NFKC')
+      .normalize('NFD')
+      .replace(/[\u3099\u309a]/g, '')
+      .normalize('NFC');
   } catch (_e) {
     /* 古い環境向けフォールバック */
   }

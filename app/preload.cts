@@ -51,6 +51,7 @@ const api = {
   exportComplete: (mode?: string): Promise<any> => ipcRenderer.invoke('export-complete', mode),
   importComplete: (bytes: Uint8Array | ArrayBuffer): Promise<any> => ipcRenderer.invoke('import-complete', bytes),
   pickSaveFolder: (): Promise<any> => ipcRenderer.invoke('pick-save-folder'),
+  moveSaveFolder: (dest: string): Promise<any> => ipcRenderer.invoke('move-save-folder', dest),
   onSaveFolderProgress: (cb: (p: any) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
