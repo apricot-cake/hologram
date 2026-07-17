@@ -14,7 +14,7 @@ import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
-import { densityImage, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
+import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
 import { corpusPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { corpusIpc } from './ipc.ts';
@@ -518,14 +518,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     const g = card && viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
     if (!g) return;
     e.preventDefault();
-    // Explorer/Eagle rule: dragging a card that IS in the selection takes the whole
-    // selection; dragging one that isn't makes it the selection and takes only it.
-    const selected = selection.selectedGroups(viewGroups, postIdKey);
-    const inSelection = selected.some((s) => s.key === g.key);
-    if (!inSelection && card) deps.selectOnlyCard(card);
-    // Multi-image posts hand over every original they hold, not just the one the
-    // card happens to show.
-    const files = [...new Set((inSelection ? selected : [g]).flatMap((x) => x.files))];
+    // Which files leave, and whether this card was part of the selection, is the
+    // Explorer/Eagle rule in records.ts (pure — see test-records-unit).
+    const { fromSelection, files } = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
+    if (!fromSelection && card) deps.selectOnlyCard(card); // dragging outside the selection re-points it at this card
     if (files.length) corpusIpc.dragOut(files);
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
