@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
@@ -96,6 +96,7 @@ function register(ctx) {
       posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card', // 投稿者グリッドの表示密度
       posterTileSize: Number.isFinite(cfg.posterTileSize) ? cfg.posterTileSize : null, // 投稿者タイルの一辺px
       posterCardSize: Number.isFinite(cfg.posterCardSize) ? cfg.posterCardSize : null, // 投稿者カードの最小列幅px
+      sidebarOpen: typeof cfg.sidebarOpen === 'boolean' ? cfg.sidebarOpen : null, // sidebar expanded/collapsed; null = never toggled
     };
   });
 

@@ -17,9 +17,10 @@
 // - The right inspector keeps the legacy #postDetail element: its .inspector CSS
 //   already implements the #143 model (wide = fixed 320px column, narrow = slide-over),
 //   so P1 inherits that behavior; the content is reworked in P2⑦.
-import { useEffect, useRef } from 'react';
-import { SidebarInset, SidebarProvider, useSidebar } from '@/components/ui/sidebar';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { cachedOpen, loadOpen, persistOpen } from '../../renderer/sidebar-pref.ts';
 import { signalShellReady } from '../../renderer/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
@@ -34,28 +35,52 @@ import { TabsHost } from '../tabs/index.tsx';
 // contested resource (the inspector detaches to a slide-over below 1280px), so a sparse
 // nav column must not hold persistent width. Below 1024px the sidebar auto-collapses to
 // the icon rail (shadcn's collapsible="icon"); below 768px it becomes the mobile Sheet
-// (useIsMobile). The manual SidebarTrigger + Ctrl/Cmd+B still override within a band —
-// this only re-applies on a breakpoint crossing, so a manual toggle persists until the
-// next crossing. See the trial memory: "幅規律の対称ルール".
+// (useIsMobile). See the trial memory: "幅規律の対称ルール".
 const SIDEBAR_EXPANDED_QUERY = '(min-width: 1024px)';
 
-function SidebarAutoCollapse() {
-  const { setOpen } = useSidebar();
-  const setOpenRef = useRef(setOpen);
+// #149: the state is the user's saved choice (sidebar-pref.ts), clamped by that width
+// discipline — a saved "expanded" is only honored once the viewport can afford the
+// column, and an unset pref means expanded on a wide screen. Below the breakpoint the
+// override is temporary: it is not written back, so widening the window returns to
+// whatever the user last chose rather than to a resize artifact.
+function resolveOpen(saved: boolean | null): boolean {
+  if (!window.matchMedia(SIDEBAR_EXPANDED_QUERY).matches) return false;
+  return saved ?? true;
+}
+
+function useSidebarOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => resolveOpen(cachedOpen()));
+  // A user toggle mid-boot must not lose to the reconcile landing a tick later.
+  const toggled = useRef(false);
+
+  // config.json outranks the localStorage cache the initial state was guessed from.
   useEffect(() => {
-    setOpenRef.current = setOpen;
-  }, [setOpen]);
+    loadOpen().then((saved) => {
+      if (saved !== null && !toggled.current) setOpen(resolveOpen(saved));
+    });
+  }, []);
+
+  // Re-apply the width discipline on a breakpoint crossing (cachedOpen() is kept live by
+  // persistOpen/loadOpen, so this reads the current choice without re-rendering on it).
   useEffect(() => {
     const mql = window.matchMedia(SIDEBAR_EXPANDED_QUERY);
-    setOpenRef.current(mql.matches);
-    const onChange = (e: MediaQueryListEvent) => setOpenRef.current(e.matches);
+    const onChange = () => setOpen(resolveOpen(cachedOpen()));
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
-  return null;
+
+  // Only an explicit toggle (SidebarTrigger / Ctrl+B / rail) is a preference.
+  const choose = useCallback((v: boolean) => {
+    toggled.current = true;
+    setOpen(v);
+    persistOpen(v);
+  }, []);
+
+  return [open, choose];
 }
 
 export function AppShell() {
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
   // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
   // before wiring the delegated #postGrid/#emptyState/etc. listeners — those elements
   // are React-rendered below, not static index.html markup anymore).
@@ -71,8 +96,7 @@ export function AppShell() {
             <TabsHost />
           </div>
         </header>
-        <SidebarProvider defaultOpen={window.innerWidth >= 1024} className="min-h-0 flex-1">
-          <SidebarAutoCollapse />
+        <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen} className="min-h-0 flex-1">
           <LeftSidebar />
           <SidebarInset className="min-w-0">
             <AppToolbar />
