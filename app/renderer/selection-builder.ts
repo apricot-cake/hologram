@@ -57,13 +57,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
   }
 
-  // Make this card the whole selection — a drag that starts outside the current
-  // selection grabs only the dragged card (Explorer/Eagle rule, #132). The grid's
-  // rings follow on their own: the cells subscribe to corpusStore's selectedSet.
-  function selectOnly(card: HTMLElement) {
-    selection.clear();
-    toggleCardSelection(card, false); // reuses the anchor + class sync of a plain ring click
-  }
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
   // corpusStore's 'selectedSet' directly (selection.toggle already
@@ -221,7 +214,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   return {
     toggleCardSelection,
-    selectOnly,
     selectedRecords,
     clearSelection,
     handleShortcutSelectAllKey,
