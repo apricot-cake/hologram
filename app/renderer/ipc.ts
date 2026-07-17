@@ -62,6 +62,7 @@ export const corpusIpc: CorpusPreload = {
   exportComplete: (mode) => bridge().exportComplete(mode),
   importComplete: (bytes) => bridge().importComplete(bytes),
   pickSaveFolder: () => bridge().pickSaveFolder(),
+  moveSaveFolder: (dest) => bridge().moveSaveFolder(dest),
   onSaveFolderProgress: (cb) => bridge().onSaveFolderProgress(cb),
   getBackup: () => bridge().getBackup(),
   setBackup: (patch) => bridge().setBackup(patch),

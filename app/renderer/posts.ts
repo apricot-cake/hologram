@@ -46,6 +46,11 @@ export function importComplete(bytes: Uint8Array | ArrayBuffer) {
 export function pickSaveFolder() {
   return corpusIpc.pickSaveFolder();
 }
+// Second half of the pick flow — relocate to a destination pick-save-folder handed
+// back with a warning the user then accepted (#95).
+export function moveSaveFolder(dest: string) {
+  return corpusIpc.moveSaveFolder(dest);
+}
 export function onSaveFolderProgress(cb: (p: any) => void) {
   return corpusIpc.onSaveFolderProgress(cb);
 }

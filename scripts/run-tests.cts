@@ -33,6 +33,7 @@ const TESTS = [
   'test-format-unit',
   'test-undo-unit',
   'test-migrate-unit',
+  'test-save-folder-guard',
   'test-collections-merge',
   'test-token-parity',
   'test-contrast-parity',
