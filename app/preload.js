@@ -19,8 +19,6 @@ electron.contextBridge.exposeInMainWorld("corpus", {
 	setManualGroups: (groups) => electron.ipcRenderer.invoke("set-manual-groups", groups),
 	getFolders: () => electron.ipcRenderer.invoke("get-folders"),
 	setFolders: (data) => electron.ipcRenderer.invoke("set-folders", data),
-	getCollections: () => electron.ipcRenderer.invoke("get-collections"),
-	setCollections: (data) => electron.ipcRenderer.invoke("set-collections", data),
 	getTabs: () => electron.ipcRenderer.invoke("get-tabs"),
 	setTabs: (data) => electron.ipcRenderer.invoke("set-tabs", data),
 	openExternal: (url) => electron.ipcRenderer.invoke("open-external", url),

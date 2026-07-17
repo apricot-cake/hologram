@@ -5,10 +5,10 @@
 //  - create a folder via the shared management modal (#ivFolderModal, no auto-default ★)
 //  - add a card to the folder via the real 📁 picker (card context menu → 「フォルダに追加…」
 //    → folder row) — the data + filter + persistence path is what this smoke pins;
-//    folder ids/membership counts are read back through window.corpus.getCollections()
+//    folder ids/membership counts are read back through window.corpus.getFolders()
 //  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="collection"]
 //    → .qf-pop row), the same entry every other facet uses — only the member card remains
-//  - collections.json persists { collections/folders, clip }, no defaultId
+//  - folders.json persists { folders, clip }, no defaultId
 //  - 📎 clip one-click flags the card (library-wide ephemeral set), sidebar count + filter,
 //    空にする clears all flags; clip is NOT a folder (the manager lists only real folders)
 // Seeds 3 standalone illustration records → 3 cards.
@@ -83,7 +83,7 @@ const evalJs = `(async () => {
   const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
   // Active chips minus the CHIP_OUT_MS exit-animation ghosts (see test-app-textleaf-*).
   const activeChips = (sel) => document.querySelectorAll('#queryChips ' + sel + ':not(.leaving)').length;
-  const getCollections = () => window.corpus.getCollections();
+  const getFolders = () => window.corpus.getFolders();
 
   await waitFor(() => cards() >= 3);
   const totalBefore = cards();                              // 3
@@ -96,21 +96,21 @@ const evalJs = `(async () => {
   const modalOpen = !$('ivFolderModal').hidden;
   setVal($('ivFolderNewName'), '一次資料');
   click($('ivFolderCreate')); await sleep(60);
-  const c1 = await getCollections();
-  const folderCount = c1.collections.length;                // 1 folder exists
+  const c1 = await getFolders();
+  const folderCount = c1.folders.length;                // 1 folder exists
   const noStar = !document.querySelector('.iv-foldstar');  // no default folder → no ★
   click($('ivFolderClose')); await sleep(20);
 
   // --- membership: add card[0] to the folder via the real 📁 picker (card context
   //     menu → 「フォルダに追加…」 → the folder row toggles + closes) ---
-  const fid = c1.collections[0].id;
+  const fid = c1.folders[0].id;
   const card0Img = document.querySelector('img[data-cap="' + ${JSON.stringify(CIDS[0])} + '"]');
   rclick(card0Img); await sleep(40);
   click(menuRow('フォルダに追加…'));
   await waitFor(() => !!menuRow('一次資料'));
   click(menuRow('一次資料')); await sleep(80);
-  const c2 = await getCollections();
-  const memberCount = ((c2.collections.find((c) => c.id === fid) || {}).items || []).length; // 1 (the card joined)
+  const c2 = await getFolders();
+  const memberCount = ((c2.folders.find((c) => c.id === fid) || {}).items || []).length; // 1 (the card joined)
 
   // --- filter by the folder via the sidebar folder flyout (data-qfrow="collection") ---
   click(document.querySelector('#filterRows [data-qfrow="collection"]'));
@@ -119,9 +119,9 @@ const evalJs = `(async () => {
   const filteredCount = cards();                            // 1 (only the member card)
   const folderChip = activeChips('.sb-active-chip') >= 1;   // a folder chip is shown
 
-  // --- persistence: get-collections { collections/folders, clip }, no defaultId ---
-  const rb = await getCollections();
-  const list = rb.collections || rb.folders || [];
+  // --- persistence: get-folders { folders, clip }, no defaultId ---
+  const rb = await getFolders();
+  const list = rb.folders || [];
   const persistedFolders = list.length;                    // 1
   const persistedItems = Array.isArray((list[0] || {}).items) ? list[0].items.length : -1;  // 1
   const noDefaultId = !('defaultId' in rb);
@@ -131,27 +131,27 @@ const evalJs = `(async () => {
   const clipBtn1 = grid.querySelector('.post-card[data-index="1"] .clip-btn');
   click(clipBtn1); await sleep(60);
   const clipIn = clipBtn1.classList.contains('in');
-  const clipCount = (await getCollections()).clip.length; // 1
+  const clipCount = (await getFolders()).clip.length; // 1
   // filter to clipped → only that card
   click($('clipRow')); await sleep(80);
   const clipFiltered = cards();                            // 1
   const clipPill = activeChips('.sb-active-chip.qc-clip') === 1;
-  // persisted to collections.json as the clip array (1 id), NOT a folder
-  const rb2 = await getCollections();
+  // persisted to folders.json as the clip array (1 id), NOT a folder
+  const rb2 = await getFolders();
   const clipPersist = Array.isArray(rb2.clip) && rb2.clip.length === 1;
   // clip is NOT a folder: the manager still lists only the real folder
   click(document.querySelector('#filterRows [data-qfrow="collection"]'));
   await waitFor(() => !!document.querySelector('.qf-footer-link'));
   click(document.querySelector('.qf-footer-link')); await sleep(50);
   const mgrRows = document.querySelectorAll('#ivFolderList .iv-folder-row').length;
-  const rb2b = await getCollections();
-  const clipNotFolder = mgrRows === rb2b.collections.length && rb2b.collections.length === 1;
+  const rb2b = await getFolders();
+  const clipNotFolder = mgrRows === rb2b.folders.length && rb2b.folders.length === 1;
   click($('ivFolderClose')); await sleep(20);
   // 空にする clears all flags (the posts themselves are kept; stub the dialog here)
   $('postResetBtn').click(); await sleep(40);
   window.confirm = () => true;
   click($('clipClear')); await sleep(80);
-  const rb3 = await getCollections();
+  const rb3 = await getFolders();
   const clipCleared = (rb3.clip || []).length === 0;
 
   return { totalBefore, modalOpen, folderCount, noStar, memberCount, flyoutHasFolder, filteredCount, folderChip,

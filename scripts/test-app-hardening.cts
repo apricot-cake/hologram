@@ -59,8 +59,8 @@ fs.writeFileSync(
 
 // 件3: two org files that are present-but-corrupt (torn JSON). The handlers should
 // read them as empty (so the UI loads) but refuse to overwrite them.
-const CORRUPT = '{ "collections": [ { "id": "c1", "nam'; // truncated mid-object
-fs.writeFileSync(path.join(saveFolder, 'collections.json'), CORRUPT);
+const CORRUPT = '{ "folders": [ { "id": "c1", "nam'; // truncated mid-object
+fs.writeFileSync(path.join(saveFolder, 'folders.json'), CORRUPT);
 fs.writeFileSync(path.join(saveFolder, 'tag-groups.json'), CORRUPT);
 
 const evalJs = `(async () => {
@@ -80,13 +80,13 @@ const evalJs = `(async () => {
   const dragPrevented = dragEvt.defaultPrevented;
 
   // 件3: corrupt org files read back as empty (UI keeps working) ...
-  const coll = await window.corpus.getCollections();
-  const collEmpty = Array.isArray(coll.collections) && coll.collections.length === 0;
+  const coll = await window.corpus.getFolders();
+  const collEmpty = Array.isArray(coll.folders) && coll.folders.length === 0;
   const tg = await window.corpus.getTagGroups();
   const tgEmpty = Array.isArray(tg.groups) && tg.groups.length === 0;
   // ... but a follow-up set-* (e.g. the renderer auto-persisting that empty) is
   // REFUSED, so nothing overwrites the corrupt-but-recoverable file on disk.
-  const setColl = await window.corpus.setCollections({ collections: [], clip: [], posterWorkspace: [] });
+  const setColl = await window.corpus.setFolders({ folders: [], clip: [], posterWorkspace: [] });
   const setTg = await window.corpus.setTagGroups([]);
   const setCollRefused = !!(setColl && setColl.ok === false);
   const setTgRefused = !!(setTg && setTg.ok === false);
@@ -131,7 +131,7 @@ child.on('close', () => {
   let collPreserved = false;
   let tgPreserved = false;
   try {
-    collPreserved = fs.readFileSync(path.join(saveFolder, 'collections.json'), 'utf8') === CORRUPT;
+    collPreserved = fs.readFileSync(path.join(saveFolder, 'folders.json'), 'utf8') === CORRUPT;
   } catch {
     /* missing = fail */
   }
@@ -160,11 +160,11 @@ child.on('close', () => {
   check('件2 window drop が preventDefault された', r.dropPrevented === true);
   check('件2 window dragover が preventDefault された', r.dragPrevented === true);
   // 件3
-  check('件3 壊れた collections.json は空として読まれる', r.collEmpty === true);
+  check('件3 壊れた folders.json は空として読まれる', r.collEmpty === true);
   check('件3 壊れた tag-groups.json は空として読まれる', r.tgEmpty === true);
-  check('件3 空での collections 上書きが拒否された', r.setCollRefused === true);
+  check('件3 空での folders 上書きが拒否された', r.setCollRefused === true);
   check('件3 空での tag-groups 上書きが拒否された', r.setTgRefused === true);
-  check('件3 壊れた collections.json が温存された', collPreserved);
+  check('件3 壊れた folders.json が温存された', collPreserved);
   check('件3 壊れた tag-groups.json が温存された', tgPreserved);
 
   console.log('\n' + (ok ? 'HARDENING_TEST_PASS' : 'HARDENING_TEST_FAIL'));

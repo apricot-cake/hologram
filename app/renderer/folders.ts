@@ -1,5 +1,5 @@
 // Shared folder store + management-modal state + toast, used by the post-view
-// (orchestrator.ts). The library data lives in collections.json (keyed by captureId) —
+// (orchestrator.ts). The library data lives in folders.json (keyed by captureId) —
 // the unified container for folders (collections). Clip is a separate library-wide
 // ephemeral flag set (a captureId Set), persisted alongside the collections. This
 // module owns the data, the management-modal state (rendering is the FolderManagerModal
@@ -184,7 +184,7 @@ export function corpusPosterFolderStore(): CorpusPersistedFolderStore {
 // folders container. isCollections enables kind/created + dynamic saved-search.
 const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isCollections: true });
 // Clip = a library-wide ephemeral flag set (captureId Set), separate from collections.
-// Persisted alongside the collections in collections.json (the `clip` array).
+// Persisted alongside the folders in folders.json (the `clip` array).
 let clipSet = new Set<string>();
 // The management modal (FolderManagerModal island, #ivFolderModal) is shared: by
 // default it edits the library store, but openManager({store,onChange}) re-points it at
@@ -225,8 +225,8 @@ corpusI18n.then((api) => {
 
 function persist() {
   loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-  if (corpusIpc && corpusIpc.setCollections)
-    corpusIpc.setCollections({ collections: store.allRaw(), clip: [...clipSet] }).catch(() => {
+  if (corpusIpc && corpusIpc.setFolders)
+    corpusIpc.setFolders({ folders: store.allRaw(), clip: [...clipSet] }).catch(() => {
       /* best-effort */
     });
 }
@@ -242,9 +242,8 @@ function notify(kind?: string) {
 
 async function doLoad() {
   try {
-    // getCollections migrates a legacy folders.json on first read (main.js).
-    const r = corpusIpc && corpusIpc.getCollections ? await corpusIpc.getCollections() : null;
-    store.setAll((r && r.collections) || []);
+    const r = corpusIpc && corpusIpc.getFolders ? await corpusIpc.getFolders() : null;
+    store.setAll((r && r.folders) || []);
     // activeId is legacy (the old 🔖 target) — ignore it; the old active collection
     // just stays as a normal collection. Clip loads from the persisted `clip` array.
     clipSet = new Set(r && Array.isArray(r.clip) ? r.clip.map(String) : []);

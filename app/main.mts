@@ -209,18 +209,18 @@ function migrateConfigDirFromAppData() {
 // persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
 // IGNORE them — otherwise each write self-triggers a full library reload
 // (listPosts re-reads all sidecars, ~1s on a 9k-post folder) and the UI stalls.
-const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const INTERNAL_FILES = new Set(['config.json', '.index.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // The subset of INTERNAL_FILES that the renderer REWRITES in place on every edit
-// (organization layer: tags / groups / folders / collections / clip / poster-* /
-// open tabs). Unlike write-once captures (.jpg + .json sidecar), these mutate, so
+// (organization layer: tags / groups / folders / clip / poster-* / open tabs).
+// Unlike write-once captures (.jpg + .json sidecar), these mutate, so
 // a backup that only copies "files not yet present at dest" freezes them at their
 // first-ever contents — restoring from that mirror would silently discard every
 // tagging / foldering edit made since the first backup. The backup must re-copy
 // these whenever the source changed (size or mtime). config.json lives in
 // configDir (never in the save folder) and .index.json is a rebuildable snapshot
 // already skipped by the backup, so neither belongs here.
-const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'collections.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
+const MUTABLE_INTERNAL = new Set(['tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'folders.json', 'tabs.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json']);
 
 // Watch the save folder and tell the renderer to refresh when files change
 // (e.g. a new capture arrives, or dummy data is injected). Debounced because a
@@ -541,8 +541,8 @@ function resolveInFolder(name) {
 // fs.watch event): JSON.parse throws, the record reads as null, and the prior
 // record's captureId is pushed to `removed`. The renderer then drops it from
 // _postsById and reconcileFolders() PERMANENTLY purges that captureId from
-// collections.json membership and the clip set. The card reappears on the next
-// watch event but its collection/clip membership is gone for good. The .tmp
+// folders.json membership and the clip set. The card reappears on the next
+// watch event but its folder/clip membership is gone for good. The .tmp
 // suffix is invisible to the watcher (its regex only matches jpe?g|jfif|png|
 // webp|gif|json). Mirrors lib-index's writeSnapshot.
 async function writeSidecarAtomic(jsonPath, rec) {

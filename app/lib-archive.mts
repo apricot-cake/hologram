@@ -22,7 +22,7 @@ import path from 'node:path';
 import { parseJsonLoose } from './lib-json.mts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
-const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -93,15 +93,17 @@ function unionById(curList, incList, memberKey) {
   }
   return [...byId.values()].map((e) => ({ id: e.id, name: e.name, [memberKey]: [...e[memberKey]] }));
 }
-function mergeFolders(cur, inc) {
+// Poster folders: the plain { folders:[{id,name,items}] } shape. id-union on items,
+// first-seen name wins. (defaultId is legacy/unused for posters but harmless.)
+function mergePosterFolders(cur, inc) {
   const folders = unionById(cur.folders, inc.folders, 'items');
   const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId : folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null;
   return { folders, defaultId };
 }
-// Collections (the unified folders container). id-union on items; name/kind/created/
-// tree are LOCAL-wins (cur put first, dup only unions items). activeId is legacy and
-// stays local if it still points at a live collection; clip + posterWorkspace union.
-function mergeCollections(cur, inc) {
+// The library folder store (folders.json). id-union on items; name/kind/created/tree
+// are LOCAL-wins (cur put first, dup only unions items). activeId is legacy and stays
+// local if it still points at a live folder; clip + posterWorkspace union.
+function mergeFolders(cur, inc) {
   const byId = new Map();
   const put = (c) => {
     if (!c || typeof c.id !== 'string') return;
@@ -118,36 +120,19 @@ function mergeCollections(cur, inc) {
     }
     byId.set(c.id, e);
   };
-  for (const c of (cur && cur.collections) || []) put(c);
-  for (const c of (inc && inc.collections) || []) put(c);
-  const collections = [...byId.values()].map((c) => {
+  for (const c of (cur && cur.folders) || []) put(c);
+  for (const c of (inc && inc.folders) || []) put(c);
+  const folders = [...byId.values()].map((c) => {
     const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
     if (c.tree) o.tree = c.tree;
     if (c.q) o.q = c.q;
     return o;
   });
-  const valid = new Set(collections.map((c) => c.id));
+  const valid = new Set(folders.map((c) => c.id));
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   const clip = [...new Set([...((cur && cur.clip) || []), ...((inc && inc.clip) || [])].map(String))];
   const posterWorkspace = [...new Set([...((cur && cur.posterWorkspace) || []), ...((inc && inc.posterWorkspace) || [])].map(String))];
-  return { collections, activeId, clip, posterWorkspace };
-}
-// Convert a legacy folders.json into the collections shape (for folding an old
-// export ZIP into a migrated library). Folders → static collections; the incoming
-// workspace is dropped (don't import a foreign active tray); posterWorkspace rides along.
-function foldersToCollections(legacy) {
-  const folders = Array.isArray(legacy && legacy.folders) ? legacy.folders : [];
-  const collections = folders
-    .filter((f) => f && typeof f.id === 'string')
-    .map((f) => ({
-      id: f.id,
-      name: String(f.name || f.id),
-      kind: 'static',
-      created: null,
-      items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [],
-    }));
-  const posterWorkspace = Array.isArray(legacy && legacy.posterWorkspace) ? [...new Set(legacy.posterWorkspace.map(String))] : [];
-  return { collections, activeId: null, posterWorkspace };
+  return { folders, activeId, clip, posterWorkspace };
 }
 function mergeTagGroups(cur, inc) {
   return { groups: unionById(cur.groups, inc.groups, 'tags') };
@@ -223,14 +208,13 @@ function mergePosterTags(cur, inc) {
   return { tags };
 }
 const MERGERS = {
-  'folders.json': mergeFolders, // legacy ZIPs — folded into collections.json on import
-  'collections.json': mergeCollections,
+  'folders.json': mergeFolders, // the library folder store
   'tag-groups.json': mergeTagGroups,
   'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
   'poster-favorites.json': mergeUngrouped, // same { keys } shape → union merge
-  'poster-folders.json': mergeFolders, // same { folders } shape → id-union merge
+  'poster-folders.json': mergePosterFolders, // plain { folders } shape → id-union merge
   'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → per-key union
 };
 
@@ -432,7 +416,7 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     }
   };
   // Atomic tmp+rename for the merged organization JSON: a crash mid-merge must not
-  // leave a torn/zero-byte collections.json (etc.) that the app then reads as empty
+  // leave a torn/zero-byte folders.json (etc.) that the app then reads as empty
   // and persists over — losing the live organization layer. Mirrors the capture
   // write above; the .tmp-import suffix is invisible to the folder watcher.
   const writeOrgAtomic = async (file, value) => {
@@ -449,17 +433,6 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
     } catch {
       inc = {};
     }
-    if (name === 'folders.json') {
-      // Legacy export: fold its folders into collections.json (don't resurrect the
-      // retired folders.json on a migrated library).
-      const merged = mergeCollections(readCur('collections.json'), foldersToCollections(inc));
-      try {
-        await writeOrgAtomic('collections.json', merged);
-      } catch {
-        /* ignore */
-      }
-      continue;
-    }
     const merged = MERGERS[name](readCur(name), inc);
     try {
       await writeOrgAtomic(name, merged);
@@ -470,4 +443,4 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
-export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, importCompleteZip, mergeFolders, mergeCollections, foldersToCollections, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups };
+export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, importCompleteZip, mergeFolders, mergePosterFolders, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups };

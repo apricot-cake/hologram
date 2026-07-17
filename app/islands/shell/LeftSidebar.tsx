@@ -25,7 +25,7 @@ import { applyFolderFilter } from '../../renderer/orchestrator.ts';
 const subBrowse = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 
-// Library folders (collections.json). folders.ts owns the data + a mutation-notify
+// Library folders (folders.json). folders.ts owns the data + a mutation-notify
 // channel (onChange); load() resolves once the file is read. React mounts before
 // bootApp calls load(), so an initial list read can be empty — kick load() and
 // re-read on both its resolve and any later mutation. (No unsubscribe from onChange,

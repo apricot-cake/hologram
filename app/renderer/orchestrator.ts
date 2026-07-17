@@ -350,7 +350,7 @@ export let applyFolderFilter: (id: string) => void;
     posterFilterVocab,
     namedPosters: () => namedPosters(),
     posterFolders: () => pfStore.all(),
-    postFolders: () => (CF() ? CF().all() : []), // library folders (collections.json) for the フォルダ flyout
+    postFolders: () => (CF() ? CF().all() : []), // library folders (folders.json) for the フォルダ flyout
     // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
     // after this point — a direct ref here would hit TDZ at wiring time.
     buildUsers: () => buildUsers(),

@@ -46,7 +46,7 @@ const TESTS = [
   'test-library-files',
   'test-backup-guard',
   'test-config-recovery',
-  'test-collections-merge',
+  'test-folders-merge',
   'test-tag-types',
   'test-token-parity',
   'test-contrast-parity',

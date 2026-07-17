@@ -76,7 +76,7 @@ async function expectReject(promise, label) {
     const res = await importCompleteZip(JSZip, dest, buf);
     assert.strictEqual(res.imported, 2, 'normal export: 2 captures imported, got ' + res.imported);
     assert.ok(fs.existsSync(path.join(dest, 'cap1.jpg')), 'normal export: cap1.jpg present');
-    assert.ok(fs.existsSync(path.join(dest, 'collections.json')), 'normal export: folders folded into collections.json');
+    assert.ok(fs.existsSync(path.join(dest, 'folders.json')), 'normal export: folders.json imported and merged');
   }
 
   // Build a small real ZIP reused by the forged cases below.

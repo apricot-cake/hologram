@@ -1,148 +1,143 @@
 'use strict';
 
-// Unit tests for the collections merge layer in app/lib-archive.js:
-//  - mergeCollections: id-union on items; name/kind/created/tree local-wins;
-//    activeId stays local-if-valid; posterWorkspace union
-//  - foldersToCollections: legacy folders → static collections; workspace dropped
-//  - importCompleteZip: a legacy folders.json ZIP folds into collections.json (no
-//    folders.json resurrected, no item loss); a collections.json ZIP merges in
+// Unit tests for the folder-store merge layer in app/lib-archive.mts:
+//  - mergeFolders: id-union on items; name/kind/created/tree local-wins;
+//    activeId stays local-if-valid; clip + posterWorkspace union
+//  - mergePosterFolders: plain { folders:[{id,name,items}] } id-union (poster folders)
+//  - importCompleteZip: a folders.json ZIP merges into the local folders.json (no
+//    item loss, name local-wins)
 //
-//   node scripts/test-collections-merge.cts
+//   node scripts/test-folders-merge.cts
 
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGroups, mergeFolders, mergeTagGroups } = require('../app/lib-archive.mts');
+const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, mergeTagGroups } = require('../app/lib-archive.mts');
 
 (async () => {
-  // --- mergeCollections (pure) ---
+  // --- mergeFolders (pure) ---
   {
     const cur = {
-      collections: [
+      folders: [
         { id: 'f-1', name: 'Local', kind: 'static', created: null, items: ['a', 'b'] },
         { id: 'c-x', name: 'WS', kind: 'static', created: 1, items: ['z'] },
         { id: 'd-1', name: 'Saved', kind: 'dynamic', created: 2, items: [], tree: { kind: 'group', op: 'and', children: [] } },
       ],
       activeId: 'c-x',
+      clip: ['k1'],
       posterWorkspace: ['p1'],
     };
     const inc = {
-      collections: [
+      folders: [
         { id: 'f-1', name: 'Remote', kind: 'static', created: null, items: ['b', 'c'] },
         { id: 'f-2', name: 'New', kind: 'static', created: null, items: ['d'] },
       ],
       activeId: 'f-2',
+      clip: ['k2'],
       posterWorkspace: ['p2'],
     };
-    const m = mergeCollections(cur, inc);
-    const f1 = m.collections.find((c) => c.id === 'f-1');
+    const m = mergeFolders(cur, inc);
+    const f1 = m.folders.find((c) => c.id === 'f-1');
     assert.strictEqual(f1.name, 'Local', 'name local-wins on same id');
     assert.deepStrictEqual(f1.items.slice().sort(), ['a', 'b', 'c'], 'items union on same id');
     assert.ok(
-      m.collections.find((c) => c.id === 'f-2'),
+      m.folders.find((c) => c.id === 'f-2'),
       'new incoming id added',
     );
     assert.strictEqual(m.activeId, 'c-x', 'activeId stays local when still valid');
+    assert.deepStrictEqual(m.clip.slice().sort(), ['k1', 'k2'], 'clip union');
     assert.deepStrictEqual(m.posterWorkspace.slice().sort(), ['p1', 'p2'], 'posterWorkspace union');
-    const d1 = m.collections.find((c) => c.id === 'd-1');
+    const d1 = m.folders.find((c) => c.id === 'd-1');
     assert.ok(d1 && d1.kind === 'dynamic' && d1.tree, 'dynamic kind + tree passthrough');
     // invalid activeId on both → null
-    const m2 = mergeCollections({ collections: [], activeId: 'gone', posterWorkspace: [] }, { collections: [{ id: 'f-3', name: 'X', items: [] }], activeId: 'nope', posterWorkspace: [] });
+    const m2 = mergeFolders({ folders: [], activeId: 'gone', posterWorkspace: [] }, { folders: [{ id: 'f-3', name: 'X', items: [] }], activeId: 'nope', posterWorkspace: [] });
     assert.strictEqual(m2.activeId, null, 'invalid activeId → null');
     // incoming activeId adopted only if local is null and it exists
-    const m3 = mergeCollections({ collections: [], activeId: null, posterWorkspace: [] }, { collections: [{ id: 'f-9', name: 'Y', items: [] }], activeId: 'f-9', posterWorkspace: [] });
+    const m3 = mergeFolders({ folders: [], activeId: null, posterWorkspace: [] }, { folders: [{ id: 'f-9', name: 'Y', items: [] }], activeId: 'f-9', posterWorkspace: [] });
     assert.strictEqual(m3.activeId, 'f-9', 'incoming activeId adopted when local null + valid');
-    console.log('PASS mergeCollections');
+    console.log('PASS mergeFolders');
   }
 
-  // --- foldersToCollections (pure) ---
+  // --- importCompleteZip: a folders.json ZIP merges into the local folders.json ---
   {
-    const conv = foldersToCollections({ folders: [{ id: 'f-9', name: 'Old', items: ['x', 'x', 'y'] }], workspace: ['w1'], posterWorkspace: ['p9'] });
-    assert.deepStrictEqual(conv.collections, [{ id: 'f-9', name: 'Old', kind: 'static', created: null, items: ['x', 'y'] }], 'folders → static collection (deduped)');
-    assert.strictEqual(conv.activeId, null, 'no active from a folded import');
-    assert.ok(JSON.stringify(conv).indexOf('w1') < 0, 'imported workspace is dropped');
-    assert.deepStrictEqual(conv.posterWorkspace, ['p9'], 'posterWorkspace kept');
-    console.log('PASS foldersToCollections');
-  }
-
-  // --- importCompleteZip: legacy folders.json folds into an existing collections.json ---
-  {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-colmerge-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-foldmerge-'));
     const dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(
-      path.join(dest, 'collections.json'),
+      path.join(dest, 'folders.json'),
       JSON.stringify({
-        collections: [{ id: 'c-local', name: 'Local WS', kind: 'static', created: null, items: ['x'] }],
+        folders: [{ id: 'c-local', name: 'Local', kind: 'static', created: null, items: ['x'] }],
         activeId: 'c-local',
+        clip: ['clip-local'],
         posterWorkspace: ['p-local'],
       }),
     );
     const zip = new JSZip();
     zip.file('library/capY.jpg', Buffer.from('JPEGY'));
-    zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f-imp', name: 'Imported', items: ['y'] }], workspace: ['ignored'], posterWorkspace: ['p-imp'] }));
+    // The ZIP entry carries a plain (kind-less) folder — the store merger fills in static.
+    zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'f-imp', name: 'Imported', items: ['y'] }], clip: ['clip-imp'], posterWorkspace: ['p-imp'] }));
     const buf = await zip.generateAsync({ type: 'nodebuffer' });
     await importCompleteZip(JSZip, dest, buf);
 
-    const col = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
+    const col = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
     assert.ok(
-      col.collections.find((c) => c.id === 'c-local'),
-      'local collection kept',
+      col.folders.find((c) => c.id === 'c-local'),
+      'local folder kept',
     );
-    assert.ok(
-      col.collections.find((c) => c.id === 'f-imp'),
-      'imported folder folded in as collection',
-    );
+    const imp = col.folders.find((c) => c.id === 'f-imp');
+    assert.ok(imp, 'imported folder folded in');
+    assert.strictEqual(imp.kind, 'static', 'kind-less imported folder defaults to static');
     assert.strictEqual(col.activeId, 'c-local', 'local activeId preserved');
-    assert.deepStrictEqual(col.posterWorkspace.slice().sort(), ['p-imp', 'p-local'], 'posterWorkspace union on fold-in');
-    assert.ok(!fs.existsSync(path.join(dest, 'folders.json')), 'no folders.json resurrected');
-    assert.ok(JSON.stringify(col).indexOf('ignored') < 0, 'imported workspace not adopted');
+    assert.deepStrictEqual(col.clip.slice().sort(), ['clip-imp', 'clip-local'], 'clip union on merge');
+    assert.deepStrictEqual(col.posterWorkspace.slice().sort(), ['p-imp', 'p-local'], 'posterWorkspace union on merge');
     fs.rmSync(root, { recursive: true, force: true });
-    console.log('PASS import: legacy folders.json fold-in');
+    console.log('PASS import: folders.json merge');
   }
 
-  // --- importCompleteZip: a collections.json ZIP merges into the local one ---
+  // --- importCompleteZip: name local-wins, items union across the same id ---
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-colmerge2-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-foldmerge2-'));
     const dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(
-      path.join(dest, 'collections.json'),
+      path.join(dest, 'folders.json'),
       JSON.stringify({
-        collections: [{ id: 'c1', name: 'L', kind: 'static', created: null, items: ['a'] }],
+        folders: [{ id: 'c1', name: 'L', kind: 'static', created: null, items: ['a'] }],
         activeId: null,
+        clip: [],
         posterWorkspace: [],
       }),
     );
     const zip = new JSZip();
     zip.file(
-      'library/collections.json',
+      'library/folders.json',
       JSON.stringify({
-        collections: [
+        folders: [
           { id: 'c1', name: 'R', kind: 'static', created: null, items: ['b'] },
           { id: 'c2', name: 'New', kind: 'static', created: null, items: ['c'] },
         ],
         activeId: 'c2',
+        clip: [],
         posterWorkspace: ['pp'],
       }),
     );
     const buf = await zip.generateAsync({ type: 'nodebuffer' });
     await importCompleteZip(JSZip, dest, buf);
 
-    const col = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
-    const c1 = col.collections.find((c) => c.id === 'c1');
+    const col = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
+    const c1 = col.folders.find((c) => c.id === 'c1');
     assert.strictEqual(c1.name, 'L', 'name local-wins');
     assert.deepStrictEqual(c1.items.slice().sort(), ['a', 'b'], 'items union');
     assert.ok(
-      col.collections.find((c) => c.id === 'c2'),
-      'new collection added',
+      col.folders.find((c) => c.id === 'c2'),
+      'new folder added',
     );
     assert.strictEqual(col.activeId, 'c2', 'incoming activeId adopted (local was null)');
     assert.deepStrictEqual(col.posterWorkspace, ['pp'], 'posterWorkspace union');
     fs.rmSync(root, { recursive: true, force: true });
-    console.log('PASS import: collections.json merge');
+    console.log('PASS import: folders.json id-union');
   }
 
   // --- mergeManualGroups (pure): union-find over members (BACKLOG L4) ---
@@ -195,7 +190,7 @@ const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGr
 
   // --- unionById-backed mergers keep their contract (refactor guard) ---
   {
-    const f = mergeFolders(
+    const f = mergePosterFolders(
       { folders: [{ id: 'f1', name: 'Local', items: ['a'] }], defaultId: 'f1' },
       {
         folders: [
@@ -206,8 +201,8 @@ const { importCompleteZip, mergeCollections, foldersToCollections, mergeManualGr
       },
     );
     const f1 = f.folders.find((x) => x.id === 'f1');
-    assert.strictEqual(f1.name, 'Local', 'folder name local-wins');
-    assert.deepStrictEqual(f1.items.slice().sort(), ['a', 'b'], 'folder items union');
+    assert.strictEqual(f1.name, 'Local', 'poster folder name local-wins');
+    assert.deepStrictEqual(f1.items.slice().sort(), ['a', 'b'], 'poster folder items union');
     assert.strictEqual(f.defaultId, 'f1', 'defaultId local-wins while alive');
     const g = mergeTagGroups({ groups: [{ id: 'g1', name: 'L', tags: ['t1'] }] }, { groups: [{ id: 'g1', name: 'R', tags: ['t2'] }] });
     assert.deepStrictEqual(g.groups[0].tags.slice().sort(), ['t1', 't2'], 'tag-group tags union');

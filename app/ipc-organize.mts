@@ -1,8 +1,8 @@
 'use strict';
 
 // Organization-layer IPC handlers, extracted from main.js (mechanical move — logic
-// unchanged). These 16 get/set channels persist the per-library organization JSON
-// files (tag groups, tag 種別, ungrouped set, manual groups, folders, collections,
+// unchanged). These 14 get/set channels persist the per-library organization JSON
+// files (tag groups, tag 種別, ungrouped set, manual groups, folders,
 // poster folders/tags) alongside the sidecars. Every handler needs only the same
 // three core helpers — getSaveFolder + readOrgJsonSync + writeOrgJsonSync — which
 // stay in main.js and arrive via ctx. See main.js for the org-JSON degraded-guard
@@ -10,7 +10,6 @@
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseJsonLoose } from './lib-json.mts';
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
@@ -89,7 +88,7 @@ function register(ctx) {
   // still listed in INTERNAL_FILES so the post index keeps skipping it.)
 
   // Named poster folders (poster view). { folders: [{ id, name, items:[posterKey] }] }
-  // — same shape as folders.json (minus workspace), so import reuses mergeFolders.
+  // — a plain { folders } shape, so ZIP import reuses mergePosterFolders.
   ipcMain.handle('get-poster-folders', () => {
     const folder = getSaveFolder();
     if (!folder) return { folders: [] };
@@ -148,45 +147,14 @@ function register(ctx) {
     }
   });
 
-  // User folders: named permanent collections of captureIds. Plus a single
-  // `workspace` — an ephemeral one-click tray. Distinct from tags. Lives as
-  // <saveFolder>/folders.json: { folders: [ { id, name, items:[…] } ], workspace:[…] }.
-  // (The old `defaultId` key is dropped on read/write — default folder was removed.)
-  ipcMain.handle('get-folders', () => {
-    const folder = getSaveFolder();
-    if (!folder) return { folders: [], workspace: [], posterWorkspace: [] };
-    const { value: j } = readOrgJsonSync(path.join(folder, 'folders.json'));
-    if (!j) return { folders: [], workspace: [], posterWorkspace: [] };
-    const folders = Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string').map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] })) : [];
-    const workspace = Array.isArray(j.workspace) ? [...new Set(j.workspace.map(String))] : [];
-    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    return { folders, workspace, posterWorkspace };
-  });
-  ipcMain.handle('set-folders', (_e, data) => {
-    const folder = getSaveFolder();
-    if (!folder) return { ok: false };
-    try {
-      const src = data && Array.isArray(data.folders) ? data.folders : [];
-      const folders = src.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string').map((f) => ({ id: f.id, name: f.name, items: Array.isArray(f.items) ? [...new Set(f.items.map(String))] : [] }));
-      const workspace = data && Array.isArray(data.workspace) ? [...new Set(data.workspace.map(String))] : [];
-      const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
-      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, workspace, posterWorkspace });
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
-  });
-
-  // `collections` — the unified container that supersedes folders + workspace
-  // (Phase① of the collection feature). <saveFolder>/collections.json:
-  //   { collections:[{id,name,kind:'static',created,items:[captureId]}], clip:[captureId], posterWorkspace:[posterKey] }
+  // `folders` — the unified container of named folders (formerly "collections").
+  // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
+  // a dynamic folder additionally carries a saved-search payload (tree + q).
+  // <saveFolder>/folders.json:
+  //   { folders:[…], clip:[captureId], posterWorkspace:[posterKey] }
   // `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
-  // (the old 🔖 one-click target); the renderer no longer writes it, so it settles to
-  // null. On first read we migrate any existing folders.json into this shape, then
-  // DELETE folders.json (clean cutover — no backup, by design). get/set-folders stay
-  // for the migration read and for folding a legacy folders.json out of an imported
-  // ZIP (lib-archive.js).
-  function normCollections(arr) {
+  // (the old 🔖 one-click target); the renderer no longer writes it, so it settles to null.
+  function normFolders(arr) {
     return Array.isArray(arr)
       ? arr
           .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
@@ -206,66 +174,41 @@ function register(ctx) {
           })
       : [];
   }
-  // Shape a legacy folders.json into the collections model. Folders become static
-  // collections (ids preserved). The legacy workspace tray is dropped (clip starts
-  // empty — no migration, by design). Returns null when there is nothing to migrate.
-  function migrateFoldersToCollections(folder) {
-    let j: any;
-    try {
-      j = parseJsonLoose(fs.readFileSync(path.join(folder, 'folders.json'), 'utf8'));
-    } catch {
-      return null;
-    }
-    const folders = Array.isArray(j.folders) ? j.folders : [];
-    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-    const collections = normCollections(folders.map((f) => ({ id: f.id, name: f.name, kind: 'static', created: null, items: f.items })));
-    return { collections, activeId: null, clip: [], posterWorkspace };
-  }
-  ipcMain.handle('get-collections', () => {
+  ipcMain.handle('get-folders', () => {
     const folder = getSaveFolder();
-    const empty = { collections: [], activeId: null, clip: [], posterWorkspace: [] };
+    const empty = { folders: [], activeId: null, clip: [], posterWorkspace: [] };
     if (!folder) return empty;
-    // 1) already migrated → read collections.json
-    const collectionsPath = path.join(folder, 'collections.json');
-    const { value: j, degraded } = readOrgJsonSync(collectionsPath);
-    if (j) {
-      const collections = normCollections(j.collections);
-      const ids = new Set(collections.map((c) => c.id));
-      const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
-      const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
-      const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
-      return { collections, activeId, clip, posterWorkspace };
-    }
-    // collections.json present-but-corrupt: return empty so the UI loads, but the
-    // file stays flagged degraded so set-collections won't purge it. Do NOT fall
-    // through to migration — that would overwrite the recoverable file (and could
-    // drop clip membership the migration can't reconstruct from folders.json).
-    if (degraded) return empty;
-    // 2) collections.json absent → migrate a legacy folders.json once, write it, delete folders.json
-    const migrated = migrateFoldersToCollections(folder);
-    if (!migrated) return empty;
+    const foldersPath = path.join(folder, 'folders.json');
+    // One-time pre-release rename: the store file went from collections.json →
+    // folders.json (#42). If only the old name is on disk, rename it once. Scaffolding —
+    // remove before release (no third-party libraries exist pre-release).
     try {
-      writeOrgJsonSync(collectionsPath, migrated);
-    } catch {
-      return migrated;
-    }
-    try {
-      fs.unlinkSync(path.join(folder, 'folders.json'));
+      const legacyPath = path.join(folder, 'collections.json');
+      if (!fs.existsSync(foldersPath) && fs.existsSync(legacyPath)) fs.renameSync(legacyPath, foldersPath);
     } catch {
       /* best-effort */
     }
-    return migrated;
+    // A present-but-corrupt folders.json returns empty (the UI still loads) but stays
+    // flagged degraded inside readOrgJsonSync, so set-folders won't purge it.
+    const { value: j } = readOrgJsonSync(foldersPath);
+    if (!j) return empty;
+    const folders = normFolders(j.folders);
+    const ids = new Set(folders.map((c) => c.id));
+    const activeId = typeof j.activeId === 'string' && ids.has(j.activeId) ? j.activeId : null;
+    const clip = Array.isArray(j.clip) ? [...new Set(j.clip.map(String))] : [];
+    const posterWorkspace = Array.isArray(j.posterWorkspace) ? [...new Set(j.posterWorkspace.map(String))] : [];
+    return { folders, activeId, clip, posterWorkspace };
   });
-  ipcMain.handle('set-collections', (_e, data) => {
+  ipcMain.handle('set-folders', (_e, data) => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      const collections = normCollections(data && data.collections);
-      const ids = new Set(collections.map((c) => c.id));
+      const folders = normFolders(data && data.folders);
+      const ids = new Set(folders.map((c) => c.id));
       const activeId = data && typeof data.activeId === 'string' && ids.has(data.activeId) ? data.activeId : null;
       const clip = data && Array.isArray(data.clip) ? [...new Set(data.clip.map(String))] : [];
       const posterWorkspace = data && Array.isArray(data.posterWorkspace) ? [...new Set(data.posterWorkspace.map(String))] : [];
-      writeOrgJsonSync(path.join(folder, 'collections.json'), { collections, activeId, clip, posterWorkspace });
+      writeOrgJsonSync(path.join(folder, 'folders.json'), { folders, activeId, clip, posterWorkspace });
       return { ok: true };
     } catch {
       return { ok: false };

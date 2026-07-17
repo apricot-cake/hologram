@@ -24,7 +24,7 @@ const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts'
   // paths — the zip entry (third-party tools export BOM'd JSON) and the existing
   // file at dest (hand-edited) — must parse, or the merge silently drops a side.
   const BOM = String.fromCharCode(0xfeff);
-  fs.writeFileSync(path.join(dest, 'collections.json'), BOM + JSON.stringify({ collections: [{ id: 'pre', name: 'P', items: [] }] }));
+  fs.writeFileSync(path.join(dest, 'folders.json'), BOM + JSON.stringify({ folders: [{ id: 'pre', name: 'P', items: [] }] }));
 
   const zip = new JSZip();
   // Legitimate entries.
@@ -52,17 +52,17 @@ const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts'
   assert.ok(fs.existsSync(path.join(dest, 'avatars', 'abcd1234.png')), 'avatars/abcd1234.png should import into the subfolder');
   assert.strictEqual(res.imported, 3, 'exactly the 3 legit entries imported, got ' + res.imported);
 
-  // legacy folders.json folds into collections.json (folders.json is retired).
-  const merged = JSON.parse(fs.readFileSync(path.join(dest, 'collections.json'), 'utf8'));
+  // The imported folders.json merges into the local folders.json (BOM tolerated on
+  // both the zip entry and the pre-existing hand-edited file).
+  const merged = JSON.parse(fs.readFileSync(path.join(dest, 'folders.json'), 'utf8'));
   assert.ok(
-    merged.collections.some((c) => c.id === 'f1'),
-    'imported folders.json folded into collections.json (BOM in zip entry tolerated)',
+    merged.folders.some((c) => c.id === 'f1'),
+    'imported folders.json merged in (BOM in zip entry tolerated)',
   );
   assert.ok(
-    merged.collections.some((c) => c.id === 'pre'),
-    'pre-existing BOM-prefixed collections.json read and merged, not clobbered',
+    merged.folders.some((c) => c.id === 'pre'),
+    'pre-existing BOM-prefixed folders.json read and merged, not clobbered',
   );
-  assert.ok(!fs.existsSync(path.join(dest, 'folders.json')), 'no local folders.json resurrected');
 
   // Nothing escaped the destination.
   const escapeTargets = [path.resolve(dest, '..', '..', 'evil-back.txt'), path.resolve(dest, '..', '..', 'evil-fwd.txt'), path.resolve(root, 'evil-back.txt'), path.resolve(root, 'evil-fwd.txt'), path.resolve(dest, '..', 'evil-back.txt'), path.resolve(dest, '..', 'evil-fwd.txt')];
