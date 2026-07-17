@@ -39,6 +39,11 @@ const api = {
   openExternal: (url: string): Promise<any> => ipcRenderer.invoke('open-external', url),
   openImageWindow: (image: string): Promise<any> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<any> => ipcRenderer.invoke('show-in-folder', file),
+  // send, not invoke: the OS drag has to start inside the dragstart the renderer
+  // is still holding open — a promise round-trip lands after the gesture is over.
+  dragOut: (files: string[]): void => ipcRenderer.send('drag-out', files),
+  // false = nativeImage couldn't decode it (svg/tiff) and the clipboard was left alone.
+  copyImage: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-image', file),
   getAppInfo: (): Promise<any> => ipcRenderer.invoke('app-info'),
   getPrefs: (): Promise<any> => ipcRenderer.invoke('get-prefs'),
   setPref: (key: string, value: unknown): Promise<any> => ipcRenderer.invoke('set-pref', key, value),

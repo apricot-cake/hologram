@@ -131,8 +131,20 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
       <button className="tag-btn" data-tagedit={m.index} data-tip={L.tipTagEdit} aria-label={L.tipTagEdit}>
         <TagIcon />
       </button>
+      {/* draggable on the video placeholder only — an <img> already is by default.
+          Both hand the gesture to the #postGrid dragstart delegate, which cancels
+          the HTML5 drag (it would carry the psimg:// URL) and starts an OS drag of
+          the ORIGINAL files instead (#132). */}
       {m.hasThumb && (
-        <div className="card-thumb">{m.imgSrc ? <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} /> : <div className="card-img card-video">{'▶'}</div>}</div>
+        <div className="card-thumb">
+          {m.imgSrc ? (
+            <img className="card-img" src={m.imgSrc} alt="" data-cap={m.captureId} style={m.aspRatio ? { aspectRatio: m.aspRatio } : undefined} loading={m.eager ? 'eager' : 'lazy'} decoding="async" onLoad={onImgLoad} />
+          ) : (
+            <div className="card-img card-video" draggable>
+              {'▶'}
+            </div>
+          )}
+        </div>
       )}
       {(m.nImg as number) > 1 && <div className="card-ntag">{'×' + m.nImg}</div>}
       <div className="card-overlay">

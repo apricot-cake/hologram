@@ -53,6 +53,10 @@ export interface PostGridBuilderDeps {
   showDetail(g: CorpusPostGroup): void;
   jumpToPoster(post: CorpusPost): void;
   addImageTab(g: CorpusPostGroup): void;
+  // Selection mutation is selection-builder.ts's (it owns the anchor + the bar),
+  // and it's constructed after this module — so this is a deferred dep, the same
+  // shape as jumpToPoster/showToast in inspector-builder.ts.
+  selectOnlyCard(card: HTMLElement): void;
 }
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
@@ -436,6 +440,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   };
   // Card context menu — React-owned glass menu (menu.ts); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
@@ -459,6 +464,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
       items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
     }
+    // Only ever the ONE image the card is showing — the clipboard holds a single
+    // bitmap, and dragging out is the path for a whole multi-image group (#132).
+    if (cardFile) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
     if (cardFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
@@ -484,7 +492,41 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     else if (act === 'reveal') {
       const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
       if (file && corpusIpc.showInFolder) corpusIpc.showInFolder(file);
-    } else if (act === 'delete') requestDeleteGroup(g);
+    } else if (act === 'copyImage') copyGroupImage(g);
+    else if (act === 'delete') requestDeleteGroup(g);
+  }
+
+  // Copy the card's image to the clipboard — context menu, and Ctrl+C on a single
+  // selection (#132). The file is picked exactly like 'reveal' picks it: whatever
+  // this density is actually showing.
+  async function copyGroupImage(g: CorpusPostGroup) {
+    const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
+    if (!file) return;
+    // false = main couldn't decode it (svg, some tiff) and left the clipboard
+    // alone; staying silent would read as "copied" over whatever was there.
+    notify(deps.t((await corpusIpc.copyImage(file)) ? 'imageCopied' : 'imageCopyFailed'));
+  }
+
+  // Drag cards out to another app (#132). The browser's own drag must be cancelled
+  // — it would carry the psimg:// thumbnail URL — so main can start an OS drag of
+  // the ORIGINAL files instead. Registration is the #postGrid dragstart delegate in
+  // orchestrator.ts, like every other card gesture.
+  function handleCardDragStart(e: DragEvent) {
+    const t = e.target;
+    if (!(t instanceof Element) || !t.closest('.card-img')) return; // text/buttons: leave the browser's drag alone
+    const card = t.closest('.post-card') as HTMLElement | null;
+    const g = card && viewGroups[Number.parseInt(card.dataset.index ?? '', 10)];
+    if (!g) return;
+    e.preventDefault();
+    // Explorer/Eagle rule: dragging a card that IS in the selection takes the whole
+    // selection; dragging one that isn't makes it the selection and takes only it.
+    const selected = selection.selectedGroups(viewGroups, postIdKey);
+    const inSelection = selected.some((s) => s.key === g.key);
+    if (!inSelection && card) deps.selectOnlyCard(card);
+    // Multi-image posts hand over every original they hold, not just the one the
+    // card happens to show.
+    const files = [...new Set((inSelection ? selected : [g]).flatMap((x) => x.files))];
+    if (files.length) corpusIpc.dragOut(files);
   }
   function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);
@@ -578,6 +620,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     groupRecords,
     showFoldMenu,
     showCardMenu,
+    handleCardDragStart,
+    copyGroupImage,
     requestDeleteGroup,
     confirmClearAll,
     getSkipDeleteConfirm,

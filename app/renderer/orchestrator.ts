@@ -72,6 +72,7 @@ export let handleShortcutNavKey: (e: KeyboardEvent) => void;
 export let handleShortcutMouseNav: (e: MouseEvent) => void;
 export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
 export let handleShortcutSelectAllKey: (e: KeyboardEvent) => void;
+export let handleShortcutCopyKey: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
@@ -756,6 +757,7 @@ export let applyFolderFilter: (id: string) => void;
     showDetail: (g) => showDetail(g),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
+    selectOnlyCard: (card) => selectionCtl.selectOnly(card), // selectionCtl is constructed below — deferred
   });
   const { loadPosts, renderPosts, markPostsMutated, reconcileFolders, keepCurrentVisible, showFoldMenu, showCardMenu, requestDeleteGroup } = postGrid;
   bindLoadPosts(postGrid.loadPosts);
@@ -970,6 +972,11 @@ export let applyFolderFilter: (id: string) => void;
     if (e.button === 1 && closestOf(e, '.card-img')) e.preventDefault();
   });
 
+  // Drag a card's ORIGINAL files out to another app (#132). No interplay with the
+  // click/dblclick/auxclick handlers above is needed: the browser only fires
+  // dragstart past its own drag threshold, and a completed drag suppresses click.
+  byId('postGrid').addEventListener('dragstart', (e) => postGrid.handleCardDragStart(e as DragEvent));
+
   // Clip button: one-click flag/unflag this post (no picking). Mutations never replay
   // the entrance animation: re-render (keepLimit) only when a clip filter could change
   // the visible set.
@@ -1081,6 +1088,7 @@ export let applyFolderFilter: (id: string) => void;
     // since it needs this selectionCtl's own selectedRecords.
     openTagPopForSelection: (anchorRect) => bulkEdit.openTagPopForSelection(anchorRect),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
+    copyGroupImage: (g) => postGrid.copyGroupImage(g),
   });
   const { toggleCardSelection, selectedRecords } = selectionCtl;
   // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
@@ -1109,6 +1117,7 @@ export let applyFolderFilter: (id: string) => void;
   );
   document.getElementById('selectionBar')?.addEventListener('click', selectionCtl.handleSelectionBarClick);
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
+  handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
 
   // ℹ button on card → detail popup (re-click same card toggles close)
   byId('postGrid').addEventListener('click', (e) => {
