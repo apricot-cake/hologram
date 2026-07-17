@@ -4,7 +4,7 @@
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
-    "message": "X・Bluesky・Misskey・Mastodonの投稿を画像としてキャプチャし、デスクトップアプリで閲覧・検索",
+    "message": "SNSで見かけた投稿を、画像・本文・情報ごと自分のPCに保存して検索できるライブラリに。サーバーへの送信は一切ありません。",
     "description": "Extension description shown in Web Store"
   },
   "actionTitle": {

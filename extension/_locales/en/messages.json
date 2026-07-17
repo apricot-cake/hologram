@@ -4,7 +4,7 @@
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
-    "message": "Capture posts from X, Bluesky, Misskey, and Mastodon, then browse and search them in a desktop app",
+    "message": "Save posts you find on social media — image, text, and details together — into a searchable library on your PC. Private by design.",
     "description": "Extension description shown in Web Store"
   },
   "actionTitle": {

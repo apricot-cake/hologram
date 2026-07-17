@@ -1,22 +1,45 @@
-Capture posts from X (Twitter), Bluesky, Misskey, Mastodon, and pixiv as JPEG images, and browse them in a companion desktop app.
+Chrome Web Store listing (English). Japanese version: store-description.ja.txt
+The SUMMARY must match extension/_locales/en/messages.json extDesc (the store
+summary is taken from the manifest description; max 132 characters).
 
-Click the extension icon or press Alt+S, then click a post — it is saved to a folder you choose, together with its text, author, date, and engagement counts. The desktop app lets you search, filter (by platform, date, engagement, tags), tag posts, and export.
+=== SUMMARY (max 132 chars) ===
 
-HOW IT WORKS
-1. Click the extension icon or press Alt+S
-2. Click the post you want to save
-3. The post is saved to your chosen folder as a JPEG plus a small JSON metadata file
-4. Open the desktop app to browse, search, and manage your captures
+Save posts you find on social media — image, text, and details together — into a searchable library on your PC. Private by design.
 
-WHAT'S CAPTURED
-- The post as a JPEG image
-- Text, author (display name / handle), and post date
-- Engagement counts at the time of capture
-- Tags you add yourself
+=== DETAILED DESCRIPTION ===
 
-EXPORT & RESTORE
-- Export your library to ZIP (images + metadata)
-- Restore by importing an exported ZIP
+Your own personal social-media library.
+
+Corpus saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them. No more "where did that post go?"
+
+YOUR DATA STAYS WITH YOU
+- Everything is saved to a local folder you choose. No data is collected or sent to any server of ours.
+- Images and metadata sit side by side as ordinary files. Open them in other tools, back them up, move the whole library — it is all yours.
+- Your library stays with you even when a post or account is no longer available online.
+- Export/import the whole library as a ZIP, or set up a scheduled mirror backup to another folder.
+
+HOW TO SAVE
+1. Press Alt+S (or click the extension icon), then click a post — it is captured together with its text, author, date, and engagement details.
+2. Or drag an image to save an illustration as the image file itself.
+3. New captures appear in the desktop app automatically.
+
+FIND IT AGAIN
+- Search by text or username, with optional fuzzy matching
+- Filter by platform, author, tag, in-text hashtag, date, engagement, and folder — combined freely
+- Sort by newest, most likes, save date, and more
+- Browse as cards, tiles, or a reading-friendly list; open a gallery that bundles the screenshot and the original-resolution images
+
+ORGANIZE
+- Tags, plus a "tagging session" mode to tag untagged posts one after another
+- Folders for themes and favorites
+- A clip tray for temporarily gathering posts to compare
+- Bulk actions: select many posts and tag, file, group, or delete them at once
+
+SUPPORTED PLATFORMS
+X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
+
+REQUIREMENTS
+Saving and browsing require the Corpus desktop app (Windows, free and open source). Install it first, then add this extension.
 
 PRIVACY
-No data is collected or transmitted to any server of ours. To enrich metadata, read-only requests go directly from your browser to the platform being captured (X's syndication API, Bluesky, Misskey, Mastodon, and pixiv — pixiv requests use your own pixiv session so logged-in-only works can be captured; see the privacy policy for details). Everything is saved locally to a folder you choose.
+No data is collected or transmitted to any server of ours. To enrich metadata, read-only requests go directly from your browser to the platform you are viewing (X's syndication API, Bluesky, Misskey, Mastodon, and pixiv — pixiv requests use your own pixiv session so logged-in-only works can be captured; see the privacy policy for details). Everything is saved locally to a folder you choose.
