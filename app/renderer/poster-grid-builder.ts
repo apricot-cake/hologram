@@ -67,6 +67,21 @@ export interface PosterGridBuilderDeps {
   setPosterReturn(key: string | null): void;
 }
 
+// Fallback-avatar tint (#107): a stable hue per poster so avatar-less cards stay
+// distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
+// .poster-mono owns saturation and lightness, so light and dark each keep their own tonal
+// range from one number. FNV-1a over the poster key (the identity the card is keyed by,
+// unlike a display name it cannot change under us), so a poster's letter+color pairing is
+// the same on every render and every restart.
+function monoHue(seed: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 360;
+}
+
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -179,6 +194,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         index: i,
         avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile) : null,
         monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
+        monoHue: u.avatarFile ? null : monoHue(u.key || s),
         name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
         handle: hasName && u.screenName ? u.screenName : null,
         platform: u.platform || null,

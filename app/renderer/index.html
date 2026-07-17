@@ -649,9 +649,23 @@
     .poster-av {
       width: 100%; aspect-ratio: 1; flex: none; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
-      background: var(--surface-3); color: var(--text-muted); font-weight: 600; font-size: 44px;
+      background: var(--surface-3);
+      container-type: inline-size; /* the monogram sizes off this frame, which the density slider drives */
     }
     .poster-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    /* Avatar-less posters wear the standard circular monogram (the GitHub / Google
+       fallback-avatar idiom): a small initial on a pale, hue-hashed disc — a grid of them
+       reads as cards, where the old card-filling letter read as a wall of glyphs. The hue
+       (--mono-h, hashed per poster in poster-grid-builder.ts) is the ONLY thing that
+       varies; each theme pins its own saturation/lightness so the tint stays pale in
+       light and stays muted in dark. */
+    .poster-mono {
+      width: 44cqw; height: 44cqw; flex: none; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 19cqw; line-height: 1;
+      background: hsl(var(--mono-h, 220) 52% 88%); color: hsl(var(--mono-h, 220) 42% 32%);
+    }
+    [data-theme="dark"] .poster-mono { background: hsl(var(--mono-h, 220) 26% 27%); color: hsl(var(--mono-h, 220) 50% 78%); }
     .poster-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 9px 11px 10px; }
     .poster-name { font-weight: 600; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .poster-handle { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -676,7 +690,6 @@
     .poster-info svg, .poster-tag svg { width: 16px; height: 16px; display: block; }
     /* Tile density: same avatar-led square but meta OVERLAID (compact, no card chrome). */
     .poster-grid.tile-view .poster-card { border-radius: 12px; }
-    .poster-grid.tile-view .poster-av { font-size: 34px; }
     .poster-grid.tile-view .poster-meta { position: absolute; left: 0; right: 0; bottom: 0; gap: 1px; padding: 18px 10px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); pointer-events: none; }
     .poster-grid.tile-view .poster-name { color: #fff; font-size: 12px; }
     .poster-grid.tile-view .poster-handle { display: none; }
@@ -688,7 +701,10 @@
     /* List rows lift like cards via the shared .poster-card:hover (scale + shadow +
        z-index). Base list rows have box-shadow:none, so the hover shadow-md from that
        rule provides the lift. (Earlier the avatar zoomed in-frame instead.) */
-    .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); font-size: 15px; }
+    .poster-grid.list-view .poster-av { width: 36px; height: 36px; aspect-ratio: auto; border-radius: 50%; border: 1px solid var(--border-soft); }
+    /* The row's frame is already a 36px disc, so the tint fills it instead of insetting a
+       second circle (the fixed row height makes the frame's cqw scaling moot here). */
+    .poster-grid.list-view .poster-mono { width: 100%; height: 100%; font-size: 15px; }
     .poster-grid.list-view .poster-meta { flex: 1; padding: 0; }
     .poster-grid.list-view .poster-info, .poster-grid.list-view .poster-tag { background: transparent; color: var(--text-subtle); }
     .poster-grid.list-view .poster-info:hover, .poster-grid.list-view .poster-tag:hover { background: var(--hover); color: var(--text); }
