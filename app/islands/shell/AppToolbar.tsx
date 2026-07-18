@@ -60,9 +60,11 @@ export function AppToolbar() {
             <ChevronRight />
           </Button>
         </div>
-        {/* Search field — hosts the SearchBox island; #searchWrap keeps the id the
-            search-box-builder queries (retired in P2④ with the Autocomplete swap). */}
-        <div id="searchWrap" className="search-wrap relative ml-1 max-w-md flex-1">
+        {/* Search field — the hero of this bar (the free-text half of the 述語 axis),
+            so it GROWS to fill the row instead of stranding a 448px box beside a huge
+            gap. Capped generously so it stays a bar, not a full-bleed input on ultrawide.
+            #searchWrap keeps the id the search-box-builder queries (retired in P2④). */}
+        <div id="searchWrap" className="search-wrap relative ml-1 min-w-0 flex-1">
           <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>
