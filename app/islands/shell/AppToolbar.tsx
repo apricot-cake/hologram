@@ -8,10 +8,11 @@
 // Autocomplete in P2④); "+ filter" and "display" are disabled placeholders
 // (wired in P2③ / P2②). The chip row keeps the existing Chips island so
 // remove/reset still work; adding filters returns with the filter bar (P2③).
-import { ChevronLeft, ChevronRight, ListFilter, SlidersHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { AddFilterButton } from '../filterbar/index.tsx';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -61,12 +62,9 @@ export function AppToolbar() {
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Placeholders: the real filter bar (P2③) and display popover (P2②)
-              replace these — disabled so their absence reads as "coming", not broken. */}
-          <Button variant="outline" size="sm" disabled>
-            <ListFilter />
-            <span>フィルタ</span>
-          </Button>
+          {/* "+ フィルタ" (P2③) is live; the display popover (P2②) is still a disabled
+              placeholder — disabled so its absence reads as "coming", not broken. */}
+          <AddFilterButton />
           <Button variant="ghost" size="icon-sm" aria-label="表示" disabled>
             <SlidersHorizontal />
           </Button>

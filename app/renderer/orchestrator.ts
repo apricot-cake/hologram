@@ -100,6 +100,50 @@ export let resetPosterFilters: () => void;
 // folder rows call this directly (no qf-pop flyout).
 export let applyFolderFilter: (id: string) => void;
 
+// --- Filter bar (redesign §3-2 / P2③) -------------------------------------
+// One value-flyout row (from facets.ts's qfValues) — the structural shape the
+// filterbar island renders. Kept loose ([k]:any) like CorpusQfPopItem: qfValues
+// tacks on per-category extras (type/kind/sub/sn/facetDim/ghead/dotTitle).
+export interface FilterRow {
+  v?: string;
+  l?: string;
+  on?: boolean;
+  count?: number;
+  ghead?: string;
+  [k: string]: unknown;
+}
+interface FilterCatBase {
+  cat: string;
+  label: string;
+}
+// A category whose editor is a value list (checklist / grouped-tag two-pane).
+export interface FilterCatValues extends FilterCatBase {
+  editor: 'values';
+  showFind: boolean;
+  values(): FilterRow[];
+  pick(it: FilterRow): void;
+  manage?: () => void;
+}
+// A category whose editor is the date-range form (post date or the 3-dim poster date).
+export interface FilterCatDate extends FilterCatBase {
+  editor: 'date';
+  dimOptions: Array<{ value: string; label: string }>;
+  apply(f: { dateField?: string; from?: string; to?: string }): void;
+}
+// A category whose editor is the engagement form (type + 以上/以下 + min).
+export interface FilterCatEng extends FilterCatBase {
+  editor: 'eng';
+  typeOptions: Array<{ value: string; label: string }>;
+  opGte: string;
+  opLte: string;
+  apply(f: { engType?: string; min?: string; op?: string }): void;
+}
+export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
+// The "+ フィルタ" menu: the facet categories the current browse mode offers,
+// each carrying its own live value/apply closures (the island only renders +
+// routes). Recomputed per open so counts/labels/vocab are fresh.
+export let filterCategories: () => FilterCat[];
+
 (async () => {
   // The Promise executor runs synchronously, so this is assigned before any other
   // code executes — the `!` tells tsc what the executor already guarantees.
@@ -1405,6 +1449,95 @@ export let applyFolderFilter: (id: string) => void;
     posterRemoveByType: (type) => posterQB.removeByType(type),
     posterRefresh: () => posterQB.refresh(),
   });
+
+  // The "+ フィルタ" category menu (redesign §3-2 / P2③): the facet categories the
+  // current browse mode offers, each carrying its own live value/apply closures. The
+  // routing is REUSED — value picks go through qfPop.pickValue (= onQfPick, run headless
+  // with no open flyout), date/engagement writes go straight to the QB (mirroring
+  // makeFilterPopover's onApply bodies). The filterbar island only renders + routes; it
+  // never rebuilds this logic. Recomputed per open so counts/vocab/labels stay fresh.
+  filterCategories = function (): FilterCat[] {
+    const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as CorpusQfPopItem);
+    // 種別 dot: a tag row carrying it.kind ('work'/'character') wears the shared category
+    // dot — resolve its (possibly custom) label here so the island only draws (this is
+    // exactly what renderQfPop did before the flyout was retired).
+    const valuesCat = (cat: string, label: string, showFind: boolean, manage?: () => void): FilterCatValues => ({
+      cat,
+      label,
+      editor: 'values',
+      showFind,
+      values: () => (qfValues(cat) as FilterRow[]).map((it) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it)),
+      pick: pick(cat),
+      manage,
+    });
+    if (browseMode === 'posters') {
+      const cats: FilterCat[] = [valuesCat('poster-platform', getMessage('sbPosterPlatformTitle'), false), valuesCat('poster-tag', getMessage('sbPosterTagsTitle'), true)];
+      if (qfValues('poster-work').length) cats.push(valuesCat('poster-work', kindLabel('work'), true));
+      if (qfValues('poster-character').length) cats.push(valuesCat('poster-character', kindLabel('character'), true));
+      if (qfValues('poster-instance').length) cats.push(valuesCat('poster-instance', getMessage('qfInstance'), true));
+      cats.push(
+        valuesCat('poster-folder', getMessage('sbPosterFoldersTitle'), false, () =>
+          folders.openManager({
+            store: pfStore,
+            onChange: () => {
+              renderPosterFilterRows();
+              renderPosters();
+            },
+          }),
+        ),
+      );
+      cats.push({
+        cat: 'poster-date',
+        label: getMessage('qfDate'),
+        editor: 'date',
+        dimOptions: [
+          { value: 'latest', label: getMessage('posterDateLastPost') },
+          { value: 'lastCapture', label: getMessage('posterDateLastCapture') },
+          { value: 'authorCreatedAt', label: getMessage('posterDateCreated') },
+        ],
+        apply: ({ dateField, from, to }) => {
+          if (!from && !to) return;
+          posterQB.addFilter({ type: 'date', dateField, from, to }); // date is single-valued (replaces)
+        },
+      });
+      return cats;
+    }
+    // Posts mode.
+    const cats: FilterCat[] = [valuesCat('kind', getMessage('fbCatKind'), false), valuesCat('platform', getMessage('qfPlatform'), false), valuesCat('postType', getMessage('qfPostType'), false), valuesCat('media', getMessage('qfMediaTitle'), false), valuesCat('tag', getMessage('qfTag'), true)];
+    if (qfValues('work').length) cats.push(valuesCat('work', kindLabel('work'), true));
+    if (qfValues('character').length) cats.push(valuesCat('character', kindLabel('character'), true));
+    cats.push(valuesCat('hashtag', getMessage('tabTags'), true));
+    cats.push(valuesCat('user', getMessage('sidebarAuthors'), true));
+    cats.push(valuesCat('folder', getMessage('qfCatFolder'), false, () => folders.openManager()));
+    cats.push({
+      cat: 'date',
+      label: getMessage('qfDate'),
+      editor: 'date',
+      dimOptions: [
+        { value: 'date', label: getMessage('qfDatePost') },
+        { value: 'capturedAt', label: getMessage('qfDateCaptured') },
+      ],
+      apply: ({ dateField, from, to }) => {
+        if (!from && !to) return;
+        addFilter({ type: 'date', dateField, from, to }); // date is single-valued (replaces)
+      },
+    });
+    cats.push({
+      cat: 'engagement',
+      label: getMessage('qfEngagement'),
+      editor: 'eng',
+      typeOptions: Object.entries(ENG_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+      opGte: getMessage('qfEngGte'),
+      opLte: getMessage('qfEngLte'),
+      apply: ({ engType, min, op }) => {
+        const n = Number(min);
+        if (!(n > 0)) return;
+        removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType); // no gte+lte on one type
+        addFilter({ type: 'engagement', engType, min: n, op }); // numeric — the predicate compares p[engType] >= min
+      },
+    });
+    return cats;
+  };
 
   // resetPosterFilters/renderPosters/corpusPosterGridSource.configure/
   // openPosterPosts/jumpToPoster/refreshPosterTagFields/refreshPosterFolderFields/

@@ -352,6 +352,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     captured: '$1 にキャプチャ',
 
     // viewer: query/sidebar filters
+    fbCatKind: '種別',
     qfPlatform: 'プラットフォーム',
     qfPlatformNone: 'プラットフォームなし',
     qfPostType: '投稿タイプ',
@@ -717,6 +718,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     postedOn: 'Posted $1',
     captured: 'Captured $1',
 
+    fbCatKind: 'Kind',
     qfPlatform: 'Platform',
     qfPlatformNone: 'No platform',
     qfPostType: 'Post type',

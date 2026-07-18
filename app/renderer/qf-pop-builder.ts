@@ -182,5 +182,10 @@ export function makeQfPop(deps: QfPopDeps) {
     renderQfPop();
   }
 
-  return { showQfPopAt, hideQfPop, handleQfPopChange };
+  // pickValue is onQfPick exposed headlessly (no open flyout required): the redesign
+  // filter bar (islands/filterbar) drives the SAME add/remove routing from its own
+  // Popover value editor, without going through showQfPopAt/the qf-pop bridge. Called
+  // with qfCat unset, so onQfPick's trailing renderQfPop() no-ops (it early-returns) —
+  // the QB mutation's own refresh() drives the re-render.
+  return { showQfPopAt, hideQfPop, handleQfPopChange, pickValue: onQfPick };
 }
