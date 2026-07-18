@@ -1601,6 +1601,9 @@
       box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
     }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* Breathing room under the chip row, only when chips exist (the container is
+       always mounted — an unconditional padding would gap the empty toolbar). */
+    .sb-chips:has(*) { padding-bottom: 8px; }
     /* Feature launcher (tagging session): an explicit CTA button (Notion "+New" /
        Linear式) — defined fill + border + xs shadow, plus a hover LIFT (translateY
        + shadow) so it reads unmistakably as a press target, not a flat tinted box.

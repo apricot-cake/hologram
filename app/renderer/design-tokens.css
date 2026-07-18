@@ -84,9 +84,14 @@
   --surface:       var(--gray-0);
   --surface-2:     var(--gray-50);
   --surface-3:     var(--gray-100);
-  --sidebar-bg:    var(--surface);
-  /* Tab strip sits a step darker than --bg so the white active tab reads as
-     raised; at --bg (≈white) active/inactive tabs dissolved in light (BACKLOG). */
+  /* = shadcn --sidebar (globals.css, oklch(0.985 0 0) = Tailwind neutral-50).
+     The React sidebar + toolbar paint bg-sidebar; the legacy active tab fills
+     --sidebar-bg — all three form ONE band under the tab strip, so this MUST
+     stay in sync with globals.css until the legacy tab CSS retires. Literal hex
+     because test-contrast-parity resolves inside this file (no oklch/cross-file). */
+  --sidebar-bg:    #fafafa;
+  /* Tab strip sits a step darker than --bg so the near-white active tab reads
+     as raised; at --bg (≈white) active/inactive tabs dissolved in light (BACKLOG). */
   --tabbar-bg:     var(--gray-100);
 
   --text:          var(--gray-800);
@@ -188,7 +193,9 @@
   --surface:       #16171a;
   --surface-2:     #1c1e21;
   --surface-3:     #25272b;
-  --sidebar-bg:    #202226;
+  /* = shadcn dark --sidebar (globals.css, oklch(0.205 0 0) = neutral-900); see
+     the light-block note — one band with the React sidebar/toolbar. */
+  --sidebar-bg:    #171717;
   /* dark already separates the bar (#0e0f11) from the active tab (#202226), so
      the bar keeps --bg — only light needed the darker strip (see :root note). */
   --tabbar-bg:     var(--bg);

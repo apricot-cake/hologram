@@ -30,7 +30,10 @@ const getForward = (): boolean => !!storeGet('navCanForward');
 // icon is the field's chrome, same split the old #searchWrap used).
 function SearchIcon() {
   return (
-    <svg className="search-ico pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+    // NO legacy .search-ico class: its transform:translateY(-50%) stacks with the
+    // -translate-y-1/2 utility (Tailwind v4 emits the separate `translate` property,
+    // so BOTH apply = icon rides 8px high). One positioning system only.
+    <svg className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
       <circle cx="11" cy="11" r="7" />
       <line x1="16.5" y1="16.5" x2="21" y2="21" />
     </svg>
@@ -43,7 +46,10 @@ export function AppToolbar() {
   const canForward = useSyncExternalStore(subForward, getForward);
   const isPosters = mode === 'posters';
   return (
-    <div className="flex flex-col border-b bg-background">
+    // bg-sidebar, not bg-background: the toolbar and the left sidebar form ONE band
+    // under the tab strip, and the active tab connects into that band (its legacy
+    // fill --sidebar-bg aliases the same color) — Chrome's strip/toolbar anatomy.
+    <div className="flex flex-col border-b bg-sidebar">
       <div className="flex h-12 items-center gap-1.5 px-2">
         <SidebarTrigger className="text-muted-foreground" />
         <div className="flex items-center">
@@ -77,7 +83,9 @@ export function AppToolbar() {
           container would be null for the inactive mode and crash render()). The inactive
           one is just hidden. The Chips island renders into each (null when empty). The
           .sb-chips class keeps the legacy chip layout/CSS until the filter bar rewrite (P2③). */}
-      <div className="px-3">
+      {/* px-8 = #mode-post's 32px content padding: the chip row sits on the same
+          left axis as the cards it filters (Linear's filter row ↔ list gutter). */}
+      <div className="px-8">
         <div id="queryChips" className="sb-chips" hidden={isPosters}>
           <ChipsHost id="queryChips" />
         </div>
