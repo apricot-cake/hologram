@@ -9,7 +9,7 @@
 // imported below are converted, the rest are still read via that bridge at
 // call time.
 import JSZip from 'jszip';
-import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
 import { sync as syncPostsData } from './posts-data.ts';
@@ -34,7 +34,7 @@ import * as selection from './selection.ts';
 import { open as settingsOpen } from './settings.ts';
 import { shellReady } from './shell-ready.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
-import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder } from './query-builder.ts';
+import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
@@ -116,12 +116,23 @@ interface FilterCatBase {
   cat: string;
   label: string;
 }
+// The operator/exclusion mode of one facet (redesign §4-2 B, Linear「is any of /
+// is all of / is not」). 'and'/'or' = positive すべて/どれか; 'exclude' = 「〜以外」
+// (every value of the facet negated). 'and' is only offered for multi-value types.
+export type FacetMode = 'and' | 'or' | 'exclude';
 // A category whose editor is a value list (checklist / grouped-tag two-pane).
 export interface FilterCatValues extends FilterCatBase {
   editor: 'values';
   showFind: boolean;
+  // multi = a すべて/どれか-capable type (multiValueTypes): the editor offers the
+  // 3-way どれか/すべて/〜以外; other value types offer the 2-way 含む/〜以外.
+  multi: boolean;
   values(): FilterRow[];
   pick(it: FilterRow): void;
+  // Read/write the facet's current mode (drives the editor's mode segment). mode()
+  // reflects the live tree; setMode() rewrites it (op toggle / negate-all) + refreshes.
+  mode(): FacetMode;
+  setMode(m: FacetMode): void;
   manage?: () => void;
 }
 // A category whose editor is the date-range form (post date or the 3-dim poster date).
@@ -143,6 +154,21 @@ export type FilterCat = FilterCatValues | FilterCatDate | FilterCatEng;
 // each carrying its own live value/apply closures (the island only renders +
 // routes). Recomputed per open so counts/labels/vocab are fresh.
 export let filterCategories: () => FilterCat[];
+
+// One active-filter chip (redesign §3-2 / P2③ タスク2) — a facet currently in the
+// query tree, rendered Linear-style (1 facet = 1 chip). `cat` matches a
+// filterCategories() entry so a chip click reopens that facet's editor; `remove`
+// clears the whole facet. Recomputed from the active QB tree on every tree change.
+export interface ActiveFilter {
+  cat: string; // matches a filterCategories() entry (editor to reopen on click)
+  type: string; // leaf type (icon cue)
+  label: string; // category label
+  editor: 'values' | 'date' | 'eng';
+  mode: FacetMode; // positive すべて/どれか, or 「〜以外」
+  values: string[]; // per-value labels shown inside the chip
+  remove(): void; // clear the whole facet (all its leaves)
+}
+export let activeFilters: () => ActiveFilter[];
 
 (async () => {
   // The Promise executor runs synchronously, so this is assigned before any other
@@ -1461,30 +1487,80 @@ export let filterCategories: () => FilterCat[];
     // 種別 dot: a tag row carrying it.kind ('work'/'character') wears the shared category
     // dot — resolve its (possibly custom) label here so the island only draws (this is
     // exactly what renderQfPop did before the flyout was retired).
-    const valuesCat = (cat: string, label: string, showFind: boolean, manage?: () => void): FilterCatValues => ({
-      cat,
-      label,
-      editor: 'values',
-      showFind,
-      values: () => (qfValues(cat) as FilterRow[]).map((it) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it)),
-      pick: pick(cat),
-      manage,
+    const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it);
+    // Mode accessors (redesign §4-2 B) bound to one view's QB + facet schema: read /
+    // write a facet's すべて/どれか/〜以外 against the live tree. mode() derives from the
+    // tree (all-negated → 'exclude', else the cluster op / default op); setMode() negates
+    // or un-negates every value of the type and sets the group op, then refreshes.
+    const modeFor = (qb: typeof postQB, opts: typeof POST_FACET_OPTS) => (type: string) => ({
+      mode: (): FacetMode => {
+        const leaves = treeLeaves(qb.getTree()).filter((c) => c.type === type);
+        if (leaves.length && leaves.every((c) => c.neg)) return 'exclude';
+        const cl = facetViewOf(qb.getTree(), opts)?.clusters.find((c) => c.type === type);
+        return cl ? (cl.op === 'and' ? 'and' : 'or') : facetDefaultOp(type, opts);
+      },
+      setMode: (m: FacetMode) => {
+        const tree = qb.getTree();
+        const leaves = treeLeaves(tree).filter((c) => c.type === type);
+        if (m === 'exclude') {
+          for (const l of leaves) if (!l.neg) facetSetNeg(tree, l, true, opts);
+        } else {
+          for (const l of leaves) if (l.neg) facetSetNeg(tree, l, false, opts);
+          facetSetOp(tree, type, m);
+        }
+        qb.refresh();
+      },
     });
+    // A value-list category. `type` = the leaf type it writes (drives multi + mode);
+    // `valuesFn` overrides the default qfValues(cat) read (the combined タグ merges its
+    // 作品/キャラ kin — they share the one 'tag' leaf type and its single op, so one chip).
+    const valuesCat =
+      (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
+      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[] }): FilterCatValues => {
+        const mo = modeFor(qb, opts)(type);
+        return {
+          cat,
+          label,
+          editor: 'values',
+          showFind,
+          multi: opts.multiValueTypes.includes(type),
+          values: extra?.valuesFn ?? (() => (qfValues(cat) as FilterRow[]).map(dot)),
+          pick: pick(cat),
+          mode: mo.mode,
+          setMode: mo.setMode,
+          manage: extra?.manage,
+        };
+      };
+    // The combined タグ editor values: general tags (already grouped by 用語帳 vocab)
+    // followed by 作品/キャラ groups — all one 'tag' facet, so one chip + one op.
+    const combinedTagValues = (tagCat: string, workCat: string, charCat: string) => (): FilterRow[] => {
+      const general = (qfValues(tagCat) as FilterRow[]).map(dot);
+      const work = (qfValues(workCat) as FilterRow[]).map(dot);
+      const char = (qfValues(charCat) as FilterRow[]).map(dot);
+      const out: FilterRow[] = [];
+      // If general is flat (no vocab groups) but kinded groups follow, wrap it under its
+      // own head so the two-pane doesn't orphan it (buildGroups drops pre-first-ghead rows).
+      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagGroupOther') });
+      out.push(...general);
+      if (work.length) out.push({ ghead: kindLabel('work') }, ...work);
+      if (char.length) out.push({ ghead: kindLabel('character') }, ...char);
+      return out;
+    };
     if (browseMode === 'posters') {
-      const cats: FilterCat[] = [valuesCat('poster-platform', getMessage('sbPosterPlatformTitle'), false), valuesCat('poster-tag', getMessage('sbPosterTagsTitle'), true)];
-      if (qfValues('poster-work').length) cats.push(valuesCat('poster-work', kindLabel('work'), true));
-      if (qfValues('poster-character').length) cats.push(valuesCat('poster-character', kindLabel('character'), true));
-      if (qfValues('poster-instance').length) cats.push(valuesCat('poster-instance', getMessage('qfInstance'), true));
+      const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
+      const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
+      if (qfValues('poster-instance').length) cats.push(vc('poster-instance', getMessage('qfInstance'), 'instance', true));
       cats.push(
-        valuesCat('poster-folder', getMessage('sbPosterFoldersTitle'), false, () =>
-          folders.openManager({
-            store: pfStore,
-            onChange: () => {
-              renderPosterFilterRows();
-              renderPosters();
-            },
-          }),
-        ),
+        vc('poster-folder', getMessage('sbPosterFoldersTitle'), 'folder', false, {
+          manage: () =>
+            folders.openManager({
+              store: pfStore,
+              onChange: () => {
+                renderPosterFilterRows();
+                renderPosters();
+              },
+            }),
+        }),
       );
       cats.push({
         cat: 'poster-date',
@@ -1503,12 +1579,17 @@ export let filterCategories: () => FilterCat[];
       return cats;
     }
     // Posts mode.
-    const cats: FilterCat[] = [valuesCat('kind', getMessage('fbCatKind'), false), valuesCat('platform', getMessage('qfPlatform'), false), valuesCat('postType', getMessage('qfPostType'), false), valuesCat('media', getMessage('qfMediaTitle'), false), valuesCat('tag', getMessage('qfTag'), true)];
-    if (qfValues('work').length) cats.push(valuesCat('work', kindLabel('work'), true));
-    if (qfValues('character').length) cats.push(valuesCat('character', kindLabel('character'), true));
-    cats.push(valuesCat('hashtag', getMessage('tabTags'), true));
-    cats.push(valuesCat('user', getMessage('sidebarAuthors'), true));
-    cats.push(valuesCat('folder', getMessage('qfCatFolder'), false, () => folders.openManager()));
+    const vc = valuesCat(postQB, POST_FACET_OPTS);
+    const cats: FilterCat[] = [
+      vc('kind', getMessage('fbCatKind'), 'kind', false),
+      vc('platform', getMessage('qfPlatform'), 'platform', false),
+      vc('postType', getMessage('qfPostType'), 'postType', false),
+      vc('media', getMessage('qfMediaTitle'), 'media', false),
+      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
+      vc('hashtag', getMessage('tabTags'), 'hashtag', true),
+      vc('user', getMessage('sidebarAuthors'), 'user', true),
+      vc('folder', getMessage('qfCatFolder'), 'folder', false, { manage: () => folders.openManager() }),
+    ];
     cats.push({
       cat: 'date',
       label: getMessage('qfDate'),
@@ -1537,6 +1618,60 @@ export let filterCategories: () => FilterCat[];
       },
     });
     return cats;
+  };
+
+  // Active-filter chips (redesign §3-2 / P2③ タスク2): the query tree's facets, one
+  // chip per facet (Linear型), derived from facetViewOf. `cat` matches a
+  // filterCategories() entry so a chip click reopens that facet's editor; negated
+  // leaves collect per type into a 「〜以外」 chip (要決 A案). Recomputed on every tree
+  // change — the island subscribes to the postQueryTree/posterQueryTree store keys.
+  activeFilters = function (): ActiveFilter[] {
+    const posters = browseMode === 'posters';
+    const qb = posters ? posterQB : postQB;
+    const opts = posters ? POSTER_FACET_OPTS : POST_FACET_OPTS;
+    const labelOf = posters ? posterFilterLabel : filterLabel;
+    // leaf type → { editor category, chip label, editor kind }. instance has no
+    // standalone category (it lives as sub-rows under プラットフォーム), so its chip
+    // reopens the platform editor.
+    const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' }> = posters
+      ? {
+          platform: { cat: 'poster-platform', label: getMessage('sbPosterPlatformTitle'), editor: 'values' },
+          tag: { cat: 'poster-tag', label: getMessage('sbPosterTagsTitle'), editor: 'values' },
+          instance: { cat: 'poster-instance', label: getMessage('qfInstance'), editor: 'values' },
+          folder: { cat: 'poster-folder', label: getMessage('sbPosterFoldersTitle'), editor: 'values' },
+          date: { cat: 'poster-date', label: getMessage('qfDate'), editor: 'date' },
+        }
+      : {
+          kind: { cat: 'kind', label: getMessage('fbCatKind'), editor: 'values' },
+          platform: { cat: 'platform', label: getMessage('qfPlatform'), editor: 'values' },
+          instance: { cat: 'platform', label: getMessage('qfInstance'), editor: 'values' },
+          postType: { cat: 'postType', label: getMessage('qfPostType'), editor: 'values' },
+          media: { cat: 'media', label: getMessage('qfMediaTitle'), editor: 'values' },
+          tag: { cat: 'tag', label: getMessage('qfTag'), editor: 'values' },
+          hashtag: { cat: 'hashtag', label: getMessage('tabTags'), editor: 'values' },
+          user: { cat: 'user', label: getMessage('sidebarAuthors'), editor: 'values' },
+          folder: { cat: 'folder', label: getMessage('qfCatFolder'), editor: 'values' },
+          date: { cat: 'date', label: getMessage('qfDate'), editor: 'date' },
+          engagement: { cat: 'engagement', label: getMessage('qfEngagement'), editor: 'eng' },
+        };
+    const view = facetViewOf(qb.getTree(), opts);
+    if (!view) return []; // non-facet persisted tree → no chips (read-only fallback dropped for the trial)
+    const out: ActiveFilter[] = [];
+    const emit = (type: string, mode: FacetMode, leaves: CorpusQueryLeaf[]) => {
+      const m = map[type];
+      if (!m) return; // legacy/standalone-only types (clip/workspace/text) carry no chip
+      out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
+    };
+    for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
+    for (const l of view.singles) emit(l.type, 'or', [l]);
+    const excl = new Map<string, CorpusQueryLeaf[]>();
+    for (const l of view.excl) {
+      const arr = excl.get(l.type) ?? [];
+      arr.push(l);
+      excl.set(l.type, arr);
+    }
+    for (const [type, leaves] of excl) emit(type, 'exclude', leaves);
+    return out;
   };
 
   // resetPosterFilters/renderPosters/corpusPosterGridSource.configure/

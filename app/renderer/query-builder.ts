@@ -40,6 +40,13 @@ export const qcGlyph = (type: string) => {
   return g ? `<svg class="qc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>` : '';
 };
 
+// Facet type schemas (改訂④) — the すべて/どれか-capable multi-value types and the
+// standalone (never-clustered) types, per view. Exported so the redesign filter bar
+// (orchestrator's activeFilters / filterCategories mode logic) reads the SAME schema
+// facetViewOf is built with here, rather than re-declaring it and drifting.
+export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'] };
+export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'workspace'] };
+
 // Callbacks/state still owned by viewer.ts (searchbox, render, popovers, tab
 // restore) — injected the same way createQueryBuilder's own ctx is.
 export interface PostQueryBuilderDeps {
@@ -86,8 +93,8 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     // (both すべて/どれか meaningful, default すべて); date/engagement/clip/text
     // (+ the legacy 'workspace' alias) stay standalone chips. Everything else
     // (platform/user/instance/kind/media/postType) clusters as a silent どれか.
-    multiValueTypes: ['tag', 'hashtag', 'folder'],
-    standaloneTypes: ['date', 'engagement', 'clip', 'workspace', 'text'],
+    multiValueTypes: POST_FACET_OPTS.multiValueTypes,
+    standaloneTypes: POST_FACET_OPTS.standaloneTypes,
   });
   // Establish an initial value (emptyTree()) before any mutation, so a future
   // reader never sees undefined — setTree only runs on tab restore, which may
@@ -134,8 +141,8 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     noDupTypes: [],
     // Poster facet schema: a poster aggregates many tags (すべて/どれか both
     // meaningful); date + the workspace toggle stay standalone chips.
-    multiValueTypes: ['tag'],
-    standaloneTypes: ['date', 'workspace'],
+    multiValueTypes: POSTER_FACET_OPTS.multiValueTypes,
+    standaloneTypes: POSTER_FACET_OPTS.standaloneTypes,
   });
   // Establish an initial value (emptyTree()) before any mutation — posters have
   // no tabs/setTree restore path, so this is the ONLY populator until the first

@@ -13,15 +13,13 @@ import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { AddFilterButton } from '../filterbar/index.tsx';
-import { ChipsHost } from '../query-chips/index.tsx';
+import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { navBack, navForward } from '../../renderer/orchestrator.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
-const subBrowse = subKey('browseMode');
-const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 const subBack = subKey('navCanBack');
 const getBack = (): boolean => !!storeGet('navCanBack');
 const subForward = subKey('navCanForward');
@@ -39,10 +37,8 @@ function SearchIcon() {
 }
 
 export function AppToolbar() {
-  const mode = useSyncExternalStore(subBrowse, getBrowse);
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
-  const isPosters = mode === 'posters';
   return (
     <div className="flex flex-col border-b bg-background">
       <div className="flex h-12 items-center gap-1.5 px-2">
@@ -70,18 +66,15 @@ export function AppToolbar() {
           </Button>
         </div>
       </div>
-      {/* Active-filter chips. BOTH containers stay mounted (the post/poster query-chips
-          builders each resolve their container id once at boot — a conditionally-rendered
-          container would be null for the inactive mode and crash render()). The inactive
-          one is just hidden. The Chips island renders into each (null when empty). The
-          .sb-chips class keeps the legacy chip layout/CSS until the filter bar rewrite (P2③). */}
+      {/* Active-filter chips (redesign §3-2 / P2③ タスク2) — Linear型 chips rendered by
+          the filterbar island from activeFilters(); a chip click reopens its editor.
+          The #queryChips / #posterQueryChips divs stay only as the container ids the
+          legacy post/poster query builders resolve at boot — emptied + hidden until the
+          query-chips island + builder are removed (タスク3). */}
       <div className="px-3">
-        <div id="queryChips" className="sb-chips" hidden={isPosters}>
-          <ChipsHost id="queryChips" />
-        </div>
-        <div id="posterQueryChips" className="sb-chips" hidden={!isPosters}>
-          <ChipsHost id="posterQueryChips" />
-        </div>
+        <FilterChips />
+        <div id="queryChips" hidden />
+        <div id="posterQueryChips" hidden />
       </div>
     </div>
   );

@@ -18,7 +18,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // The chip's leading glyph carries the category cue (same idiom as the filter chips).
 // Poster-* categories share the base icon (poster-tag → Tag, etc.).
 const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart };
-function CatIcon({ cat }: { cat: string }) {
+// Shared by the "+ フィルタ" category list and the active-filter chips (FilterChips).
+// Accepts either a category key ('poster-tag') or a leaf type ('tag') — both resolve
+// to the same base glyph.
+export function CatIcon({ cat }: { cat: string }) {
   const Icon = ICONS[cat.replace(/^poster-/, '')] || ListFilter;
   return <Icon className="size-4 text-muted-foreground" />;
 }

@@ -11,11 +11,37 @@
 // shared search module's mode as a side effect.
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FilterCatValues, FilterRow } from '../../renderer/orchestrator.ts';
+import type { FacetMode, FilterCatValues, FilterRow } from '../../renderer/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+
+// The facet's operator/exclusion mode (redesign §4-2 B, Linear「is any of / all of /
+// is not」). multi-value facets (tag/hashtag/folder) offer the 3-way どれか/すべて/
+// 〜以外; every other value facet offers the 2-way 含む/〜以外 (any/all is moot when the
+// type never clusters). Selecting a side rewrites the whole facet via cat.setMode().
+function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode; onPick: (m: FacetMode) => void }) {
+  const opts: { m: FacetMode; label: string }[] = cat.multi
+    ? [
+        { m: 'or', label: t('qbOptAny') },
+        { m: 'and', label: t('qbOptAll') },
+        { m: 'exclude', label: t('fbModeExclude') },
+      ]
+    : [
+        { m: 'or', label: t('fbModeInclude') },
+        { m: 'exclude', label: t('fbModeExclude') },
+      ];
+  return (
+    <div className="flex gap-0.5 rounded-md bg-muted p-0.5">
+      {opts.map((o) => (
+        <button key={o.m} type="button" className={cn('flex-1 rounded px-2 py-0.5 text-xs', mode === o.m ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => onPick(o.m)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type Row = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: FilterRow };
 type Group = { name: string; items: FilterRow[] };
@@ -70,8 +96,18 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   // Re-read values() after every pick so on/count reflect the mutated tree in place.
   // The parent remounts this per category (key=cat), so lazy init is the fresh read.
   const [items, setItems] = useState<FilterRow[]>(cat.values);
+  // The mode is a UI intent that persists across picks (seeded from the live tree at
+  // mount). In 〜以外 mode a fresh pick lands positive, so re-negate the facet to keep
+  // the whole thing excluded (setMode is idempotent for already-negated values).
+  const [mode, setMode] = useState<FacetMode>(cat.mode());
   const pick = (it: FilterRow) => {
     cat.pick(it);
+    if (mode === 'exclude') cat.setMode('exclude');
+    setItems(cat.values());
+  };
+  const applyMode = (m: FacetMode) => {
+    cat.setMode(m);
+    setMode(m);
     setItems(cat.values());
   };
 
@@ -104,6 +140,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
 
   return (
     <div className={cn('flex max-h-(--available-height) flex-col gap-2 p-2', twoPane ? 'w-max max-w-[min(520px,calc(100vw-24px))]' : 'w-64')}>
+      <ModeSeg cat={cat} mode={mode} onPick={applyMode} />
       {cat.showFind ? <Input ref={inputRef} type="text" className="h-7 text-xs" placeholder={t('qfFindPh')} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} /> : null}
       {twoPane ? (
         <div className="flex min-h-0 flex-1">
