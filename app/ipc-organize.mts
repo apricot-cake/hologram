@@ -179,14 +179,23 @@ function register(ctx) {
     const empty = { folders: [], activeId: null, clip: [], posterWorkspace: [] };
     if (!folder) return empty;
     const foldersPath = path.join(folder, 'folders.json');
-    // One-time pre-release rename: the store file went from collections.json →
-    // folders.json (#42). If only the old name is on disk, rename it once. Scaffolding —
-    // remove before release (no third-party libraries exist pre-release).
-    try {
-      const legacyPath = path.join(folder, 'collections.json');
-      if (!fs.existsSync(foldersPath) && fs.existsSync(legacyPath)) fs.renameSync(legacyPath, foldersPath);
-    } catch {
-      /* best-effort */
+    // One-time pre-release migration: the store file went from collections.json →
+    // folders.json AND its retired top-level key `collections` → `folders` (#42).
+    // If only the old file exists, rewrite it under the new name/key once (a plain
+    // rename would leave `collections` inside, which the reader below no longer sees
+    // → the store would load empty and the next save would wipe it). Scaffolding —
+    // remove before release (no third-party data exists pre-release).
+    if (!fs.existsSync(foldersPath)) {
+      const { value: legacy } = readOrgJsonSync(path.join(folder, 'collections.json'));
+      if (legacy && typeof legacy === 'object') {
+        try {
+          const { collections, ...rest } = legacy as Record<string, unknown>;
+          writeOrgJsonSync(foldersPath, { ...rest, folders: collections || [] }); // fields normalized on the read below
+          fs.unlinkSync(path.join(folder, 'collections.json'));
+        } catch {
+          /* best-effort */
+        }
+      }
     }
     // A present-but-corrupt folders.json returns empty (the UI still loads) but stays
     // flagged degraded inside readOrgJsonSync, so set-folders won't purge it.
