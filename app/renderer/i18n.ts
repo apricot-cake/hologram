@@ -74,7 +74,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     qbMenuExclude: '「除く」へ移す（〜でない）',
     qbMenuInclude: '含む条件に戻す',
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
-    fbModeInclude: '含む',
     fbModeExclude: '〜以外',
     qbSummaryTip: '旧形式の絞り込みのため、ここでは編集できません。「リセット」で作り直せます。',
     tileOverlay: 'タイルに情報を表示',
@@ -453,7 +452,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     qbMenuExclude: 'Move to "Not" (exclude)',
     qbMenuInclude: 'Move back to include',
     // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
-    fbModeInclude: 'Is',
     fbModeExclude: 'Is not',
     qbSummaryTip: 'Saved in an older format, so it cannot be edited here. Press Reset to rebuild it.',
     tileOverlay: 'Show info on tiles',

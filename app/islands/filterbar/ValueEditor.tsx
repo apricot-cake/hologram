@@ -19,8 +19,9 @@ import { cn } from '@/lib/utils';
 
 // The facet's operator/exclusion mode (redesign §4-2 B, Linear「is any of / all of /
 // is not」). multi-value facets (tag/hashtag/folder) offer the 3-way どれか/すべて/
-// 〜以外; every other value facet offers the 2-way 含む/〜以外 (any/all is moot when the
-// type never clusters). Selecting a side rewrites the whole facet via cat.setMode().
+// 〜以外; every other value facet offers the 2-way どれか/〜以外 (すべて is moot when the
+// type never clusters). One vocabulary throughout (どれか/すべて/〜以外) so the segment
+// and the chip's mode word read the same. Selecting a side rewrites the facet via setMode.
 function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode; onPick: (m: FacetMode) => void }) {
   const opts: { m: FacetMode; label: string }[] = cat.multi
     ? [
@@ -29,7 +30,7 @@ function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode;
         { m: 'exclude', label: t('fbModeExclude') },
       ]
     : [
-        { m: 'or', label: t('fbModeInclude') },
+        { m: 'or', label: t('qbOptAny') },
         { m: 'exclude', label: t('fbModeExclude') },
       ];
   return (
