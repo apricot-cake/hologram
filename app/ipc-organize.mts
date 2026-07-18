@@ -181,21 +181,28 @@ function register(ctx) {
     const foldersPath = path.join(folder, 'folders.json');
     // One-time pre-release migration: the store file went from collections.json →
     // folders.json AND its retired top-level key `collections` → `folders` (#42).
-    // If only the old file exists, rewrite it under the new name/key once (a plain
-    // rename would leave `collections` inside, which the reader below no longer sees
-    // → the store would load empty and the next save would wipe it). Scaffolding —
-    // remove before release (no third-party data exists pre-release).
-    if (!fs.existsSync(foldersPath)) {
-      const { value: legacy } = readOrgJsonSync(path.join(folder, 'collections.json'));
-      if (legacy && typeof legacy === 'object') {
-        try {
-          const { collections, ...rest } = legacy as Record<string, unknown>;
-          writeOrgJsonSync(foldersPath, { ...rest, folders: collections || [] }); // fields normalized on the read below
+    // Two old shapes exist in the wild (dev): collections.json still on disk, and a
+    // folders.json that was renamed but kept the `collections` key. Either way rewrite
+    // once under folders.json with `folders` — a plain rename would leave `collections`
+    // inside, which the reader below no longer sees → the store loads empty and the
+    // next save wipes it. Scaffolding — remove before release (no third-party data).
+    try {
+      const rekey = (o: Record<string, unknown>) => {
+        const { collections, ...rest } = o;
+        return { ...rest, folders: collections || [] }; // fields normalized on the read below
+      };
+      if (!fs.existsSync(foldersPath)) {
+        const { value: legacy } = readOrgJsonSync(path.join(folder, 'collections.json'));
+        if (legacy && typeof legacy === 'object') {
+          writeOrgJsonSync(foldersPath, rekey(legacy as Record<string, unknown>));
           fs.unlinkSync(path.join(folder, 'collections.json'));
-        } catch {
-          /* best-effort */
         }
+      } else {
+        const { value: cur } = readOrgJsonSync(foldersPath);
+        if (cur && typeof cur === 'object' && 'collections' in cur && !('folders' in cur)) writeOrgJsonSync(foldersPath, rekey(cur as Record<string, unknown>));
       }
+    } catch {
+      /* best-effort */
     }
     // A present-but-corrupt folders.json returns empty (the UI still loads) but stays
     // flagged degraded inside readOrgJsonSync, so set-folders won't purge it.
