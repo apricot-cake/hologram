@@ -19,7 +19,7 @@ const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
@@ -75,15 +75,17 @@ const evalJs = `(async () => {
   const initTabCount  = tabCount();
   const initTitle     = activeTitle();
 
-  // ② Add alpha filter via tag flyout (the qf-pop React island has no data-qfval —
-  //    find the row by its .fm-name label)
-  const tagRow = document.querySelector('[data-qfrow="tag"]');
-  if (tagRow) tagRow.click();
-  await waitFor(() => !!document.querySelector('.qf-pop .fm-row'));
-  const alphaItem = [...document.querySelectorAll('.qf-pop .fm-row')]
-    .find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === 'alpha'; });
-  if (alphaItem) alphaItem.click();
+  // ② Add alpha filter via the "+ フィルタ" flow (filterbar island — the qf-pop
+  //    flyout is gone since P2③): open the popover, pick タグ, click the alpha row.
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!byText('[data-slot="command-item"]', 'タグ'));
+  byText('[data-slot="command-item"]', 'タグ').click();
+  await waitFor(() => !!byText('[data-slot="popover-content"] span', 'alpha'));
+  byText('[data-slot="popover-content"] span', 'alpha').click();
   await sleep(250);
+  // close the picker (it stays open by design so several values can be toggled)
+  key('Escape'); await sleep(60);
   document.body.click(); await sleep(60);
   const filteredTitle = activeTitle();
   const filteredCards = cardCount();

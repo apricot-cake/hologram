@@ -20,7 +20,7 @@ const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
@@ -59,32 +59,36 @@ const evalJs = `(async () => {
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   await waitFor(() => cards() >= 5);
 
-  // プラットフォーム行 → Misskey/Mastodon の直下にインスタンスがサブ行で並ぶ
-  // The qf-pop is a React island: instance sub-rows are .fm-row.fm-sub labeled by
-  // host (no data-qftype/data-qfval), and every pick REMOUNTS the popup — so always
-  // re-query from document instead of keeping the pop / row elements.
-  const subRows = () => [...document.querySelectorAll('.qf-pop .fm-row.fm-sub')];
-  const rowByName = (name) => [...document.querySelectorAll('.qf-pop .fm-row')]
-    .find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
-  document.querySelector('#filterRows [data-qfrow="platform"]').click();
+  // プラットフォーム editor ("+ フィルタ" flow) → Misskey/Mastodon の直下にインスタンスが
+  // インデント付きサブ行 (pl-6) で並ぶ。Filterbar idioms: see test-app-facetcounts.
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
+  const rowName = (r) => { const n = r.querySelector('span.truncate'); return n ? n.textContent : ''; };
+  const rowByName = (name) => edRows().find((r) => rowName(r) === name) || null;
+  const subRows = () => edRows().filter((r) => r.className.includes('pl-6'));
+  const chipsText = () => { const c = document.querySelector('[data-slot="filter-chips"]'); return c ? c.textContent : ''; };
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  byText(POP + ' [data-slot="command-item"]', 'プラットフォーム').click();
   await waitFor(() => subRows().length >= 4);
-  const hosts = subRows().map((r) => r.querySelector('.fm-name').textContent).sort();
-  const subIndented = subRows().some((r) => r.querySelector('.fm-name').textContent === 'misskey.io');
+  const hosts = subRows().map(rowName).sort();
+  const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');
 
-  // mastodon.social を選ぶ → 2件・プラットフォーム行のバッジ点灯・開いたまま
-  rowByName('mastodon.social').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(120);
+  // mastodon.social を選ぶ → 2件・チップが立つ・エディタは開いたまま
+  rowByName('mastodon.social').click();
+  await sleep(200);
   const socialCount = cards();
-  const badgeOn = document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');
-  const stillOpen = !!document.querySelector('.qf-pop.show');
+  const chipOn = chipsText().includes('mastodon.social');
+  const stillOpen = !!document.querySelector(POP);
 
-  // もう一度クリックで解除 → 全5件・バッジ消灯
-  rowByName('mastodon.social').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(120);
+  // もう一度クリックで解除 → 全5件・チップ消滅
+  rowByName('mastodon.social').click();
+  await sleep(200);
   const cleared = cards();
-  const badgeOff = !document.querySelector('#filterRows [data-badge="platform"]').classList.contains('on');
+  const chipOff = !chipsText().includes('mastodon.social');
 
-  return { hosts, subIndented, socialCount, badgeOn, stillOpen, cleared, badgeOff };
+  return { hosts, subIndented, socialCount, chipOn, stillOpen, cleared, chipOff };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -111,9 +115,9 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('platform flyout nests every host as indented sub-rows', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
-  check('picking mastodon.social filters to 2 (platform badge on, flyout stays)', r.socialCount === 2 && r.badgeOn === true && r.stillOpen === true);
-  check('picking it again clears the filter (5 posts, badge off)', r.cleared === 5 && r.badgeOff === true);
+  check('platform editor nests every host as indented sub-rows', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
+  check('picking mastodon.social filters to 2 (chip on, editor stays)', r.socialCount === 2 && r.chipOn === true && r.stillOpen === true);
+  check('picking it again clears the filter (5 posts, chip off)', r.cleared === 5 && r.chipOff === true);
   console.log('\n' + (ok ? 'INSTANCES_TEST_PASS' : 'INSTANCES_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

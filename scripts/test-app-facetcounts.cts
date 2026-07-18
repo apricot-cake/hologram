@@ -1,14 +1,14 @@
 'use strict';
 
-// Verifies facet counts across the (non-tag) filter flyouts — the generalization of
-// fa52635 from p.tags to facetCounts(keyFn). Two behaviours are asserted:
-//   fixed lists (platform): every value carries a count badge, counts reflect the
-//     CURRENT query, and a 0 keeps its place (no `off` greying — order is stable).
-//   facetDim lists (tag): counts reflect the query AND a 0 value is greyed (`off`).
+// Verifies facet counts across the "+ フィルタ" value editors (filterbar island —
+// the qf-pop flyouts are gone since P2③). Two behaviours are asserted:
+//   fixed lists (platform): every value carries a count, counts reflect the
+//     CURRENT query, and a 0 keeps its place (no greying — order is stable).
+//   facetDim lists (tag): counts reflect the query AND a 0 value is greyed.
 //   seeds: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 misskey/(no tag)
 //     all platform → x=3, bluesky=1, misskey=1
 //     filter tag=猫 → x=2, bluesky=1, misskey=0 (misskey row stays, not greyed);
-//                     tag flyout: 犬 count 0 and greyed (off)
+//                     tag editor: 犬 count 0 and greyed
 //
 //   node scripts/test-app-facetcounts.cts
 
@@ -66,38 +66,65 @@ seeds.forEach((s, i) => {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  const posterCards = () => document.querySelectorAll('#posterGrid .poster-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  const openRow = (cat) => document.querySelector('[data-qfrow="' + cat + '"]').click();
-  // qf-pop is a React island: rows carry no data-qfval — match by the .fm-name label
-  // (PF_NAME display names for platforms, the raw tag text for tags)
-  const rowEl = (name) => [...document.querySelectorAll('.qf-vals .fm-row')]
-    .find((el) => { const n = el.querySelector('.fm-name'); return n && n.textContent === name; });
-  const cntOf = (name) => { const r = rowEl(name); return r ? ((r.querySelector('.fm-count') || {}).textContent || null) : null; };
-  const offOf = (name) => { const r = rowEl(name); return r ? r.classList.contains('off') : null; };
+  // Filterbar idioms (see test-app-tabs): the "+ フィルタ" popover → Command category
+  // list → ValueEditor rows (div.cursor-default with a label span + tabular-nums count).
+  // The smoke window is unfocused, so exit animations are throttled — awaiting a full
+  // popup unmount costs seconds against the 9s harness cap. Instead navigate BETWEEN
+  // categories with the editor's 戻る button inside ONE popover session, scoping every
+  // query to the open (:not([data-closed])) popup.
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
+  const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
+  const cntSpan = (name) => { const r = rowEl(name); return r ? r.querySelector('span.tabular-nums') : null; };
+  const cntOf = (name) => { const c = cntSpan(name); return c ? c.textContent : null; };
+  const offOf = (name) => { const c = cntSpan(name); return c ? c.className.includes('/60') : null; }; // muted 0-count (ValueRow off state)
+  const openMenu = async () => {
+    byText('button', 'フィルタ').click();
+    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  };
+  const pickCat = async (label) => {
+    byText(POP + ' [data-slot="command-item"]', label).click();
+    await waitFor(() => edRows().length > 0);
+  };
+  const goBack = async () => {
+    document.querySelector(POP + ' button[aria-label="戻る"]').click();
+    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  };
   await waitFor(() => cards() >= 5);
   const r = {};
-  // all-platform counts (fixed list — order preserved, badges present)
-  openRow('platform'); await wait(220);
+  // all-platform counts (fixed list — order preserved, counts present)
+  await openMenu();
+  await pickCat('プラットフォーム');
   r.pfX_all = cntOf('X');           // 3
   r.pfBsky_all = cntOf('Bluesky');  // 1
   r.pfMisskey_all = cntOf('Misskey'); // 1
-  // apply tag=猫 via its flyout
-  openRow('tag'); await wait(220);
+  // apply tag=猫 via its editor
+  await goBack();
+  await pickCat('タグ');
   rowEl('猫').click(); await wait(220);
   r.afterCatCards = cards();        // 3 (p0,p2,p3)
-  // reopen platform — counts now reflect the 猫 query
-  openRow('platform'); await wait(220);
+  // back to platform — counts now reflect the 猫 query (values() reads the live tree)
+  await goBack();
+  await pickCat('プラットフォーム');
   r.pfX_cat = cntOf('X');           // 2
   r.pfMisskey_cat = cntOf('Misskey'); // 0
-  r.pfMisskey_off = offOf('Misskey'); // false (fixed list: badge but no greying)
-  // reopen tag — 犬 is now absent (0) and greyed on a facetDim list
-  openRow('tag'); await wait(220);
+  r.pfMisskey_off = offOf('Misskey'); // false (fixed list: count but no greying)
+  // back to tag — 犬 is now absent (0) and greyed on a facetDim list
+  await goBack();
+  await pickCat('タグ');
   r.tagCat = cntOf('猫');           // 3
   r.tagDog = cntOf('犬');           // 0
   r.tagDogOff = offOf('犬');        // true (facetDim greys a 0)
   // --- poster view: counts come from filteredPosters() (population = posters) ---
-  document.querySelector('#browseToggle [data-mode="posters"]').click(); await wait(280);
-  document.querySelector('#posterFilterRows [data-qfrow="poster-platform"]').click(); await wait(220);
+  byText('button', 'フィルタ').click(); // toggle shut (don't await the throttled unmount)
+  await wait(120);
+  byText('button', '投稿者').click();
+  await waitFor(() => posterCards() >= 5);
+  await openMenu();
+  await pickCat('プラットフォーム');   // poster-platform (same label in poster mode)
   r.posterPfX = cntOf('X');           // 3 posters (u0,u1,u2)
   r.posterPfBsky = cntOf('Bluesky');  // 1 (u3)
   r.posterPfMisskey = cntOf('Misskey'); // 1 (u4)

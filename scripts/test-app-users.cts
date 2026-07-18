@@ -21,7 +21,7 @@ const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
@@ -59,26 +59,28 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 4);
 
-  // 作者行 → フライアウトに投稿数順で列挙される
-  // The qf-pop is a React island: rows are .fm-row (no data-qfval), and every pick
-  // remounts the popup (openId key) — so always re-query from document, never keep a
-  // reference to the pop element itself.
-  document.querySelector('#filterRows [data-qfrow="user"]').click();
-  await waitFor(() => document.querySelectorAll('.qf-pop .fm-row').length >= 3);
-  const rows = () => [...document.querySelectorAll('.qf-pop .fm-row')];
-  const nameOf = (r) => { const n = r.querySelector('.fm-name'); return n ? n.textContent : ''; };
-  const allNames = rows().map(nameOf);   // Alice(2), Bob, Carol
+  // 投稿者 editor ("+ フィルタ" flow — the 作者 row flyout is gone since P2③) —
+  // posters are listed by post count. Filterbar idioms: see test-app-facetcounts.
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
+  const nameOf = (r) => { const n = r.querySelector('span.truncate'); return n ? n.textContent : ''; };
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  byText(POP + ' [data-slot="command-item"]', '投稿者').click();
+  await waitFor(() => edRows().length >= 3);
+  const allNames = edRows().map(nameOf);   // Alice(2), Bob, Carol
 
-  // click Alice -> apply a user filter (flyout stays open, row shows ✓)
-  rows().find(r => nameOf(r) === 'Alice')
-    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(140);
-  const chipText = [...document.querySelectorAll('#queryChips .sb-active-chip.qc-user')].map(c => c.textContent);
+  // click Alice -> apply a user filter (editor stays open, row shows ✓)
+  edRows().find(r => nameOf(r) === 'Alice').click();
+  await sleep(200);
+  const chips = document.querySelector('[data-slot="filter-chips"]');
+  const chipText = chips ? [chips.textContent] : [];
   const cardCount = document.querySelectorAll('#postGrid .post-card').length;
-  const aliceActive = await waitFor(() => !!rows().find(r => nameOf(r) === 'Alice' && r.querySelector('.fm-check')));
-  const badgeOn = document.querySelector('#filterRows [data-badge="user"]').classList.contains('on');
+  const aliceActive = await waitFor(() => !!edRows().find(r => nameOf(r) === 'Alice' && r.querySelector('svg')));
+  const stillOpen = !!document.querySelector(POP);
 
-  return { allNames, chipText, cardCount, aliceActive, badgeOn };
+  return { allNames, chipText, cardCount, aliceActive, stillOpen };
 })()`;
 
 const shot = path.join(appDir, '.smoke-shot.png');
@@ -118,10 +120,10 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('authors ranked by post count in the flyout (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
-  check('the active filter chip shows the user (Alice)', eq(r.chipText, ['Alice']));
+  check('authors ranked by post count in the editor (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
+  check('the active filter chip shows the user (Alice)', Array.isArray(r.chipText) && String(r.chipText[0] || '').includes('Alice'));
   check("posts are filtered to that user's 2 posts", r.cardCount === 2);
-  check('the picked author row shows ✓ and the row badge lights', r.aliceActive === true && r.badgeOn === true);
+  check('the picked author row shows ✓ and the editor stays open', r.aliceActive === true && r.stillOpen === true);
   console.log('\n' + (ok ? 'USERS_TEST_PASS' : 'USERS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

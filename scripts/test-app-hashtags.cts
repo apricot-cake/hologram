@@ -1,8 +1,9 @@
 'use strict';
 
-// Verifies the sidebar tag row and hashtag row flyouts:
-// - Tag row opens a flyout listing all user tags (grouped by group / uncategorized)
-// - Hashtag row opens a flyout listing hashtags from post text
+// Verifies the タグ and ハッシュタグ value editors ("+ フィルタ" flow — the sidebar
+// row flyouts are gone since P2③):
+// - the タグ editor lists all user tags
+// - the ハッシュタグ editor lists hashtags from post text; picking one filters the grid
 //
 //   node scripts/test-app-hashtags.cts
 
@@ -19,7 +20,7 @@ const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
@@ -54,25 +55,37 @@ const evalJs = `(async () => {
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
 
-  // qf-pop is a React island: value rows are .fm-row (no data-qfval) and hashtag rows
-  // are labeled '#'+tag — count/find them via .fm-name.
-  const qfRows = () => [...document.querySelectorAll('.qf-pop .qf-vals .fm-row')];
+  // Filterbar idioms (see test-app-facetcounts): one "+ フィルタ" popover session,
+  // categories navigated via 戻る, queries scoped to the open popup.
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
+  const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
+  const openMenu = async () => {
+    byText('button', 'フィルタ').click();
+    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  };
+  const pickCat = async (label) => {
+    byText(POP + ' [data-slot="command-item"]', label).click();
+    await waitFor(() => edRows().length > 0);
+  };
+  const goBack = async () => {
+    document.querySelector(POP + ' button[aria-label="戻る"]').click();
+    await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  };
 
-  // --- Tag row: opens flyout with all user tags ---
-  document.querySelector('[data-qfrow="tag"]').click();
-  await waitFor(() => qfRows().length > 0);
-  const tagFlyCount = qfRows().length;
-  document.body.click(); await sleep(40);
+  // --- タグ editor: lists all 8 user tags ---
+  await openMenu();
+  await pickCat('タグ');
+  const tagFlyCount = edRows().length;
 
-  // --- Hashtag row: opens flyout with hashtags from post text ---
-  document.querySelector('[data-qfrow="hashtag"]').click();
-  await waitFor(() => qfRows().length > 0);
-  const htFlyCount = qfRows().length;
-  // select '#typescript' from the flyout
-  const tsRow = qfRows().find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === '#typescript'; });
+  // --- ハッシュタグ editor: lists the 3 distinct hashtags; pick '#typescript' ---
+  await goBack();
+  await pickCat('ハッシュタグ');
+  const htFlyCount = edRows().length;
+  const tsRow = rowEl('#typescript');
   if (tsRow) tsRow.click();
-  await sleep(120);
-  document.body.click(); await sleep(40);
+  await sleep(220);
   const htCards = document.querySelectorAll('#postGrid .post-card').length;
 
   return { tagFlyCount, htFlyCount, htCards };

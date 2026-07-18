@@ -1,10 +1,12 @@
 'use strict';
 
-// Verifies the post-view query builder bar (current flyout-era UI):
-//  - the builder bar is always visible; リセット is hidden until a filter exists
-//  - adding a platform filter via its flyout adds a pill and filters the grid
-//  - リセット clears the pills (and hides itself again)
-//  - a search term becomes a real text-leaf pill (qc-text); deleting it clears the search
+// Verifies the post-view filter flow on the filterbar (P2③ — the Activebar /
+// qf-pop flyout era is gone):
+//  - adding a platform filter via the "+ フィルタ" value editor shows a chip,
+//    filters the grid, checks the row, and keeps the editor open
+//  - the chip's ✕ clears the facet (chip gone, grid restored)
+// (The search-term text chip is covered by test-app-textleaf.cts; the reset-all
+// affordance is the chip row's planned 全解除 — not built yet, #154.)
 // Post-view is the default mode, so no mode switch is needed.
 //
 //   node scripts/test-app-postfilter.cts
@@ -22,9 +24,10 @@ const configDir = path.join(tmp, 'Corpus');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
+// p0/p1 = x, p2 = bluesky — so a platform=X filter actually narrows the grid.
 for (let i = 0; i < 3; i++) {
   const id = '170000000000' + i + '-pf' + i;
   fs.writeFileSync(path.join(saveFolder, id + '.jpg'), jpeg);
@@ -34,8 +37,8 @@ for (let i = 0; i < 3; i++) {
       {
         captureId: id,
         image: id + '.jpg',
-        url: 'https://x.com/u/status/' + (700 + i),
-        platform: 'x',
+        url: i === 2 ? 'https://bsky.app/profile/u2/post/702' : 'https://x.com/u/status/' + (700 + i),
+        platform: i === 2 ? 'bluesky' : 'x',
         text: '投稿' + i,
         displayName: '人' + i,
         screenName: 'u' + i,
@@ -55,48 +58,36 @@ for (let i = 0; i < 3; i++) {
 const evalJs = `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(40); } return false; };
-  // React-island idioms: the qf-pop island renders rows without data-qfval — find a row
-  // by its .fm-name label (platform 'x' shows as PF_NAME.x = 'X'). The searchbox is a
-  // controlled react-aria input — a bare .value write is invisible to React's value
-  // tracker, so go through the prototype setter, then fire 'input'.
-  const qfRow = (name) => [...document.querySelectorAll('.qf-pop .fm-row')].find((r) => { const n = r.querySelector('.fm-name'); return n && n.textContent === name; });
-  const typeSearch = (text) => {
-    const sb = document.getElementById('searchBox');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, text);
-    sb.dispatchEvent(new Event('input', { bubbles: true }));
-  };
-  await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 3);
-  const bar = document.getElementById('postActiveBar');
-  const reset = document.getElementById('postResetBtn');
-  // builder bar is always visible; reset hidden while nothing is filtered
-  const barAlwaysOn = bar.style.display !== 'none';
-  const resetHiddenBefore = reset.style.display === 'none';
-  // add a platform filter via its flyout (sidebar restructure: rows → flyout)
-  document.querySelector('#filterRows [data-qfrow="platform"]').click();
-  await waitFor(() => !!qfRow('X'));
-  qfRow('X').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const cards = () => document.querySelectorAll('#postGrid .post-card').length;
+  // Filterbar idioms (see test-app-facetcounts): "+ フィルタ" popover → category →
+  // ValueEditor rows, chips in the [data-slot=filter-chips] row.
+  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
+  const edRows = () => [...document.querySelectorAll(POP + ' div.cursor-default')];
+  const rowEl = (name) => edRows().find((el) => { const n = el.querySelector('span.truncate'); return n && n.textContent === name; }) || null;
+  const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
+  const chipCount = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
+  await waitFor(() => cards() >= 3);
+  const chipsBefore = chipCount();   // 0 — no chip row while nothing is filtered
+  // add a platform filter via the value editor
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  byText(POP + ' [data-slot="command-item"]', 'プラットフォーム').click();
+  await waitFor(() => !!rowEl('X'));
+  rowEl('X').click();
+  await sleep(220);
+  const chipShown = chipCount() === 1 && chipRow().textContent.includes('X');
+  const cardsFiltered = cards();                                   // 2 (p0,p1)
+  const rowChecked = !!(rowEl('X') && rowEl('X').querySelector('svg')); // ✓ on the picked row
+  const stillOpen = !!document.querySelector(POP);                 // editor stays open for more picks
+  // close the popover (toggle; don't await the throttled unmount) and clear via the chip ✕
+  byText('button', 'フィルタ').click();
   await sleep(120);
-  const pills = document.querySelectorAll('#queryChips .sb-active-chip:not(.leaving)').length;
-  const resetShown = reset.style.display !== 'none';
-  const cardsFiltered = document.querySelectorAll('#postGrid .post-card').length;
-  // reset clears the pills and hides itself. Count only settled chips: reset removes the
-  // cluster, which lingers as a .leaving exit-animation ghost (CHIP_OUT_MS=200ms,
-  // pointer-events:none, stale data-nid) — this reads ~80ms in, so :not(.leaving) is what
-  // makes "reset cleared everything" deterministic rather than racing the fade-out.
-  reset.click();
-  await sleep(80);
-  const pillsAfter = document.querySelectorAll('#queryChips .sb-active-chip:not(.leaving)').length;
-  const resetHiddenAfter = reset.style.display === 'none';
-  const cardsAfter = document.querySelectorAll('#postGrid .post-card').length;
-  // a search term becomes a real text-leaf pill (qc-text), not the legacy 付箋
-  typeSearch('投稿1');
-  // the term is applied after a 150ms debounce — poll instead of a fixed sleep
-  const searchPill = await waitFor(() => !!document.querySelector('#queryChips .qb-val.qc-text'));
-  const noLegacy = !document.querySelector('#queryChips [data-special="search"]');
-  // deleting the text leaf via its ✕ clears the search (box empties, reset hides)
-  document.querySelector('#queryChips .qb-val.qc-text:not(.leaving) .qb-del-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  const searchCleared = await waitFor(() => document.getElementById('searchBox').value === '' && reset.style.display === 'none');
-  return { barAlwaysOn, resetHiddenBefore, pills, resetShown, cardsFiltered, pillsAfter, resetHiddenAfter, cardsAfter, searchPill, noLegacy, searchCleared };
+  chipRow().querySelector(':scope > span > button[aria-label]').click();
+  await sleep(220);
+  const chipsAfter = chipCount();   // 0
+  const cardsAfter = cards();       // 3
+  return { chipsBefore, chipShown, cardsFiltered, rowChecked, stillOpen, chipsAfter, cardsAfter };
 })()`;
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
@@ -117,10 +108,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.barAlwaysOn === true && r.resetHiddenBefore === true && r.pills === 1 && r.resetShown === true && r.cardsFiltered === 3 && r.pillsAfter === 0 && r.resetHiddenAfter === true && r.cardsAfter === 3 && r.searchPill === true && r.noLegacy === true && r.searchCleared === true;
-  console.log(
-    `barAlwaysOn=${r.barAlwaysOn} resetHiddenBefore=${r.resetHiddenBefore} pills=${r.pills} resetShown=${r.resetShown} filtered=${r.cardsFiltered} pillsAfter=${r.pillsAfter} resetHiddenAfter=${r.resetHiddenAfter} cardsAfter=${r.cardsAfter} searchPill=${r.searchPill} noLegacy=${r.noLegacy} searchCleared=${r.searchCleared}`,
-  );
+  const ok = r.chipsBefore === 0 && r.chipShown === true && r.cardsFiltered === 2 && r.rowChecked === true && r.stillOpen === true && r.chipsAfter === 0 && r.cardsAfter === 3;
+  console.log(`chipsBefore=${r.chipsBefore} chipShown=${r.chipShown} filtered=${r.cardsFiltered} rowChecked=${r.rowChecked} stillOpen=${r.stillOpen} chipsAfter=${r.chipsAfter} cardsAfter=${r.cardsAfter}`);
   console.log(ok ? 'POSTFILTER_TEST_PASS' : 'POSTFILTER_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });
