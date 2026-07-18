@@ -1,0 +1,24 @@
+{
+  "name": "corpus-logo-motion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion project for the Corpus promo end-card logo motion",
+  "scripts": {
+    "studio": "remotion studio",
+    "render:slide": "remotion render LogoSlide out/logo-slide.mp4",
+    "render:fill": "remotion render LogoFill out/logo-fill.mp4",
+    "still": "remotion still"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@ffmpeg/core": "^0.11.0",
+    "@ffmpeg/ffmpeg": "^0.11.6",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.5.0"
+  }
+}
