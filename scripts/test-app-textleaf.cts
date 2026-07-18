@@ -1,14 +1,15 @@
 'use strict';
 
 // Verifies the search term as a first-class 'text' leaf in the query tree (the
-// search box now edits a tree leaf instead of a special "付箋" chip):
-//   - typing「ねこ」(ぴったり) creates ONE .qb-val.qc-text leaf chip (not the old
-//     data-special="search" 付箋) and, exact-mode, does NOT match katakana body → 0 cards
-//   - switching to おおまか makes the EDITING leaf follow the mode → matches「ネコかわいい」→ 1
-//   - Enter confirms: box clears, the leaf chip stays
-//   - typing a second term「いぬ」adds a SECOND text leaf chip (両立)
-// OR-drag of two leaves and the frozen-mode of confirmed leaves are checked on the
-// real app (drag synthesis is brittle in a smoke harness).
+// search box edits a tree leaf; single smart search since P2④ — no exact/fuzzy
+// toggle):
+//   - typing「ねこ」creates ONE text chip in the filter-chip row and the smart
+//     matcher hits the katakana body「ネコかわいい」→ 1 card
+//   - Enter confirms: box clears, the term chip stays
+//   - typing a second term「いぬ」adds a SECOND text chip (両立・AND なので 0 cards)
+//   - the chip's ✕ removes just that term
+// OR-drag of two leaves is checked on the real app (drag synthesis is brittle in
+// a smoke harness).
 //
 //   node scripts/test-app-textleaf.cts
 
@@ -59,43 +60,43 @@ for (let i = 0; i < texts.length; i++) {
 const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
-  // Count only settled text chips, excluding CHIP_OUT_MS (200ms) exit-animation ghosts a
-  // removed/reconfirmed value keeps (pointer-events:none, stale data-nid = not active). A
-  // ghost is marked .leaving at the .qb-val (item removed from a surviving cluster) OR only
-  // at the .qb-cluster (whole attribute removed), so exclude both levels — a second term
-  // reads ~40ms after the first is confirmed, inside the ghost window.
-  const textChips = () => document.querySelectorAll('#queryChips .qb-cluster:not(.leaving) .qb-val.qc-text:not(.leaving)').length;
-  const specialChips = () => document.querySelectorAll('#queryChips [data-special="search"]').length;
+  // Filter chips live in the FilterChips island ([data-slot=filter-chips]); each chip
+  // is a direct span child. Only text terms are active in this test, so counting all
+  // chips counts the text chips.
+  const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
+  const textChips = () => (chipRow() ? chipRow().querySelectorAll(':scope > span').length : 0);
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
   await waitFor(() => cards() >= 3);
-  const sb = document.getElementById('searchBox');
-  // toolbar island: the fuzzy button is .seg-opt[data-mode] (old #searchModeFuzzy id gone)
-  const fuzzyBtn = document.querySelector('#searchModeSeg .seg-opt[data-mode="fuzzy"]');
-  // React controlled input (searchbox island): write via the prototype setter + 'input'
+  // The searchbox island's Autocomplete input (no #searchBox id since P2④; the ja
+  // placeholder is the stable accessible handle).
+  const sb = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
+  // React controlled input: write via the prototype setter + 'input'
   const setVal = (v) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(sb, v);
     sb.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const r = {};
-  // A+B: exact「ねこ」→ one real qc-text leaf chip, no legacy 付箋, katakana body 非一致 → 0
+  // A: typing「ねこ」→ one text chip + the smart matcher hits カタカナ本文 → 1
   setVal('ねこ');
   await wait(240);
-  r.chipExact = textChips();        // 1
-  r.special = specialChips();       // 0 (legacy data-special chip gone)
-  r.cardsExact = cards();           // 0 (ぴったり: ひらがな ≠ カタカナ)
-  // C: switch to おおまか → the EDITING leaf follows the mode → matches ネコかわいい
-  fuzzyBtn.click();
-  await wait(240);
-  r.cardsFuzzy = cards();           // 1
-  // D: Enter confirms — box clears, the leaf chip stays
+  r.chipTyping = textChips();       // 1 (the editing leaf is already a chip)
+  r.cardsKana = cards();            // 1 (単一スマート検索: ひらがな↔カタカナ正規化)
+  // B: Enter confirms — box clears, the term chip stays
   sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await wait(140);
   r.boxAfterEnter = sb.value;       // ''
   r.chipAfterEnter = textChips();   // 1
-  // E: a second term → a second text leaf chip (両立)
+  // C: a second term → a second text chip (両立・AND なので 0 cards)
   setVal('いぬ');
   await wait(240);
   r.chips2 = textChips();           // 2
+  r.cardsAnd = cards();             // 0 (ねこ AND いぬ に合う投稿はない)
+  // D: the second chip's ✕ removes just that term → back to 1 chip / 1 card
+  const xBtns = chipRow().querySelectorAll(':scope > span > button[aria-label]');
+  xBtns[xBtns.length - 1].click();
+  await wait(240);
+  r.chipsAfterX = textChips();      // 1
+  r.cardsAfterX = cards();          // 1 (ねこ だけに戻る)
   return r;
 })()`;
 
@@ -117,8 +118,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.chipExact === 1 && r.special === 0 && r.cardsExact === 0 && r.cardsFuzzy === 1 && r.boxAfterEnter === '' && r.chipAfterEnter === 1 && r.chips2 === 2;
-  console.log(`chipExact=${r.chipExact} special=${r.special} cardsExact=${r.cardsExact} cardsFuzzy=${r.cardsFuzzy} boxAfterEnter="${r.boxAfterEnter}" chipAfterEnter=${r.chipAfterEnter} chips2=${r.chips2}`);
+  const ok = r.chipTyping === 1 && r.cardsKana === 1 && r.boxAfterEnter === '' && r.chipAfterEnter === 1 && r.chips2 === 2 && r.cardsAnd === 0 && r.chipsAfterX === 1 && r.cardsAfterX === 1;
+  console.log(`chipTyping=${r.chipTyping} cardsKana=${r.cardsKana} boxAfterEnter="${r.boxAfterEnter}" chipAfterEnter=${r.chipAfterEnter} chips2=${r.chips2} cardsAnd=${r.cardsAnd} chipsAfterX=${r.chipsAfterX} cardsAfterX=${r.cardsAfterX}`);
   console.log(ok ? 'TEXTLEAF_TEST_PASS' : 'TEXTLEAF_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

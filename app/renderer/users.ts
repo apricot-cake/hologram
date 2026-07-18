@@ -4,17 +4,16 @@
 // "pure logic → service" slice of the viewer decomposition (最終形B). A real ES
 // module (named exports), imported directly by viewer.ts; touches no DOM.
 // Runtime couplings are injected via makeUsers(deps) — reassigned viewer lets
-// (allPosts / _allPostsGeneration) come in as getter functions, and
-// corpusSearch as a getter too (buildSuggest reads its live fuzzy mode per call).
+// (allPosts / _allPostsGeneration) come in as getter functions.
 
 // deps contract (all functions):
 //   allPosts() — full library (getter — viewer reassigns the array)
 //   generation() — _allPostsGeneration (bumped on every allPosts replacement;
 //                  invalidates the buildUsers cache)
 //   userKey(p) / hostOf(url) — from query.js
-//   corpusSearch() — search.ts (fuzzy mode + matcher compiler)
-export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; corpusSearch(): { isFuzzy(): boolean; compile(q: string): (hay: string) => boolean } | undefined }) {
-  const { allPosts, generation, userKey, hostOf, corpusSearch } = deps;
+//   compile(q) — search.ts's single smart matcher compiler
+export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; compile(q: string): (hay: string) => boolean }) {
+  const { allPosts, generation, userKey, hostOf, compile } = deps;
 
   // Group posts by author. Posts arrive newest-first, so the first occurrence
   // carries the latest display name / handle for that user.
@@ -59,18 +58,10 @@ export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number
   }
 
   // Search-box suggestion items: top-6 tags (by SNS-post usage count) + top-4
-  // posters whose display/screen name matches. Honors the live search mode —
-  // fuzzy compiles a matcher via corpusSearch, exact is a case-insensitive
-  // substring test.
+  // posters whose display/screen name matches, through the single smart matcher.
   function buildSuggest(q: string) {
-    const norm = (s: string) => String(s || '').toLowerCase();
-    const cs = corpusSearch();
-    // `matcher` (rather than the old separate `fuzzyOn` flag) is the TS-visible
-    // narrowing: it's non-null exactly when cs exists and fuzzy mode is on, so
-    // branching on its presence below is behaviorally identical to the old
-    // `fuzzyOn ? ... : ...` while letting TS see `cs` is defined inside the ternary.
-    const matcher = cs && cs.isFuzzy() ? cs.compile(q) : null;
-    const hit = (s: string) => (matcher ? matcher(String(s || '')) : norm(s).includes(norm(q)));
+    const matcher = compile(q);
+    const hit = (s: string) => matcher(String(s || ''));
     const items: any[] = [];
     const counts = new Map<string, any>();
     for (const p of allPosts()) if (p.url) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);

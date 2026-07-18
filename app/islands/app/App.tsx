@@ -13,7 +13,6 @@ import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { applyTitleBar } from '../../renderer/theme-api.ts';
-import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
 import { onChange as foldersOnChange } from '../../renderer/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -43,7 +42,6 @@ import {
   handleBrowseModeStoreChange,
   handlePosterViewStoreChange,
   handleSearchQueryStoreChange,
-  handleSearchModeChange,
 } from '../../renderer/orchestrator.ts';
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
@@ -229,8 +227,8 @@ function TabBarEvents() {
 // still lives in orchestrator.ts, imported directly as live bindings — "cut out and
 // rewire", same as the other App.tsx-level effects and handleFolderChange/
 // handlePostsChanged below (Wave31/V17, extended to the rest of this effect in Wave32 —
-// no bridge needed once orchestrator.ts exports them as real bindings). corpusStore/
-// search all return an unsubscribe (useSyncExternalStore-compatible) and get one on
+// no bridge needed once orchestrator.ts exports them as real bindings). corpusStore
+// subscriptions return an unsubscribe (useSyncExternalStore-compatible) and get one on
 // cleanup; corpusFolders.onChange and corpusPosts.onPostsChanged don't (subs.push / raw
 // ipcRenderer.on) — harmless, since this effect never actually unmounts in this
 // single-page app.
@@ -240,7 +238,6 @@ function StoreSubscriptions() {
     const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
     const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
     const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
-    const unsubSearchMode = subscribeSearch(() => handleSearchModeChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged((names) => handlePostsChanged(names));
     return () => {
@@ -248,7 +245,6 @@ function StoreSubscriptions() {
       unsubBrowseMode();
       unsubPosterView();
       unsubSearchQuery();
-      unsubSearchMode();
     };
   }, []);
   return null;

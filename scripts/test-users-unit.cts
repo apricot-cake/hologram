@@ -34,16 +34,16 @@ async function main() {
   ];
   let gen = 1;
 
-  // fuzzy スタブ: exact では絶対当たらない照合（クエリ '☆' を「'風'を含む」へ解釈）＋
-  // 呼び出し記録＝注入経路そのものを検証する（query.js テストと同じ流儀）。
-  let fuzzyMode = false;
+  // compile スタブ（単一スマートマッチ＝P2④で mode 切替は撤去）: 通常クエリは
+  // 大文字小文字を無視した部分一致、'☆' だけは「'風' か 'carol' を含む」へ解釈＝
+  // 部分一致では絶対当たらないクエリで注入経路そのものを検証する（query.js テスト
+  // と同じ流儀）。呼び出し記録つき。
   const compileCalls: any[] = [];
-  const corpusSearch = {
-    isFuzzy: () => fuzzyMode,
-    compile: (q) => {
-      compileCalls.push(q);
-      return (s) => String(s).includes('風') || String(s).includes('carol');
-    },
+  const compile = (q) => {
+    compileCalls.push(q);
+    if (q === '☆') return (s) => String(s).includes('風') || String(s).includes('carol');
+    const nq = String(q).toLowerCase();
+    return (s) => String(s).toLowerCase().includes(nq);
   };
 
   const { buildUsers, buildSuggest } = U.makeUsers({
@@ -57,7 +57,7 @@ async function main() {
         return '';
       }
     },
-    corpusSearch: () => corpusSearch,
+    compile,
   });
 
   // --- buildUsers ---
@@ -86,7 +86,7 @@ async function main() {
     assert('世代バンプで再構築（3投稿者）', fresh.length === 3 && fresh.some((u) => u.key === 'x:u2'));
   }
 
-  // --- buildSuggest（exact モード） ---
+  // --- buildSuggest（部分一致クエリ＝スタブ matcher 経由） ---
   {
     // タグは SNS 投稿（url あり）のみ集計＝「取込タグ」は候補に出ない
     const none = buildSuggest('取込');
@@ -109,20 +109,18 @@ async function main() {
     assert('displayName 空は screenName へフォールバック', b && b.label === 'bob');
   }
 
-  // --- buildSuggest（fuzzy モード＝注入経路の検証） ---
+  // --- buildSuggest（注入経路の検証＝'☆' は部分一致では当たらない） ---
   {
-    fuzzyMode = true;
-    const s = buildSuggest('☆'); // exact なら何にも当たらないクエリ
-    assert('fuzzy: compile がクエリで呼ばれる', compileCalls.includes('☆'));
+    const s = buildSuggest('☆');
+    assert('compile がクエリで呼ばれる', compileCalls.includes('☆'));
     assert(
-      'fuzzy: matcher 経由でタグ「風景」が当たる',
+      'matcher 経由でタグ「風景」が当たる',
       s.some((it) => it.kind === 'tag' && it.value === '風景'),
     );
     assert(
-      'fuzzy: matcher 経由で carol が当たる',
+      'matcher 経由で carol が当たる',
       s.some((it) => it.kind === 'user' && it.value === 'misskey:u3'),
     );
-    fuzzyMode = false;
   }
 
   // --- 上限（tag 6 件・user 4 件） ---
@@ -147,7 +145,7 @@ async function main() {
     console.error(`FAIL test-users-unit: ${failed} assertion(s) red`);
     process.exit(1);
   }
-  console.log('PASS test-users-unit: buildUsers（ロールアップ＋世代キャッシュ）/ buildSuggest（exact・fuzzy・上限） all green');
+  console.log('PASS test-users-unit: buildUsers（ロールアップ＋世代キャッシュ）/ buildSuggest（単一スマートマッチ・注入経路・上限） all green');
 }
 
 main().catch((e) => {

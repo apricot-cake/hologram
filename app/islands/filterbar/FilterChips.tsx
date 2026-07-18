@@ -5,6 +5,8 @@
 // same ValueEditor / FormEditor the "+ フィルタ" flow uses — in a Popover anchored to the
 // chip. This replaces the retired query-chips island's cluster pills (改訂④ の
 // クラスタ枠＋すべて/どれか seg＋値ごと✕); すべて/どれか and 除外 now live inside the editor.
+// Free-text terms (the search box's confirmed leaves) are the one exception: one chip
+// per term, ✕ only (no editor) — P2④.
 //
 // Data: orchestrator.activeFilters() derives the chips from the active query tree; the
 // island subscribes to the postQueryTree/posterQueryTree store keys (written on every
@@ -49,6 +51,9 @@ function Chip({ f }: { f: ActiveFilter }) {
   // happen for an emitted chip, but keeps the click a no-op rather than a crash).
   const [cat, setCat] = useState<FilterCat | null>(null);
   const handleOpen = (o: boolean) => {
+    // No editor category (free-text term chips, P2④) → the click stays a no-op
+    // instead of opening an empty popover; the ✕ is the chip's only action.
+    if (o && !filterCategories().some((c) => c.cat === f.cat)) return;
     setOpen(o);
     if (o) setCat(filterCategories().find((c) => c.cat === f.cat) ?? null);
   };
@@ -94,9 +99,12 @@ export function FilterChips() {
   const chips = activeFilters ? activeFilters() : [];
   if (!chips.length) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 py-1.5">
-      {chips.map((f) => (
-        <Chip key={f.cat + ':' + f.mode} f={f} />
+    <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">
+      {chips.map((f, i) => (
+        // values (and the index — duplicate confirmed terms are legal) in the key:
+        // free-text chips are one PER term (same cat+mode), and a term edit must
+        // remount its chip so the values line stays the chip's identity.
+        <Chip key={f.cat + ':' + f.mode + ':' + i + ':' + f.values.join(' ')} f={f} />
       ))}
     </div>
   );

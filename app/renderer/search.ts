@@ -1,35 +1,14 @@
-// 共有検索ユーティリティ。検索方式（通常＝部分一致 / あいまい）を一元管理し、viewer.js が参照する。
-// モードは config pref 'searchMode' に永続化（main.js）。
+// 共有検索ユーティリティ＝単一スマート検索のマッチャー（P2④で方式切替を全廃・
+// 常にこの loose マッチャー1本。旧 'searchMode' pref と ぴったり/おおまか seg は退場）。
 //
-// あいまい検索は次の3要素を併用する:
+// 検索は次の3要素を併用する:
 //   B 表記ゆれ正規化 … NFKC(全角↔半角) + カタカナ→ひらがな統一 + 小文字化を両辺に適用
 //   A サブシーケンス … 文字が順番に現れれば一致（部分・絞り込み用途、緩め）
 //   C 編集距離       … 近似部分一致(Sellers法)でタイプミス（置換/挿入/欠落）を許容
 //   → 正規化後に「A または C」で各語を判定し、空白区切りの全語を AND 結合。
 //
-// A real ES module (named exports) now — imported directly by viewer.ts and the
-// islands that share this domain (QfPop/SearchModeSeg/App/shell.ts).
-// Default = 'fuzzy' (おおまか): the loose matcher is the more forgiving first
-// experience (typos / wording differences still hit); a user who prefers literal
-// matching flips to ぴったり and that choice is persisted (pref 'searchMode') and
-// restored by applyMode below (2026-07-04). Only an explicit 'normal' pref maps to
-// exact — an unset pref keeps the fuzzy default.
-import { corpusIpc } from './ipc.ts';
-
-let mode: 'normal' | 'fuzzy' = 'fuzzy';
-// Set (not array) so subscribe can return an unsubscribe that actually removes the
-// listener — React islands subscribe via useSyncExternalStore and must detach on
-// unmount (and to avoid duplicate registrations across HMR reloads in dev).
-const listeners = new Set<(m: string) => void>();
-const notifyListeners = () => {
-  for (const fn of [...listeners]) {
-    try {
-      fn(mode);
-    } catch (_e) {
-      /* ignore */
-    }
-  }
-};
+// A real ES module (named exports) — imported directly by the orchestrator and
+// query-builder.ts.
 
 // カタカナ(U+30A1..U+30F6)→ひらがな(U+3041..U+3096)。長音符ー等はそのまま。
 function kataToHira(s: string) {
@@ -135,50 +114,4 @@ export function compile(query: string) {
     }
     return true;
   };
-}
-
-export function subscribe(fn: (mode?: string) => void) {
-  if (typeof fn !== 'function') return () => {};
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-// Returns an unsubscribe fn (existing callers ignore it — backward compatible).
-// `subscribe` is the canonical name (same contract as corpusStore, so React
-// islands can pass it straight to useSyncExternalStore); `onChange` stays as
-// a compatibility alias for older vanilla call sites. Both are the same
-// standalone function (not a `this`-forwarding method), so a detached
-// reference like `useSyncExternalStore(subscribe, …)` is safe.
-export const onChange = subscribe;
-
-export function getMode() {
-  return mode;
-}
-export function isFuzzy() {
-  return mode === 'fuzzy';
-}
-// ユーザー操作による変更（pref へ永続化）。
-export function setMode(m: 'normal' | 'fuzzy') {
-  const next = m === 'fuzzy' ? 'fuzzy' : 'normal';
-  const changed = next !== mode;
-  mode = next;
-  if (changed && corpusIpc && corpusIpc.setPref) {
-    corpusIpc.setPref('searchMode', mode).catch(() => {
-      /* best-effort */
-    });
-  }
-  notifyListeners();
-}
-export function toggle() {
-  setMode(mode === 'fuzzy' ? 'normal' : 'fuzzy');
-}
-// pref からの初期反映（永続化しない）。既定は fuzzy（おおまか）＝明示的に
-// 'normal' を選んだ時だけ ぴったり。未設定（undefined）は fuzzy のまま。
-export function applyMode(m: string) {
-  mode = m === 'normal' ? 'normal' : 'fuzzy';
-  notifyListeners();
-}
-// 単発判定の便宜ラッパ（hay/query 1組）。大量判定では compile を使うこと。
-export function fuzzy(hay: string, query: string) {
-  return compile(query)(hay);
 }

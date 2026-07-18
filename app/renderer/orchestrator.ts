@@ -24,7 +24,7 @@ import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabe
 import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, importComplete, importPosts } from './posts.ts';
-import { compile as searchCompile, isFuzzy as searchIsFuzzy } from './search.ts';
+import { compile as searchCompile } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen, setLabels as lightboxSetLabels } from './lightbox.ts';
@@ -87,7 +87,6 @@ export let handleViewStoreChange: () => void;
 export let handleBrowseModeStoreChange: () => void;
 export let handlePosterViewStoreChange: () => void;
 export let handleSearchQueryStoreChange: () => void;
-export let handleSearchModeChange: () => void;
 export let navBack: () => void;
 export let navForward: () => void;
 export let resetAllFilters: () => void;
@@ -622,7 +621,7 @@ export let activeFilters: () => ActiveFilter[];
   // — the first "pure logic → service" extraction of the viewer decomposition.
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
-  // run post-init), fuzzy text matching through corpusSearch.
+  // run post-init), fuzzy text matching through search.ts's compile.
   // The shared facet-chip builder (改訂④) lives in
   // query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster view-model
   // derivation, qbNodeMap, and click/contextmenu dispatch all moved there — the
@@ -747,14 +746,13 @@ export let activeFilters: () => ActiveFilter[];
   // suggestion items) moved to users.ts (imported above) — 5th extraction
   // slice. Reassigned lets (allPosts / _allPostsGeneration) are injected as
   // getters; userKey/hostOf are consts already initialized at this point (the
-  // query.ts import above), so they pass through directly. corpusSearch
-  // is a getter because buildSuggest reads its live fuzzy mode per call.
+  // query.ts import above), so they pass through directly.
   const { buildUsers, buildSuggest } = makeUsers({
     allPosts: () => postGrid.getAllPosts(),
     generation: () => postGrid.getGeneration(),
     userKey,
     hostOf,
-    corpusSearch: () => ({ isFuzzy: searchIsFuzzy, compile: searchCompile }),
+    compile: searchCompile,
   });
 
   // --- Image source (served from the save folder via the psimg:// protocol) ---
@@ -1616,11 +1614,20 @@ export let activeFilters: () => ActiveFilter[];
     const out: ActiveFilter[] = [];
     const emit = (type: string, mode: FacetMode, leaves: CorpusQueryLeaf[]) => {
       const m = map[type];
-      if (!m) return; // legacy/standalone-only types (clip/workspace/text) carry no chip
+      if (!m) return; // legacy standalone types (clip/workspace) carry no chip
       out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
     };
     for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
-    for (const l of view.singles) emit(l.type, 'or', [l]);
+    for (const l of view.singles) {
+      // Free-text terms (the search box's confirmed leaves, P2④): one chip PER term.
+      // There is no 'text' entry in filterCategories (nothing to edit — the term IS
+      // the value), so the chip's ✕ removes just that leaf; a chip click is a no-op.
+      if (l.type === 'text') {
+        out.push({ cat: 'text', type: 'text', label: labelOf(l), editor: 'values', mode: 'or', values: [labelOf(l)], remove: () => qb.removeNode(l) });
+        continue;
+      }
+      emit(l.type, 'or', [l]);
+    }
     const excl = new Map<string, CorpusQueryLeaf[]>();
     for (const l of view.excl) {
       const arr = excl.get(l.type) ?? [];
@@ -1734,14 +1741,12 @@ export let activeFilters: () => ActiveFilter[];
     addFilter: (f) => postQB.addFilter(f),
     removeNode: (n) => postQB.removeNode(n),
     treeLeaves,
-    isFuzzy: () => searchIsFuzzy(),
     getBrowseMode: () => browseMode,
     afterQueryChange: () => afterQueryChange(),
     renderPosts: () => renderPosts(),
     renderPosters: () => renderPosters(),
     updateSidebarState: () => updateSidebarState(),
     buildSuggest: (q) => buildSuggest(q),
-    searchModeTitle: getMessage('searchModeTitle'),
   });
   const { searchQuery, setSearchBoxValue, rebindEditingTextLeaf, searchEditing } = searchBox;
   // React owns the subscribe() registration (StoreSubscriptions, App.tsx), importing
@@ -1756,15 +1761,6 @@ export let activeFilters: () => ActiveFilter[];
     // separate global pref — that double-storage raced on load. renderPosts captures it.
     renderPosts();
   });
-
-  // 検索方式の切替（おおまか / ぴったり）＝macOS 風セグメント。両方を常に見せ、
-  // 状態と切替手段がひと目で分かる。corpusSearch がモードを集約＝メイン検索と
-  // フライアウト絞り込みで共有する。UI は toolbar 島（#searchModeSeg）が描画し、
-  // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。コンテナの
-  // aria-label 設定とhandleSearchModeChange本体はsearch-box-builder.tsへ移設済み
-  // （Wave17/V3）。React owns the subscribe() registration (StoreSubscriptions,
-  // App.tsx), importing this directly; this stays the guard + action logic.
-  handleSearchModeChange = searchBox.handleSearchModeChange;
 
   // --- Import from ZIP ---
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して

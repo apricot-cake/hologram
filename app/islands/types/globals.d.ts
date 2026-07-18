@@ -34,8 +34,8 @@ declare global {
     getMessage(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   }
 
-  // ---- renderer/search.ts — shared search-mode + fuzzy matching utilities. A real
-  // ES module (named exports) now — no ambient Window-shaped interface needed.
+  // ---- renderer/search.ts — the single smart-search matcher (normalize/compile).
+  // A real ES module (named exports) now — no ambient Window-shaped interface needed.
 
   // ---- renderer/ui.ts — notify/escapeHtml. A real ES module (named exports)
   // now — no ambient Window-shaped interface needed.
@@ -171,33 +171,12 @@ declare global {
     bottom: number;
   }
 
-  // ---- renderer/qf-pop.js — sidebar value flyout ----
+  // ---- renderer/qf-pop-builder.ts (headless pickValue router) ----
   interface CorpusQfPopItem {
     [key: string]: any;
   }
-  interface CorpusQfPopModel {
-    openId: number;
-    /** Bumped only on a fresh open (not on a pick) — the island keys its root on this
-        so picks re-render in place (group/find preserved). */
-    sessionId?: number;
-    anchorRect: CorpusAnchorRect;
-    items: CorpusQfPopItem[];
-    showFind?: boolean;
-    /** Left-pane "all" label for the two-pane (grouped tag) layout. */
-    allGroupLabel?: string;
-    findPlaceholder?: string;
-    searchModeTitle?: string;
-    exactLabel?: string;
-    fuzzyLabel?: string;
-    exactHint?: string;
-    fuzzyHint?: string;
-    footerLabel?: string;
-    onManage?(): void;
-    onPick(item: CorpusQfPopItem): void;
-    [extra: string]: any;
-  }
-  // CorpusQfPop (the open/close/get/subscribe API) removed — qf-pop.ts is a real
-  // ES module now, imported directly by its consumers.
+  // CorpusQfPopModel (the retired qf-pop flyout's view model) removed with the
+  // flyout UI (P2③) and the search-mode hint fields (P2④).
 
   // ---- renderer/menu.js — shared right-click context menu ----
   interface CorpusMenuItem {

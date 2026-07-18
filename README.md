@@ -46,7 +46,7 @@ Click a card's image to open a **gallery** that bundles the screenshot and the o
 
 Filter and sort from the left sidebar.
 
-- **Search** — by text or username (fuzzy search is also available)
+- **Search** — by text or username, with smart matching that forgives typos and kana variants
 - **Filter** — by platform / author / tag / hashtag / date / engagement (likes, etc.) / folder (multi-select)
 - **Sort** — newest first, most likes, save date, and more
 

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // --- Preferences (language / viewMode / skipDeleteConfirm / sortBy) ---
-const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'searchMode', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen'];
+const PREF_KEYS = ['language', 'viewMode', 'skipDeleteConfirm', 'sortBy', 'imageTileSize', 'cardSize', 'listThumb', 'theme', 'tileOverlay', 'browseMode', 'posterViewMode', 'posterTileSize', 'posterCardSize', 'sidebarOpen'];
 const VALID_SORTS = ['date-desc', 'date-asc', 'likes-desc', 'reposts-desc', 'replies-desc', 'captured-desc', 'likes-pct'];
 
 // Chrome extension ids are exactly 32 chars of a–p. The id crosses a trust
@@ -90,7 +90,6 @@ function register(ctx) {
       cardSize: Number.isFinite(cfg.cardSize) ? cfg.cardSize : null, // card view: min column px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list view: thumbnail px
       tileOverlay: cfg.tileOverlay !== false, // was missing → pref never restored on restart
-      searchMode: cfg.searchMode === 'fuzzy' ? 'fuzzy' : 'normal', // 検索方式: 通常 / あいまい
       theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システム / ライト / ダーク
       browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元）
       posterViewMode: ['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card', // 投稿者グリッドの表示密度

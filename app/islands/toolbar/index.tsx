@@ -3,16 +3,14 @@ import { createPortal } from 'react-dom';
 import { BrowseToggle } from './BrowseToggle.tsx';
 import { DensityToggle } from './DensityToggle.tsx';
 import { SortSelect } from './SortSelect.tsx';
-import { SearchModeSeg } from './SearchModeSeg.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 
 // Toolbar island — the sidebar's small toolbar controls, React-owned. Presentational,
-// with state in shared stores (search.ts for the search mode; corpusStore
-// for the view density / browse mode / sort). viewer.js keeps the heavy logic. Each control
-// portals into its EXISTING, now-empty container so the DOM/CSS contract is unchanged.
-// Lives under the single App root now: app/App.tsx renders <Toolbar/>, which portals every
-// control. i18n is resolved by the unified root before it renders (SearchModeSeg /
-// SectionTitle / SortSelect use t() synchronously).
+// with state in corpusStore (view density / browse mode / sort). viewer.js keeps the
+// heavy logic. Each control portals into its EXISTING, now-empty container so the
+// DOM/CSS contract is unchanged. Lives under the single App root now: app/App.tsx
+// renders <Toolbar/>, which portals every control. i18n is resolved by the unified
+// root before it renders (SectionTitle / SortSelect use t() synchronously).
 
 const SORT_POST = [
   { value: 'date-desc', key: 'sortDateDesc' },
@@ -72,7 +70,6 @@ function SortMount({ id, storeKey, options }: { id: string; storeKey: string; op
 export function Toolbar() {
   return (
     <>
-      {into('searchModeSeg', <SearchModeSeg />)}
       <DensityMount id="densityToggle" />
       <DensityMount id="posterDensityToggle" storeKey="posterView" dataAttr="data-pview" defaultView="card" />
       <BrowseMount />

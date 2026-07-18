@@ -31,9 +31,9 @@
 //     searchbox/theme/records/tags/tab-state/trash/backup/posts/search/i18n/folders/
 //     selection/grid/query-chips/sidebar/tabs are all real ES modules now, imported
 //     directly by their consumers — no barrel entry needed, and the corpus-svc alias
-//     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts (below)
-//     is the only entry left here, and only because it's a side-effect-only IIFE with
-//     nothing to import — now a plain relative import like everything else. ---
+//     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts — the
+//     last side-effect-only entry (searchMode pref restore) — was deleted with the
+//     search-mode toggle itself (P2④ 単一スマート検索). ---
 // Tailwind v4 + shadcn/ui theme (islands/globals.css) — imported FIRST so the
 // generated stylesheet (runtime-injected by the lib bundle) precedes any
 // component-level CSS in cascade order.
@@ -46,8 +46,3 @@ import './root.tsx';
 // 'corpus-viewer-bundle' alias + @ts-ignore was a leftover from when this file was a
 // plain window-IIFE with no imports/exports of its own (removed together with the
 // viewer.ts→orchestrator.ts rename; see Wave33 in memory corpus-react-purity-execution-map).
-// shell.ts was index.html's LAST <script> (after islands/app.js, so after viewer too) —
-// kept last here to preserve that ordering. Its only load-time work is an async IIFE
-// that awaits corpusIpc.getPrefs() then calls applyMode(...) (search.ts, imported
-// directly by shell.ts now).
-import '../../renderer/shell.ts';

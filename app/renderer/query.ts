@@ -411,8 +411,9 @@ export function makePostPredOf(deps: {
         if (!(f.min > 0)) return () => true;
         return (p) => (f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min);
       }
-      // Free-text leaf: the search-box term, now a first-class tree citizen.
-      // mode (exact/fuzzy) is frozen onto the leaf at confirm time. The compiled
+      // Free-text leaf: the search-box term, now a first-class tree citizen,
+      // matched by the single smart matcher (deps.fuzzyCompile; the per-leaf
+      // exact/fuzzy mode field is gone — P2④ 単一スマート検索). The compiled
       // matcher is memoized on the node — evalNode calls postPredOf per item, so
       // compiling in the bare factory body would recompile once per post.
       // The !_compiled guard is essential: a node round-tripped through JSON
@@ -421,7 +422,7 @@ export function makePostPredOf(deps: {
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
-        const key = q + '\0' + (f.mode || 'exact');
+        const key = q;
         if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
           // URL probe: url/quotedUrl are matched only for URL-shaped queries
@@ -434,7 +435,7 @@ export function makePostPredOf(deps: {
           const urlish = /[./]/.test(q);
           const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
           const urlHit: ((p: CorpusPost) => boolean) | null = !urlish ? null : (p: CorpusPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
-          const m = f.mode === 'fuzzy' && deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
+          const m = deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
           if (m) {
             f._compiled = (p: CorpusPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
           } else {

@@ -25,17 +25,19 @@ async function main() {
     }
   }
 
-  // --- 述語ファクトリ: 依存はスタブ注入（コレクション/クリップ/あいまい照合）---
+  // --- 述語ファクトリ: 依存はスタブ注入（コレクション/クリップ/スマート照合）---
   const clipped = new Set(['cap-clip']);
   const collections = new Map([['col-1', new Set(['cap-in'])]]);
   const fuzzyCalls: any[] = []; // 注入された compile が「いつ・何で」呼ばれたかの記録
   const predOf = Q.makePostPredOf({
     isInFolder: (id, cap) => !!collections.get(id)?.has(cap),
     isClipped: (cap) => clipped.has(cap),
-    // exact では絶対に当たらない照合を返す簡易 fuzzy＝経路が本当に注入側を通った証明
+    // 簡易スマートマッチのスタブ: 'ﾈｺ' だけ 'ネコ' へ正規化する部分一致＝素の
+    // includes では当たらないクエリで、経路が本当に注入側を通った証明に使う。
     fuzzyCompile: (q) => {
       fuzzyCalls.push(q);
-      return (s) => s.includes('ネコ');
+      const nq = q === 'ﾈｺ' ? 'ネコ' : q;
+      return (s) => s.includes(nq);
     },
   });
 
@@ -125,38 +127,38 @@ async function main() {
   assert('engagement: lte', predOf({ type: 'engagement', engType: 'likes', op: 'lte', min: 20 })(post()));
   assert('engagement: min<=0 は素通し', predOf({ type: 'engagement', engType: 'likes', min: 0 })(post({ likes: 0 })));
 
-  // --- text: exact / fuzzy / メモ化 ---
-  const tExact = { type: 'text', value: 'こんにちは', mode: 'exact' };
-  assert('text: exact 部分一致(本文)', predOf(tExact)(post()));
-  assert('text: exact はタグにも当たる', predOf({ type: 'text', value: '作画', mode: 'exact' })(post({ text: '' })));
-  assert('text: 不一致', !predOf({ type: 'text', value: '存在しない語', mode: 'exact' })(post()));
-  assert('text: 空値は素通し', predOf({ type: 'text', value: '  ' })(post()));
-  const tFuzzy: any = { type: 'text', value: 'ﾈｺ', mode: 'fuzzy' };
-  assert('text: fuzzy は注入 compile を経由して当たる', predOf(tFuzzy)(post({ text: 'ネコ' })) && fuzzyCalls.length === 1 && fuzzyCalls[0] === 'ﾈｺ');
-  const memoBefore = tFuzzy._compiled;
-  predOf(tFuzzy)(post());
-  assert('text: _compiled はノードにメモ化される(再 compile なし)', tFuzzy._compiled === memoBefore && typeof memoBefore === 'function' && fuzzyCalls.length === 1);
-  tFuzzy._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ落ちた状態を再現
-  assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tFuzzy)(post({ text: 'ネコ' })) && fuzzyCalls.length === 2);
+  // --- text: 単一スマートマッチ（P2④＝mode 撤去・常に注入 compile 経由）＋メモ化 ---
+  assert('text: 本文一致（注入 matcher 経由）', predOf({ type: 'text', value: 'こんにちは' })(post()) && fuzzyCalls.includes('こんにちは'));
+  assert('text: タグにも当たる', predOf({ type: 'text', value: '作画' })(post({ text: '' })));
+  assert('text: 不一致', !predOf({ type: 'text', value: '存在しない語' })(post()));
+  assert('text: 空値は素通し（compile 不要）', predOf({ type: 'text', value: '  ' })(post()));
+  assert('text: description（Eagle 注釈）にも当たる', predOf({ type: 'text', value: '注釈テキスト' })(post({ description: 'ここに注釈テキストがある' })));
+  const tKana: any = { type: 'text', value: 'ﾈｺ' };
+  const callsBefore = fuzzyCalls.length;
+  assert('text: 半角カナが matcher の正規化で当たる（注入経路の証明）', predOf(tKana)(post({ text: 'ネコ' })) && fuzzyCalls.length === callsBefore + 1 && fuzzyCalls[fuzzyCalls.length - 1] === 'ﾈｺ');
+  const memoBefore = tKana._compiled;
+  predOf(tKana)(post());
+  assert('text: _compiled はノードにメモ化される(再 compile なし)', tKana._compiled === memoBefore && typeof memoBefore === 'function' && fuzzyCalls.length === callsBefore + 1);
+  tKana._compiled = null; // JSON 往復（保存/タブ復元）で関数だけ落ちた状態を再現
+  assert('text: _compiledKey が残っても _compiled 欠落なら再コンパイル', predOf(tKana)(post({ text: 'ネコ' })) && fuzzyCalls.length === callsBefore + 2);
 
-  // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・fuzzy 不適用）---
+  // --- text: URL 照合（URL 形クエリのみ・postKeyOf 正規化・quotedUrl・smart matcher 不適用）---
   const R = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'renderer', 'records.ts')).href);
   const predOfU = Q.makePostPredOf({
     isInFolder: () => false,
     isClipped: () => false,
-    // exact では絶対に当たらない fuzzy スタブ＝URL ヒットが OR 経路である証明に使う
-    fuzzyCompile: () => (s) => s.includes('ネコ'),
+    // 絶対に当たらない matcher スタブ＝URL ヒットが（本文照合でなく）OR 経路である証明に使う
+    fuzzyCompile: () => () => false,
     postKeyOf: R.postKeyOf,
   });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
-  assert('text(url): フル URL 貼り付けが部分一致で当たる', predOfU({ type: 'text', value: 'https://x.com/foo/status/123', mode: 'exact' })(xPost));
-  assert('text(url): twitter.com 貼り付けが x.com 保存分に postKey で当たる', predOfU({ type: 'text', value: 'https://twitter.com/foo/status/123', mode: 'exact' })(xPost));
-  assert('text(url): ドメイン断片（misskey.io）も URL に当たる', predOfU({ type: 'text', value: 'misskey.io', mode: 'exact' })(R.stampPost(post())));
+  assert('text(url): フル URL 貼り付けが部分一致で当たる', predOfU({ type: 'text', value: 'https://x.com/foo/status/123' })(xPost));
+  assert('text(url): twitter.com 貼り付けが x.com 保存分に postKey で当たる', predOfU({ type: 'text', value: 'https://twitter.com/foo/status/123' })(xPost));
+  assert('text(url): ドメイン断片（misskey.io）も URL に当たる', predOfU({ type: 'text', value: 'misskey.io' })(R.stampPost(post())));
   const quoter = R.stampPost(post({ quotedUrl: 'https://x.com/bar/status/999' }));
-  assert('text(url): 引用元 URL の貼り付けが引用した投稿に当たる', predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999', mode: 'exact' })(quoter));
-  assert('text(url): 非URL形の語（notes）は URL だけの一致では当たらない', !predOfU({ type: 'text', value: 'notes', mode: 'exact' })(R.stampPost(post())));
-  assert('text(url): fuzzy モードでも URL 貼り付けは exact 経路で当たる', predOfU({ type: 'text', value: 'https://misskey.io/notes/abc', mode: 'fuzzy' })(R.stampPost(post())));
-  assert('text: description（Eagle 注釈）にも当たる', predOfU({ type: 'text', value: '注釈テキスト', mode: 'exact' })(post({ description: 'ここに注釈テキストがある' })));
+  assert('text(url): 引用元 URL の貼り付けが引用した投稿に当たる', predOfU({ type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter));
+  assert('text(url): 非URL形の語（notes）は URL だけの一致では当たらない', !predOfU({ type: 'text', value: 'notes' })(R.stampPost(post())));
+  assert('text(url): URL 貼り付けは smart matcher を経由せず exact 経路で当たる', predOfU({ type: 'text', value: 'https://misskey.io/notes/abc' })(R.stampPost(post())));
 
   // --- makePosterPredOf: poster フィルタ述語（post 側 makePostPredOf の対称）---
   // deps=posterTagsOf（key→タグ配列・tags.js）/ folderById（id→{items}・pfStore）を注入。

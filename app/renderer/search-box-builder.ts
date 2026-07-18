@@ -5,10 +5,9 @@
 // Wave5) already exist as real ES modules — this module is the view-specific
 // glue that used to live inline in viewer.ts: the corpusStore 'searchQuery'
 // getter/setter (with the echo guard that tells typing apart from programmatic
-// writes), the debounced re-render on typing, and the 検索方式(fuzzy/exact)
-// toggle handling. postQB/browseMode/i18n and the render/sidebar callbacks are
-// still owned by viewer.ts, so they're injected as deps — same ctx pattern as
-// query-builder.ts/kind-menu-builder.ts.
+// writes) and the debounced re-render on typing. postQB/browseMode and the
+// render/sidebar callbacks are still owned by viewer.ts, so they're injected
+// as deps — same ctx pattern as query-builder.ts/kind-menu-builder.ts.
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
@@ -22,14 +21,12 @@ export interface SearchBoxDeps {
   addFilter(leaf: { type: string; [k: string]: any }): CorpusQueryLeaf | null;
   removeNode(node: CorpusQueryLeaf): void;
   treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
-  isFuzzy(): boolean;
   getBrowseMode(): string;
   afterQueryChange(): void;
   renderPosts(): void;
   renderPosters(): void;
   updateSidebarState(): void;
   buildSuggest(q: string): any[];
-  searchModeTitle: string;
 }
 
 export function makeSearchBox(deps: SearchBoxDeps) {
@@ -58,8 +55,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     treeLeaves: deps.treeLeaves,
     searchQuery,
     setSearchBoxValue,
-    isFuzzy: () => deps.isFuzzy(),
-    isPostsMode: () => deps.getBrowseMode() === 'posts',
     afterQueryChange: () => deps.afterQueryChange(),
     renderPosts: () => deps.renderPosts(),
     updateSidebarState: () => deps.updateSidebarState(),
@@ -108,24 +103,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     },
   });
 
-  // 検索方式の切替（おおまか / ぴったり）＝macOS 風セグメント。両方を常に見せ、
-  // 状態と切替手段がひと目で分かる。corpusSearch がモードを集約＝メイン検索と
-  // フライアウト絞り込みで共有する。UI は toolbar 島（#searchModeSeg）が描画し、
-  // 各選択肢の説明は .ui-tip ツールチップが担う（旧・常設ヒント行は撤去）。ここは
-  // コンテナの aria-label とモード変更時の副作用（編集中リーフ追従 / 再描画）だけ持つ。
-  {
-    const sms = document.getElementById('searchModeSeg');
-    if (sms) sms.setAttribute('aria-label', deps.searchModeTitle);
-  }
-  // The toggle sets the mode for the NEXT term. The editing (un-confirmed) leaf
-  // follows it; confirmed leaves keep their own frozen mode (postPredOf reads
-  // f.mode). React owns the subscribe() registration (StoreSubscriptions, App.tsx),
-  // importing this function's live binding from viewer.ts directly; this stays the
-  // guard + action logic.
-  function handleSearchModeChange() {
-    searchEditing.onSearchModeChange();
-  }
-
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A (selection-builder.ts): never steal keys from fields
   // or open overlays. Extracted from viewer.ts as the viewer.ts decomposition's
@@ -152,7 +129,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     setSearchBoxValue,
     handleSearchQueryStoreChange,
     rebindEditingTextLeaf,
-    handleSearchModeChange,
     handleShortcutSearchFocusKey,
     searchEditing,
   };

@@ -26,7 +26,7 @@ HOW TO SAVE
 3. New captures appear in the desktop app automatically.
 
 FIND IT AGAIN
-- Search by text or username, with optional fuzzy matching
+- Search by text or username, with smart matching that forgives typos and kana variants
 - Filter by platform, author, tag, in-text hashtag, date, engagement, and folder — combined freely
 - Sort by newest, most likes, save date, and more
 - Browse as cards, tiles, or a reading-friendly list; open a gallery that bundles the screenshot and the original-resolution images

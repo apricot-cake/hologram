@@ -1,20 +1,22 @@
 'use strict';
 
-// Verifies the search-mode toggle (ぴったり / おおまか) end-to-end in the (unified
-// post-view) app, including the おおまか enhancements:
-//   ぴったり: query "ねこ" does NOT substring-match the katakana body "ネコかわいい" → 0
-//   おおまか(B 正規化): "ねこ" matches "ネコかわいい" (カナ統一) → 1
-//   おおまか(C 編集距離): typo "こんにとは" matches "こんにちは世界" → 1
-//   方式は macOS 風セグメント（#searchModeSeg の #searchModeExact/#searchModeFuzzy）で切替。
-//   両オプション常時表示＝状態 (is-on) と切替手段がひと目で分かる UI もここで検証。
+// Verifies the single smart search end-to-end in the app (P2④: the ぴったり/おおまか
+// toggle is gone — the loose matcher is the only behavior):
+//   B 正規化: "ねこ" matches the katakana body "ネコかわいい" → 1
+//   C 編集距離: typo "こんにとは" matches "こんにちは世界" → 1
+//   無関係語 → 0
 //
 // Also verifies the date-filter predicate's timezone boundary (postPredOf /
-// localDayRange). The picker value is a LOCAL calendar day, so a post whose UTC
-// instant falls on a different UTC day than its local day must bucket by the
-// LOCAL day (matching what the app shows on the card). We force TZ=Asia/Tokyo
-// (UTC+9) and seed posts straddling JST midnight, then assert the from=to=6/20
-// range includes exactly the two posts that read as 6/20 in local time. A
-// UTC-anchored bound would mis-bucket the two boundary posts (regression guard).
+// localDayRange) through the real UI — the "+ フィルタ" flow's date form (P2③
+// filterbar; the retired qf date popover is gone). The picker value is a LOCAL
+// calendar day, so a post whose UTC instant falls on a different UTC day than its
+// local day must bucket by the LOCAL day (matching what the app shows on the card).
+// We force TZ=Asia/Tokyo (UTC+9) and seed posts straddling JST midnight, then assert
+// the from=to=6/20 range includes exactly the two posts that read as 6/20 in local
+// time. A UTC-anchored bound would mis-bucket the two boundary posts (regression
+// guard). The dateField=capturedAt path (a Base UI Select in the form — not reliably
+// drivable with synthetic events) is covered at the predicate level by
+// test-query-unit.cts.
 //
 //   node scripts/test-app-search.cts
 
@@ -106,40 +108,37 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const cards = () => document.querySelectorAll('#postGrid .post-card').length;
   const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(40); } return false; };
-  // React controlled inputs (searchbox island / date popover): a bare .value write is
+  // React controlled inputs (searchbox island / date form): a bare .value write is
   // invisible to React's value tracker — go through the prototype setter, then 'input'.
   const setInput = (el, text) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const typeSearch = (text) => setInput(document.getElementById('searchBox'), text);
+  // The searchbox island's Autocomplete input (no #searchBox id since P2④).
+  const searchInput = document.querySelector('input[placeholder="テキスト・ユーザー名で検索"]');
+  const typeSearch = (text) => setInput(searchInput, text);
   await waitFor(() => cards() >= 7);   // 3 search posts + 4 date-boundary posts; post view loads async
-  const seg = document.getElementById('searchModeSeg');
-  // the segment is the toolbar island now: state shows as .is-on per .seg-opt button
-  // (the old #searchModeExact/#searchModeFuzzy ids and the container's .is-fuzzy class
-  // are gone — the thumb slides by inline transform instead)
-  const exactBtn = seg.querySelector('.seg-opt[data-mode="normal"]');
-  const fuzzyBtn = seg.querySelector('.seg-opt[data-mode="fuzzy"]');
-  const exactOnByDefault = exactBtn.classList.contains('is-on') && !fuzzyBtn.classList.contains('is-on'); // 既定 = normal
-  // ぴったり（既定）: カタカナ本文にひらがなクエリは部分一致しない → 0
+
+  // --- Single smart search (the only behavior — no mode toggle) ---
+  // B 正規化: ひらがなクエリがカタカナ本文に当たる
   typeSearch('ねこ');
-  await wait(220);
-  const normalKana = cards();
-  // セグメントの「おおまか」をクリックで切替（B 正規化）: 'ねこ' が 'ネコかわいい' に一致 → 1
-  fuzzyBtn.click();
-  await wait(220);
-  const fuzzyKana = cards();
-  const fuzzyOn = fuzzyBtn.classList.contains('is-on') && !exactBtn.classList.contains('is-on'); // fuzzy
-  // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致 → 1
+  await wait(240);
+  const smartKana = cards();
+  // C 編集距離: 'こんにとは'（ち→と 置換ミス）が 'こんにちは世界' に一致
   typeSearch('こんにとは');
-  await wait(220);
-  const fuzzyTypo = cards();
+  await wait(240);
+  const smartTypo = cards();
+  // 無関係語は当たらない
+  typeSearch('存在しない語');
+  await wait(240);
+  const smartMiss = cards();
 
   // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
   // Clear the search term so it does not co-filter the grid, then drive the real
-  // date popover (same path the user takes): set from/to, field, click Apply.
+  // "+ フィルタ" flow (filterbar island): open the popover, pick 日付, fill the
+  // from/to date inputs, click 適用.
   typeSearch('');
-  await wait(220);
+  await wait(240);
   // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
   // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
   // AND dz2 (adds it), so the COUNT stays 2 while the SET changes — only the set
@@ -149,32 +148,23 @@ const evalJs = `(async () => {
   const dzSet = () => Array.from(document.querySelectorAll('#postGrid .post-card'))
     .map((c) => (c.dataset.url || '').split('/').pop())
     .filter((id) => /^dz\\d$/.test(id)).sort().join(',');
-  // The date popover is the filter-popover React island now (no qfDate* ids): the row
-  // click opens a fresh .qf-popover, the field-type .chip toggles date↔capturedAt
-  // (.active ⇔ capturedAt), and the non-delete .btn-outline applies. Apply with a
-  // pre-existing date filter replaces it (addFilter is single-valued for dates).
-  const applyDate = async (field, from, to) => {
-    document.querySelector('#filterRows [data-qfrow="date"]').click();
-    await waitFor(() => !!document.querySelector('.qf-popover input.date-input'));
-    const pop = document.querySelector('.qf-popover');
-    const [fromEl, toEl] = pop.querySelectorAll('input.date-input');
-    setInput(fromEl, from);
-    setInput(toEl, to);
-    const typeChip = pop.querySelector('button.chip');
-    if ((field === 'capturedAt') !== typeChip.classList.contains('active')) { typeChip.click(); await wait(40); }
-    pop.querySelector('.btn-outline:not(.qf-popover-delete)').click();
-    // The grid re-renders async (folder refresh + animation); poll until the
-    // visible post count settles to 2 (the boundary matches) before snapshotting.
-    await waitFor(() => cards() === 2);
-    await wait(120);
-    return dzSet();
-  };
-  // from=to=2026-06-20 (local). Expect exactly dz0 + dz1 (both read 6/20 in JST).
-  const dateRange = await applyDate('date', '2026-06-20', '2026-06-20');
-  // capturedAt mirrors date in the fixtures → same field path must yield the same set.
-  const capturedRange = await applyDate('capturedAt', '2026-06-20', '2026-06-20');
+  const byText = (sel, text) => Array.from(document.querySelectorAll(sel)).find((el) => (el.textContent || '').trim() === text) || null;
+  // 「+ フィルタ」ボタン（AddFilterButton: icon + 'フィルタ'）
+  byText('button', 'フィルタ').click();
+  await waitFor(() => !!byText('[data-slot="command-item"]', '日付'));
+  byText('[data-slot="command-item"]', '日付').click();   // date category → DateForm
+  await waitFor(() => document.querySelectorAll('[data-slot="popover-content"] input[type="date"]').length === 2);
+  const [fromEl, toEl] = document.querySelectorAll('[data-slot="popover-content"] input[type="date"]');
+  setInput(fromEl, '2026-06-20');
+  setInput(toEl, '2026-06-20');
+  byText('[data-slot="popover-content"] button', '適用').click();
+  // The grid re-renders async; poll until the visible post count settles to 2
+  // (the boundary matches) before snapshotting.
+  await waitFor(() => cards() === 2);
+  await wait(120);
+  const dateRange = dzSet();   // expect exactly dz0 + dz1 (both read 6/20 in JST)
 
-  return { normalKana, fuzzyKana, fuzzyTypo, exactOnByDefault, fuzzyOn, dateRange, capturedRange };
+  return { smartKana, smartTypo, smartMiss, dateRange };
 })()`;
 
 // TZ=Asia/Tokyo (UTC+9) so the date-filter section exercises a non-UTC boundary.
@@ -196,8 +186,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.normalKana === 0 && r.fuzzyKana === 1 && r.fuzzyTypo === 1 && r.exactOnByDefault === true && r.fuzzyOn === true && r.dateRange === 'dz0,dz1' && r.capturedRange === 'dz0,dz1';
-  console.log(`normalKana=${r.normalKana} fuzzyKana=${r.fuzzyKana} fuzzyTypo=${r.fuzzyTypo} exactOn=${r.exactOnByDefault} fuzzyOn=${r.fuzzyOn} dateRange=${r.dateRange} capturedRange=${r.capturedRange}`);
+  const ok = r.smartKana === 1 && r.smartTypo === 1 && r.smartMiss === 0 && r.dateRange === 'dz0,dz1';
+  console.log(`smartKana=${r.smartKana} smartTypo=${r.smartTypo} smartMiss=${r.smartMiss} dateRange=${r.dateRange}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

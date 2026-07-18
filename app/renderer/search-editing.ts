@@ -5,8 +5,7 @@
 // — this module owns WHICH leaf (if any) is
 // currently "being typed" (editingTextNode, private state) and the state
 // transitions: sync on typing, confirm on Enter, rebind after a tab/history
-// restore, drop when a concrete suggestion is picked instead, and follow the
-// fuzzy/exact mode toggle. Rendering/persistence side effects
+// restore, drop when a concrete suggestion is picked instead. Rendering/persistence side effects
 // (afterQueryChange/renderPosts/updateSidebarState) stay injected callbacks —
 // this module never touches the DOM (same shape as tab-state.js's
 // makeNavHistory / undo.js's makeUndo: encapsulated mutable state + injected
@@ -17,9 +16,6 @@
 //     instance's tree ops (postQB), passed as bound wrappers.
 //   treeLeaves(tree) — query.js pure helper.
 //   searchQuery() / setSearchBoxValue(v) — the search box's value getter/setter.
-//   isFuzzy() — corpusSearch.isFuzzy(), wrapped so this module doesn't touch
-//     corpusSearch directly.
-//   isPostsMode() — browseMode === 'posts' (a viewer.js reassigned let, so a getter).
 //   afterQueryChange() / renderPosts() / updateSidebarState() — viewer.js
 //     re-render triggers, called after a state transition.
 export interface SearchEditingDeps {
@@ -29,15 +25,13 @@ export interface SearchEditingDeps {
   treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
   searchQuery(): string;
   setSearchBoxValue(v: string): void;
-  isFuzzy(): boolean;
-  isPostsMode(): boolean;
   afterQueryChange(): void;
   renderPosts(): void;
   updateSidebarState(): void;
 }
 
 export function makeSearchEditing(deps: SearchEditingDeps) {
-  const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, isFuzzy, isPostsMode, afterQueryChange, renderPosts, updateSidebarState } = deps;
+  const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, afterQueryChange, renderPosts, updateSidebarState } = deps;
   let editingTextNode: CorpusQueryLeaf | null = null;
 
   function isEditingLeaf(node: unknown) {
@@ -63,7 +57,6 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
     // it (otherwise Object.assign below would mutate an orphan node).
     if (editingTextNode && !treeLeaves(getTree()).includes(editingTextNode)) editingTextNode = null;
     const val = (searchQuery() || '').trim();
-    const mode = isFuzzy() ? 'fuzzy' : 'exact';
     if (!val) {
       if (editingTextNode) {
         const n = editingTextNode;
@@ -73,10 +66,10 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
       return;
     }
     if (editingTextNode) {
-      Object.assign(editingTextNode, { value: val, mode });
+      editingTextNode.value = val;
       afterQueryChange();
     } else {
-      editingTextNode = addFilter({ type: 'text', value: val, mode }) || treeLeaves(getTree()).find((c) => c.type === 'text' && c.value === val) || null;
+      editingTextNode = addFilter({ type: 'text', value: val }) || treeLeaves(getTree()).find((c) => c.type === 'text' && c.value === val) || null;
       if (!editingTextNode) renderPosts();
     }
   }
@@ -111,17 +104,6 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
     else if (it.kind === 'user') addFilter({ type: 'user', value: it.value, label: it.label });
     updateSidebarState();
   }
-  // The toggle sets the mode for the NEXT term. The editing (un-confirmed) leaf
-  // follows it; confirmed leaves keep their own frozen mode (postPredOf reads
-  // f.mode).
-  function onSearchModeChange() {
-    if (isPostsMode() && editingTextNode) {
-      editingTextNode.mode = isFuzzy() ? 'fuzzy' : 'exact';
-      afterQueryChange();
-    } else {
-      renderPosts();
-    }
-  }
 
-  return { isEditingLeaf, onLeafMutated, clear, sync, confirm, rebind, pick, onSearchModeChange };
+  return { isEditingLeaf, onLeafMutated, clear, sync, confirm, rebind, pick };
 }
