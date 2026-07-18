@@ -71,6 +71,7 @@ export let handleShortcutMouseNav: (e: MouseEvent) => void;
 export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
 export let handleShortcutSelectAllKey: (e: KeyboardEvent) => void;
 export let handleShortcutCopyKey: (e: KeyboardEvent) => void;
+export let handleShortcutQuickView: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
@@ -1149,6 +1150,7 @@ export function endFilterEditSession(): void {
     openTagPopForSelection: (anchorRect) => bulkEdit.openTagPopForSelection(anchorRect),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
+    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g), 0), // Space peek (#143)
   });
   const { selectedRecords } = selectionCtl;
   // Selection is driven entirely by the unified card gesture above (plain =
@@ -1161,6 +1163,7 @@ export function endFilterEditSession(): void {
   document.getElementById('selectionBar')?.addEventListener('click', selectionCtl.handleSelectionBarClick);
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
+  handleShortcutQuickView = selectionCtl.handleShortcutQuickView;
 
   // 🏷 button on card → tag picker pop (Issue #22), anchored to the button itself.
   byId('postGrid').addEventListener('click', (e) => {

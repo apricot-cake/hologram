@@ -39,6 +39,10 @@ export interface SelectionBarDeps {
   // Copying an image is post-grid-builder.ts's (it owns the density → file
   // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
   copyGroupImage(g: CorpusPostGroup): void;
+  // Open the quick-view lightbox (peek) for a group — the Space-key entry (#143
+  // 未決事項3). Same wiring as the inspector thumbnail's onThumbClick;
+  // orchestrator supplies the gallery items.
+  openQuickView(g: CorpusPostGroup): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -174,6 +178,27 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     deps.copyGroupImage(groups[0]);
   }
 
+  // Space peeks the selected card in the quick-view lightbox (#143 未決事項3 —
+  // Quick Look / Eagle と同型). Single selection only (peek is one card); same
+  // guard shape as the copy key above, plus: a lightbox already open owns Space
+  // (its own paging), and a text field / the image view keep the key. Registration
+  // lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  function handleShortcutQuickView(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (e.key !== ' ' && e.code !== 'Space') return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (confirmGet() || lightboxIsOpen()) return;
+    if (settingsIsOpen()) return;
+    if (!byId('ivFolderModal').hidden) return;
+    if (document.body.classList.contains('image-tab-active')) return;
+    if (deps.getBrowseMode() !== 'posts') return;
+    const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
+    if (groups.length !== 1) return;
+    e.preventDefault();
+    deps.openQuickView(groups[0]);
+  }
+
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
@@ -241,6 +266,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     clearSelection,
     handleShortcutSelectAllKey,
     handleShortcutCopyKey,
+    handleShortcutQuickView,
     handleSelectionBarClick,
   };
 }

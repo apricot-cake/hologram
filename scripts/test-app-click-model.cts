@@ -101,6 +101,18 @@ const evalJs = `(async () => {
   await sleep(60);
   out.selAfterD = selectedKeys().join(',');
 
+  // D2. Space peeks the selected card — but only with a SINGLE selection (two are
+  // selected now, so Space must NOT open the lightbox), then collapse to one and retry.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+  await sleep(80);
+  out.spaceIgnoredForMulti = !(byId('lightbox') && byId('lightbox').childElementCount > 0);
+  click(cardOf('dummy-c1')); // collapse to a single selection
+  await sleep(60);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+  out.spacePeeked = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount === 0);
+
   // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
   // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
   const navActive = () => { const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim() === '投稿者'); return !!(b && b.hasAttribute('data-active') && b.getAttribute('data-active') !== 'false'); };
@@ -163,6 +175,8 @@ child.on('close', () => {
     ['inspector thumbnail opens the quick-view lightbox', r.lightboxOpened === true],
     ['Esc closes the quick-view lightbox', r.lightboxClosed === true],
     ['Ctrl-click adds a second card', r.selAfterD === 'dummy-c1,dummy-c2'],
+    ['Space is ignored while multiple are selected', r.spaceIgnoredForMulti === true],
+    ['Space peeks the single selected card', r.spacePeeked === true],
     ['poster cards render', r.posterCardsShown === true],
     ['poster cards have no ℹ button', r.posterHoverInfo === 0],
     ['plain click opens the poster inspector', r.inspOpenedF === true && r.inspIsPoster === true],
