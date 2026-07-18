@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { continueRender, delayRender, staticFile } from "remotion";
+import { useEffect, useRef } from 'react';
+import { continueRender, delayRender, staticFile } from 'remotion';
 
 // Square logo mark rendered via WebGL: the still icon texture is kept in
 // perpetual motion by domain-warping its UVs with animated fbm noise.
@@ -78,11 +78,11 @@ type GlState = {
 
 const compile = (gl: WebGLRenderingContext, type: number, src: string) => {
   const shader = gl.createShader(type);
-  if (!shader) throw new Error("createShader failed");
+  if (!shader) throw new Error('createShader failed');
   gl.shaderSource(shader, src);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw new Error(gl.getShaderInfoLog(shader) ?? "shader compile failed");
+    throw new Error(gl.getShaderInfoLog(shader) ?? 'shader compile failed');
   }
   return shader;
 };
@@ -114,35 +114,32 @@ export const LiquidSquare: React.FC<{
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-time GL init; draw only reads refs
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const handle = delayRender("liquid-square-init");
-    const gl = canvas.getContext("webgl", {
+    const handle = delayRender('liquid-square-init');
+    const gl = canvas.getContext('webgl', {
       alpha: true,
       premultipliedAlpha: true,
       antialias: false,
     });
-    if (!gl) throw new Error("WebGL context unavailable");
+    if (!gl) throw new Error('WebGL context unavailable');
 
     const program = gl.createProgram();
-    if (!program) throw new Error("createProgram failed");
+    if (!program) throw new Error('createProgram failed');
     gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERT));
     gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAG));
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(program) ?? "program link failed");
+      throw new Error(gl.getProgramInfoLog(program) ?? 'program link failed');
     }
     gl.useProgram(program);
 
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-      gl.STATIC_DRAW,
-    );
-    const aPos = gl.getAttribLocation(program, "aPos");
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(program, 'aPos');
     gl.enableVertexAttribArray(aPos);
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
@@ -157,14 +154,14 @@ export const LiquidSquare: React.FC<{
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       stateRef.current = {
         gl,
-        uTime: gl.getUniformLocation(program, "uTime"),
-        uFill: gl.getUniformLocation(program, "uFill"),
-        uWarp: gl.getUniformLocation(program, "uWarp"),
+        uTime: gl.getUniformLocation(program, 'uTime'),
+        uFill: gl.getUniformLocation(program, 'uFill'),
+        uWarp: gl.getUniformLocation(program, 'uWarp'),
       };
       draw(); // the pending frame is captured right after continueRender
       continueRender(handle);
     };
-    img.src = staticFile("icon-master.png");
+    img.src = staticFile('icon-master.png');
 
     return () => {
       stateRef.current = null;
@@ -185,7 +182,7 @@ export const LiquidSquare: React.FC<{
         width: size,
         height: size,
         borderRadius: cornerRadius,
-        display: "block",
+        display: 'block',
       }}
     />
   );

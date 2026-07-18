@@ -5,8 +5,8 @@
   "description": "Remotion project for the Corpus promo end-card logo motion",
   "scripts": {
     "studio": "remotion studio",
-    "render:slide": "remotion render LogoSlide out/logo-slide.mp4",
-    "render:fill": "remotion render LogoFill out/logo-fill.mp4",
+    "render:slide": "remotion render LogoSlide out/slide-seq --sequence --image-format=png && node scripts/stitch.mjs out/slide-seq out/logo-slide.mp4",
+    "render:fill": "remotion render LogoFill out/fill-seq --sequence --image-format=png && node scripts/stitch.mjs out/fill-seq out/logo-fill.mp4",
     "still": "remotion still"
   },
   "dependencies": {
