@@ -10,7 +10,7 @@
 // 保存した検索 group (#40) — the #42 'collection'→'folder' store rename they waited on is done.
 import { Folder, LayoutGrid, Settings, Users } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger } from '@/components/ui/sidebar';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -47,8 +47,12 @@ export function LeftSidebar() {
   const folders = useFolders();
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex h-8 items-center gap-2 px-2 font-heading text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Corpus</div>
+      {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
+          the window top now, so its header row IS the left half of the titlebar — the
+          collapse trigger sits here (moved out of the toolbar), the rest is grab space
+          to move the window. No wordmark: chrome stays quiet. */}
+      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start px-1">
+        <SidebarTrigger className="app-no-drag text-muted-foreground" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

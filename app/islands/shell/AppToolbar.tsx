@@ -11,7 +11,6 @@
 import { ChevronLeft, ChevronRight, ListFilter, SlidersHorizontal } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
-import { SidebarTrigger } from '@/components/ui/sidebar';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -51,7 +50,8 @@ export function AppToolbar() {
     // fill --sidebar-bg aliases the same color) — Chrome's strip/toolbar anatomy.
     <div className="flex flex-col border-b bg-sidebar">
       <div className="flex h-12 items-center gap-1.5 px-2">
-        <SidebarTrigger className="text-muted-foreground" />
+        {/* Sidebar toggle lives in the sidebar's own header now (Obsidian-type shell,
+            #154); the toolbar starts straight into the tab-scoped back/forward. */}
         <div className="flex items-center">
           <Button variant="ghost" size="icon-sm" aria-label="戻る" disabled={!canBack} onClick={() => navBack()}>
             <ChevronLeft />

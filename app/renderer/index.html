@@ -41,13 +41,17 @@
     }
     #tabBarInner > * { -webkit-app-region: no-drag; }
     #tabBarInner {
-      width: env(titlebar-area-width, 100%); display: flex; align-items: flex-end;
+      box-sizing: border-box;
+      width: 100%; display: flex; align-items: flex-end;
       align-self: stretch;
-      /* padding-right reserves a permanent draggable gutter (no child sits in
-         padding, so it stays -webkit-app-region:drag). Chrome keeps a grab strip
-         right of the tabs so the window can always be moved/un-snapped even when
-         many tabs fill the bar; without it 4+ equal-width tabs ate the whole row. */
-      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px; gap: 0; min-width: 0;
+      /* Obsidian-type shell (#154): the tab bar is scoped to the content column now, so
+         its width is 100% of the column (not env(titlebar-area-width), which is the whole
+         window and would overflow). The window caption buttons still sit at the window's
+         top-right = this column's top-right, so the right padding must clear them:
+         (100vw - titlebar-area-width) = the caption-buttons width, + a grab gutter so the
+         window can always be dragged/un-snapped even when many tabs fill the row. */
+      padding: 0 calc(100vw - env(titlebar-area-width, 100vw) + var(--tabbar-drag-gutter, 88px)) 0 8px;
+      gap: 0; min-width: 0;
     }
     /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
        32px bottom-flush box (one text axis); inactive hover = floating pill
