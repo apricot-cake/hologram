@@ -11,6 +11,8 @@ Save the posts you come across on social media — image and information togethe
 
 No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
 
+Corpus is **free and open source** (MIT). Your library is nothing but ordinary files in a folder you own — no account, no server, no lock-in.
+
 ## What it does
 
 - **Save the whole post** — not just a screenshot, but the text, author, date, like count, and original URL too. So you can always find "that post" later.
