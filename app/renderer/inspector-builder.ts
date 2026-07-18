@@ -405,7 +405,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (insp.contains(e.target as Node | null)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
     if (closestOf(e, '.post-card, .tag-btn')) return; // card click = swap to it; 🏷 = tag-pop for it
-    if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
+    if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
     e.preventDefault();
     e.stopPropagation();
     closeDetail();

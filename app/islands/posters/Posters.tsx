@@ -1,8 +1,8 @@
 // Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
 // the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
 // with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
-// .poster-foot), and the `.poster-tag[data-ptag]` / `.poster-info[data-pinfo]`
-// hover buttons — so the delegated click/contextmenu on #posterGrid keeps
+// .poster-foot), and the `.poster-tag[data-ptag]` hover button — so the
+// delegated click/dblclick/contextmenu on #posterGrid keeps
 // firing. React renders + windows; viewer.js owns posterList, the count badge,
 // the density classes on the container, and every event. The inspected
 // highlight is derived from corpusStore, not modelOf (see below).
@@ -42,18 +42,7 @@ function TagIcon() {
   );
 }
 
-// ℹ info button — ported 1:1 from viewer.js.
-function InfoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <circle cx="12" cy="12" r="9" />
-      <line x1="12" y1="11" x2="12" y2="16" />
-      <line x1="12" y1="7.6" x2="12" y2="7.7" />
-    </svg>
-  );
-}
-
-function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?: string; infoTitle?: string }) {
+function PosterCard({ c, tagTitle }: { c: PosterCardModel; tagTitle?: string }) {
   return (
     <div
       className={'poster-card' + (c.inspected ? ' inspected' : '')}
@@ -86,12 +75,10 @@ function PosterCard({ c, tagTitle, infoTitle }: { c: PosterCardModel; tagTitle?:
           <span className="poster-count">{c.countLabel}</span>
         </div>
       </div>
-      {/* Hover actions: 🏷 tag → ℹ info (L→R). */}
+      {/* Hover action: 🏷 tag. The ℹ button is retired — a plain click shows the
+          poster in the inspector now (#143). */}
       <button className="poster-tag" data-ptag={c.index} data-tip={tagTitle} aria-label={tagTitle}>
         <TagIcon />
-      </button>
-      <button className="poster-info" data-pinfo={c.index} data-tip={infoTitle} aria-label={infoTitle}>
-        <InfoIcon />
       </button>
     </div>
   );
@@ -103,7 +90,7 @@ function PosterCell({ index, data }: GridCellProps) {
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
   const c = model.modelOf(data, index);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
-  return <PosterCard c={c} tagTitle={model.tagTitle} infoTitle={model.infoTitle} />;
+  return <PosterCard c={c} tagTitle={model.tagTitle} />;
 }
 
 export function PostersHost({ model }: { model: CorpusGridModel }) {

@@ -27,7 +27,7 @@ import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 //    setState in GridMount keys off.
 
 type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void };
-type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string; infoTitle: string };
+type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string };
 
 // Post grid model source (P4-B slice⑩): items come from corpusStore('postGroups'),
 // layout is derived from corpusStore('view'/'cardSize'/'tileSize'/'listThumb')
@@ -140,7 +140,6 @@ function makePosterGridSource() {
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       tagTitle: config.tagTitle,
-      infoTitle: config.infoTitle,
       // list: one full-width row column, gap 4. tile: squares packed by minimum
       // width posterTileSize, gap 10. card: avatar-led columns of minimum width
       // posterCardSize, gap 14 — masonic stretches columns to fill, the same

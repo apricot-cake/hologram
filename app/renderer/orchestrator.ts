@@ -1624,30 +1624,30 @@ export function endFilterEditSession(): void {
   // (Activebar.tsx imports it directly) — assigned by property, not destructured above,
   // to avoid shadowing it.
   resetPosterFilters = posterGrid.resetPosterFilters;
+  // Poster card gesture (#143 P2⑥): a plain click shows the poster in the
+  // inspector (シングル＝インスペクタ, matching post cards); double-click drills into
+  // their posts (下の dblclick). The ℹ button is retired — the inspector is the
+  // single-click destination now. 🏷 still opens the tag-pop anchored to itself.
   byId('posterGrid').addEventListener('click', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (!u) return;
-    // ℹ opens the inspector (shared idiom with post cards' .info-btn); re-click the
-    // inspected poster's ℹ toggles it closed.
-    if (closestOf(e, '.poster-info')) {
-      if (!byId('postDetail').hidden && inspectedKey === 'poster:' + u.key) {
-        closeDetail();
-        return;
-      }
-      showPosterDetail(u);
-      return;
-    }
-    // 🏷 → tag picker pop (Issue #22), anchored to the button itself (mirrors the
-    // library 🏷 button — no longer opens the full inspector).
     const tagBtn = closestOf(e, '.poster-tag');
     if (tagBtn) {
       openTagPopForPoster(u, tagBtn.getBoundingClientRect());
       return;
     }
-    // A plain card click drills into that poster's posts (posts mode + user filter).
-    openPosterPosts(u);
+    showPosterDetail(u);
+  });
+  // Double-click a poster → drill into that poster's posts (posts mode + user
+  // filter). ドリルイン＝#143 確定のダブルクリック割当（#24 の旧「シングル＝切替」を上書き）。
+  byId('posterGrid').addEventListener('dblclick', (e) => {
+    if (closestOf(e, '.poster-tag')) return;
+    const card = closestOf(e, '.poster-card');
+    if (!card) return;
+    const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
+    if (u) openPosterPosts(u);
   });
   // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts
   // (V6/Wave20) — destructured (showPosterMenu) from posterGrid above.

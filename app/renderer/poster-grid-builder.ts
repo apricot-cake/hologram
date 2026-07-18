@@ -185,7 +185,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
   // highlight is NOT part of this model — the island derives its own ring from
   // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
-  // item's `.key`. modelOf/keyOf/tagTitle/infoTitle never change identity
+  // item's `.key`. modelOf/keyOf/tagTitle never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post
   // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
   corpusPosterGridSource.configure({
@@ -206,7 +206,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     },
     keyOf: (u: CorpusUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
     tagTitle: deps.t('tipTagEdit'),
-    infoTitle: deps.t('tipInfo'),
   });
 
   // Jump from a poster to its posts: posts mode + a single user filter for it.
