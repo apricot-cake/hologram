@@ -5,17 +5,21 @@
 // VS Code's toolbar.
 //
 // P1 scope: the FRAME. Search hosts the existing SearchBox island (rewired to
-// Autocomplete in P2④); "+ filter" and "display" are disabled placeholders
-// (wired in P2③ / P2②). The chip row keeps the existing Chips island so
-// remove/reset still work; adding filters returns with the filter bar (P2③).
+// Autocomplete in P2④); フィルタ (何を出すか) and 表示 (どう見せるか) are a matched
+// labeled pair (Linear) that are NOT yet wired — they carry a 準備中 tooltip + toast
+// instead of being disabled (a disabled button can't surface a tooltip, so the
+// user just hit a dead control). Real editor/popover land in P2③ / P2②. The chip
+// row keeps the existing Chips island so remove/reset still work (P2③ rewrites it).
 import { ChevronLeft, ChevronRight, ListFilter, SlidersHorizontal } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChipsHost } from '../query-chips/index.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { navBack, navForward } from '../../renderer/orchestrator.ts';
+import { notify } from '../../renderer/ui.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
 const subBrowse = subKey('browseMode');
@@ -49,9 +53,15 @@ export function AppToolbar() {
     // under the tab strip, and the active tab connects into that band (its legacy
     // fill --sidebar-bg aliases the same color) — Chrome's strip/toolbar anatomy.
     <div className="flex flex-col border-b bg-sidebar">
-      <div className="flex h-12 items-center gap-1.5 px-2">
+      {/* Three-column grid so the search sits CENTERED with symmetric side gutters
+          (Slack / Safari / VS Code), not stretched full-width (which just made a wide
+          window's empty middle into a wide empty input). The 1fr side cells carry the
+          nav (left) and the filter/display pair (right); their leftover space is equal,
+          so the search's breathing room is symmetric. Center caps at 40rem and shrinks
+          (minmax 0) on narrow windows back into a tight row. */}
+      <div className="grid h-12 items-center gap-1.5 px-2" style={{ gridTemplateColumns: '1fr minmax(0, 40rem) 1fr' }}>
         {/* Sidebar toggle lives in the sidebar's own header now (Obsidian-type shell,
-            #154); the toolbar starts straight into the tab-scoped back/forward. */}
+            #154); the left cell starts straight into the tab-scoped back/forward. */}
         <div className="flex items-center">
           <Button variant="ghost" size="icon-sm" aria-label="戻る" disabled={!canBack} onClick={() => navBack()}>
             <ChevronLeft />
@@ -60,24 +70,37 @@ export function AppToolbar() {
             <ChevronRight />
           </Button>
         </div>
-        {/* Search field — the hero of this bar (the free-text half of the 述語 axis),
-            so it GROWS to fill the row instead of stranding a 448px box beside a huge
-            gap. Capped generously so it stays a bar, not a full-bleed input on ultrawide.
-            #searchWrap keeps the id the search-box-builder queries (retired in P2④). */}
-        <div id="searchWrap" className="search-wrap relative ml-1 min-w-0 flex-1">
+        {/* #searchWrap keeps the id the search-box-builder queries (retired in P2④). */}
+        <div id="searchWrap" className="search-wrap relative min-w-0">
           <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          {/* Placeholders: the real filter bar (P2③) and display popover (P2②)
-              replace these — disabled so their absence reads as "coming", not broken. */}
-          <Button variant="outline" size="sm" disabled>
-            <ListFilter />
-            <span>フィルタ</span>
-          </Button>
-          <Button variant="ghost" size="icon-sm" aria-label="表示" disabled>
-            <SlidersHorizontal />
-          </Button>
+        {/* フィルタ (何を出すか) + 表示 (どう見せるか): a matched labeled pair (Linear).
+            Not yet wired — enabled with a 準備中 tooltip + toast rather than disabled, so
+            hovering explains and a click isn't a dead end. Real surfaces land P2③ / P2②. */}
+        <div className="flex items-center justify-end gap-1.5">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="outline" size="sm" onClick={() => notify('フィルタは準備中です')}>
+                  <ListFilter />
+                  <span>フィルタ</span>
+                </Button>
+              }
+            />
+            <TooltipContent>準備中（もうすぐ）</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="outline" size="sm" onClick={() => notify('表示オプションは準備中です')}>
+                  <SlidersHorizontal />
+                  <span>表示</span>
+                </Button>
+              }
+            />
+            <TooltipContent>準備中（もうすぐ）</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       {/* Active-filter chips. BOTH containers stay mounted (the post/poster query-chips
