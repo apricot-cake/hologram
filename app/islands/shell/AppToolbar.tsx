@@ -10,11 +10,12 @@
 // instead of being disabled (a disabled button can't surface a tooltip, so the
 // user just hit a dead control). Real editor/popover land in P2③ / P2②. The chip
 // row keeps the existing Chips island so remove/reset still work (P2③ rewrites it).
-import { ChevronLeft, ChevronRight, ListFilter, SlidersHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ListFilter } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChipsHost } from '../query-chips/index.tsx';
+import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -76,8 +77,9 @@ export function AppToolbar() {
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>
         {/* フィルタ (何を出すか) + 表示 (どう見せるか): a matched labeled pair (Linear).
-            Not yet wired — enabled with a 準備中 tooltip + toast rather than disabled, so
-            hovering explains and a click isn't a dead end. Real surfaces land P2③ / P2②. */}
+            表示 is the real Display popover now (sort / view / info — P2②). フィルタ stays a
+            準備中 stub (enabled with a tooltip + toast rather than disabled, so a hover
+            explains and a click isn't a dead end) until the filter bar lands in P2③. */}
         <div className="flex items-center justify-end gap-1.5">
           <Tooltip>
             <TooltipTrigger
@@ -90,17 +92,7 @@ export function AppToolbar() {
             />
             <TooltipContent>準備中（もうすぐ）</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="outline" size="sm" onClick={() => notify('表示オプションは準備中です')}>
-                  <SlidersHorizontal />
-                  <span>表示</span>
-                </Button>
-              }
-            />
-            <TooltipContent>準備中（もうすぐ）</TooltipContent>
-          </Tooltip>
+          <DisplayMenu />
         </div>
       </div>
       {/* Active-filter chips. BOTH containers stay mounted (the post/poster query-chips
