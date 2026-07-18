@@ -14,17 +14,31 @@
 // re-conceived separately (未決事項E scoped the gallery/list split to the post grid).
 import type { ReactNode } from 'react';
 import { LayoutGrid, List, SlidersHorizontal, Square } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
+import type { CorpusSizeTrack } from '../../renderer/grid-density-builder.ts';
+import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack } from '../../renderer/orchestrator.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
+
+// Subscribe to several store keys at once (any change fires cb) — the size track depends
+// on the view AND the active view's size, which live in separate store keys.
+const subMany = (keys: string[]) => (cb: () => void) => {
+  const unsubs = keys.map((k) => storeSubscribe(k, cb));
+  return () => unsubs.forEach((u) => u());
+};
+const subPostSize = subMany(['view', 'tileSize', 'cardSize', 'listThumb']);
+const postSizeSnap = () => `${storeGet('view')}|${storeGet('tileSize')}|${storeGet('cardSize')}|${storeGet('listThumb')}`;
+const subPosterSize = subMany(['posterView', 'posterTileSize', 'posterCardSize']);
+const posterSizeSnap = () => `${storeGet('posterView')}|${storeGet('posterTileSize')}|${storeGet('posterCardSize')}`;
 
 // Sort option tables (value = the sort key the listing pipeline reads; key = i18n
 // label). Same tables the retired sidebar SortSelect used.
@@ -47,9 +61,59 @@ const SORT_POSTER = [
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-h-8 items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
       {children}
     </div>
+  );
+}
+
+// Size-slider track (column-count range for the auto-fill views, px for the list) read
+// from grid-density-builder via the orchestrator bindings. Recomputes on a view/size
+// store change and on window resize (column counts depend on grid width). getPost/
+// PosterSizeTrack are stable module bindings, so they stay out of the memo deps.
+function usePostSizeTrack(): CorpusSizeTrack | null {
+  // Re-render on a view/size store change or a window resize, then read the live
+  // geometry-derived track fresh (it depends on #postGrid width, which only these change).
+  useSyncExternalStore(subPostSize, postSizeSnap);
+  const [, bumpResize] = useState(0);
+  useEffect(() => {
+    const on = () => bumpResize((n) => n + 1);
+    window.addEventListener('resize', on, { passive: true });
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return getPostSizeTrack ? getPostSizeTrack() : null;
+}
+function usePosterSizeTrack(): CorpusSizeTrack | null {
+  useSyncExternalStore(subPosterSize, posterSizeSnap);
+  const [, bumpResize] = useState(0);
+  useEffect(() => {
+    const on = () => bumpResize((n) => n + 1);
+    window.addEventListener('resize', on, { passive: true });
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return getPosterSizeTrack ? getPosterSizeTrack() : null;
+}
+
+// The Slider drives the size axis. Local state owns the thumb while dragging (mid-drag
+// updates skip the store); the caller keys this on the track RANGE so the thumb reseeds
+// only when the view changes, not on every commit within a view.
+function SizeSlider({ track, onDrag, onCommit }: { track: CorpusSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(track.value);
+  const pick = (val: number | readonly number[]): number => (Array.isArray(val) ? val[0] : (val as number));
+  return (
+    <Slider
+      className="w-40"
+      min={track.min}
+      max={track.max}
+      step={track.step}
+      value={[v]}
+      onValueChange={(val) => {
+        const n = pick(val);
+        setV(n);
+        onDrag(n);
+      }}
+      onValueCommitted={(val) => onCommit(pick(val))}
+    />
   );
 }
 
@@ -98,6 +162,7 @@ function SortSelect_({ storeKey, sel, options }: { storeKey: string; sel: HTMLSe
 // facade over the store 'view' key (card/tile/list); see the file header.
 function PostControls() {
   const view = useSyncExternalStore(subKey('view'), () => (storeGet('view') as string) || 'card');
+  const sizeTrack = usePostSizeTrack();
   const layout = view === 'list' ? 'list' : 'gallery';
   const infoOn = view !== 'tile'; // card/list → on, tile → off (in list the switch is disabled)
   // Remember the gallery sub-choice (info on/off) so leaving/returning via list keeps it.
@@ -136,6 +201,11 @@ function PostControls() {
       <Row label={t('displayShowInfo')}>
         <Switch checked={infoOn} onCheckedChange={setInfo} disabled={layout === 'list'} />
       </Row>
+      {sizeTrack && !sizeTrack.single && (
+        <Row label={t('displaySize')}>
+          <SizeSlider key={`post:${sizeTrack.min}:${sizeTrack.max}`} track={sizeTrack} onDrag={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, false)} onCommit={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, true)} />
+        </Row>
+      )}
     </>
   );
 }
@@ -149,6 +219,7 @@ const POSTER_VIEWS = [
 ];
 function PosterControls() {
   const posterView = useSyncExternalStore(subKey('posterView'), () => (storeGet('posterView') as string) || 'card');
+  const posterSizeTrack = usePosterSizeTrack();
   return (
     <>
       <Row label={t('sbPosterSortTitle')}>
@@ -163,6 +234,11 @@ function PosterControls() {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+      {posterSizeTrack && !posterSizeTrack.single && (
+        <Row label={t('displaySize')}>
+          <SizeSlider key={`poster:${posterSizeTrack.min}:${posterSizeTrack.max}`} track={posterSizeTrack} onDrag={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} onCommit={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} />
+        </Row>
+      )}
     </>
   );
 }

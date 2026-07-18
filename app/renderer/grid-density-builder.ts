@@ -23,6 +23,18 @@ export interface GridDensityDeps {
   getBrowseMode(): string;
 }
 
+// The size-slider track, as data for a React-driven control. For the auto-fill views the
+// range is COLUMN COUNTS (min = fewest = largest tiles ... max = most = smallest); for the
+// list it is raw thumbnail px. `single` = only one stop is geometrically possible, so the
+// caller hides the control (it would convey nothing).
+export interface CorpusSizeTrack {
+  min: number;
+  max: number;
+  value: number;
+  step: number;
+  single: boolean;
+}
+
 export function makeGridDensity(deps: GridDensityDeps) {
   const inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -188,6 +200,34 @@ export function makeGridDensity(deps: GridDensityDeps) {
     setViewSize(sizeFor(sliderCols(), m), commit);
   }
 
+  // Size-slider track as DATA (the React display popover reads this; the old #tileSlider
+  // DOM path is retired). Same math refreshTileSlider used: a column-count track for the
+  // auto-fill views (one detent = one column, no dead notches) and raw px for the list.
+  function computeSizeTrack(): CorpusSizeTrack | null {
+    const st = viewSizeState();
+    if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
+    const m = tileGridMetrics();
+    if (!m) return null;
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentView === 'card' ? { minCols: 1 } : undefined);
+    return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
+  }
+
+  // Apply a slider value (the popover's Slider drives this in place of #tileSlider):
+  // mid-drag (commit=false) reuses the cached geometry + updates the live column width;
+  // commit persists + re-requests thumbnails. Mirrors onSliderMove (min/max come from the
+  // track the caller last read, so the column un-inversion matches).
+  function setSizeFromSlider(value: number, min: number, max: number, commit: boolean) {
+    const st = viewSizeState();
+    if (!st.columns) {
+      setViewSize(value, commit);
+      return;
+    }
+    const m = (!commit && _dragMetrics) || tileGridMetrics();
+    if (!m) return;
+    _dragMetrics = commit ? null : m;
+    setViewSize(sizeFor(trackCols(value, min, max), m), commit);
+  }
+
   // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view
   // modes). Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   function handleShortcutSizeKey(e: KeyboardEvent) {
@@ -326,6 +366,31 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.corpusIpc.setPref(st.pref, size);
   }
 
+  // Poster size-slider track as data (mirrors computeSizeTrack). Null for the list view
+  // (no size axis) → the caller hides the control.
+  function computePosterSizeTrack(): CorpusSizeTrack | null {
+    const st = posterSizeState();
+    if (!st) return null;
+    const m = posterGridMetrics();
+    if (!m) return null;
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m);
+    return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
+  }
+
+  // Apply a poster slider value (the popover Slider drives this instead of
+  // #posterTileSlider). The poster grid commits on every tick (no mid-drag/commit split —
+  // masonic recreates its positioner on the columnWidth change either way), mirroring
+  // onPosterSliderInput.
+  function setPosterSizeFromSlider(value: number, min: number, max: number) {
+    const st = posterSizeState();
+    const m = posterGridMetrics();
+    if (!st || !m) return;
+    const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
+    st.set(size);
+    storeSet(st.pref, size);
+    deps.corpusIpc.setPref(st.pref, size);
+  }
+
   // Poster grid density (card/tile/list) — rendered by the toolbar island
   // (corpusStore 'posterView'). React owns the active state + glass thumb; this
   // reacts to a change: mirror it into posterView, persist it, and re-render the
@@ -400,10 +465,14 @@ export function makeGridDensity(deps: GridDensityDeps) {
     applyTileOverlay,
     refreshTileSlider,
     onSliderMove,
+    computeSizeTrack,
+    setSizeFromSlider,
     handleShortcutSizeKey,
     handleViewStoreChange,
     refreshPosterSlider,
     onPosterSliderInput,
+    computePosterSizeTrack,
+    setPosterSizeFromSlider,
     handlePosterViewStoreChange,
     handleWindowResize,
     restorePrefs,
