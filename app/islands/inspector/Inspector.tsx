@@ -63,7 +63,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
         &times;
       </button>
       {m.heading ? <div className="iv-insp-title">{m.heading}</div> : null}
-      {m.thumbSrc ? <img className="iv-insp-thumb" src={m.thumbSrc} alt="" /> : null}
+      {m.thumbSrc ? <img className={'iv-insp-thumb' + (m.onThumbClick ? ' iv-insp-thumb--peek' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       <Row k={m.labels.platform} v={m.platformLabel} />
       {m.authorName || m.avatarSrc ? (
         <div className="iv-insp-row">

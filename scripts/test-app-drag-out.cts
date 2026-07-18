@@ -91,9 +91,10 @@ const evalJs = `(async () => {
   out.prevented1 = await dragFrom(cardOf('dummy-d1').querySelector('.card-img'));
   out.selAfter1 = selectedKeys();
 
-  // 2. build a real selection by hand (the ○ ring), the way a user does
-  cardOf('dummy-d1').querySelector('.select-check').click();
-  cardOf('dummy-d2').querySelector('.select-check').click();
+  // 2. build a real selection by hand the way a user does now that the ○ ring is
+  //    gone (#143): a plain click single-selects, Ctrl-click adds the second card.
+  cardOf('dummy-d1').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  cardOf('dummy-d2').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   await sleep(80);
   out.selBuilt = selectedKeys();
 
@@ -145,7 +146,7 @@ child.on('close', () => {
   const checks = [
     ['card image drag is intercepted', r.prevented1 === true],
     ['a drag selects nothing (export must not change the library)', r.selAfter1 === ''],
-    ['ring clicks build the selection', r.selBuilt === 'dummy-d1,dummy-d2'],
+    ['click + Ctrl-click builds the selection', r.selBuilt === 'dummy-d1,dummy-d2'],
     ['dragging inside the selection leaves it alone', r.prevented3 === true && r.selAfter3 === 'dummy-d1,dummy-d2'],
     ['dragging outside the selection leaves it alone too', r.prevented4 === true && r.selAfter4 === 'dummy-d1,dummy-d2'],
     ['a drag off the image is left to the browser', r.preventedText === false],

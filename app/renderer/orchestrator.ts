@@ -994,31 +994,25 @@ export function endFilterEditSession(): void {
     onCloseTab: closeImageTab,
   });
 
+  // Primary card gesture (#143 P2⑥): a plain click single-selects the card and
+  // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
+  // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
+  //事項2). Double-click opens the image view as an in-tab history destination
+  // (#144). The card's own buttons (🏷/📎) and the expandable post text keep their
+  // dedicated handlers, so those regions are skipped here. selectionCtl/showDetail
+  // are declared below — safe closure forward-refs (they run only on a real click).
   byId('postGrid').addEventListener('click', (e) => {
-    // Image -> open the gallery (screenshot + originals, whole group).
-    // While the inspector is open, a single click swaps its content instead
-    // (inline browsing); the gallery is then reached by double-click.
-    const img = closestOf(e, '.card-img');
-    if (img) {
-      e.stopPropagation();
-      const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
-      if (!g) return;
-      if (!byId('postDetail').hidden) {
-        showDetail(g);
-        return;
-      }
-      lightboxOpen(buildGroupGalleryItems(g), 0);
-    }
+    if (closestOf(e, '.tag-btn, .clip-btn, .text')) return;
+    const card = closestOf(e, '.post-card');
+    if (!card) return;
+    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
+    if (selectionCtl.clickSelect(card, e) && g) showDetail(g);
   });
-  // Double-click → the image view as a history destination in THIS tab (#143
-  // 確定・#144): pushes an 'image' entry; leaving is ←/Alt+←. Gated on the open
-  // inspector like the old dblclick→lightbox was (with the inspector closed, the
-  // FIRST click already opened the lightbox overlay — the full click model
-  // lands in P2⑥).
   byId('postGrid').addEventListener('dblclick', (e) => {
-    const img = closestOf(e, '.card-img');
-    if (!img || byId('postDetail').hidden) return;
-    const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
+    if (closestOf(e, '.tag-btn, .clip-btn, .text')) return;
+    const card = closestOf(e, '.post-card');
+    if (!card) return;
+    const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (g) openImageEntry(g);
   });
 
@@ -1114,6 +1108,7 @@ export function endFilterEditSession(): void {
     tagKindOf,
     worksCooccurringWith,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster (posterGrid) is declared far below — deferred
+    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g), 0), // inspector thumb → quick-view peek (#143)
     pushUndo,
     inspectorTagPickerData,
     getViewGroups: postGrid.getViewGroups,
@@ -1155,47 +1150,18 @@ export function endFilterEditSession(): void {
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
   });
-  const { toggleCardSelection, selectedRecords } = selectionCtl;
-  // ○ select ring (top-left, shown on hover) — the ONLY way INTO the selection.
-  // Clicking the card body does not select while nothing is selected yet.
-  byId('postGrid').addEventListener('click', (e) => {
-    const ring = closestOf(e, '.select-check');
-    if (!ring) return;
-    e.stopPropagation();
-    const card = ring.closest('.post-card') as HTMLElement | null;
-    if (card) toggleCardSelection(card, e.shiftKey);
-  });
-  // Selection mode (≥1 selected): a click ANYWHERE on a card toggles it.
-  // Capture phase so it pre-empts every other card action (gallery, text
-  // expand, ℹ/edit/delete/📁/open) until the selection is cleared.
-  byId('postGrid').addEventListener(
-    'click',
-    (e) => {
-      if (selection.size() === 0) return;
-      const card = closestOf(e, '.post-card');
-      if (!card) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleCardSelection(card, e.shiftKey);
-    },
-    true,
-  );
+  const { selectedRecords } = selectionCtl;
+  // Selection is driven entirely by the unified card gesture above (plain =
+  // single-select + inspector, Ctrl = add/remove, Shift = range). The old hover
+  // ○ ring (the former only way INTO the selection) and the capture-phase "any
+  // click toggles while selecting" handler are gone — Eagle 純型・ホバー部品ゼロ
+  // (確定A) と単一クリック選択（確定 未決事項2）に一本化。The ℹ button is likewise
+  // retired; the inspector is reached by a plain click (or the card's 詳細
+  // context-menu item), not a dedicated hover button.
   document.getElementById('selectionBar')?.addEventListener('click', selectionCtl.handleSelectionBarClick);
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
 
-  // ℹ button on card → detail popup (re-click same card toggles close)
-  byId('postGrid').addEventListener('click', (e) => {
-    const btn = closestOf(e, '.info-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.info ?? '', 10)];
-    if (!byId('postDetail').hidden && inspectedKey && g && postIdKey(g.rep) === inspectedKey) {
-      closeDetail();
-      return;
-    }
-    showDetail(g);
-  });
   // 🏷 button on card → tag picker pop (Issue #22), anchored to the button itself.
   byId('postGrid').addEventListener('click', (e) => {
     const btn = closestOf(e, '.tag-btn');

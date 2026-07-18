@@ -57,6 +57,28 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     syncSelectionClasses(); // class-only: don't rebuild the grid (was reloading every visible image)
   }
 
+  // Unified card-click selection (#143): plain = single-select (the caller then
+  // opens the inspector for it), Ctrl/Cmd = add/remove, Shift = range from the
+  // anchor. Returns true only for a plain click, so the caller knows to swap the
+  // inspector to this card (Ctrl/Shift must not touch it — 確定 未決事項2).
+  function clickSelect(card: HTMLElement, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
+    const idx = Number.parseInt(card.dataset.index ?? '', 10);
+    const key = card.dataset.key as string;
+    if (e.shiftKey) {
+      selection.toggle(idx, key, true, deps.getViewGroups(), postIdKey);
+      syncSelectionClasses();
+      return false;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      selection.toggle(idx, key, false, deps.getViewGroups(), postIdKey);
+      syncSelectionClasses();
+      return false;
+    }
+    selection.selectOnly(idx, key);
+    syncSelectionClasses();
+    return true;
+  }
+
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
   // corpusStore's 'selectedSet' directly (selection.toggle already
@@ -214,6 +236,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   return {
     toggleCardSelection,
+    clickSelect,
     selectedRecords,
     clearSelection,
     handleShortcutSelectAllKey,

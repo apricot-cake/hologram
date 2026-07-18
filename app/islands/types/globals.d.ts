@@ -270,6 +270,7 @@ declare global {
     onTagContextMenu(tag: string, x: number, y: number): void;
     onEditTags(anchorRect: CorpusAnchorRect): void;
     // Post-only (Inspector.tsx renders these when present).
+    onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
     onOpenExternal?(): void;
     onSauce?(): void;
     onAscii?(): void;

@@ -35,6 +35,9 @@ export interface InspectorBuilderDeps {
   tagKindOf(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: CorpusPost): void;
+  // Peek this group in the quick-view lightbox (#143 未決事項3) — the inspector
+  // preview thumbnail is one of its two entries (the other = Space on the card).
+  openQuickView(g: CorpusPostGroup): void;
   pushUndo(kind: string, records: CorpusUndoRecord[]): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   getViewGroups(): CorpusPostGroup[];
@@ -257,6 +260,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       kind: 'post',
       heading,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
+      onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
       platformLabel: (p.platform || '').toUpperCase(),
       avatarSrc,
       authorName: p.displayName || '',
@@ -388,19 +392,19 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     closeDetail();
   }
   // Slide-over mode (narrow window): the panel covers the grid, so it acts
-  // like a scrim-less drawer — ANY click outside it inside the content area
-  // (cards and grid included) dismisses it, and the click is consumed so the
-  // card doesn't also react on the same press. ℹ buttons stay live as the
-  // explicit "show this one instead" entry. Inline mode (wide) keeps clicks:
-  // cards swap the content there since the panel covers nothing. Also
-  // registered from DetailDismiss, in CAPTURE phase like the Esc handler above.
+  // like a scrim-less drawer — a click on EMPTY grid area (or elsewhere in the
+  // content region) dismisses it, and the click is consumed so nothing else
+  // reacts on the same press. A click on a card is exempt: the unified card
+  // gesture (#143) swaps the inspector to that card, so it must reach the card's
+  // own handler. Inline mode (wide) keeps every click — the panel covers
+  // nothing. Registered from DetailDismiss, in CAPTURE phase like the Esc handler.
   function handleOutsideClickDismissDetail(e: MouseEvent) {
     const insp = byId('postDetail');
     if (insp.hidden) return;
     if (!matchMedia('(max-width: 1279px)').matches) return;
     if (insp.contains(e.target as Node | null)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '.info-btn, .tag-btn')) return; // ℹ/🏷 = swap to that card
+    if (closestOf(e, '.post-card, .tag-btn')) return; // card click = swap to it; 🏷 = tag-pop for it
     if (closestOf(e, '.poster-card')) return; // poster click = go to that poster's posts
     e.preventDefault();
     e.stopPropagation();

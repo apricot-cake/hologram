@@ -69,6 +69,14 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Corp
   storeSet('selectedSet', next);
 }
 
+// Plain click (#143): collapse the selection to just this one card and make it
+// the range anchor — Eagle/Explorer 型「クリック＝単一選択」. Ctrl/Shift keep
+// using toggle() above (add-remove / range).
+export function selectOnly(idx: number, key: string) {
+  anchor = idx;
+  storeSet('selectedSet', new Set<string>([key]));
+}
+
 export function clear() {
   anchor = null;
   storeSet('selectedSet', new Set<string>());
