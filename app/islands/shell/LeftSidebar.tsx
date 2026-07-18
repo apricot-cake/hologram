@@ -95,7 +95,7 @@ export function LeftSidebar() {
             {/* id="settingsBtn" is kept as a (b) contract: MirrorStatus refreshes
                 its rail on this button's click (folders/backup may have changed).
                 The id + the cross-boundary listener are retired together when the
-                settings surface is reworked (redesign 要決G / P2⑩). */}
+                settings surface is reworked (redesign 未決事項G / P2⑩). */}
             <SidebarMenuButton id="settingsBtn" tooltip={t('tabSettings')} onClick={() => openSettings()}>
               <Settings />
               <span>{t('tabSettings')}</span>
