@@ -67,7 +67,8 @@ async function main() {
     assert('postIdKey captureId 優先＋フォールバック', R.postIdKey({ captureId: 'c1' }) === 'c1' && R.postIdKey({ url: 'u', capturedAt: 't' }) === 'u|t');
   }
 
-  // --- imageTabGroup / imageTabTitleOf: 画像タブの記録解決＋タイトル（byId/fallback 注入・純関数）---
+  // --- imageTabGroup / imageTabTitleOf: 画像ビューの記録解決＋タイトル（byId/fallback 注入・純関数）---
+  // #144: 引数は image エントリ由来の { id?, recs }（旧 { img:{recs} } タブ形は廃止）。
   {
     const shot: any = { captureId: 'a', image: 'a.jpg', media: [] }; // スクショ
     const art: any = { captureId: 'b', image: 'b.png', source: 'drag', text: 'hi', media: [{ file: 'm.png' }] };
@@ -77,13 +78,13 @@ async function main() {
     ]);
     const byId = (id) => lib.get(id);
     // rep pick: スクショ優先（groupRecords と同じ）。files は flatMap(groupFilesOf)。
-    const g = R.imageTabGroup({ id: 't1', img: { recs: ['a', 'b'], idx: 0 } }, byId);
+    const g = R.imageTabGroup({ id: 't1', recs: ['a', 'b'] }, byId);
     assert('imageTabGroup key/rep（スクショ優先）', g.key === 'imgtab:t1' && g.rep === shot);
     // files は flatMap(groupFilesOf)＝"作品ページ"のみ（スクショ shot は artwork を持たず空、art の media が入る）
     assert('imageTabGroup records 解決＋files', g.records.length === 2 && g.files.join(',') === 'm.png');
     // 削除で全て解決不能 → null（missing 状態へ縮退）
-    assert('imageTabGroup 解決ゼロ → null', R.imageTabGroup({ id: 't2', img: { recs: ['x', 'y'], idx: 0 } }, byId) === null);
-    assert('imageTabGroup recs 欠損 → null', R.imageTabGroup({ id: 't3' }, byId) === null);
+    assert('imageTabGroup 解決ゼロ → null', R.imageTabGroup({ id: 't2', recs: ['x', 'y'] }, byId) === null);
+    assert('imageTabGroup recs 欠損 → null', R.imageTabGroup({ id: 't3', recs: undefined }, byId) === null);
     // rep が text 持ちで title 無し → text 採用、24字超は省略
     assert('imageTabTitleOf text 採用', R.imageTabTitleOf({ rep: { text: 'hello world' } }, '無題') === 'hello world');
     assert('imageTabTitleOf 24字超は…付き省略', R.imageTabTitleOf({ rep: { title: 'あ'.repeat(30) } }, '無題') === 'あ'.repeat(24) + '…');

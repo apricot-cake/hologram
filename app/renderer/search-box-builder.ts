@@ -66,7 +66,26 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // Typing arrives via the store (the searchbox island pushes every keystroke).
   // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
   // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
-  // no args — a truthy arg would be taken as keepLimit and skip the history push.
+  // no args — a truthy arg would be taken as keepLimit and skip the history record.
+  //
+  // _liveToken brackets every search-editing render (typing sync / Enter confirm /
+  // suggestion pick): while a render runs, tabs-builder's navCoalesceKey reads the
+  // burst's token, so one typing burst collapses into ONE history entry (#144
+  // 確定未決2 — the confirm/pick lands as a rewrite of that same entry and ENDS
+  // the burst; the next burst gets a fresh token = a fresh entry).
+  let _liveToken: object | null = null;
+  let _liveSearch = false;
+  const liveSearchKey = (): unknown => (_liveSearch ? _liveToken : null);
+  function asLiveSearch(fn: () => void, end?: boolean) {
+    if (!_liveToken) _liveToken = {};
+    _liveSearch = true;
+    try {
+      fn();
+    } finally {
+      _liveSearch = false;
+      if (end) _liveToken = null;
+    }
+  }
   let _searchRenderTimer: any = null;
   function handleSearchQueryStoreChange() {
     const v = searchQuery();
@@ -74,11 +93,13 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     _searchEcho = v;
     clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(() => {
-      if (deps.getBrowseMode() === 'posters') {
-        deps.renderPosters();
-        return;
-      }
-      searchEditing.sync(); // posts: the box edits a 'text' leaf in the query tree
+      asLiveSearch(() => {
+        if (deps.getBrowseMode() === 'posters') {
+          deps.renderPosters();
+          return;
+        }
+        searchEditing.sync(); // posts: the box edits a 'text' leaf in the query tree
+      });
     }, 150);
   }
 
@@ -94,11 +115,14 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   // filter live off the box value, Enter is a no-op there).
   initSearchBox({
     getSuggestions: (q) => deps.buildSuggest(q),
-    onPick: (it) => searchEditing.pick(it),
+    // pick/confirm run as live-search too: their renders REWRITE the typing
+    // burst's history entry (the typed text was for finding the filter — the
+    // confirmed/picked state is what the entry should hold), then END the burst.
+    onPick: (it) => asLiveSearch(() => searchEditing.pick(it), true),
     onConfirmText: () => {
       if (deps.getBrowseMode() === 'posts' && searchQuery().trim()) {
         clearTimeout(_searchRenderTimer); // beat the debounce so the leaf holds the latest value
-        searchEditing.confirm();
+        asLiveSearch(() => searchEditing.confirm(), true);
       }
     },
   });
@@ -131,5 +155,6 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     rebindEditingTextLeaf,
     handleShortcutSearchFocusKey,
     searchEditing,
+    liveSearchKey,
   };
 }

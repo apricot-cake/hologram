@@ -124,14 +124,25 @@ interface CorpusTabSnapshot {
   multi?: boolean;
   [k: string]: any;
 }
+// One per-tab history entry (#144): a tagged union over the three view kinds.
+// `u` is a pseudo-URL — a display label + identity key (the global history page
+// derives its rows from it); it is NEVER a restore contract (state is the truth,
+// u is derived from it).
+interface CorpusNavEntry {
+  u: string;
+  kind: 'posts' | 'posters' | 'image';
+  state: CorpusTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
+}
 interface CorpusTab {
   id: string;
   pinned: boolean;
   title: string | null;
   state: CorpusTabSnapshot | null;
-  type?: 'image';
-  img?: { recs: string[]; idx: number };
   _scrollTop?: number;
+  // Per-tab back/forward stack (JSON-serialized CorpusNavEntry each) — carried
+  // on the tab object across switches AND persisted to tabs.json (#144 未決5).
+  _navHist?: string[];
+  _navIdx?: number;
   [k: string]: any;
 }
 

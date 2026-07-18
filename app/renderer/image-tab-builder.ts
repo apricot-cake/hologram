@@ -1,21 +1,14 @@
-// Image tabs (type:'image', Eagle-style fit-to-screen detail view) — extracted
-// from viewer.ts as the viewer.ts decomposition's V13 slice (see memory
-// corpus-react-purity-execution-map, Wave27/V13 "画像タブ"). Mirrors
-// tabs-builder.ts (V12): the tab-list mutators (mutateTabs/getActiveTabId/…)
-// and nav history stay in tabs-builder.ts's makeTabsController — this module
-// is one of its consumers (showImageTab/hideImageTabView are deps.tabsCtl
-// takes back, a "deferred forward reference" the same shape as tabsCtl's own
-// snapshotState/syncTitleAndPersist wiring in viewer.ts).
-//
-// This wave also finishes the viewer.ts⇄image-tab.ts circular dependency's
-// DI (memory corpus-react-purity-execution-map §5): image-tab.ts's
-// dispatchIndex/dispatchToggleInspector/dispatchClose used to reach back into
-// viewer.ts's old shared bridge (setImageTabIndex/toggleImageTabInspector/
-// closeImageTab); they now call callbacks handed in via configure() (see
-// viewer.ts's corpusImageTabSource.configure call), so the dependency is
-// one-way (viewer.ts → image-tab.ts) same as every other renderer service.
+// Image VIEW controller (Eagle-style fit-to-screen detail) — #144 reworked the
+// old image TAB (type:'image') into an 'image' history entry on the unified
+// per-tab back/forward stack: double-click pushes an image entry onto the
+// current tab (leaving is nav-back), middle-click opens a background tab whose
+// history is a single image entry (back stays disabled — 確定未決1). This module
+// owns the view show/hide (corpusStore 'activeImageTab' → the ImageTabHost
+// island derives the whole React model), the gallery index (replace, not push —
+// 確定未決2), and the tab-title stamping (_autoTitle). The stack itself lives in
+// tabs-builder.ts's nav (handed in as deps).
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
-import { genTabId } from './tab-state.ts';
+import { genTabId, navEntryUrl } from './tab-state.ts';
 import { set as storeSet } from './store.ts';
 
 export interface ImageTabBuilderDeps {
@@ -23,85 +16,129 @@ export interface ImageTabBuilderDeps {
   getPostById(id: string): CorpusPost | undefined;
   showDetail(g: CorpusPostGroup): void;
   closeDetail(): void;
-  isImageTab(t: CorpusTab | null | undefined): boolean;
-  activeTab(): CorpusTab | undefined;
   closeTab(id: string | null | undefined): void;
   getActiveTabId(): string | null;
   setActiveTabId(id: string | null): void;
   mutateTabs(fn: (arr: CorpusTab[]) => CorpusTab[] | undefined): void;
   saveActiveTabState(): void;
-  nav: { adopt(t: CorpusTab | null | undefined): void };
+  nav: {
+    adopt(t: CorpusTab | null | undefined): void;
+    applyCurrent(): void;
+    push(e: CorpusNavEntry): void;
+    replace(e: CorpusNavEntry): void;
+    current(): CorpusNavEntry | null;
+    canBack(): boolean;
+  };
+  navBack(): void;
   persistTabsDebounced(): void;
 }
 
 export function makeImageTabController(deps: ImageTabBuilderDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
-  // Persisted as { type:'image', img:{ recs:[captureId…], idx } }; recs resolve
-  // against the live library on every activation (imageTabGroup, records.ts —
-  // the _postsById lookup is injected), so deletions degrade to a "missing"
-  // empty state instead of a broken image.
-  const resolveImageTabGroup = (t: CorpusTab) => imageTabGroup(t, (id) => deps.getPostById(id));
+  // recs resolve against the live library on every use (imageTabGroup,
+  // records.ts), so deletions degrade to a "missing" empty state instead of a
+  // broken image. No cached group (_g) anymore — resolution is a map lookup.
+  const resolveGroup = (recs: string[]) => imageTabGroup({ id: deps.getActiveTabId() || '', recs }, (id) => deps.getPostById(id));
 
-  // Publish the tab's identity to corpusStore — renderer/image-tab.ts derives
+  const imageEntry = (recs: string[], idx: number): CorpusNavEntry => ({ u: navEntryUrl('image', { recs, idx }), kind: 'image', state: { recs, idx } });
+
+  // Publish the view identity to corpusStore — renderer/image-tab.ts derives
   // the whole React model from this (crossed with posts-data.ts for library
-  // changes, and 'inspectedKey' for the inspector state), so no model push
-  // happens here.
-  function publishActiveImageTab(t: CorpusTab | null) {
-    storeSet('activeImageTab', t && t.img ? { id: t.id, recs: t.img.recs, idx: t.img.idx } : null);
+  // changes, and 'inspectedKey' for the inspector state).
+  function publish(recs: string[], idx: number) {
+    storeSet('activeImageTab', { id: deps.getActiveTabId() || '', recs, idx });
+  }
+
+  // Stamp the image title onto the active tab (auto-title — cleared by
+  // tabs-builder when a grid entry becomes current again).
+  function stampTabTitle(title: string) {
+    const id = deps.getActiveTabId();
+    deps.mutateTabs((arr) => {
+      const t = arr.find((x) => x.id === id);
+      if (t) {
+        t.title = title;
+        t._autoTitle = true;
+      }
+    });
   }
 
   // body.image-tab-active is React-owned (ImageTabHost toggles it from model
-  // presence — the class ⟺ an image tab is showing). This closure keeps only
-  // this local flag for the re-entrancy guard + the Esc check, so it no
-  // longer touches document.body.classList.
-  let imageTabShowing = false;
-  function showImageTab(t: CorpusTab) {
-    imageTabShowing = true;
-    t._g = resolveImageTabGroup(t); // runtime resolution (inspector toggle re-uses it; never persisted)
-    publishActiveImageTab(t); // → ImageTabHost derives the model, adds body.image-tab-active
+  // presence — the class ⟺ the image view is showing). This closure keeps only
+  // this local flag for the re-entrancy guard + command gating.
+  let imageViewShowing = false;
+  function showImageView(recs: string[], idx: number) {
+    imageViewShowing = true;
+    publish(recs, idx); // → ImageTabHost derives the model, adds body.image-tab-active
+    const g = resolveGroup(recs);
     // The inspector opens with the view (Eagle-style detail screen).
-    if (t._g) deps.showDetail(t._g);
+    if (g) deps.showDetail(g);
     else deps.closeDetail();
-    document.title = (t.title || deps.t('imgTabFallback')) + ' — Corpus';
+    const title = g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
+    stampTabTitle(title);
+    document.title = title + ' — Corpus';
   }
-  function hideImageTabView() {
-    if (!imageTabShowing) return;
-    imageTabShowing = false;
-    publishActiveImageTab(null); // → ImageTabHost removes the class
-    deps.closeDetail(); // the open detail belonged to the image tab; grid tabs reopen it per card
+  function hideImageView() {
+    if (!imageViewShowing) return;
+    imageViewShowing = false;
+    storeSet('activeImageTab', null); // → ImageTabHost removes the class
+    deps.closeDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
   }
 
-  // Index step / inspector toggle / close-tab commands — handed to
-  // renderer/image-tab.ts's configure() as onIndexChange/onToggleInspector/
-  // onCloseTab (this file computes the model, viewer keeps the logic).
-  function setImageTabIndex(i: number) {
-    const t = deps.activeTab();
-    if (!t || !deps.isImageTab(t) || !t.img) return;
-    t.img.idx = i;
+  // Double-click a card (#143 確定): the image view is a history DESTINATION in
+  // the current tab — push an image entry and show it. Leaving is ←/Alt+← (Esc
+  // stays a dismiss-only key — 確定).
+  function openImageEntry(g: CorpusPostGroup) {
+    const recs = g.records.map((r) => r.captureId).filter(Boolean);
+    if (!recs.length) return;
+    deps.nav.push(imageEntry(recs, 0));
+    showImageView(recs, 0);
     deps.persistTabsDebounced();
-    publishActiveImageTab(t);
+  }
+
+  // Gallery index step — rewrites the current image entry in place (paging
+  // within one image view is not a navigation — 確定未決2's replace list).
+  function setImageTabIndex(i: number) {
+    const cur = deps.nav.current();
+    if (!imageViewShowing || !cur || cur.kind !== 'image') return;
+    const st = cur.state as { recs: string[]; idx: number };
+    deps.nav.replace(imageEntry(st.recs, i));
+    publish(st.recs, i);
+    deps.persistTabsDebounced();
   }
   function toggleImageTabInspector() {
-    const t = deps.activeTab();
-    if (!t || !deps.isImageTab(t)) return;
+    const cur = deps.nav.current();
+    if (!imageViewShowing || !cur || cur.kind !== 'image') return;
     if (byId('postDetail').hidden) {
-      if (t._g) deps.showDetail(t._g);
+      const g = resolveGroup((cur.state as { recs: string[] }).recs);
+      if (g) deps.showDetail(g);
     } else deps.closeDetail();
     // inspectorOpen derives from corpusStore's 'inspectedKey' reactively — no repaint call needed.
   }
+  // The view's close command: browser semantics — an image entry reached from a
+  // grid goes BACK; a tab that is nothing but its image entry (middle-click)
+  // closes outright.
   function closeImageTab() {
-    const t = deps.activeTab();
-    if (t) deps.closeTab(t.id);
+    if (deps.nav.canBack()) deps.navBack();
+    else deps.closeTab(deps.getActiveTabId());
   }
 
-  // Open a post group as its own tab. Background by default (browser-like:
-  // middle-click / context menu leave you in the grid).
+  // Open a post group as its own tab: a normal tab whose history is one image
+  // entry (中クリック＝「画像ビューを直接開いた新タブ」＝履歴1コマ — 確定未決1).
+  // Background by default (browser-like: middle-click leaves you in the grid).
   function addImageTab(g: CorpusPostGroup, opts?: { activate?: boolean }) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
     const id = genTabId();
-    const t = { id, pinned: false, title: imageTabTitleOf(g, deps.t('imgTabFallback')), type: 'image', img: { recs, idx: 0 }, state: null } as CorpusTab;
+    const t = {
+      id,
+      pinned: false,
+      title: imageTabTitleOf(g, deps.t('imgTabFallback')),
+      _autoTitle: true,
+      state: null,
+      _navHist: [JSON.stringify(imageEntry(recs, 0))],
+      _navIdx: 0,
+    } as CorpusTab;
     // Insert next to the current tab (browser-like), never inside the pinned run.
     deps.mutateTabs((arr) => {
       const ai = arr.findIndex((tt) => tt.id === deps.getActiveTabId());
@@ -113,20 +150,20 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (opts && opts.activate) {
       deps.saveActiveTabState();
       deps.setActiveTabId(id);
-      showImageTab(t);
       deps.nav.adopt(t);
+      deps.nav.applyCurrent();
     }
     deps.persistTabsDebounced();
   }
 
   return {
-    resolveImageTabGroup,
-    showImageTab,
-    hideImageTabView,
+    showImageView,
+    hideImageView,
+    openImageEntry,
     setImageTabIndex,
     toggleImageTabInspector,
     closeImageTab,
     addImageTab,
-    isShowing: () => imageTabShowing, // primitive read — live, not a snapshot
+    isShowing: () => imageViewShowing, // primitive read — live, not a snapshot
   };
 }

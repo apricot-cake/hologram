@@ -141,29 +141,45 @@ export function makeTabLabels(deps: {
   return { filterLabel, tabTitleOf, posterFilterLabel };
 }
 
-// Per-tab view-history for browser-style back/forward. Holds JSON snapshots;
-// idx points at the current entry. Linear: navigating back then making a
-// fresh change drops the forward entries. In-memory per session (rides on the
-// tab object across switches via adopt/saveInto; not written to disk).
+// Derives an entry's pseudo-URL (label + identity key — see CorpusNavEntry.u).
+// Grid kinds carry no query string for now (state is the truth; the history
+// page #145 derives display labels from state via tabTitleOf) — only the image
+// kind needs an identity in u ("reopening the same image doesn't stack").
+export function navEntryUrl(kind: CorpusNavEntry['kind'], state: any): string {
+  if (kind === 'image') return '/image/' + ((state && Array.isArray(state.recs) && state.recs[0]) || '');
+  return kind === 'posters' ? '/posters' : '/posts';
+}
+
+// Per-tab view-history for browser-style back/forward (#144: entries are
+// tagged-union CorpusNavEntry JSON — posts / posters / image all ride the same
+// stack). idx points at the current entry. Linear: navigating back then making
+// a fresh change drops the forward entries. The stack rides on the tab object
+// across switches via adopt/saveInto and persists to tabs.json (未決5).
 //
 // deps contract:
 //   cap — history depth cap
 //   enabled() — history gate (viewer's appBooted: no entries until initTabs
 //               has applied the saved view — avoids a spurious empty entry
 //               from the early prefs render)
-//   snapshot() — current view state object (seeds a fresh history on adopt)
-//   apply(state) — restores a view state (its restoring guard stops the re-push)
+//   snapshot() — current view entry (seeds a fresh history on adopt)
+//   apply(entry) — restores a view entry (its restoring guard stops the re-push)
 //   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
-export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusTabSnapshot; apply(s: CorpusTabSnapshot): void; onChange(): void }) {
+export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusNavEntry; apply(e: CorpusNavEntry): void; onChange(): void }) {
   const { cap, enabled, snapshot, apply, onChange } = deps;
   let hist: string[] = [];
   let idx = -1;
+  // Coalescing state for record(): while the caller keeps handing the same
+  // non-null key (one live-typing burst, one open facet editor), follow-up
+  // records REPLACE the entry the first record pushed — "1 セッション 1 エントリ"
+  // (確定未決2). Any navigation / adopt resets it, so post-nav edits push fresh.
+  let lastKey: unknown = null;
 
   // Record a fresh view. No-op when the state equals the current entry, so
   // background refreshes / re-renders of the same query don't pile up.
-  function push(snap: CorpusTabSnapshot) {
+  function push(e: CorpusNavEntry) {
     if (!enabled()) return;
-    const s = JSON.stringify(snap);
+    lastKey = null;
+    const s = JSON.stringify(e);
     if (idx >= 0 && hist[idx] === s) return;
     if (idx < hist.length - 1) hist = hist.slice(0, idx + 1); // drop forward branch
     hist.push(s);
@@ -171,18 +187,59 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     idx = hist.length - 1;
     onChange();
   }
+  // Rewrite the current entry in place (live typing / gallery paging / sort —
+  // the 確定 replace list). When the rewrite makes it a duplicate of the
+  // previous entry (e.g. a typing session backspaced to where it started),
+  // drop it instead of keeping two identical neighbours.
+  function replace(e: CorpusNavEntry) {
+    if (!enabled()) return;
+    if (idx < 0) {
+      push(e);
+      return;
+    }
+    const s = JSON.stringify(e);
+    if (hist[idx] === s) return;
+    if (idx > 0 && hist[idx - 1] === s) {
+      hist.splice(idx, 1);
+      idx--;
+      lastKey = null; // the burst's entry vanished — the next coalesced record must push fresh
+    } else {
+      hist[idx] = s;
+    }
+    onChange();
+  }
+  // push/replace router: a repeated non-null coalesce key collapses the burst
+  // into the entry its first record pushed.
+  function record(e: CorpusNavEntry, coalesceKey?: unknown) {
+    if (coalesceKey != null && coalesceKey === lastKey) {
+      replace(e);
+      return;
+    }
+    push(e);
+    lastKey = coalesceKey ?? null;
+  }
   // Returns true when it actually navigated (the caller persists on true).
   function go(i: number): boolean {
     if (i < 0 || i >= hist.length || i === idx) return false;
     idx = i;
+    lastKey = null;
     apply(JSON.parse(hist[idx]));
     onChange();
     return true;
   }
   const back = () => go(idx - 1);
   const forward = () => go(idx + 1);
+  // Current entry (parsed copy) — null before the first record/adopt.
+  function current(): CorpusNavEntry | null {
+    return idx >= 0 ? JSON.parse(hist[idx]) : null;
+  }
+  // Re-apply the current entry (tab switch: the adopted stack knows the view).
+  function applyCurrent() {
+    if (idx >= 0) apply(JSON.parse(hist[idx]));
+  }
   // Adopt (or seed) a tab's history when it becomes active.
   function adopt(t: CorpusTab | null | undefined) {
+    lastKey = null;
     if (t && Array.isArray(t._navHist) && t._navHist.length) {
       hist = t._navHist;
       idx = typeof t._navIdx === 'number' ? Math.max(0, Math.min(t._navIdx, hist.length - 1)) : hist.length - 1;
@@ -197,18 +254,29 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     t._navHist = hist;
     t._navIdx = idx;
   }
-  return { push, back, forward, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
+  return { push, replace, record, back, forward, current, applyCurrent, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
 }
 
 // tabs.json payload. scrollTop rides along so the view restores across
 // RESTART, not just tab switches (main.js writes the payload verbatim — no
 // whitelist). The old renderLimit field is gone with the windowed path: the
 // virtualized grid restores any depth from scrollTop alone (stale saved
-// fields are ignored). Image tabs persist type+img instead of filter state
-// (undefined fields drop out of the JSON, so filter tabs keep their old
-// shape on disk).
+// fields are ignored). The per-tab back/forward stack persists as parsed
+// entry objects under `nav` (#144 未決5 — NAV_CAP is the only size bound;
+// Chrome carries tab history across restarts the same way).
 export function serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> } {
-  return { activeTabId, tabs: tabs.map((t) => ({ id: t.id, pinned: t.pinned, title: t.title, state: t.state, scrollTop: t._scrollTop, type: t.type, img: t.img })) };
+  return {
+    activeTabId,
+    tabs: tabs.map((t) => ({
+      id: t.id,
+      pinned: t.pinned,
+      title: t.title,
+      autoTitle: t._autoTitle || undefined, // image-view stamped title (cleared on grid entries)
+      state: t.state,
+      scrollTop: t._scrollTop,
+      nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
+    })),
+  };
 }
 
 // Normalize a persisted tab state's leaf-type names to the current schema (see
@@ -222,28 +290,72 @@ function normalizeSavedState(state: any): any {
   return state || null;
 }
 
+// Validate one persisted nav entry — returns the re-serialized string or null
+// (bad rows are dropped; idx is clamped by the caller). kind-specific state
+// checks keep a hand-edited / truncated tabs.json from seeding a broken stack.
+function sanitizeNavEntry(e: any): string | null {
+  if (!e || typeof e !== 'object') return null;
+  const kind = e.kind === 'posters' || e.kind === 'image' ? e.kind : e.kind === 'posts' ? 'posts' : null;
+  if (!kind) return null;
+  let state = e.state;
+  if (kind === 'image') {
+    const recs = state && Array.isArray(state.recs) ? state.recs.filter((x: any) => typeof x === 'string') : [];
+    if (!recs.length) return null;
+    state = { recs, idx: typeof state.idx === 'number' ? Math.max(0, Math.min(state.idx, recs.length - 1)) : 0 };
+  } else {
+    if (!state || typeof state !== 'object') return null;
+    if (kind === 'posts') state = normalizeSavedState(state);
+    else if (state.tree) normalizeTree(state.tree);
+  }
+  return JSON.stringify({ u: navEntryUrl(kind, state), kind, state });
+}
+
 // Restore-side sanitizer for a persisted tabs.json payload. Returns null when
-// nothing usable was saved (the caller seeds a fresh single tab). Image tabs:
-// sanitize the persisted shape (unknown/older files just yield a filter tab;
-// an image tab with bad recs shows the missing state).
+// nothing usable was saved (the caller seeds a fresh single tab). The nav
+// stack is validated row-by-row (bad rows dropped, idx clamped); a pre-#144
+// image tab ({type:'image', img}) self-heals into a one-entry image history —
+// the unified shape (one-off migration, droppable before release).
 export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null {
   // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
   // loose shape once here, matching the CorpusPost "open JSON" convention,
   // rather than threading `unknown` through every field access below.
   const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
   if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
-  const tabs: CorpusTab[] = data.tabs.map((t) => ({
-    id: t.id || genId(),
-    pinned: !!t.pinned,
-    title: t.title || null,
-    // Self-heal retired leaf-type names in the persisted query tree + its title
-    // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
-    // both are normalized; the next tab-switch write persists the healed shape.
-    state: normalizeSavedState(t.state),
-    type: t.type === 'image' ? 'image' : undefined,
-    img: t.type === 'image' && t.img && Array.isArray(t.img.recs) ? { recs: t.img.recs.filter((x: any) => typeof x === 'string'), idx: typeof t.img.idx === 'number' ? t.img.idx : 0 } : undefined,
-    _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
-  }));
+  const tabs: CorpusTab[] = data.tabs.map((t) => {
+    let navHist: string[] | undefined;
+    let navIdx: number | undefined;
+    if (t.nav && Array.isArray(t.nav.hist)) {
+      const raw: any[] = t.nav.hist;
+      const kept = raw.map((e, i) => ({ s: sanitizeNavEntry(e), i })).filter((x) => x.s != null);
+      if (kept.length) {
+        navHist = kept.map((x) => x.s as string);
+        const savedIdx = typeof t.nav.idx === 'number' ? t.nav.idx : raw.length - 1;
+        // Point at the kept row nearest the saved current row (dropped rows shift it).
+        let mapped = kept.filter((x) => x.i <= savedIdx).length - 1;
+        if (mapped < 0) mapped = 0;
+        navIdx = Math.min(mapped, navHist.length - 1);
+      }
+    } else if (t.type === 'image' && t.img && Array.isArray(t.img.recs)) {
+      const s = sanitizeNavEntry({ kind: 'image', state: { recs: t.img.recs, idx: t.img.idx } });
+      if (s) {
+        navHist = [s];
+        navIdx = 0;
+      }
+    }
+    return {
+      id: t.id || genId(),
+      pinned: !!t.pinned,
+      title: t.title || null,
+      _autoTitle: !!t.autoTitle || (t.type === 'image' && !!navHist),
+      // Self-heal retired leaf-type names in the persisted query tree + its title
+      // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
+      // both are normalized; the next tab-switch write persists the healed shape.
+      state: normalizeSavedState(t.state),
+      _scrollTop: typeof t.scrollTop === 'number' ? t.scrollTop : 0,
+      _navHist: navHist,
+      _navIdx: navIdx,
+    };
+  });
   const sid = data.activeTabId;
   return { tabs, activeTabId: sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id };
 }

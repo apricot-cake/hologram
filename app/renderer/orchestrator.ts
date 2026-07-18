@@ -173,6 +173,18 @@ export interface ActiveFilter {
 }
 export let activeFilters: () => ActiveFilter[];
 
+// One open facet-editor popup = one nav-history entry (#144 確定未決2: エディタ
+// 1セッション1エントリ). The filterbar's ValueEditor/FormEditor bracket their
+// mount with these; while a session token is live, tabs-builder coalesces the
+// per-pick records into the entry the first pick pushed.
+let _filterEditSession: object | null = null;
+export function beginFilterEditSession(): void {
+  _filterEditSession = {};
+}
+export function endFilterEditSession(): void {
+  _filterEditSession = null;
+}
+
 (async () => {
   // The Promise executor runs synchronously, so this is assigned before any other
   // code executes — the `!` tells tsc what the executor already guarantees.
@@ -326,9 +338,8 @@ export let activeFilters: () => ActiveFilter[];
   // Assigned (not a hoisted declaration) so the module-scope `export let` above is what
   // gets set — Activebar.tsx imports it directly now (Wave32/V17 continued).
   resetAllFilters = function () {
-    // Bounce back to the poster grid only if we drilled in from a poster AND that
-    // poster's user filter is still active (check before emptying the tree).
-    const bounce = posterReturn && qHasValue('user', posterReturn);
+    // No poster bounce anymore (#144 確定未決4: posterReturn 撤去) — a drill-in is a
+    // history push now, so "back to the poster grid" is the ← button / Alt+←.
     postQB.resetTree();
     searchEditing.clear(); // the editing text leaf is gone with the tree
     const set = (id: string, v: string) => {
@@ -340,8 +351,6 @@ export let activeFilters: () => ActiveFilter[];
     set('sbDateTo', '');
     set('sbEngMin', '');
     afterQueryChange();
-    posterReturn = null;
-    if (bounce) setBrowseMode('posters');
   };
   // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island,
   // which imports resetAllFilters/navBack/navForward directly (P4-B slice⑱ — no more
@@ -541,12 +550,7 @@ export let activeFilters: () => ActiveFilter[];
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
   // post-grid-builder.ts (Wave19/V5 "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
-  let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses)
-  // Holds the poster KEY a poster-click drilled into (posts mode + that `user` filter).
-  // A query reset bounces back to the poster grid AS LONG AS that user filter is still
-  // active (you're still looking at this poster's posts, even with extra library filters
-  // added). Removing the user filter or switching mode ends it. null = no pending return.
-  let posterReturn: any = null;
+  let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 確定未決3)
   let multiOnly = false; // show only items with more than one image
   // SMOKE capture: the hidden screenshot instance never has anything "on-screen",
   // so content-visibility:auto skips painting every card and loading=lazy images
@@ -796,11 +800,9 @@ export let activeFilters: () => ActiveFilter[];
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: () => {
-      // An active image tab shows library records — re-resolve it against the fresh
-      // set so t._g stays current (inspector re-open); the React model itself
-      // re-derives live via renderer/image-tab.ts's posts-data.ts subscription.
-      const it = tabsCtl.activeTab();
-      if (it && tabsCtl.isImageTab(it)) it._g = imageTabCtl.resolveImageTabGroup(it);
+      // The open image view re-derives live via renderer/image-tab.ts's
+      // posts-data.ts subscription, and the inspector toggle resolves its group
+      // fresh from the current history entry — no cached group to refresh (#144).
     },
     getInspectedKey: () => inspectedKey,
     closeDetail: () => closeDetail(),
@@ -890,12 +892,21 @@ export let activeFilters: () => ActiveFilter[];
     getAllPostsCount: () => postGrid.getAllPosts().length,
     resetAllFilters: () => resetAllFilters(),
     getBrowseMode: () => browseMode,
+    setBrowseModeLite: (m) => setBrowseModeLite(m), // setBrowseModeLite is declared far below — deferred
     contentScrollTop: () => contentScrollTop(),
     scrollContentTo: (y) => scrollContentTo(y),
-    showImageTab: (t) => imageTabCtl.showImageTab(t), // imageTabCtl is constructed just below — deferred
-    hideImageTabView: () => imageTabCtl.hideImageTabView(),
+    getPosterTree: () => posterQB.getTree(), // posterQB is constructed far below — deferred
+    setPosterTree: (t) => posterQB.setTree(t),
+    getPosterSort: () => (storeGet('sortPoster') as string) || 'count',
+    setPosterSort: (v) => storeSet('sortPoster', v),
+    renderPosters: () => renderPosters(),
+    showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl is constructed just below — deferred
+    hideImageView: () => imageTabCtl.hideImageView(),
+    // Coalescing hint (#144 確定未決2): an open facet-editor session, else a live
+    // search-typing burst (searchBox is constructed far below — deferred read).
+    navCoalesceKey: () => _filterEditSession || searchBox.liveSearchKey(),
   });
-  const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, isImageTab, activeTab, nav, persistTabsDebounced, saveActiveTabState, closeTab } = tabsCtl;
+  const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, nav, persistTabsDebounced, saveActiveTabState, closeTab } = tabsCtl;
   // The rest of tabsCtl's surface only ever gets read through the module-scope exports
   // above (App.tsx/Activebar.tsx import those directly) — assigned by property, not
   // destructured, so there's no local same-named binding shadowing the `export let`s
@@ -913,10 +924,11 @@ export let activeFilters: () => ActiveFilter[];
   handleTabBarDblclick = tabsCtl.handleTabBarDblclick;
   handleGlobalTabShortcut = tabsCtl.handleGlobalTabShortcut;
 
-  // --- Image tabs (type:'image') — fit-to-screen detail view (Eagle 風) ---
-  // The model/state cluster (resolveImageTabGroup/showImageTab/hideImageTabView/
+  // --- Image view ('image' history entries) — fit-to-screen detail view (Eagle 風) ---
+  // The view/state cluster (showImageView/hideImageView/openImageEntry/
   // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
-  // image-tab-builder.ts now (viewer.ts decomposition's V13 slice, Wave27).
+  // image-tab-builder.ts (viewer.ts decomposition's V13 slice, Wave27; #144
+  // reworked the type:'image' TAB into an entry on the unified per-tab history).
   // showDetail/closeDetail (inspector-builder.ts) are declared far below —
   // deferred arrows the same TDZ-safe way postGrid's own showDetail/closeDetail
   // deps already work.
@@ -925,17 +937,16 @@ export let activeFilters: () => ActiveFilter[];
     getPostById: postGrid.getPostById,
     showDetail: (g) => showDetail(g),
     closeDetail: () => closeDetail(),
-    isImageTab,
-    activeTab,
     closeTab,
     getActiveTabId,
     setActiveTabId,
     mutateTabs,
     saveActiveTabState,
     nav,
+    navBack: () => navBack(),
     persistTabsDebounced,
   });
-  const { resolveImageTabGroup, showImageTab, hideImageTabView, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
+  const { openImageEntry, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
 
   // initTabs/showTabMenu/tab-rename commit-cancel/tab-bar DOM handlers/the
   // Ctrl+T/W/Tab shortcut all live in tabsCtl now (destructured above); the
@@ -999,11 +1010,16 @@ export let activeFilters: () => ActiveFilter[];
       lightboxOpen(buildGroupGalleryItems(g), 0);
     }
   });
+  // Double-click → the image view as a history destination in THIS tab (#143
+  // 確定・#144): pushes an 'image' entry; leaving is ←/Alt+←. Gated on the open
+  // inspector like the old dblclick→lightbox was (with the inspector closed, the
+  // FIRST click already opened the lightbox overlay — the full click model
+  // lands in P2⑥).
   byId('postGrid').addEventListener('dblclick', (e) => {
     const img = closestOf(e, '.card-img');
     if (!img || byId('postDetail').hidden) return;
     const g = postGrid.getViewGroups()[Number.parseInt((img.closest('.post-card') as HTMLElement | null)?.dataset.index ?? '', 10)];
-    if (g) lightboxOpen(buildGroupGalleryItems(g), 0);
+    if (g) openImageEntry(g);
   });
 
   // Middle-click an image → open the post as a background image tab
@@ -1230,39 +1246,38 @@ export let activeFilters: () => ActiveFilter[];
   handleViewStoreChange = gridDensity.handleViewStoreChange;
 
   // === Browse-mode toggle: 投稿グリッド ↔ 投稿者グリッド ===
+  // The light half: flip the mode state (let + store mirror + stale-detail close)
+  // WITHOUT rendering. applyEntry (tabs-builder) uses this so a history restore
+  // renders exactly once — its own kind-specific render right after.
+  // No pref write anywhere: mode is per-tab state on the history entry now (#144
+  // 確定未決3 — the old global browseMode pref is retired; a new tab opens posts).
+  function setBrowseModeLite(mode: string) {
+    mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
+    if (browseMode === mode) return;
+    browseMode = mode;
+    // Mirror into the store so the React islands (LeftSidebar active state, App's
+    // ShellClasses body.browse-posters — CSS hides the inactive grid) reflect the
+    // mode even when an INTERNAL setter drove us. Safe against recursion: the
+    // store's set is value-guarded, and browseMode === mode by now so the
+    // subscribe handler's guard skips.
+    storeSet('browseMode', mode);
+    closeDetail(); // a stale post/poster detail shouldn't survive the switch
+  }
   // Switches the content area between the post grid and the poster grid (same tab).
   // A semantic "what am I browsing" switch — distinct from the card/tile/list density.
-  function setBrowseMode(mode: string, opts?: { silent?: boolean }) {
-    mode = mode === 'posters' ? 'posters' : 'posts'; // collections retired (now a sidebar folder list)
-    posterReturn = null; // an explicit mode switch ends any pending poster-return
-    browseMode = mode;
-    // Mirror into the store so the React islands (BrowseToggle active/thumb, SectionTitle's
-    // "ビュー · …" suffix) reflect the mode even when we got here from an INTERNAL setter
-    // (jumpToPoster / openPosterPosts / openCollection / the filter-reset bounce) rather
-    // than a toggle click. Safe against recursion: the store's set is value-guarded, and
-    // when the click path drove us the value is already equal (no-op); when an internal
-    // setter drove us, browseMode === mode by now so the subscribe handler's guard skips.
-    storeSet('browseMode', mode);
-    // The active state + glass thumb AND body.browse-posters (CSS hides the inactive grid)
-    // are React-owned now — the BrowseToggle island / App's ShellClasses both react to this
-    // corpusStore 'browseMode' change (ShellClasses toggles the body class in a
-    // useLayoutEffect, before paint = no flash). We only run the heavy switch below.
-    // (Changing which toolbars are visible shifts the sidebar width → the toggle's geometry;
-    // the island's ResizeObserver re-slides its own thumb, so there is nothing to measure here.)
-    closeDetail(); // a stale post/poster detail shouldn't survive the switch
-    if (!(opts && opts.silent)) corpusIpc.setPref('browseMode', mode);
-    // Optimistic UI: the segment (thumb slide / active state / grid swap via body class)
-    // was updated synchronously above; defer the heavy grid render past a paint so the
-    // switch shows INSTANTLY instead of blocking on renderPosts/Posters/Collections.
+  // The render lands as a fresh history entry of the new kind (renderPosts /
+  // renderPosters record it — that push IS the mode switch on the tab history).
+  function setBrowseMode(mode: string) {
+    mode = mode === 'posters' ? 'posters' : 'posts';
+    setBrowseModeLite(mode);
+    // Optimistic UI: the mode state (active state / grid swap via body class) was
+    // updated synchronously above; defer the heavy grid render past a paint so the
+    // switch shows INSTANTLY instead of blocking on renderPosts/Posters.
     const render = () => {
       if (browseMode !== mode) return;
       if (mode === 'posters') renderPosters();
       else renderPosts();
     };
-    if (opts && opts.silent) {
-      render();
-      return;
-    } // initial restore: render synchronously
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
@@ -1348,9 +1363,7 @@ export let activeFilters: () => ActiveFilter[];
     posterView: gridDensity.getPosterView,
     refreshPosterSlider: gridDensity.refreshPosterSlider,
     syncBrowseBar,
-    setPosterReturn: (key) => {
-      posterReturn = key;
-    },
+    onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
   const {
     getPosterList,
@@ -1682,7 +1695,12 @@ export let activeFilters: () => ActiveFilter[];
   // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the SortSelect
   // writes it on pick); re-render when it changes. This replaces the old #posterSortSelect
   // DOM-'change' listener — the store is now the one trigger (no dual source).
-  storeSubscribe('sortPoster', () => renderPosters());
+  storeSubscribe('sortPoster', () => {
+    if (tabsCtl.isRestoring()) return; // applyEntry/initTabs wrote the store — they drive their own render
+    // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
+    tabsCtl.setNavReplaceNext();
+    renderPosters();
+  });
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
   // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
   // The poster [data-qfrow] flyout rows were removed with the poster sidebar facet
@@ -1759,6 +1777,8 @@ export let activeFilters: () => ActiveFilter[];
   sortSelect.addEventListener('change', () => {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
     // separate global pref — that double-storage raced on load. renderPosts captures it.
+    // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
+    tabsCtl.setNavReplaceNext();
     renderPosts();
   });
 
@@ -1870,34 +1890,27 @@ export let activeFilters: () => ActiveFilter[];
     // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
     // model on first get() (P4-B slice⑰), so both columns paint immediately with
     // whatever's already loaded and pick up badges/disclosure as data streams in.
+    // initTabs adopts the persisted per-tab history and restores the active tab's
+    // view state (mode included — #144: the current entry decides, the old
+    // browseMode pref is retired). loadPosts then runs the first render in that
+    // mode; both stay UNRECORDED (markBooted comes after) so boot re-renders
+    // can't stack onto the adopted history.
     await tabsCtl.initTabs();
-    tabsCtl.markBooted(); // saved view is now applied — the first loadPosts render seeds history
     await loadPosts();
-    // Restore the last browse mode (ライブラリ / 投稿者) now that posts are loaded so
-    // buildUsers has data for the poster grid. silent = no history/pref echo.
-    try {
-      const prefs = await corpusIpc.getPrefs();
-      // 'collections' is retired → falls through to 'posts' (setBrowseMode also coerces it).
-      const bm = prefs && prefs.browseMode === 'posters' ? 'posters' : 'posts';
-      // Run the heavy restore synchronously (silent = no history/pref echo, no animation),
-      // THEN push the mode into the store so the island reflects active + thumb. browseMode
-      // is already === bm by then, so the subscribe guard skips the echo. (pull → push, the
-      // same shape as the density toggle's pref restore.)
-      if (bm !== 'posts') setBrowseMode(bm, { silent: true });
-      storeSet('browseMode', bm);
-    } catch {
-      /* stay in library mode */
-    }
-    // First paint done — restore the active tab's scroll (survives restart).
-    tabsCtl.restoreTabView(getTabs().find((t) => t.id === getActiveTabId()));
-    // A restored image tab could only resolve its captureIds now that the
-    // library is loaded — enter the detail view here, after the grid restore.
+    // A restored image entry could only resolve its captureIds now that the
+    // library is loaded — enter the detail view here, on top of the grid.
     {
-      const bootTab = getTabs().find((t) => t.id === getActiveTabId());
-      if (bootTab && isImageTab(bootTab)) showImageTab(bootTab);
+      const cur = nav.current();
+      if (cur && cur.kind === 'image') {
+        const st = cur.state as { recs: string[]; idx: number };
+        imageTabCtl.showImageView(st.recs, st.idx);
+      }
       // grid-tab titles deriving live counts (allPostsCount, just set above by the
       // library load) reach the Tabs source automatically — no push needed here.
     }
+    tabsCtl.markBooted(); // saved view is applied — records start with the first user action
+    // First paint done — restore the active tab's scroll (survives restart).
+    tabsCtl.restoreTabView(getTabs().find((t) => t.id === getActiveTabId()));
     // Persist scroll changes too (debounced), not only state/tab-switch changes, so the
     // remembered position is current at restart. persistTabsDebounced captures scrollY.
     let _scrollPersistTimer: any = null;

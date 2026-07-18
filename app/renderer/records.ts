@@ -89,17 +89,18 @@ export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): st
   return [...new Set((grabbedSelection ? selected : [g]).flatMap((x) => x.files))];
 }
 
-// Image-tab (type:'image') record resolution. The tab persists { img:{ recs:[captureId…],
-// idx } }; recs resolve against the live library on every activation via the injected byId
-// lookup, so deletions degrade to a "missing" empty state instead of a broken image. Same
-// rep pick as groupRecords (capture first, then any record with text). Pure — byId is
-// injected (so this loads under Node too).
-export function imageTabGroup(t: CorpusTab, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null {
-  const ids: string[] = t.img && Array.isArray(t.img.recs) ? t.img.recs : [];
+// Image-view record resolution (#144: an 'image' history entry carries
+// { recs:[captureId…], idx }). recs resolve against the live library on every
+// activation via the injected byId lookup, so deletions degrade to a "missing"
+// empty state instead of a broken image. Same rep pick as groupRecords (capture
+// first, then any record with text). Pure — byId is injected (so this loads
+// under Node too).
+export function imageTabGroup(view: { id?: string; recs: string[] | null | undefined }, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null {
+  const ids: string[] = Array.isArray(view.recs) ? view.recs : [];
   const records = ids.map((id) => byId(id)).filter(Boolean) as CorpusPost[];
   if (!records.length) return null;
   const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
-  return { key: 'imgtab:' + t.id, records, rep, files: records.flatMap(groupFilesOf) };
+  return { key: 'imgtab:' + (view.id || ''), records, rep, files: records.flatMap(groupFilesOf) };
 }
 // Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
 // caller-supplied 無題 fallback (i18n-owned by the caller).

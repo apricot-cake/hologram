@@ -61,10 +61,10 @@ export interface PosterGridBuilderDeps {
   posterView(): string;
   refreshPosterSlider(): void;
   syncBrowseBar(): void;
-  // posterReturn (the poster whose posts a query reset should bounce back to) is a
-  // viewer.ts `let` read by setBrowseMode/resetAllFilters' bounce check (neither
-  // moved here) — openPosterPosts only ever WRITES it, via this setter.
-  setPosterReturn(key: string | null): void;
+  // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
+  // history + persists (#144) — the poster-mode mirror of the post grid's
+  // syncTitleAndPersist dep. Not called on keepLimit (in-place) refreshes.
+  onPosterRendered(): void;
 }
 
 // Fallback-avatar tint (#107): a stable hue per poster so avatar-less cards stay
@@ -166,6 +166,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       // same laziness, not a new cost).
       storeSet('allUsersCount', deps.buildUsers().length);
       storeSet('posterGroups', posterList); // [] — React renders an empty grid (no cards)
+      if (!keepLimit) deps.onPosterRendered(); // 0件 state also records/persists (mirrors the post grid)
       return;
     }
     empty.style.display = 'none';
@@ -176,6 +177,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // cell would replay it mid-scroll (same wiring as the post grid).
     clearTimeout(_posterAnimT);
     if (grid.classList.contains('anim-in')) _posterAnimT = setTimeout(() => grid.classList.remove('anim-in'), GRID_ANIM_MS);
+    if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 
   // React owns the poster cells (virtualized — corpusPosterGridSource,
@@ -224,8 +226,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     set('sbDateTo', '');
     set('sbEngMin', '');
     deps.setBrowseMode('posts');
+    // The drill-in lands as a fresh 'posts' entry on the tab history (#144) — going
+    // back to the poster grid is nav-back now (the old posterReturn bounce is gone).
     deps.addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
-    deps.setPosterReturn(u.key); // set LAST (setBrowseMode clears it): reset returns to posters while this user filter is active
   }
 
   // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster

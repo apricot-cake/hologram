@@ -11,7 +11,7 @@
 // shared search module's mode as a side effect.
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FacetMode, FilterCatValues, FilterRow } from '../../renderer/orchestrator.ts';
+import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../../renderer/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -94,6 +94,13 @@ function ValueRow({ it, onPick }: { it: FilterRow; onPick: (it: FilterRow) => vo
 }
 
 export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage: (fn: () => void) => void }) {
+  // One mounted editor = one nav-history entry (#144 確定未決2): bracket the mount
+  // so every pick in this session coalesces into the entry the first pick pushed.
+  // The parent keys this per category, so switching categories restarts the session.
+  useEffect(() => {
+    beginFilterEditSession();
+    return endFilterEditSession;
+  }, []);
   // Re-read values() after every pick so on/count reflect the mutated tree in place.
   // The parent remounts this per category (key=cat), so lazy init is the fresh read.
   const [items, setItems] = useState<FilterRow[]>(cat.values);

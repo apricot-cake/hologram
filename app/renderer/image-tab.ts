@@ -60,10 +60,7 @@ function get(): CorpusImageTabModel | null {
   const active = storeGet('activeImageTab');
   if (!active || !gallery || !labels) return null;
   const byId = byIdMap();
-  // Only id + img matter to imageTabGroup (records.ts) — the rest of CorpusTab is
-  // full tab state that hasn't migrated to corpusStore yet (that's slice⑯).
-  const stub = { id: active.id, img: { recs: active.recs, idx: active.idx } } as CorpusTab;
-  const g = imageTabGroup(stub, (id) => byId.get(id));
+  const g = imageTabGroup({ id: active.id, recs: active.recs }, (id) => byId.get(id));
   if (!g) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
   const items = gallery.buildGroupGalleryItems(g);
   if (!items.length) return { items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };

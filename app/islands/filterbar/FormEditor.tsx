@@ -6,8 +6,8 @@
 //
 // Add-only here (the "+ フィルタ" flow never edits an existing leaf — that's the
 // chip-click path, P2③ 後半), so there is no remove button.
-import { useMemo, useState } from 'react';
-import type { FilterCatDate, FilterCatEng } from '../../renderer/orchestrator.ts';
+import { useEffect, useMemo, useState } from 'react';
+import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng } from '../../renderer/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,5 +103,11 @@ function EngForm({ cat, onClose }: { cat: FilterCatEng; onClose: () => void }) {
 }
 
 export function FormEditor({ cat, onClose }: { cat: FilterCatDate | FilterCatEng; onClose: () => void }) {
+  // One mounted editor = one nav-history entry (#144 確定未決2) — same bracket as
+  // ValueEditor (the form applies once, but an edit-reopen replaces in place).
+  useEffect(() => {
+    beginFilterEditSession();
+    return endFilterEditSession;
+  }, []);
   return cat.editor === 'date' ? <DateForm cat={cat} onClose={onClose} /> : <EngForm cat={cat} onClose={onClose} />;
 }

@@ -151,9 +151,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (deps.getBrowseMode() === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
-      // An active image tab shows library records — re-resolve it against the fresh
-      // set so t._g stays current (inspector re-open); the React model itself
-      // re-derives live via renderer/image-tab.ts's posts-data.ts subscription.
+      // The open image view re-derives live via renderer/image-tab.ts's
+      // posts-data.ts subscription — the hook stays for orchestration-side effects.
       deps.onPostsLoaded();
     } finally {
       _loadPostsInFlight = false;

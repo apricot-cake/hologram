@@ -8,17 +8,17 @@
 // the corpusStore-backed tabs/activeTabId/tabEditingId accessors (former
 // viewer.ts locals, P4-B slice⑯) and the tab-bar DOM event handlers.
 //
-// Image tabs (addImageTab/showImageTab/hideImageTabView/setImageTabIndex/
-// toggleImageTabInspector/closeImageTab/resolveImageTabGroup) stay in
-// viewer.ts — that cluster was V13's (Wave27) scope, which also finished
-// image-tab.ts's DI off the old shared bridge (image-tab-builder.ts). This module takes
-// showImageTab/hideImageTabView as deps (deferred forward references, same
+// The image view cluster (showImageView/hideImageView/openImageEntry/
+// setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
+// image-tab-builder.ts (V13/Wave27; #144 reworked the type:'image' TAB into an
+// 'image' entry on the unified per-tab history). This module takes
+// showImageView/hideImageView as deps (deferred forward references, same
 // shape as undo-builder.ts's showToast/postGrid) and exports enough surface
-// (getTabs/mutateTabs/getActiveTabId/setActiveTabId/isImageTab/activeTab/
+// (getTabs/mutateTabs/getActiveTabId/setActiveTabId/activeTab/
 // saveActiveTabState/nav/persistTabsDebounced/persistTabsNow/closeTab) for
 // that still-local code — and for bootApp/postGrid's own deps, both declared
 // elsewhere in viewer.ts — to keep calling into tab state.
-import { genTabId, makeNavHistory, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
+import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
 import { cloneTree } from './listing.ts';
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -45,10 +45,26 @@ export interface TabsBuilderDeps {
   getAllPostsCount(): number;
   resetAllFilters(): void;
   getBrowseMode(): string;
+  // Flip the mode WITHOUT rendering / recording (browseMode let + store mirror +
+  // closeDetail only) — applyEntry runs the right render itself right after.
+  setBrowseModeLite(mode: 'posts' | 'posters'): void;
   contentScrollTop(): number;
   scrollContentTo(y: number): void;
-  showImageTab(t: CorpusTab): void;
-  hideImageTabView(): void;
+  // Poster-side view state for 'posters' entries (#144 未決3 — mode is per-tab now,
+  // so the poster filter tree / sort / live search ride the history entry).
+  getPosterTree(): CorpusQueryGroup;
+  setPosterTree(t: CorpusQueryGroup | null | undefined): void;
+  getPosterSort(): string;
+  setPosterSort(v: string): void;
+  renderPosters(): void;
+  // Image view (fit-to-screen detail) — an 'image' history entry, not a tab type
+  // anymore (#144 未決1: 画像タブの統一).
+  showImageView(recs: string[], idx: number): void;
+  hideImageView(): void;
+  // Coalescing hint for record(): a stable non-null key while one editing burst
+  // is in progress (live search typing / an open facet editor session) makes
+  // follow-up records replace instead of push — "1 セッション 1 エントリ" (未決2).
+  navCoalesceKey(): unknown;
 }
 
 const NAV_CAP = 60;
@@ -59,8 +75,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
-
-  const isImageTab = (t: CorpusTab | null | undefined) => !!t && t.type === 'image';
 
   // --- corpusStore-backed tab list (tabs/activeTabId/tabEditingId — P4-B slice⑯) ---
   const getTabs = (): CorpusTab[] => storeGet('tabs') || [];
@@ -93,16 +107,57 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       multi: deps.getMultiOnly(),
     };
   }
+  // Poster-side view state — the 'posters' entry payload (mirror of snapshotState).
+  function snapshotPosterState() {
+    return { tree: cloneTree(deps.getPosterTree()), sort: deps.getPosterSort(), search: deps.searchQuery() };
+  }
+  const entryOf = (kind: CorpusNavEntry['kind'], state: any): CorpusNavEntry => ({ u: navEntryUrl(kind, state), kind, state });
+  // Current view as a history entry — image beats mode (the image view overlays
+  // whichever grid the tab was browsing); used to seed fresh histories on adopt.
+  function snapshotEntry(): CorpusNavEntry {
+    const iv = storeGet('activeImageTab');
+    if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
+    if (deps.getBrowseMode() === 'posters') return entryOf('posters', snapshotPosterState());
+    return entryOf('posts', snapshotState());
+  }
+  // push/replace router around nav.record: a one-shot replace flag (sort changes —
+  // 確定未決2's replace list) beats the coalesce key (live typing / facet editor).
+  let _navReplaceNext = false;
+  function setNavReplaceNext() {
+    _navReplaceNext = true;
+  }
+  function recordEntry(e: CorpusNavEntry) {
+    if (_navReplaceNext) {
+      _navReplaceNext = false;
+      nav.replace(e);
+      return;
+    }
+    nav.record(e, deps.navCoalesceKey());
+  }
   // Called from every fresh renderPosts(): keep the tab title + persistence in sync
   // with the current state, record it for the stickyRecs change-detection below,
-  // and push it onto the per-tab back/forward history (see nav.push).
+  // and record it onto the per-tab back/forward history (see recordEntry).
   function syncTitleAndPersist() {
-    if (isImageTab(activeTab())) return; // grid renders under an image tab are background refreshes — its title/persistence live on the image-tab path
+    if (storeGet('activeImageTab')) return; // grid renders under the image view are background refreshes
+    if (deps.getBrowseMode() !== 'posts') return; // hidden-grid render while browsing posters
     const snap = snapshotState();
     deps.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
-    nav.push(snap); // record this view for back/forward (skipped while restoring)
+    recordEntry(entryOf('posts', snap));
+    clearAutoTitle();
     document.title = deps.tabTitleOf(snap, { allCount: deps.getAllPostsCount() }).text + ' — Corpus';
+    persistTabsDebounced();
+  }
+  // The poster-grid mirror (deps.onPosterRendered of poster-grid-builder): every
+  // fresh renderPosters() records a 'posters' entry — poster filters/sort/search
+  // are history now that mode is per-tab (#144 未決3).
+  function syncPosterTitleAndPersist() {
+    if (storeGet('activeImageTab')) return;
+    if (deps.getBrowseMode() !== 'posters') return;
+    if (restoringState) return;
+    recordEntry(entryOf('posters', snapshotPosterState()));
+    clearAutoTitle();
+    document.title = deps.t('browsePosters') + ' — Corpus';
     persistTabsDebounced();
   }
   function applyState(s: CorpusTabSnapshot) {
@@ -118,16 +173,59 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     restoringState = false;
     document.title = deps.tabTitleOf(s, { allCount: deps.getAllPostsCount() }).text + ' — Corpus';
   }
+  // The kind dispatch (#144 core): restore whichever view an entry describes.
+  // posts/posters swap the browse mode without the setBrowseMode render debounce
+  // (the entry's own render below is THE render); image overlays the grid as-is.
+  function applyEntry(e: CorpusNavEntry) {
+    _navReplaceNext = false; // a restore consumes no pending replace hint
+    if (e.kind === 'image') {
+      const st = e.state as { recs: string[]; idx: number };
+      deps.showImageView(st.recs, st.idx);
+      return;
+    }
+    deps.hideImageView();
+    deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : 'posts');
+    if (e.kind === 'posters') {
+      const st = e.state as { tree?: any; sort?: string; search?: string };
+      restoringState = true;
+      deps.setPosterTree(st.tree || null);
+      deps.setPosterSort(st.sort || 'count');
+      deps.setSearchBoxValue(st.search || '');
+      deps.renderPosters();
+      restoringState = false;
+      clearAutoTitle();
+      document.title = deps.t('browsePosters') + ' — Corpus';
+      return;
+    }
+    clearAutoTitle();
+    applyState(e.state as CorpusTabSnapshot);
+  }
+  // An image entry stamps its title onto the tab (auto-title); leaving the image
+  // entry clears it back to the derived grid title. User renames (retiring UI)
+  // are left alone — only titles flagged _autoTitle are cleared.
+  function clearAutoTitle() {
+    const id = getActiveTabId();
+    const t = getTabs().find((x) => x.id === id);
+    if (!t || !t._autoTitle) return;
+    mutateTabs((arr) => {
+      const tt = arr.find((x) => x.id === id);
+      if (tt) {
+        tt.title = null;
+        tt._autoTitle = false;
+      }
+    });
+  }
 
   // --- View history (browser-style back/forward) ---
-  // The state machine (hist/idx/cap/dedupe/forward-branch drop/adopt) lives in
-  // tab-state.ts (makeNavHistory); this module keeps the DOM button sync and the
+  // The state machine (hist/idx/cap/dedupe/forward-branch drop/adopt/replace/
+  // coalescing) lives in tab-state.ts (makeNavHistory); this module keeps the
+  // entry construction, the kind dispatch, the store button sync and the
   // persistence hooks. applyState's restoringState guards the re-push.
   const nav = makeNavHistory({
     cap: NAV_CAP,
     enabled: () => appBooted,
-    snapshot: snapshotState,
-    apply: applyState,
+    snapshot: snapshotEntry,
+    apply: applyEntry,
     onChange: updateNavButtons,
   });
   // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
@@ -144,10 +242,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function navForward() {
     if (nav.forward()) persistTabsDebounced();
   }
-  // Nav is post-mode only and yields to typing / open overlays / poster mode.
+  // Nav yields to typing / open overlays only — posters and the image view are
+  // ON the history now (#144), so mode no longer gates back/forward.
   function navAllowed() {
-    if (deps.getBrowseMode() !== 'posts') return false; // history nav is post-view only (posters/collections excluded)
-    if (isImageTab(activeTab())) return false; // image tabs have no filter history
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (!byId('ivFolderModal').hidden) return false;
@@ -198,11 +295,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   };
   function persistTabsNow() {
     clearTimeout(_tabPersistTimer);
-    const at = getTabs().find((t) => t.id === getActiveTabId());
-    if (at && !isImageTab(at)) {
-      at.state = snapshotState();
-      at._scrollTop = deps.contentScrollTop();
-    }
+    saveActiveTabState(); // snapshot + carry the live history (it persists now — #144 未決5)
     persistTabs(getTabs(), getActiveTabId());
   }
   function persistTabsDebounced() {
@@ -212,16 +305,21 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function saveActiveTabState() {
     const t = getTabs().find((t) => t.id === getActiveTabId());
     if (!t) return;
-    if (isImageTab(t)) return; // img.idx is kept live by the island callback; there is no filter state to snapshot
-    t.state = snapshotState();
-    t._scrollTop = deps.contentScrollTop(); // remember content scroll per tab (persisted too)
+    const cur = nav.current();
+    // t.state stays the posts-side snapshot (title fallback + pre-#144 shape);
+    // under a posters/image entry the grid state isn't the current view — keep
+    // the last posts snapshot instead of overwriting it with a stale read.
+    if (!cur || cur.kind === 'posts') {
+      t.state = snapshotState();
+      t._scrollTop = deps.contentScrollTop(); // remember content scroll per tab (persisted too)
+    }
     nav.saveInto(t); // carry the back/forward history with the tab
   }
   // Restore a tab's remembered content scroll. rAF×2 so the freshly rendered
   // grid has laid out; the virtualized grid derives its window from scrollTop
   // alone (its estimated container height already spans all items).
   function restoreTabView(t: CorpusTab | null | undefined) {
-    if (!t || isImageTab(t)) return; // no grid scroll to restore under an image tab
+    if (!t) return;
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
   }
@@ -232,27 +330,37 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // tab's derived title), so nothing here builds a model or pushes one. The
   // pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-  corpusTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew') });
+  corpusTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew'), postersTitle: deps.t('browsePosters'), imageFallbackTitle: deps.t('imgTabFallback') });
+  // Activate a tab object: adopt its history and re-apply its current entry
+  // (the stack knows which view — posts/posters/image — the tab was on). Tabs
+  // without a stack (pre-#144 files) fall back to the legacy state path, then
+  // seed a fresh history from the applied view.
+  function activateTab(t: CorpusTab) {
+    if (Array.isArray(t._navHist) && t._navHist.length) {
+      nav.adopt(t);
+      nav.applyCurrent();
+    } else {
+      deps.hideImageView();
+      deps.setBrowseModeLite('posts');
+      if (t.state) applyState(t.state);
+      else deps.renderPosts();
+      nav.adopt(t);
+    }
+  }
   function switchTab(id: string) {
     if (id === getActiveTabId()) return;
     saveActiveTabState();
     setActiveTabId(id);
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
-    if (isImageTab(t)) {
-      deps.showImageTab(t);
-    } else {
-      deps.hideImageTabView();
-      if (t.state) applyState(t.state);
-      else deps.renderPosts();
-    }
-    nav.adopt(t);
+    activateTab(t);
     restoreTabView(t);
     persistTabsDebounced();
   }
   function addTab() {
     saveActiveTabState();
-    deps.hideImageTabView(); // Ctrl+T from an image tab lands on a fresh grid tab
+    deps.hideImageView(); // Ctrl+T from the image view lands on a fresh grid tab
+    deps.setBrowseModeLite('posts'); // a new tab always opens the posts grid (fresh view)
     const id = genTabId();
     mutateTabs((arr) => {
       arr.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
@@ -265,18 +373,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function closeTab(id: string | null | undefined) {
     if (getTabs().length <= 1) {
-      if (isImageTab(getTabs()[0])) {
-        // Last tab: a window always keeps one grid tab, so the image tab
-        // becomes a fresh filter tab instead of just resetting.
-        deps.hideImageTabView();
-        const nid = genTabId();
-        mutateTabs(() => [{ id: nid, pinned: false, title: null, state: null }]);
-        setActiveTabId(nid);
-        deps.resetAllFilters();
-        nav.adopt(getTabs()[0]);
-        persistTabsDebounced();
-        return;
-      }
+      // Last tab: a window always keeps one tab — whatever view it was on
+      // (grid or image entry), it resets to the fresh posts grid. The history
+      // stays adopted, so the pre-close views remain one back-step away.
+      deps.hideImageView();
+      deps.setBrowseModeLite('posts');
       deps.resetAllFilters();
       persistTabsDebounced();
       return;
@@ -290,14 +391,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const nextActive = wasActive ? getTabs()[Math.min(idx, getTabs().length - 1)] : null;
     if (nextActive) {
       setActiveTabId(nextActive.id);
-      if (isImageTab(nextActive)) {
-        deps.showImageTab(nextActive);
-      } else {
-        deps.hideImageTabView();
-        if (nextActive.state) applyState(nextActive.state);
-        else deps.renderPosts();
-      }
-      nav.adopt(nextActive);
+      activateTab(nextActive);
       restoreTabView(nextActive);
     }
     persistTabsDebounced();
@@ -317,28 +411,42 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (!t) return;
     mutateTabs((arr) => {
       const tt = arr.find((x) => x.id === id);
-      if (tt) tt.title = name.trim() || null;
+      if (tt) {
+        tt.title = name.trim() || null;
+        tt._autoTitle = false; // a manual rename is never auto-cleared
+      }
     });
     persistTabsDebounced();
   }
   function duplicateTab(id: string) {
-    saveActiveTabState();
+    saveActiveTabState(); // flushes the live history into src if src is active
     const src = getTabs().find((t) => t.id === id);
     if (!src) return;
     const idx = getTabs().indexOf(src);
-    const nt = { id: genTabId(), pinned: false, title: src.title ? src.title + ' (2)' : null, type: src.type, img: src.img ? JSON.parse(JSON.stringify(src.img)) : undefined, state: JSON.parse(JSON.stringify(src.state || {})) };
+    const nt: CorpusTab = {
+      id: genTabId(),
+      pinned: false,
+      title: src.title ? (src._autoTitle ? src.title : src.title + ' (2)') : null,
+      _autoTitle: src._autoTitle,
+      state: JSON.parse(JSON.stringify(src.state || {})),
+      // Chrome-style: the duplicate carries the full back/forward stack.
+      _navHist: Array.isArray(src._navHist) ? src._navHist.slice() : undefined,
+      _navIdx: src._navIdx,
+    };
     mutateTabs((arr) => {
       arr.splice(idx + 1, 0, nt);
     });
     setActiveTabId(nt.id);
-    if (isImageTab(nt)) {
-      deps.showImageTab(nt);
+    if (Array.isArray(nt._navHist) && nt._navHist.length) {
+      nav.adopt(nt);
+      nav.applyCurrent();
     } else {
-      deps.hideImageTabView();
+      deps.hideImageView();
+      deps.setBrowseModeLite('posts');
       if (nt.state && Object.keys(nt.state).length) applyState(nt.state);
       else deps.renderPosts();
+      nav.adopt(nt);
     }
-    nav.adopt(nt); // duplicate starts its own history at the copied view
     persistTabsDebounced();
   }
 
@@ -355,7 +463,21 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         setActiveTabId(id);
       }
       const at = getTabs().find((t) => t.id === getActiveTabId());
-      if (at && at.state && !isImageTab(at)) {
+      // Restore the active tab's view state WITHOUT rendering (bootApp's
+      // loadPosts runs the first render). The current history entry decides the
+      // view (#144 mode per-tab): posters restores the poster tree + mode; an
+      // image entry restores the posts fields underneath (back-from-image lands
+      // there) and bootApp opens the image view once the library is loaded.
+      const cur = at && Array.isArray(at._navHist) && at._navHist.length ? (JSON.parse(at._navHist[Math.max(0, Math.min(at._navIdx ?? at._navHist.length - 1, at._navHist.length - 1))]) as CorpusNavEntry) : null;
+      if (cur && cur.kind === 'posters') {
+        const st = cur.state as { tree?: any; sort?: string; search?: string };
+        restoringState = true; // the sortPoster store write must not read as a user sort change
+        deps.setPosterTree(st.tree || null);
+        deps.setPosterSort(st.sort || 'count');
+        deps.setSearchBoxValue(st.search || '');
+        restoringState = false;
+        deps.setBrowseModeLite('posters');
+      } else if (at && at.state) {
         // queryTree is the truth; migrate older states (f + ops, no tree).
         deps.postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
         deps.setSearchBoxValue(at.state.search || '');
@@ -363,11 +485,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.setSortValue(at.state.sort || 'date-desc');
         deps.setMultiOnly(!!at.state.multi);
       }
+      nav.adopt(at); // adopt the persisted stack (or seed from the restored view)
     } catch (err) {
       console.error('initTabs error:', err);
       const id = genTabId();
       setTabs([{ id, pinned: false, title: null, state: null }]);
       setActiveTabId(id);
+      nav.adopt(getTabs()[0]);
     }
   }
   // Tab bar: rename-input commit/cancel, close/new/switch clicks, middle-click close,
@@ -520,12 +644,14 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     mutateTabs,
     getActiveTabId,
     setActiveTabId,
-    isImageTab,
     activeTab,
     markBooted,
     nav,
     snapshotState,
     syncTitleAndPersist,
+    syncPosterTitleAndPersist,
+    setNavReplaceNext,
+    isRestoring: () => restoringState,
     navBack,
     navForward,
     navAllowed,
