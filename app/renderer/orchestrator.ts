@@ -16,9 +16,7 @@ import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
-import { get as filterPopoverGet } from './filter-popover.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
-import { makeFilterPopover } from './filter-popover-builder.ts';
 import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, isScreenshot, artworkFile, densityImage, postIdKey, groupFilesOf, stampPost, percentileFn, makeGroupRecords, makeCardModel, makeGallery, loadUngrouped, loadManualGroups } from './records.ts';
@@ -85,7 +83,6 @@ export let handleTabBarMousedown: (e: MouseEvent) => void;
 export let handleTabBarContextmenu: (e: MouseEvent) => void;
 export let handleTabBarDblclick: (e: MouseEvent) => void;
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
-export let handleQfPopChange: () => void;
 export let handleViewStoreChange: () => void;
 export let handleBrowseModeStoreChange: () => void;
 export let handlePosterViewStoreChange: () => void;
@@ -437,16 +434,16 @@ export let activeFilters: () => ActiveFilter[];
   // getter wiring as facets above (allPosts is a reassigned let; the getters only
   // run when a picker or homonym check fires).
   const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOf });
-  // renderQfPop/onQfPick/showQfPopAt moved to qf-pop-builder.ts (V4/Wave18) — see
-  // the makeQfPop() call near posterQB below.
+  // onQfPick (value-pick → tree mutation) lives in qf-pop-builder.ts (V4/Wave18),
+  // exposed as qfPop.pickValue for the filter bar — see the makeQfPop() call near
+  // posterQB below (the flyout render/anchor half retired with its island, P2③).
 
   // The ⓘ クエリビルダの使い方 hover popover is the activebar island now (HelpPop) — its
   // content (title + 5 rows) rides the model's `help` field; hover/positioning live there.
 
-  // closeAllMenus/openDatePopover/openPosterDatePopover/openEngPopover (the date/
-  // engagement/poster-date-range popovers — unified with qf-pop's "click row to
-  // open/close, no backdrop" behavior) moved to filter-popover-builder.ts
-  // (V4/Wave18) — see the makeFilterPopover() call near posterQB below.
+  // The date/engagement/poster-date-range popovers (the retired filter-popover flyout)
+  // were removed with their island (P2③ タスク3); adding a date/engagement filter is the
+  // "+ フィルタ" bar's FormEditor now, and editing a chip re-opens it (P2③).
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts, wired together with the rest of the search-box plumbing
   // in search-box-builder.ts now (viewer.ts decomposition's V3 slice, Wave17) —
@@ -487,31 +484,8 @@ export let activeFilters: () => ActiveFilter[];
       renderPosts();
       return;
     }
-    const row = closestOf(e, '[data-qfrow]');
-    if (!row) return;
-    const cat = row.dataset.qfrow as string;
-    const openKind = filterPopoverGet()?.kind;
-    // Re-clicking the row whose popover is already open = toggle it closed.
-    if (cat === 'date' && openKind === 'date') {
-      filterPopover.closeAll();
-      return;
-    }
-    if (cat === 'engagement' && openKind === 'eng') {
-      filterPopover.closeAll();
-      return;
-    }
-    filterPopover.closeAll(); // switching rows closes any open date/eng popover first
-    if (cat === 'date') {
-      qfPop.hideQfPop();
-      filterPopover.openDate(null);
-      return;
-    }
-    if (cat === 'engagement') {
-      qfPop.hideQfPop();
-      filterPopover.openEng(null);
-      return;
-    }
-    qfPop.showQfPopAt(cat, row);
+    // The [data-qfrow] value/date/engagement flyout rows were removed with the
+    // sidebar facet rows (P1) — adding filters is the "+ フィルタ" bar now (P2③).
   });
 
   // フライアウトはクリックのみで開閉（ホバーで開く実験は撤回＝誤爆・絞り込み入力中に
@@ -680,10 +654,11 @@ export let activeFilters: () => ActiveFilter[];
     onChange: () => {
       renderPosts();
     },
-    openLeafEditor: (n: CorpusQueryLeaf) => {
-      if (n.type === 'date') filterPopover.openDate(n);
-      else if (n.type === 'engagement') filterPopover.openEng(n);
-    },
+    // Legacy chip-click leaf editing routed through the retired filter-popover flyout;
+    // in the redesign a date/engagement chip re-opens the filterbar FormEditor instead
+    // (P2③). Inert now (the query-chips dispatch that called this is gone) — kept as a
+    // no-op until createQueryBuilder's dispatch is stripped.
+    openLeafEditor: () => {},
     // When the editing text leaf is removed or dragged on the bar, detach it from
     // the box. textInTree (query-builder.ts) suppresses the legacy echo chip (the
     // term is a real leaf). Deferred arrows: searchEditing is constructed later in
@@ -1407,8 +1382,9 @@ export let activeFilters: () => ActiveFilter[];
   // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
   // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
   // tab-state.js's makeTabLabels (destructured near filterLabel).
-  // editingPosterDateNode (the date leaf being edited via the popover) moved into
-  // filter-popover-builder.ts's internal state (V4/Wave18).
+  // The poster date-range popover (and its editingPosterDateNode state) retired with
+  // the filter-popover island (P2③ タスク3); a poster date chip re-opens the filterbar
+  // FormEditor now.
   // The poster-side builder instance (predOf/glyph/instance construction moved to
   // query-builder.ts, Wave15/V1 — see that file's makePosterQueryBuilder).
   // transient (no tabs / nav history for posters); onChange → renderPosters
@@ -1431,9 +1407,7 @@ export let activeFilters: () => ActiveFilter[];
     onChange: () => {
       renderPosters();
     },
-    openLeafEditor: (n: CorpusQueryLeaf) => {
-      if (n.type === 'date') filterPopover.openPosterDate(n);
-    },
+    openLeafEditor: () => {}, // retired filter-popover flyout; inert (see the post-side note above)
     posterTagsOf,
     folderById: posterFolderById,
   });
@@ -1443,16 +1417,12 @@ export let activeFilters: () => ActiveFilter[];
   // poster-grid-builder.ts (V6/Wave20) along with the rest of the poster cluster —
   // destructured from posterGrid above.
 
-  // qf-pop (value flyout) + filter-popover (date/eng/poster-date-range) bridges —
-  // viewer.ts decomposition's V4 slice (Wave18). Wired here (not where they're
-  // first used, further up) so postQB/posterQB/pfStore/buildUsers are all
-  // already real consts — no deferred-getter indirection needed, same reasoning
-  // as makeSearchBox() being wired late (search-box-builder.ts).
+  // qf-pop value-pick routing — viewer.ts decomposition's V4 slice (Wave18), now just
+  // the headless pick router for the filter bar (the value flyout + date/eng popover
+  // retired with their islands, P2③ タスク3). Wired here (not where first used) so
+  // postQB/posterQB/buildUsers are already real consts — no deferred-getter indirection,
+  // same reasoning as makeSearchBox() being wired late (search-box-builder.ts).
   const qfPop = makeQfPop({
-    qfValues,
-    kindLabel,
-    t: getMessage,
-    pfStore,
     postShadow: () => postQB.shadow(),
     posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
@@ -1460,34 +1430,14 @@ export let activeFilters: () => ActiveFilter[];
     addFilter,
     removeFilter,
     buildUsers: () => buildUsers(),
-    storeSet,
     updateSidebarState,
-    renderPosterFilterRows,
-    renderPosters,
-  });
-  // The island may close itself (outside-click / Escape) without going through
-  // qfPop.hideQfPop() — React owns the subscribe() registration (StoreSubscriptions,
-  // App.tsx), importing this directly; this stays the guard + action logic.
-  handleQfPopChange = qfPop.handleQfPopChange;
-
-  const filterPopover = makeFilterPopover({
-    t: getMessage,
-    engTypeLabels: ENG_TYPE_LABELS,
-    addFilter,
-    removeNode,
-    removeCondsMatching,
-    afterQueryChange,
-    posterGetTree: () => posterQB.getTree(),
-    posterAddFilter: (filter) => posterQB.addFilter(filter),
-    posterRemoveByType: (type) => posterQB.removeByType(type),
-    posterRefresh: () => posterQB.refresh(),
   });
 
   // The "+ フィルタ" category menu (redesign §3-2 / P2③): the facet categories the
   // current browse mode offers, each carrying its own live value/apply closures. The
   // routing is REUSED — value picks go through qfPop.pickValue (= onQfPick, run headless
-  // with no open flyout), date/engagement writes go straight to the QB (mirroring
-  // makeFilterPopover's onApply bodies). The filterbar island only renders + routes; it
+  // with no open flyout), date/engagement writes go straight to the QB (mirroring the
+  // retired filter-popover's onApply logic). The filterbar island only renders + routes; it
   // never rebuilds this logic. Recomputed per open so counts/vocab/labels stay fresh.
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as CorpusQfPopItem);
@@ -1728,25 +1678,8 @@ export let activeFilters: () => ActiveFilter[];
   storeSubscribe('sortPoster', () => renderPosters());
   // Poster query reset (bar右の「リセット」): empty the poster tree + the shared search box.
   // Wired to the activebar island's #posterResetBtn via onPosterReset (React-owned button).
-  // Poster filter rows (mirror of the #filterRows handler): a data-qfrow row opens its
-  // flyout (poster-* categories); the date row opens the date popover.
-  // Selections live in the transient posterXxx state.
-  document.getElementById('posterFilterRows')?.addEventListener('click', (e) => {
-    const row = closestOf(e, '[data-qfrow]');
-    if (!row) return;
-    const cat = row.dataset.qfrow as string;
-    if (cat === 'poster-date' && filterPopoverGet()?.kind === 'posterDate') {
-      filterPopover.closeAll();
-      return;
-    } // re-click closes
-    filterPopover.closeAll(); // switching rows closes any open date popover first
-    if (cat === 'poster-date') {
-      qfPop.hideQfPop();
-      filterPopover.openPosterDate(row);
-      return;
-    }
-    qfPop.showQfPopAt(cat, row);
-  });
+  // The poster [data-qfrow] flyout rows were removed with the poster sidebar facet
+  // rows (P1); poster filters are added via the "+ フィルタ" bar now (P2③).
 
   // Collections are a sidebar folder list now (renderCollectionSidebar), not a
   // browse view. The old third-mode grid, its context menu, and dynamic collections

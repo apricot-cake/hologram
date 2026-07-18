@@ -12,7 +12,6 @@ import { SettingsHost } from '../settings/index.tsx';
 import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { subscribe as subscribeQfPop } from '../../renderer/qf-pop.ts';
 import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { subscribe as subscribeSearch } from '../../renderer/search.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
@@ -40,7 +39,6 @@ import {
   handleTabBarContextmenu,
   handleTabBarDblclick,
   handleGlobalTabShortcut,
-  handleQfPopChange,
   handleViewStoreChange,
   handleBrowseModeStoreChange,
   handlePosterViewStoreChange,
@@ -225,24 +223,23 @@ function TabBarEvents() {
 }
 
 // External-store / IPC subscriptions: corpusStore keys (view / browseMode /
-// posterView / searchQuery), the qf-pop close-echo, the search-mode toggle, shared
-// folder changes, and the fs-watch posts-changed hint. React owns the subscribe()
-// registration (mounted once for the app's lifetime). The store/qf-pop/search-mode
-// handlers are guard+action logic that still lives in orchestrator.ts, imported directly as
-// live bindings — "cut out and rewire", same as the other App.tsx-level effects and
-// handleFolderChange/handlePostsChanged below (Wave31/V17, extended to the rest of
-// this effect in Wave32 — no bridge needed once orchestrator.ts exports them as real
-// bindings). corpusStore/qf-pop/search all return an unsubscribe (useSyncExternalStore-
-// compatible) and get one on cleanup; corpusFolders.onChange and
-// corpusPosts.onPostsChanged don't (subs.push / raw ipcRenderer.on) — harmless,
-// since this effect never actually unmounts in this single-page app.
+// posterView / searchQuery), the search-mode toggle, shared folder changes, and the
+// fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
+// for the app's lifetime). The store/search-mode handlers are guard+action logic that
+// still lives in orchestrator.ts, imported directly as live bindings — "cut out and
+// rewire", same as the other App.tsx-level effects and handleFolderChange/
+// handlePostsChanged below (Wave31/V17, extended to the rest of this effect in Wave32 —
+// no bridge needed once orchestrator.ts exports them as real bindings). corpusStore/
+// search all return an unsubscribe (useSyncExternalStore-compatible) and get one on
+// cleanup; corpusFolders.onChange and corpusPosts.onPostsChanged don't (subs.push / raw
+// ipcRenderer.on) — harmless, since this effect never actually unmounts in this
+// single-page app.
 function StoreSubscriptions() {
   useEffect(() => {
     const unsubView = storeSubscribe('view', () => handleViewStoreChange());
     const unsubBrowseMode = storeSubscribe('browseMode', () => handleBrowseModeStoreChange());
     const unsubPosterView = storeSubscribe('posterView', () => handlePosterViewStoreChange());
     const unsubSearchQuery = storeSubscribe('searchQuery', () => handleSearchQueryStoreChange());
-    const unsubQfPop = subscribeQfPop(() => handleQfPopChange());
     const unsubSearchMode = subscribeSearch(() => handleSearchModeChange());
     foldersOnChange((kind) => handleFolderChange(kind));
     onPostsChanged((names) => handlePostsChanged(names));
@@ -251,7 +248,6 @@ function StoreSubscriptions() {
       unsubBrowseMode();
       unsubPosterView();
       unsubSearchQuery();
-      unsubQfPop();
       unsubSearchMode();
     };
   }, []);

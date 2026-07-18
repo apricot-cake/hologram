@@ -19,13 +19,11 @@ import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
-import { get as qfPopGet } from './qf-pop.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
-import { get as filterPopoverGet } from './filter-popover.ts';
 import { corpusIpc } from './ipc.ts';
 
 export interface InspectorBuilderDeps {
@@ -381,9 +379,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (!byId('ivFolderModal').hidden) return;
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;
-    if (qfPopGet() || tagPopGet()) return; // let an open value-flyout / tag-pop take the first Esc
-    if (isAnySelectOpen()) return; // …and an open shadcn Select (SortSelect / FilterPopover), tracked by state not DOM
-    if (filterPopoverGet()) return;
+    if (tagPopGet()) return; // let an open tag-pop take the first Esc
+    if (isAnySelectOpen()) return; // …and an open shadcn Select (SortSelect / filter editors), tracked by state not DOM
     if (inImageTab) {
       deps.closeTab(deps.getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
       return;
