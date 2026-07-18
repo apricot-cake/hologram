@@ -1720,7 +1720,7 @@ export let activeFilters: () => ActiveFilter[];
 
   // --- Search value source -----------------------------------------------------
   // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
-  // as a controlled react-aria ComboBox input. The query-tree text-leaf state
+  // as a controlled Base UI Autocomplete input. The query-tree text-leaf state
   // machine (search-editing.ts, Wave2), the suggestion-pick bridge to the
   // searchbox island (searchbox.ts, Wave5), and the store plumbing/debounced
   // re-render around them are wired together in search-box-builder.ts now

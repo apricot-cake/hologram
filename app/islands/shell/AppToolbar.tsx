@@ -66,8 +66,7 @@ export function AppToolbar() {
             <ChevronRight />
           </Button>
         </div>
-        {/* #searchWrap keeps the id the search-box-builder queries (retired in P2④). */}
-        <div id="searchWrap" className="search-wrap relative min-w-0">
+        <div className="relative flex min-w-0 items-center">
           <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>

@@ -18,3 +18,19 @@ export function init(h: CorpusSearchBoxHandlers): void {
 export function handlers(): CorpusSearchBoxHandlers | null {
   return registered;
 }
+
+// Focus travels the opposite way: the island registers a focus callback at
+// mount, and the `/` / Ctrl+K shortcut handler (search-box-builder) calls
+// focusSearchBox() — replacing the old getElementById('#searchBox') id
+// contract (P2④, #153 zero-tolerance). Returns an unregister so an unmounting
+// island detaches cleanly.
+let focusFn: (() => void) | null = null;
+export function registerFocus(fn: () => void): () => void {
+  focusFn = fn;
+  return () => {
+    if (focusFn === fn) focusFn = null;
+  };
+}
+export function focusSearchBox(): void {
+  if (focusFn) focusFn();
+}

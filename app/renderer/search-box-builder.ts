@@ -12,7 +12,7 @@
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
-import { init as initSearchBox } from './searchbox.ts';
+import { focusSearchBox, init as initSearchBox } from './searchbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 
 export interface SearchBoxDeps {
@@ -36,7 +36,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
   // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
-  // as a controlled react-aria ComboBox input. Typing: island → store → the
+  // as a controlled Base UI Autocomplete input. Typing: island → store → the
   // subscriber below runs the debounced heavy side effects. Programmatic writes
   // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →
   // store → island re-renders the input. _searchEcho tells the two apart — every
@@ -144,10 +144,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     if (settingsIsOpen()) return;
     if (!byId('ivFolderModal').hidden) return;
     e.preventDefault();
-    const sb = document.getElementById('searchBox') as HTMLInputElement | null; // the searchbox island's Input (id preserved)
-    if (!sb) return; // island not mounted yet (sub-second boot window)
-    sb.focus();
-    sb.select();
+    focusSearchBox(); // the island's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
   }
 
   return {

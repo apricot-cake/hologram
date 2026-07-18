@@ -412,9 +412,9 @@ declare global {
   // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
   // directly by their consumers.
 
-  // ---- renderer/searchbox.ts — a real ES module (named exports: init/handlers) now.
-  // Only the handlers payload contract stays here as a cross-module data shape (viewer
-  // produces it, the searchbox island pulls it). ----
+  // ---- renderer/searchbox.ts — a real ES module (named exports: init/handlers/
+  // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
+  // as a cross-module data shape (viewer produces it, the searchbox island pulls it). ----
   interface CorpusSearchBoxHandlers {
     getSuggestions(q: string): any[];
     onPick(item: any): void;
