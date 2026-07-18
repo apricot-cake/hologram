@@ -155,12 +155,10 @@
   }
 }
 
-/* App shell (AppShell.tsx): the tab bar is a full-width band ABOVE the sidebar.
-   shadcn's fixed sidebar-container assumes it owns the whole viewport height, so
-   offset it below the band using the legacy titlebar height var (--tabbar-h). Unlayered
-   so it beats the h-svh / inset-y-0 utilities (layer order: utilities is a layer, this
-   isn't → wins). Retired when the tab bar is folded into the React shell tokens. */
-[data-slot="sidebar-container"] {
-  top: var(--tabbar-h, 0px);
-  height: calc(100svh - var(--tabbar-h, 0px));
-}
+/* App shell (AppShell.tsx): Obsidian-type shell (#154) — the sidebar spans the full
+   window height and the tab bar lives INSIDE the content column, so the sidebar no
+   longer needs the --tabbar-h offset (shadcn's fixed inset-y-0 default now applies).
+   The sidebar's header row is the left half of the window titlebar: it drags the
+   window, and the collapse trigger opts out. Unlayered so -webkit-app-region wins. */
+.app-drag { -webkit-app-region: drag; }
+.app-no-drag { -webkit-app-region: no-drag; }

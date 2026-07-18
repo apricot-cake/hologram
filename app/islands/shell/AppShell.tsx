@@ -3,14 +3,16 @@
 // [tab bar band] + [SidebarProvider: left nav | content inset | right inspector].
 //
 // Layout notes:
-// - The tab bar is the Electron titlebar band, OUTSIDE SidebarProvider, full width
-//   above everything. It keeps the legacy #tabBar/#tabBarInner ids so the legacy
-//   titlebar CSS (height var(--tabbar-h), drag region) + the delegated tab handlers
-//   still apply. TRANSIENT: TabsHost still emits the legacy .tab-item DOM; the
-//   Tailwind rewrite + delegation teardown is the immediate follow-up (P1-2 rest).
-// - shadcn's fixed sidebar-container assumes it owns the full viewport height; a
-//   globals.css rule offsets it below the tab bar band (--tabbar-h). SidebarProvider's
-//   own min-h-svh is overridden to flex-1 so the row fills the column, not svh+band.
+// - Obsidian-type shell (#154, 2026-07-18): the sidebar spans the full window height
+//   and the tab bar is scoped INTO the content column (SidebarInset), not a full-width
+//   band above everything. That kills the seam where the sidebar's vertical edge met
+//   the tab strip and split the connected tab into two tones. The tab bar keeps the
+//   legacy #tabBar/#tabBarInner ids + titlebar CSS (drag region) + delegated handlers.
+//   TRANSIENT: TabsHost still emits legacy .tab-item DOM; the Tailwind rewrite +
+//   delegation teardown is the follow-up (P1-2 rest).
+// - The sidebar's own header row is the window's titlebar drag strip and holds the
+//   collapse trigger (moved out of the toolbar). shadcn's fixed sidebar-container now
+//   spans inset-y-0 as-is (the --tabbar-h offset hack is gone).
 // - #mode-post is kept as the scroll root (orchestrator's contentScrollEl + per-tab
 //   scroll restore key off this id). #postGrid/#posterGrid keep ids+classes for the
 //   masonic host-attach and the body.browse-posters visibility CSS.
@@ -90,15 +92,18 @@ export function AppShell() {
   return (
     <TooltipProvider delay={0}>
       <div className="flex h-svh flex-col overflow-hidden">
-        {/* Electron titlebar band — legacy #tabBar CSS styles it; TabsHost fills #tabBarInner. */}
-        <header id="tabBar" className="shrink-0">
-          <div id="tabBarInner">
-            <TabsHost />
-          </div>
-        </header>
         <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen} className="min-h-0 flex-1">
           <LeftSidebar />
           <SidebarInset className="min-w-0">
+            {/* Electron titlebar band, now scoped INTO the content column (Obsidian-type
+                shell, #154): the sidebar spans full height beside it, so the tab strip no
+                longer crosses the sidebar seam. Legacy #tabBar CSS styles it; TabsHost
+                fills #tabBarInner. */}
+            <header id="tabBar" className="shrink-0">
+              <div id="tabBarInner">
+                <TabsHost />
+              </div>
+            </header>
             <AppToolbar />
             {/* Scroll root for the content area (the page itself never scrolls). */}
             <div id="mode-post" className="relative min-h-0 flex-1 overflow-y-auto">

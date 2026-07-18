@@ -39,7 +39,7 @@ import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
-import { makeGridDensity, bindApplyTileOverlay } from './grid-density-builder.ts';
+import { makeGridDensity, bindApplyTileOverlay, type CorpusSizeTrack } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
@@ -95,6 +95,13 @@ export let navBack: () => void;
 export let navForward: () => void;
 export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
+// Size-slider bindings for the display popover (P2②): read the current view's size track
+// (column-count or px) and apply a slider value. gridDensity owns the geometry math; the
+// popover imports these live bindings and calls them on open / drag / commit.
+export let getPostSizeTrack: () => CorpusSizeTrack | null;
+export let applyPostSize: (value: number, min: number, max: number, commit: boolean) => void;
+export let getPosterSizeTrack: () => CorpusSizeTrack | null;
+export let applyPosterSize: (value: number, min: number, max: number) => void;
 // Apply a library folder as a place filter (redesign §3-1): replace the post query's
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
@@ -1757,6 +1764,11 @@ export let activeFilters: () => ActiveFilter[];
   // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
   // imports this directly.
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
+  // Size-slider bindings for the display popover (P2②) — see the export decls above.
+  getPostSizeTrack = gridDensity.computeSizeTrack;
+  applyPostSize = gridDensity.setSizeFromSlider;
+  getPosterSizeTrack = gridDensity.computePosterSizeTrack;
+  applyPosterSize = gridDensity.setPosterSizeFromSlider;
 
   // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
   // through the old shared bridge for the React settings island (Danger.tsx/Data.tsx/

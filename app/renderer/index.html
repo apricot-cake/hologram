@@ -41,13 +41,17 @@
     }
     #tabBarInner > * { -webkit-app-region: no-drag; }
     #tabBarInner {
-      width: env(titlebar-area-width, 100%); display: flex; align-items: flex-end;
+      box-sizing: border-box;
+      width: 100%; display: flex; align-items: flex-end;
       align-self: stretch;
-      /* padding-right reserves a permanent draggable gutter (no child sits in
-         padding, so it stays -webkit-app-region:drag). Chrome keeps a grab strip
-         right of the tabs so the window can always be moved/un-snapped even when
-         many tabs fill the bar; without it 4+ equal-width tabs ate the whole row. */
-      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px; gap: 0; min-width: 0;
+      /* Obsidian-type shell (#154): the tab bar is scoped to the content column now, so
+         its width is 100% of the column (not env(titlebar-area-width), which is the whole
+         window and would overflow). The window caption buttons still sit at the window's
+         top-right = this column's top-right, so the right padding must clear them:
+         (100vw - titlebar-area-width) = the caption-buttons width, + a grab gutter so the
+         window can always be dragged/un-snapped even when many tabs fill the row. */
+      padding: 0 calc(100vw - env(titlebar-area-width, 100vw) + var(--tabbar-drag-gutter, 88px)) 0 8px;
+      gap: 0; min-width: 0;
     }
     /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
        32px bottom-flush box (one text axis); inactive hover = floating pill
@@ -1601,6 +1605,9 @@
       box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent);
     }
     .sb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* Breathing room under the chip row, only when chips exist (the container is
+       always mounted — an unconditional padding would gap the empty toolbar). */
+    .sb-chips:has(*) { padding-bottom: 8px; }
     /* Feature launcher (tagging session): an explicit CTA button (Notion "+New" /
        Linear式) — defined fill + border + xs shadow, plus a hover LIFT (translateY
        + shadow) so it reads unmistakably as a press target, not a flat tinted box.
