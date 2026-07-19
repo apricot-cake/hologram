@@ -236,20 +236,30 @@ function register(ctx) {
   // which replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
   ipcMain.handle('export-complete', async (_e, mode) => {
     const imagesOnly = mode === 'images';
-    let built: any;
+    const src = getSaveFolder();
+    // Emptiness is a cheap readdir — check it BEFORE the dialog so an empty library
+    // never pops a save prompt (matches the old fileCount===0 → empty behaviour).
+    let hasAny: boolean;
     try {
-      const JSZip = await getJSZip();
-      built = imagesOnly ? await archive.buildImagesZip(JSZip, getSaveFolder()) : await (archive.buildCompleteZip as any)(JSZip, getSaveFolder());
+      hasAny = await archive.hasExportableFiles(src, imagesOnly);
     } catch (err) {
       return { saved: false, error: err.message };
     }
-    if (built.fileCount === 0) return { saved: false, empty: true };
+    if (!hasAny) return { saved: false, empty: true };
     const res = await dialog.showSaveDialog(getWin(), { defaultPath: `corpus-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
+    // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
+    // the whole library never sits in memory and a >4 GiB archive stays valid. On any
+    // failure, drop the partial file so a half-written ZIP is never left behind.
     try {
-      await fs.promises.writeFile(res.filePath, built.buffer);
+      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath) : await archive.writeCompleteZip(src, res.filePath, undefined);
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
     } catch (err) {
+      try {
+        await fs.promises.unlink(res.filePath);
+      } catch {
+        /* nothing to clean up */
+      }
       return { saved: false, error: err.message };
     }
   });

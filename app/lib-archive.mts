@@ -19,6 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { ZipFile } from 'yazl';
 import { parseJsonLoose } from './lib-json.mts';
 
 const EXPORT_SKIP = new Set(['config.json', '.index.json']);
@@ -298,6 +299,68 @@ async function buildImagesZip(JSZip, srcFolder) {
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), fileCount };
 }
 
+// --- Streaming ZIP writers (yazl) ----------------------------------------------
+// Stream a ZIP straight to disk with bounded memory AND ZIP64 (large-archive)
+// support. yazl reads each addFile source lazily as it writes that entry, so a
+// multi-GB library never sits in memory (peak ≈ one entry). This replaces the
+// buildCompleteZip/buildImagesZip path above, which materialised the whole archive
+// as one Buffer — that OOM'd past a few GB (measured 11.5 GiB peak on a ~7 GB
+// library) AND, worse, JSZip cannot emit ZIP64, so any >4 GiB archive got a
+// truncated central-directory offset = a corrupt, unopenable ZIP. Media/sidecars
+// are STORED (compress:false): the library is already-compressed media, so
+// deflating it burns CPU for ~no size win.
+function streamZipToFile(zip: ZipFile, outPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(outPath);
+    zip.outputStream.on('error', reject);
+    out.on('error', reject);
+    out.on('close', () => resolve());
+    zip.outputStream.pipe(out);
+  });
+}
+
+// Complete, directly-re-importable snapshot: every top-level library file under
+// library/, the shared avatar store under library/avatars/, plus a corpus-export.json
+// manifest. Returns the file count (excludes the manifest), matching the old builder.
+async function writeCompleteZip(srcFolder, outPath, nowIso) {
+  const zip = new ZipFile();
+  let fileCount = 0;
+  for (const name of await collectFiles(srcFolder)) {
+    zip.addFile(path.join(srcFolder, name), `library/${name}`, { compress: false });
+    fileCount++;
+  }
+  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) {
+    zip.addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`, { compress: false });
+    fileCount++;
+  }
+  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Corpus', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'corpus-export.json');
+  zip.end();
+  await streamZipToFile(zip, outPath);
+  return { fileCount };
+}
+
+// Images-only: the media files flat at the ZIP root (no sidecars/org JSONs), NOT
+// re-importable as a library.
+async function writeImagesZip(srcFolder, outPath) {
+  const zip = new ZipFile();
+  let fileCount = 0;
+  for (const name of await collectFiles(srcFolder, (n) => IMAGE_EXT.test(n))) {
+    zip.addFile(path.join(srcFolder, name), name, { compress: false });
+    fileCount++;
+  }
+  zip.end();
+  await streamZipToFile(zip, outPath);
+  return { fileCount };
+}
+
+// Cheap "is there anything to export" probe (readdir + stat only, no file reads) so
+// an empty library never opens a save dialog.
+async function hasExportableFiles(srcFolder, imagesOnly) {
+  if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
+  if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
+  return false;
+}
+
 // Stream a single ZIP entry to disk, aborting if its decompressed output exceeds
 // maxBytes. Never buffers the whole entry in memory, so a bomb that under-declares
 // its size in the central directory is still capped at the byte budget (it just
@@ -443,4 +506,24 @@ async function importCompleteZip(JSZip, destFolder, buffer) {
   return { ok: true, imported, skipped };
 }
 
-export { EXPORT_SKIP, ORG_MERGE, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, writeEntryStreamed, buildCompleteZip, buildImagesZip, importCompleteZip, mergeFolders, mergePosterFolders, mergeTagGroups, mergeTagTypes, mergeUngrouped, mergeManualGroups };
+export {
+  EXPORT_SKIP,
+  ORG_MERGE,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  writeEntryStreamed,
+  buildCompleteZip,
+  buildImagesZip,
+  writeCompleteZip,
+  writeImagesZip,
+  hasExportableFiles,
+  importCompleteZip,
+  mergeFolders,
+  mergePosterFolders,
+  mergeTagGroups,
+  mergeTagTypes,
+  mergeUngrouped,
+  mergeManualGroups,
+};
