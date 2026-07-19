@@ -22,7 +22,12 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 }
 
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  // z-[13000]: like the popover/menu/select手当て (z-[13500]), a modal must stack ABOVE
+  // the legacy overlay scale — the narrow-mode inspector is z-9500 and legacy modals are
+  // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
+  // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog
+  // Select/Tooltip still opens above the dialog. Re-apply on `shadcn add dialog` (§8-2).
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function DialogContent({
@@ -39,7 +44,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          'font-sans fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+          'font-sans fixed top-1/2 left-1/2 z-[13000] grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
           className,
         )}
         {...props}

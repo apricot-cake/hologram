@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
+import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../../renderer/settings.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -105,14 +106,17 @@ function ShellClasses() {
 // faithful move of the old setupModalChrome IIFE into a React effect. The inspector
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
-  // The confirm modal is a shadcn AlertDialog now (renders through a portal, no static
-  // overlay div to observe) — read its open state straight from the confirm bridge.
+  // The confirm modal is a shadcn AlertDialog and settings is a shadcn Dialog now (both
+  // render through a portal, no static overlay div to observe) — read their open state
+  // straight from the bridges. Settings was missing here, so opening it left the native
+  // titlebar untinted (its window controls "floated" bright over the dimmed content).
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
+  const settingsOpen = useSyncExternalStore(settingsSubscribe, settingsIsOpen);
   useEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
-      const open = confirmOpen || ids.some((id) => visible(document.getElementById(id)));
+      const open = confirmOpen || settingsOpen || ids.some((id) => visible(document.getElementById(id)));
       document.documentElement.classList.toggle('modal-open', open);
       document.body.classList.toggle('modal-open', open);
       applyTitleBar(open);
@@ -127,7 +131,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen]);
+  }, [confirmOpen, settingsOpen]);
   return null;
 }
 
