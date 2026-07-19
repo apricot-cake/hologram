@@ -1,5 +1,5 @@
 # プロジェクト概要
-Corpus = SNS投稿を画像・メタデータごとローカル保存し検索・整理できる「自分だけのSNSライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし）。
+Corpus = ウェブのコンテンツ（現対応はSNS投稿）を出自・エンゲージメントごとローカル保存し検索・整理できる「自分だけのコンテンツライブラリ」（X/Bluesky/Misskey/Mastodon/pixiv対応、Chrome拡張→Native Messaging→Electronアプリの3構成、サーバー送信なし。射程の正＝docs/architecture.md「射程の原則」）。
 
 # ドキュメント
 詳細=docs/architecture.md／ビルド・実機検証=docs/build.md／テスト一覧=docs/testing.md／機能説明=README.md／残タスク=GitHub Issues＋Project「Corpus Backlog」（apricot-cake/corpus）。実装のhow・私的文脈はメモリ`corpus-backlog`（repo外）

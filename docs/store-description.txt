@@ -6,11 +6,11 @@ Before submission, re-verify every feature claim against the shipped UI
 
 === SUMMARY (max 132 chars) ===
 
-Save posts you find on social media — image, text, and details together — into a searchable library on your PC. Private by design.
+Save content you find on the web — image, text, creator, source and all — into a searchable library on your PC. Private by design.
 
 === DETAILED DESCRIPTION ===
 
-Your own personal social-media library.
+Your own personal content library — every save keeps its creator, context, and source.
 
 Corpus saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them. No more "where did that post go?"
 

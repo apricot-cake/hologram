@@ -7,9 +7,11 @@
 
 <p align="center"><strong>English</strong> · <a href="README.ja.md">日本語</a></p>
 
-Save the posts you come across on social media — image and information together — and find them again whenever you like. **Your own personal social-media library.**
+Save the content you come across on the web — and find it again whenever you like. **Your own personal content library — every save keeps its creator, context, and source.**
 
 No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
+
+Today Corpus speaks fluent social media (X, Bluesky, Misskey, Mastodon, pixiv); the library itself is built for web content in general.
 
 Corpus is **free and open source** (MIT). Your library is nothing but ordinary files in a folder you own — no account, no server, no lock-in.
 
