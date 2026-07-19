@@ -22,10 +22,11 @@ function SheetPortal({ ...props }: SheetPrimitive.Portal.Props) {
 }
 
 function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
-  // bg-black/50: same scrim as Dialog/AlertDialog (no backdrop-blur — a frosted page next to
-  // the flat, recolored OS strip mismatches). NOTE: the Sheet is the narrow-mode mobile sidebar;
-  // its open state isn't wired into ModalChrome, so the OS window-control strip is NOT dimmed for
-  // it (a known narrow-mode gap) — hence it keeps its own fade. Re-apply on `shadcn add sheet`.
+  // bg-black/50: same scrim as Dialog/AlertDialog, and no backdrop-filter for the same reason
+  // (stock shadcn look, not the old glass era). The narrow-mode gap this used to carry — the
+  // OS-drawn window buttons stayed bright because the Sheet's fading scrim couldn't be matched
+  // by a strip that only snaps — is gone with the buttons themselves (they are app-drawn now,
+  // so this scrim covers them like anything else). Re-apply on `shadcn add sheet`.
   return <SheetPrimitive.Backdrop data-slot="sheet-overlay" className={cn('fixed inset-0 z-[13500] bg-black/50 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0', className)} {...props} />;
 }
 

@@ -65,6 +65,10 @@ electron.contextBridge.exposeInMainWorld("corpus", {
 	onPostsChanged: (cb) => {
 		electron.ipcRenderer.on("posts-changed", (_e, names) => cb(names));
 	},
-	setTitleBarOverlay: (opts) => electron.ipcRenderer.invoke("set-titlebar-overlay", opts)
+	windowControl: (action) => electron.ipcRenderer.invoke("window-control", action),
+	windowIsMaximized: () => electron.ipcRenderer.invoke("window-is-maximized"),
+	onWindowMaximizedChanged: (cb) => {
+		electron.ipcRenderer.on("window-maximized-changed", (_e, maximized) => cb(maximized));
+	}
 });
 //#endregion

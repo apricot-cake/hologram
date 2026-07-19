@@ -21,11 +21,10 @@ function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
 function AlertDialogOverlay({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) {
   // z-[13100]: same legacy-scale bump as Dialog (see dialog.tsx), a notch higher so a
   // confirm raised FROM an open settings Dialog (e.g. 危険な操作 → clear-all) stacks above
-  // it. Still below the z-[13500] popover portals. bg-black/50 (see dialog.tsx); no backdrop
-  // fade so the instant OS-strip recolor isn't outrun, and data-closed:opacity-0 so the dim
-  // lifts the frame the close starts instead of outliving the card's exit animation (see
-  // dialog.tsx). OS strip dimmed in lockstep by theme-api. Re-apply both on `shadcn add alert-dialog`.
-  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/50 data-closed:opacity-0', className)} {...props} />;
+  // it. Still below the z-[13500] popover portals. bg-black/50 + the stock fade (see
+  // dialog.tsx for why the fade was gone while the window buttons were OS-drawn).
+  // Re-apply both on `shadcn add alert-dialog`.
+  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function AlertDialogContent({

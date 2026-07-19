@@ -33,6 +33,7 @@ import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid } from '../grid/index.tsx';
 import { PosterGrid } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
+import { WindowControls } from './WindowControls.tsx';
 
 // The sidebar obeys the same width discipline as the inspector: horizontal width is a
 // contested resource (the inspector detaches to a slide-over below 1280px), so a sparse
@@ -104,6 +105,9 @@ export function AppShell() {
               <div id="tabBarInner">
                 <TabsHost />
               </div>
+              {/* The window buttons are ours now (see WindowControls) — they sit at the end of
+                  the tab strip where the OS overlay used to be painted. */}
+              <WindowControls />
             </header>
             <AppToolbar />
             {/* Scroll root for the content area (the page itself never scrolls). */}

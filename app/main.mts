@@ -505,7 +505,7 @@ function registerImageProtocol() {
 
 // --- IPC ---
 // Config / prefs / tabs handlers (get-config / set-extension-id / get-prefs / set-pref /
-// app-info / get-tabs / set-tabs / set-titlebar-overlay) were extracted to
+// app-info / get-tabs / set-tabs / window-control) were extracted to
 // ./ipc-config.js (registered via ipcConfig.register below).
 
 // Posts handlers (list-posts / list-posts-delta / image-data-url) were extracted to
@@ -1127,11 +1127,16 @@ function createWindow(show = true) {
     title: 'Corpus',
     icon: APP_ICON,
     paintWhenInitiallyHidden: true,
+    // No titleBarOverlay: the min/max/close buttons are app-drawn in the tab bar. The OS
+    // overlay draws its strip on the browser process' own compositor, so its color could
+    // never be synchronized with a web-layer change (a modal scrim) — it could only be
+    // approximated per frame, which showed as a flicker. App-drawn buttons live in the same
+    // frame as the scrim, so the whole class of mismatch is gone. The cost is the Windows 11
+    // Snap Layouts flyout, which only appears for a real caption button (the OS asks the
+    // window "is this point the maximize button?" and only the native overlay can say yes);
+    // Discord/Figma/Spotify/Obsidian all sit on this side of the trade. Snap itself still
+    // works everywhere else: Win+arrow, drag-to-edge, Win+Z.
     titleBarStyle: 'hidden',
-    // color MUST match --tabbar-bg (dark #0e0f11 / light #eceef2) so the caption-
-    // button strip blends into the tab bar instead of floating. height 37 = 1px less
-    // than --tabbar-h(38) so the tab bar's bottom border peeks under the buttons.
-    titleBarOverlay: { color: dark ? '#0e0f11' : '#eceef2', symbolColor: dark ? '#9aa3af' : '#5b6470', height: 37 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1140,6 +1145,15 @@ function createWindow(show = true) {
     },
   });
   win.removeMenu();
+  // The app-drawn maximize button mirrors the real window state, which also changes without
+  // the button (snap, double-click on the drag strip, Win+arrow, the taskbar), so push every
+  // change rather than have the renderer poll.
+  const sendMaximized = () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('window-maximized-changed', win.isMaximized());
+  };
+  win.on('maximize', sendMaximized);
+  win.on('unmaximize', sendMaximized);
   if (!smoke) {
     if (sb && sb.isMaximized) win.maximize();
     // Remember size/position across launches (debounced on resize/move; flushed on close).

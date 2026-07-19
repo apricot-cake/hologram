@@ -27,14 +27,13 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
   // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog
   // Select/Tooltip still opens above the dialog.
-  // bg-black/50: the common real-product scrim (VS Code / Bootstrap). It can't cover the OS-
-  // drawn window-control strip, so theme-api dims that strip in lockstep (App.tsx ModalChrome
-  // → applyTitleBar). NO fade in either direction: the OS-strip recolor can only snap (the OS
-  // draws those buttons), so an animated scrim would visibly outrun it. The scrim therefore
-  // snaps ON at open and — via data-closed:opacity-0 — snaps OFF the frame the close starts,
-  // rather than sitting opaque through the card's exit (that read as "the dim releases late").
-  // The card still animates out over the un-dimmed page (see Popup). Re-apply on `shadcn add dialog` (§8-2).
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 data-closed:opacity-0', className)} {...props} />;
+  // bg-black/50: the common real-product scrim (VS Code / Bootstrap); stock shadcn's 0.8 read
+  // as too dark here. The fade is stock — it was dropped only while the window buttons were
+  // OS-drawn, since that strip could only snap between colors and an animating scrim visibly
+  // outran it. The buttons are app-drawn now (shell/WindowControls.tsx), so the scrim just
+  // covers them and can animate freely. No backdrop-filter: the charter is the stock shadcn
+  // look, not the old glass era. Re-apply on `shadcn add dialog` (§8-2).
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function DialogContent({

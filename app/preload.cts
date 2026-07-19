@@ -85,7 +85,13 @@ const api = {
   onPostsChanged: (cb: (names: string[] | null) => void): void => {
     ipcRenderer.on('posts-changed', (_e, names) => cb(names));
   },
-  setTitleBarOverlay: (opts: unknown): Promise<any> => ipcRenderer.invoke('set-titlebar-overlay', opts),
+  // Window controls (min/max/close are app-drawn — see the WindowControls island).
+  windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => ipcRenderer.invoke('window-control', action),
+  windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-is-maximized'),
+  // cb receives the new maximized state; the raw IPC event is not forwarded.
+  onWindowMaximizedChanged: (cb: (maximized: boolean) => void): void => {
+    ipcRenderer.on('window-maximized-changed', (_e, maximized) => cb(maximized));
+  },
 };
 
 // The full contextBridge IPC surface (window.corpus) — typeof the implementation,
