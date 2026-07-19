@@ -22,7 +22,11 @@ function SheetPortal({ ...props }: SheetPrimitive.Portal.Props) {
 }
 
 function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
-  return <SheetPrimitive.Backdrop data-slot="sheet-overlay" className={cn('fixed inset-0 z-[13500] bg-black/10 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs', className)} {...props} />;
+  // modal-backdrop-dim (globals.css): spare the titlebar band so the OS window-control strip
+  // doesn't float above the dim, same as Dialog/AlertDialog. The blur is dropped for the same
+  // reason it was there (a2b4bc7) — a frosted page next to the flat OS strip mismatches.
+  // Re-apply both on `shadcn add sheet`.
+  return <SheetPrimitive.Backdrop data-slot="sheet-overlay" className={cn('modal-backdrop-dim fixed inset-0 z-[13500] transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0', className)} {...props} />;
 }
 
 function SheetContent({

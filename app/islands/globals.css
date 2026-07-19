@@ -162,3 +162,14 @@
    window, and the collapse trigger opts out. Unlayered so -webkit-app-region wins. */
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag { -webkit-app-region: no-drag; }
+
+/* Modal backdrop dim (shadcn Dialog / AlertDialog overlays). A flat page-wide dim can't
+   cover the OS-drawn window-control strip (WCO / titleBarOverlay), so it left that strip
+   ~10% brighter than the dimmed page = it floated (reported 2026-07-19). Recoloring the
+   strip to match would repaint the non-client area = a flash (reverted; see theme-api.ts).
+   So we spare the titlebar band: the dim is transparent for the top --tabbar-h (where the
+   strip lives, sharing #tabBar's color) and dims only below it — like VS Code, whose
+   titlebar stays lit during a modal. Keep --tabbar-h == #tabBar height (index.html). */
+.modal-backdrop-dim {
+  background: linear-gradient(to bottom, transparent var(--tabbar-h, 44px), rgb(0 0 0 / 0.1) var(--tabbar-h, 44px));
+}

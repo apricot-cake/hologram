@@ -26,8 +26,11 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   // the legacy overlay scale — the narrow-mode inspector is z-9500 and legacy modals are
   // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
   // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog
-  // Select/Tooltip still opens above the dialog. Re-apply on `shadcn add dialog` (§8-2).
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/10 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  // Select/Tooltip still opens above the dialog.
+  // modal-backdrop-dim (globals.css) replaces the flat bg-black/10: it spares the titlebar
+  // band so the OS window-control strip doesn't float above the dim (see that class).
+  // Re-apply both on `shadcn add dialog` (§8-2).
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('modal-backdrop-dim fixed inset-0 isolate z-[13000] duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function DialogContent({

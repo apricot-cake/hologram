@@ -34,9 +34,10 @@ function resolvePref(p: string): string {
 // Native titlebar overlay (Windows). The OS draws the window-control buttons (WCO /
 // titleBarOverlay); we only set their color to match the app chrome / theme. We deliberately
 // do NOT recolor them while a modal is open: changing the overlay color makes Windows
-// repaint the caption area, a visible flash on every modal open (reported). With the modal
-// backdrop's blur removed (plain bg-black/10 dim), the un-recolored strip sits only ~10%
-// brighter than the dimmed page — a subtle static difference, not a flash.
+// repaint the caption area, a visible flash on every modal open (reported). Instead the modal
+// backdrop spares the titlebar band (modal-backdrop-dim, globals.css) — it leaves the top
+// --tabbar-h undimmed — so the un-recolored strip stays matched to the tab bar it shares a
+// color with: no flash, no float.
 function barColors() {
   const d = resolvePref(pref) === 'dark';
   return { color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
