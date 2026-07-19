@@ -29,7 +29,6 @@ import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import * as selection from './selection.ts';
-import { open as settingsOpen } from './settings.ts';
 import { shellReady } from './shell-ready.ts';
 import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
@@ -247,8 +246,9 @@ export function endFilterEditSession(): void {
     if (el) el.setAttribute(attr, val);
   };
 
-  setAttr('settingsBtn', 'data-tip', getMessage('tabSettings')); // shared glass tooltip (was native title)
-  setAttr('settingsBtn', 'aria-label', getMessage('tabSettings'));
+  // #settingsBtn is the sidebar island's gear now (LeftSidebar): it carries the
+  // Sidebar tooltip + its own <span> label, so the legacy [data-tip]/aria-label
+  // written here stacked a SECOND .ui-tip chip on top of it on hover.
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource (P4-B
   // slice⑰; renderer/sidebar.ts) — no static setText here.
@@ -716,12 +716,9 @@ export function endFilterEditSession(): void {
 
   const CF = () => folders; // shared folder module
 
-  // --- Settings (the React island owns the modal; see app/islands/settings).
-  // The brand-bar gear opens it; Esc / backdrop close are handled in the island.
-  (function wireSettingsGear() {
-    const btn = document.getElementById('settingsBtn');
-    if (btn) btn.addEventListener('click', settingsOpen);
-  })();
+  // --- Settings: fully island-owned now (app/islands/settings for the modal,
+  // LeftSidebar's gear for the open call; Esc / backdrop close live in the island).
+  // The old wireSettingsGear() listener on #settingsBtn duplicated that onClick.
 
   // Hashtag browsing is now covered by the sidebar タグ section + the search box
   // (typing "#tag" matches post text), so the dedicated hashtag tab was removed.
