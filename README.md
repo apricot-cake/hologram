@@ -74,3 +74,10 @@ Preparing for release (including publishing the extension to the Chrome Web Stor
 ## Privacy
 
 Everything is stored in a local folder; nothing is sent to any server. See [PRIVACY.md](PRIVACY.md) for details.
+
+### Where your data lives
+
+- **Library** (images + metadata): a plain folder you choose — default `~/Corpus/library`
+- **Settings**: `~/.corpus`
+
+Both are ordinary folders outside the app's installation, so **uninstalling the app never deletes them**. To remove everything, delete these two folders yourself.
