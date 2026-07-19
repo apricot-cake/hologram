@@ -29,9 +29,12 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   // Select/Tooltip still opens above the dialog.
   // bg-black/50: the common real-product scrim (VS Code / Bootstrap). It can't cover the OS-
   // drawn window-control strip, so theme-api dims that strip in lockstep (App.tsx ModalChrome
-  // → applyTitleBar). NO fade on the backdrop: the OS-strip recolor is instant, so a fading
-  // scrim would visibly outrun it (the card still animates — see Popup). Re-apply on `shadcn add dialog` (§8-2).
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50', className)} {...props} />;
+  // → applyTitleBar). NO fade in either direction: the OS-strip recolor can only snap (the OS
+  // draws those buttons), so an animated scrim would visibly outrun it. The scrim therefore
+  // snaps ON at open and — via data-closed:opacity-0 — snaps OFF the frame the close starts,
+  // rather than sitting opaque through the card's exit (that read as "the dim releases late").
+  // The card still animates out over the un-dimmed page (see Popup). Re-apply on `shadcn add dialog` (§8-2).
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 data-closed:opacity-0', className)} {...props} />;
 }
 
 function DialogContent({

@@ -122,14 +122,14 @@ function ModalChrome() {
   useLayoutEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
-    // The shadcn Dialog/AlertDialog scrim OUTLIVES the open state on close: the portal stays
-    // mounted (overlay at full opacity) until the card's exit animation ends, so keying the
-    // un-dim off `settingsOpen`/`confirmOpen` alone brightens the WCO ~115ms before the page
-    // (measured; the one remaining flicker). Dim while EITHER the state is open (pre-paint,
-    // so open stays lockstep) OR the overlay element is still in the DOM (so close waits for
-    // the real scrim teardown). Sheet is deliberately not tracked (its scrim fades, a snap
-    // recolor would mismatch — known gap).
-    const scrimUp = () => !!document.querySelector('[data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"]');
+    // The Dialog/AlertDialog portal stays mounted through the card's exit animation, so DOM
+    // presence alone doesn't mean the page is dim — the overlay drops to opacity 0 the frame
+    // the close starts (data-closed:opacity-0, see dialog.tsx). So match on the OPEN overlay
+    // only: that tracks what's actually painted, and both edges stay lockstep with the scrim
+    // (open + close are driven by the same state flip, pre-paint). This is a safety net for
+    // overlays outside the tracked state union; Sheet is deliberately not tracked (its scrim
+    // fades, and a snap recolor would mismatch — known gap).
+    const scrimUp = () => !!document.querySelector('[data-slot="dialog-overlay"][data-open], [data-slot="alert-dialog-overlay"][data-open]');
     const sync = () => {
       const legacy = ids.some((id) => visible(document.getElementById(id)));
       const scrollLock = confirmOpen || legacy;
