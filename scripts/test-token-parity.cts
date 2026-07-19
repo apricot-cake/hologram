@@ -39,6 +39,7 @@ const SHARED_EXACT = new Set([
   // Non-color layout constants (same in both themes, like --tabbar-h):
   '--scrollbar-w',
   '--activebar-h',
+  '--window-controls-w',
   '--sidebar-float',
   '--ring',
   '--fg',

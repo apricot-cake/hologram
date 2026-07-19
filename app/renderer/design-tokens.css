@@ -326,6 +326,10 @@
   /* Scrollbar width — kept in sync with the ::-webkit-scrollbar rule. */
   --scrollbar-w: 10px;
   --tabbar-h: 44px;
+  /* Width of the app-drawn window controls (WindowControls.tsx): 3 buttons on the Windows
+     caption grid, 46px each. The tab strip reserves this on its right so tabs never run
+     under them. */
+  --window-controls-w: 138px;
   /* Height of the full-width query-builder top bar. Updated in JS from the bar's
      measured height (it wraps when many chips), so the floating sidebar below can
      offset its sticky top to clear it. */

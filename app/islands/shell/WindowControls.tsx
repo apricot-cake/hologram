@@ -17,6 +17,7 @@
 // Geometry follows the Windows caption convention: 46x32 buttons, Segoe-style glyphs, and the
 // close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { corpusIpc } from '../../renderer/ipc.ts';
 
 function useMaximized(): boolean {
@@ -66,13 +67,21 @@ function CloseGlyph() {
 
 export function WindowControls() {
   const maximized = useMaximized();
-  // app-no-drag: these sit inside the tab bar's drag region, which would otherwise swallow
-  // their clicks. z-10 keeps them above the tab strip; the modal scrim is above BOTH, which
-  // is the point — but pointer-events stay on so the window can still be closed or minimized
-  // while a modal is up, matching the OS buttons they replace (and every other Windows app).
+  // app-no-drag: the strip overlaps the tab bar's drag region, which would otherwise swallow
+  // the clicks. The tab bar reserves --window-controls-w of right padding so tabs never run
+  // under it (index.html).
   const base = 'app-no-drag inline-grid h-8 w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
-  return (
-    <div className="app-no-drag relative z-10 flex shrink-0 self-start">
+  // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
+  // sheet 13500) so window management still works while a modal is up, the way the OS buttons
+  // it replaces did. Inside the tab bar this was impossible — #tabBar is its own stacking
+  // context at z-50, so no z-index on a child could clear the scrim. The dim that the scrim
+  // would have applied is painted by .wc-dim instead (globals.css).
+  // The strip carries the tab bar's own background, opaque: it sits ABOVE the scrim, so
+  // without it the scrim would show through and .wc-dim would darken an already-darkened
+  // area — the strip came out visibly deeper than the page around it. Opaque + one dim of
+  // its own reproduces exactly what the page gets.
+  return createPortal(
+    <div className="app-no-drag fixed top-0 right-0 z-[13600] flex bg-[var(--tabbar-bg)]">
       <button type="button" aria-label="最小化" className={`${base} hover:bg-[var(--hover)] active:bg-[var(--active)]`} onClick={() => corpusIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
@@ -82,6 +91,10 @@ export function WindowControls() {
       <button type="button" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => corpusIpc.windowControl('close')}>
         <CloseGlyph />
       </button>
-    </div>
+      {/* The scrim's dim, re-created over the buttons (they're above the scrim). pointer-events
+          off so it darkens without taking the clicks it exists to preserve. */}
+      <div className="wc-dim pointer-events-none absolute inset-0 bg-black/50" aria-hidden="true" />
+    </div>,
+    document.body,
   );
 }

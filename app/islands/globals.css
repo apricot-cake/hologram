@@ -162,3 +162,38 @@
    window, and the collapse trigger opts out. Unlayered so -webkit-app-region wins. */
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag { -webkit-app-region: no-drag; }
+
+/* Window controls (WindowControls.tsx) sit ABOVE the modal scrim, because window management
+   must keep working while a modal is up — same as the OS-drawn buttons they replaced. Being
+   above the scrim they aren't dimmed by it, so they carry their own dim layer: the same 50%
+   black, switched by the same data-open/data-closed attributes Base UI puts on the scrim, over
+   the same duration. Both are CSS in one frame, so they cannot drift the way the OS strip did.
+   :has() keeps this stateless — nothing in JS has to track which modals are open.
+
+   It runs the scrim's OWN animation (tw-animate's `enter`/`exit` keyframes, same duration and
+   easing) rather than a transition of its own: a transition starts at the style change, an
+   animation starts on the following frame, and that one-frame difference was measurable — the
+   strip began dimming a frame before the page. Same mechanism, same frames. */
+.wc-dim {
+  opacity: 0;
+}
+:root:has([data-slot='dialog-overlay'][data-open]) .wc-dim,
+:root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-dim,
+:root:has([data-slot='sheet-overlay'][data-open]) .wc-dim {
+  --tw-enter-opacity: 0;
+  opacity: 1;
+  animation: enter 100ms ease;
+}
+/* The exit: the overlay stays mounted with data-closed while it animates out. Scoped to that
+   attribute so nothing animates at startup, when no overlay exists at all. */
+/* opacity stays 1 here on purpose: `exit` only declares its 100% frame, so the implicit 0% is
+   whatever the element's own style says. Setting it to 0 made the keyframes run 0 -> 0 and the
+   dim snapped off instantly while the page was still fading. `forwards` then holds the faded-out
+   value until the overlay unmounts and the base rule takes over. */
+:root:has([data-slot='dialog-overlay'][data-closed]) .wc-dim,
+:root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-dim,
+:root:has([data-slot='sheet-overlay'][data-closed]) .wc-dim {
+  --tw-exit-opacity: 0;
+  opacity: 1;
+  animation: exit 100ms ease forwards;
+}

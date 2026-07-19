@@ -105,8 +105,9 @@ export function AppShell() {
               <div id="tabBarInner">
                 <TabsHost />
               </div>
-              {/* The window buttons are ours now (see WindowControls) — they sit at the end of
-                  the tab strip where the OS overlay used to be painted. */}
+              {/* The window buttons are ours now (see WindowControls). Mounted here for
+                  ownership, but portaled to the window's top-right above the modal scrim —
+                  #tabBarInner reserves --window-controls-w so tabs stay clear of them. */}
               <WindowControls />
             </header>
             <AppToolbar />

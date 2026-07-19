@@ -44,11 +44,11 @@
       box-sizing: border-box;
       min-width: 0; flex: 1; display: flex; align-items: flex-end;
       align-self: stretch;
-      /* The window buttons are real elements at the end of this strip now (WindowControls),
-         so no env(titlebar-area-width) reservation is needed — the flex row just makes room.
-         The right padding is only the grab gutter, so the window can always be dragged or
-         un-snapped even when many tabs fill the row. */
-      padding: 0 var(--tabbar-drag-gutter, 88px) 0 8px;
+      /* The window buttons are ours now (WindowControls), but they're pinned to the window's
+         top-right ABOVE the modal scrim rather than sitting in this row's flow, so reserve
+         their width here to keep tabs from running under them — plus the grab gutter that
+         leaves a draggable patch even when many tabs fill the row. */
+      padding: 0 calc(var(--window-controls-w, 138px) + var(--tabbar-drag-gutter, 88px)) 0 8px;
       gap: 0;
     }
     /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
