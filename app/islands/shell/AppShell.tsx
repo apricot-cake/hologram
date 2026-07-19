@@ -27,6 +27,7 @@ import { signalShellReady } from '../../renderer/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
+import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid } from '../grid/index.tsx';
@@ -121,6 +122,10 @@ export function AppShell() {
             <div id="imageTabView">
               <ImageTabHost />
             </div>
+            {/* Bottom floating selection bar (redesign §3-4 / P2⑥). Inside the inset (not
+                a body-level overlay) so it centers on the content column and stays clear of
+                the right inspector, which is a flex sibling that narrows the inset when open. */}
+            <FloatingBar />
           </SidebarInset>
           {/* Right inspector — legacy element + CSS (already the #143 wide/narrow model). */}
           <aside id="postDetail" className="inspector" hidden>

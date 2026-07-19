@@ -8,9 +8,9 @@
 // variable, same as before (no subscribers — viewer-internal only, per the
 // state→store phase's own decision to leave it out of corpusStore).
 // viewer.js keeps every side effect around a mutation (the #postGrid 'selecting'
-// class, the #selectionBar model push, bulk IPC/confirm/render orchestration)
-// and calls only this module's query/mutate API. A real ES module now — its
-// exports are imported directly by viewer.ts and SelectionBar.tsx.
+// class, bulk IPC/confirm/render orchestration) and calls only this module's
+// query/mutate API. A real ES module now — its exports are imported directly by
+// the orchestrator and the bottom FloatingBar island (islands/selection).
 
 import { get as storeGet, set as storeSet } from './store.ts';
 

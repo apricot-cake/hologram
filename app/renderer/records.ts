@@ -4,7 +4,7 @@
 // slice of the viewer decomposition (最終形B), plus (P4 "IPC→service" domain-grouping
 // follow-up) the manual-groups.json / ungrouped.json load/persist pairs for the two
 // stores makeGroupRecords already consumes. A real ES module (named exports)
-// imported directly by viewer.ts / image-tab.ts and the SelectionBar island
+// imported directly by viewer.ts / image-tab.ts and the FloatingBar island
 // (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
 // — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
 // under Node too (scripts/test-records-unit.cts drives it via dynamic import); the

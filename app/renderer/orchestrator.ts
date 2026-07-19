@@ -92,6 +92,16 @@ export let navBack: () => void;
 export let navForward: () => void;
 export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
+// Bulk-selection actions for the bottom floating bar (redesign §3-4 / P2⑥). The
+// FloatingBar island calls these directly (onClick → function), so the old data-act
+// #selectionBar delegation is gone. tag/folder take the clicked button's rect to anchor
+// their pop/menu against the bar.
+export let selectionSelectAll: () => void;
+export let selectionTag: (anchorRect: CorpusAnchorRect) => void;
+export let selectionFolder: (anchorRect: CorpusAnchorRect) => void;
+export let selectionGroup: () => void;
+export let selectionDelete: () => void;
+export let selectionClear: () => void;
 // Size-slider bindings for the display popover (P2②): read the current view's size track
 // (column-count or px) and apply a slider value. gridDensity owns the geometry math; the
 // popover imports these live bindings and calls them on open / drag / commit.
@@ -1159,10 +1169,17 @@ export function endFilterEditSession(): void {
   // (確定A) と単一クリック選択（確定 未決事項2）に一本化。The ℹ button is likewise
   // retired; the inspector is reached by a plain click (or the card's 詳細
   // context-menu item), not a dedicated hover button.
-  document.getElementById('selectionBar')?.addEventListener('click', selectionCtl.handleSelectionBarClick);
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
   handleShortcutQuickView = selectionCtl.handleShortcutQuickView;
+  // Bulk-action bindings for the bottom floating bar (P2⑥) — called straight from the
+  // FloatingBar island (no #selectionBar container, no data-act dispatch anymore).
+  selectionSelectAll = selectionCtl.toggleSelectAll;
+  selectionTag = selectionCtl.tagSelection;
+  selectionFolder = selectionCtl.folderSelection;
+  selectionGroup = selectionCtl.groupSelected;
+  selectionDelete = selectionCtl.requestDeleteSelected;
+  selectionClear = selectionCtl.clearSelection;
 
   // 🏷 button on card → tag picker pop (Issue #22), anchored to the button itself.
   byId('postGrid').addEventListener('click', (e) => {

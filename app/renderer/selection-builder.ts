@@ -47,10 +47,6 @@ export interface SelectionBarDeps {
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
-  const closestOf = (e: Event, sel: string) => {
-    const t = e.target as HTMLElement | null;
-    return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
-  };
 
   // Toggle a card in/out of the selection; Shift additionally selects the range
   // from the last-selected card (anchor), Google-Photos style.
@@ -217,46 +213,30 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     });
   }
 
-  // #selectionBar buttons + count are React-owned now — the selection-bar island derives
-  // its own model straight from corpusStore's 'selectedSet' (P4-B slice⑱, reusing
-  // corpusSelection's isAllSelected/selectedGroups; no more viewer-pushed model). viewer
-  // keeps the container (show/hide) and this ONE delegated click handler that dispatches
-  // by data-act — the island reproduces the button IDs so scripts/_verify-select.js's
-  // getElementById(...).click() still bubbles here.
-  function handleSelectionBarClick(e: MouseEvent) {
-    const btn = closestOf(e, '[data-act]');
-    if (!btn) return;
-    switch (btn.dataset.act) {
-      case 'selectAll':
-        toggleSelectAll();
-        break;
-      case 'tag':
-        deps.openTagPopForSelection(btn.getBoundingClientRect());
-        break;
-      case 'folder': {
-        // フォルダに追加: open the folder picker for the whole selection (no default
-        // folder anymore — you choose the destination, same as a card's 📁).
-        if (!folders) return;
-        e.stopPropagation(); // don't let the document outside-click handler close the menu we're opening
-        const recs = selectedRecords();
-        const ids = recs.map((r) => r.captureId).filter(Boolean);
-        if (!ids.length) return;
-        const r = btn.getBoundingClientRect();
-        // Synthetic stand-in group (no real key/files — showFoldMenu's callees only
-        // read .rep.captureId and .records for this bulk "add selection to folder" path).
-        deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as CorpusPostGroup, r.left, r.bottom + 4);
-        break;
-      }
-      case 'group':
-        groupSelected();
-        break;
-      case 'delete':
-        requestDeleteSelected();
-        break;
-      case 'cancel':
-        clearSelection();
-        break;
-    }
+  // The bulk-action buttons are the bottom floating bar's now (islands/selection/
+  // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
+  // exports (onClick → function), so there's no #selectionBar container, no data-act
+  // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The
+  // pop-anchored actions (tag / folder) take the clicked button's rect so their
+  // pop/menu opens against it (Base UI collision-flips it above the bottom bar).
+
+  // タグを追加: open the bulk tag-pop anchored to the button (reworked to an inspector-
+  // inline / Dialog editor in P2⑦; the tag-pop path stands in until then).
+  function tagSelection(anchorRect: CorpusAnchorRect) {
+    deps.openTagPopForSelection(anchorRect);
+  }
+
+  // フォルダに追加: open the folder picker for the whole selection (you choose the
+  // destination, same as a card's 📁 — no default folder).
+  function folderSelection(anchorRect: CorpusAnchorRect) {
+    if (!folders) return;
+    const recs = selectedRecords();
+    const ids = recs.map((r) => r.captureId).filter(Boolean);
+    if (!ids.length) return;
+    // Synthetic stand-in group (no real key/files — showFoldMenu's callees only read
+    // .rep.captureId and .records for this bulk "add selection to folder" path).
+    // Anchor the picker at the button's top edge: Base UI flips it above the bottom bar.
+    deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as CorpusPostGroup, anchorRect.left, anchorRect.top);
   }
 
   return {
@@ -267,6 +247,10 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     handleShortcutSelectAllKey,
     handleShortcutCopyKey,
     handleShortcutQuickView,
-    handleSelectionBarClick,
+    toggleSelectAll,
+    groupSelected,
+    requestDeleteSelected,
+    tagSelection,
+    folderSelection,
   };
 }

@@ -350,11 +350,12 @@ declare global {
   // renderer/sidebar.ts — a real ES module (named exports: corpusPostSidebarSource/
   // corpusPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
 
-  // ---- #selectionBar bulk-action bar. viewer keeps the container's show/hide + the
-  // delegated #selectionBar click handler (data-act); SelectionBar.tsx (P4-B slice⑱)
-  // derives count/allSelected/groupDisabled itself from corpusStore's 'selectedSet' +
-  // 'postGroups' (the old renderer/selection-bar.ts push bridge was deleted — no callers
-  // left, same as renderer/empty.ts below). ----
+  // ---- Bulk-action selection bar. Now the bottom floating FloatingBar island
+  // (islands/selection, redesign P2⑥): no #selectionBar container and no delegated
+  // data-act handler — each button calls an orchestrator-exported selection action
+  // directly. It derives count/allSelected/groupDisabled itself from corpusStore's
+  // 'selectedSet' + 'postGroups' (the old renderer/selection-bar.ts push bridge was
+  // deleted — no callers left, same as renderer/empty.ts below). ----
 
   // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
   // delegated CTA click handler; EmptyState.tsx (P4-B slice⑩/⑫) derives the
