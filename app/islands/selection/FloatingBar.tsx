@@ -3,7 +3,6 @@ import { useSyncExternalStore } from 'react';
 import { FolderPlus, Group, ListChecks, Tag, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { postIdKey } from '../../renderer/records.ts';
@@ -19,17 +18,20 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // come straight from 'selectedSet' + 'postGroups' (reusing renderer/selection.ts's own
 // isAllSelected/selectedGroups), same derivation the retired SelectionBar island used.
 //
-// Icon-forward buttons (label via tooltip + aria-label): a compact capsule is the
-// Google-Photos selection-bar form, and it's what fits the content column once the right
-// inspector claims 320px — a six-label bar would not. The actions stay the old inventory
-// (select-all / tag / folder / group / delete / clear).
+// Each action shows an icon + a text label (the old inventory: select-all / tag / folder
+// / group / delete / clear). The labels are RESPONSIVE to available width: the full
+// wording ("タグを追加") when there's room, a short form ("タグ") when the bar is squeezed
+// beside an open inspector on a narrow window — so it stays readable at every width
+// instead of collapsing to bare icons. Clear (✕) is the one icon-only button (universal).
+// The full wording is always the accessible name.
 //
 // Layout: rendered inside the SidebarInset content column (AppShell), so its absolute
 // bottom-center placement stays clear of the right inspector. In WIDE mode the inspector
 // is a flex sibling that already narrows the inset, so centering there is automatically
-// clear. In NARROW mode (<1280px) the inspector is instead a fixed overlay that does NOT
-// narrow the inset, so when it's open the bar reserves its 320px on the right — the same
-// breakpoint the .inspector CSS switches on.
+// clear AND the full labels fit. In NARROW mode (<1280px) the inspector is instead a fixed
+// overlay that does NOT narrow the inset, so when it's open the bar reserves its 320px on
+// the right (same breakpoint the .inspector CSS switches on) and drops to the short labels
+// so the whole capsule fits the reduced width.
 //
 // Selection only ever exists in the post grid (poster cards drill in, they don't
 // multi-select), so the bar also hides in the posters view to never strand a stale
@@ -62,19 +64,14 @@ const subOverlayMode = (cb: () => void) => {
 };
 const getOverlayMode = () => window.matchMedia(INSPECTOR_OVERLAY_QUERY).matches;
 
-// One capsule button: icon-only, its label surfaced as a tooltip + aria-label.
-function Action({ label, danger, disabled, onClick, children }: { label: string; danger?: boolean; disabled?: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) {
+// One capsule button: icon + visible label; `title` (the full wording) is the accessible
+// name even when the visible `label` is shortened.
+function Action({ label, title, danger, disabled, onClick, children }: { label: string; title: string; danger?: boolean; disabled?: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button size="icon-sm" variant="ghost" disabled={disabled} aria-label={label} onClick={onClick} className={cn('rounded-full', danger && 'text-destructive hover:text-destructive hover:bg-destructive/10')}>
-            {children}
-          </Button>
-        }
-      />
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <Button size="sm" variant="ghost" disabled={disabled} aria-label={title} onClick={onClick} className={cn('rounded-full', danger && 'text-destructive hover:bg-destructive/10 hover:text-destructive')}>
+      {children}
+      {label}
+    </Button>
   );
 }
 
@@ -91,9 +88,11 @@ export function FloatingBar() {
   const allSelected = isAllSelected(groups, postIdKey);
   // Manual grouping needs at least two selected cards (groups).
   const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
-  // Reserve the inspector's 320px only when it's a fixed overlay (narrow) AND open;
-  // in wide mode it's a flex sibling that already excludes itself from the inset.
+  // Reserve the inspector's 320px only when it's a fixed overlay (narrow) AND open; in
+  // wide mode it's a flex sibling that already excludes itself from the inset. That same
+  // squeeze is when the labels shrink to their short form.
   const reserveInspector = overlayMode && inspectorOpen;
+  const showFull = !reserveInspector;
 
   return (
     <div
@@ -103,25 +102,25 @@ export function FloatingBar() {
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border bg-popover p-1 text-popover-foreground shadow-lg">
         <span className="px-2 text-sm font-medium tabular-nums whitespace-nowrap">{t('selectedCount', [count])}</span>
         <Separator orientation="vertical" className="mx-0.5 h-5" />
-        <Action label={allSelected ? t('deselectAll') : t('selectAll')} onClick={() => selectionSelectAll()}>
+        <Action label={allSelected ? t('deselectAll') : t('selectAll')} title={allSelected ? t('deselectAll') : t('selectAll')} onClick={() => selectionSelectAll()}>
           <ListChecks />
         </Action>
-        <Action label={t('tagSelected')} onClick={(e) => selectionTag(e.currentTarget.getBoundingClientRect())}>
+        <Action label={showFull ? t('tagSelected') : t('selTag')} title={t('tagSelected')} onClick={(e) => selectionTag(e.currentTarget.getBoundingClientRect())}>
           <Tag />
         </Action>
-        <Action label={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget.getBoundingClientRect())}>
+        <Action label={showFull ? t('folderSelected') : t('selFolder')} title={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget.getBoundingClientRect())}>
           <FolderPlus />
         </Action>
-        <Action label={t('groupSelected')} disabled={groupDisabled} onClick={() => selectionGroup()}>
+        <Action label={t('groupSelected')} title={t('groupSelected')} disabled={groupDisabled} onClick={() => selectionGroup()}>
           <Group />
         </Action>
-        <Action label={t('deleteSelected')} danger onClick={() => selectionDelete()}>
+        <Action label={showFull ? t('deleteSelected') : t('selDelete')} title={t('deleteSelected')} danger onClick={() => selectionDelete()}>
           <Trash2 />
         </Action>
         <Separator orientation="vertical" className="mx-0.5 h-5" />
-        <Action label={t('cancelSelect')} onClick={() => selectionClear()}>
+        <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label={t('cancelSelect')} onClick={() => selectionClear()}>
           <X />
-        </Action>
+        </Button>
       </div>
     </div>
   );

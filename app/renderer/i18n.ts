@@ -334,6 +334,11 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     cancelSelect: 'キャンセル',
     deleteSelected: '投稿を削除',
     selectedCount: '$1 件選択中',
+    // Short labels for the floating selection bar when it's squeezed beside the inspector
+    // on a narrow window (the fuller wording above stays the accessible name / roomy label).
+    selTag: 'タグ',
+    selFolder: 'フォルダ',
+    selDelete: '削除',
     confirmDeleteSelected: '$1 件の投稿を削除しますか？',
     confirmDeleteGroup: 'この投稿（$1件）を削除しますか？',
     deletedN: '$1 件削除しました',
@@ -703,6 +708,10 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     cancelSelect: 'Cancel',
     deleteSelected: 'Delete posts',
     selectedCount: '$1 selected',
+    // Short labels for the floating selection bar when it's squeezed beside the inspector.
+    selTag: 'Tag',
+    selFolder: 'Folder',
+    selDelete: 'Delete',
     confirmDeleteSelected: 'Delete $1 posts?',
     confirmDeleteGroup: 'Delete this post ($1 records)?',
     deletedN: '$1 posts deleted',
