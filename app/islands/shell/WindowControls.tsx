@@ -70,6 +70,10 @@ export function WindowControls() {
   // app-no-drag: the strip overlaps the tab bar's drag region, which would otherwise swallow
   // the clicks. The tab bar reserves --window-controls-w of right padding so tabs never run
   // under it (index.html).
+  // Hover/press are a wash of the foreground color, the way Windows tints its caption buttons:
+  // it reads in both themes without a per-theme token, and it can't collide with the strip's
+  // own background the way --hover did (that token IS --tabbar-bg in the light theme, so the
+  // hover was invisible there — and `bg-[var(--hover)]` never even generated a rule).
   const base = 'app-no-drag inline-grid h-8 w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
   // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
   // sheet 13500) so window management still works while a modal is up, the way the OS buttons
@@ -82,10 +86,10 @@ export function WindowControls() {
   // its own reproduces exactly what the page gets.
   return createPortal(
     <div className="app-no-drag fixed top-0 right-0 z-[13600] flex bg-[var(--tabbar-bg)]">
-      <button type="button" aria-label="最小化" className={`${base} hover:bg-[var(--hover)] active:bg-[var(--active)]`} onClick={() => corpusIpc.windowControl('minimize')}>
+      <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => corpusIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
-      <button type="button" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-[var(--hover)] active:bg-[var(--active)]`} onClick={() => corpusIpc.windowControl('toggle-maximize')}>
+      <button type="button" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => corpusIpc.windowControl('toggle-maximize')}>
         {maximized ? <RestoreGlyph /> : <MaximizeGlyph />}
       </button>
       <button type="button" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => corpusIpc.windowControl('close')}>
