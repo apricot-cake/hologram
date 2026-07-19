@@ -12,6 +12,7 @@
 export const ipcRenderer: {
   invoke(channel: string, ...args: any[]): Promise<any>;
   on(channel: string, listener: (event: unknown, ...args: any[]) => void): unknown;
+  removeListener(channel: string, listener: (event: unknown, ...args: any[]) => void): unknown;
   send(channel: string, ...args: any[]): void;
 };
 export const contextBridge: {

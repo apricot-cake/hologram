@@ -58,6 +58,13 @@ const api = {
   onSaveFolderProgress: (cb: (p: any) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
+  // Returns an unsubscribe (unlike onSaveFolderProgress) so an export can attach for its
+  // duration and detach when done, without piling listeners up across repeated exports.
+  onExportProgress: (cb: (p: any) => void): (() => void) => {
+    const h = (_e: unknown, p: any) => cb(p);
+    ipcRenderer.on('export-progress', h);
+    return () => ipcRenderer.removeListener('export-progress', h);
+  },
   getBackup: (): Promise<any> => ipcRenderer.invoke('get-backup'),
   setBackup: (patch: unknown): Promise<any> => ipcRenderer.invoke('set-backup', patch),
   pickBackupDir: (): Promise<any> => ipcRenderer.invoke('pick-backup-dir'),

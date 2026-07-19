@@ -19,6 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { Transform } from 'node:stream';
 import { ZipFile } from 'yazl';
 import { parseJsonLoose } from './lib-json.mts';
 
@@ -309,47 +310,76 @@ async function buildImagesZip(JSZip, srcFolder) {
 // truncated central-directory offset = a corrupt, unopenable ZIP. Media/sidecars
 // are STORED (compress:false): the library is already-compressed media, so
 // deflating it burns CPU for ~no size win.
-function streamZipToFile(zip: ZipFile, outPath: string): Promise<void> {
+// onBytes (optional) reports cumulative bytes written to the output file — a
+// Transform tap between the yazl stream and the file, so it doesn't disturb the pipe.
+function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const out = fs.createWriteStream(outPath);
     zip.outputStream.on('error', reject);
     out.on('error', reject);
     out.on('close', () => resolve());
-    zip.outputStream.pipe(out);
+    if (onBytes) {
+      let written = 0;
+      const counter = new Transform({
+        transform(chunk, _enc, cb) {
+          written += chunk.length;
+          onBytes(written);
+          cb(null, chunk);
+        },
+      });
+      counter.on('error', reject);
+      zip.outputStream.pipe(counter).pipe(out);
+    } else {
+      zip.outputStream.pipe(out);
+    }
   });
 }
 
 // Complete, directly-re-importable snapshot: every top-level library file under
 // library/, the shared avatar store under library/avatars/, plus a corpus-export.json
 // manifest. Returns the file count (excludes the manifest), matching the old builder.
-async function writeCompleteZip(srcFolder, outPath, nowIso) {
+// onProgress(writtenBytes, totalBytes) fires as the archive streams out — totalBytes is
+// the summed input size (STORED, so output ≈ input + small headers), good enough to drive
+// a taskbar / % progress bar.
+async function writeCompleteZip(srcFolder, outPath, nowIso, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
-  for (const name of await collectFiles(srcFolder)) {
-    zip.addFile(path.join(srcFolder, name), `library/${name}`, { compress: false });
+  let totalBytes = 0;
+  const addFile = async (fullPath, entryName) => {
+    try {
+      totalBytes += (await fs.promises.stat(fullPath)).size;
+    } catch {
+      /* size unknown — progress just runs a hair ahead */
+    }
+    zip.addFile(fullPath, entryName, { compress: false });
     fileCount++;
-  }
-  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) {
-    zip.addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`, { compress: false });
-    fileCount++;
-  }
+  };
+  for (const name of await collectFiles(srcFolder)) await addFile(path.join(srcFolder, name), `library/${name}`);
+  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
   zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Corpus', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'corpus-export.json');
   zip.end();
-  await streamZipToFile(zip, outPath);
+  await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };
 }
 
 // Images-only: the media files flat at the ZIP root (no sidecars/org JSONs), NOT
 // re-importable as a library.
-async function writeImagesZip(srcFolder, outPath) {
+async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
+  let totalBytes = 0;
   for (const name of await collectFiles(srcFolder, (n) => IMAGE_EXT.test(n))) {
-    zip.addFile(path.join(srcFolder, name), name, { compress: false });
+    const fullPath = path.join(srcFolder, name);
+    try {
+      totalBytes += (await fs.promises.stat(fullPath)).size;
+    } catch {
+      /* size unknown */
+    }
+    zip.addFile(fullPath, name, { compress: false });
     fileCount++;
   }
   zip.end();
-  await streamZipToFile(zip, outPath);
+  await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };
 }
 

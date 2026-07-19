@@ -42,6 +42,11 @@ electron.contextBridge.exposeInMainWorld("corpus", {
 	onSaveFolderProgress: (cb) => {
 		electron.ipcRenderer.on("save-folder-progress", (_e, p) => cb(p));
 	},
+	onExportProgress: (cb) => {
+		const h = (_e, p) => cb(p);
+		electron.ipcRenderer.on("export-progress", h);
+		return () => electron.ipcRenderer.removeListener("export-progress", h);
+	},
 	getBackup: () => electron.ipcRenderer.invoke("get-backup"),
 	setBackup: (patch) => electron.ipcRenderer.invoke("set-backup", patch),
 	pickBackupDir: () => electron.ipcRenderer.invoke("pick-backup-dir"),

@@ -54,6 +54,11 @@ export function moveSaveFolder(dest: string) {
 export function onSaveFolderProgress(cb: (p: any) => void) {
   return corpusIpc.onSaveFolderProgress(cb);
 }
+// Export streaming progress: returns an unsubscribe. Payloads: {written,total,pct} while
+// running, then {done:true}.
+export function onExportProgress(cb: (p: any) => void): () => void {
+  return corpusIpc.onExportProgress(cb);
+}
 export function onPostsChanged(cb: (names: string[] | null) => void) {
   return corpusIpc.onPostsChanged(cb);
 }

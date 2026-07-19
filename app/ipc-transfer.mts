@@ -249,12 +249,42 @@ function register(ctx) {
     const res = await dialog.showSaveDialog(getWin(), { defaultPath: `corpus-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
     // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
-    // the whole library never sits in memory and a >4 GiB archive stays valid. On any
-    // failure, drop the partial file so a half-written ZIP is never left behind.
+    // the whole library never sits in memory and a >4 GiB archive stays valid. Progress
+    // drives the Windows taskbar (BrowserWindow.setProgressBar) AND an 'export-progress'
+    // IPC event for the in-app %; throttled to whole-percent changes so we don't spam.
+    // On any failure, drop the partial file so a half-written ZIP is never left behind.
+    const win = getWin();
+    let lastPct = -1;
+    const onProgress = (written: number, total: number) => {
+      const frac = total > 0 ? Math.min(1, written / total) : 0;
+      const pct = Math.floor(frac * 100);
+      if (pct === lastPct) return;
+      lastPct = pct;
+      try {
+        win?.setProgressBar(frac);
+      } catch {
+        /* window gone */
+      }
+      send('export-progress', { written, total, pct });
+    };
     try {
-      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath) : await archive.writeCompleteZip(src, res.filePath, undefined);
+      win?.setProgressBar(0);
+      send('export-progress', { written: 0, total: 0, pct: 0 });
+      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(src, res.filePath, undefined, onProgress);
+      try {
+        win?.setProgressBar(-1);
+      } catch {
+        /* window gone */
+      }
+      send('export-progress', { done: true });
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
     } catch (err) {
+      try {
+        win?.setProgressBar(-1);
+      } catch {
+        /* window gone */
+      }
+      send('export-progress', { done: true });
       try {
         await fs.promises.unlink(res.filePath);
       } catch {

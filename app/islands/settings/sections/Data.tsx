@@ -11,10 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
+import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../../renderer/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone } from '../../../renderer/backup.ts';
-import { onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importPosts, importImages } from '../../../renderer/posts.ts';
 import { open as confirmOpen } from '../../../renderer/confirm.ts';
 import { loadPosts } from '../../../renderer/post-grid-builder.ts';
 
@@ -222,13 +223,25 @@ export function Data() {
   // --- export ---
   const [exportMode, setExportMode] = useState('full');
   const exportZip = async () => {
-    notify(t('exporting'));
+    // A sticky loading toast shows the live % streamed to disk (fed by main's
+    // 'export-progress' via onExportProgress); it also covers the save-dialog wait.
+    const id = 'corpus-export';
+    toast.loading(t('exporting'), { id, description: '0%' });
+    const off = onExportProgress((p) => {
+      if (!p || p.done) return;
+      toast.loading(t('exporting'), { id, description: `${p.pct ?? 0}%` });
+    });
     try {
       const res = await exportComplete(exportMode);
+      off();
+      toast.dismiss(id);
       if (res && res.saved) notify(t('exported'));
       else if (res && res.empty) notify(t('noData'));
       else if (res && res.error) notify(t('exportFailed'));
+      // canceled dialog (res.saved false, no empty/error): the toast is already dismissed.
     } catch {
+      off();
+      toast.dismiss(id);
       notify(t('exportFailed'));
     }
   };
