@@ -122,20 +122,20 @@ function ModalChrome() {
   useLayoutEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
-    // The Dialog/AlertDialog portal stays mounted through the card's exit animation, so DOM
-    // presence alone doesn't mean the page is dim — the overlay drops to opacity 0 the frame
-    // the close starts (data-closed:opacity-0, see dialog.tsx). So match on the OPEN overlay
-    // only: that tracks what's actually painted, and both edges stay lockstep with the scrim
-    // (open + close are driven by the same state flip, pre-paint). This is a safety net for
-    // overlays outside the tracked state union; Sheet is deliberately not tracked (its scrim
-    // fades, and a snap recolor would mismatch — known gap).
-    const scrimUp = () => !!document.querySelector('[data-slot="dialog-overlay"][data-open], [data-slot="alert-dialog-overlay"][data-open]');
+    // NO DOM probe of the shadcn overlay here — it can only lag. The portal outlives the close
+    // (card exit animation) and Base UI flips the element's data-open in its own commit, so
+    // reading the element while this effect runs can still report "open" one frame after the
+    // state said closed; the WCO then held its dim until the portal unmounted ~112ms later,
+    // which is exactly the flicker this whole exercise is about. The scrim is now driven by the
+    // same state flip (data-closed:opacity-0, see dialog.tsx), so the state IS the truth for
+    // both — keep them on one source. Sheet is deliberately not tracked (its scrim fades, and a
+    // snap recolor would mismatch — known gap).
     const sync = () => {
       const legacy = ids.some((id) => visible(document.getElementById(id)));
       const scrollLock = confirmOpen || legacy;
       document.documentElement.classList.toggle('modal-open', scrollLock);
       document.body.classList.toggle('modal-open', scrollLock);
-      applyTitleBar(settingsOpen || confirmOpen || legacy || scrimUp());
+      applyTitleBar(settingsOpen || confirmOpen || legacy);
     };
     const observers = ids
       .map((id) => document.getElementById(id))
@@ -145,11 +145,6 @@ function ModalChrome() {
         mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
         return mo;
       });
-    // Portal mounts/unmounts land as body-level child changes; the unmount fires sync()
-    // as a microtask (pre-paint), so the un-dim IPC leaves the same frame the scrim vanishes.
-    const bodyMo = new MutationObserver(sync);
-    bodyMo.observe(document.body, { childList: true });
-    observers.push(bodyMo);
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
   }, [confirmOpen, settingsOpen]);
