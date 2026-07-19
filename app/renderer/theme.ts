@@ -10,7 +10,7 @@
 
    FOUC-only: it resolves the pref (main passes config's theme as ?theme=; else the
    localStorage cache; else 'auto') and sets the attribute, nothing more. It publishes no
-   window global. The LIVE theme runtime — the apply/get/set/resolve/applyTitleBar API the
+   window global. The LIVE theme runtime — the apply/get/set/resolve API the
    React Appearance section drives, OS-change following, and the config.json reconcile —
    lives in renderer/theme-api.ts, bundled into app.js. */
 (function () {

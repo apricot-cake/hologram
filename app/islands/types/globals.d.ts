@@ -40,7 +40,7 @@ declare global {
   // ---- renderer/ui.ts — notify/escapeHtml. A real ES module (named exports)
   // now — no ambient Window-shaped interface needed.
 
-  // ---- renderer/theme-api.ts — apply/get/set/resolve/applyTitleBar. A real ES module
+  // ---- renderer/theme-api.ts — apply/get/set/resolve. A real ES module
   // (named exports) now — no ambient Window-shaped interface needed. The pre-paint
   // renderer/theme.js boot publishes no window global.
 

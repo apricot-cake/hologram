@@ -32,15 +32,13 @@ function resolvePref(p: string): string {
 }
 
 // Native titlebar overlay (Windows). The OS draws the window-control buttons (WCO /
-// titleBarOverlay), so a web modal backdrop can't cover them — while a modal scrim is up
-// we recolor the strip to MATCH the dimmed page instead. The modal backdrop is a plain
-// bg-black/10 dim (the blur was removed — a frosted page vs a flat button strip is what
-// made the controls "float"), so the modal colors are just the normal chrome darkened by
-// that same ~10% (× 0.9). The glyph color stays normal so the buttons remain legible.
-let modalDark = false;
+// titleBarOverlay); we only set their color to match the app chrome / theme. We deliberately
+// do NOT recolor them while a modal is open: changing the overlay color makes Windows
+// repaint the caption area, a visible flash on every modal open (reported). With the modal
+// backdrop's blur removed (plain bg-black/10 dim), the un-recolored strip sits only ~10%
+// brighter than the dimmed page — a subtle static difference, not a flash.
 function barColors() {
   const d = resolvePref(pref) === 'dark';
-  if (modalDark) return { color: d ? '#0d0e0f' : '#d4d6da', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
   return { color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
 }
 function setBar() {
@@ -50,16 +48,12 @@ function setBar() {
     } catch (e) {}
   }
 }
-export function applyTitleBar(modal?: boolean): void {
-  modalDark = !!modal;
-  setBar();
-}
 
 export function apply(p: string): string {
   pref = cleanPref(p);
   if (resolvePref(pref) === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
   else document.documentElement.removeAttribute('data-theme');
-  setBar(); // modalDark-aware; keeps the dark titlebar if a modal is open
+  setBar(); // set the titlebar overlay to the resolved theme color
   return pref;
 }
 export function get(): string {

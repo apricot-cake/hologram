@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
-import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../../renderer/settings.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -13,7 +12,6 @@ import { SettingsHost } from '../settings/index.tsx';
 import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
-import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { onPostsChanged } from '../../renderer/posts.ts';
 import { onChange as foldersOnChange } from '../../renderer/folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -106,20 +104,20 @@ function ShellClasses() {
 // faithful move of the old setupModalChrome IIFE into a React effect. The inspector
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
-  // The confirm modal is a shadcn AlertDialog and settings is a shadcn Dialog now (both
-  // render through a portal, no static overlay div to observe) — read their open state
-  // straight from the bridges. Settings was missing here, so opening it left the native
-  // titlebar untinted (its window controls "floated" bright over the dimmed content).
+  // Background scroll-lock for the LEGACY overlays that aren't Base UI (the folder modal +
+  // the lightbox) + the confirm AlertDialog. `.modal-open` is just `overflow:hidden`. The
+  // shadcn Dialog/AlertDialog lock their own scroll, so settings isn't tracked here.
+  // We deliberately do NOT recolor the native titlebar for modals: with the modal backdrop
+  // blur removed, the un-recolored strip is only ~10% off the dimmed page, and recoloring
+  // the WCO overlay makes Windows repaint the caption area = a flash on every open.
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
-  const settingsOpen = useSyncExternalStore(settingsSubscribe, settingsIsOpen);
   useEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
-      const open = confirmOpen || settingsOpen || ids.some((id) => visible(document.getElementById(id)));
+      const open = confirmOpen || ids.some((id) => visible(document.getElementById(id)));
       document.documentElement.classList.toggle('modal-open', open);
       document.body.classList.toggle('modal-open', open);
-      applyTitleBar(open);
     };
     const observers = ids
       .map((id) => document.getElementById(id))
@@ -131,7 +129,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen, settingsOpen]);
+  }, [confirmOpen]);
   return null;
 }
 
