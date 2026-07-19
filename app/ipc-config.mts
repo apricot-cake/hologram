@@ -44,13 +44,26 @@ function register(ctx) {
     return { extensionId: cfg.extensionId };
   });
 
-  ipcMain.handle('set-titlebar-overlay', (_e, opts) => {
+  // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
+  // the OS overlay, so the window commands they used to carry natively come over IPC now.
+  // See the AppShell WindowControls island for why they are app-drawn.
+  ipcMain.handle('window-control', (_e, action) => {
     const win = getWin();
-    try {
-      if (win) win.setTitleBarOverlay(opts);
-    } catch {
-      /* non-Windows or overlay-less build */
-    }
+    if (!win) return null;
+    if (action === 'minimize') win.minimize();
+    else if (action === 'toggle-maximize') {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    } else if (action === 'close') win.close();
+    return win.isMaximized();
+  });
+
+  // The maximize button's glyph follows the real window state, which changes without us
+  // (snap, double-click on the drag strip, Win+Up, the taskbar). Push it instead of making
+  // the renderer poll.
+  ipcMain.handle('window-is-maximized', () => {
+    const win = getWin();
+    return !!win && win.isMaximized();
   });
 
   ipcMain.handle('get-tabs', () => {

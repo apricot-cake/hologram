@@ -77,5 +77,7 @@ export const corpusIpc: CorpusPreload = {
   emptyTrash: () => bridge().emptyTrash(),
   deleteFromTrash: (image) => bridge().deleteFromTrash(image),
   onPostsChanged: (cb) => bridge().onPostsChanged(cb),
-  setTitleBarOverlay: (opts) => bridge().setTitleBarOverlay(opts),
+  windowControl: (action) => bridge().windowControl(action),
+  windowIsMaximized: () => bridge().windowIsMaximized(),
+  onWindowMaximizedChanged: (cb) => bridge().onWindowMaximizedChanged(cb),
 };

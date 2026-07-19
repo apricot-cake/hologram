@@ -3,8 +3,6 @@ import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
-import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../../renderer/settings.ts';
-import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -99,44 +97,27 @@ function ShellClasses() {
   return null;
 }
 
-// Modal chrome: lock background scroll + darken the native titlebar while any full-
-// screen overlay is up (the scrim can't cover the OS window controls or the page
-// scrollbar, so they'd otherwise stay bright). Observes each overlay's visibility so no
-// open/close site can be missed — self-contained (no orchestrator state), so this is a byte-
-// faithful move of the old setupModalChrome IIFE into a React effect. The inspector
-// (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
+// Modal chrome: lock background scroll while any full-screen overlay is up. Observes each
+// overlay's visibility so no open/close site can be missed — self-contained (no orchestrator
+// state). The inspector (#postDetail) is a side panel, not a modal, so it's excluded.
+//
+// This used to also dim the OS-drawn window-control strip in lockstep with the scrim, because
+// a web backdrop cannot cover an OS-painted overlay. The buttons are app-drawn now
+// (shell/WindowControls.tsx), so the scrim covers them on its own and that whole mechanism —
+// the recolor, the dedupe, the paint-timing deferral — is gone.
 function ModalChrome() {
-  // Two shell concerns while a full-screen overlay is up:
-  //  1. Background scroll-lock (`.modal-open` = overflow:hidden) for the LEGACY overlays that
-  //     aren't Base UI (folder modal + lightbox) + the confirm AlertDialog. The shadcn
-  //     Dialog/AlertDialog lock their own scroll, so settings isn't in the scroll-lock set.
-  //  2. Dim the OS-drawn window-control strip in lockstep with the page scrim — the WCO can't
-  //     be covered by a web backdrop, so theme-api recolors it (applyTitleBar). This set DOES
-  //     include settings (it dims the page too). setBar() dedupes, so the observers firing
-  //     repeatedly can't flicker the caption (that was the old "recolor flashes" bug).
+  // Scroll-lock (`.modal-open` = overflow:hidden) is for the LEGACY overlays that aren't Base
+  // UI (folder modal + lightbox) plus the confirm AlertDialog. The shadcn Dialog/AlertDialog
+  // lock their own scroll, so settings isn't in this set.
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
-  const settingsOpen = useSyncExternalStore(settingsSubscribe, settingsIsOpen);
-  // useLayoutEffect (not useEffect): this runs in the same commit that flips the scrim, so the
-  // recolor is QUEUED off the same state change rather than a frame later. When it actually
-  // reaches the OS is theme-api's business — applyTitleBar defers the IPC to just after the
-  // paint so the strip can't outrun the scrim (see the comment there).
-  useLayoutEffect(() => {
+  useEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
-    // NO DOM probe of the shadcn overlay here — it can only lag. The portal outlives the close
-    // (card exit animation) and Base UI flips the element's data-open in its own commit, so
-    // reading the element while this effect runs can still report "open" one frame after the
-    // state said closed; the WCO then held its dim until the portal unmounted ~112ms later,
-    // which is exactly the flicker this whole exercise is about. The scrim is now driven by the
-    // same state flip (data-closed:opacity-0, see dialog.tsx), so the state IS the truth for
-    // both — keep them on one source. Sheet is deliberately not tracked (its scrim fades, and a
-    // snap recolor would mismatch — known gap).
     const sync = () => {
       const legacy = ids.some((id) => visible(document.getElementById(id)));
       const scrollLock = confirmOpen || legacy;
       document.documentElement.classList.toggle('modal-open', scrollLock);
       document.body.classList.toggle('modal-open', scrollLock);
-      applyTitleBar(settingsOpen || confirmOpen || legacy);
     };
     const observers = ids
       .map((id) => document.getElementById(id))
@@ -148,7 +129,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen, settingsOpen]);
+  }, [confirmOpen]);
   return null;
 }
 
