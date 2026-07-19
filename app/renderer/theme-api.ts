@@ -32,22 +32,50 @@ function resolvePref(p: string): string {
 }
 
 // Native titlebar overlay (Windows). The OS draws the window-control buttons (WCO /
-// titleBarOverlay); we only set their color to match the app chrome / theme. We deliberately
-// do NOT recolor them while a modal is open: changing the overlay color makes Windows
-// repaint the caption area, a visible flash on every modal open (reported). Instead the modal
-// backdrop spares the titlebar band (modal-backdrop-dim, globals.css) — it leaves the top
-// --tabbar-h undimmed — so the un-recolored strip stays matched to the tab bar it shares a
-// color with: no flash, no float.
+// titleBarOverlay) OVER the web layer, so a modal's page-wide scrim can't cover them — left
+// alone they'd stay bright and "float" above the dimmed page. Electron has no transparent
+// WCO (electron#33567), so the only fix is to recolor the strip to the dimmed tone while a
+// modal is up. VS Code does exactly this (windowImpl.ts updateWindowControls → dimColor =
+// base × (1 − scrim opacity), matching its rgba(0,0,0,.5) modal overlay).
+//
+// Two things kept the earlier recolor from looking clean, neither a law of nature:
+//  - repeated repaints: setTitleBarOverlay repaints the caption on EVERY call, and ModalChrome
+//    recolored on every MutationObserver fire → flicker. setBar() dedupes (skips no-op recolors).
+//  - lag: the recolor is instant + async-over-IPC, so if it fires AFTER the page paints its dim
+//    (post-paint useEffect) OR the scrim FADES in, the strip visibly trails the page ("色合わせが
+//    追いつかない"). So it's fired pre-paint (ModalChrome useLayoutEffect) against an instant
+//    (un-faded) scrim, landing with the page dim. VS Code drives it from one main source the same way.
+let modalDim = false;
+const DIM = 0.5; // 1 − the modal scrim opacity (bg-black/50, the common real-product value, in dialog/alert-dialog/sheet)
+function dimHex(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * DIM);
+  const g = Math.round(((n >> 8) & 255) * DIM);
+  const b = Math.round((n & 255) * DIM);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 function barColors() {
   const d = resolvePref(pref) === 'dark';
-  return { color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
+  const color = d ? '#0e0f11' : '#eceef2';
+  const symbol = d ? '#9aa3af' : '#5b6470';
+  return { color: modalDim ? dimHex(color) : color, symbolColor: modalDim ? dimHex(symbol) : symbol, height: 37 };
 }
+let lastBar = '';
 function setBar() {
-  if (window.corpus && window.corpus.setTitleBarOverlay) {
-    try {
-      window.corpus.setTitleBarOverlay(barColors());
-    } catch (e) {}
-  }
+  if (!(window.corpus && window.corpus.setTitleBarOverlay)) return;
+  const next = barColors();
+  const key = JSON.stringify(next);
+  if (key === lastBar) return; // dedupe: each setTitleBarOverlay repaints the caption = flicker if spammed
+  lastBar = key;
+  try {
+    window.corpus.setTitleBarOverlay(next);
+  } catch (e) {}
+}
+// Recolor the WCO strip to the dimmed tone (or back) when a modal scrim goes up/down.
+// App.tsx ModalChrome is the single caller, driven by the union of modal-open states.
+export function applyTitleBar(modal: boolean): void {
+  modalDim = !!modal;
+  setBar();
 }
 
 export function apply(p: string): string {

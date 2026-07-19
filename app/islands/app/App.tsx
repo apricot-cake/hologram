@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
+import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../../renderer/settings.ts';
+import { applyTitleBar } from '../../renderer/theme-api.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
@@ -104,20 +106,28 @@ function ShellClasses() {
 // faithful move of the old setupModalChrome IIFE into a React effect. The inspector
 // (#postDetail) is a side panel, not a modal, so it's intentionally excluded.
 function ModalChrome() {
-  // Background scroll-lock for the LEGACY overlays that aren't Base UI (the folder modal +
-  // the lightbox) + the confirm AlertDialog. `.modal-open` is just `overflow:hidden`. The
-  // shadcn Dialog/AlertDialog lock their own scroll, so settings isn't tracked here.
-  // We deliberately do NOT recolor the native titlebar for modals: with the modal backdrop
-  // blur removed, the un-recolored strip is only ~10% off the dimmed page, and recoloring
-  // the WCO overlay makes Windows repaint the caption area = a flash on every open.
+  // Two shell concerns while a full-screen overlay is up:
+  //  1. Background scroll-lock (`.modal-open` = overflow:hidden) for the LEGACY overlays that
+  //     aren't Base UI (folder modal + lightbox) + the confirm AlertDialog. The shadcn
+  //     Dialog/AlertDialog lock their own scroll, so settings isn't in the scroll-lock set.
+  //  2. Dim the OS-drawn window-control strip in lockstep with the page scrim — the WCO can't
+  //     be covered by a web backdrop, so theme-api recolors it (applyTitleBar). This set DOES
+  //     include settings (it dims the page too). setBar() dedupes, so the observers firing
+  //     repeatedly can't flicker the caption (that was the old "recolor flashes" bug).
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
-  useEffect(() => {
+  const settingsOpen = useSyncExternalStore(settingsSubscribe, settingsIsOpen);
+  // useLayoutEffect (not useEffect): the WCO recolor is instant + async-over-IPC, so it must be
+  // DISPATCHED before the browser paints the scrim — a post-paint useEffect makes the strip
+  // visibly trail the page dim. Runs pre-paint here, landing with (or a hair before) the dim.
+  useLayoutEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
     const sync = () => {
-      const open = confirmOpen || ids.some((id) => visible(document.getElementById(id)));
-      document.documentElement.classList.toggle('modal-open', open);
-      document.body.classList.toggle('modal-open', open);
+      const legacy = ids.some((id) => visible(document.getElementById(id)));
+      const scrollLock = confirmOpen || legacy;
+      document.documentElement.classList.toggle('modal-open', scrollLock);
+      document.body.classList.toggle('modal-open', scrollLock);
+      applyTitleBar(settingsOpen || confirmOpen || legacy);
     };
     const observers = ids
       .map((id) => document.getElementById(id))
@@ -129,7 +139,7 @@ function ModalChrome() {
       });
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
-  }, [confirmOpen]);
+  }, [confirmOpen, settingsOpen]);
   return null;
 }
 
