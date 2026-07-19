@@ -19,12 +19,14 @@
 // - The right inspector keeps the legacy #postDetail element: its .inspector CSS
 //   already implements the #143 model (wide = fixed 320px column, narrow = slide-over),
 //   so P1 inherits that behavior; the content is reworked in P2⑦.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { isOpen as inspectorIsOpen, load as inspectorLoad, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
 import { cachedOpen, loadOpen, persistOpen } from '../../renderer/sidebar-pref.ts';
 import { signalShellReady } from '../../renderer/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
+import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
@@ -68,6 +70,13 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+  const inspectorOpen = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
+  // config.json outranks the localStorage cache the panel's first render was guessed from
+  // (same two-tier reconcile as the sidebar, but the store owns the state — see
+  // inspector-panel.ts for why it has to).
+  useEffect(() => {
+    inspectorLoad();
+  }, []);
   // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
   // before wiring the delegated #postGrid/#emptyState/etc. listeners — those elements
   // are React-rendered below, not static index.html markup anymore).
@@ -85,9 +94,15 @@ export function AppShell() {
                 longer crosses the sidebar seam. Legacy #tabBar CSS styles it; TabsHost
                 fills #tabBarInner. */}
             <header id="tabBar" className="shrink-0">
-              <div id="tabBarInner">
+              {/* has-inspector: when the panel is open the band no longer reaches the window
+                  edge, so it stops reserving the width of the chrome pinned there. */}
+              <div id="tabBarInner" className={inspectorOpen ? 'has-inspector' : undefined}>
                 <TabsHost />
               </div>
+              {/* Inspector toggle (#243) — mirrors the sidebar trigger at the band's left
+                  end. A real child here (not portaled), so it sits just left of the window
+                  buttons and is covered by a modal scrim like everything else. */}
+              <InspectorToggle />
               {/* The window buttons are ours now (see WindowControls). Mounted here for
                   ownership, but portaled to the window's top-right above the modal scrim —
                   #tabBarInner reserves --window-controls-w so tabs stay clear of them. */}
@@ -115,9 +130,13 @@ export function AppShell() {
                 the right inspector, which is a flex sibling that narrows the inset when open. */}
             <FloatingBar />
           </SidebarInset>
-          {/* Right inspector — legacy element + CSS (already the #143 wide/narrow model). */}
-          <aside id="postDetail" className="inspector" hidden>
-            <div id="postDetailBox">
+          {/* Right inspector. Visibility is the user's own toggle now (#243) — it is no
+              longer opened/closed as a side effect of selecting a card, and the content
+              (Inspector) shows a placeholder while nothing is selected (#244). */}
+          <aside id="postDetail" className="inspector" hidden={!inspectorOpen}>
+            {/* h-full so the empty-state placeholder can center itself in the column
+                (a filled panel just overflows it into the scroll, as before). */}
+            <div id="postDetailBox" className="h-full">
               <Inspector />
             </div>
           </aside>

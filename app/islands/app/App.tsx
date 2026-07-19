@@ -29,7 +29,6 @@ import {
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
   handleEscDismissDetail,
-  handleOutsideClickDismissDetail,
   handleTabBarKeydown,
   handleTabBarFocusout,
   handleTabBarClick,
@@ -163,22 +162,20 @@ function GlobalShortcuts() {
   return null;
 }
 
-// Esc-priority inspector close + outside-click slide-over dismiss. Both must run in the
-// CAPTURE phase (ahead of the overlays/popovers they check for) — a different phase than
-// GlobalShortcuts' bubble-phase keydown, so this stays a separate effect/component rather
-// than merging into it. Handler + guard logic lives in inspector-builder.ts (moved there
-// in Wave21/V7, ahead of this wave), imported directly as a live binding, same
-// "cut out and rewire" as GlobalShortcuts.
+// Esc-priority dismiss for the image-tab detail view. Must run in the CAPTURE phase (ahead
+// of the overlays/popovers it checks for) — a different phase than GlobalShortcuts'
+// bubble-phase keydown, so this stays a separate effect/component rather than merging into
+// it. Handler + guard logic lives in inspector-builder.ts (moved there in Wave21/V7, ahead
+// of this wave), imported directly as a live binding, same "cut out and rewire" as
+// GlobalShortcuts.
+//
+// The outside-click listener that shared this effect is gone with the inspector's
+// slide-over form (#243) — see inspector-builder.ts.
 function DetailDismiss() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => handleEscDismissDetail(e);
-    const onClick = (e: MouseEvent) => handleOutsideClickDismissDetail(e);
     document.addEventListener('keydown', onKeydown, true);
-    document.addEventListener('click', onClick, true);
-    return () => {
-      document.removeEventListener('keydown', onKeydown, true);
-      document.removeEventListener('click', onClick, true);
-    };
+    return () => document.removeEventListener('keydown', onKeydown, true);
   }, []);
   return null;
 }

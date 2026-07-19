@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
+import { PanelRight } from 'lucide-react';
 import { get, subscribe } from '../../renderer/inspector.ts';
+import { t } from '../_shared/i18n.ts';
 import type { ReactNode } from 'react';
 
 function Row({ k, v }: { k?: string; v?: ReactNode }) {
@@ -181,9 +183,22 @@ function PosterInspector({ m }: { m: CorpusInspectorModel }) {
   );
 }
 
+// Nothing selected (#244). The panel is persistent now, so "no selection" is a normal
+// state of it rather than a reason for it to disappear — and what belongs here is only
+// that fact. A library-wide summary was considered and rejected: this surface is defined
+// as the detail OF a selection (#143), and the counts it would show are already on the tab.
+function InspectorEmpty() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
+      <PanelRight className="size-6 opacity-40" aria-hidden="true" />
+      <span className="text-xs">{t('inspectorEmpty')}</span>
+    </div>
+  );
+}
+
 export function Inspector() {
   const m = useSyncExternalStore(subscribe, get);
-  if (!m) return null;
+  if (!m) return <InspectorEmpty />;
   // Keyed on openId (bumped only by open(), not refresh()): a fresh post/poster remounts
   // and resets local state (tag-input text), while a tag mutation on the SAME panel
   // re-renders in place and keeps it — matching the old full-rebuild-vs-subpart-refresh split.

@@ -74,7 +74,6 @@ export let handleShortcutQuickView: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
-export let handleOutsideClickDismissDetail: (e: MouseEvent) => void;
 export let handleTabBarKeydown: (e: KeyboardEvent) => void;
 export let handleTabBarFocusout: (e: FocusEvent) => void;
 export let handleTabBarClick: (e: MouseEvent) => void;
@@ -1135,7 +1134,6 @@ export function endFilterEditSession(): void {
   });
   const { closeDetail, showDetail, persistManual, openTagPopForGroup } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
-  handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
   // === Selection (click a card to select; the bar appears when 1+ are selected) ===
   // groupSelected needs inspector's persistManual, so this is constructed here

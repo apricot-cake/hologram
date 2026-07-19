@@ -44,13 +44,17 @@
       box-sizing: border-box;
       min-width: 0; flex: 1; display: flex; align-items: flex-end;
       align-self: stretch;
-      /* The window buttons are ours now (WindowControls), but they're pinned to the window's
-         top-right ABOVE the modal scrim rather than sitting in this row's flow, so reserve
-         their width here to keep tabs from running under them — plus the grab gutter that
-         leaves a draggable patch even when many tabs fill the row. */
-      padding: 0 calc(var(--window-controls-w, 138px) + var(--tabbar-drag-gutter, 88px)) 0 8px;
+      /* The window buttons and the inspector toggle are both pinned to the window's
+         top-right rather than sitting in this row's flow, so reserve their width to keep
+         tabs from running under them — plus the grab gutter that leaves a draggable patch
+         even when many tabs fill the row. */
+      padding: 0 calc(var(--window-controls-w, 138px) + var(--inspector-toggle-w, 48px) + var(--tabbar-drag-gutter, 88px)) 0 8px;
       gap: 0;
     }
+    /* …unless the inspector is open: the panel is wider than that chrome, so the band ends
+       well before it and only the grab gutter is still owed. Without this the reservation
+       would eat a third of the tab row for buttons that aren't over it. */
+    #tabBarInner.has-inspector { padding-right: var(--tabbar-drag-gutter, 88px); }
     /* Window tabs (Phase 2) — Chrome tab-strip anatomy: all tabs share one
        32px bottom-flush box (one text axis); inactive hover = floating pill
        inset within the box; active = connected to the band below with

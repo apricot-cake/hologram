@@ -14,6 +14,7 @@
 import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
+import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
@@ -80,14 +81,28 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       adoptSource: deps.t('editAdoptSource'),
     };
   }
-  // === Inspector (ℹ on a card): persistent right column / slide-over ===
+  // === Inspector: the persistent right column ===
+  //
+  // Visibility belongs to the user now (#243), so it lives in the inspector-panel store
+  // rather than in a `hidden` poke from here. Closing means asking the store; everything
+  // that has to happen ALONGSIDE a visibility change is done by the subscriber below, so
+  // the shell toggle and the panel's own × produce identical results.
   function closeDetail() {
-    byId('postDetail').hidden = true;
-    inspectorClose();
-    deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
-    byId('postGrid').classList.remove('insp-open');
-    deps.refreshTileSlider(); // the grid width grew back — re-derive the track
+    panelSetOpen(false);
   }
+
+  // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
+  // inspected-card ring can't outlive the panel that explains it. The grid's track is
+  // re-derived either way, since the column's width leaves or returns to the content area.
+  panelSubscribe(() => {
+    const open = panelIsOpen();
+    if (!open) {
+      inspectorClose();
+      deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
+    }
+    byId('postGrid').classList.toggle('insp-open', open);
+    deps.refreshTileSlider();
+  });
   function persistManual() {
     persistManualGroups(deps.getManualGroups());
   }
@@ -311,14 +326,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       },
       onEditTags: (anchorRect: CorpusAnchorRect) => openTagPopForGroup(g, anchorRect),
     });
-    byId('postDetail').hidden = false;
-    // While open, a card click swaps the panel (not zoom) → plain pointer.
-    byId('postGrid').classList.add('insp-open');
+    // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
+    // The visibility-linked chrome (insp-open, the tile track) therefore isn't touched
+    // here — it follows the panel store, not the content.
+    //
     // Ring-mark the inspected card so swapping content stays traceable — the grid
     // cell derives its own ring reactively (corpusStore subscribe), so no manual
     // DOM classList reach-in / repaint() is needed here.
     deps.setInspectedKey(postIdKey(p));
-    deps.refreshTileSlider(); // inline column narrows the grid — re-derive the track
   }
 
   // Tag picker pop (Issue #22) opened straight from a card's 🏷 — a lighter-weight
@@ -336,7 +351,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     tagPopClose();
     // Only drop the ring if the full inspector isn't ALSO showing this card —
     // closing the pop shouldn't blank out an independently-open detail panel.
-    if (byId('postDetail').hidden) deps.setInspectedKey(null);
+    if (!panelIsOpen()) deps.setInspectedKey(null);
   }
   function openTagPopForGroup(g: CorpusPostGroup, anchorRect: CorpusAnchorRect) {
     if (!g) return;
@@ -367,15 +382,20 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     });
   }
 
-  // Esc closes the inspector — registered in CAPTURE phase so it can check
-  // what else is open BEFORE those handlers dismiss themselves on the same
-  // press (lightbox/popovers/modals win the first Esc, the panel the next).
-  // Registration lives in the DetailDismiss component (app/islands/app/App.tsx);
-  // this stays the handler + guard logic (viewer keeps the orchestration).
+  // Esc leaves the image-tab detail view (Eagle-style). It does NOT touch the inspector:
+  // #244 scoped Esc to transient surfaces (quick view / popovers / modals), because a
+  // persistent panel is not something Esc dismisses in any product that has one — and
+  // #143/#242 already ruled out Esc as a way to clear the selection. Closing the panel is
+  // the toggle, the ×, or #245's bulk shortcut.
+  //
+  // Still registered in CAPTURE phase (from the DetailDismiss component in
+  // app/islands/app/App.tsx) so it can check what else is open BEFORE those handlers
+  // dismiss themselves on the same press — the transient surfaces win this Esc, and only
+  // once nothing is left does the detail view close.
   function handleEscDismissDetail(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
     const inImageTab = deps.imageTabShowing();
-    if (byId('postDetail').hidden && !inImageTab) return;
+    if (!inImageTab) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (lightboxIsOpen()) return;
@@ -385,31 +405,12 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (menuGet() || kindMenuGet()) return;
     if (tagPopGet()) return; // let an open tag-pop take the first Esc
     if (isAnySelectOpen()) return; // …and an open shadcn Select (SortSelect / filter editors), tracked by state not DOM
-    if (inImageTab) {
-      deps.closeTab(deps.getActiveTabId()); // Esc leaves the detail view (Eagle-style) — the inspector is part of it
-      return;
-    }
-    closeDetail();
+    deps.closeTab(deps.getActiveTabId());
   }
-  // Slide-over mode (narrow window): the panel covers the grid, so it acts
-  // like a scrim-less drawer — a click on EMPTY grid area (or elsewhere in the
-  // content region) dismisses it, and the click is consumed so nothing else
-  // reacts on the same press. A click on a card is exempt: the unified card
-  // gesture (#143) swaps the inspector to that card, so it must reach the card's
-  // own handler. Inline mode (wide) keeps every click — the panel covers
-  // nothing. Registered from DetailDismiss, in CAPTURE phase like the Esc handler.
-  function handleOutsideClickDismissDetail(e: MouseEvent) {
-    const insp = byId('postDetail');
-    if (insp.hidden) return;
-    if (!matchMedia('(max-width: 1279px)').matches) return;
-    if (insp.contains(e.target as Node | null)) return;
-    if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '.post-card, .tag-btn')) return; // card click = swap to it; 🏷 = tag-pop for it
-    if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
-    e.preventDefault();
-    e.stopPropagation();
-    closeDetail();
-  }
+
+  // The outside-click dismiss that used to live here is gone with the slide-over it served
+  // (#243): an inline column covers nothing, so a click beside it dismisses nothing. The
+  // empty-area gesture is respecified as "clear the selection" and belongs to #242.
 
   return {
     closeDetail,
@@ -417,6 +418,5 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     persistManual,
     openTagPopForGroup,
     handleEscDismissDetail,
-    handleOutsideClickDismissDetail,
   };
 }
