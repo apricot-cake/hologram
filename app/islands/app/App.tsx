@@ -122,12 +122,20 @@ function ModalChrome() {
   useLayoutEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
+    // The shadcn Dialog/AlertDialog scrim OUTLIVES the open state on close: the portal stays
+    // mounted (overlay at full opacity) until the card's exit animation ends, so keying the
+    // un-dim off `settingsOpen`/`confirmOpen` alone brightens the WCO ~115ms before the page
+    // (measured; the one remaining flicker). Dim while EITHER the state is open (pre-paint,
+    // so open stays lockstep) OR the overlay element is still in the DOM (so close waits for
+    // the real scrim teardown). Sheet is deliberately not tracked (its scrim fades, a snap
+    // recolor would mismatch — known gap).
+    const scrimUp = () => !!document.querySelector('[data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"]');
     const sync = () => {
       const legacy = ids.some((id) => visible(document.getElementById(id)));
       const scrollLock = confirmOpen || legacy;
       document.documentElement.classList.toggle('modal-open', scrollLock);
       document.body.classList.toggle('modal-open', scrollLock);
-      applyTitleBar(settingsOpen || confirmOpen || legacy);
+      applyTitleBar(settingsOpen || confirmOpen || legacy || scrimUp());
     };
     const observers = ids
       .map((id) => document.getElementById(id))
@@ -137,6 +145,11 @@ function ModalChrome() {
         mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
         return mo;
       });
+    // Portal mounts/unmounts land as body-level child changes; the unmount fires sync()
+    // as a microtask (pre-paint), so the un-dim IPC leaves the same frame the scrim vanishes.
+    const bodyMo = new MutationObserver(sync);
+    bodyMo.observe(document.body, { childList: true });
+    observers.push(bodyMo);
     sync();
     return () => observers.forEach((mo) => mo.disconnect());
   }, [confirmOpen, settingsOpen]);
