@@ -35,42 +35,25 @@ import { PosterGrid } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
-// The sidebar obeys the same width discipline as the inspector: horizontal width is a
-// contested resource (the inspector detaches to a slide-over below 1280px), so a sparse
-// nav column must not hold persistent width. Below 1024px the sidebar auto-collapses to
-// the icon rail (shadcn's collapsible="icon"); below 768px it becomes the mobile Sheet
-// (useIsMobile). See the trial memory: "幅規律の対称ルール".
-const SIDEBAR_EXPANDED_QUERY = '(min-width: 1024px)';
-
-// #149: the state is the user's saved choice (sidebar-pref.ts), clamped by that width
-// discipline — a saved "expanded" is only honored once the viewport can afford the
-// column, and an unset pref means expanded on a wide screen. Below the breakpoint the
-// override is temporary: it is not written back, so widening the window returns to
-// whatever the user last chose rather than to a resize artifact.
-function resolveOpen(saved: boolean | null): boolean {
-  if (!window.matchMedia(SIDEBAR_EXPANDED_QUERY).matches) return false;
-  return saved ?? true;
-}
-
+// #149 + #243: the state is purely the user's saved choice (sidebar-pref.ts). It used to
+// be clamped by a width discipline — below 1024px the column was forced to the icon rail
+// no matter what the user had chosen — but #243 retired automatic reshaping for BOTH side
+// panels: a panel's form follows the user's explicit toggle, not the window size. Desktop
+// DAMs and editors (Eagle / Lightroom / Bridge / Obsidian / VS Code) all work this way;
+// width-driven relayout is the responsive-web idiom, not the desktop one.
+//
+// The one automatic behavior left is shadcn's mobile Sheet below 768px (useIsMobile),
+// which is not a reshape of choice but a retreat where no column can physically fit.
 function useSidebarOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(() => resolveOpen(cachedOpen()));
+  const [open, setOpen] = useState(() => cachedOpen() ?? true);
   // A user toggle mid-boot must not lose to the reconcile landing a tick later.
   const toggled = useRef(false);
 
   // config.json outranks the localStorage cache the initial state was guessed from.
   useEffect(() => {
     loadOpen().then((saved) => {
-      if (saved !== null && !toggled.current) setOpen(resolveOpen(saved));
+      if (saved !== null && !toggled.current) setOpen(saved);
     });
-  }, []);
-
-  // Re-apply the width discipline on a breakpoint crossing (cachedOpen() is kept live by
-  // persistOpen/loadOpen, so this reads the current choice without re-rendering on it).
-  useEffect(() => {
-    const mql = window.matchMedia(SIDEBAR_EXPANDED_QUERY);
-    const onChange = () => setOpen(resolveOpen(cachedOpen()));
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
   }, []);
 
   // Only an explicit toggle (SidebarTrigger / Ctrl+B / rail) is a preference.

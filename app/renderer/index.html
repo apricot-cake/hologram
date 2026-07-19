@@ -1947,10 +1947,11 @@
     .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
     .iv-insp-open:hover { text-decoration: underline; }
 
-    /* Inspector (ℹ): an inline right column at wide widths; below the
-       breakpoint the SAME panel floats over the grid as a slide-over — it
-       never disappears, only the layering changes. Esc/× closes; clicking a
-       card while it is open swaps the content (double-click → gallery). */
+    /* Inspector: an inline right column, at every window width (#243). The panel
+       used to detach into a fixed slide-over below 1280px; that automatic reshape
+       is gone — the column is opened and closed by the user (toggle / ×) and the
+       width no longer decides its form. Clicking a card while it is open swaps the
+       content (double-click → gallery). */
     .inspector {
       width: 320px; flex-shrink: 0;
       height: 100%; overflow-y: auto; overscroll-behavior: contain; z-index: 25;
@@ -1959,23 +1960,6 @@
     }
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: corpusPanelIn var(--dur-panel) var(--ease-out); }
-    @media (max-width: 1279px) {
-      .inspector {
-        position: fixed; top: calc(var(--tabbar-h) + var(--activebar-h)); right: 0; bottom: 0; height: auto;
-        border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
-        z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
-        /* Text-dense panel → solid, same as the inline (wide) column (#136). */
-        background: var(--surface);
-      }
-      /* Image tab: the inspector is part of the detail view (Eagle-style), so
-         it stays an inline column even below the breakpoint — a slide-over
-         would cover the very image being inspected. */
-      body.image-tab-active .inspector {
-        position: static; height: 100%; box-shadow: none;
-        background: var(--surface);
-        border-left: 1px solid var(--border);
-      }
-    }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
     .iv-insp-actions .iv-insp-open { margin-top: 0; }
     /* Inspector inline tag editor — always shown while the inspector is open: tag

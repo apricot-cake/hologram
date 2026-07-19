@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { FolderPlus, Group, ListChecks, Tag, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,17 +21,20 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // Each action shows an icon + a text label (the old inventory: select-all / tag / folder
 // / group / delete / clear). The labels are RESPONSIVE to available width: the full
 // wording ("タグを追加") when there's room, a short form ("タグ") when the bar is squeezed
-// beside an open inspector on a narrow window — so it stays readable at every width
+// (a narrow window, an open inspector, an expanded sidebar) — so it stays readable
 // instead of collapsing to bare icons. Clear (✕) is the one icon-only button (universal).
 // The full wording is always the accessible name.
 //
 // Layout: rendered inside the SidebarInset content column (AppShell), so its absolute
-// bottom-center placement stays clear of the right inspector. In WIDE mode the inspector
-// is a flex sibling that already narrows the inset, so centering there is automatically
-// clear AND the full labels fit. In NARROW mode (<1280px) the inspector is instead a fixed
-// overlay that does NOT narrow the inset, so when it's open the bar reserves its 320px on
-// the right (same breakpoint the .inspector CSS switches on) and drops to the short labels
-// so the whole capsule fits the reduced width.
+// bottom-center placement stays clear of the right inspector — which since #243 is ALWAYS
+// a flex sibling that narrows the inset, at every window width. That retired the old
+// reservation branch (the inspector used to detach into a fixed overlay below 1280px, and
+// the bar had to hold back 320px for it).
+//
+// The full/short label switch therefore no longer keys off a window breakpoint at all: it asks
+// the bar's own box whether the full wording fits (ResizeObserver). Same visible behavior,
+// but driven by the actual space rather than by a proxy for it — so it also stays correct
+// when the sidebar collapses or the inspector opens, neither of which moves the viewport.
 //
 // Selection only ever exists in the post grid (poster cards drill in, they don't
 // multi-select), so the bar also hides in the posters view to never strand a stale
@@ -44,7 +47,10 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // one CSS transition (both directions — no exit-presence library, redesign §3-10a). The
 // wrapper is pointer-events-none so it never covers the grid; only the capsule itself
 // takes clicks.
-const INSPECTOR_OVERLAY_QUERY = '(max-width: 1279px)';
+
+// Width the capsule needs for the full labels (measured: 638px) plus the wrapper's own
+// horizontal padding. Below it the short forms are used.
+const FULL_LABEL_MIN_W = 670;
 
 const subSelectedSet = (cb: () => void) => storeSubscribe('selectedSet', cb);
 const getSelectedSet = () => storeGet('selectedSet') as Set<string> | undefined;
@@ -52,17 +58,23 @@ const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
 const getPostGroups = () => storeGet('postGroups') as CorpusPostGroup[] | null | undefined;
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => storeGet('browseMode') as string | undefined;
-const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
-const getInspectorOpen = () => storeGet('inspectedKey') != null;
-
-// Live "is the inspector currently a fixed overlay" flag = the narrow breakpoint. Its
-// own external-store shim so it re-renders on a window resize across the breakpoint.
-const subOverlayMode = (cb: () => void) => {
-  const mql = window.matchMedia(INSPECTOR_OVERLAY_QUERY);
-  mql.addEventListener('change', cb);
-  return () => mql.removeEventListener('change', cb);
-};
-const getOverlayMode = () => window.matchMedia(INSPECTOR_OVERLAY_QUERY).matches;
+// Does the bar's own box still fit the full labels? Watching the element (not the
+// viewport) is what makes this correct when the inspector opens or the sidebar collapses
+// — both change the room available here without the window changing size at all.
+function useFitsFullLabels(ref: React.RefObject<HTMLDivElement | null>): boolean {
+  const [fits, setFits] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (typeof w === 'number') setFits(w >= FULL_LABEL_MIN_W);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return fits;
+}
 
 // One capsule button: icon + visible label; `title` (the full wording) is the accessible
 // name even when the visible `label` is shortened.
@@ -79,8 +91,8 @@ export function FloatingBar() {
   const selectedSet = useSyncExternalStore(subSelectedSet, getSelectedSet);
   const postGroups = useSyncExternalStore(subPostGroups, getPostGroups);
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
-  const inspectorOpen = useSyncExternalStore(subInspected, getInspectorOpen);
-  const overlayMode = useSyncExternalStore(subOverlayMode, getOverlayMode);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const showFull = useFitsFullLabels(wrapRef);
 
   const count = selectedSet ? selectedSet.size : 0;
   const shown = count > 0 && mode !== 'posters';
@@ -88,17 +100,8 @@ export function FloatingBar() {
   const allSelected = isAllSelected(groups, postIdKey);
   // Manual grouping needs at least two selected cards (groups).
   const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
-  // Reserve the inspector's 320px only when it's a fixed overlay (narrow) AND open; in
-  // wide mode it's a flex sibling that already excludes itself from the inset. That same
-  // squeeze is when the labels shrink to their short form.
-  const reserveInspector = overlayMode && inspectorOpen;
-  const showFull = !reserveInspector;
-
   return (
-    <div
-      aria-hidden={!shown}
-      className={cn('pointer-events-none absolute inset-x-0 bottom-6 z-50 flex justify-center pl-4 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', reserveInspector ? 'pr-[336px]' : 'pr-4', shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0')}
-    >
+    <div ref={wrapRef} aria-hidden={!shown} className={cn('pointer-events-none absolute inset-x-0 bottom-6 z-50 flex justify-center px-4 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0')}>
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border bg-popover p-1 text-popover-foreground shadow-lg">
         <span className="px-2 text-sm font-medium tabular-nums whitespace-nowrap">{t('selectedCount', [count])}</span>
         <Separator orientation="vertical" className="mx-0.5 h-5" />
