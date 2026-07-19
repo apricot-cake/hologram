@@ -116,9 +116,10 @@ function ModalChrome() {
   //     repeatedly can't flicker the caption (that was the old "recolor flashes" bug).
   const confirmOpen = useSyncExternalStore(confirmSubscribe, () => !!confirmGet());
   const settingsOpen = useSyncExternalStore(settingsSubscribe, settingsIsOpen);
-  // useLayoutEffect (not useEffect): the WCO recolor is instant + async-over-IPC, so it must be
-  // DISPATCHED before the browser paints the scrim — a post-paint useEffect makes the strip
-  // visibly trail the page dim. Runs pre-paint here, landing with (or a hair before) the dim.
+  // useLayoutEffect (not useEffect): this runs in the same commit that flips the scrim, so the
+  // recolor is QUEUED off the same state change rather than a frame later. When it actually
+  // reaches the OS is theme-api's business — applyTitleBar defers the IPC to just after the
+  // paint so the strip can't outrun the scrim (see the comment there).
   useLayoutEffect(() => {
     const ids = ['ivFolderModal', 'lightbox'];
     const visible = (el: HTMLElement | null) => !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';

@@ -73,9 +73,28 @@ function setBar() {
 }
 // Recolor the WCO strip to the dimmed tone (or back) when a modal scrim goes up/down.
 // App.tsx ModalChrome is the single caller, driven by the union of modal-open states.
+//
+// Deferred to AFTER the page paints, on purpose. The two surfaces travel different pipelines
+// — the scrim is a compositor frame, the strip is an IPC hop to main + an OS caption repaint
+// — and the IPC hop is the faster of the two. Dispatching pre-paint therefore made the strip
+// LEAD the scrim by 1-2 frames whenever the renderer was busy enough to miss a frame (rapid
+// open/close: measured max 33ms lead, always strip-first). Firing post-paint instead puts the
+// recolor a bare IPC latency BEHIND the scrim, which is the smaller of the two errors. rAF +
+// setTimeout(0) is the post-paint idiom: the rAF callback still runs before the frame is
+// painted, the timeout lands after it.
+let pendingDim = false;
+let flushQueued = false;
 export function applyTitleBar(modal: boolean): void {
-  modalDim = !!modal;
-  setBar();
+  pendingDim = !!modal;
+  if (flushQueued) return; // coalesce: a burst of toggles only ever applies its final state
+  flushQueued = true;
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      flushQueued = false;
+      modalDim = pendingDim;
+      setBar();
+    }, 0);
+  });
 }
 
 export function apply(p: string): string {
