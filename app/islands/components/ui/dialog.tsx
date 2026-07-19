@@ -27,7 +27,7 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
   // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog
   // Select/Tooltip still opens above the dialog. Re-apply on `shadcn add dialog` (§8-2).
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/10 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function DialogContent({

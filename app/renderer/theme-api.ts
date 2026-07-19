@@ -31,12 +31,16 @@ function resolvePref(p: string): string {
   return p === 'auto' ? (systemDark() ? 'dark' : 'light') : p;
 }
 
-// Native titlebar overlay (Windows). While a modal scrim is up we darken it so the
-// OS window controls don't stay bright against the dimmed page (modalDark).
+// Native titlebar overlay (Windows). The OS draws the window-control buttons (WCO /
+// titleBarOverlay), so a web modal backdrop can't cover them — while a modal scrim is up
+// we recolor the strip to MATCH the dimmed page instead. The modal backdrop is a plain
+// bg-black/10 dim (the blur was removed — a frosted page vs a flat button strip is what
+// made the controls "float"), so the modal colors are just the normal chrome darkened by
+// that same ~10% (× 0.9). The glyph color stays normal so the buttons remain legible.
 let modalDark = false;
 function barColors() {
   const d = resolvePref(pref) === 'dark';
-  if (modalDark) return { color: d ? '#0a0a0c' : '#9a9c9f', symbolColor: d ? '#7a818b' : '#34373c', height: 37 };
+  if (modalDark) return { color: d ? '#0d0e0f' : '#d4d6da', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
   return { color: d ? '#0e0f11' : '#eceef2', symbolColor: d ? '#9aa3af' : '#5b6470', height: 37 };
 }
 function setBar() {

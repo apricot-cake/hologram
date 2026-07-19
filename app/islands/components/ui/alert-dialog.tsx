@@ -22,7 +22,7 @@ function AlertDialogOverlay({ className, ...props }: AlertDialogPrimitive.Backdr
   // z-[13100]: same legacy-scale bump as Dialog (see dialog.tsx), a notch higher so a
   // confirm raised FROM an open settings Dialog (e.g. 危険な操作 → clear-all) stacks above
   // it. Still below the z-[13500] popover portals. Re-apply on `shadcn add alert-dialog`.
-  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/10 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 
 function AlertDialogContent({
