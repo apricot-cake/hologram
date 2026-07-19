@@ -2,17 +2,15 @@ import { useRef, useLayoutEffect } from 'react';
 import type { Ref } from 'react';
 import type { LightboxState } from '../../renderer/lightbox.ts';
 
-// Gallery slide list orchestrator.ts builds (buildGroupGalleryItems) and the open
-// state renderer/lightbox.ts owns.
-
-// One gallery slide (image or video) plus prev/next nav and the counter. The
-// slide-in animation restarts on every slide change by toggling .lb-in after a
-// forced reflow — this mirrors the old showGallerySlide() in viewer.js. When the
-// slide changes away from a video the <video> element unmounts, which stops
-// playback, so no manual pause/load teardown is needed here.
-export function Lightbox({ state, labels, onPrev, onNext }: { state: LightboxState; labels: Record<string, string>; onPrev: () => void; onNext: () => void }) {
-  const { items, index, open } = state;
-  const item = open ? items[index] : null;
+// Single-image quick-view (peek) overlay. #143 reduced the lightbox to one item —
+// full gallery paging lives in the image view now — so this renders just the item
+// renderer/lightbox.ts holds (the thumbnail, zoomed) plus video playback; no prev/
+// next nav or counter. The enter animation restarts whenever the shown item changes
+// by toggling .lb-in after a forced reflow (mirrors the old showGallerySlide()).
+// When the item changes away from a video (or the peek closes) the <video> unmounts,
+// which stops playback, so no manual pause/load teardown is needed here.
+export function Lightbox({ state }: { state: LightboxState }) {
+  const { item, open } = state;
   const mediaRef = useRef<HTMLElement | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: [item] is the replay trigger (not read inside) — re-run the enter animation whenever the shown item changes
@@ -24,34 +22,7 @@ export function Lightbox({ state, labels, onPrev, onNext }: { state: LightboxSta
     visEl.classList.add('lb-in');
   }, [item]);
 
-  if (!item) return null;
+  if (!open || !item) return null;
 
-  return (
-    <>
-      <button
-        className="lb-nav lb-prev"
-        type="button"
-        aria-label={labels.lbPrev}
-        onClick={(e) => {
-          e.stopPropagation();
-          onPrev();
-        }}
-      >
-        {'‹'}
-      </button>
-      {item.video ? <video ref={mediaRef as Ref<HTMLVideoElement>} src={item.src} controls playsInline preload="metadata" /> : <img ref={mediaRef as Ref<HTMLImageElement>} src={item.src} alt={item.alt || ''} />}
-      <button
-        className="lb-nav lb-next"
-        type="button"
-        aria-label={labels.lbNext}
-        onClick={(e) => {
-          e.stopPropagation();
-          onNext();
-        }}
-      >
-        {'›'}
-      </button>
-      <div className="lb-counter">{index + 1 + ' / ' + items.length}</div>
-    </>
-  );
+  return item.video ? <video ref={mediaRef as Ref<HTMLVideoElement>} src={item.src} controls playsInline preload="metadata" /> : <img ref={mediaRef as Ref<HTMLImageElement>} src={item.src} alt={item.alt || ''} />;
 }

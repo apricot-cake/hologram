@@ -264,34 +264,47 @@ export function percentileFn(list: CorpusPost[]): (p: CorpusPost) => number {
 // The URL scheme (psimg://) stays viewer-owned: fileSrc is injected so the
 // protocol knowledge isn't duplicated here.
 const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
+export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean };
 // deps: fileSrc(file) — renderer media URL builder (viewer.js).
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
-  // Gallery items for a post: the screenshot first, then each original image.
-  function buildGalleryItems(p: CorpusPost): { src: string; alt: string; video: boolean }[] {
-    const items: { src: string; alt: string; video: boolean }[] = [];
-    if (p.image) items.push({ src: fileSrc(p.image), alt: '', video: false });
+  // Gallery items for a post: the original images/video lead, the screenshot
+  // capture rides at the TAIL (#143 — "what the thumbnail shows opens first"; the
+  // card/inspector thumbnail is the original, so page 1 == that thumbnail zoomed,
+  // and the capture is still reachable on the last page). p.image is an original
+  // only when it isn't a screenshot (a dragged/migrated artwork); a text-only post
+  // has no original, so its screenshot is the sole — hence first — item, which is
+  // exactly what its thumbnail shows too.
+  function buildGalleryItems(p: CorpusPost): GalleryItem[] {
+    const items: GalleryItem[] = [];
+    const shot = captureFile(p); // '' unless p.image is a screenshot
+    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: false });
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
       for (const m of p.media as CorpusMediaItem[]) {
         if (m && m.file) items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
       }
     }
+    if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, capture: true });
     return items;
   }
-  // Gallery for a whole group: every record's items in captureId order, deduped by src.
-  function buildGroupGalleryItems(g: CorpusPostGroup): { src: string; alt: string; video: boolean }[] {
+  // Gallery for a whole group: every record's items, deduped by src, with the
+  // screenshots pulled past the originals so the group reads originals-first too
+  // (#143). Each record already emits its capture last; bucketing keeps that intact
+  // across records (a text-only member contributes only its capture → tail).
+  function buildGroupGalleryItems(g: CorpusPostGroup): GalleryItem[] {
     if (g.records.length === 1) return buildGalleryItems(g.rep);
     const seen = new Set<string>();
-    const items: { src: string; alt: string; video: boolean }[] = [];
+    const originals: GalleryItem[] = [];
+    const captures: GalleryItem[] = [];
     for (const r of g.records) {
       for (const it of buildGalleryItems(r)) {
         if (seen.has(it.src)) continue;
         seen.add(it.src);
-        items.push(it);
+        (it.capture ? captures : originals).push(it);
       }
     }
-    return items;
+    return [...originals, ...captures];
   }
   return { buildGalleryItems, buildGroupGalleryItems };
 }

@@ -202,20 +202,26 @@ async function main() {
     assert('percentile プラットフォーム分離（x の 10 は中位）', pct(list[1]) === 0.5);
   }
 
-  // --- makeGallery: ライトボックス項目（image→video→media 順・グループは src 去重） ---
+  // --- makeGallery: ライトボックス項目（元画像先頭・キャプチャ末尾＝#143・グループは src 去重） ---
   {
     const { buildGalleryItems, buildGroupGalleryItems } = R.makeGallery({ fileSrc: (f) => 'stub://' + f });
     const p1 = { image: 'shot.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
     const items = buildGalleryItems(p1);
-    assert('gallery 順序＝image→video→media', items.map((i) => i.src).join() === 'stub://shot.jpg,stub://clip.mp4,stub://a.png,stub://b.mp4');
-    assert('gallery video フラグ（image=false/video=true/media は拡張子判定）', items.map((i) => i.video).join() === 'false,true,false,true');
-    assert('gallery alt 引き継ぎ（無指定は空）', items[2].alt === 'A' && items[3].alt === '');
+    // スクショ（shot.jpg）は末尾へ回り、元画像（video→media）が先頭に立つ（#143＝サムネ＝元画像と一致）
+    assert('gallery 順序＝元画像先頭・キャプチャ末尾', items.map((i) => i.src).join() === 'stub://clip.mp4,stub://a.png,stub://b.mp4,stub://shot.jpg');
+    assert('gallery video フラグ（video=true/media は拡張子判定/末尾キャプチャ=false）', items.map((i) => i.video).join() === 'true,false,true,false');
+    assert('gallery alt 引き継ぎ（無指定は空）', items[1].alt === 'A' && items[0].alt === '');
+    assert('gallery 末尾のみ capture フラグ', items[3].capture === true && items[0].capture === undefined);
     assert('gallery null/空 file の media はスキップ', items.length === 4);
+    // 本文だけの投稿＝スクショが唯一かつ先頭（サムネ＝キャプチャと一致・特例不要）
+    const textOnly = buildGalleryItems({ image: 'shot.jpg' });
+    assert('gallery 本文のみ投稿＝キャプチャが唯一の1枚', textOnly.length === 1 && textOnly[0].src === 'stub://shot.jpg');
     const r1 = { image: 'shot.jpg' };
     const r2 = { image: 'shot.jpg', media: [{ file: 'c.png' }] };
     assert('group 単独＝rep の items 直行', buildGroupGalleryItems({ records: [r1], rep: r1 }).length === 1);
     const gi = buildGroupGalleryItems({ records: [r1, r2], rep: r1 });
-    assert('group 複数＝src 去重（shot.jpg は1回）', gi.map((i) => i.src).join() === 'stub://shot.jpg,stub://c.png');
+    // src 去重（shot.jpg は1回）＋グループも元画像先頭・キャプチャ末尾
+    assert('group 複数＝src 去重・元画像先頭キャプチャ末尾', gi.map((i) => i.src).join() === 'stub://c.png,stub://shot.jpg');
   }
 
   // --- makeCardModel: per-card view model（濃度/学習アスペクト/選択/クリップ/フラグ/両日付） ---

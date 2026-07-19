@@ -335,7 +335,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const works = posterWorkGroups
       .map((g) => {
         const f = (g.files && g.files[0]) || captureFile(g.rep);
-        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => lightboxOpen(deps.buildGroupGalleryItems(g), 0) } : null;
+        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => lightboxOpen(deps.buildGroupGalleryItems(g)[0]) } : null;
       })
       .filter(Boolean);
     const tags = deps.posterTagsOf(u.key);

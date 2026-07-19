@@ -27,7 +27,7 @@ import { listPostsDelta, importComplete, importPosts } from './posts.ts';
 import { compile as searchCompile } from './search.ts';
 import { corpusI18n } from './i18n.ts';
 import * as folders from './folders.ts';
-import { open as lightboxOpen, setLabels as lightboxSetLabels } from './lightbox.ts';
+import { open as lightboxOpen } from './lightbox.ts';
 import * as selection from './selection.ts';
 import { open as settingsOpen } from './settings.ts';
 import { shellReady } from './shell-ready.ts';
@@ -974,11 +974,10 @@ export function endFilterEditSession(): void {
     }
   });
 
-  // Image lightbox / gallery (captured screenshot + downloaded originals). The
-  // overlay UI lives in the React island (renderer/lightbox.ts + islands/lightbox);
-  // orchestrator.ts only resolves a post's gallery items below and hands them to
-  // open(). Labels are pushed once so the island can set the nav buttons' aria-labels.
-  lightboxSetLabels({ lbPrev: getMessage('lbPrev'), lbNext: getMessage('lbNext') });
+  // Image lightbox / quick-view peek (a single image — #143). The overlay UI lives
+  // in the React island (renderer/lightbox.ts + islands/lightbox); orchestrator.ts
+  // only resolves a post's gallery items below and hands the FIRST (the thumbnail)
+  // to open(). Full paging over every page moved to the image view.
 
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
   // scheme stays orchestrator-owned via the injected fileSrc.
@@ -1109,7 +1108,7 @@ export function endFilterEditSession(): void {
     tagKindOf,
     worksCooccurringWith,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster (posterGrid) is declared far below — deferred
-    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g), 0), // inspector thumb → quick-view peek (#143)
+    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // inspector thumb → quick-view peek (single image, #143)
     pushUndo,
     inspectorTagPickerData,
     getViewGroups: postGrid.getViewGroups,
@@ -1150,7 +1149,7 @@ export function endFilterEditSession(): void {
     openTagPopForSelection: (anchorRect) => bulkEdit.openTagPopForSelection(anchorRect),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
-    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g), 0), // Space peek (#143)
+    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
   });
   const { selectedRecords } = selectionCtl;
   // Selection is driven entirely by the unified card gesture above (plain =
