@@ -2,7 +2,7 @@
 
 // Window / shell IPC handlers, extracted from main.js (mechanical move — logic
 // unchanged). open-external opens an https URL in the OS browser; open-image-window
-// pops one library image into its own window via the psimg:// protocol; drag-out /
+// pops one library image into its own window via the asset:// protocol; drag-out /
 // copy-image hand library originals to other apps (#132). Electron primitives are
 // re-required here; getSaveFolder + APP_ICON arrive via ctx.
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
@@ -27,7 +27,7 @@ function register(ctx) {
   });
 
   // Open one library image in its own frameless-ish window (middle-click on a
-  // card). The psimg:// protocol is registered app-wide, so a bare loadURL shows
+  // card). The asset:// protocol is registered app-wide, so a bare loadURL shows
   // Chromium's built-in image view (zoom/fit for free).
   ipcMain.handle('open-image-window', (_event, image) => {
     if (!isLibraryFileName(image)) return;
@@ -54,7 +54,7 @@ function register(ctx) {
       icon: APP_ICON,
       webPreferences: { sandbox: true },
     });
-    w.loadURL('psimg://img/' + encodeURIComponent(image));
+    w.loadURL('asset://img/' + encodeURIComponent(image));
   });
 
   // Drag cards out to another app (#132): Explorer, PureRef, a chat window —
@@ -62,7 +62,7 @@ function register(ctx) {
   // inside the dragstart the renderer is still holding open, and an invoke
   // round-trip would land after the gesture is already over.
   ipcMain.on('drag-out', (event, files) => {
-    // Always the ORIGINALS: the renderer only ever sees psimg:// thumbnail URLs,
+    // Always the ORIGINALS: the renderer only ever sees asset:// thumbnail URLs,
     // so the names it sends are the sidecar's, and this is where they become real
     // paths (missing files drop out — see library-files.mts).
     const paths = libraryFilePaths(files, getSaveFolder(), fs.existsSync);

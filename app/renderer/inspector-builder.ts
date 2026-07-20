@@ -265,7 +265,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
     const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h: string) => !userSet.has(h));
-    // Poster row carries the locally-saved avatar (psimg://) when present, so the
+    // Poster row carries the locally-saved avatar (asset://) when present, so the
     // inspector keeps its "label: value" rhythm while adding a face to the name.
     const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
     // The poster exists in the poster view only for SNS posts (buildUsers skips url-less

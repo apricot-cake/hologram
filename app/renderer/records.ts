@@ -261,7 +261,7 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 }
 
 // --- Lightbox gallery items (twelfth extraction slice) ----------------------
-// The URL scheme (psimg://) stays viewer-owned: fileSrc is injected so the
+// The URL scheme (asset://) stays viewer-owned: fileSrc is injected so the
 // protocol knowledge isn't duplicated here.
 const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
 export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean };
@@ -313,13 +313,13 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // The model PostCard.tsx renders (grid modelOf). Pure field-mapping over a
 // group + the live view density; every runtime coupling (current density,
 // learned-aspect cache, selection set, clip flag, thumb widths, i18n messages,
-// psimg URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
+// asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
 // rules that used to live inside renderPosts are locked here: engagement
 // zero-suppression, both-date same-day dedup, body-text dedup vs the author
 // line, GIF full-size (no thumb) in card/list, card-masonry height reservation
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
-//   isClipped/fileSrc keep folder + psimg knowledge viewer-owned. Selection is
+//   isClipped/fileSrc keep folder + asset knowledge viewer-owned. Selection is
 //   NOT here — the grid island derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {

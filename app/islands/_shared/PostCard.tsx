@@ -119,7 +119,7 @@ export function PostCard({ m, L, cellRef, onImgLoad }: { m: PostCardModel; L: Re
       </button>
       {/* draggable on the video placeholder only — an <img> already is by default.
           Both hand the gesture to the #postGrid dragstart delegate, which cancels
-          the HTML5 drag (it would carry the psimg:// URL) and starts an OS drag of
+          the HTML5 drag (it would carry the asset:// URL) and starts an OS drag of
           the ORIGINAL files instead (#132). */}
       {m.hasThumb && (
         <div className="card-thumb">
