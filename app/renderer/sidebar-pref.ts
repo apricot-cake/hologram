@@ -11,9 +11,9 @@
 // width discipline collapses the column below 1024px WITHOUT writing here, so resizing
 // the window never clobbers what the user chose. Separate key from #30's sidebarWidth:
 // "collapsed" and "how wide when expanded" are independent answers.
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
-const KEY = 'corpus-sidebar-open';
+const KEY = 'hologram-sidebar-open';
 
 function readCache(): boolean | null {
   try {
@@ -41,7 +41,7 @@ export function cachedOpen(): boolean | null {
 export function persistOpen(open: boolean): void {
   writeCache(open);
   try {
-    corpusIpc.setPref('sidebarOpen', open);
+    hologramIpc.setPref('sidebarOpen', open);
   } catch {
     /* ignore */
   }
@@ -51,7 +51,7 @@ export function persistOpen(open: boolean): void {
 // null when it is unset/unreadable — in which case the cached guess already in use stands.
 export async function loadOpen(): Promise<boolean | null> {
   try {
-    const prefs = corpusIpc.getPrefs ? await corpusIpc.getPrefs() : null;
+    const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
     const open = prefs ? prefs.sidebarOpen : null;
     if (typeof open !== 'boolean') return null;
     writeCache(open);

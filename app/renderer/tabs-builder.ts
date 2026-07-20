@@ -5,7 +5,7 @@
 // selection-builder.ts (V8): the state machines (makeNavHistory / the
 // tabs.json (de)serialization pair) stay in tab-state.ts (Wave7) untouched —
 // this module is their consumer, replacing viewer.ts's inline wiring, plus
-// the corpusStore-backed tabs/activeTabId/tabEditingId accessors (former
+// the hologramStore-backed tabs/activeTabId/tabEditingId accessors (former
 // viewer.ts locals, P4-B slice⑯) and the tab-bar DOM event handlers.
 //
 // The image view cluster (showImageView/hideImageView/openImageEntry/
@@ -25,12 +25,12 @@ import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
-import { corpusTabsSource } from './tabs.ts';
+import { hologramTabsSource } from './tabs.ts';
 
 export interface TabsBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
-  postQB: { getTree(): CorpusQueryGroup; setTree(t: CorpusQueryGroup | null | undefined): void; shadow(): CorpusQueryLeaf[] };
+  tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
+  postQB: { getTree(): HologramQueryGroup; setTree(t: HologramQueryGroup | null | undefined): void; shadow(): HologramQueryLeaf[] };
   getSortValue(): string;
   setSortValue(v: string): void;
   getShuffleSeed(): string;
@@ -53,8 +53,8 @@ export interface TabsBuilderDeps {
   scrollContentTo(y: number): void;
   // Poster-side view state for 'posters' entries (#144 未決3 — mode is per-tab now,
   // so the poster filter tree / sort / live search ride the history entry).
-  getPosterTree(): CorpusQueryGroup;
-  setPosterTree(t: CorpusQueryGroup | null | undefined): void;
+  getPosterTree(): HologramQueryGroup;
+  setPosterTree(t: HologramQueryGroup | null | undefined): void;
   getPosterSort(): string;
   setPosterSort(v: string): void;
   renderPosters(): void;
@@ -77,10 +77,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
 
-  // --- corpusStore-backed tab list (tabs/activeTabId/tabEditingId — P4-B slice⑯) ---
-  const getTabs = (): CorpusTab[] => storeGet('tabs') || [];
-  const setTabs = (arr: CorpusTab[]) => storeSet('tabs', arr);
-  function mutateTabs(fn: (arr: CorpusTab[]) => CorpusTab[] | undefined) {
+  // --- hologramStore-backed tab list (tabs/activeTabId/tabEditingId — P4-B slice⑯) ---
+  const getTabs = (): HologramTab[] => storeGet('tabs') || [];
+  const setTabs = (arr: HologramTab[]) => storeSet('tabs', arr);
+  function mutateTabs(fn: (arr: HologramTab[]) => HologramTab[] | undefined) {
     const copy = getTabs().slice();
     const result = fn(copy);
     setTabs(result || copy);
@@ -97,7 +97,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   let _tabPersistTimer: any = null;
   let restoringState = false;
 
-  function snapshotState(): CorpusTabSnapshot {
+  function snapshotState(): HologramTabSnapshot {
     return {
       // queryTree is the source of truth; f (the shadow) is kept for the tab title
       // (tabTitleOf reads state.f) and for migrating older persisted states.
@@ -114,10 +114,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function snapshotPosterState() {
     return { tree: cloneTree(deps.getPosterTree()), sort: deps.getPosterSort(), search: deps.searchQuery() };
   }
-  const entryOf = (kind: CorpusNavEntry['kind'], state: any): CorpusNavEntry => ({ u: navEntryUrl(kind, state), kind, state });
+  const entryOf = (kind: HologramNavEntry['kind'], state: any): HologramNavEntry => ({ u: navEntryUrl(kind, state), kind, state });
   // Current view as a history entry — image beats mode (the image view overlays
   // whichever grid the tab was browsing); used to seed fresh histories on adopt.
-  function snapshotEntry(): CorpusNavEntry {
+  function snapshotEntry(): HologramNavEntry {
     const iv = storeGet('activeImageTab');
     if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
     if (deps.getBrowseMode() === 'posters') return entryOf('posters', snapshotPosterState());
@@ -129,7 +129,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function setNavReplaceNext() {
     _navReplaceNext = true;
   }
-  function recordEntry(e: CorpusNavEntry) {
+  function recordEntry(e: HologramNavEntry) {
     if (_navReplaceNext) {
       _navReplaceNext = false;
       nav.replace(e);
@@ -148,7 +148,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (restoringState) return;
     recordEntry(entryOf('posts', snap));
     clearAutoTitle();
-    document.title = deps.tabTitleOf(snap, { allCount: deps.getAllPostsCount() }).text + ' — Corpus';
+    document.title = deps.tabTitleOf(snap, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';
     persistTabsDebounced();
   }
   // The poster-grid mirror (deps.onPosterRendered of poster-grid-builder): every
@@ -160,10 +160,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (restoringState) return;
     recordEntry(entryOf('posters', snapshotPosterState()));
     clearAutoTitle();
-    document.title = deps.t('browsePosters') + ' — Corpus';
+    document.title = deps.t('browsePosters') + ' — Hologram';
     persistTabsDebounced();
   }
-  function applyState(s: CorpusTabSnapshot) {
+  function applyState(s: HologramTabSnapshot) {
     restoringState = true;
     // Restore the tree (truth); migrate older states (f + ops, no tree) if needed.
     deps.postQB.setTree(s.tree ? s.tree : facetTreeFrom(s.f || [], s.ops || {}));
@@ -175,12 +175,12 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.renderQueryChips();
     deps.renderPosts();
     restoringState = false;
-    document.title = deps.tabTitleOf(s, { allCount: deps.getAllPostsCount() }).text + ' — Corpus';
+    document.title = deps.tabTitleOf(s, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';
   }
   // The kind dispatch (#144 core): restore whichever view an entry describes.
   // posts/posters swap the browse mode without the setBrowseMode render debounce
   // (the entry's own render below is THE render); image overlays the grid as-is.
-  function applyEntry(e: CorpusNavEntry) {
+  function applyEntry(e: HologramNavEntry) {
     _navReplaceNext = false; // a restore consumes no pending replace hint
     if (e.kind === 'image') {
       const st = e.state as { recs: string[]; idx: number };
@@ -198,11 +198,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       deps.renderPosters();
       restoringState = false;
       clearAutoTitle();
-      document.title = deps.t('browsePosters') + ' — Corpus';
+      document.title = deps.t('browsePosters') + ' — Hologram';
       return;
     }
     clearAutoTitle();
-    applyState(e.state as CorpusTabSnapshot);
+    applyState(e.state as HologramTabSnapshot);
   }
   // An image entry stamps its title onto the tab (auto-title); leaving the image
   // entry clears it back to the derived grid title. User renames (retiring UI)
@@ -233,7 +233,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     onChange: updateNavButtons,
   });
   // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
-  // activebar island now self-derives everything else from corpusStore (P4-B slice⑱), but
+  // activebar island now self-derives everything else from hologramStore (P4-B slice⑱), but
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
@@ -322,24 +322,24 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // Restore a tab's remembered content scroll. rAF×2 so the freshly rendered
   // grid has laid out; the virtualized grid derives its window from scrollTop
   // alone (its estimated container height already spans all items).
-  function restoreTabView(t: CorpusTab | null | undefined) {
+  function restoreTabView(t: HologramTab | null | undefined) {
     if (!t) return;
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
     requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
   }
   // Model derivation (title/icon/editing state) lives in renderer/tabs.ts's
-  // corpusTabsSource (P4-B slice⑯) — it pulls from the SAME corpusStore keys
+  // hologramTabsSource (P4-B slice⑯) — it pulls from the SAME hologramStore keys
   // every mutation below writes (tabs/activeTabId/tabEditingId, plus
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
   // tab's derived title), so nothing here builds a model or pushes one. The
   // pin glyph + close/new i18n strings it needs are handed over once below.
   const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
-  corpusTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew'), postersTitle: deps.t('browsePosters'), imageFallbackTitle: deps.t('imgTabFallback') });
+  hologramTabsSource.configure({ tabTitleOf: deps.tabTitleOf, tabIcons: TAB_ICONS, pinSvg: TAB_PIN_SVG, closeTitle: deps.t('tabClose'), newTitle: deps.t('tabNew'), postersTitle: deps.t('browsePosters'), imageFallbackTitle: deps.t('imgTabFallback') });
   // Activate a tab object: adopt its history and re-apply its current entry
   // (the stack knows which view — posts/posters/image — the tab was on). Tabs
   // without a stack (pre-#144 files) fall back to the legacy state path, then
   // seed a fresh history from the applied view.
-  function activateTab(t: CorpusTab) {
+  function activateTab(t: HologramTab) {
     if (Array.isArray(t._navHist) && t._navHist.length) {
       nav.adopt(t);
       nav.applyCurrent();
@@ -427,7 +427,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const src = getTabs().find((t) => t.id === id);
     if (!src) return;
     const idx = getTabs().indexOf(src);
-    const nt: CorpusTab = {
+    const nt: HologramTab = {
       id: genTabId(),
       pinned: false,
       title: src.title ? (src._autoTitle ? src.title : src.title + ' (2)') : null,
@@ -472,7 +472,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       // view (#144 mode per-tab): posters restores the poster tree + mode; an
       // image entry restores the posts fields underneath (back-from-image lands
       // there) and bootApp opens the image view once the library is loaded.
-      const cur = at && Array.isArray(at._navHist) && at._navHist.length ? (JSON.parse(at._navHist[Math.max(0, Math.min(at._navIdx ?? at._navHist.length - 1, at._navHist.length - 1))]) as CorpusNavEntry) : null;
+      const cur = at && Array.isArray(at._navHist) && at._navHist.length ? (JSON.parse(at._navHist[Math.max(0, Math.min(at._navIdx ?? at._navHist.length - 1, at._navHist.length - 1))]) as HologramNavEntry) : null;
       if (cur && cur.kind === 'posters') {
         const st = cur.state as { tree?: any; sort?: string; search?: string };
         restoringState = true; // the sortPoster store write must not read as a user sort change

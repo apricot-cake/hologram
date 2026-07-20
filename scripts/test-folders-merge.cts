@@ -62,7 +62,7 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, 
 
   // --- importCompleteZip: a folders.json ZIP merges into the local folders.json ---
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-foldmerge-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-foldmerge-'));
     const dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(
@@ -98,7 +98,7 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, 
 
   // --- importCompleteZip: name local-wins, items union across the same id ---
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-foldmerge2-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-foldmerge2-'));
     const dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(

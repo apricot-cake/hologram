@@ -11,11 +11,11 @@
 // (merge into each record's existing tags — no replace UI exists) but stays an
 // explicit gettable flag, same as before, so onApply's undo-diff ternary is
 // unchanged.
-let records: CorpusPost[] = [];
+let records: HologramPost[] = [];
 let tags: string[] = [];
 const additive = true;
 
-export function open(recs: CorpusPost[]) {
+export function open(recs: HologramPost[]) {
   records = recs;
   tags = [];
 }

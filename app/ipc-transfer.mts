@@ -29,12 +29,12 @@ function exportStamp() {
 }
 
 // Named subfolder for a relocated library, so picking a folder never dumps
-// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Corpus-mirror).
-const LIBRARY_SUBDIR = 'Corpus-library';
+// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-mirror).
+const LIBRARY_SUBDIR = 'Hologram-library';
 
 // Import arbitrary image files as library images (the user's own files are fine).
 // Tagged source:'drag' so they appear in the image browse view. Also serves as the
-// import path for Corpus' media-only export.
+// import path for Hologram' media-only export.
 const IMPORTABLE_IMG = ['jpg', 'jpeg', 'jfif', 'png', 'webp', 'gif', 'avif', 'bmp', 'tiff', 'svg'];
 const IMPORTABLE_VID = ['mp4', 'webm', 'mov', 'm4v'];
 const IMPORTABLE_MEDIA = IMPORTABLE_IMG.concat(IMPORTABLE_VID);
@@ -246,7 +246,7 @@ function register(ctx) {
       return { saved: false, error: err.message };
     }
     if (!hasAny) return { saved: false, empty: true };
-    const res = await dialog.showSaveDialog(getWin(), { defaultPath: `corpus-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
+    const res = await dialog.showSaveDialog(getWin(), { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
     // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
     // the whole library never sits in memory and a >4 GiB archive stays valid. Progress
@@ -345,7 +345,7 @@ function register(ctx) {
     const chosen = res.filePaths[0];
     // Treat the picked folder as a PARENT and put the library in a named subfolder
     // — never dump sidecars/images flat into a folder that may hold the user's own
-    // files. If they re-pick an existing Corpus-library folder, use it as-is (no
+    // files. If they re-pick an existing Hologram-library folder, use it as-is (no
     // double nesting).
     const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
     const v = validateSaveFolder(dest);

@@ -12,23 +12,23 @@ export {};
 // only modules (settings imports './styles.css').
 declare module '*.css' {}
 
-// The former `declare module 'corpus-svc:*'` ambient is gone: the barrel
+// The former `declare module 'hologram-svc:*'` ambient is gone: the barrel
 // (app/index.tsx) imports the renderer service layer by plain relative path now
 // (V18 item 7 removed the last bare-specifier alias), so tsc resolves the real
 // modules directly. The service .ts files are type-checked in this same program
 // (merged 2026-07-09 into one tsconfig.json), via the `renderer/**/*` include.
 
 declare global {
-  type CorpusUnsubscribe = () => void;
+  type HologramUnsubscribe = () => void;
 
   // ---- renderer/store.ts — key-addressed external store (viewer ⇄ islands). A
   // real ES module now (Wave12) — get/set/subscribe are imported directly by
   // every consumer; no ambient Window-shaped interface needed here. ----
 
-  // ---- renderer/i18n.ts — corpusI18n resolves after prefs are read. Data-shape
+  // ---- renderer/i18n.ts — hologramI18n resolves after prefs are read. Data-shape
   // type only (the promise's resolved value) — the module itself is a real ES
-  // module (named export `corpusI18n`), imported by _shared/i18n.ts. ----
-  interface CorpusI18nApi {
+  // module (named export `hologramI18n`), imported by _shared/i18n.ts. ----
+  interface HologramI18nApi {
     lang: string;
     resolved: 'ja' | 'en';
     getMessage(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -65,24 +65,24 @@ declare global {
   // (P4-B slice⑱) imports isAllSelected/selectedGroups directly instead of
   // re-deriving allSelected/groupDisabled itself.
 
-  // ---- preload.cts — the full contextBridge IPC surface (window.corpus). The
+  // ---- preload.cts — the full contextBridge IPC surface (window.hologram). The
   // type is exported by the implementation itself (typeof the exposed api object,
   // Issue #17), so this alias can never drift from what the bridge actually
   // exposes — the old hand-maintained interface mirror is gone. In THIS program
   // 'electron' resolves to islands/types/electron-shim.d.ts (tsconfig paths; see
   // the shim's comment); tsconfig.main.json checks the same file against the real
   // electron types. ----
-  type CorpusPreload = import('../../preload.cts').CorpusPreload;
+  type HologramPreload = import('../../preload.cts').HologramPreload;
 
   // ---- renderer/grid.ts — a PULLED model source per virtualized grid (P4-B
   // slice⑩ post, slice⑫ poster — both converted off the old push bridge; nothing
   // instantiates a push bridge anymore). viewer.js still builds items/layout
-  // inputs, but writes them to corpusStore instead of calling a render()/patch()
+  // inputs, but writes them to hologramStore instead of calling a render()/patch()
   // method — the source derives the model itself. `paint` is internal (bumped on
   // every get() so a fresh object ref reaches React even when field VALUES repeat).
   // Selection/inspected are NOT part of this model — Cell derives both from
-  // corpusStore subscriptions directly (see Grid.tsx / PosterGrid.tsx).
-  interface CorpusGridModel {
+  // hologramStore subscriptions directly (see Grid.tsx / PosterGrid.tsx).
+  interface HologramGridModel {
     items: any[];
     itemsKey: string | number;
     modelOf(item: any, i: number): any;
@@ -99,12 +99,12 @@ declare global {
   }
   // The shape GridMount (_shared/VirtualGrid.tsx) actually consumes — it only
   // ever calls get()/subscribe(), so this is the minimal contract both sources
-  // (renderer/grid.ts's corpusPostGridSource/corpusPosterGridSource, real ES
+  // (renderer/grid.ts's hologramPostGridSource/hologramPosterGridSource, real ES
   // module exports now) satisfy, plus their own configure()/etc., which GridMount
   // never touches.
-  interface CorpusGridSource {
-    get(): CorpusGridModel | null;
-    subscribe(cb: () => void): CorpusUnsubscribe;
+  interface HologramGridSource {
+    get(): HologramGridModel | null;
+    subscribe(cb: () => void): HologramUnsubscribe;
   }
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
@@ -114,7 +114,7 @@ declare global {
   // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
   // render(model) on it from ~8 call sites) to a PULLED source, same shape as
-  // the grid sources (⑩/⑫). viewer.js writes only the tab identity (corpusStore's
+  // the grid sources (⑩/⑫). viewer.js writes only the tab identity (hologramStore's
   // 'activeImageTab' — id/recs/idx, the one slice of tab state migrated ahead of
   // the full tabs→store move in ⑯) + still owns 'inspectedKey' (state→store
   // phase); get() crosses both with posts-data.ts (library changes — a deleted
@@ -123,10 +123,10 @@ declare global {
   // inspector toggle / close tab) dispatch back to viewer.ts via configure()
   // callbacks (DI'd off its old shared bridge in V13/Wave27) —
   // this file only computes, it never mutates tab state. A real ES module
-  // (named export `corpusImageTabSource`) now — no ambient Window-shaped
-  // interface needed for it (CorpusImageTabModel stays: the shared data shape
+  // (named export `hologramImageTabSource`) now — no ambient Window-shaped
+  // interface needed for it (HologramImageTabModel stays: the shared data shape
   // between image-tab.ts and this island).
-  interface CorpusImageTabModel {
+  interface HologramImageTabModel {
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
     missing?: boolean;
@@ -141,12 +141,12 @@ declare global {
   // the old push (viewer.js built a TabsModel via renderTabs() and pushed it to a
   // shared render bridge from ~15 call sites) to a PULLED source, same
   // shape as the grid/image-tab sources. viewer.js no longer owns tabs/
-  // activeTabId/tabEditingId as closure state — corpusStore's keys of the same
+  // activeTabId/tabEditingId as closure state — hologramStore's keys of the same
   // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…)
   // and all #tabBarInner event delegation (TabBarEvents, App.tsx, unchanged).
   // tabTitleOf/tabIcons/pinSvg are viewer-built invariants handed over once
   // (configure), the same "configure once" shape as the grid sources.
-  interface CorpusTabModel {
+  interface HologramTabModel {
     id: string;
     title: string;
     icon: string;
@@ -154,17 +154,17 @@ declare global {
     pinned?: boolean;
     showClose?: boolean;
   }
-  interface CorpusTabsModel {
-    tabs: CorpusTabModel[];
+  interface HologramTabsModel {
+    tabs: HologramTabModel[];
     editingId?: string | null;
     closeTitle?: string;
     newTitle?: string;
   }
-  // renderer/tabs.ts — a real ES module (named export: corpusTabsSource) now,
+  // renderer/tabs.ts — a real ES module (named export: hologramTabsSource) now,
   // imported directly by tabs/index.tsx.
 
   // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
-  interface CorpusAnchorRect {
+  interface HologramAnchorRect {
     left: number;
     top: number;
     right: number;
@@ -172,14 +172,14 @@ declare global {
   }
 
   // ---- renderer/qf-pop-builder.ts (headless pickValue router) ----
-  interface CorpusQfPopItem {
+  interface HologramQfPopItem {
     [key: string]: any;
   }
-  // CorpusQfPopModel (the retired qf-pop flyout's view model) removed with the
+  // HologramQfPopModel (the retired qf-pop flyout's view model) removed with the
   // flyout UI (P2③) and the search-mode hint fields (P2④).
 
   // ---- renderer/menu.js — shared right-click context menu ----
-  interface CorpusMenuItem {
+  interface HologramMenuItem {
     label?: string;
     act?: string;
     danger?: boolean;
@@ -189,21 +189,21 @@ declare global {
     icon?: string;
     [extra: string]: any;
   }
-  interface CorpusContextMenuModel {
-    items: CorpusMenuItem[];
+  interface HologramContextMenuModel {
+    items: HologramMenuItem[];
     x: number;
     y: number;
     // Returning a new items array keeps the menu open (toggle rows); returning
     // nothing closes it. The `| void` arm is that "close" signal — it also lets
     // void-returning pick handlers (the common case) assign cleanly.
     // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
-    onPick: ((item: CorpusMenuItem) => CorpusMenuItem[] | void) | null;
+    onPick: ((item: HologramMenuItem) => HologramMenuItem[] | void) | null;
   }
-  // CorpusContextMenu (the open/close/pick/get/subscribe API) removed — menu.ts
+  // HologramContextMenu (the open/close/pick/get/subscribe API) removed — menu.ts
   // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/kind-menu.js — tag-kind (work/character/…) menu ----
-  interface CorpusKindMenuRow {
+  interface HologramKindMenuRow {
     kind?: string;
     label?: string;
     dot?: boolean;
@@ -211,23 +211,23 @@ declare global {
     checked?: boolean;
     sep?: boolean;
   }
-  interface CorpusKindMenuModel {
+  interface HologramKindMenuModel {
     x: number;
     y: number;
     header?: string;
     renameTitle?: string;
-    rows: CorpusKindMenuRow[];
+    rows: HologramKindMenuRow[];
     onPick(kind: string): void;
     onRename(kind: string): void;
   }
-  // CorpusKindMenu (the open/close/get/subscribe API) removed — kind-menu.ts
+  // HologramKindMenu (the open/close/get/subscribe API) removed — kind-menu.ts
   // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/filter-popover.js — date / engagement / poster-date forms ----
-  interface CorpusFilterPopoverModel {
+  interface HologramFilterPopoverModel {
     kind: 'date' | 'eng' | 'posterDate';
     openId: number;
-    anchorRect: CorpusAnchorRect;
+    anchorRect: HologramAnchorRect;
     editing?: boolean;
     fields: any;
     labels: any;
@@ -243,32 +243,32 @@ declare global {
     onRemove(): void;
     [extra: string]: any;
   }
-  // CorpusFilterPopover (the open/close/get/subscribe API) removed — filter-popover.ts
+  // HologramFilterPopover (the open/close/get/subscribe API) removed — filter-popover.ts
   // is a real ES module now, imported directly by its consumers.
 
   // ---- renderer/inspector.js — model mechanics; the deep field lists live in
   // viewer.js's model builders. ----
   // Tag-editing callbacks TagEditor.tsx (_shared) requires — its onAdd/onRemove/
   // onToggle/onContextMenu props are all required. TagEditor.tsx now renders in
-  // exactly ONE place: CorpusTagPopModel below (Issue #22 retired both the
+  // exactly ONE place: HologramTagPopModel below (Issue #22 retired both the
   // inspector's always-live editor and the bulk edit-overlay modal in favor of
   // one shared pop).
-  interface CorpusTagEditorCallbacks {
+  interface HologramTagEditorCallbacks {
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagToggle(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
   }
-  // NOT extending CorpusTagEditorCallbacks: the inspector (post AND poster,
+  // NOT extending HologramTagEditorCallbacks: the inspector (post AND poster,
   // Inspector.tsx) is read-only (Issue #22) and only needs onTagContextMenu
   // (right-click still opens the kind-menu — a read operation) + onEditTags
   // (opens tag-pop for this card/poster).
-  interface CorpusInspectorModel {
+  interface HologramInspectorModel {
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
-    onEditTags(anchorRect: CorpusAnchorRect): void;
+    onEditTags(anchorRect: HologramAnchorRect): void;
     // Post-only (Inspector.tsx renders these when present).
     onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
     onOpenExternal?(): void;
@@ -281,10 +281,10 @@ declare global {
     onFolderCreate?(): void;
     [extra: string]: any;
   }
-  // CorpusInspector (the open/refresh/close/get/subscribe API) removed —
+  // HologramInspector (the open/refresh/close/get/subscribe API) removed —
   // inspector.ts is a real ES module now, imported directly by its consumers.
-  // CorpusEditOverlayModel removed with edit-overlay.ts/EditOverlay.tsx (Issue #22
-  // retired the bulk modal — see CorpusTagPopModel's mode:'bulk' below).
+  // HologramEditOverlayModel removed with edit-overlay.ts/EditOverlay.tsx (Issue #22
+  // retired the bulk modal — see HologramTagPopModel's mode:'bulk' below).
 
   // ---- renderer/tag-pop.ts — tag picker pop (Issue #22): the single popup that
   // replaced both the inspector's always-live TagEditor and the bulk edit-overlay
@@ -292,11 +292,11 @@ declare global {
   // persistence orchestrator.ts's inspector builder already had (immediate save +
   // undo); 'bulk' mode wires to bulk-edit.ts's staging list instead and adds
   // applyLabel/additiveHint/onApply (the staged "N件に適用" commit). Extends
-  // CorpusTagEditorCallbacks (unlike CorpusInspectorModel above) because
+  // HologramTagEditorCallbacks (unlike HologramInspectorModel above) because
   // TagEditor.tsx is tag-pop's ONLY content now — every caller must supply all four.
-  interface CorpusTagPopModel extends CorpusTagEditorCallbacks {
+  interface HologramTagPopModel extends HologramTagEditorCallbacks {
     openId: number;
-    anchorRect: CorpusAnchorRect;
+    anchorRect: HologramAnchorRect;
     mode: 'single' | 'bulk';
     // Which target this pop is currently showing (inspectedKey's format for single —
     // postIdKey(g.rep) / 'poster:'+key — a fixed sentinel for bulk). The SOLE source
@@ -324,15 +324,15 @@ declare global {
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
   // tabs sources. Labels are NOT in the model: the islands resolve their own static
-  // row names via t() and the 作品/キャラ custom label via corpusTags.getTagLabels(),
+  // row names via t() and the 作品/キャラ custom label via hologramTags.getTagLabels(),
   // the same "island resolves its own i18n" pattern every other island uses.
-  // Everything else (badges/visible/clip/multi/openCat) is derived from corpusStore
-  // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + corpusTags/corpusFolders/
-  // posts-data.ts/corpusListing — no viewer push needed, so viewer's mutation call
+  // Everything else (badges/visible/clip/multi/openCat) is derived from hologramStore
+  // keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + hologramTags/hologramFolders/
+  // posts-data.ts/hologramListing — no viewer push needed, so viewer's mutation call
   // sites (addFilter/removeFilter/setTagKind/markPostsMutated/…) no longer need a
   // matching re-push; the source's own subscriptions cover it. Two independent
   // sources (post / poster) so a change in one column never re-renders the other. ----
-  interface CorpusSidebarModel {
+  interface HologramSidebarModel {
     openCat: string | null; // the flyout cat with .qf-open (null = none)
     clip: { active: boolean; count: number; clearVisible: boolean };
     multi: { active: boolean };
@@ -342,31 +342,31 @@ declare global {
   // Poster column (#posterFilterRows): a leaner twin — no clip/multi toggles, and the
   // rows are keyed by their full poster-* cat (data-qfrow === data-badge). work / character
   // / tag / instance are progressively disclosed once posters actually carry such values.
-  interface CorpusPosterSidebarModel {
+  interface HologramPosterSidebarModel {
     openCat: string | null; // the poster-* flyout cat with .qf-open (null = none)
     badges: Record<string, number>; // per-row active leaf count (poster query shadow)
     visible: { work: boolean; character: boolean; tag: boolean; instance: boolean };
   }
-  // renderer/sidebar.ts — a real ES module (named exports: corpusPostSidebarSource/
-  // corpusPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
+  // renderer/sidebar.ts — a real ES module (named exports: hologramPostSidebarSource/
+  // hologramPosterSidebarSource) now, imported directly by Sidebar.tsx/PosterSidebar.tsx.
 
   // ---- Bulk-action selection bar. Now the bottom floating FloatingBar island
   // (islands/selection, redesign P2⑥): no #selectionBar container and no delegated
   // data-act handler — each button calls an orchestrator-exported selection action
-  // directly. It derives count/allSelected/groupDisabled itself from corpusStore's
+  // directly. It derives count/allSelected/groupDisabled itself from hologramStore's
   // 'selectedSet' + 'postGroups' (the old renderer/selection-bar.ts push bridge was
   // deleted — no callers left, same as renderer/empty.ts below). ----
 
   // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
   // delegated CTA click handler; EmptyState.tsx (P4-B slice⑩/⑫) derives the
-  // variant itself from corpusStore instead of a pushed bridge (the old
+  // variant itself from hologramStore instead of a pushed bridge (the old
   // renderer/empty.js bridge was deleted — no callers left). ----
-  type CorpusEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
+  type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
 
   // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
   // フィルター title, empty hint, result count, リセット, and the ⓘ help popover. viewer
   // keeps only the container reveal + --activebar-h measurement; ActivebarHost (P4-B
-  // slice⑱) derives everything else itself from corpusStore ('postQueryTree'/
+  // slice⑱) derives everything else itself from hologramStore ('postQueryTree'/
   // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
   // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
   // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
@@ -375,7 +375,7 @@ declare global {
 
   // ---- renderer/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
   // with a message + optional skip/keyword gate + callbacks; the island renders it. ----
-  interface CorpusConfirmConfig {
+  interface HologramConfirmConfig {
     message: string;
     description?: string; // present → secondary line under the title (AlertDialogDescription)
     okLabel: string;
@@ -386,12 +386,12 @@ declare global {
     onOk(result: { skip: boolean }): void;
     onCancel?(): void;
   }
-  interface CorpusConfirmModel extends CorpusConfirmConfig {
+  interface HologramConfirmModel extends HologramConfirmConfig {
     openId: number;
   }
   // Naming prompt (prompt.ts + PromptHost) — the replacement for window.prompt,
   // which Electron's renderer refuses ("prompt() is not supported.").
-  interface CorpusPromptConfig {
+  interface HologramPromptConfig {
     title: string;
     value?: string; // initial input value (rename passes the current name)
     placeholder?: string;
@@ -401,17 +401,17 @@ declare global {
     onOk(value: string): void;
     onCancel?(): void;
   }
-  interface CorpusPromptModel extends CorpusPromptConfig {
+  interface HologramPromptModel extends HologramPromptConfig {
     openId: number;
   }
-  // CorpusConfirm / CorpusEditOverlay (the open/close/get/subscribe APIs)
+  // HologramConfirm / HologramEditOverlay (the open/close/get/subscribe APIs)
   // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
   // directly by their consumers.
 
   // ---- renderer/searchbox.ts — a real ES module (named exports: init/handlers/
   // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
   // as a cross-module data shape (viewer produces it, the searchbox island pulls it). ----
-  interface CorpusSearchBoxHandlers {
+  interface HologramSearchBoxHandlers {
     getSuggestions(q: string): any[];
     onPick(item: any): void;
     onConfirmText(): void;
@@ -439,9 +439,9 @@ declare global {
   // module (named exports) now — no ambient Window-shaped interface needed.
 
   // renderer/ipc.ts — the P4 IPC→service seam over the raw bridge below. A real ES
-  // module now (named export `corpusIpc`), imported directly by every caller.
+  // module now (named export `hologramIpc`), imported directly by every caller.
 
   interface Window {
-    corpus: CorpusPreload;
+    hologram: HologramPreload;
   }
 }

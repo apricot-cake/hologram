@@ -18,16 +18,16 @@
 // close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { corpusIpc } from '../../renderer/ipc.ts';
+import { hologramIpc } from '../../renderer/ipc.ts';
 import { isOpen as inspectorIsOpen, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
 
 function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
-    corpusIpc.windowIsMaximized().then(setMaximized);
+    hologramIpc.windowIsMaximized().then(setMaximized);
     // Main pushes every change, including the ones no button caused (snap, double-click on
     // the drag strip, Win+arrow, the taskbar), so the glyph can't drift out of sync.
-    corpusIpc.onWindowMaximizedChanged(setMaximized);
+    hologramIpc.onWindowMaximizedChanged(setMaximized);
   }, []);
   return maximized;
 }
@@ -93,13 +93,13 @@ export function WindowControls() {
   // its own reproduces exactly what the page gets.
   return createPortal(
     <div className="app-no-drag fixed top-0 right-0 z-[13600] flex" style={{ background: overInspector ? 'var(--surface)' : 'var(--tabbar-bg)' }}>
-      <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => corpusIpc.windowControl('minimize')}>
+      <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
-      <button type="button" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => corpusIpc.windowControl('toggle-maximize')}>
+      <button type="button" aria-label={maximized ? '元のサイズに戻す' : '最大化'} className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('toggle-maximize')}>
         {maximized ? <RestoreGlyph /> : <MaximizeGlyph />}
       </button>
-      <button type="button" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => corpusIpc.windowControl('close')}>
+      <button type="button" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => hologramIpc.windowControl('close')}>
         <CloseGlyph />
       </button>
       {/* The scrim's dim, re-created over the buttons (they're above the scrim). pointer-events

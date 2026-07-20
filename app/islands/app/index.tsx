@@ -4,7 +4,7 @@
 // i18n,tip}) is bundled ONCE instead of duplicated per island.
 //
 // The renderer's single React root (最終形B DoD: 島 root 群の1本統合 — COMPLETE). root.tsx
-// creates ONE createRoot(#corpusAppRoot) and renders app/App.tsx, which is the source of
+// creates ONE createRoot(#hologramAppRoot) and renders app/App.tsx, which is the source of
 // truth for the island roster: every island renders under that one root (container-mounted
 // ones via createPortal into their orchestrator-owned static container; body-level overlays as
 // fixed children). Each island still owns only RENDERING and reads its state from a
@@ -22,7 +22,7 @@
 // (islands/app.js → /islands/app/index.tsx).
 //
 // --- renderer service layer (formerly individual <script> tags in index.html, then a
-//     `corpus-svc:NAME` bare-specifier barrel here — aliased to renderer/NAME.ts by
+//     `hologram-svc:NAME` bare-specifier barrel here — aliased to renderer/NAME.ts by
 //     build.mjs / vite.config.mjs — while each was converted one wave at a time from a
 //     window-IIFE global bridge to a real named export, consumed via a plain relative
 //     import; see the corpus-react-purity-execution-map memory). query/listing/format/
@@ -30,7 +30,7 @@
 //     kind-menu/menu/edit-overlay/bridge/filter-popover/qf-pop/cooc/facets/about-icon/
 //     searchbox/theme/records/tags/tab-state/trash/backup/posts/search/i18n/folders/
 //     selection/grid/query-chips/sidebar/tabs are all real ES modules now, imported
-//     directly by their consumers — no barrel entry needed, and the corpus-svc alias
+//     directly by their consumers — no barrel entry needed, and the hologram-svc alias
 //     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts — the
 //     last side-effect-only entry (searchMode pref restore) — was deleted with the
 //     search-mode toggle itself (P2④ 単一スマート検索). ---
@@ -43,6 +43,6 @@ import './root.tsx';
 // 2026-07-11) no longer needs a side-effect-only import here: App.tsx (rendered via
 // root.tsx above) already imports its exports (bootApp etc.) directly by relative path,
 // which is enough to trigger ES module evaluation — the former bare-specifier
-// 'corpus-viewer-bundle' alias + @ts-ignore was a leftover from when this file was a
+// 'hologram-viewer-bundle' alias + @ts-ignore was a leftover from when this file was a
 // plain window-IIFE with no imports/exports of its own (removed together with the
 // viewer.ts→orchestrator.ts rename; see Wave33 in memory corpus-react-purity-execution-map).

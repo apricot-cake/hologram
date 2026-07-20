@@ -1,6 +1,6 @@
 importScripts('metadata.js');
 
-const NATIVE_HOST = 'com.corpus.host';
+const NATIVE_HOST = 'com.hologram.host';
 
 // Allowed capture origins per platform (used to validate the sender tab).
 const PLATFORM_HOSTS = {
@@ -201,7 +201,7 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, extra
       // viewer's date sort/filter. The viewer handles null dates.
       date: meta.date || null,
       capturedAt,
-      updatedAt: capturedAt, // last modified in Corpus (bumped on tag edits etc.)
+      updatedAt: capturedAt, // last modified in Hologram (bumped on tag edits etc.)
       lang: meta.lang,
       isReply: meta.isReply,
       isQuote: meta.isQuote,

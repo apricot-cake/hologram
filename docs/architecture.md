@@ -1,10 +1,10 @@
-# Corpus アーキテクチャ・構成
+# Hologram アーキテクチャ・構成
 
 > CLAUDE.md のスリム化に伴い、ファイル別の詳細構成・実装メモをここへ集約（2026-06-17）。CLAUDE.md 側は要約とこのファイルへのリンクのみ。
 
 ## 射程の原則（#190 で確定・2026-07-20 名乗り改訂）
 
-Corpus の名乗りは「**ウェブのコンテンツを、出自・エンゲージメントごと保存できる個人ライブラリ**」。一級性は SNS に限らず、プラットフォームに投稿されたコンテンツ全般に及ぶ（改訂の経緯・根拠は #190 コメント）。この汎用側の選択は必然ではなく設計判断＝主要プラットフォーム対応に絞る特化も成立する却下案として #190 に記録済み。個別機能の採否は次の概念モデルで判定する。
+Hologram の名乗りは「**ウェブのコンテンツを、出自・エンゲージメントごと保存できる個人ライブラリ**」。一級性は SNS に限らず、プラットフォームに投稿されたコンテンツ全般に及ぶ（改訂の経緯・根拠は #190 コメント）。この汎用側の選択は必然ではなく設計判断＝主要プラットフォーム対応に絞る特化も成立する却下案として #190 に記録済み。個別機能の採否は次の概念モデルで判定する。
 
 ### 概念モデル
 
@@ -20,7 +20,7 @@ Corpus の名乗りは「**ウェブのコンテンツを、出自・エンゲ�
 
 ## 全体フロー
 
-キャプチャは拡張（タブキャプチャ＋API由来メタ）→ **Native Messaging ブリッジ**（`native-host/`・拡張/アプリ未起動でも動作）→ **保存先フォルダ（既定 `~/Corpus/library`・変更可）に `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す**。閲覧は Electron アプリ（`app/`）がサイドカーを走査。旧・拡張内ビューアと EXIF/storage 方式は撤去済み。配布パッケージングの手順は `docs/build.md`。
+キャプチャは拡張（タブキャプチャ＋API由来メタ）→ **Native Messaging ブリッジ**（`native-host/`・拡張/アプリ未起動でも動作）→ **保存先フォルダ（既定 `~/Hologram/library`・変更可）に `<captureId>.jpg`（純JPEG）+ `<captureId>.json`（サイドカー＝メタデータ）を書き出す**。閲覧は Electron アプリ（`app/`）がサイドカーを走査。旧・拡張内ビューアと EXIF/storage 方式は撤去済み。配布パッケージングの手順は `docs/build.md`。
 
 ## 構成
 
@@ -42,7 +42,7 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 
 ### `native-host/` — Native Messaging ブリッジ
 
-全ファイル `.cts`（Node 型消去で無ビルド実行・CJS維持＝`bridge.cts` は生ソースを `~/.corpus` へコピー実行するため）。
+全ファイル `.cts`（Node 型消去で無ビルド実行・CJS維持＝`bridge.cts` は生ソースを `~/.hologram` へコピー実行するため）。
 
 - `bridge.cts` — 保存先に jpg+サイドカーを書き込み専用で生成。サイドカーの `media[]`（API由来の原寸URL）と著者アバターを**ベストエフォートでDL**し `<id>-media-N.<ext>` / `<id>-avatar.<ext>` に保存
 - `media-download.cts` — **静止画DLの共有モジュール**（SSRFガード・25MB/12s/12件上限・https限定・手動リダイレクト・失敗時dropで保存を失敗させない）。`fetchStillImage`/`downloadMedia`/`downloadAvatar`/`pixivRefererFor` を export し、bridge・app(`import-posts`)・`backfill-metadata.cts` で同一ロジックを共有（ガードが経路ごとにズレないように一箇所へ集約）
@@ -52,14 +52,14 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 
 ### `app/` — Electron デスクトップアプリ
 
-メインプロセスは`.mts`直実行（`main.mts`＋`ipc-{backup,config,organize,posts,transfer,trash,window}.mts`＋`lib-*.mts`＝Node型消去・無ビルド）。preloadのみビルドを経る＝ソースは`preload.cts`で、`islands/build.mjs`（Vite lib CJS）が`preload.js`へビルド（サンドボックスpreloadローダーが型ストリップ非対応という技術的制約・`tsconfig.main.json`に明記）。公開APIの型は`preload.cts`が実装から`CorpusPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）。
+メインプロセスは`.mts`直実行（`main.mts`＋`ipc-{backup,config,organize,posts,transfer,trash,window}.mts`＋`lib-*.mts`＝Node型消去・無ビルド）。preloadのみビルドを経る＝ソースは`preload.cts`で、`islands/build.mjs`（Vite lib CJS）が`preload.js`へビルド（サンドボックスpreloadローダーが型ストリップ非対応という技術的制約・`tsconfig.main.json`に明記）。公開APIの型は`preload.cts`が実装から`HologramPreload`としてexportし、rendererはそれを型エイリアスで参照（手書き型ミラーなし・Issue #17）。
 
 - `main.mts` — メインプロセス（ウィンドウ生成・`fs.watch`・IPC登録）
 - `lib-archive.mts` — ZIP入出力
 - `lib-index.mts` — 保存先サイドカーの index＝filename+mtimeMs で記録をキャッシュ。`listPosts` を非同期・O(changed) 化し `.index.json` スナップショットで起動も高速化。更新は差分IPC（list-posts-delta）＋fs.watch の変更ファイル名ヒントで対象サイドカーだけ再走査（applyChanges）＝実測 ~1ms。Electron非依存＝node でテスト可
-- `renderer/`（`index.html`・`.ts`群＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み・`design-tokens.css`）。描画自体は下記`islands/`のReactコンポーネントが100%所有し、島は`store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.corpusXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.corpus`のみ）
+- `renderer/`（`index.html`・`.ts`群＝`orchestrator.ts`（2026-07-11に`viewer.ts`から改名。boot orchestration層として意図的に独立モジュールのまま残す設計）が状態/オーケストレーション/IPC呼び出しの中核、`store.ts`ほか単機能サービス（`tags.ts`/`selection.ts`/`query.ts`/`records.ts`等）に段階抽出済み・`design-tokens.css`）。描画自体は下記`islands/`のReactコンポーネントが100%所有し、島は`store.ts`をESM importで直接購読して連携（push型のモデル注入・`window.hologramXxx`ブリッジは全廃済み＝Window拡張はpreloadの`window.hologram`のみ）
 - `islands/` — React（`.tsx`）コンポーネント群。`islands/build.mjs`（Vite lib-IIFE）で単一バンドル`renderer/islands/app.js`へビルド（React本体・JSZipもこのバンドルへ直接取り込み・`theme.ts`のみ`<script>`直読み・pre-paint実行の制約で別バンドル`renderer/theme.js`）
-- 機能: サイドカー走査で閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Corpus-mirror`）。画像は `psimg://` プロトコルで遅延読込。
+- 機能: サイドカー走査で閲覧、拡張ID設定・ホスト自動登録、指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`）。画像は `psimg://` プロトコルで遅延読込。
 
 ## ビューア機能（内部実装メモ）
 
@@ -76,10 +76,10 @@ TypeScript ソース（`.ts`）。ブラウザは TypeScript を直接実行で�
 - レイアウト切替（card/tile/list・config保存）
 - 投稿の個別削除・一括削除（確認スキップ可）
 - カード右クリックの操作メニュー（開く/新しいタブで開く/タグ編集/フォルダに追加/クリップに追加/この投稿者を見る/画像をコピー/ファイルの場所を開く/詳細/削除。ホバーは📎クリップ・ℹ詳細・🏷タグの3個）
-- **他アプリへの送り出し**（#132）＝カード画像のドラッグアウト（Explorer・PureRef 等へ**原本ファイル**をドロップ。選択中のカードを掴めば選択全体・選択外を掴めばそのカードだけ。複数画像投稿は `g.files` 全部。**ドラッグは選択を読むだけで書き換えない**＝Explorer の「ドラッグで選択が変わる」は mousedown の副産物でドラッグ側の設計ではなく、Corpus の選択はスクロールをまたいで手で作る作業セット＝アプリ外へ出る操作で壊さない。規則の実体は `records.ts` の `dragFilesOf`＝純関数）＋**画像をコピー**（右クリックメニュー／選択1件時の `Ctrl+C`＝クリップボードは1枚しか持てないため複数は不可）。実体＝`dragstart` を `preventDefault` して main の `webContents.startDrag`（`drag-out`＝invoke でなく send＝ドラッグは同期開始が必須）／`clipboard.writeImage`（`copy-image`）。ファイル名→実パスの解決とベースネーム検証は `app/library-files.mts` が単一所有（欠損ファイルは除外＝Windows は不在パスを1つ混ぜるとドラッグ全体が失敗する／svg 等 nativeImage が読めない形式は false を返し**クリップボードを空で上書きしない**）
+- **他アプリへの送り出し**（#132）＝カード画像のドラッグアウト（Explorer・PureRef 等へ**原本ファイル**をドロップ。選択中のカードを掴めば選択全体・選択外を掴めばそのカードだけ。複数画像投稿は `g.files` 全部。**ドラッグは選択を読むだけで書き換えない**＝Explorer の「ドラッグで選択が変わる」は mousedown の副産物でドラッグ側の設計ではなく、Hologram の選択はスクロールをまたいで手で作る作業セット＝アプリ外へ出る操作で壊さない。規則の実体は `records.ts` の `dragFilesOf`＝純関数）＋**画像をコピー**（右クリックメニュー／選択1件時の `Ctrl+C`＝クリップボードは1枚しか持てないため複数は不可）。実体＝`dragstart` を `preventDefault` して main の `webContents.startDrag`（`drag-out`＝invoke でなく send＝ドラッグは同期開始が必須）／`clipboard.writeImage`（`copy-image`）。ファイル名→実パスの解決とベースネーム検証は `app/library-files.mts` が単一所有（欠損ファイルは除外＝Windows は不在パスを1つ混ぜるとドラッグ全体が失敗する／svg 等 nativeImage が読めない形式は false を返し**クリップボードを空で上書きしない**）
 - 言語切替（auto/ja/en）
 - エクスポート: ZIP（画像+JSON）／インポート: ZIP から復元
-- 指定フォルダへの定期バックアップ（増分ミラー・`Corpus-mirror`・間隔スケジュール可・起動時の遅れ取り戻し）
+- 指定フォルダへの定期バックアップ（増分ミラー・`Hologram-mirror`・間隔スケジュール可・起動時の遅れ取り戻し）
 
 ## i18n
 

@@ -1,6 +1,6 @@
 """Verify sidecar metadata against actual post data via public APIs.
 
-Reads <id>.json sidecars from the Corpus save folder (configured by the
+Reads <id>.json sidecars from the Hologram save folder (configured by the
 desktop app) and compares them with live data from the Bluesky / Misskey public
 APIs. Also checks each sidecar has its paired <id>.jpg.
 
@@ -24,17 +24,17 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 
 def config_dir():
-    # Must match native-host/paths.js configDir(): CORPUS_CONFIG_DIR wins, else
+    # Must match native-host/paths.js configDir(): HOLOGRAM_CONFIG_DIR wins, else
     # per-OS default. Windows is OUT of %APPDATA% (MSIX storage virtualization).
-    override = os.environ.get("CORPUS_CONFIG_DIR")
+    override = os.environ.get("HOLOGRAM_CONFIG_DIR")
     if override:
         return override
     if os.name == "nt":
-        return os.path.join(os.path.expanduser("~"), ".corpus")
+        return os.path.join(os.path.expanduser("~"), ".hologram")
     if sys.platform == "darwin":
-        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus")
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Hologram")
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "Corpus")
+    return os.path.join(base, "Hologram")
 
 
 def save_folder():
@@ -47,11 +47,11 @@ def save_folder():
         pass
     # default library dir — must match native-host/paths.js defaultLibraryDir()
     if os.name == "nt":
-        return os.path.join(os.path.expanduser("~"), "Corpus", "library")
+        return os.path.join(os.path.expanduser("~"), "Hologram", "library")
     if sys.platform == "darwin":
-        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Corpus", "library")
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Hologram", "library")
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    return os.path.join(base, "Corpus", "library")
+    return os.path.join(base, "Hologram", "library")
 
 
 def parse_post_url(url):

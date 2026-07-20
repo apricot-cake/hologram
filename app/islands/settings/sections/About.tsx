@@ -44,7 +44,7 @@ export function About() {
       <div className="mb-3">
         <canvas ref={canvasRef} width={352} height={352} className="size-32" aria-hidden="true" />
       </div>
-      <div className="text-2xl font-semibold tracking-tight">Corpus</div>
+      <div className="text-2xl font-semibold tracking-tight">Hologram</div>
       <div className="text-muted-foreground text-sm">{info ? t('aboutVersion', [info.version || '']) : ''}</div>
       <div className="mt-1 max-w-sm text-sm text-balance">{t('aboutTagline')}</div>
       <div className="text-muted-foreground/70 mt-2 text-xs">{info ? `Electron ${info.electron} · Chromium ${info.chromium} · Node ${info.node}` : ''}</div>

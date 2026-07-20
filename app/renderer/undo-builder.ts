@@ -18,15 +18,15 @@ import { applyPosterTagRecords } from './tags.ts';
 
 export interface UndoBuilderDeps {
   showToast(msg: unknown): void;
-  getPostById(id: string): CorpusPost | undefined;
+  getPostById(id: string): HologramPost | undefined;
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
-  getViewGroups(): CorpusPostGroup[];
+  getViewGroups(): HologramPostGroup[];
   // inspectedKey is a viewer.ts `let` (read/written outside this cluster too)
   // — this module only gets the accessor, same shape as posterReturn/
   // inspectedKey in poster-grid-builder.ts/inspector-builder.ts.
   getInspectedKey(): string | null;
-  showDetail(g: CorpusPostGroup): void;
+  showDetail(g: HologramPostGroup): void;
   refreshPosterTagFields(key: string): void;
 }
 

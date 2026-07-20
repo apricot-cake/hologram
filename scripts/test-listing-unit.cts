@@ -2,7 +2,7 @@
 
 // Pure unit test for listing.ts — the 7th viewer.js extraction slice. listing.ts
 // is a real ES module now (named exports), so load it with a dynamic import()
-// (2026-07-09 window.corpusXxx→export/import conversion — see test-query-unit.cts
+// (2026-07-09 window.hologramXxx→export/import conversion — see test-query-unit.cts
 // for the same change on its sibling). Drives getFilteredPosts (content gate →
 // query tree → sticky merge → sort), namedPosters/filteredPosters, the collection
 // derivations (legacy-q folding / dynamic matching / per-pass record cache /

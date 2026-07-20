@@ -58,29 +58,29 @@ function pushModel(id: string, model: any) {
 }
 
 // Local shape for the ctx contract documented in the file-top comment (the
-// exported CorpusQueryChipsIsland.create(ctx: any) stays loose — the islands
-// project doesn't see CorpusQueryLeaf/CorpusQueryGroup — so this is typed only
+// exported HologramQueryChipsIsland.create(ctx: any) stays loose — the islands
+// project doesn't see HologramQueryLeaf/HologramQueryGroup — so this is typed only
 // for this module's own body).
 interface QbCtx {
   container: HTMLElement;
   storeKey?: string;
   barEl?: HTMLElement | null;
-  predOf: (f: CorpusQueryLeaf) => (item: any) => boolean;
-  labelOf: (f: CorpusQueryLeaf) => string;
+  predOf: (f: HologramQueryLeaf) => (item: any) => boolean;
+  labelOf: (f: HologramQueryLeaf) => string;
   glyphOf: (type: string) => string;
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   getSearchVal?: () => string;
   onClearSearch?: () => void;
   onChange: () => void;
-  openLeafEditor?: (node: CorpusQueryLeaf) => void;
+  openLeafEditor?: (node: HologramQueryLeaf) => void;
   editableLeafTypes?: string[];
   singleValueTypes?: string[];
   noDupTypes?: string[];
   multiValueTypes?: string[];
   standaloneTypes?: string[];
-  isEditingLeaf?: (leaf: CorpusQueryLeaf) => boolean;
+  isEditingLeaf?: (leaf: HologramQueryLeaf) => boolean;
   textInTree?: boolean;
-  onLeafMutated?: (node: CorpusQueryLeaf) => void;
+  onLeafMutated?: (node: HologramQueryLeaf) => void;
 }
 
 export function createQueryBuilder(ctx: QbCtx) {
@@ -101,9 +101,9 @@ export function createQueryBuilder(ctx: QbCtx) {
   // --- Tree mutation domain lives in query.ts (imported above, 9th extraction slice); the
   // bindings below close over THIS instance's tree.
   const qHasValue = (type: string, value: unknown) => hasLeafValue(tree, type, value);
-  const removeCondsMatching = (pred: (c: CorpusQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
+  const removeCondsMatching = (pred: (c: HologramQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
   // Rebuild the flat (deduped) leaf shadow that `.shadow()` exposes below.
-  // Also mirror the tree into corpusStore under ctx.storeKey, a fresh deep
+  // Also mirror the tree into hologramStore under ctx.storeKey, a fresh deep
   // clone each time (tree is mutated in-place by the query.ts calls below, so a
   // same-reference push would never pass the store's identity-equality
   // guard — same issue as the selectedSet slice, same fix). This is THE
@@ -124,7 +124,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // Read-only text for a NON-facet tree (persisted 改訂③ nesting the ④ UI
   // cannot edit): honest parenthesised form; the existing リセット button is
   // the rebuild path.
-  function summaryOf(node: CorpusQueryNode, isRoot: boolean): string {
+  function summaryOf(node: HologramQueryNode, isRoot: boolean): string {
     if (node.kind === 'cond') return (node.neg ? '≠' : '') + ctx.labelOf(node);
     const inner = node.children.map((c) => summaryOf(c, false)).join(node.op === 'or' ? ` ${ctx.t('qcJoinOr')} ` : ` ${ctx.t('qcJoinAnd')} `);
     return isRoot ? inner : `${node.neg ? '≠' : ''}(${inner})`;
@@ -164,13 +164,13 @@ export function createQueryBuilder(ctx: QbCtx) {
     // the state, and the event routing.
     qbNodeMap = new Map();
     let idc = 0;
-    const nid = (node: CorpusQueryNode) => {
+    const nid = (node: HologramQueryNode) => {
       const id = 'n' + idc++;
       qbNodeMap.set(id, node);
       return id;
     };
     const animate = !prefersReducedMotion();
-    const itemModel = (leaf: CorpusQueryLeaf) => {
+    const itemModel = (leaf: HologramQueryLeaf) => {
       const label = ctx.labelOf(leaf);
       // chip-new entrance: flag leaves whose label wasn't on the bar last render
       // (skip the live-updating editing chip — it would flicker per keystroke).
@@ -221,7 +221,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // the newcomer joins its type's group, or pairs with the existing bare leaf
   // (structure is DERIVED — the user never builds it). On a non-facet tree
   // (persisted 改訂③ nesting) it lands at the top level (AND) instead.
-  function addFilter(filter: { type: string; [k: string]: any }): CorpusQueryLeaf | null {
+  function addFilter(filter: { type: string; [k: string]: any }): HologramQueryLeaf | null {
     // Single-valued types (択一): a new one replaces the existing anywhere.
     if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
     // Prevent exact duplicates (anywhere in the tree), except for multi types.
@@ -241,7 +241,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     removeCondsMatching((c) => sameLeaf(c, f));
     refresh();
   }
-  function removeNode(node: CorpusQueryLeaf) {
+  function removeNode(node: HologramQueryLeaf) {
     if (ctx.onLeafMutated) ctx.onLeafMutated(node); // let the view reconcile (e.g. unbind the editing text leaf)
     detachNode(node, treeParentMap(tree));
     cleanupTree(tree);
@@ -251,7 +251,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // Right-click a value → 「除外へ移す／含む条件に戻す」＋削除 (fold-menu 様式,
   // right-click = the menu of actions per DESIGN). React-owned glass menu
   // (menu.ts); one bridge serves BOTH builder instances.
-  function showQbMenu(node: CorpusQueryLeaf, x: number, y: number) {
+  function showQbMenu(node: HologramQueryLeaf, x: number, y: number) {
     const NEG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>';
     const DEL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
     const items = [{ label: node.neg ? ctx.t('qbMenuInclude') : ctx.t('qbMenuExclude'), act: 'neg', icon: NEG }, { sep: true }, { label: ctx.t('qfDelete'), act: 'del', icon: DEL, danger: true }];
@@ -310,7 +310,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     // Replace the tree (clone + self-heal singleton groups + recompute shadow).
     // Facet-compatible persisted trees normalize into the canonical shape;
     // anything else stays intact and renders as the read-only summary.
-    setTree: (t: CorpusQueryGroup | null | undefined) => {
+    setTree: (t: HologramQueryGroup | null | undefined) => {
       tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
       cleanupTree(tree);
       canonicalizeFacet(tree, facetOpts);

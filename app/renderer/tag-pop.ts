@@ -8,7 +8,7 @@
 // (input text + picker scroll survive). orchestrator.ts keeps every business rule
 // (persistence, undo, homonym detection, bulk staging); the React island
 // (TagPop.tsx) only draws whatever this bridge currently holds.
-let current: CorpusTagPopModel | null = null;
+let current: HologramTagPopModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
 const notify = () => {
@@ -21,8 +21,8 @@ const notify = () => {
   }
 };
 
-export function open(model: Omit<CorpusTagPopModel, 'openId'>) {
-  current = { ...model, openId: ++seq } as CorpusTagPopModel;
+export function open(model: Omit<HologramTagPopModel, 'openId'>) {
+  current = { ...model, openId: ++seq } as HologramTagPopModel;
   notify();
 }
 export function refresh(partial: Record<string, unknown>) {

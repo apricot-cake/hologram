@@ -2,7 +2,7 @@
 
 // Verifies the 自動バックアップ (incremental mirror) plumbing end-to-end via IPC:
 //  - set-backup rejects an output dir that overlaps the save folder
-//  - run-backup mirrors the library into <dir>/Corpus-mirror/ (individual files)
+//  - run-backup mirrors the library into <dir>/Hologram-mirror/ (individual files)
 //  - a second run is idempotent (immutable assets → nothing new copied)
 //  - a MUTABLE organization JSON (tag-groups.json) re-copies on every edit:
 //    edit twice → the mirror reflects the LATEST contents, not the first backup's
@@ -22,8 +22,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-bk-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bk-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 const outDir = path.join(tmp, 'out');
 fs.mkdirSync(configDir, { recursive: true });
@@ -64,7 +64,7 @@ for (let i = 0; i < 4; i++) {
   );
 }
 
-const mirror = path.join(outDir, 'Corpus-mirror');
+const mirror = path.join(outDir, 'Hologram-mirror');
 const countMirror = () => {
   try {
     return fs.readdirSync(mirror).filter((n) => !/\.tmp(-\d+)?$/i.test(n)).length;
@@ -77,57 +77,57 @@ const evalJs = `(async () => {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   await wait(400);
   // output dir nested inside the save folder must be rejected (overlap)
-  const bad = await window.corpus.setBackup({ dir: ${JSON.stringify(path.join(saveFolder, 'nested'))} });
+  const bad = await window.hologram.setBackup({ dir: ${JSON.stringify(path.join(saveFolder, 'nested'))} });
   const overlapRejected = !!(bad && bad.ok === false && bad.error === 'overlap');
-  const good = await window.corpus.setBackup({ dir: ${JSON.stringify(outDir)} });
+  const good = await window.hologram.setBackup({ dir: ${JSON.stringify(outDir)} });
   const dirSet = !!(good && good.backup && good.backup.dir);
 
   // run 1: first mirror copies everything fresh (our 2 posts + app metadata json).
   // Don't hardcode the count — metadata files count too; assert written === fileCount.
-  const r1 = await window.corpus.runBackup();
+  const r1 = await window.hologram.runBackup();
   const run1 = !!(r1 && r1.ok && r1.written >= 4 && r1.written === r1.fileCount && r1.pruned === 0 && !r1.pruneSkipped);
 
   // run 2: idempotent — assets are immutable, nothing new to copy or prune
-  const r2 = await window.corpus.runBackup();
+  const r2 = await window.hologram.runBackup();
   const run2 = !!(r2 && r2.ok && r2.written === 0 && r2.pruned === 0 && !r2.pruneSkipped);
 
   // mutable organization JSON must NOT freeze at its first backup. Edit tag-groups
   // twice (different sizes so drift is unambiguous) and back up after each edit;
   // every edited run must re-copy the file (written >= 1) so the mirror tracks the
   // latest contents. The on-disk mirror content is checked in the close handler.
-  await window.corpus.setTagGroups([{ id: 'g1', name: 'first', tags: ['a'] }]);
-  const e1 = await window.corpus.runBackup();
+  await window.hologram.setTagGroups([{ id: 'g1', name: 'first', tags: ['a'] }]);
+  const e1 = await window.hologram.runBackup();
   const edit1 = !!(e1 && e1.ok && e1.written >= 1 && !e1.pruneSkipped);
-  await window.corpus.setTagGroups([
+  await window.hologram.setTagGroups([
     { id: 'g1', name: 'second', tags: ['a', 'b'] },
     { id: 'g2', name: 'extra', tags: ['c'] },
     { id: 'g3', name: 'more', tags: ['d', 'e'] }
   ]);
-  const e2 = await window.corpus.runBackup();
+  const e2 = await window.hologram.runBackup();
   const edit2 = !!(e2 && e2.ok && e2.written >= 1 && !e2.pruneSkipped);
   // an UNEDITED follow-up run must be idempotent again (mtime+size preserved → no
   // re-copy), proving the refresh is drift-gated, not unconditional churn.
-  const e3 = await window.corpus.runBackup();
+  const e3 = await window.hologram.runBackup();
   const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
 
   // delete one post → next run prunes BOTH its files (jpg+json) from the mirror.
   // Baseline is e3.fileCount (after the tag-groups edits added that file), not r2.
-  await window.corpus.deletePost(${JSON.stringify(ids[0] + '.jpg')});
-  const r3 = await window.corpus.runBackup();
+  await window.hologram.deletePost(${JSON.stringify(ids[0] + '.jpg')});
+  const r3 = await window.hologram.runBackup();
   const pruneWorks = !!(r3 && r3.ok && r3.pruned === 2 && r3.fileCount === e3.fileCount - 2 && !r3.pruneSkipped);
 
   // collapse src (clear-all wipes posts, keeps metadata) → guard MUST hold the
   // prune and leave the mirror untouched. Reason is shrink/empty depending on how
   // much metadata survives; either is a valid trip.
-  await window.corpus.clearAll();
-  const r4 = await window.corpus.runBackup();
+  await window.hologram.clearAll();
+  const r4 = await window.hologram.runBackup();
   const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
   // mirror should still hold exactly what r3 left (guard prevented any deletion)
   return { overlapRejected, dirSet, run1, run2, edit1, edit2, editIdempotent, pruneWorks, guardHeld, expectMirror: r3.fileCount };
 })()`;
 
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'), CORPUS_SMOKE: '1', CORPUS_SMOKE_EVAL: evalJs });
+const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
 child.stdout.on('data', (d) => {

@@ -15,7 +15,7 @@ function mount() {
   if (mounted) return;
   mounted = true;
   const root = document.createElement('div');
-  root.id = 'corpusAppRoot';
+  root.id = 'hologramAppRoot';
   document.body.appendChild(root);
   createRoot(root).render(<App />);
 }

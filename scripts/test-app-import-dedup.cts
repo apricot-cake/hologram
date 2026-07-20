@@ -3,7 +3,7 @@
 // import-posts duplicate detection (BACKLOG L2): URL-less posts (Eagle/file
 // migrations) used to duplicate wholesale on a re-import because the only
 // dedup key was url. Now they fall back to eagleName + capturedAt + image byte
-// size. Asserts, via a sandboxed Electron boot (CORPUS_SMOKE eval):
+// size. Asserts, via a sandboxed Electron boot (HOLOGRAM_SMOKE eval):
 //  - first import lands; exact re-import skips everything (url AND legacy keys)
 //  - same eagleName with a different capturedAt imports (names are NOT unique)
 //  - same eagleName+capturedAt with different image bytes imports (3-point key)
@@ -20,8 +20,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-impdedup-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-impdedup-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -42,26 +42,26 @@ const evalJs = `(async () => {
   const A = mk('dup name', '2025-01-01T00:00:00.000Z', jp);
   const B = mk('dup name', '2025-01-02T00:00:00.000Z', jp);
   const C = mk('c-item', '2025-01-03T00:00:00.000Z', jp, { url: 'https://x.com/u/status/777' });
-  const r1 = await window.corpus.importPosts([A, B, C]); await gap();
-  const r2 = await window.corpus.importPosts([A, B, C]); await gap();
+  const r1 = await window.hologram.importPosts([A, B, C]); await gap();
+  const r2 = await window.hologram.importPosts([A, B, C]); await gap();
   const D = mk('dup name', '2025-01-01T00:00:00.000Z', jp2);
-  const r3 = await window.corpus.importPosts([D]); await gap();
-  const r4 = await window.corpus.importPosts([A, A]); await gap();
+  const r3 = await window.hologram.importPosts([D]); await gap();
+  const r4 = await window.hologram.importPosts([A, A]); await gap();
   const E = mk('e-item', '2025-01-05T00:00:00.000Z', jp);
-  const r5 = await window.corpus.importPosts([E, E]); await gap();
-  const { posts } = await window.corpus.listPosts();
+  const r5 = await window.hologram.importPosts([E, E]); await gap();
+  const { posts } = await window.hologram.listPosts();
   const c = posts.find((p) => p.url === 'https://x.com/u/status/777');
-  await window.corpus.deletePost(c.image); await gap();
-  const r6 = await window.corpus.importPosts([C]);
+  await window.hologram.deletePost(c.image); await gap();
+  const r6 = await window.hologram.importPosts([C]);
   const s = (r) => r.imported + '/' + r.skipped;
   return [r1, r2, r3, r4, r5, r6].map(s).join(' ');
 })()`;
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: configDir,
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: configDir,
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

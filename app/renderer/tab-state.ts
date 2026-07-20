@@ -8,10 +8,10 @@
 // DOM. Runtime couplings are injected — reassigned viewer lets (appBooted) come
 // in as getter functions and later-declared consts (PF_NAME / CF) as deferred
 // arrows — so this file loads under Node (scripts/test-tabstate-unit.cts drives
-// it via dynamic import): loadTabs/persistTabs call corpusIpc (renderer/ipc.ts),
-// which touches window.corpus lazily inside its arrow functions — the import
+// it via dynamic import): loadTabs/persistTabs call hologramIpc (renderer/ipc.ts),
+// which touches window.hologram lazily inside its arrow functions — the import
 // itself is side-effect free, so it stays harmless under Node.
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 import { normalizeLeaf, normalizeTree } from './query.ts';
 
 export function genTabId() {
@@ -78,7 +78,7 @@ export function makeTabLabels(deps: {
 
   // Derives a tab title from a snapshot state. Pure function (no DOM reads).
   // All active labels joined with ・ in priority order so every tab is unique.
-  function tabTitleOf(state: CorpusTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
+  function tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
     const filters = (state && state.f) || [];
     const search = (state && state.search) || '';
     const multi = !!(state && state.multi);
@@ -141,17 +141,17 @@ export function makeTabLabels(deps: {
   return { filterLabel, tabTitleOf, posterFilterLabel };
 }
 
-// Derives an entry's pseudo-URL (label + identity key — see CorpusNavEntry.u).
+// Derives an entry's pseudo-URL (label + identity key — see HologramNavEntry.u).
 // Grid kinds carry no query string for now (state is the truth; the history
 // page #145 derives display labels from state via tabTitleOf) — only the image
 // kind needs an identity in u ("reopening the same image doesn't stack").
-export function navEntryUrl(kind: CorpusNavEntry['kind'], state: any): string {
+export function navEntryUrl(kind: HologramNavEntry['kind'], state: any): string {
   if (kind === 'image') return '/image/' + ((state && Array.isArray(state.recs) && state.recs[0]) || '');
   return kind === 'posters' ? '/posters' : '/posts';
 }
 
 // Per-tab view-history for browser-style back/forward (#144: entries are
-// tagged-union CorpusNavEntry JSON — posts / posters / image all ride the same
+// tagged-union HologramNavEntry JSON — posts / posters / image all ride the same
 // stack). idx points at the current entry. Linear: navigating back then making
 // a fresh change drops the forward entries. The stack rides on the tab object
 // across switches via adopt/saveInto and persists to tabs.json (未決5).
@@ -164,7 +164,7 @@ export function navEntryUrl(kind: CorpusNavEntry['kind'], state: any): string {
 //   snapshot() — current view entry (seeds a fresh history on adopt)
 //   apply(entry) — restores a view entry (its restoring guard stops the re-push)
 //   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
-export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): CorpusNavEntry; apply(e: CorpusNavEntry): void; onChange(): void }) {
+export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): HologramNavEntry; apply(e: HologramNavEntry): void; onChange(): void }) {
   const { cap, enabled, snapshot, apply, onChange } = deps;
   let hist: string[] = [];
   let idx = -1;
@@ -176,7 +176,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
 
   // Record a fresh view. No-op when the state equals the current entry, so
   // background refreshes / re-renders of the same query don't pile up.
-  function push(e: CorpusNavEntry) {
+  function push(e: HologramNavEntry) {
     if (!enabled()) return;
     lastKey = null;
     const s = JSON.stringify(e);
@@ -191,7 +191,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   // the 確定 replace list). When the rewrite makes it a duplicate of the
   // previous entry (e.g. a typing session backspaced to where it started),
   // drop it instead of keeping two identical neighbours.
-  function replace(e: CorpusNavEntry) {
+  function replace(e: HologramNavEntry) {
     if (!enabled()) return;
     if (idx < 0) {
       push(e);
@@ -210,7 +210,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   }
   // push/replace router: a repeated non-null coalesce key collapses the burst
   // into the entry its first record pushed.
-  function record(e: CorpusNavEntry, coalesceKey?: unknown) {
+  function record(e: HologramNavEntry, coalesceKey?: unknown) {
     if (coalesceKey != null && coalesceKey === lastKey) {
       replace(e);
       return;
@@ -230,7 +230,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   const back = () => go(idx - 1);
   const forward = () => go(idx + 1);
   // Current entry (parsed copy) — null before the first record/adopt.
-  function current(): CorpusNavEntry | null {
+  function current(): HologramNavEntry | null {
     return idx >= 0 ? JSON.parse(hist[idx]) : null;
   }
   // Re-apply the current entry (tab switch: the adopted stack knows the view).
@@ -238,7 +238,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     if (idx >= 0) apply(JSON.parse(hist[idx]));
   }
   // Adopt (or seed) a tab's history when it becomes active.
-  function adopt(t: CorpusTab | null | undefined) {
+  function adopt(t: HologramTab | null | undefined) {
     lastKey = null;
     if (t && Array.isArray(t._navHist) && t._navHist.length) {
       hist = t._navHist;
@@ -250,7 +250,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     onChange();
   }
   // Carry the live history with the tab object across switches.
-  function saveInto(t: CorpusTab) {
+  function saveInto(t: HologramTab) {
     t._navHist = hist;
     t._navIdx = idx;
   }
@@ -264,7 +264,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
 // fields are ignored). The per-tab back/forward stack persists as parsed
 // entry objects under `nav` (#144 未決5 — NAV_CAP is the only size bound;
 // Chrome carries tab history across restarts the same way).
-export function serializeTabs(tabs: CorpusTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> } {
+export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): { activeTabId: string | null; tabs: Array<{ [k: string]: any }> } {
   return {
     activeTabId,
     tabs: tabs.map((t) => ({
@@ -315,13 +315,13 @@ function sanitizeNavEntry(e: any): string | null {
 // stack is validated row-by-row (bad rows dropped, idx clamped); a pre-#144
 // image tab ({type:'image', img}) self-heals into a one-entry image history —
 // the unified shape (one-off migration, droppable before release).
-export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: CorpusTab[]; activeTabId: string } | null {
+export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
   // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
-  // loose shape once here, matching the CorpusPost "open JSON" convention,
+  // loose shape once here, matching the HologramPost "open JSON" convention,
   // rather than threading `unknown` through every field access below.
   const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
   if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
-  const tabs: CorpusTab[] = data.tabs.map((t) => {
+  const tabs: HologramTab[] = data.tabs.map((t) => {
     let navHist: string[] | undefined;
     let navIdx: number | undefined;
     if (t.nav && Array.isArray(t.nav.hist)) {
@@ -361,19 +361,19 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
 }
 
 // tabs.json load/persist (P4 "IPC→service" domain-grouping slice — the raw
-// corpusIpc.getTabs/setTabs calls move here from viewer.js, next to the
+// hologramIpc.getTabs/setTabs calls move here from viewer.js, next to the
 // (de)serialization pair they wrap). Only called from the browser (viewer.js);
 // never invoked by the Node unit test.
 export async function loadTabs() {
   try {
-    return await corpusIpc.getTabs();
+    return await hologramIpc.getTabs();
   } catch {
     return null;
   }
 }
-export async function persistTabs(tabs: CorpusTab[], activeTabId: string | null) {
+export async function persistTabs(tabs: HologramTab[], activeTabId: string | null) {
   try {
-    await corpusIpc.setTabs(serializeTabs(tabs, activeTabId));
+    await hologramIpc.setTabs(serializeTabs(tabs, activeTabId));
   } catch {
     /* best-effort */
   }

@@ -41,7 +41,7 @@ const appRoot = path.join(here, '..'); // app
 // hook natively; point both import specifiers at a 1-line ESM re-export.
 const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.ts');
 // Array form (order matters: the more specific shim/index.js must precede shim).
-// The former `corpus-svc:NAME` regex (which folded the renderer service layer into
+// The former `hologram-svc:NAME` regex (which folded the renderer service layer into
 // this bundle via bare specifiers) is gone — every service, shell.ts included, is
 // now imported by plain relative path (V18 item 7).
 const USE_SYNC_WITH_SELECTOR_SHIM = path.join(here, '_shared', 'use-sync-external-store-with-selector-shim.ts');
@@ -75,7 +75,7 @@ await build({
     lib: {
       entry: path.join(appRoot, 'renderer', 'theme.ts'),
       formats: ['iife'],
-      name: '__corpusTheme', // side-effect only (pre-paint [data-theme] boot); no window global, no exports read
+      name: '__hologramTheme', // side-effect only (pre-paint [data-theme] boot); no window global, no exports read
       fileName: () => 'theme.js',
     },
   },
@@ -128,7 +128,7 @@ await build({
     lib: {
       entry: path.join(here, 'app', 'index.tsx'), // the barrel: side-effect-imports every island
       formats: ['iife'],
-      name: '__corpusIslands', // IIFE needs a name; islands export nothing (side-effect only)
+      name: '__hologramIslands', // IIFE needs a name; islands export nothing (side-effect only)
       fileName: () => 'app.js',
     },
     // React (and jszip) are bundled straight into app.js now — no external/globals

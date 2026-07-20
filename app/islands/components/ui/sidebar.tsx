@@ -249,7 +249,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
 //
 // The two roles are not combined, because click-to-toggle and double-click-to-reset
 // fight: a double click delivers two clicks first, so the panel would collapse and
-// reopen before the reset lands. Corpus never mounted the rail as a toggle, so there
+// reopen before the reset lands. Hologram never mounted the rail as a toggle, so there
 // is nothing to keep — collapsing stays with SidebarTrigger and Ctrl+B, and the rail
 // is the resize edge, as it is in VS Code (sash) and Lightroom.
 function SidebarRail({ className, resize, ...props }: React.ComponentProps<'button'> & { resize?: PanelResize }) {

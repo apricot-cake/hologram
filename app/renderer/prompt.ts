@@ -8,11 +8,11 @@
 // for it silently died at the first keystroke of the user's intent.
 //
 // Same shape as confirm.ts (callbacks aren't serializable, so this is a dedicated
-// bridge, not corpusStore). ModalChrome (App.tsx) reads get()/subscribe() for the
+// bridge, not hologramStore). ModalChrome (App.tsx) reads get()/subscribe() for the
 // modal-open body class + titlebar tint, exactly as it does for confirm.
 //
 // config: { title, value?, okLabel?, cancelLabel?, placeholder?, onOk(value:string) }
-let current: CorpusPromptModel | null = null;
+let current: HologramPromptModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
 const notify = () => {
@@ -24,7 +24,7 @@ const notify = () => {
     }
   }
 };
-export function open(config: CorpusPromptConfig) {
+export function open(config: HologramPromptConfig) {
   current = Object.assign({ openId: ++seq }, config);
   notify();
 }

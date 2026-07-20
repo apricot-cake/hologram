@@ -15,9 +15,9 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
-import { corpusPostGridSource } from './grid.ts';
+import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { set as storeSet } from './store.ts';
 import { userKey } from './query.ts';
@@ -38,8 +38,8 @@ export interface PostGridBuilderDeps {
   listThumbW(): number;
   sortValue(): string;
   postShadow(): { type: string; value?: string }[];
-  getFilteredPosts(): CorpusPost[];
-  buildUsers(): CorpusUserAgg[];
+  getFilteredPosts(): HologramPost[];
+  buildUsers(): HologramUserAgg[];
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
   updateSidebarState(): void;
@@ -49,9 +49,9 @@ export interface PostGridBuilderDeps {
   onPostsLoaded(): void;
   getInspectedKey(): string | null;
   closeDetail(): void;
-  showDetail(g: CorpusPostGroup): void;
-  jumpToPoster(post: CorpusPost): void;
-  addImageTab(g: CorpusPostGroup): void;
+  showDetail(g: HologramPostGroup): void;
+  jumpToPoster(post: HologramPost): void;
+  addImageTab(g: HologramPostGroup): void;
 }
 
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
@@ -75,7 +75,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
   function setSkipDeleteConfirm(v: boolean) {
     skipDeleteConfirm = v;
-    corpusIpc.setPref('skipDeleteConfirm', v);
+    hologramIpc.setPref('skipDeleteConfirm', v);
   }
   // Restoring a saved pref shouldn't re-persist it right back (mirrors
   // grid-density-builder.ts's restorePrefs, which assigns tileOverlay directly).
@@ -84,14 +84,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // --- Authoritative post cache (allPosts ownership) ------------------------
-  let allPosts: CorpusPost[] = [];
+  let allPosts: HologramPost[] = [];
   let _allPostsGeneration = 0; // bumped on every allPosts replacement; invalidates sidebar caches
   // In-place edits (tag add/remove, single delete) mutate allPosts records without
   // replacing the array, so the generation counter won't advance on its own. It gates
   // the sidebar tag/author/instance caches and buildUsers, so mutators must call this —
   // otherwise a newly-added tag never reaches the sidebar rows (and a removed author /
   // instance lingers) even though renderPosts redraws the grid and flyouts.
-  // The SAME choke point also mirrors allPosts.length into corpusStore (the
+  // The SAME choke point also mirrors allPosts.length into hologramStore (the
   // post-empty-state selector's input) and syncs the subscribable posts-data
   // service (renderer/posts-data.ts) — every allPosts mutation (replace OR
   // in-place edit) is reachable from ONE place instead of scattered pushes.
@@ -121,7 +121,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
   // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
   // its order is irrelevant since getFilteredPosts() always re-sorts.
-  let _postsById = new Map<string, CorpusPost>();
+  let _postsById = new Map<string, HologramPost>();
   let _haveBaseline = false; // false until we hold a full snapshot (also reset on reload = fresh module state)
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
@@ -199,7 +199,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     return stickyRecs;
   }
 
-  let viewGroups: CorpusPostGroup[] = []; // current render result: [{ key, records, rep, files }]
+  let viewGroups: HologramPostGroup[] = []; // current render result: [{ key, records, rep, files }]
   function getViewGroups() {
     return viewGroups;
   }
@@ -210,7 +210,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // guard a not-yet-extracted cluster (tab title/persist/history) must update.
   let lastRenderedState: any = null;
   let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
-  let _lastViewGroups: CorpusPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
+  let _lastViewGroups: HologramPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
   let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
   function setLastRenderedState(sig: string) {
     lastRenderedState = sig;
@@ -231,14 +231,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // so masonry packs correctly the first time = no settle/jitter and no eager load.
   let imgAspect: Record<string, string> = {};
   try {
-    imgAspect = JSON.parse(localStorage.getItem('corpus.imgAspect') || '{}') || {};
+    imgAspect = JSON.parse(localStorage.getItem('hologram.imgAspect') || '{}') || {};
   } catch (e) {}
   let _aspectT: any = null;
   function persistAspect() {
     clearTimeout(_aspectT);
     _aspectT = setTimeout(() => {
       try {
-        localStorage.setItem('corpus.imgAspect', JSON.stringify(imgAspect));
+        localStorage.setItem('hologram.imgAspect', JSON.stringify(imgAspect));
       } catch (e) {}
     }, 1000);
   }
@@ -255,8 +255,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Resolve ONE group into a plain, fully-formatted card model: image src,
   // formatted counts/dates, selection, clip, aspect — everything the markup
   // needs as primitives. The grid island renders it with the shared PostCard
-  // component (live React cells via corpusPostGridSource). Selection is NOT
-  // injected — the grid island's Cell derives .selected from corpusStore's
+  // component (live React cells via hologramPostGridSource). Selection is NOT
+  // injected — the grid island's Cell derives .selected from hologramStore's
   // 'selectedSet'.
   const cardModel = makeCardModel({
     t: deps.t,
@@ -282,9 +282,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     clickToExpand: deps.t('clickToExpand'),
   };
   // modelOf/keyOf/labels/onAspect never change identity meaningfully between
-  // renders (only items/layout do, and those are corpusStore-derived by the
+  // renders (only items/layout do, and those are hologramStore-derived by the
   // source itself) — configure once instead of rebuilding + pushing every renderPosts().
-  corpusPostGridSource.configure({
+  hologramPostGridSource.configure({
     modelOf: (g, i) => cardModel(g, i),
     keyOf: (g) => postIdKey(g.rep),
     labels: cardLabels,
@@ -317,7 +317,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // Any mismatch falls through to a fresh build.
     const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
     if (canReuseGroups) {
-      viewGroups = _lastViewGroups as CorpusPostGroup[];
+      viewGroups = _lastViewGroups as HologramPostGroup[];
     } else {
       viewGroups = groupRecords(deps.getFilteredPosts());
       if (deps.multiOnly()) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
@@ -325,7 +325,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 
     if (viewGroups.length === 0) {
       // pushing 'postGroups'=null (not just an empty array — see renderer/grid.ts's
-      // computeModel) unmounts the grid island's cells SYNCHRONOUSLY (corpusStore.set's
+      // computeModel) unmounts the grid island's cells SYNCHRONOUSLY (hologramStore.set's
       // notify loop is synchronous, and the island's subscriber flushSync's the unmount,
       // removing its own host div — same guarantee the old pushed render(null) call gave).
       // The EmptyState island derives 'firstRun'/'filtered' itself from this same key +
@@ -365,12 +365,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     grid.classList.toggle('show-eng', ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'));
     grid.classList.toggle('show-cap', deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'));
 
-    // THE GRID — fully React-owned (grid island via corpusPostGridSource):
+    // THE GRID — fully React-owned (grid island via hologramPostGridSource):
     // masonic windowing + live cell rendering for all three views. viewer.js keeps
     // the data pipeline (viewGroups above), the container's classes/CSS vars, and
     // every delegated #postGrid handler. Layout (view/columnWidth/rowGutter/
     // itemHeightEstimate/…) is no longer pushed — the source derives it itself
-    // from corpusStore's 'view'/'cardSize'/'tileSize'/'listThumb'; modelOf/keyOf/
+    // from hologramStore's 'view'/'cardSize'/'tileSize'/'listThumb'; modelOf/keyOf/
     // labels/onAspect were configured once, above. Pushing the SAME array
     // reference (in-place reuse) is a no-op via the store's identity guard,
     // matching the old itemsKey-doesn't-bump behavior.
@@ -390,15 +390,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
   // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
   // 「フォルダに追加」 button.
-  function foldMenuItems(g: CorpusPostGroup) {
+  function foldMenuItems(g: HologramPostGroup) {
     const list = CF() ? CF().staticFolders() : []; // destinations only — a saved search holds no posts
     const rep = g.rep.captureId;
-    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
+    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as HologramMenuItem[];
     if (list.length) items.push({ sep: true });
     items.push({ label: deps.t('ctxManage'), act: 'manage', manage: true });
     return items;
   }
-  function onFoldMenuPick(g: CorpusPostGroup, item: CorpusMenuItem) {
+  function onFoldMenuPick(g: HologramPostGroup, item: HologramMenuItem) {
     if (!CF()) return;
     if (item.act === 'manage') {
       CF().openManager();
@@ -415,7 +415,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (deps.postShadow().some((f: { type: string }) => f.type === 'folder')) renderPosts(true);
     }
   }
-  function showFoldMenu(g: CorpusPostGroup, x: number, y: number) {
+  function showFoldMenu(g: HologramPostGroup, x: number, y: number) {
     if (!CF()) return;
     menuOpen({ items: foldMenuItems(g), x, y }, (item) => onFoldMenuPick(g, item));
   }
@@ -438,7 +438,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Card context menu — React-owned glass menu (menu.ts); viewer owns
   // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
   // spot; the bridge's transition guard keeps that open instead of closing it.
-  function cardMenuItems(g: CorpusPostGroup) {
+  function cardMenuItems(g: HologramPostGroup) {
     const inClip = !!(CF() && CF().isClipped(g.rep.captureId));
     // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
@@ -465,10 +465,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
   }
-  function onCardMenuPick(g: CorpusPostGroup, x: number, y: number, srcUrl: string, item: CorpusMenuItem) {
+  function onCardMenuPick(g: HologramPostGroup, x: number, y: number, srcUrl: string, item: HologramMenuItem) {
     const act = item.act;
     if (act === 'open') {
-      if (g.rep.url) corpusIpc.openExternal(g.rep.url);
+      if (g.rep.url) hologramIpc.openExternal(g.rep.url);
     } else if (act === 'newtab') {
       deps.addImageTab(g); // background, browser-like
     } else if (act === 'folder') {
@@ -480,11 +480,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (b) b.click();
     } else if (act === 'info') deps.showDetail(g);
     else if (act === 'poster') deps.jumpToPoster(g.rep);
-    else if (act === 'sauce') corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
-    else if (act === 'ascii') corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
+    else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
+    else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
       const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
-      if (file && corpusIpc.showInFolder) corpusIpc.showInFolder(file);
+      if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
     } else if (act === 'copyImage') copyGroupImage(g);
     else if (act === 'delete') requestDeleteGroup(g);
   }
@@ -492,12 +492,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Copy the card's image to the clipboard — context menu, and Ctrl+C on a single
   // selection (#132). The file is picked exactly like 'reveal' picks it: whatever
   // this density is actually showing.
-  async function copyGroupImage(g: CorpusPostGroup) {
+  async function copyGroupImage(g: HologramPostGroup) {
     const file = densityImage(g.rep, deps.currentView()) || g.rep.image;
     if (!file) return;
     // false = main couldn't decode it (svg, some tiff) and left the clipboard
     // alone; staying silent would read as "copied" over whatever was there.
-    notify(deps.t((await corpusIpc.copyImage(file)) ? 'imageCopied' : 'imageCopyFailed'));
+    notify(deps.t((await hologramIpc.copyImage(file)) ? 'imageCopied' : 'imageCopyFailed'));
   }
 
   // Drag cards out to another app (#132). The browser's own drag must be cancelled
@@ -514,14 +514,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // Which files leave is records.ts's rule (pure — see test-records-unit). The
     // selection is only READ: a drag leaves the library exactly as it found it.
     const files = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
-    if (files.length) corpusIpc.dragOut(files);
+    if (files.length) hologramIpc.dragOut(files);
   }
-  function showCardMenu(g: CorpusPostGroup, x: number, y: number) {
+  function showCardMenu(g: HologramPostGroup, x: number, y: number) {
     const { items, srcUrl } = cardMenuItems(g);
     menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item));
   }
 
-  function requestDeleteGroup(g: CorpusPostGroup) {
+  function requestDeleteGroup(g: HologramPostGroup) {
     if (getSkipDeleteConfirm()) {
       executeDeleteGroup(g);
       return;
@@ -569,7 +569,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // Delete every record of the group (a group IS one post in the UI).
-  async function executeDeleteGroup(g: CorpusPostGroup) {
+  async function executeDeleteGroup(g: HologramPostGroup) {
     const inspectedKey = deps.getInspectedKey();
     if (inspectedKey && g.records.some((r) => postIdKey(r) === inspectedKey)) deps.closeDetail();
     for (const r of g.records) {

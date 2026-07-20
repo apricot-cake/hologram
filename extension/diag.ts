@@ -29,7 +29,7 @@
       };
       let port: chrome.runtime.Port;
       try {
-        port = chrome.runtime.connectNative('com.corpus.host');
+        port = chrome.runtime.connectNative('com.hologram.host');
       } catch (e: any) {
         done({ ok: false, where: 'connect-threw', error: String((e && e.message) || e) });
         return;
@@ -81,7 +81,7 @@
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
     out.nativeTest = await testNative(); // launches the host if Chrome can find it
-    window.__corpusDiag = out; // readable via the page console
+    window.__hologramDiag = out; // readable via the page console
     const outEl = document.getElementById('out');
     if (outEl) outEl.textContent = JSON.stringify(out, null, 2);
     return out;

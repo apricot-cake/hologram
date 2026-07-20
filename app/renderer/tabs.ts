@@ -3,7 +3,7 @@
 // render bridge from ~15 call sites) to a PULLED source, the
 // same shape as the grid sources (renderer/grid.ts) and the image-tab source
 // (renderer/image-tab.ts, ⑮). viewer.js no longer holds tabs/activeTabId/
-// tabEditingId as closure state — corpusStore's 'tabs'/'activeTabId'/
+// tabEditingId as closure state — hologramStore's 'tabs'/'activeTabId'/
 // 'tabEditingId' keys ARE the state now (the SAME "single source of truth" move
 // as selectedSet, ⑬); every renderTabs() call site is gone, its notification now
 // automatic through the store subscriptions below.
@@ -56,7 +56,7 @@ const notify = () => {
 // A tab's current view kind (#144: the history entry decides — posts / posters /
 // image). The ACTIVE tab reads the LIVE mode/store instead (its stack is only
 // flushed to the tab object on switch-away).
-function navKindOf(t: CorpusTab): 'posts' | 'posters' | 'image' {
+function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' {
   if (Array.isArray(t._navHist) && t._navHist.length) {
     const i = Math.max(0, Math.min(typeof t._navIdx === 'number' ? t._navIdx : t._navHist.length - 1, t._navHist.length - 1));
     try {
@@ -81,11 +81,11 @@ function liveActiveState() {
   };
 }
 
-function get(): CorpusTabsModel | null {
+function get(): HologramTabsModel | null {
   const tt = tabTitleOf;
   const icons = tabIcons;
   if (!tt || !icons) return null;
-  const rawTabs: CorpusTab[] | undefined = storeGet('tabs');
+  const rawTabs: HologramTab[] | undefined = storeGet('tabs');
   if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
   const activeTabId = storeGet('activeTabId');
   const editingId = storeGet('tabEditingId') || null;
@@ -111,7 +111,7 @@ function get(): CorpusTabsModel | null {
   return { tabs, editingId, closeTitle, newTitle };
 }
 
-export const corpusTabsSource = {
+export const hologramTabsSource = {
   configure(cfg: TabsConfig) {
     tabTitleOf = cfg.tabTitleOf;
     tabIcons = cfg.tabIcons;

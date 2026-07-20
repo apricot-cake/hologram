@@ -1,4 +1,4 @@
-# Corpus Test Plan
+# Hologram Test Plan
 
 繰り返し利用可能なテストケース集。新機能追加時はケースを追加する。
 
@@ -206,7 +206,7 @@ python scripts/verify-store.py --recent N
 | E-3 | データなしでエクスポート | トースト表示 |
 | E-4 | HTML からインポート | エクスポートHTMLのJSON → 保存先に jpg+サイドカー生成 → 一覧に反映 |
 | E-5 | 重複スキップ | 同じ URL の投稿は既存があればスキップ |
-| E-6 | 無効ファイル | `corpusData` なし HTML → エラートースト |
+| E-6 | 無効ファイル | `hologramData` なし HTML → エラートースト |
 | E-7 | 復元フロー | 別フォルダへ HTML インポート → データ復元 |
 
 ---

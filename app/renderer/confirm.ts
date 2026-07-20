@@ -4,13 +4,13 @@
 // dialog, owns the keyword/skip local state, and calls the callbacks. The destructive
 // LOGIC stays in the caller's onOk closures — this only moves WHEN it runs. Callbacks
 // aren't serializable, so this is a dedicated bridge (like menu.ts / kind-menu.ts), NOT
-// corpusStore. A real ES module (named exports), imported directly by its consumers
+// hologramStore. A real ES module (named exports), imported directly by its consumers
 // (post-grid-builder.ts / selection-builder.ts / Confirm.tsx). ModalChrome (App.tsx)
 // reads get()/subscribe() for the modal-open body class + titlebar tint.
 //
 // config: { message, description?, okLabel, cancelLabel, skipLabel?, keywordPlaceholder?,
 //           keywordRequired?, onOk(result:{skip}), onCancel? }
-let current: CorpusConfirmModel | null = null;
+let current: HologramConfirmModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
 const notify = () => {
@@ -22,7 +22,7 @@ const notify = () => {
     }
   }
 };
-export function open(config: CorpusConfirmConfig) {
+export function open(config: HologramConfirmConfig) {
   current = Object.assign({ openId: ++seq }, config);
   notify();
 }

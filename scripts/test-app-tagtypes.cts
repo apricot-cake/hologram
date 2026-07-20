@@ -2,7 +2,7 @@
 
 // Round-trips the tag 用語帳 IPC (get/set-tag-types) through the real Electron main
 // process and checks tag-types.json on disk. Mirrors test-app-ipc.cts's headless
-// CORPUS_SMOKE harness.
+// HOLOGRAM_SMOKE harness.
 //
 //   node scripts/test-app-tagtypes.cts
 
@@ -14,8 +14,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-tagtypes-ipc-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tagtypes-ipc-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -24,16 +24,16 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 // set kinds + renamed 種別 labels, then read both maps back (the rename UI persists
 // via the same setTagTypes(types, labels) path).
 const evalJs = `(async () => {
-  await window.corpus.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' }, { work: 'シリーズ', character: '登場人物' });
-  const r = await window.corpus.getTagTypes();
+  await window.hologram.setTagTypes({ 'ブルアカ': 'work', 'アロナ': 'character' }, { work: 'シリーズ', character: '登場人物' });
+  const r = await window.hologram.getTagTypes();
   return r.types['ブルアカ'] + ',' + r.types['アロナ'] + ',' + r.labels.work + ',' + r.labels.character;
 })()`;
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'),
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

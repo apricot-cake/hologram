@@ -14,12 +14,12 @@
 // How many columns fit at a given min column size (auto-fill minmax math —
 // masonic's columnWidth is a minimum and columns stretch to fill, the same
 // column-count formula as the old CSS grid).
-export const colsFor = (size: number, m: CorpusGridMetrics) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
+export const colsFor = (size: number, m: HologramGridMetrics) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
 // Exact-fit column size for a target column count.
-export const sizeFor = (n: number, m: CorpusGridMetrics) => Math.floor((m.W - (n - 1) * m.g) / n);
+export const sizeFor = (n: number, m: HologramGridMetrics) => Math.floor((m.W - (n - 1) * m.g) / n);
 // Fewest columns whose exact-fit size still stays ≤ max. ceil — floor would
 // offer a notch whose size clamps and never reflows.
-export const minColsFor = (max: number, m: CorpusGridMetrics) => Math.max(1, Math.ceil((m.W + m.g) / (max + m.g)));
+export const minColsFor = (max: number, m: HologramGridMetrics) => Math.max(1, Math.ceil((m.W + m.g) / (max + m.g)));
 
 // Derive a size-slider track that maps to COLUMN COUNTS, not raw px: the
 // stretching grid only moves the layout at column-count thresholds, so
@@ -29,7 +29,7 @@ export const minColsFor = (max: number, m: CorpusGridMetrics) => Math.max(1, Mat
 //   opts.minCols — hard floor for nBig (card view always allows 1 column).
 // Returns { nBig, nSmall, single, value }; single = only one column count is
 // geometrically possible (a one-stop slider conveys nothing → callers hide it).
-export function sliderTrack(st: { min: number; max: number; size: number }, m: CorpusGridMetrics, opts?: { minCols?: number }) {
+export function sliderTrack(st: { min: number; max: number; size: number }, m: HologramGridMetrics, opts?: { minCols?: number }) {
   const nBig = (opts && opts.minCols) || minColsFor(st.max, m);
   const nSmall = Math.max(nBig, colsFor(st.min, m));
   const n = Math.min(nSmall, Math.max(nBig, colsFor(st.size, m)));

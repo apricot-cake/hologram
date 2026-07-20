@@ -23,7 +23,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
-import type { CorpusSizeTrack } from '../../renderer/grid-density-builder.ts';
+import type { HologramSizeTrack } from '../../renderer/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../../renderer/orchestrator.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
@@ -72,7 +72,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 // from grid-density-builder via the orchestrator bindings. Recomputes on a view/size
 // store change and on window resize (column counts depend on grid width). getPost/
 // PosterSizeTrack are stable module bindings, so they stay out of the memo deps.
-function usePostSizeTrack(): CorpusSizeTrack | null {
+function usePostSizeTrack(): HologramSizeTrack | null {
   // Re-render on a view/size store change or a window resize, then read the live
   // geometry-derived track fresh (it depends on #postGrid width, which only these change).
   useSyncExternalStore(subPostSize, postSizeSnap);
@@ -84,7 +84,7 @@ function usePostSizeTrack(): CorpusSizeTrack | null {
   }, []);
   return getPostSizeTrack ? getPostSizeTrack() : null;
 }
-function usePosterSizeTrack(): CorpusSizeTrack | null {
+function usePosterSizeTrack(): HologramSizeTrack | null {
   useSyncExternalStore(subPosterSize, posterSizeSnap);
   const [, bumpResize] = useState(0);
   useEffect(() => {
@@ -98,7 +98,7 @@ function usePosterSizeTrack(): CorpusSizeTrack | null {
 // The Slider drives the size axis. Local state owns the thumb while dragging (mid-drag
 // updates skip the store); the caller keys this on the track RANGE so the thumb reseeds
 // only when the view changes, not on every commit within a view.
-function SizeSlider({ track, onDrag, onCommit }: { track: CorpusSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
+function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
   const [v, setV] = useState(track.value);
   const pick = (val: number | readonly number[]): number => (Array.isArray(val) ? val[0] : (val as number));
   return (

@@ -14,8 +14,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-tabs-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tabs-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -129,7 +129,7 @@ const evalJs = `(async () => {
   await sleep(1000);
   let ipcOk = false;
   try {
-    const data = await window.corpus.getTabs();
+    const data = await window.hologram.getTabs();
     ipcOk = !!(data && Array.isArray(data.tabs) && data.tabs.length >= 1);
   } catch {}
 
@@ -152,10 +152,10 @@ try {
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
-  CORPUS_SMOKE_SHOT: shot,
+  HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'),
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
+  HOLOGRAM_SMOKE_SHOT: shot,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

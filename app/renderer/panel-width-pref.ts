@@ -12,13 +12,13 @@
 // fsync'd atomic write, and calling that per pointermove would stall the drag.
 // Separate keys from `sidebarOpen` — "collapsed" and "how wide when expanded" are
 // independent answers, and collapsing must not write a width back.
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
 export type PanelKey = 'sidebarWidth' | 'inspectorWidth';
 
 const CACHE_KEY: Record<PanelKey, string> = {
-  sidebarWidth: 'corpus-sidebar-width',
-  inspectorWidth: 'corpus-inspector-width',
+  sidebarWidth: 'hologram-sidebar-width',
+  inspectorWidth: 'hologram-inspector-width',
 };
 
 // Absolute limits, in px. Lower bounds keep a panel readable rather than letting it
@@ -73,7 +73,7 @@ export function cachedWidth(key: PanelKey): number | null {
 export function persistWidth(key: PanelKey, px: number): void {
   writeCache(key, px);
   try {
-    corpusIpc.setPref(key, px);
+    hologramIpc.setPref(key, px);
   } catch {
     /* ignore */
   }
@@ -83,7 +83,7 @@ export function persistWidth(key: PanelKey, px: number): void {
 // null when it is unset/unreadable — in which case the cached guess already in use stands.
 export async function loadWidth(key: PanelKey): Promise<number | null> {
   try {
-    const prefs = corpusIpc.getPrefs ? await corpusIpc.getPrefs() : null;
+    const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
     const px = prefs ? prefs[key] : null;
     if (typeof px !== 'number' || !Number.isFinite(px)) return null;
     writeCache(key, px);

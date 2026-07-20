@@ -21,7 +21,7 @@ import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { captureFile } from './records.ts';
 import { setPosterTags } from './tags.ts';
-import { corpusPosterGridSource } from './grid.ts';
+import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
 import { set as storeSet } from './store.ts';
 
@@ -32,22 +32,22 @@ export interface PosterGridBuilderDeps {
   showToast(msg: unknown): void;
   pushUndo(kind: string, records: any[]): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
-  buildGroupGalleryItems(g: CorpusPostGroup): any[];
+  buildGroupGalleryItems(g: HologramPostGroup): any[];
   posterTagsOf(key: string): string[];
   posterFilterVocab(): string[];
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
-  filteredPosters(): CorpusUserAgg[];
-  buildUsers(): CorpusUserAgg[];
-  getAllPosts(): CorpusPost[];
-  groupRecords(posts: CorpusPost[]): CorpusPostGroup[];
+  filteredPosters(): HologramUserAgg[];
+  buildUsers(): HologramUserAgg[];
+  getAllPosts(): HologramPost[];
+  groupRecords(posts: HologramPost[]): HologramPostGroup[];
   // posterQB (query-builder.ts's makePosterQueryBuilder instance) is constructed
   // AFTER this builder (it needs folderById/pfStore from here) — every method is a
   // deferred arrow at the viewer.ts call site.
-  posterQBGetTree(): CorpusQueryGroup;
+  posterQBGetTree(): HologramQueryGroup;
   posterQBResetTree(): void;
   posterQBRender(): void;
   posterQBRemoveByLeaf(type: string, value: string): void;
-  posterQBRemoveCondsMatching(pred: (c: CorpusQueryLeaf) => boolean): boolean;
+  posterQBRemoveCondsMatching(pred: (c: HologramQueryLeaf) => boolean): boolean;
   posterQBSyncShadow(): void;
   postQBResetTree(): void;
   addFilter(filter: { type: string; [k: string]: any }): void;
@@ -85,7 +85,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const GRID_ANIM_MS = 950; // mirrors post-grid-builder.ts's constant (kept in lockstep with that file's own copy — see its Wave19 note on the shared literal)
 
-  let posterList: CorpusUserAgg[] = [];
+  let posterList: HologramUserAgg[] = [];
   function getPosterList() {
     return posterList;
   }
@@ -96,7 +96,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // Reuses the shared folder-list store (folders.ts createPersistedFolderStore) so the
   // CRUD/id-minting/toggle/persist/load logic isn't reimplemented; only the
   // view-specific toast/re-render live here.
-  const pfStore = folders.corpusPosterFolderStore();
+  const pfStore = folders.hologramPosterFolderStore();
   const posterFolderById = pfStore.byId;
   const posterFolderHas = pfStore.has;
   function createPosterFolder(name: string | null) {
@@ -119,7 +119,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
   // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
   // row wears .qf-open) is self-derived by renderer/sidebar.ts's
-  // corpusPosterSidebarSource (P4-B slice⑰) — no viewer-side build+push.
+  // hologramPosterSidebarSource (P4-B slice⑰) — no viewer-side build+push.
   // Poster sidebar filter rows: prune tag selections that no longer have a backing value
   // (poster removed/edited). The rows are React-owned; this is the ONE remaining side
   // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
@@ -145,7 +145,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
     // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
-    // する（P4-B slice⑱・下の corpusStore.set('posterGroups', …) を購読）。
+    // する（P4-B slice⑱・下の hologramStore.set('posterGroups', …) を購読）。
     // Density: the classes style the CELLS (descendant selectors); the column
     // layout itself lives in the masonic model (pushPosterModel).
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');
@@ -173,16 +173,16 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 
-  // React owns the poster cells (virtualized — corpusPosterGridSource,
+  // React owns the poster cells (virtualized — hologramPosterGridSource,
   // P4-B slice⑫); viewer.js keeps posterList, the count badge, the density
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
   // highlight is NOT part of this model — the island derives its own ring from
-  // corpusStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
+  // hologramStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
   // item's `.key`. modelOf/keyOf/tagTitle never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post
   // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
-  corpusPosterGridSource.configure({
-    modelOf: (u: CorpusUserAgg, i: number) => {
+  hologramPosterGridSource.configure({
+    modelOf: (u: HologramUserAgg, i: number) => {
       const hasName = !!u.displayName;
       const s = (u.displayName || u.screenName || '').trim();
       return {
@@ -197,7 +197,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         countLabel: deps.t('posterPosts', [formatCount(u.count)]),
       };
     },
-    keyOf: (u: CorpusUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
+    keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
     tagTitle: deps.t('tipTagEdit'),
   });
 
@@ -206,7 +206,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // the prior posts view (tags/date/media/search/engagement) — not just a previous
   // user filter — otherwise unrelated leftover filters AND-narrow the result and
   // hide posts the user expects to see.
-  function openPosterPosts(u: CorpusUserAgg) {
+  function openPosterPosts(u: HologramUserAgg) {
     if (!u) return;
     deps.postQBResetTree();
     const set = (id: string, v: string) => {
@@ -226,7 +226,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // Jump from a post to its poster (双方向ナビ: posts → posters): switch to the poster
   // view and open that poster's inspector. Only SNS posts have a poster in buildUsers()
   // (url-less Eagle migrations don't), so callers guard on existence before offering it.
-  function jumpToPoster(p: CorpusPost) {
+  function jumpToPoster(p: HologramPost) {
     if (!p || !p.url) return;
     const u = deps.buildUsers().find((x) => x.key === userKey(p));
     if (!u) return;
@@ -288,7 +288,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // Tag picker pop (Issue #22) opened straight from a poster card's 🏷 — mirrors
   // inspector-builder.ts's openTagPopForGroup, keyed by 'poster:'+key (matching
   // setInspectedKey's own format below) instead of a post group's key.
-  function openTagPopForPoster(u: CorpusUserAgg, anchorRect: CorpusAnchorRect) {
+  function openTagPopForPoster(u: HologramUserAgg, anchorRect: HologramAnchorRect) {
     if (!u) return;
     const forKey = 'poster:' + u.key;
     if (tagPopGet()?.forKey === forKey) {
@@ -314,7 +314,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     });
   }
 
-  function showPosterDetail(u: CorpusUserAgg) {
+  function showPosterDetail(u: HologramUserAgg) {
     if (!u) return;
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
@@ -322,8 +322,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // Recent works: group this poster's posts (newest first) and preview the lead
     // image of each. Click → open that work in the gallery (over the inspector).
     posterWorkGroups = deps
-      .groupRecords(deps.getAllPosts().filter((p: CorpusPost) => userKey(p) === u.key))
-      .sort((a: CorpusPostGroup, b: CorpusPostGroup) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
+      .groupRecords(deps.getAllPosts().filter((p: HologramPost) => userKey(p) === u.key))
+      .sort((a: HologramPostGroup, b: HologramPostGroup) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
     const works = posterWorkGroups
       .map((g) => {
@@ -376,24 +376,24 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
-      onEditTags: (anchorRect: CorpusAnchorRect) => openTagPopForPoster(u, anchorRect),
+      onEditTags: (anchorRect: HologramAnchorRect) => openTagPopForPoster(u, anchorRect),
     });
     byId('postDetail').hidden = false;
-    deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (corpusStore subscribe)
+    deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (hologramStore subscribe)
   }
 
   // Poster context menu (right-click a poster card): jump to その投稿者の投稿 + assign to
   // poster-folders (toggle, stays open). React-owned glass popup via
   // menu.ts; viewer owns the items + actions here.
-  function posterMenuItems(u: CorpusUserAgg) {
-    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { sep: true }] as CorpusMenuItem[];
+  function posterMenuItems(u: HologramUserAgg) {
+    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { sep: true }] as HologramMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
     }
     items.push({ label: deps.t('posterMenuNewFolder'), act: 'newfolder', manage: true });
     return items;
   }
-  function onPosterMenuPick(u: CorpusUserAgg, item: CorpusMenuItem) {
+  function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
     if (item.act === 'posts') {
       openPosterPosts(u);
       return;
@@ -411,7 +411,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       return posterMenuItems(u); // keep open to assign more
     }
   }
-  function showPosterMenu(u: CorpusUserAgg, x: number, y: number) {
+  function showPosterMenu(u: HologramUserAgg, x: number, y: number) {
     menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
 

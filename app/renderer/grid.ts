@@ -2,17 +2,17 @@
 // grid (#postGrid / #posterGrid). viewer.js owns the data pipeline, the
 // container's classes/CSS vars, and every delegated container event handler;
 // the grid islands own cell rendering + windowing (masonic). Kept SEPARATE from
-// corpusStore for modelOf/keyOf specifically, which carry CALLBACKS (same
+// hologramStore for modelOf/keyOf specifically, which carry CALLBACKS (same
 // reason as menu.js/qf-pop.js) — everything else (items, layout inputs) DOES live
-// in corpusStore; these sources derive the rest of the model from it. A real ES
+// in hologramStore; these sources derive the rest of the model from it. A real ES
 // module now — its exports are imported directly by viewer.ts and the grid
-// islands; corpusStore itself is a real ES module too (store.ts).
+// islands; hologramStore itself is a real ES module too (store.ts).
 
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 //
 // P4-B slice⑩ (post) and slice⑫ (poster) converted both grids from a PUSHED
 // bridge (viewer calls render()/patch() with a full model) to a PULLED source
-// (viewer only writes items/layout into corpusStore; the source derives the rest
+// (viewer only writes items/layout into hologramStore; the source derives the rest
 // on get()). GridMount (_shared/VirtualGrid.tsx) only ever calls .get()/.subscribe()
 // on its bridge prop — it never called render()/patch()/isActive(), those were
 // viewer-only APIs — so this was a drop-in swap with zero changes to GridMount.
@@ -29,14 +29,14 @@ import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void };
 type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string };
 
-// Post grid model source (P4-B slice⑩): items come from corpusStore('postGroups'),
-// layout is derived from corpusStore('view'/'cardSize'/'tileSize'/'listThumb')
+// Post grid model source (P4-B slice⑩): items come from hologramStore('postGroups'),
+// layout is derived from hologramStore('view'/'cardSize'/'tileSize'/'listThumb')
 // using the same formulas renderPosts() used to compute inline. configure() sets
 // the invariant callbacks once (modelOf/keyOf/labels/onAspect never change
 // identity meaningfully across renders — only items+layout do).
 function makePostGridSource() {
   let config: PostGridConfig | null = null;
-  let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in corpusStore (see the type's doc comment)
+  let liveColumnWidth: number | null = null; // mid-drag override; deliberately not in hologramStore (see the type's doc comment)
   let lastItems: any = undefined;
   let itemsKeySeq = 0; // bumps only when the items reference actually changes — mirrors the old push-time itemsKey bump
   let paintSeq = 0;
@@ -52,9 +52,9 @@ function makePostGridSource() {
   };
   // Store-key listeners are wired ONCE (not per subscribe() caller) — there's a
   // single consumer (GridMount) in practice, but this avoids stacking duplicate
-  // corpusStore subscriptions (and duplicate notify() fan-out) if that changes.
+  // hologramStore subscriptions (and duplicate notify() fan-out) if that changes.
   for (const k of ['postGroups', 'view', 'cardSize', 'tileSize', 'listThumb']) storeSubscribe(k, notify);
-  function computeModel(): CorpusGridModel | null {
+  function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('postGroups');
     if (items == null) return null; // undefined (nothing rendered yet) or explicit null (grid empty)
@@ -81,7 +81,7 @@ function makePostGridSource() {
       itemHeightEstimate: view === 'list' ? Math.round(listThumb * 1.25) : view === 'tile' ? tileSize : Math.round(cardSize * 1.2),
       onAspect: config.onAspect,
       paint: ++paintSeq,
-    } as CorpusGridModel;
+    } as HologramGridModel;
   }
   return {
     configure(cfg: PostGridConfig) {
@@ -98,13 +98,13 @@ function makePostGridSource() {
     },
   };
 }
-export const corpusPostGridSource = makePostGridSource();
+export const hologramPostGridSource = makePostGridSource();
 
 // Poster grid model source (P4-B slice⑫): same shape as the post source, minus
 // onAspect (poster avatars don't report a learned aspect ratio) and minus a
-// live-drag override — the poster size slider already commits corpusIpc.setPref
+// live-drag override — the poster size slider already commits hologramIpc.setPref
 // on every 'input' tick (renderer/orchestrator.ts's setupPosterSizeSlider has no
-// separate mid-drag/commit split like the post slider), so writing corpusStore
+// separate mid-drag/commit split like the post slider), so writing hologramStore
 // on every tick too is no NEW cost; get() just reads the settled value straight
 // from the store like every other layout input.
 function makePosterGridSource() {
@@ -123,7 +123,7 @@ function makePosterGridSource() {
     }
   };
   for (const k of ['posterGroups', 'posterView', 'posterTileSize', 'posterCardSize']) storeSubscribe(k, notify);
-  function computeModel(): CorpusGridModel | null {
+  function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = storeGet('posterGroups');
     if (items == null) return null; // undefined until the first renderPosters() — after that it's always an array (possibly empty), never explicitly cleared to null (unlike posts, poster has no innerHTML-clear ordering constraint to preserve)
@@ -151,7 +151,7 @@ function makePosterGridSource() {
       rowGutter: view === 'list' ? 4 : view === 'tile' ? 10 : 14,
       itemHeightEstimate: view === 'list' ? 52 : Math.round(posterCardSize * 1.35),
       paint: ++paintSeq,
-    } as CorpusGridModel;
+    } as HologramGridModel;
   }
   return {
     configure(cfg: PosterGridConfig) {
@@ -164,4 +164,4 @@ function makePosterGridSource() {
     },
   };
 }
-export const corpusPosterGridSource = makePosterGridSource();
+export const hologramPosterGridSource = makePosterGridSource();

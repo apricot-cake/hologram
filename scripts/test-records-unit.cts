@@ -314,7 +314,7 @@ async function main() {
   // --- dragFilesOf: ドラッグアウトが何を渡すか（#132） ---
   // 掴んだものが選択内なら選択全体・選択外ならそれだけ。選択は読むだけで書き換えない
   // （Explorer の「ドラッグで選択が変わる」は mousedown の仕業＝ドラッグ側の設計ではない・
-  // Corpus の選択は手で作る作業セット＝持ち出しで壊さない。2026-07-17 ユーザー確定）。
+  // Hologram の選択は手で作る作業セット＝持ち出しで壊さない。2026-07-17 ユーザー確定）。
   // DOM/IPC 配線（handleCardDragStart）はここを呼ぶだけ＝規則の正はこの純関数。
   {
     const G = (key, files) => ({ key, files, records: [], rep: {} });

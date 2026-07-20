@@ -5,10 +5,10 @@
 // DOM lib's setTimeout/setInterval (number) with NodeJS.Timeout.
 //
 // The only file that resolves 'electron' from this program is app/preload.cts,
-// pulled in via the CorpusPreload import type in globals.d.ts. Weak types here
+// pulled in via the HologramPreload import type in globals.d.ts. Weak types here
 // cannot hide a real contract break: tsconfig.main.json type-checks the same
 // preload.cts against the REAL electron types, and preload.cts annotates every
-// api method explicitly, so the CorpusPreload shape does not depend on the shim.
+// api method explicitly, so the HologramPreload shape does not depend on the shim.
 export const ipcRenderer: {
   invoke(channel: string, ...args: any[]): Promise<any>;
   on(channel: string, listener: (event: unknown, ...args: any[]) => void): unknown;

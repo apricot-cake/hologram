@@ -12,7 +12,7 @@
 //   - manifest.json carries a fixed `key` (see memory ext-signing-key), so the
 //     extension ID is pinned to that key regardless of which folder it's
 //     loaded from → same extension ID → the registered native-messaging host
-//     (com.corpus.host) accepts the connection
+//     (com.hologram.host) accepts the connection
 //   - Alt+S (chrome.commands) can't be synthesized via CDP, but activateOnTab()
 //     is a top-level function in the service worker — we attach to the SW
 //     target and call it directly
@@ -38,14 +38,14 @@ declare const chrome: any;
 // extension/tsconfig.json's header comment for why the browser layer needs a
 // real build step unlike main/native-host).
 const SRC_EXT_DIR = path.join(__dirname, '..', 'extension', 'dist');
-const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key — allowed_origins of com.corpus.host
+const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key — allowed_origins of com.hologram.host
 
 // Stage a copy of the extension with <all_urls> host permission added, so
 // captureVisibleTab works WITHOUT a user gesture (in production the Alt+S
 // chrome.commands gesture grants activeTab; a headless test can't synthesize
 // that trusted gesture). Everything else — the code under test — is identical.
 function stageExtension() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-ext-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-ext-'));
   const copyDir = (src, dst) => {
     fs.mkdirSync(dst, { recursive: true });
     for (const e of fs.readdirSync(src, { withFileTypes: true })) {
@@ -302,9 +302,9 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
   }
   console.log(`対象セル: ${active.map((c) => c.id + '(' + c.kind + ')').join(' ')}`);
 
-  const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-e2e-'));
+  const profile = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-e2e-'));
   const EXT_DIR = stageExtension();
-  const hostManifestPath = path.join(configDir(), 'com.corpus.host.json');
+  const hostManifestPath = path.join(configDir(), 'com.hologram.host.json');
   const originalHostManifest = fs.existsSync(hostManifestPath) ? fs.readFileSync(hostManifestPath, 'utf8') : null;
   const browser = await puppeteer.launch({
     headless: false,
@@ -325,7 +325,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
       // The unpacked test instance gets a path-derived ID — allow it on the
       // native host so the bridge accepts the connection. Idempotent add; the
       // extra origin is a local unpacked extension only we control.
-      const hostManifest = path.join(configDir(), 'com.corpus.host.json');
+      const hostManifest = path.join(configDir(), 'com.hologram.host.json');
       const hm = JSON.parse(fs.readFileSync(hostManifest, 'utf8'));
       const origin = `chrome-extension://${extId}/`;
       if (!hm.allowed_origins.includes(origin)) {
@@ -363,7 +363,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
               img.scrollIntoView({ block: 'center' });
               img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
               await new Promise((r) => setTimeout(r, 500));
-              const z = document.getElementById('__corpusDropZone');
+              const z = document.getElementById('__hologramDropZone');
               return !!(z && z.style.display !== 'none');
             },
             cell.dragSel,
@@ -419,7 +419,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
                 img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
                 return new Promise((res) =>
                   setTimeout(() => {
-                    const zone = document.getElementById('__corpusDropZone');
+                    const zone = document.getElementById('__hologramDropZone');
                     if (!zone || zone.style.display === 'none') {
                       res('no-zone');
                       return;
@@ -502,7 +502,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
             const dt = new DataTransfer();
             img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
             await new Promise((r) => setTimeout(r, 400));
-            const zone = document.getElementById('__corpusDropZone');
+            const zone = document.getElementById('__hologramDropZone');
             if (!zone || zone.style.display === 'none') return 'no-zone';
             zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
             return 'ok';
@@ -515,7 +515,7 @@ async function waitForNewSidecar(dir, before, timeoutMs = 25000) {
           // surface the in-page failure message (drop zone / banner text)
           const hint = await page
             .evaluate(() => {
-              const z = document.getElementById('__corpusDropZone');
+              const z = document.getElementById('__hologramDropZone');
               const banner = [...document.querySelectorAll('div')].find((d) => d.style.zIndex === '2147483647');
               return (z && z.style.display !== 'none' ? `zone="${z.textContent}" ` : '') + (banner ? `banner="${banner.textContent}"` : '');
             })

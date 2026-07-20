@@ -63,7 +63,7 @@ async function expectReject(promise, label) {
 }
 
 (async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-zipbomb-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-zipbomb-'));
 
   // (a) Normal export still imports (real ZIP, real sizes).
   {

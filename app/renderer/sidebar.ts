@@ -10,20 +10,20 @@
 // render()/renderPoster()) to a PULLED source, the same shape as the grid (⑩/⑫) /
 // image-tab (⑮) / tabs (⑯) sources: viewer no longer re-derives+pushes a model after
 // every filter/tag/library mutation — this module derives it fresh on get(), reading
-// corpusStore keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + the tags/folders/
+// hologramStore keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + the tags/folders/
 // posts-data/listing services directly. Labels are NOT part of the model — the islands
 // resolve their own row names via t() and the 作品/キャラ custom label via
-// corpusTags.getTagLabels(), the same "island resolves its own i18n" pattern every
+// hologramTags.getTagLabels(), the same "island resolves its own i18n" pattern every
 // other island uses (buildSidebarModel used to carry MSG-resolved strings
 // because it ran inside viewer.ts; that reason is gone once the derivation moves here).
 //
 // tagKindOf/posterFilterVocab/namedPosters are NOT reimplemented here — they're the
-// exact closures viewer.ts already builds (via corpusTags.makeTags / listing.ts's
-// makeListing), bound onto the shared service object (corpusTags) / live binding
+// exact closures viewer.ts already builds (via hologramTags.makeTags / listing.ts's
+// makeListing), bound onto the shared service object (hologramTags) / live binding
 // (listing.ts's namedPosters) once at boot so this module reads the SAME functions
 // instead of a second copy that could drift. They're null/undefined until viewer.ts's
 // binding call runs, because this module's store/service subscriptions are wired at
-// load time, before viewer.ts's own `await corpusI18n`-gated body runs — a pull that
+// load time, before viewer.ts's own `await hologramI18n`-gated body runs — a pull that
 // lands in that narrow window just sees "no data yet" and recomputes once viewer
 // wires up and the first real mutation notifies.
 //
@@ -41,9 +41,9 @@ import { tagKindOf, posterFilterVocab, onChange } from './tags.ts';
 import { clipCount as foldersClipCount, onChange as foldersOnChange } from './folders.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 
-type SidebarSource<T> = { get(): T | null; subscribe(cb: () => void): CorpusUnsubscribe };
+type SidebarSource<T> = { get(): T | null; subscribe(cb: () => void): HologramUnsubscribe };
 
-function computePostModel(): CorpusSidebarModel {
+function computePostModel(): HologramSidebarModel {
   const activeFilters = buildShadow(storeGet('postQueryTree'));
   // Per-category active-filter counts. Instance filters live inside the platform
   // flyout, so they count toward the platform badge; the tag badge splits by 種別 so a
@@ -96,7 +96,7 @@ function computePostModel(): CorpusSidebarModel {
   };
 }
 
-function computePosterModel(): CorpusPosterSidebarModel {
+function computePosterModel(): HologramPosterSidebarModel {
   const kindOf = (v: string) => (tagKindOf ? tagKindOf(v) : null);
   const vocab = posterFilterVocab ? posterFilterVocab() : [];
   const named = namedPosters ? namedPosters() : [];
@@ -156,7 +156,7 @@ function makeSource<T>(compute: () => T, wire: Array<(cb: () => void) => void>):
 
 const byKey = (k: string) => (cb: () => void) => storeSubscribe(k, cb);
 
-export const corpusPostSidebarSource = makeSource(computePostModel, [
+export const hologramPostSidebarSource = makeSource(computePostModel, [
   byKey('postQueryTree'),
   byKey('multiOnly'),
   byKey('qfCat'),
@@ -165,10 +165,10 @@ export const corpusPostSidebarSource = makeSource(computePostModel, [
   (cb) => foldersOnChange(cb), // clip state (count/active) is folders-owned
 ]);
 
-export const corpusPosterSidebarSource = makeSource(computePosterModel, [
+export const hologramPosterSidebarSource = makeSource(computePosterModel, [
   byKey('posterQueryTree'),
   byKey('qfCat'),
   (cb) => onChange(cb),
   subscribePostsData, // namedPosters()/buildUsers() read allPosts
-  // No corpusFolders subscription — poster badges/visible never depend on clip state.
+  // No hologramFolders subscription — poster badges/visible never depend on clip state.
 ]);

@@ -21,7 +21,7 @@ import { loadPosts } from '../../../renderer/post-grid-builder.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
 // untyped original — the {} fallback only exists for the bare dev server.
-const corpus = (): CorpusPreload => window.corpus || ({} as CorpusPreload);
+const hologram = (): HologramPreload => window.hologram || ({} as HologramPreload);
 const reloadPosts = () => {
   if (loadPosts) loadPosts();
 };
@@ -66,12 +66,12 @@ function wireIpcOnce() {
   try {
     onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
   } catch {
-    /* bare dev server: no preload bridge behind corpusPosts */
+    /* bare dev server: no preload bridge behind hologramPosts */
   }
   try {
     onBackupDone((_e: unknown, r: BackupResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
-    /* bare dev server: no preload bridge behind corpusBackup */
+    /* bare dev server: no preload bridge behind hologramBackup */
   }
 }
 
@@ -127,7 +127,7 @@ export function Data() {
   // Load both the config save folder and the backup config on mount (the modal
   // remounts each time it opens, so this matches the old "reload on open").
   useEffect(() => {
-    Promise.resolve(corpus().getConfig ? corpus().getConfig() : null)
+    Promise.resolve(hologram().getConfig ? hologram().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
       .catch(() => {});
     Promise.resolve(getBackup())
@@ -225,7 +225,7 @@ export function Data() {
   const exportZip = async () => {
     // A sticky loading toast shows the live % streamed to disk (fed by main's
     // 'export-progress' via onExportProgress); it also covers the save-dialog wait.
-    const id = 'corpus-export';
+    const id = 'hologram-export';
     toast.loading(t('exporting'), { id, description: '0%' });
     const off = onExportProgress((p) => {
       if (!p || p.done) return;
@@ -255,7 +255,7 @@ export function Data() {
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const zip = await JSZip.loadAsync(buf);
-      const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
+      const isComplete = !!zip.file('hologram-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
         const res = await importComplete(buf);
         reloadPosts();

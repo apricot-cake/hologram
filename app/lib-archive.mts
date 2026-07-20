@@ -10,7 +10,7 @@
 //   library/<captureId>-media-N.<ext>  original media
 //   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
 //   library/folders.json|tag-groups.json|tag-types.json|ungrouped.json|manual-groups.json
-//   corpus-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
+//   hologram-export.json                 manifest { app, kind:'complete', version, exportedAt, fileCount }
 //
 // Excluded from the snapshot: config.json (machine-specific: paths, extension id)
 // and .index.json (cache). On import, captures are copied SKIPPING existing files
@@ -31,7 +31,7 @@ function isVolatile(name) {
 }
 
 // --- Zip-bomb / unbounded-expansion guard -------------------------------------
-// A `corpus-export.zip` is shared between machines, so a malicious/corrupt one can
+// A `hologram-export.zip` is shared between machines, so a malicious/corrupt one can
 // declare a tiny compressed payload that expands to gigabytes (zip bomb) and exhaust
 // memory on import (DoS). Cap entry count, total uncompressed bytes, and any single
 // entry's uncompressed size BEFORE extracting, using the sizes declared in the ZIP
@@ -264,10 +264,10 @@ async function buildCompleteZip(JSZip, srcFolder, nowIso) {
     }
   }
   zip.file(
-    'corpus-export.json',
+    'hologram-export.json',
     JSON.stringify(
       {
-        app: 'Corpus',
+        app: 'Hologram',
         kind: 'complete',
         version: 1,
         exportedAt: nowIso || new Date().toISOString(),
@@ -333,7 +333,7 @@ function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: numb
 }
 
 // Complete, directly-re-importable snapshot: every top-level library file under
-// library/, the shared avatar store under library/avatars/, plus a corpus-export.json
+// library/, the shared avatar store under library/avatars/, plus a hologram-export.json
 // manifest. Returns the file count (excludes the manifest), matching the old builder.
 // onProgress(writtenBytes, totalBytes) fires as the archive streams out — totalBytes is
 // the summed input size (STORED, so output ≈ input + small headers), good enough to drive
@@ -353,7 +353,7 @@ async function writeCompleteZip(srcFolder, outPath, nowIso, onProgress?: (writte
   };
   for (const name of await collectFiles(srcFolder)) await addFile(path.join(srcFolder, name), `library/${name}`);
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
-  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Corpus', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'corpus-export.json');
+  zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 1, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
   zip.end();
   await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };

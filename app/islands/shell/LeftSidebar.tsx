@@ -35,8 +35,8 @@ const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 // bootApp calls load(), so an initial list read can be empty — kick load() and
 // re-read on both its resolve and any later mutation. (No unsubscribe from onChange,
 // same as MirrorStatus: this island never unmounts in the single-page app.)
-function useFolders(): CorpusFolder[] {
-  const [list, setList] = useState<CorpusFolder[]>(() => folderAll());
+function useFolders(): HologramFolder[] {
+  const [list, setList] = useState<HologramFolder[]>(() => folderAll());
   useEffect(() => {
     const sync = () => setList(folderAll().slice());
     folderLoad().then(sync);
@@ -51,10 +51,10 @@ function useFolders(): CorpusFolder[] {
 // when the current tree equals the saved one; there is no separate applied-id
 // state to keep in sync, so editing a chip simply stops the row from matching.
 const subPostTree = (cb: () => void) => storeSubscribe('postQueryTree', cb);
-const getPostTree = () => storeGet('postQueryTree') as CorpusQueryGroup | undefined;
+const getPostTree = () => storeGet('postQueryTree') as HologramQueryGroup | undefined;
 // Compare through the persistence clone so a tree that has been to disk and back
 // compares equal to a freshly built one (the compile memos are the only difference).
-const treeKey = (tree: CorpusQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
+const treeKey = (tree: HologramQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
 
 export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
@@ -67,7 +67,7 @@ export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   // Saved searches are managed on their own row, not in the folder manager (which is
   // about folders: create, drag-reorder, put posts in). Re-saving the condition is the
   // one action here whose effect is invisible, so it is the one that says anything.
-  const savedSearchMenu = (e: MouseEvent, f: CorpusFolder) => {
+  const savedSearchMenu = (e: MouseEvent, f: HologramFolder) => {
     e.preventDefault();
     // 条件を更新 is offered only when there IS a filter to capture — re-saving an empty
     // query would quietly turn the saved search into "everything".

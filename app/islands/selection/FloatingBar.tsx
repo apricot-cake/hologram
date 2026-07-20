@@ -14,7 +14,7 @@ import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selec
 // capsule pinned bottom-center, shown whenever 1+ post cards are selected. It replaces
 // the old top #selectionBar: the container + delegated data-act dispatcher are gone, and
 // each button calls an orchestrator-exported selection action directly (onClick →
-// function). The model is self-derived from corpusStore — count/allSelected/groupDisabled
+// function). The model is self-derived from hologramStore — count/allSelected/groupDisabled
 // come straight from 'selectedSet' + 'postGroups' (reusing renderer/selection.ts's own
 // isAllSelected/selectedGroups), same derivation the retired SelectionBar island used.
 //
@@ -55,7 +55,7 @@ const FULL_LABEL_MIN_W = 670;
 const subSelectedSet = (cb: () => void) => storeSubscribe('selectedSet', cb);
 const getSelectedSet = () => storeGet('selectedSet') as Set<string> | undefined;
 const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
-const getPostGroups = () => storeGet('postGroups') as CorpusPostGroup[] | null | undefined;
+const getPostGroups = () => storeGet('postGroups') as HologramPostGroup[] | null | undefined;
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => storeGet('browseMode') as string | undefined;
 // Derived once by AppShell (width + toggle + selection); read here, not re-derived.

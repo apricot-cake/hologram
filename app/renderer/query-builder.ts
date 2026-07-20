@@ -53,13 +53,13 @@ export interface PostQueryBuilderDeps {
   container: HTMLElement;
   barEl: HTMLElement | null;
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  labelOf: (f: CorpusQueryLeaf) => string;
+  labelOf: (f: HologramQueryLeaf) => string;
   getSearchVal: () => string;
   onClearSearch: () => void;
   onChange: () => void;
-  openLeafEditor: (n: CorpusQueryLeaf) => void;
-  onLeafMutated: (n: CorpusQueryLeaf) => void;
-  isEditingLeaf: (n: CorpusQueryLeaf) => boolean;
+  openLeafEditor: (n: HologramQueryLeaf) => void;
+  onLeafMutated: (n: HologramQueryLeaf) => void;
+  isEditingLeaf: (n: HologramQueryLeaf) => boolean;
 }
 
 // The post-side builder instance. predOf is also returned — viewer.ts's
@@ -107,11 +107,11 @@ export interface PosterQueryBuilderDeps {
   container: HTMLElement;
   barEl: HTMLElement | null;
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  labelOf: (f: CorpusQueryLeaf) => string;
+  labelOf: (f: HologramQueryLeaf) => string;
   getSearchVal: () => string;
   onClearSearch: () => void;
   onChange: () => void;
-  openLeafEditor: (n: CorpusQueryLeaf) => void;
+  openLeafEditor: (n: HologramQueryLeaf) => void;
   posterTagsOf: (key: string) => string[];
   folderById: (id: string) => { items: string[] } | null | undefined;
 }

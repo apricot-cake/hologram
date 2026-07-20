@@ -19,7 +19,7 @@ import { t } from '../_shared/i18n.ts';
 const subscribe = (cb: () => void) => subscribePrompt(cb);
 const getSnapshot = () => get();
 
-function PromptContent({ model }: { model: CorpusPromptModel }) {
+function PromptContent({ model }: { model: HologramPromptModel }) {
   const [value, setValue] = useState(model.value ?? '');
   const okDisabled = !value.trim();
   const doOk = () => {
@@ -61,7 +61,7 @@ export function PromptHost() {
   const m = useSyncExternalStore(subscribe, getSnapshot);
   // Keep the last model while the dialog animates closed, so the content doesn't
   // blank out mid-exit (same reason ConfirmHost holds one).
-  const lastRef = useRef<CorpusPromptModel | null>(null);
+  const lastRef = useRef<HologramPromptModel | null>(null);
   if (m) lastRef.current = m;
   const model = m ?? lastRef.current;
   return (

@@ -1,7 +1,7 @@
 'use strict';
 
 // Hardening regressions for app/main.js, driven through the real IPC handlers via
-// the CORPUS_SMOKE harness. Covers three independent fixes:
+// the HOLOGRAM_SMOKE harness. Covers three independent fixes:
 //
 //   件1 delete-post reaps the author avatar (<base>-avatar.<ext>) into .trash/
 //        instead of leaving it orphaned in the save folder.
@@ -22,8 +22,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-harden-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-harden-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -80,28 +80,28 @@ const evalJs = `(async () => {
   const dragPrevented = dragEvt.defaultPrevented;
 
   // 件3: corrupt org files read back as empty (UI keeps working) ...
-  const coll = await window.corpus.getFolders();
+  const coll = await window.hologram.getFolders();
   const collEmpty = Array.isArray(coll.folders) && coll.folders.length === 0;
-  const tg = await window.corpus.getTagGroups();
+  const tg = await window.hologram.getTagGroups();
   const tgEmpty = Array.isArray(tg.groups) && tg.groups.length === 0;
   // ... but a follow-up set-* (e.g. the renderer auto-persisting that empty) is
   // REFUSED, so nothing overwrites the corrupt-but-recoverable file on disk.
-  const setColl = await window.corpus.setFolders({ folders: [], clip: [], posterWorkspace: [] });
-  const setTg = await window.corpus.setTagGroups([]);
+  const setColl = await window.hologram.setFolders({ folders: [], clip: [], posterWorkspace: [] });
+  const setTg = await window.hologram.setTagGroups([]);
   const setCollRefused = !!(setColl && setColl.ok === false);
   const setTgRefused = !!(setTg && setTg.ok === false);
 
   // 件1: delete the post → its files move to .trash/.
-  await window.corpus.deletePost('${POST}.jpg');
+  await window.hologram.deletePost('${POST}.jpg');
 
   return { openDenied, dropPrevented, dragPrevented, collEmpty, tgEmpty, setCollRefused, setTgRefused };
 })()`;
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'),
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

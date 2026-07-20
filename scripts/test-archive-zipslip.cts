@@ -17,7 +17,7 @@ const JSZip = require('jszip');
 const { importCompleteZip, buildCompleteZip } = require('../app/lib-archive.mts');
 
 (async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-zipslip-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-zipslip-'));
   const dest = path.join(root, 'lib');
   fs.mkdirSync(dest, { recursive: true });
   // BOM tolerance (BACKLOG L3), piggybacked on this import: both org-JSON read

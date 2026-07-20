@@ -20,7 +20,7 @@ function check(name, fn) {
   console.log('  ok  ' + name);
 }
 
-const save = path.resolve(path.sep === '\\' ? 'C:\\Corpus\\library' : '/home/alice/Corpus/library');
+const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\library' : '/home/alice/Hologram/library');
 const at = (f) => path.join(save, f);
 
 // --- isLibraryFileName: the gate ---

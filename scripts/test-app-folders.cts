@@ -5,7 +5,7 @@
 //  - create a folder via the shared management modal (#ivFolderModal, no auto-default ★)
 //  - add a card to the folder via the real 📁 picker (card context menu → 「フォルダに追加…」
 //    → folder row) — the data + filter + persistence path is what this smoke pins;
-//    folder ids/membership counts are read back through window.corpus.getFolders()
+//    folder ids/membership counts are read back through window.hologram.getFolders()
 //  - filter by the folder via the SIDEBAR folder flyout (#filterRows [data-qfrow="folder"]
 //    → .qf-pop row), the same entry every other facet uses — only the member card remains
 //  - folders.json persists { folders, clip }, no defaultId
@@ -23,8 +23,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-fold-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-fold-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -83,7 +83,7 @@ const evalJs = `(async () => {
   const menuRow = (txt) => [...document.querySelectorAll('.fold-menu.show .fm-row')].find((r) => ((r.querySelector('.fm-name') || {}).textContent || '').includes(txt));
   // Active chips minus the CHIP_OUT_MS exit-animation ghosts (see test-app-textleaf-*).
   const activeChips = (sel) => document.querySelectorAll('#queryChips ' + sel + ':not(.leaving)').length;
-  const getFolders = () => window.corpus.getFolders();
+  const getFolders = () => window.hologram.getFolders();
 
   await waitFor(() => cards() >= 3);
   const totalBefore = cards();                              // 3
@@ -160,9 +160,9 @@ const evalJs = `(async () => {
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus'),
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'),
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

@@ -1,6 +1,6 @@
 let electron = require("electron");
 //#region preload.cts
-electron.contextBridge.exposeInMainWorld("corpus", {
+electron.contextBridge.exposeInMainWorld("hologram", {
 	getConfig: () => electron.ipcRenderer.invoke("get-config"),
 	setExtensionId: (id) => electron.ipcRenderer.invoke("set-extension-id", id),
 	listPosts: () => electron.ipcRenderer.invoke("list-posts"),

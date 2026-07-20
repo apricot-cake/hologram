@@ -1,6 +1,6 @@
 // The toolbar search field — Base UI Autocomplete owning the input + suggest
 // popup (P2④: the react-aria ComboBox is retired, and with it the last
-// react-aria-components consumer). The value source is corpusStore
+// react-aria-components consumer). The value source is hologramStore
 // 'searchQuery': typing pushes into the store; programmatic writes (resets /
 // tab & history restore) flow back into the controlled input. Suggestion DATA
 // (buildSuggest) and what a pick DOES (search-editing's pick/confirm) stay in

@@ -1,6 +1,6 @@
 // makeCallbackBridge — the shared imperative→declarative "callback bridge" behind
 // the popover models whose payloads carry CALLBACKS (onPick/onApply/onManage/…),
-// which is why they can't live in the serializable corpusStore. Each bridge holds the
+// which is why they can't live in the serializable hologramStore. Each bridge holds the
 // CURRENT rendered model + a subscriber set; open() replaces the model and stamps a
 // monotonic openId (the island keys its React root on it, so re-opening — even onto the
 // same node, or after a pick — remounts and resets local input state); close() clears;

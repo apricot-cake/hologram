@@ -12,12 +12,12 @@ const UNDO_MAX = 50;
 // deps contract (both async, both viewer-owned side effects):
 //   applyTags(records)       — records = [{captureId, image, tags}] (post sidecars)
 //   applyPosterTags(records) — records = [{key, tags}] (poster-tags.json)
-type CorpusUndoEntry = { type: string; records: CorpusUndoRecord[] };
+type HologramUndoEntry = { type: string; records: HologramUndoRecord[] };
 export function makeUndo(deps: { applyTags(records: { captureId?: string; image?: string; tags: string[] }[]): Promise<void> | void; applyPosterTags(records: { key?: string; tags: string[] }[]): Promise<void> | void }) {
-  const undoStack: CorpusUndoEntry[] = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
-  let redoStack: CorpusUndoEntry[] = [];
+  const undoStack: HologramUndoEntry[] = []; // [{type, records: [{captureId, image, prevTags, newTags}]}]
+  let redoStack: HologramUndoEntry[] = [];
 
-  function push(type: string, records: CorpusUndoRecord[]) {
+  function push(type: string, records: HologramUndoRecord[]) {
     if (!records || !records.length) return;
     undoStack.push({ type, records });
     if (undoStack.length > UNDO_MAX) undoStack.shift();
@@ -25,7 +25,7 @@ export function makeUndo(deps: { applyTags(records: { captureId?: string; image?
   }
 
   // dir = which captured tag list to re-apply: 'prevTags' (undo) / 'newTags' (redo).
-  async function apply(entry: CorpusUndoEntry, dir: 'prevTags' | 'newTags') {
+  async function apply(entry: HologramUndoEntry, dir: 'prevTags' | 'newTags') {
     if (entry.type === 'poster-tags') await deps.applyPosterTags(entry.records.map((r) => ({ key: r.key, tags: r[dir] })));
     else await deps.applyTags(entry.records.map((r) => ({ captureId: r.captureId, image: r.image, tags: r[dir] })));
   }

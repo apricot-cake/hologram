@@ -14,7 +14,7 @@
    React Appearance section drives, OS-change following, and the config.json reconcile —
    lives in renderer/theme-api.ts, bundled into app.js. */
 (function () {
-  const KEY = 'corpus-theme';
+  const KEY = 'hologram-theme';
   function cleanPref(t: string): string {
     return t === 'light' || t === 'dark' ? t : 'auto';
   }

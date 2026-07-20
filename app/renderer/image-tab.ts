@@ -2,18 +2,18 @@
 // (viewer.js built the React model and called render(model) on it from ~8 call
 // sites: showImageTab / hideImageTabView / index step / inspector toggle /
 // library refresh) to a PULLED source, the same shape as the grid sources
-// (renderer/grid.ts, ⑩/⑫). viewer.js writes only the tab IDENTITY into corpusStore's
+// (renderer/grid.ts, ⑩/⑫). viewer.js writes only the tab IDENTITY into hologramStore's
 // 'activeImageTab' (id/recs/idx — the one slice of tab state migrated ahead of the
 // full tabs→store move in ⑯); get() derives everything else: the gallery items (via
-// corpusRecords.imageTabGroup, crossed with posts-data.ts so a deleted post
+// hologramRecords.imageTabGroup, crossed with posts-data.ts so a deleted post
 // degrades to the missing state live with no viewer push — exactly what
-// posts-data.ts's doc comment anticipated) and inspectorOpen (corpusStore's
+// posts-data.ts's doc comment anticipated) and inspectorOpen (hologramStore's
 // 'inspectedKey', already the single source for "is the inspector open" since the
 // state→store phase). Commands (index step / inspector toggle / close tab) dispatch
 // back to viewer.ts via callbacks handed in through configure() (onIndexChange/
 // onToggleInspector/onCloseTab), mirroring the query-chips / TabBarEvents
 // event-half pattern — this file only computes, it never mutates tab state.
-// Real ES module (named export `corpusImageTabSource`) — imported directly by
+// Real ES module (named export `hologramImageTabSource`) — imported directly by
 // image-tab/index.tsx (islands) and viewer.ts (configure). The former dispatch
 // through viewer.ts's old shared bridge was DI'd away in V13/Wave27
 // (image-tab-builder.ts supplies the callbacks) — see memory
@@ -56,7 +56,7 @@ function dispatchClose() {
   if (onCloseTab) onCloseTab();
 }
 
-function get(): CorpusImageTabModel | null {
+function get(): HologramImageTabModel | null {
   const active = storeGet('activeImageTab');
   if (!active || !gallery || !labels) return null;
   const byId = byIdMap();
@@ -75,7 +75,7 @@ function get(): CorpusImageTabModel | null {
   };
 }
 
-export const corpusImageTabSource = {
+export const hologramImageTabSource = {
   configure(cfg: { gallery: Gallery; labels: Record<string, string>; onIndexChange: (i: number) => void; onToggleInspector: () => void; onCloseTab: () => void }) {
     gallery = cfg.gallery;
     labels = cfg.labels;

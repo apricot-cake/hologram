@@ -5,7 +5,7 @@
 (async () => {
   // --- i18n ---
   // i18n.js is injected alongside this script (see background.js → executeScript).
-  const { getMessage, partialSaveText } = await window.corpusI18n;
+  const { getMessage, partialSaveText } = await window.hologramI18n;
   const MSG = {
     select: getMessage('bannerSelect'),
     saving: getMessage('bannerSaving'),
@@ -45,7 +45,7 @@
   // ink), so there is no async pref read to wait for. State is carried by the
   // badge fill + a tinted pill border; see glass-ui.ts for the CSP/Trusted
   // Types constraints that shape how everything is built.
-  const G = window.corpusGlassUi;
+  const G = window.hologramGlassUi;
 
   // Top banner — scrim-solid pill: leading icon badge + label.
   const banner = document.createElement('div');
@@ -419,7 +419,7 @@
       setBanner(partial ? 'partial' : msg.success ? 'ok' : 'fail', text);
       if (msg.success && !partial && !G.REDUCED_MOTION) {
         // Small badge pop so the state flip reads even in peripheral vision
-        // (app corpusBadgePop: .3s on the shared ease-out curve).
+        // (app hologramBadgePop: .3s on the shared ease-out curve).
         bannerBadge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
       }
       // Hold failures (and partials) longer so the reason is readable.

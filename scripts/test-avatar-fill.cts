@@ -30,8 +30,8 @@ check('pixivRefererFor garbage → undefined', pixivRefererFor('not a url') === 
 check('pixivRefererFor non-pximg lookalike → undefined', pixivRefererFor('https://notpximg.net.evil.com/x') === undefined);
 
 // --- backfill --avatars end-to-end ---
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-avfill-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-avfill-'));
+const configDir = path.join(tmp, 'Hologram');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -60,7 +60,7 @@ fs.writeFileSync(
   ].join('\n'),
 );
 
-const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
+const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram') });
 const res = spawnSync(process.execPath, ['-r', stub, path.join(__dirname, 'backfill-metadata.cts'), '--avatars'], { env, encoding: 'utf8' });
 
 check('script exited 0', res.status === 0);

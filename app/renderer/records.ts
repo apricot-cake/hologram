@@ -8,10 +8,10 @@
 // (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
 // — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
 // under Node too (scripts/test-records-unit.cts drives it via dynamic import); the
-// load/persist pair below goes through corpusIpc (renderer/ipc.ts). postKeyOf is a
+// load/persist pair below goes through hologramIpc (renderer/ipc.ts). postKeyOf is a
 // plain named export now (the planned duplicate-save detection can import the same
 // URL→key normalization when it lands).
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
 // Per-density image source. A post may carry both a capture (screenshot) and
 // real media/artwork; the density decides which leads:
@@ -21,18 +21,18 @@ import { corpusIpc } from './ipc.ts';
 // NOTE: lib-index's cardImageFile() MUST mirror the card branch so the masonry
 // height reservation (shotW/shotH) sizes the same image the card shows.
 const SS_EXT = /\.jpe?g$/i;
-// p.media entries are a loose JSON shape (same pragmatics as CorpusPost itself).
-type CorpusMediaItem = { file?: string; alt?: string; [k: string]: any };
-export const mediaFilesOf = (p: CorpusPost): string[] => (Array.isArray(p.media) ? (p.media as CorpusMediaItem[]).filter((m) => m && m.file).map((m) => m.file as string) : []);
+// p.media entries are a loose JSON shape (same pragmatics as HologramPost itself).
+type HologramMediaItem = { file?: string; alt?: string; [k: string]: any };
+export const mediaFilesOf = (p: HologramPost): string[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file).map((m) => m.file as string) : []);
 // p.image is a screenshot unless it's a dragged/migrated artwork or a non-JPEG original.
-export const isScreenshot = (p: CorpusPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
-export const captureFile = (p: CorpusPost): string => (isScreenshot(p) ? p.image : '');
-export const artworkFile = (p: CorpusPost): string => {
+export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'eagle-migration';
+export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
+export const artworkFile = (p: HologramPost): string => {
   const m = mediaFilesOf(p);
   if (m.length) return m[0];
   return p.image && !isScreenshot(p) ? p.image : '';
 };
-export function densityImage(p: CorpusPost, density: string): string {
+export function densityImage(p: HologramPost, density: string): string {
   const cap = captureFile(p),
     art = artworkFile(p);
   return density === 'list' ? cap || art : art || cap;
@@ -42,7 +42,7 @@ export function densityImage(p: CorpusPost, density: string): string {
 // Auto: records sharing the same post URL (multi-image drags, re-captures of
 // one post) collapse into one card. Manual groups (manual-groups.json) win
 // over auto. ungrouped.json opts individual post keys out.
-export const postIdKey = (p: CorpusPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
+export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
 // Same URL patterns as metadata.js parsePostUrl (renderer-side copy). null = don't group.
 export function postKeyOf(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -63,7 +63,7 @@ export function postKeyOf(url: string | null | undefined): string | null {
   return null;
 }
 // The "artwork pages" of one record: original media, else the dragged/migrated image.
-export const groupFilesOf = (p: CorpusPost): string[] => {
+export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
   if (m.length) return m;
   const a = artworkFile(p);
@@ -78,13 +78,13 @@ export const groupFilesOf = (p: CorpusPost): string[] => {
 // Reading the selection is ALL this does with it — a drag never writes it back.
 // Explorer looks like it selects what you drag, but that's its mousedown, not its
 // drag; the grabbed-or-selection rule above is the whole of what it does with a
-// drag, and it needs no write. Corpus's selection is also a working set built by
+// drag, and it needs no write. Hologram's selection is also a working set built by
 // hand across a scroll (the batch tag/folder ops act on it), not Explorer's
 // throwaway cursor, so an export gesture must not rewrite it (2026-07-17, user).
 //
 // Pure so the rule is unit-testable without a real drag: the DOM/IPC glue around
 // it is post-grid-builder.ts's handleCardDragStart.
-export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): string[] {
+export function dragFilesOf(g: HologramPostGroup, selected: HologramPostGroup[]): string[] {
   const grabbedSelection = selected.some((s) => s.key === g.key);
   return [...new Set((grabbedSelection ? selected : [g]).flatMap((x) => x.files))];
 }
@@ -95,16 +95,16 @@ export function dragFilesOf(g: CorpusPostGroup, selected: CorpusPostGroup[]): st
 // empty state instead of a broken image. Same rep pick as groupRecords (capture
 // first, then any record with text). Pure — byId is injected (so this loads
 // under Node too).
-export function imageTabGroup(view: { id?: string; recs: string[] | null | undefined }, byId: (id: string) => CorpusPost | undefined): CorpusPostGroup | null {
+export function imageTabGroup(view: { id?: string; recs: string[] | null | undefined }, byId: (id: string) => HologramPost | undefined): HologramPostGroup | null {
   const ids: string[] = Array.isArray(view.recs) ? view.recs : [];
-  const records = ids.map((id) => byId(id)).filter(Boolean) as CorpusPost[];
+  const records = ids.map((id) => byId(id)).filter(Boolean) as HologramPost[];
   if (!records.length) return null;
   const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
   return { key: 'imgtab:' + (view.id || ''), records, rep, files: records.flatMap(groupFilesOf) };
 }
 // Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
 // caller-supplied 無題 fallback (i18n-owned by the caller).
-export function imageTabTitleOf(g: CorpusPostGroup, fallback: string): string {
+export function imageTabTitleOf(g: HologramPostGroup, fallback: string): string {
   const p = g.rep;
   const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
   const base = raw || p.displayName || fallback;
@@ -117,12 +117,12 @@ export function imageTabTitleOf(g: CorpusPostGroup, fallback: string): string {
 // Both are getter functions because viewer.js REASSIGNS the underlying
 // bindings on load/edit — a by-value snapshot would go stale.
 export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }) {
-  return function groupRecords(list: CorpusPost[]): CorpusPostGroup[] {
+  return function groupRecords(list: HologramPost[]): HologramPostGroup[] {
     const manualGroups = deps.manualGroups();
     const ungrouped = deps.ungrouped();
     // url-derived group key, precomputed once per record by stampPost (_postKey);
     // fall back to a live parse for any record that somehow predates the stamp.
-    const pk = (p: CorpusPost) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
+    const pk = (p: HologramPost) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
     const manualOf = new Map<string, string>(); // captureId → 'manual:idx' (manual groups win)
     manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
     let solo = 0;
@@ -141,7 +141,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     // render as one card. The platform-local own-id is the last segment of the
     // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
     // suppress the merge for either side.
-    const pidOf = (p: CorpusPost) => {
+    const pidOf = (p: HologramPost) => {
       const k = pk(p);
       return k ? k.split(/[/:]/).pop() : null;
     };
@@ -174,7 +174,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       return k;
     };
     const map = new Map<string, any>();
-    const order: CorpusPostGroup[] = [];
+    const order: HologramPostGroup[] = [];
     for (const e of base) {
       const key = resolveKey(e.key);
       let g: any = map.get(key);
@@ -197,21 +197,21 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       // author (mirrors the idIndex keying used for merging above). byOwnId is built
       // per group, so a manual group mixing authors simply doesn't chain — its
       // members order by date/captureId, which is what we want there.
-      const byOwnId = new Map<string, CorpusPost>();
+      const byOwnId = new Map<string, HologramPost>();
       for (const p of g.records) {
         const id = pidOf(p);
         if (id && p.userId) byOwnId.set(p.userId + '|' + id, p);
       }
-      const depthCache = new Map<CorpusPost, number>();
-      const depthOf = (start: CorpusPost): number => {
+      const depthCache = new Map<HologramPost, number>();
+      const depthOf = (start: HologramPost): number => {
         const cached = depthCache.get(start);
         if (cached !== undefined) return cached;
         let d = 0;
-        let cur: CorpusPost | undefined = start;
-        const seen = new Set<CorpusPost>(); // guard corrupt mutual-reply cycles
+        let cur: HologramPost | undefined = start;
+        const seen = new Set<HologramPost>(); // guard corrupt mutual-reply cycles
         while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
           seen.add(cur);
-          const parent: CorpusPost | undefined = byOwnId.get(cur.userId + '|' + String(cur.replyToId));
+          const parent: HologramPost | undefined = byOwnId.get(cur.userId + '|' + String(cur.replyToId));
           if (!parent || parent === cur) break;
           d++;
           cur = parent;
@@ -238,7 +238,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
 
 // Likes percentile within each platform — ranks "did well for its SNS" so X's
 // raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
-export function percentileFn(list: CorpusPost[]): (p: CorpusPost) => number {
+export function percentileFn(list: HologramPost[]): (p: HologramPost) => number {
   const byPlat: Record<string, number[]> = {};
   list.forEach((p) => {
     const k = p.platform || '';
@@ -275,13 +275,13 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   // only when it isn't a screenshot (a dragged/migrated artwork); a text-only post
   // has no original, so its screenshot is the sole — hence first — item, which is
   // exactly what its thumbnail shows too.
-  function buildGalleryItems(p: CorpusPost): GalleryItem[] {
+  function buildGalleryItems(p: HologramPost): GalleryItem[] {
     const items: GalleryItem[] = [];
     const shot = captureFile(p); // '' unless p.image is a screenshot
     if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: false });
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
-      for (const m of p.media as CorpusMediaItem[]) {
+      for (const m of p.media as HologramMediaItem[]) {
         if (m && m.file) items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file) });
       }
     }
@@ -292,7 +292,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   // screenshots pulled past the originals so the group reads originals-first too
   // (#143). Each record already emits its capture last; bucketing keeps that intact
   // across records (a text-only member contributes only its capture → tail).
-  function buildGroupGalleryItems(g: CorpusPostGroup): GalleryItem[] {
+  function buildGroupGalleryItems(g: HologramPostGroup): GalleryItem[] {
     if (g.records.length === 1) return buildGalleryItems(g.rep);
     const seen = new Set<string>();
     const originals: GalleryItem[] = [];
@@ -320,7 +320,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
 // (shotW/H → learned cache), and the multi-image back-stack sheets.
 //   deps.currentView() / imgAspect() are getters (viewer reassigns the lets);
 //   isClipped/fileSrc keep folder + psimg knowledge viewer-owned. Selection is
-//   NOT here — the grid island derives .selected straight from corpusStore's
+//   NOT here — the grid island derives .selected straight from hologramStore's
 //   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
 export function makeCardModel(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -337,7 +337,7 @@ export function makeCardModel(deps: {
   listThumbW(): number;
 }) {
   const { t, formatCount, formatDate, compactDate, fileSrc, isClipped, smokeCapture, currentView, imgAspect, tileThumbW, cardThumbW, listThumbW } = deps;
-  return function cardModel(g: CorpusPostGroup, i: number): Record<string, any> {
+  return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = currentView();
     const aspectCache = imgAspect();
@@ -414,7 +414,7 @@ export function makeCardModel(deps: {
 
 // Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
 // comparison (done once per record on arrival, not per render).
-export function stampPost(p: CorpusPost): CorpusPost {
+export function stampPost(p: HologramPost): HologramPost {
   p._dateMs = p.date ? +new Date(p.date) : 0;
   p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
   p._postKey = postKeyOf(p.url); // url-derived group key; groupRecords would re-parse it 3x/record otherwise
@@ -423,13 +423,13 @@ export function stampPost(p: CorpusPost): CorpusPost {
 }
 
 // manual-groups.json / ungrouped.json load/persist (P4 "IPC→service" domain-
-// grouping slice — the raw corpusIpc calls move here from viewer.js, next to
+// grouping slice — the raw hologramIpc calls move here from viewer.js, next to
 // makeGroupRecords/makeGallery which already consume these two stores as
 // injected deps). Only called from the browser (viewer.js); never invoked by
 // the Node unit test.
 export async function loadManualGroups() {
   try {
-    const r = await corpusIpc.getManualGroups();
+    const r = await hologramIpc.getManualGroups();
     return (r && r.groups) || [];
   } catch {
     return [];
@@ -437,14 +437,14 @@ export async function loadManualGroups() {
 }
 export async function persistManualGroups(groups: string[][]) {
   try {
-    await corpusIpc.setManualGroups(groups);
+    await hologramIpc.setManualGroups(groups);
   } catch {
     /* best-effort */
   }
 }
 export async function loadUngrouped() {
   try {
-    const r = await corpusIpc.getUngrouped();
+    const r = await hologramIpc.getUngrouped();
     return new Set<string>((r && r.keys) || []);
   } catch {
     return new Set<string>();
@@ -452,7 +452,7 @@ export async function loadUngrouped() {
 }
 export async function persistUngrouped(keys: Set<string> | string[]) {
   try {
-    await corpusIpc.setUngrouped([...keys]);
+    await hologramIpc.setUngrouped([...keys]);
   } catch {
     /* best-effort */
   }

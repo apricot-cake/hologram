@@ -6,12 +6,12 @@
 //    the browser's own drag runs and carries the psimg:// thumbnail URL instead
 //    of the original files
 //  - a drag NEVER writes the selection, inside it or outside it. Explorer looks
-//    like it selects what you drag, but that's its mousedown; and Corpus's
+//    like it selects what you drag, but that's its mousedown; and Hologram's
 //    selection is a working set built by hand across a scroll, not Explorer's
 //    throwaway cursor, so a gesture that leaves the app must not rewrite it
 //  - a drag started off the image (post text) is left to the browser
 //
-// What each drag HANDS OVER can't be observed from here: window.corpus is deep
+// What each drag HANDS OVER can't be observed from here: window.hologram is deep
 // frozen by contextBridge, so the IPC can't be spied on, and the OS drag itself
 // is out of reach. That rule is pure and lives in records.ts's dragFilesOf —
 // covered by scripts/test-records-unit.cts. This harness covers the glue around
@@ -27,8 +27,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-dragout-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-dragout-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -75,13 +75,13 @@ const evalJs = `(async () => {
   // does NOT rethrow, so a dead line after the throw is invisible from the page —
   // it only surfaces as an uncaught error. That's how drag-out shipped broken with
   // this suite green (#132/#185): everything asserted below happened BEFORE the
-  // throw, and the corpusIpc.dragOut() after it never ran.
+  // throw, and the hologramIpc.dragOut() after it never ran.
   const errors = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const dragFrom = async (el) => {
     const ev = new DragEvent('dragstart', { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
-    await sleep(80); // selection replacement re-renders the cells (corpusStore subscription)
+    await sleep(80); // selection replacement re-renders the cells (hologramStore subscription)
     return ev.defaultPrevented;
   };
   const out = {};
@@ -118,9 +118,9 @@ const evalJs = `(async () => {
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: configDir,
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: configDir,
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

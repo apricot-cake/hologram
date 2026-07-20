@@ -3,7 +3,7 @@
 // query.ts のロジック単体テスト。query.ts は real ES module（named exports）なので
 // 動的 import() で読み込む（かつての eval-shim — 型ストリップ後の source を
 // window シム上で間接 eval していたやり方 — は export 文を含むソースを Script
-// として実行できず破綻するため廃止。2026-07-09 の window.corpusXxx→export/import
+// として実行できず破綻するため廃止。2026-07-09 の window.hologramXxx→export/import
 // 変換の一環）。条件ツリー評価(evalNode)・各リーフ述語(makePostPredOf)・日付の
 // ローカル日境界(localDayRange)・移行用 facetTreeFrom を直接検証する。
 //

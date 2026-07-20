@@ -1,16 +1,16 @@
-// Thin wrappers over corpusIpc (renderer/ipc.ts, the P4 IPC→service seam over the
+// Thin wrappers over hologramIpc (renderer/ipc.ts, the P4 IPC→service seam over the
 // preload bridge) and the theme runtime (renderer/theme-api.ts). main.mts / preload.cts
 // stay untouched — the island talks to the exact same IPC the vanilla settings did,
 // just routed through the same seam every other renderer service uses now.
 
 import { get as themeGet, set as themeSet } from '../../renderer/theme-api.ts';
-import { corpusIpc } from '../../renderer/ipc.ts';
+import { hologramIpc } from '../../renderer/ipc.ts';
 import { applyTileOverlay } from '../../renderer/grid-density-builder.ts';
 
-export const getPrefs = () => (corpusIpc.getPrefs ? corpusIpc.getPrefs() : Promise.resolve({}));
-export const setPref = (key: string, value: unknown) => (corpusIpc.setPref ? corpusIpc.setPref(key, value) : Promise.resolve());
-export const getAppInfo = () => (corpusIpc.getAppInfo ? corpusIpc.getAppInfo() : Promise.resolve(null));
-export const openExternal = (url: string) => corpusIpc.openExternal(url);
+export const getPrefs = () => (hologramIpc.getPrefs ? hologramIpc.getPrefs() : Promise.resolve({}));
+export const setPref = (key: string, value: unknown) => (hologramIpc.setPref ? hologramIpc.setPref(key, value) : Promise.resolve());
+export const getAppInfo = () => (hologramIpc.getAppInfo ? hologramIpc.getAppInfo() : Promise.resolve(null));
+export const openExternal = (url: string) => hologramIpc.openExternal(url);
 
 // Theme runtime lives in renderer/theme-api.ts (applies [data-theme], persists via
 // setPref, caches to localStorage, follows the OS). We read/drive it through that module

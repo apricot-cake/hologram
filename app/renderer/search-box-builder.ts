@@ -3,7 +3,7 @@
 // 連携"). The query-tree text-leaf state machine (search-editing.ts, Wave2) and
 // the suggestion-pick bridge to the searchbox React island (searchbox.ts,
 // Wave5) already exist as real ES modules — this module is the view-specific
-// glue that used to live inline in viewer.ts: the corpusStore 'searchQuery'
+// glue that used to live inline in viewer.ts: the hologramStore 'searchQuery'
 // getter/setter (with the echo guard that tells typing apart from programmatic
 // writes) and the debounced re-render on typing. postQB/browseMode and the
 // render/sidebar callbacks are still owned by viewer.ts, so they're injected
@@ -17,10 +17,10 @@ import { isOpen as settingsIsOpen } from './settings.ts';
 export interface SearchBoxDeps {
   storeGet(key: string): unknown;
   storeSet(key: string, value: unknown): void;
-  getTree(): CorpusQueryGroup;
-  addFilter(leaf: { type: string; [k: string]: any }): CorpusQueryLeaf | null;
-  removeNode(node: CorpusQueryLeaf): void;
-  treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
+  getTree(): HologramQueryGroup;
+  addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
+  removeNode(node: HologramQueryLeaf): void;
+  treeLeaves(tree: HologramQueryGroup): HologramQueryLeaf[];
   getBrowseMode(): string;
   afterQueryChange(): void;
   renderPosts(): void;
@@ -32,7 +32,7 @@ export interface SearchBoxDeps {
 export function makeSearchBox(deps: SearchBoxDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
-  // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
+  // hologramStore 'searchQuery' IS the search value; the searchbox island renders it
   // as a controlled Base UI Autocomplete input. Typing: island → store → the
   // subscriber below runs the debounced heavy side effects. Programmatic writes
   // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →

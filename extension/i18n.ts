@@ -4,10 +4,10 @@
 // strings below are embedded here so content scripts (which cannot fetch
 // _locales/ files reliably) get them without extra network round-trips.
 //
-// Consumers do: const { getMessage, lang, resolved } = await window.corpusI18n;
+// Consumers do: const { getMessage, lang, resolved } = await window.hologramI18n;
 // then call getMessage('key', [sub1, sub2]).
 // Note: this file may be re-executed by chrome.scripting.executeScript on every
-// Alt+S press, so window.corpusI18n is reassigned each time. The banner language
+// Alt+S press, so window.hologramI18n is reassigned each time. The banner language
 // follows the browser locale (navigator.language); the desktop app (the former
 // in-extension viewer) now owns all viewer/settings strings in app/renderer/i18n.ts.
 (function () {
@@ -34,10 +34,10 @@
       // Native host not found (unregistered, or registered but Chrome not yet
       // restarted). Chrome reads native-host registrations at startup, so the
       // first suggestion is a restart.
-      bannerHostMissing: 'Corpus の保存先に接続できません。Chrome を再起動してください',
+      bannerHostMissing: 'Hologram の保存先に接続できません。Chrome を再起動してください',
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
-      dragDropHint: 'ここにドロップで Corpus に保存',
+      dragDropHint: 'ここにドロップで Hologram に保存',
     },
 
     en: {
@@ -52,14 +52,14 @@
       bannerFailedReason: 'Save failed: $1',
       reasonNoPermalink: 'could not find the post link',
       reasonNoPost: 'could not identify a post here',
-      bannerHostMissing: "Can't reach Corpus's saver. Please restart Chrome.",
+      bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
 
       // drag.js: drop-zone hint (the toasts reuse the banner* keys above)
-      dragDropHint: 'Drop here to save to Corpus',
+      dragDropHint: 'Drop here to save to Hologram',
     },
   };
 
-  window.corpusI18n = (async () => {
+  window.hologramI18n = (async () => {
     // The banner follows the browser locale. The extension no longer stores a
     // language preference (the viewer moved to the desktop app, which keeps its
     // own setting in config.json that a content script cannot read).

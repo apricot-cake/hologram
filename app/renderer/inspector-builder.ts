@@ -26,25 +26,25 @@ import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngroupe
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
 export interface InspectorBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
-  buildUsers(): CorpusUserAgg[];
+  buildUsers(): HologramUserAgg[];
   tagKindOf(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
-  jumpToPoster(post: CorpusPost): void;
+  jumpToPoster(post: HologramPost): void;
   // Peek this group in the quick-view lightbox (#143 未決事項3) — the inspector
   // preview thumbnail is one of its two entries (the other = Space on the card).
-  openQuickView(g: CorpusPostGroup): void;
-  pushUndo(kind: string, records: CorpusUndoRecord[]): void;
+  openQuickView(g: HologramPostGroup): void;
+  pushUndo(kind: string, records: HologramUndoRecord[]): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
-  getViewGroups(): CorpusPostGroup[];
-  getAllPosts(): CorpusPost[];
-  getPostById(id: string): CorpusPost | undefined;
+  getViewGroups(): HologramPostGroup[];
+  getAllPosts(): HologramPost[];
+  getPostById(id: string): HologramPost | undefined;
   getUngrouped(): Set<string>;
   getManualGroups(): string[][];
   markPostsMutated(): void;
@@ -123,7 +123,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const open = panelIsOpen();
     if (!open) {
       inspectorClose();
-      deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
+      deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
     }
     byId('postGrid').classList.toggle('insp-open', open);
   });
@@ -158,7 +158,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // so the image/meta don't flicker) plus, while a tag-pop is open for this same
   // card, that pop's own model (refreshTagViews, below).
 
-  function refreshInspectorTagFields(g: CorpusPostGroup | null | undefined) {
+  function refreshInspectorTagFields(g: HologramPostGroup | null | undefined) {
     if (!g) return;
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
@@ -169,11 +169,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // Apply a tag mutation to every record of the inspected group, persist immediately,
   // record undo, and refresh grid + inspector tag fields (NOT a full showDetail — so the
   // image/meta don't flicker and the input keeps focus).
-  async function applyInspectorTagChange(g: CorpusPostGroup | null | undefined, mutate: (prev: string[]) => string[] | null | undefined) {
+  async function applyInspectorTagChange(g: HologramPostGroup | null | undefined, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
     deps.keepCurrentVisible(); // removing a tag can un-match an active tag filter
-    const undoRecords: CorpusUndoRecord[] = [];
+    const undoRecords: HologramUndoRecord[] = [];
     for (const r of recs) {
       const prev = (r.tags || []).slice();
       const next = mutate(prev.slice());
@@ -202,7 +202,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // so the live model is the only thing both builders can agree is current) — that
   // pop's own model. Re-render in place (same openId), not a remount, so the pop's
   // input text/scroll survive.
-  function refreshTagViews(fresh: CorpusPostGroup | null | undefined) {
+  function refreshTagViews(fresh: HologramPostGroup | null | undefined) {
     if (!fresh) return;
     refreshInspectorTagFields(fresh);
     if (tagPopGet()?.forKey === postIdKey(fresh.rep)) {
@@ -214,13 +214,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
   // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
   // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
-  async function addInspectorTag(g: CorpusPostGroup, tag: string) {
+  async function addInspectorTag(g: HologramPostGroup, tag: string) {
     const fresh = () => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
     if (adding) await maybeDistinguishHomonym(fresh(), tag);
   }
-  async function toggleInspectorTag(g: CorpusPostGroup, tag: string) {
+  async function toggleInspectorTag(g: HologramPostGroup, tag: string) {
     const fresh = () => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
     const adding = !(fresh().rep.tags || []).includes(tag);
     await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
@@ -231,7 +231,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // this character was seen with before, it's likely a same-name character from
   // another work. Offer the danbooru-style freeform distinction キャラ（作品）.
   // Deterministic + confirm-gated + silent until there's history (薄いうちは沈黙).
-  async function maybeDistinguishHomonym(g: CorpusPostGroup | null | undefined, addedTag: string) {
+  async function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
     if (!g || deps.tagKindOf(addedTag) !== 'character') return;
     const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => deps.tagKindOf(t) === 'work');
@@ -252,7 +252,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.showToast(deps.t('homonymDistinguished', [distinguished]));
   }
 
-  function showDetail(g: CorpusPostGroup) {
+  function showDetail(g: HologramPostGroup) {
     if (!g) return;
     const p = g.rep;
     const eng: string[] = [];
@@ -338,9 +338,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         ascii: deps.t('detailAscii'),
       },
       onClose: closeDetail,
-      onOpenExternal: p.url ? () => corpusIpc.openExternal(p.url) : null,
-      onSauce: srcImageUrl ? () => corpusIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
-      onAscii: srcImageUrl ? () => corpusIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
+      onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
+      onSauce: srcImageUrl ? () => hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
+      onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => {
@@ -348,14 +348,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
           if (g2) refreshInspectorTagFields(g2);
         });
       },
-      onEditTags: (anchorRect: CorpusAnchorRect) => openTagPopForGroup(g, anchorRect),
+      onEditTags: (anchorRect: HologramAnchorRect) => openTagPopForGroup(g, anchorRect),
     });
     // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
     // The visibility-linked chrome (insp-open, the tile track) therefore isn't touched
     // here — it follows the panel store, not the content.
     //
     // Ring-mark the inspected card so swapping content stays traceable — the grid
-    // cell derives its own ring reactively (corpusStore subscribe), so no manual
+    // cell derives its own ring reactively (hologramStore subscribe), so no manual
     // DOM classList reach-in / repaint() is needed here.
     deps.setInspectedKey(postIdKey(p));
   }
@@ -377,7 +377,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // closing the pop shouldn't blank out an independently-open detail panel.
     if (!panelIsOpen()) deps.setInspectedKey(null);
   }
-  function openTagPopForGroup(g: CorpusPostGroup, anchorRect: CorpusAnchorRect) {
+  function openTagPopForGroup(g: HologramPostGroup, anchorRect: HologramAnchorRect) {
     if (!g) return;
     const key = postIdKey(g.rep);
     if (tagPopGet()?.forKey === key) {

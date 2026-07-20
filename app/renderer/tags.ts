@@ -22,8 +22,8 @@
 // imported directly by viewer.ts / sidebar.ts and the Sidebar islands; touches
 // no DOM. The read-side tagKindOf/posterFilterVocab are also exposed as live
 // bindings (below) that viewer.ts binds at boot, so sidebar.ts reads the same
-// closures. Disk round-trips go through corpusIpc (renderer/ipc.ts).
-import { corpusIpc } from './ipc.ts';
+// closures. Disk round-trips go through hologramIpc (renderer/ipc.ts).
+import { hologramIpc } from './ipc.ts';
 
 // deps contract:
 //   tagTypes() / tagLabels() / tagGroups() / posterTags() / allPosts() —
@@ -37,7 +37,7 @@ export function makeTags(deps: {
   tagLabels(): Record<string, string>;
   tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
   posterTags(): Record<string, string[]>;
-  allPosts(): CorpusPost[];
+  allPosts(): HologramPost[];
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
@@ -123,7 +123,7 @@ export function makeTags(deps: {
   // but shaped as DATA for the React tag editor, which filters by its own local
   // query client-side — so keystrokes never round-trip through here (the full/
   // unfiltered vocabulary is the only thing ever asked for: query is always '').
-  function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: CorpusPost[] | null | undefined, scope?: string) {
+  function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: HologramPost[] | null | undefined, scope?: string) {
     const sel = new Set<string>(selectedTags || []);
     const vocabGroups = groupedTagVocab('', { scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
       name: g.name,
@@ -226,7 +226,7 @@ export function onChange(cb: (kind?: string) => void) {
 // from the browser (viewer.js); never invoked by the Node unit test.
 async function readTagGroups() {
   try {
-    const r = await corpusIpc.getTagGroups();
+    const r = await hologramIpc.getTagGroups();
     return (r && r.groups) || [];
   } catch {
     return [];
@@ -234,14 +234,14 @@ async function readTagGroups() {
 }
 async function writeTagGroups() {
   try {
-    await corpusIpc.setTagGroups(tagGroups);
+    await hologramIpc.setTagGroups(tagGroups);
   } catch {
     /* best-effort */
   }
 }
 async function readTagTypes() {
   try {
-    const r = await corpusIpc.getTagTypes();
+    const r = await hologramIpc.getTagTypes();
     return { types: (r && r.types) || {}, labels: (r && r.labels) || {} };
   } catch {
     return { types: {}, labels: {} };
@@ -251,14 +251,14 @@ async function readTagTypes() {
 // only keeps the labels it receives).
 async function writeTagTypes() {
   try {
-    await corpusIpc.setTagTypes(tagTypes, tagLabels);
+    await hologramIpc.setTagTypes(tagTypes, tagLabels);
   } catch {
     /* best-effort */
   }
 }
 async function readPosterTags() {
   try {
-    const r = await corpusIpc.getPosterTags();
+    const r = await hologramIpc.getPosterTags();
     return (r && r.tags) || {};
   } catch {
     return {};
@@ -266,7 +266,7 @@ async function readPosterTags() {
 }
 async function writePosterTags() {
   try {
-    await corpusIpc.setPosterTags({ tags: posterTags });
+    await hologramIpc.setPosterTags({ tags: posterTags });
   } catch {
     /* best-effort */
   }

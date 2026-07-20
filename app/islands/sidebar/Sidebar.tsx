@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { corpusPostSidebarSource } from '../../renderer/sidebar.ts';
+import { hologramPostSidebarSource } from '../../renderer/sidebar.ts';
 import { t } from '../_shared/i18n.ts';
 import { getTagLabels } from '../../renderer/tags.ts';
 import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
 
 // Post-mode filter-row column (#filterRows). Pure presentation, PULLING its own model
-// from renderer/sidebar.ts's corpusPostSidebarSource (badges/visible/clip/multi/openCat
-// derived from corpusStore + the tags/folders/posts-data services — see that file). Row
+// from renderer/sidebar.ts's hologramPostSidebarSource (badges/visible/clip/multi/openCat
+// derived from hologramStore + the tags/folders/posts-data services — see that file). Row
 // NAMES are resolved here via t() (static i18n keys) or kindLabel() (the user-renamable
 // 作品/キャラ label), not carried in the model — the same "island resolves its own i18n"
 // pattern every other island uses. The markup MUST stay a byte-for-byte match of
@@ -30,7 +30,7 @@ const ROW_LABEL_KEY: Record<string, string> = {
   tag: 'qfTag',
 };
 
-// 作品/キャラ 種別 names are user-renamable (corpusTags.setKindLabel); fall back to the
+// 作品/キャラ 種別 names are user-renamable (hologramTags.setKindLabel); fall back to the
 // built-in i18n label when unset — mirrors tags.ts's own kindLabel().
 function kindLabel(kind: 'work' | 'character'): string {
   return getTagLabels()[kind] || t(kind === 'work' ? 'kindWork' : 'kindCharacter');
@@ -51,10 +51,10 @@ const TAIL_ROWS = ['hashtag', 'tag'] as const;
 // grid/image-tab/tabs sources), which would trip React's "cached snapshot" tearing check
 // — a plain subscribe→setState effect (same shape as ImageTabHost) sidesteps that.
 export function Sidebar() {
-  const [m, setM] = useState(() => corpusPostSidebarSource.get());
+  const [m, setM] = useState(() => hologramPostSidebarSource.get());
   useEffect(() => {
-    const sync = () => setM(corpusPostSidebarSource.get());
-    const unsub = corpusPostSidebarSource.subscribe(sync);
+    const sync = () => setM(hologramPostSidebarSource.get());
+    const unsub = hologramPostSidebarSource.subscribe(sync);
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);

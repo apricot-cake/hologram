@@ -22,7 +22,7 @@ function ok(cond, msg) {
 }
 
 function mkroot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-migrate-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-migrate-'));
 }
 function seed(dir, files) {
   fs.mkdirSync(dir, { recursive: true });

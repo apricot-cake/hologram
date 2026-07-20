@@ -17,7 +17,7 @@ import { close, get, subscribe as subscribeConfirm } from '../../renderer/confir
 const subscribe = (cb: () => void) => subscribeConfirm(cb);
 const getSnapshot = () => get();
 
-function ConfirmContent({ model }: { model: CorpusConfirmModel }) {
+function ConfirmContent({ model }: { model: HologramConfirmModel }) {
   const [skip, setSkip] = useState(false);
   const [kw, setKw] = useState('');
   const okDisabled = model.keywordRequired != null && kw.trim() !== model.keywordRequired;
@@ -59,7 +59,7 @@ export function ConfirmHost() {
   const m = useSyncExternalStore(subscribe, getSnapshot);
   // Keep the last model around while the dialog animates closed, so the content
   // doesn't blank out mid-exit (m is already null by then).
-  const lastRef = useRef<CorpusConfirmModel | null>(null);
+  const lastRef = useRef<HologramConfirmModel | null>(null);
   if (m) lastRef.current = m;
   const model = m ?? lastRef.current;
   return (

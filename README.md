@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
-    <img src="assets/banner-en-light.svg" alt="corpus — more than screenshots: your whole library" width="440">
+    <img src="assets/banner-en-light.svg" alt="hologram — more than screenshots: your whole library" width="440">
   </picture>
 </p>
 
@@ -11,9 +11,9 @@ Save the content you come across on the web — and find it again whenever you l
 
 No more "where did that post go?" Illustrations you loved, text you want to keep — gather them in one place, organize them, and pull them up anytime.
 
-Today Corpus speaks fluent social media (X, Bluesky, Misskey, Mastodon, pixiv); the library itself is built for web content in general.
+Today Hologram speaks fluent social media (X, Bluesky, Misskey, Mastodon, pixiv); the library itself is built for web content in general.
 
-Corpus is **free and open source** (MIT). Your library is nothing but ordinary files in a folder you own — no account, no server, no lock-in.
+Hologram is **free and open source** (MIT). Your library is nothing but ordinary files in a folder you own — no account, no server, no lock-in.
 
 ## What it does
 
@@ -79,7 +79,7 @@ Everything is stored in a local folder; nothing is sent to any server. See [PRIV
 
 ### Where your data lives
 
-- **Library** (images + metadata): a plain folder you choose — default `~/Corpus/library`
-- **Settings**: `~/.corpus`
+- **Library** (images + metadata): a plain folder you choose — default `~/Hologram/library`
+- **Settings**: `~/.hologram`
 
 Both are ordinary folders outside the app's installation, so **uninstalling the app never deletes them**. To remove everything, delete these two folders yourself.

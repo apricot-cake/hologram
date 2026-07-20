@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none';">
-  <title>Corpus</title>
+  <title>Hologram</title>
   <!-- Cascade-layer order for the shadcn/Tailwind coexistence (trial branch):
        every legacy <style> below is wrapped in @layer legacy, slotted BETWEEN
        Tailwind's base (preflight) and components/utilities. So legacy rules
@@ -193,7 +193,7 @@
       display: none; position: fixed; bottom: 52px; left: 14px;
       border-radius: 10px; padding: 12px 14px; z-index: 12000; white-space: nowrap;
     }
-    .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
+    .kb-hint-wrap:hover .kb-hint-pop { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out); }
     /* Floating-surface materials (.pop-solid / .glass-chrome) are defined as a
        utility layer at the END of this stylesheet so they win source-order over
        component rules like .fold-menu. See "=== Floating-surface materials ===". */
@@ -216,7 +216,7 @@
       display: flex; align-items: center; justify-content: center; padding: 36px;
     }
     .settings-view[hidden] { display: none; }
-    .settings-view:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
+    .settings-view:not([hidden]) { animation: hologramFadeIn .16s ease-out; }
     .settings-view-inner {
       width: 100%; max-width: 880px; max-height: 100%; overflow-y: auto;
       background: var(--surface);
@@ -254,7 +254,7 @@
       .settings-view #panelSettings { padding-left: 0; }
       .settings-search-wrap { max-width: none; }
     }
-    .settings-view:not([hidden]) .settings-view-inner { animation: corpusPopIn .2s ease-out; }
+    .settings-view:not([hidden]) .settings-view-inner { animation: hologramPopIn .2s ease-out; }
     .settings-view-head {
       display: flex; align-items: center; justify-content: space-between;
       position: sticky; top: 0; background: transparent; padding: 12px 0 14px;
@@ -644,7 +644,7 @@
     /* backwards (not both): a forwards fill pins transform:none and kills :hover scale
        (see the .post-grid.anim-in note for the full reasoning). Staggered like posts. */
     .poster-grid.anim-in .poster-card {
-      animation: corpusCardIn var(--dur-entrance) var(--ease-out) backwards;
+      animation: hologramCardIn var(--dur-entrance) var(--ease-out) backwards;
       animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
     }
     .poster-card.inspected { border-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-soft); }
@@ -792,7 +792,7 @@
     }
     /* Hidden SMOKE capture window: force cards to paint (nothing is ever "on-screen"
        there, so content-visibility:auto would skip them all) AND skip the entrance
-       animation — corpusCardIn starts at opacity:0 with fill `both`, and the hidden
+       animation — hologramCardIn starts at opacity:0 with fill `both`, and the hidden
        window doesn't advance the animation, so cards stayed invisible despite being
        laid out with loaded images. Gated on the class so the normal app is untouched. */
     html.smoke-capture .post-card { content-visibility: visible; }
@@ -1039,11 +1039,11 @@
     .post-card:hover .select-check { opacity: 1; }
     .post-card.selected .select-check { opacity: 1; background: var(--accent); border-color: #fff; }
     /* sharp geometric check drawn with borders (matches image-view; no ✓ glyph).
-       Draws in with an overshoot on selection (corpusCheckDraw). */
+       Draws in with an overshoot on selection (hologramCheckDraw). */
     .post-card.selected .select-check::after {
       content: ''; width: 5px; height: 9px; margin-top: -1px;
       border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
-      animation: corpusCheckDraw .3s var(--ease-out) backwards;
+      animation: hologramCheckDraw .3s var(--ease-out) backwards;
     }
     /* Selection mode (≥1 selected): clicking anywhere on a card toggles it, so
        every ring stays visible and the per-card hover actions step aside. */
@@ -1364,7 +1364,7 @@
       border-radius: 8px; box-shadow: var(--shadow-pop); padding: 4px; display: none;
     }
     .fold-menu.kind-menu { z-index: 13500; }   /* above the edit modal (13000) so the 種別 menu shows on top */
-    .fold-menu.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out) both; }
+    .fold-menu.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out) both; }
     .fold-menu.qf-pop.show { display: flex; flex-direction: column; max-height: calc(100vh - var(--tabbar-h) - 16px); }
     /* Tag picker pop (Issue #22): the single popup for 🏷 / inspector ✎ / selection
        bar "タグを追加". Fixed width (chip wrap assumes it, unlike qf-pop's
@@ -1465,7 +1465,7 @@
       z-index: 1001; min-width: 260px;
       /* Entrance pop. Placement code must keep measuring via offsetWidth/Height —
          getBoundingClientRect mid-pop reads ~4% small (scale .96 start). */
-      animation: corpusPopIn var(--dur-pop) var(--ease-out) both;
+      animation: hologramPopIn var(--dur-pop) var(--ease-out) both;
     }
     /* Poster date popover: 日付の種類 / 並び替え / 期間 を小見出し付きで縦に積む。 */
     .pd-field { margin-bottom: 10px; }
@@ -1647,13 +1647,13 @@
     }
     .sb-active-chip:hover { opacity: 0.7; }
     .sb-active-chip .qc-ic { width: 12px; height: 12px; flex-shrink: 0; opacity: .72; }
-    .sb-active-chip.chip-new, .qb-val.chip-new { animation: corpusPillIn var(--dur-pop) var(--ease-out) both; }
+    .sb-active-chip.chip-new, .qb-val.chip-new { animation: hologramPillIn var(--dur-pop) var(--ease-out) both; }
     /* Chip exit: the query-chips island keeps removed values as .leaving ghosts
        for the animation's length, then prunes them (pointer-events off so the
        stale data-nid can't reach the delegated handlers). */
-    .qb-val.leaving { animation: corpusPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
+    .qb-val.leaving { animation: hologramPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
     /* A whole attribute cluster removed → the entire pill leaves as one. */
-    .sb-active-chip.leaving { animation: corpusPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
+    .sb-active-chip.leaving { animation: hologramPillOut var(--dur-pop) var(--ease-out) forwards; pointer-events: none; }
     /* 検索/フォルダの特殊ピルは「値」ではなく入力欄寄りなので角丸四角に */
     .sb-active-chip.qc-search, .sb-active-chip.qc-folder { border-radius: 6px; }
     /* Facet-chip query builder (改訂④): values
@@ -1711,7 +1711,7 @@
       border-radius: 10px; padding: 12px 14px;   /* material (bg/border/shadow) = shared pop-solid */
       font-size: 12px; line-height: 1.7; color: var(--text);
     }
-    .qb-help-pop.show { display: block; animation: corpusPopIn var(--dur-pop) var(--ease-out); }
+    .qb-help-pop.show { display: block; animation: hologramPopIn var(--dur-pop) var(--ease-out); }
     .qb-help-pop .qh-title { font-weight: 700; margin-bottom: 6px; }
     .qb-help-pop .qh-row { display: flex; gap: 7px; margin-top: 4px; }
     .qb-help-pop .qh-row::before { content: '・'; color: var(--text-subtle); flex-shrink: 0; }
@@ -1827,7 +1827,7 @@
     color: var(--text); font-size: 11px; font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
-  .sb-row .sb-row-badge.on { display: inline-block; animation: corpusBadgePop .3s var(--ease-out); }
+  .sb-row .sb-row-badge.on { display: inline-block; animation: hologramBadgePop .3s var(--ease-out); }
   /* Rows with an active filter mark their icon in accent ink (motion-study
      canvas 2026-07-05) — (0,3,1) outweighs the (0,2,1) hover rule above. */
   .sb-row:has(.sb-row-badge.on) .sb-row-ic { color: var(--accent-text); }
@@ -1965,7 +1965,7 @@
     }
     body.image-tab-active .inspector--overlay .inspector-titlebar { display: block; }
     .inspector[hidden] { display: none; }
-    .inspector:not([hidden]) { animation: corpusPanelIn var(--dur-panel) var(--ease-out); }
+    .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
     .iv-insp-actions .iv-insp-open { margin-top: 0; }
     /* Inspector inline tag editor — always shown while the inspector is open: tag
@@ -2076,22 +2076,22 @@
        is neutralized under prefers-reduced-motion. -->
   <style>
     @layer legacy {
-    @keyframes corpusCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
-    @keyframes corpusFadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes corpusPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
-    @keyframes corpusSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
-    @keyframes corpusPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-    @keyframes corpusPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+    @keyframes hologramCardIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
+    @keyframes hologramFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes hologramPopIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+    @keyframes hologramSlideIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+    @keyframes hologramPanelIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+    @keyframes hologramPillIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
     /* Chip exit — the island marks removed values .leaving and prunes them
        after the run (see query-chips AnimatedChips). */
-    @keyframes corpusPillOut { to { opacity: 0; transform: scale(.55); } }
+    @keyframes hologramPillOut { to { opacity: 0; transform: scale(.55); } }
     /* Badge pop on activation. Uses the independent `scale` property, NOT
        transform: #clipBadge carries transform: translateY(-50%) — a transform
        keyframe would yank it off its vertical axis mid-pop. */
-    @keyframes corpusBadgePop { 0% { scale: 1; } 50% { scale: 1.5; } 100% { scale: 1; } }
+    @keyframes hologramBadgePop { 0% { scale: 1; } 50% { scale: 1.5; } 100% { scale: 1; } }
     /* Selection check draw: overshoot then settle. rotate(45deg) rides along in
        every frame — it's what shapes the border-drawn checkmark. */
-    @keyframes corpusCheckDraw {
+    @keyframes hologramCheckDraw {
       0% { transform: rotate(45deg) scale(0); opacity: 0; }
       70% { transform: rotate(45deg) scale(1.15); opacity: 1; }
       100% { transform: rotate(45deg) scale(1); }
@@ -2106,49 +2106,49 @@
        island), capped at 15 steps so the grid's .anim-in removal window
        (GRID_ANIM_MS in viewer.js) can cover the last card. */
     .post-grid.anim-in .post-card {
-      animation: corpusCardIn var(--dur-entrance) var(--ease-out) backwards;
+      animation: hologramCardIn var(--dur-entrance) var(--ease-out) backwards;
       animation-delay: calc(min(var(--card-i, 0), 15) * var(--stagger));
     }
 
     /* Empty state: same slide-in as cards when first shown. */
-    .empty-state.anim-in { animation: corpusCardIn var(--dur-entrance) var(--ease-out) both; }
+    .empty-state.anim-in { animation: hologramCardIn var(--dur-entrance) var(--ease-out) both; }
 
     /* View mode transition (card↔tile↔list): scope to the grid only so sidebar
        doesn't repaint. Old grid fades out quickly; new grid's anim-in handles
        the card entrance. ::view-transition-new gets animation:none so we don't
        double-animate with anim-in. */
-    ::view-transition-old(post-grid) { animation: corpusFadeIn .12s ease-in reverse both; }
+    ::view-transition-old(post-grid) { animation: hologramFadeIn .12s ease-in reverse both; }
     ::view-transition-new(post-grid) { animation: none; }
     /* The post-grid snapshot renders in the TOP LAYER and would cover the sticky
        active-filter bar (content shows through it on mode switch — ユーザー報告).
        Promote the bar to its own snapshot group above the grid so it stays put. */
-    .content-activebar { view-transition-name: corpus-activebar; }
-    ::view-transition-group(corpus-activebar) { z-index: 2; }
-    ::view-transition-old(corpus-activebar), ::view-transition-new(corpus-activebar) { animation: none; }
+    .content-activebar { view-transition-name: hologram-activebar; }
+    ::view-transition-group(hologram-activebar) { z-index: 2; }
+    ::view-transition-old(hologram-activebar), ::view-transition-new(hologram-activebar) { animation: none; }
     /* Same top-layer cover for the rest of the persistent chrome: once the page is
        scrolled, the post-grid snapshot's box starts above the viewport, so in the
        top layer it paints over the tab bar / sidebar (query builder) / back-to-top
        and the grid shows "through" them on mode switch (ユーザー報告: タブ・クエリ
        ビルダーが透ける). Promote each to its own static group above the grid. */
-    #tabBar { view-transition-name: corpus-tabbar; }
-    ::view-transition-group(corpus-tabbar) { z-index: 3; }
-    ::view-transition-old(corpus-tabbar), ::view-transition-new(corpus-tabbar) { animation: none; }
-    #sidebar { view-transition-name: corpus-sidebar; }
-    ::view-transition-group(corpus-sidebar) { z-index: 2; }
-    ::view-transition-old(corpus-sidebar), ::view-transition-new(corpus-sidebar) { animation: none; }
-    #contentTop { view-transition-name: corpus-backtotop; }
-    ::view-transition-group(corpus-backtotop) { z-index: 3; }
-    ::view-transition-old(corpus-backtotop), ::view-transition-new(corpus-backtotop) { animation: none; }
+    #tabBar { view-transition-name: hologram-tabbar; }
+    ::view-transition-group(hologram-tabbar) { z-index: 3; }
+    ::view-transition-old(hologram-tabbar), ::view-transition-new(hologram-tabbar) { animation: none; }
+    #sidebar { view-transition-name: hologram-sidebar; }
+    ::view-transition-group(hologram-sidebar) { z-index: 2; }
+    ::view-transition-old(hologram-sidebar), ::view-transition-new(hologram-sidebar) { animation: none; }
+    #contentTop { view-transition-name: hologram-backtotop; }
+    ::view-transition-group(hologram-backtotop) { z-index: 3; }
+    ::view-transition-old(hologram-backtotop), ::view-transition-new(hologram-backtotop) { animation: none; }
 
     /* Detail popup (ℹ): backdrop fades, box pops in. Replays on each open because
        removing [hidden] re-mounts the element (display:none -> flex). */
-    .iv-detail-overlay:not([hidden]) { animation: corpusFadeIn .16s ease-out; }
-    .iv-detail-overlay:not([hidden]) .iv-detail-box { animation: corpusPopIn .2s ease-out; }
+    .iv-detail-overlay:not([hidden]) { animation: hologramFadeIn .16s ease-out; }
+    .iv-detail-overlay:not([hidden]) .iv-detail-box { animation: hologramPopIn .2s ease-out; }
 
     /* Lightbox: backdrop fades on open; the slide itself animates via .lb-in
        (viewer.js restarts it on open AND on prev/next for a consistent feel). */
-    .lightbox-overlay.show { animation: corpusFadeIn .16s ease-out; }
-    .lightbox-overlay .lb-in { animation: corpusSlideIn .2s ease-out; }
+    .lightbox-overlay.show { animation: hologramFadeIn .16s ease-out; }
+    .lightbox-overlay .lb-in { animation: hologramSlideIn .2s ease-out; }
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -2177,8 +2177,8 @@
        orchestrator in ONE IIFE bundle: islands/build.mjs builds the app/index.tsx
        barrel, which side-effect-imports every service, every island, then (last)
        renderer/orchestrator.ts + shell.ts. orchestrator.ts owns data/state/event-
-       delegation + the remaining window.corpus* bridges; each island subscribes
-       and renders. Ordering is robust — orchestrator's body awaits corpusI18n so it
+       delegation + the remaining window.hologram* bridges; each island subscribes
+       and renders. Ordering is robust — orchestrator's body awaits hologramI18n so it
        stays deferred behind the synchronous island mounts, and islands pull current
        state on mount. Shared code (React / masonic / react-aria / _shared/*) is
        bundled once. -->

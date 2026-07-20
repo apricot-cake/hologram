@@ -12,7 +12,7 @@
 //                  invalidates the buildUsers cache)
 //   userKey(p) / hostOf(url) — from query.js
 //   compile(q) — search.ts's single smart matcher compiler
-export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number; userKey(p: CorpusPost): string; hostOf(url: string | null | undefined): string; compile(q: string): (hay: string) => boolean }) {
+export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): number; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; compile(q: string): (hay: string) => boolean }) {
   const { allPosts, generation, userKey, hostOf, compile } = deps;
 
   // Group posts by author. Posts arrive newest-first, so the first occurrence
@@ -21,7 +21,7 @@ export function makeUsers(deps: { allPosts(): CorpusPost[]; generation(): number
   // buildUsers scans all ~9000 posts, and it was being re-run on every search
   // keystroke via buildSuggest. Rebuild only when the library changes.
   let _buildUsersGen = -1,
-    _cachedUsers: CorpusUserAgg[] | null = null;
+    _cachedUsers: HologramUserAgg[] | null = null;
   function buildUsers() {
     if (_buildUsersGen === generation() && _cachedUsers) return _cachedUsers;
     const map = new Map<string, any>();

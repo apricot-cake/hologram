@@ -1,4 +1,4 @@
-﻿# Restart the Corpus viewer (Electron) so it ALWAYS runs OUTSIDE the MSIX sandbox.
+﻿# Restart the Hologram viewer (Electron) so it ALWAYS runs OUTSIDE the MSIX sandbox.
 #
 # Why a scheduled task instead of launching electron.exe directly:
 # When this script is run by Claude (whose shell lives inside the MSIX-packaged Claude
@@ -13,19 +13,19 @@
 # The task action also carries --remote-debugging-port=9222 so the resident instance is
 # CDP-debuggable for the real-machine verify workflow (docs/build.md) WHILE still launching
 # outside the container. (Want port-free normal launches? Drop the port from $desiredArgs
-# and add a separate 'CorpusLaunchDebug' task for verification instead.)
+# and add a separate 'HologramLaunchDebug' task for verification instead.)
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Claude also runs it headlessly.
 
 $app      = Join-Path $PSScriptRoot 'app'
 $electron = Join-Path $app 'node_modules\electron\dist\electron.exe'
-$taskName = 'CorpusLaunch'
-$logFile  = Join-Path $HOME '.corpus\restart-app.log'
+$taskName = 'HologramLaunch'
+$logFile  = Join-Path $HOME '.hologram\restart-app.log'
 $desiredArgs = "`"$app`" --remote-debugging-port=9222"
 
 # Label the window so a right-click launch is self-explanatory (guarded: some hosts lack RawUI).
-try { $Host.UI.RawUI.WindowTitle = 'Corpus 再起動' } catch {}
+try { $Host.UI.RawUI.WindowTitle = 'Hologram 再起動' } catch {}
 
 # On failure: log, and keep the window open ONLY for an interactive (human) launch so the
 # error is never missed. When Claude runs this headlessly stdin is redirected -> skip the
@@ -54,42 +54,42 @@ if ($existing -and $existing.Actions.Count -ge 1) {
   if ($a.Execute -eq $electron -and $a.Arguments -eq $desiredArgs) { $drift = $false }
 }
 if ($drift) {
-  Write-Host 'CorpusLaunch タスクを登録/修復しています...' -ForegroundColor Cyan
+  Write-Host 'HologramLaunch タスクを登録/修復しています...' -ForegroundColor Cyan
   try {
     $action    = New-ScheduledTaskAction -Execute $electron -Argument $desiredArgs
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel
-    $t = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description 'Launch the Corpus Electron app outside the MSIX sandbox (real HKCU/filesystem), CDP on :9222 for verify. On-demand only; triggered by restart-app.ps1.'
+    $t = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description 'Launch the Hologram Electron app outside the MSIX sandbox (real HKCU/filesystem), CDP on :9222 for verify. On-demand only; triggered by restart-app.ps1.'
     Register-ScheduledTask -TaskName $taskName -InputObject $t -Force -ErrorAction Stop | Out-Null
   } catch {
-    Stop-WithError("CorpusLaunch タスクの登録に失敗しました: $($_.Exception.Message)")
+    Stop-WithError("HologramLaunch タスクの登録に失敗しました: $($_.Exception.Message)")
   }
 }
 
 # Two-stage shutdown of ONLY this repo's electron (leave other Electron apps alone).
 # CloseMainWindow lets the app finish its 'close' handler (which writes config) before exit;
 # a forced kill mid-write used to truncate config.json.
-Write-Host 'Corpus(electron) を停止しています...' -ForegroundColor Cyan
-$procs = Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*corpus*' }
+Write-Host 'Hologram(electron) を停止しています...' -ForegroundColor Cyan
+$procs = Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' }
 foreach ($p in $procs) { try { $p.CloseMainWindow() | Out-Null } catch { } }
 
 # Wait up to ~5s for a clean exit, then force-kill only stragglers.
 for ($i = 0; $i -lt 25; $i++) {
   Start-Sleep -Milliseconds 200
-  if (-not (Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*corpus*' })) { break }
+  if (-not (Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' })) { break }
 }
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*corpus*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*hologram*' } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Start-Sleep -Milliseconds 500
 
 # Relaunch OUTSIDE the sandbox via the Task Scheduler service. Surface failure LOUDLY: the
 # old instance is already killed, so a swallowed failure would leave NO app and NO error.
-Write-Host 'CorpusLaunch で起動しています...' -ForegroundColor Cyan
+Write-Host 'HologramLaunch で起動しています...' -ForegroundColor Cyan
 try {
   Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 } catch {
-  Stop-WithError("CorpusLaunch の起動に失敗しました: $($_.Exception.Message)")
+  Stop-WithError("HologramLaunch の起動に失敗しました: $($_.Exception.Message)")
 }
 
-Write-Host '完了（CorpusLaunch を起動しました）。' -ForegroundColor Green
+Write-Host '完了（HologramLaunch を起動しました）。' -ForegroundColor Green
 Start-Sleep -Milliseconds 800

@@ -3,7 +3,7 @@
 // Wave22/V8 "選択・選択バー一括操作"). Mirrors inspector-builder.ts (V7) /
 // post-grid-builder.ts (V5): the pure logic moves here, DOM event registration
 // (addEventListener calls on #postGrid/#selectionBar) stays in viewer.ts, which
-// just wires the returned functions in. selection.ts (Wave10, the corpusStore-backed
+// just wires the returned functions in. selection.ts (Wave10, the hologramStore-backed
 // selectedSet/anchor bridge) stays untouched — this module is one of its consumers
 // (the selection-bar island's own model derivation is the other, unaffected here).
 // タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory (V9/Wave23,
@@ -22,27 +22,27 @@ import { isOpen as settingsIsOpen } from './settings.ts';
 export interface SelectionBarDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   showToast(msg: unknown): void;
-  getViewGroups(): CorpusPostGroup[];
+  getViewGroups(): HologramPostGroup[];
   getManualGroups(): string[][];
   setManualGroups(groups: string[][]): void;
   markPostsMutated(): void;
   renderPosts(inPlace?: boolean): void;
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
-  showFoldMenu(g: CorpusPostGroup, x: number, y: number): void;
+  showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
   // openTagPopForSelection lives in bulk-edit-builder.ts (V9/Wave23) — a
   // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
-  openTagPopForSelection(anchorRect: CorpusAnchorRect): void;
+  openTagPopForSelection(anchorRect: HologramAnchorRect): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
   // getter since its value changes over the module's lifetime.
   getBrowseMode(): string;
   // Copying an image is post-grid-builder.ts's (it owns the density → file
   // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
-  copyGroupImage(g: CorpusPostGroup): void;
+  copyGroupImage(g: HologramPostGroup): void;
   // Open the quick-view lightbox (peek) for a group — the Space-key entry (#143
   // 未決事項3). Same wiring as the inspector thumbnail's onThumbClick;
   // orchestrator supplies the gallery items.
-  openQuickView(g: CorpusPostGroup): void;
+  openQuickView(g: HologramPostGroup): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
@@ -81,7 +81,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   // Toggle .selecting on the grid container (viewer-owned, static). Per-card
   // .selected is no longer pushed through here — the grid island's Cell reads
-  // corpusStore's 'selectedSet' directly (selection.toggle already
+  // hologramStore's 'selectedSet' directly (selection.toggle already
   // wrote the fresh snapshot), so it re-renders on its own the moment the store changes.
   function syncSelectionClasses() {
     byId('postGrid').classList.toggle('selecting', selection.size() > 0);
@@ -103,17 +103,17 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // bottom floating bar), so every call was `null.style` = a thrown TypeError on
   // EVERY selection change. It read as harmless (the store write happens first, so
   // the rings still updated), until it took out drag-out: the throw escaped
-  // selectOnly() and skipped the corpusIpc.dragOut() after it, so dragging an
+  // selectOnly() and skipped the hologramIpc.dragOut() after it, so dragging an
   // UNSELECTED card never started the OS drag (2026-07-17, reported from the real
   // app — #132/#185). If a selection bar returns, it derives its own visibility
-  // from corpusStore like SelectionBar.tsx already does (count === 0 → null); it
+  // from hologramStore like SelectionBar.tsx already does (count === 0 → null); it
   // does not come back through here.
 
   // Manual grouping: merge every record of the selected cards into one persisted
   // group (manual-groups.json). Members are first removed from any existing
   // manual group so a record never belongs to two groups.
   function groupSelected() {
-    const members = selection.selectedGroups(deps.getViewGroups(), postIdKey).flatMap((g: CorpusPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
+    const members = selection.selectedGroups(deps.getViewGroups(), postIdKey).flatMap((g: HologramPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
     const nextGroups = deps
       .getManualGroups()
@@ -222,13 +222,13 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   // タグを追加: open the bulk tag-pop anchored to the button (reworked to an inspector-
   // inline / Dialog editor in P2⑦; the tag-pop path stands in until then).
-  function tagSelection(anchorRect: CorpusAnchorRect) {
+  function tagSelection(anchorRect: HologramAnchorRect) {
     deps.openTagPopForSelection(anchorRect);
   }
 
   // フォルダに追加: open the folder picker for the whole selection (you choose the
   // destination, same as a card's 📁 — no default folder).
-  function folderSelection(anchorRect: CorpusAnchorRect) {
+  function folderSelection(anchorRect: HologramAnchorRect) {
     if (!folders) return;
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
@@ -236,7 +236,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     // Synthetic stand-in group (no real key/files — showFoldMenu's callees only read
     // .rep.captureId and .records for this bulk "add selection to folder" path).
     // Anchor the picker at the button's top edge: Base UI flips it above the bottom bar.
-    deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as CorpusPostGroup, anchorRect.left, anchorRect.top);
+    deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as HologramPostGroup, anchorRect.left, anchorRect.top);
   }
 
   return {

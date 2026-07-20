@@ -1,8 +1,8 @@
 {
-  "name": "corpus-logo-motion",
+  "name": "hologram-logo-motion",
   "version": "0.1.0",
   "private": true,
-  "description": "Remotion project for the Corpus promo end-card logo motion",
+  "description": "Remotion project for the Hologram promo end-card logo motion",
   "scripts": {
     "studio": "remotion studio",
     "render:slide": "remotion render LogoSlide out/slide-seq --sequence --image-format=png && node scripts/stitch.mjs out/slide-seq out/logo-slide.mp4",

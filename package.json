@@ -1,5 +1,5 @@
 {
-  "name": "corpus-dev",
+  "name": "hologram-dev",
   "private": true,
   "version": "0.0.0",
   "description": "dev tooling deps (e2e capture tests)",

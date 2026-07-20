@@ -1,6 +1,6 @@
 'use strict';
 // App-harness aggregator: runs every scripts/test-app-*.cts in sequence and exits
-// non-zero if ANY fails. Each harness boots its own sandboxed Electron (CORPUS_SMOKE
+// non-zero if ANY fails. Each harness boots its own sandboxed Electron (HOLOGRAM_SMOKE
 // + a mkdtemp config dir), so this is HEAVY (~10s per harness, a window flashes per
 // boot) — it is deliberately NOT part of npm test (run-tests.cts = pure units). Run it
 // at milestones (feedback-verify-batch-at-milestones), e.g. after a renderer
@@ -28,7 +28,7 @@ if (!picked.length) {
 let failed = 0;
 for (const f of picked) {
   const t0 = Date.now();
-  // Each harness builds its own sandbox (mkdtemp + CORPUS_CONFIG_DIR); 120s guards
+  // Each harness builds its own sandbox (mkdtemp + HOLOGRAM_CONFIG_DIR); 120s guards
   // against a hung Electron (the in-app smoke timeout is 9s, so this never bites a
   // healthy run).
   const r = spawnSync(process.execPath, [path.join(__dirname, f)], { stdio: 'pipe', encoding: 'utf8', timeout: 120000 });

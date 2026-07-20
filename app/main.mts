@@ -179,8 +179,8 @@ function initSaveFolderRedundancy() {
 }
 
 // One-time migration (2026-06-25): configDir moved OUT of %APPDATA% to a
-// non-virtualized home dir (~/.corpus — see native-host/paths.js). Carry the user's
-// existing config.json (+ redundant pointer) over from the old %APPDATA%\Corpus
+// non-virtualized home dir (~/.hologram — see native-host/paths.js). Carry the user's
+// existing config.json (+ redundant pointer) over from the old %APPDATA%\Hologram
 // location so settings (saveFolder, extensionId, backup) survive the move. Must run
 // before the first config read. Best-effort + idempotent: skips once the new config
 // exists, and never deletes the old copy (left as a fallback/forensic trail).
@@ -188,7 +188,7 @@ function migrateConfigDirFromAppData() {
   if (process.platform !== 'win32') return;
   const oldBase = process.env.APPDATA;
   if (!oldBase) return;
-  const oldDir = path.join(oldBase, 'Corpus');
+  const oldDir = path.join(oldBase, 'Hologram');
   const newDir = configDir();
   try {
     if (path.resolve(oldDir) === path.resolve(newDir)) return; // override points back at old (e.g. tests)
@@ -687,7 +687,7 @@ async function purgeOldTrash() {
 // アセットは immutable（一度書いたら変わらない）→ 宛先に無いファイルだけコピー(O(new))。
 // 削除は宛先からも伝播（最新ミラー）。ZIP は手動エクスポート専用に残す。
 // 宛先直下にぶちまけない安全策として専用サブフォルダに書く（下記 BACKUP_SUBDIR）。
-const BACKUP_SUBDIR = 'Corpus-mirror';
+const BACKUP_SUBDIR = 'Hologram-mirror';
 function backupDest(dir) {
   return path.join(dir, BACKUP_SUBDIR);
 }
@@ -739,7 +739,7 @@ function validateSaveFolder(dir) {
   if (b && b.dir && (pathIsInside(dir, b.dir) || pathIsInside(b.dir, dir))) return { ok: false, error: 'backup-overlap' };
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const probe = path.join(dir, `.corpus-write-probe-${Date.now()}`);
+    const probe = path.join(dir, `.hologram-write-probe-${Date.now()}`);
     fs.writeFileSync(probe, '');
     fs.unlinkSync(probe);
   } catch {
@@ -995,11 +995,11 @@ function savedWindowBounds() {
   return { x: b.x, y: b.y, width: b.width, height: b.height, isMaximized: !!b.isMaximized };
 }
 
-// Vite dev server base — honored ONLY when CORPUS_DEV_SERVER is set (island HMR /
+// Vite dev server base — honored ONLY when HOLOGRAM_DEV_SERVER is set (island HMR /
 // React Fast Refresh while developing). '1' resolves to the strictPort default;
 // any other value is used as the base URL verbatim (trailing slashes trimmed).
 // null in prod, so loadFile + the file:// navigation guard stand unchanged.
-const DEV_SERVER_URL = process.env.CORPUS_DEV_SERVER ? (process.env.CORPUS_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.CORPUS_DEV_SERVER.replace(/\/+$/, '')) : null;
+const DEV_SERVER_URL = process.env.HOLOGRAM_DEV_SERVER ? (process.env.HOLOGRAM_DEV_SERVER === '1' ? 'http://localhost:5173' : process.env.HOLOGRAM_DEV_SERVER.replace(/\/+$/, '')) : null;
 
 // Navigation lockdown for every web-contents the app creates. Without it, a file
 // (e.g. a local .html) dropped onto a window would make the top frame navigate to
@@ -1114,7 +1114,7 @@ function createWindow(show = true) {
   const cfgTheme = readConfig().theme;
   const theme = ['auto', 'light', 'dark'].includes(cfgTheme) ? cfgTheme : 'auto';
   const dark = theme === 'dark' || (theme === 'auto' && nativeTheme.shouldUseDarkColors);
-  const smoke = process.env.CORPUS_SMOKE === '1';
+  const smoke = process.env.HOLOGRAM_SMOKE === '1';
   const sb = smoke ? null : savedWindowBounds();
   win = new BrowserWindow({
     width: (sb && sb.width) || 1100,
@@ -1124,7 +1124,7 @@ function createWindow(show = true) {
     minHeight: 480,
     show,
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
-    title: 'Corpus',
+    title: 'Hologram',
     icon: APP_ICON,
     paintWhenInitiallyHidden: true,
     // No titleBarOverlay: the min/max/close buttons are app-drawn in the tab bar. The OS
@@ -1177,8 +1177,8 @@ function createWindow(show = true) {
 }
 
 // Side-effect-free launch check: skips host registration, hides the window,
-// and quits once the renderer has loaded. Run with CORPUS_SMOKE=1.
-const SMOKE = process.env.CORPUS_SMOKE === '1';
+// and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
+const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 
 // Single instance: a second launch focuses the existing window instead of
 // opening a duplicate (which would fight over the shared userData/cache).
@@ -1200,8 +1200,8 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(() => {
     // Bind the taskbar/Alt-Tab identity to the appId so Windows shows our window
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
-    // installed exe; setting it here covers the CorpusLaunch dev run.
-    app.setAppUserModelId('com.corpus.app');
+    // installed exe; setting it here covers the HologramLaunch dev run.
+    app.setAppUserModelId('com.hologram.app');
     // Carry config over from the old %APPDATA% location now that configDir moved out
     // of AppData (must run before any config read). 2026-06-25.
     migrateConfigDirFromAppData();
@@ -1217,12 +1217,12 @@ if (!gotSingleInstanceLock) {
     } catch {
       /* ignore */
     }
-    // Dev server runs (CORPUS_DEV_SERVER) never capture, so skip host registration —
-    // no HKCU writes and no native-host copy into the shared ~/.corpus.
+    // Dev server runs (HOLOGRAM_DEV_SERVER) never capture, so skip host registration —
+    // no HKCU writes and no native-host copy into the shared ~/.hologram.
     if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
     registerImageProtocol();
     installNavigationGuards();
-    const startMin = !SMOKE && process.env.CORPUS_START_MINIMIZED === '1';
+    const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
     createWindow(!SMOKE && !startMin); // start-minimized → create hidden, then show inactive below
     watchSaveFolder();
     // Dev-only: hot-reload the renderer when its source (js/html/css) changes, so
@@ -1254,7 +1254,7 @@ if (!gotSingleInstanceLock) {
     }
 
     if (SMOKE) {
-      const shot = process.env.CORPUS_SMOKE_SHOT;
+      const shot = process.env.HOLOGRAM_SMOKE_SHOT;
       (win as BrowserWindow).webContents.on('console-message', (_e, level, message) => {
         console.log(`[renderer:${level}] ${message}`);
       });
@@ -1267,9 +1267,9 @@ if (!gotSingleInstanceLock) {
       };
       (win as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
-          if (process.env.CORPUS_SMOKE_EVAL) {
+          if (process.env.HOLOGRAM_SMOKE_EVAL) {
             try {
-              const r = await (win as BrowserWindow).webContents.executeJavaScript(process.env.CORPUS_SMOKE_EVAL);
+              const r = await (win as BrowserWindow).webContents.executeJavaScript(process.env.HOLOGRAM_SMOKE_EVAL);
               console.log('EVAL_RESULT', JSON.stringify(r));
             } catch (e) {
               console.log('EVAL_ERR', e.message);

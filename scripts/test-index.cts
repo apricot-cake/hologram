@@ -14,7 +14,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createPostIndex, computeDelta } = require('../app/lib-index.mts');
 
-const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index-'));
+const dir = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index-'));
 const INTERNAL = new Set(['config.json', '.index.json', 'tabs.json', 'folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json']);
 
 let sidecarReads = 0;
@@ -113,7 +113,7 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
 
   // --- applyChanges: targeted update from an fs-watch hint (re-stats ONLY the
   //     named sidecars, not the whole folder) ---
-  const dir2 = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index2-'));
+  const dir2 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index2-'));
   const w2 = (name, rec) => realFs.writeFileSync(path.join(dir2, name), JSON.stringify(rec));
   w2('x.json', { captureId: 'x', image: 'x.jpg', capturedAt: '2026-02-01T00:00:00Z' });
   w2('y.json', { captureId: 'y', image: 'y.jpg', capturedAt: '2026-02-02T00:00:00Z' });
@@ -155,7 +155,7 @@ const writeSidecar = (name, rec) => realFs.writeFileSync(path.join(dir, name), J
   //     vanishes (worst case: reconcile purges it from collections/clip). Same for
   //     a BOM'd .index.json snapshot (cold restore must not fall back to a rescan).
   const BOM = String.fromCharCode(0xfeff);
-  const dir3 = realFs.mkdtempSync(path.join(os.tmpdir(), 'corpus-index3-'));
+  const dir3 = realFs.mkdtempSync(path.join(os.tmpdir(), 'hologram-index3-'));
   realFs.writeFileSync(path.join(dir3, 'bom.json'), BOM + JSON.stringify({ captureId: 'bom', image: 'bom.jpg', capturedAt: '2026-03-01T00:00:00Z' }));
   const idxC = createPostIndex({ fs: countingFs, internalFiles: INTERNAL });
   const rc = await idxC.list(dir3);

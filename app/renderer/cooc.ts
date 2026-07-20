@@ -9,7 +9,7 @@
 // deps contract (all functions):
 //   allPosts() — full library (getter — viewer reassigns it)
 //   tagKindOf(tag) — 用語帳 kind ('work'/'character'/null)
-export function makeCooc(deps: { allPosts(): CorpusPost[]; tagKindOf(tag: string): string | null | undefined }) {
+export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOf(tag: string): string | null | undefined }) {
   const { allPosts, tagKindOf } = deps;
 
   // Tag co-occurrence: 作品 → characters that have shared a post with any of these

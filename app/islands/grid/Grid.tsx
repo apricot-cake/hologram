@@ -15,7 +15,7 @@ import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/sto
 // One grid cell. modelOf() re-reads live viewer state (clip flag) on every
 // render, so a bridge repaint() refreshes visible cells. The inspected ring
 // and the selection checkmark are NOT part of that closure-read model —
-// both are derived straight from corpusStore ('inspectedKey' / 'selectedSet',
+// both are derived straight from hologramStore ('inspectedKey' / 'selectedSet',
 // real subscriptions), so opening/closing the inspector or toggling a
 // selection re-renders the right cell with no bridge repaint() needed.
 const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
@@ -56,6 +56,6 @@ function Cell({ index, data }: GridCellProps) {
   return <PostCard m={m} L={model.labels} cellRef={ref} onImgLoad={onImgLoad} />;
 }
 
-export function GridHost({ model }: { model: CorpusGridModel }) {
+export function GridHost({ model }: { model: HologramGridModel }) {
   return <VirtualGridHost model={model} cell={Cell} />;
 }

@@ -14,7 +14,7 @@
 // The gestures are delegated on #postGrid / #posterGrid, so this drives real
 // synthetic MouseEvents and asserts the resulting DOM state (inspector open,
 // lightbox mounted, image view active) — the same black-box shape as
-// test-app-drag-out. Boots its own sandboxed Electron (CORPUS_SMOKE).
+// test-app-drag-out. Boots its own sandboxed Electron (HOLOGRAM_SMOKE).
 //
 //   node scripts/test-app-click-model.cts
 
@@ -26,8 +26,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-clickmodel-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-clickmodel-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -141,9 +141,9 @@ const evalJs = `(async () => {
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: configDir,
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: configDir,
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

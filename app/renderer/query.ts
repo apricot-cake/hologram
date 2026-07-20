@@ -1,4 +1,4 @@
-// Query engine — the boolean condition-tree core of Corpus filtering
+// Query engine — the boolean condition-tree core of Hologram filtering
 // (改訂③), extracted 1:1 from viewer.js as the
 // first "pure logic → service" slice of the viewer decomposition (最終形B).
 // A real ES module (named exports) — imported directly by its consumers
@@ -10,11 +10,11 @@
 // --- Condition-tree machinery. The tree is ALWAYS a root group (op 'and' by
 // default); leaves are {kind:'cond', type, value, …}, groups carry children
 // and an optional neg. Shared by BOTH query builders (posts / posters). ---
-/** @returns {CorpusQueryGroup} */
+/** @returns {HologramQueryGroup} */
 export function emptyTree() {
-  return { kind: 'group', op: 'and', neg: false, children: [] } as CorpusQueryGroup;
+  return { kind: 'group', op: 'and', neg: false, children: [] } as HologramQueryGroup;
 }
-export function treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[] {
+export function treeLeaves(n: HologramQueryNode | null | undefined, out?: HologramQueryLeaf[]): HologramQueryLeaf[] {
   out = out || [];
   if (!n) return out;
   if (n.kind === 'cond') out.push(n);
@@ -27,9 +27,9 @@ export function opposite(op: string): 'and' | 'or' {
 // Deep-clone a query tree for persistence, dropping transient memo fields
 // (_compiled…). Every persisted tree — tab snapshots and saved searches alike —
 // goes through this, so a JSON round-trip never resurrects a stale memo.
-export const cloneTree = (tree: CorpusQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
+export const cloneTree = (tree: HologramQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
 // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
-export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): CorpusQueryGroup {
+export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): HologramQueryGroup {
   const root = emptyTree();
   const NO_OP = new Set(['date', 'engagement', 'clip', 'workspace']);
   const byType = new Map<string, { type: string; [k: string]: any }[]>();
@@ -42,19 +42,19 @@ export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any 
     list.push(x);
   }
   for (const [type, list] of byType) {
-    const leaves: CorpusQueryLeaf[] = list.map((x) => Object.assign({ kind: 'cond' as const }, x));
+    const leaves: HologramQueryLeaf[] = list.map((x) => Object.assign({ kind: 'cond' as const }, x));
     if (NO_OP.has(type)) {
       root.children.push(...leaves);
       continue;
     }
     const op = (ops || {})[type] || 'or';
-    root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves } as CorpusQueryGroup);
+    root.children.push({ kind: 'group', op: op === 'and' ? 'and' : 'or', neg: op === 'not', children: leaves } as HologramQueryGroup);
   }
   return root;
 }
 // Recursive evaluation of a query tree against one item, using a view-supplied
 // leaf predicate factory (predOf). Shared by both builders (post + poster).
-export function evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean {
+export function evalNode(n: HologramQueryNode, item: unknown, predOf: (f: HologramQueryLeaf) => (item: any) => boolean): boolean {
   if (n.kind === 'cond') {
     const r = predOf(n)(item);
     return n.neg ? !r : r;
@@ -69,9 +69,9 @@ export function evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQu
 // wiring stays in viewer.ts (createQueryBuilder), which binds these to its
 // per-instance tree. ---
 /** child → parent map, rebuilt for one surgery pass. */
-export function treeParentMap(tree: CorpusQueryGroup): Map<CorpusQueryNode, CorpusQueryGroup> {
-  const m = new Map<CorpusQueryNode, CorpusQueryGroup>();
-  (function rec(n: CorpusQueryNode) {
+export function treeParentMap(tree: HologramQueryGroup): Map<HologramQueryNode, HologramQueryGroup> {
+  const m = new Map<HologramQueryNode, HologramQueryGroup>();
+  (function rec(n: HologramQueryNode) {
     if (n.kind !== 'group') return;
     (n.children || []).forEach((c) => {
       m.set(c, n);
@@ -80,12 +80,12 @@ export function treeParentMap(tree: CorpusQueryGroup): Map<CorpusQueryNode, Corp
   })(tree);
   return m;
 }
-export function nodeContains(a: CorpusQueryNode | null | undefined, b: CorpusQueryNode | null | undefined): boolean {
+export function nodeContains(a: HologramQueryNode | null | undefined, b: HologramQueryNode | null | undefined): boolean {
   if (a === b) return true;
   if (!a || a.kind !== 'group') return false;
   return (a.children || []).some((c) => nodeContains(c, b));
 }
-export function detachNode(node: CorpusQueryNode, pmap: Map<CorpusQueryNode, CorpusQueryGroup>): void {
+export function detachNode(node: HologramQueryNode, pmap: Map<HologramQueryNode, HologramQueryGroup>): void {
   const par = pmap.get(node);
   if (!par) return;
   const i = par.children.indexOf(node);
@@ -94,10 +94,10 @@ export function detachNode(node: CorpusQueryNode, pmap: Map<CorpusQueryNode, Cor
 // Auto-clean: drop empty groups, collapse single-member non-root groups,
 // folding the group's negation into the survivor ("parentheses vanish once a
 // group is down to one member").
-export function cleanupTree(tree: CorpusQueryGroup): void {
-  (function rec(node: CorpusQueryNode) {
+export function cleanupTree(tree: HologramQueryGroup): void {
+  (function rec(node: HologramQueryNode) {
     if (node.kind !== 'group') return;
-    const out: CorpusQueryNode[] = [];
+    const out: HologramQueryNode[] = [];
     for (const c of node.children) {
       rec(c);
       if (c.kind === 'group') {
@@ -114,14 +114,14 @@ export function cleanupTree(tree: CorpusQueryGroup): void {
     node.children = out;
   })(tree);
 }
-export function hasLeafValue(tree: CorpusQueryGroup, type: string, value: unknown): boolean {
+export function hasLeafValue(tree: HologramQueryGroup, type: string, value: unknown): boolean {
   return treeLeaves(tree).some((c) => c.type === type && c.value === value);
 }
 // Remove every cond leaf matching pred, anywhere in the tree (+ cleanup).
 // Returns whether anything was actually removed (callers gate a refresh on it).
-export function removeCondsMatching(tree: CorpusQueryGroup, pred: (c: CorpusQueryLeaf) => boolean): boolean {
+export function removeCondsMatching(tree: HologramQueryGroup, pred: (c: HologramQueryLeaf) => boolean): boolean {
   const before = treeLeaves(tree).length;
-  (function rec(node: CorpusQueryNode) {
+  (function rec(node: HologramQueryNode) {
     if (node.kind !== 'group') return;
     node.children = node.children.filter((c) => !(c.kind === 'cond' && pred(c)));
     node.children.forEach(rec);
@@ -131,7 +131,7 @@ export function removeCondsMatching(tree: CorpusQueryGroup, pred: (c: CorpusQuer
 }
 // Shadow-filter identity: date matches by type alone (single date condition),
 // engagement by engType, everything else by value.
-export function sameLeaf(c: CorpusQueryLeaf, f: { type: string; [k: string]: any }): boolean {
+export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: any }): boolean {
   if (c.type !== f.type) return false;
   if (f.type === 'date') return true; // single date condition
   if (f.type === 'engagement') return c.engType === f.engType;
@@ -140,7 +140,7 @@ export function sameLeaf(c: CorpusQueryLeaf, f: { type: string; [k: string]: any
 // The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
 // tab title consume. date/engagement pass through whole (minus tree-only
 // fields); other types dedupe on type+value.
-export function buildShadow(tree: CorpusQueryGroup): Array<{ type: string; [k: string]: any }> {
+export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k: string]: any }> {
   const seen = new Set<string>();
   const out: Array<{ type: string; [k: string]: any }> = [];
   for (const c of treeLeaves(tree)) {
@@ -165,13 +165,13 @@ export function buildShadow(tree: CorpusQueryGroup): Array<{ type: string; [k: s
 // as a member of the target group, 'root' moves it to the top level. Returns
 // false (tree untouched) when the drop is rejected — onto itself or into its
 // own descendant.
-export function dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | undefined, target: CorpusQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean {
+export function dropNode(tree: HologramQueryGroup, drag: HologramQueryNode | null | undefined, target: HologramQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean {
   if (!target || !drag || target === drag || nodeContains(drag, target)) return false;
   const pmap = treeParentMap(tree);
   detachNode(drag, pmap); // remove from its current parent first
   if (mode === 'pair') {
     const par = pmap.get(target) || tree;
-    const g: CorpusQueryGroup = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
+    const g: HologramQueryGroup = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
     const i = par.children.indexOf(target);
     if (i >= 0) par.children[i] = g;
     else par.children.push(g);
@@ -187,10 +187,10 @@ export function dropNode(tree: CorpusQueryGroup, drag: CorpusQueryNode | null | 
 // Returns the NEW root (the caller reassigns its tree) or null when there is
 // nothing to wrap. A single-condition wrap collapses via cleanup (nothing
 // meaningful to group).
-export function wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null {
+export function wrapAllInGroup(tree: HologramQueryGroup): HologramQueryGroup | null {
   if (!tree.children.length) return null;
-  const g = { kind: 'group', op: tree.op, neg: false, children: tree.children } as CorpusQueryGroup;
-  const root = { kind: 'group', op: 'and', neg: false, children: [g] } as CorpusQueryGroup;
+  const g = { kind: 'group', op: tree.op, neg: false, children: tree.children } as HologramQueryGroup;
+  const root = { kind: 'group', op: 'and', neg: false, children: [g] } as HologramQueryGroup;
   cleanupTree(root);
   return root;
 }
@@ -205,7 +205,7 @@ export function wrapAllInGroup(tree: CorpusQueryGroup): CorpusQueryGroup | null 
 // type schemas (posts vs posters differ), injected like predOf. ---
 /** Default within-cluster operator: multi-value attributes narrow by default
  *  (すべて); for single-value attributes "any of" is the only satisfiable read. */
-export function facetDefaultOp(type: string, opts: CorpusFacetOpts): 'and' | 'or' {
+export function facetDefaultOp(type: string, opts: HologramFacetOpts): 'and' | 'or' {
   return (opts.multiValueTypes || []).includes(type) ? 'and' : 'or';
 }
 // Strict facet analysis. null = NOT facet-shaped (OR root / real nesting /
@@ -213,13 +213,13 @@ export function facetDefaultOp(type: string, opts: CorpusFacetOpts): 'and' | 'or
 // falls back to a read-only summary. Semantics-preserving with ONE deliberate
 // repair: 2+ bare single-value leaves of one type read as 'or' (their root-AND
 // was the 改訂③ two-platform always-false trap).
-export function facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): CorpusFacetView | null {
+export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): HologramFacetView | null {
   if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
   const standalone = new Set<string>(opts.standaloneTypes || []);
   const multi = new Set<string>(opts.multiValueTypes || []);
-  const clusters = new Map<string, CorpusFacetCluster>(); // type → cluster (insertion order = display order)
-  const singles: CorpusQueryLeaf[] = [];
-  const excl: CorpusQueryLeaf[] = [];
+  const clusters = new Map<string, HologramFacetCluster>(); // type → cluster (insertion order = display order)
+  const singles: HologramQueryLeaf[] = [];
+  const excl: HologramQueryLeaf[] = [];
   for (const c of tree.children) {
     if (c.kind === 'cond') {
       if (c.neg) {
@@ -243,7 +243,7 @@ export function facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): Corp
     const t = first.kind === 'cond' ? first.type : null;
     if (!t || standalone.has(t) || clusters.has(t)) return null;
     for (const l of c.children) if (l.kind !== 'cond' || l.neg || l.type !== t) return null;
-    clusters.set(t, { type: t, op: multi.has(t) ? c.op : 'or', leaves: c.children.slice() as CorpusQueryLeaf[], grouped: true });
+    clusters.set(t, { type: t, op: multi.has(t) ? c.op : 'or', leaves: c.children.slice() as HologramQueryLeaf[], grouped: true });
   }
   return { clusters: Array.from(clusters.values()), singles, excl };
 }
@@ -251,11 +251,11 @@ export function facetViewOf(tree: CorpusQueryGroup, opts: CorpusFacetOpts): Corp
 // cluster becomes a real group (the すべて/どれか toggle needs a node to write
 // to), ordered clusters → standalone leaves → excluded leaves. Returns true
 // when the tree was facet-shaped (now canonical); false leaves it untouched.
-export function canonicalizeFacet(tree: CorpusQueryGroup, opts: CorpusFacetOpts): boolean {
+export function canonicalizeFacet(tree: HologramQueryGroup, opts: HologramFacetOpts): boolean {
   const v = facetViewOf(tree, opts);
   if (!v) return false;
-  const out: CorpusQueryNode[] = [];
-  for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : ({ kind: 'group', op: cl.op, neg: false, children: cl.leaves } as CorpusQueryGroup));
+  const out: HologramQueryNode[] = [];
+  for (const cl of v.clusters) out.push(cl.leaves.length === 1 ? cl.leaves[0] : ({ kind: 'group', op: cl.op, neg: false, children: cl.leaves } as HologramQueryGroup));
   out.push(...v.singles, ...v.excl);
   tree.children = out;
   return true;
@@ -264,7 +264,7 @@ export function canonicalizeFacet(tree: CorpusQueryGroup, opts: CorpusFacetOpts)
 // the existing bare leaf + the newcomer into a fresh group (default op), or
 // land at the top level (standalone types always do). Callers handle
 // single-value replacement and dup checks; only call on facet-shaped trees.
-export function facetAdd(tree: CorpusQueryGroup, node: CorpusQueryLeaf, opts: CorpusFacetOpts): CorpusQueryLeaf {
+export function facetAdd(tree: HologramQueryGroup, node: HologramQueryLeaf, opts: HologramFacetOpts): HologramQueryLeaf {
   if (!(opts.standaloneTypes || []).includes(node.type)) {
     for (let i = 0; i < tree.children.length; i++) {
       const c = tree.children[i];
@@ -283,7 +283,7 @@ export function facetAdd(tree: CorpusQueryGroup, node: CorpusQueryLeaf, opts: Co
 }
 // The すべて/どれか toggle: set a cluster's operator. Clusters with 2+ values
 // are real groups in a canonical tree; false when no such group exists.
-export function facetSetOp(tree: CorpusQueryGroup, type: string, op: string): boolean {
+export function facetSetOp(tree: HologramQueryGroup, type: string, op: string): boolean {
   for (const c of tree.children) {
     if (c.kind === 'group' && !c.neg && c.children.length && c.children[0].kind === 'cond' && c.children[0].type === type) {
       c.op = op === 'and' ? 'and' : 'or';
@@ -295,7 +295,7 @@ export function facetSetOp(tree: CorpusQueryGroup, type: string, op: string): bo
 // Move a leaf between its cluster and the 除く cluster: detach, flip neg,
 // re-insert (negated → top level; positive → back through facetAdd). A value
 // returning while it already exists positively is dropped as redundant.
-export function facetSetNeg(tree: CorpusQueryGroup, node: CorpusQueryLeaf, neg: boolean, opts: CorpusFacetOpts): boolean {
+export function facetSetNeg(tree: HologramQueryGroup, node: HologramQueryLeaf, neg: boolean, opts: HologramFacetOpts): boolean {
   if (!!node.neg === !!neg) return false;
   detachNode(node, treeParentMap(tree));
   cleanupTree(tree);
@@ -332,10 +332,10 @@ export const hostOf = (url: string | null | undefined): string => {
   }
 };
 // Stable per-author key: prefer the platform user id, fall back to the handle.
-export const userKey = (p: CorpusPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
+export const userKey = (p: HologramPost): string => p.platform + ':' + (p.userId || '@' + (p.screenName || ''));
 // Every text-ish field a free-text query can match against.
 // (p.description = Eagle-migration annotation — real prose, so it belongs here.)
-export function textHaystackOf(p: CorpusPost): string[] {
+export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.description]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
@@ -376,7 +376,7 @@ export function makePostPredOf(deps: {
   isClipped(captureId: string): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
-}): (f: CorpusQueryLeaf) => (p: CorpusPost) => boolean {
+}): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
       // 'post' = SNS投稿（リンクあり）/ 'image' = 取り込み画像（リンクなし）。url の有無が本質。
@@ -438,12 +438,12 @@ export function makePostPredOf(deps: {
           const lq = q.toLowerCase();
           const urlish = /[./]/.test(q);
           const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
-          const urlHit: ((p: CorpusPost) => boolean) | null = !urlish ? null : (p: CorpusPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
+          const urlHit: ((p: HologramPost) => boolean) | null = !urlish ? null : (p: HologramPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq);
           const m = deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
           if (m) {
-            f._compiled = (p: CorpusPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
+            f._compiled = (p: HologramPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
           } else {
-            f._compiled = (p: CorpusPost) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
+            f._compiled = (p: HologramPost) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
           }
         }
         return f._compiled;
@@ -465,7 +465,7 @@ export function makePostPredOf(deps: {
 export function makePosterPredOf(deps: {
   posterTagsOf(key: string): string[];
   folderById(id: string): { items: string[] } | null | undefined;
-}): (f: CorpusQueryLeaf) => (u: CorpusUserAgg) => boolean {
+}): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
       case 'platform':
@@ -480,7 +480,7 @@ export function makePosterPredOf(deps: {
         return (u) => set.has(u.key);
       }
       case 'date': {
-        const field = (f.dateField || 'latest') as keyof CorpusUserAgg; // latest | lastCapture | authorCreatedAt
+        const field = (f.dateField || 'latest') as keyof HologramUserAgg; // latest | lastCapture | authorCreatedAt
         const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
         return (u) => {
           const v = u[field];

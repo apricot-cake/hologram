@@ -14,7 +14,7 @@ export interface QfPopDeps {
   posterRemoveByLeaf(type: string, value: string): void;
   addFilter(filter: { type: string; [k: string]: any }): void;
   removeFilter(index: number): void;
-  buildUsers(): CorpusUserAgg[];
+  buildUsers(): HologramUserAgg[];
   updateSidebarState(): void;
 }
 
@@ -22,7 +22,7 @@ export function makeQfPop(deps: QfPopDeps) {
   // Route a value pick to the right business action. Called headlessly by the
   // filterbar value editor (no open flyout) — the QB mutation's own refresh()
   // drives the re-render, so there is nothing to re-render here.
-  function onQfPick(cat: string, it: CorpusQfPopItem) {
+  function onQfPick(cat: string, it: HologramQfPopItem) {
     const v = it.v;
     // Poster flyouts toggle a top-level leaf in the poster query tree. 作品/キャラ/タグ
     // all map to one tag leaf type (種別 only scopes which the row offers).

@@ -7,7 +7,7 @@
 // islands (formerly a separate, looser tsconfig.renderer.json).
 //
 // Typing altitude: function surfaces are typed; domain payloads (sidecar post
-// records, aggregate rows) stay open objects (`CorpusPost` = index signature)
+// records, aggregate rows) stay open objects (`HologramPost` = index signature)
 // until the JSON layer itself is typed — same pragmatics as the islands'
 // globals.d.ts.
 
@@ -19,40 +19,40 @@
 declare const module: any;
 
 // ---- Sidecar post record (open shape — fields land from capture JSON) ----
-type CorpusPost = { [k: string]: any };
+type HologramPost = { [k: string]: any };
 
 // ---- renderer/query.js — condition-tree machinery + post-side predicates ----
 // The tree is ALWAYS a root group (op 'and' by default); leaves are
 // {kind:'cond', type, value, …}; groups carry children and an optional neg.
-interface CorpusQueryLeaf {
+interface HologramQueryLeaf {
   kind: 'cond';
   type: string;
   [k: string]: any;
 }
-interface CorpusQueryGroup {
+interface HologramQueryGroup {
   kind: 'group';
   op: 'and' | 'or';
   neg: boolean;
-  children: CorpusQueryNode[];
+  children: HologramQueryNode[];
 }
-type CorpusQueryNode = CorpusQueryLeaf | CorpusQueryGroup;
+type HologramQueryNode = HologramQueryLeaf | HologramQueryGroup;
 
 // Facet domain (改訂④ ファセット・チップ): the UI builds only facet-CNF trees.
 // opts = the view-owned type schema (multi-value vs standalone types).
-interface CorpusFacetOpts {
+interface HologramFacetOpts {
   multiValueTypes?: string[];
   standaloneTypes?: string[];
 }
-interface CorpusFacetCluster {
+interface HologramFacetCluster {
   type: string;
   op: 'and' | 'or';
-  leaves: CorpusQueryLeaf[];
+  leaves: HologramQueryLeaf[];
   grouped: boolean;
 }
-interface CorpusFacetView {
-  clusters: CorpusFacetCluster[];
-  singles: CorpusQueryLeaf[];
-  excl: CorpusQueryLeaf[];
+interface HologramFacetView {
+  clusters: HologramFacetCluster[];
+  singles: HologramQueryLeaf[];
+  excl: HologramQueryLeaf[];
 }
 
 // query.ts's own API surface (emptyTree/evalNode/makePostPredOf/etc.) is a real
@@ -61,18 +61,18 @@ interface CorpusFacetView {
 // corpus-react-purity-execution-map memory for the conversion).
 
 // ---- renderer/records.ts — record shape helpers + grouping. A real ES module
-// (named exports) now; only the CorpusPostGroup data shape stays here (shared
+// (named exports) now; only the HologramPostGroup data shape stays here (shared
 // with viewer.ts / selection.ts / image-tab.ts). ----
-interface CorpusPostGroup {
+interface HologramPostGroup {
   key: string;
-  records: CorpusPost[];
-  rep: CorpusPost;
+  records: HologramPost[];
+  rep: HologramPost;
   files: string[];
   [k: string]: any;
 }
 
 // ---- renderer/selection.ts — the post-grid multi-select Set + shift-range
-// anchor (P4-B スライス⑬). corpusStore's 'selectedSet' key IS the state (no
+// anchor (P4-B スライス⑬). hologramStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
 // real ES module (named exports) now — no ambient Window-shaped interface
 // needed (see the corpus-react-purity-execution-map memory for the conversion). ----
@@ -84,8 +84,8 @@ interface CorpusPostGroup {
 
 // ---- renderer/facets.ts — facet counts + value-flyout row models. makeFacets
 // (facets.ts) and makeCooc (cooc.ts) are real ES modules (named exports) now; only
-// CorpusQfRow stays here as a cross-module value-flyout row shape. ----
-interface CorpusQfRow {
+// HologramQfRow stays here as a cross-module value-flyout row shape. ----
+interface HologramQfRow {
   v?: string;
   l?: string;
   on?: boolean;
@@ -99,8 +99,8 @@ interface CorpusQfRow {
 
 // ---- renderer/users.ts — poster roll-up + search-box suggestions. A real ES
 // module (named exports) now — no ambient Window-shaped interface needed, but
-// CorpusUserAgg stays (a data shape shared with listing.ts/sidebar.ts). ----
-interface CorpusUserAgg {
+// HologramUserAgg stays (a data shape shared with listing.ts/sidebar.ts). ----
+interface HologramUserAgg {
   key: string;
   platform: string;
   screenName: string;
@@ -116,9 +116,9 @@ interface CorpusUserAgg {
   count: number;
 }
 // ---- renderer/tab-state.ts — tab titles + nav history + tabs.json shape. A real
-// ES module (named exports) now; only the CorpusTabSnapshot / CorpusTab data shapes
+// ES module (named exports) now; only the HologramTabSnapshot / HologramTab data shapes
 // stay here (shared with viewer.ts / tabs.ts / image-tab.ts). ----
-interface CorpusTabSnapshot {
+interface HologramTabSnapshot {
   f?: Array<{ type: string; [k: string]: any }>;
   search?: string;
   multi?: boolean;
@@ -128,18 +128,18 @@ interface CorpusTabSnapshot {
 // `u` is a pseudo-URL — a display label + identity key (the global history page
 // derives its rows from it); it is NEVER a restore contract (state is the truth,
 // u is derived from it).
-interface CorpusNavEntry {
+interface HologramNavEntry {
   u: string;
   kind: 'posts' | 'posters' | 'image';
-  state: CorpusTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
+  state: HologramTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
 }
-interface CorpusTab {
+interface HologramTab {
   id: string;
   pinned: boolean;
   title: string | null;
-  state: CorpusTabSnapshot | null;
+  state: HologramTabSnapshot | null;
   _scrollTop?: number;
-  // Per-tab back/forward stack (JSON-serialized CorpusNavEntry each) — carried
+  // Per-tab back/forward stack (JSON-serialized HologramNavEntry each) — carried
   // on the tab object across switches AND persisted to tabs.json (#144 未決5).
   _navHist?: string[];
   _navIdx?: number;
@@ -149,7 +149,7 @@ interface CorpusTab {
 // ---- renderer/listing.js — the "what is visible, in what order" pipeline for
 // all three browse modes (post filter+sort / poster filter+sort / folder
 // derivations incl. the per-render-pass record cache). The folder shape is
-// CorpusFolder (below); dynamic folders carry a saved-search (tree + q). ----
+// HologramFolder (below); dynamic folders carry a saved-search (tree + q). ----
 // listing.ts's own API surface (makeListing/cloneTree/namedPosters/etc.) is a
 // real ES module now — its named exports (including the exported ListingDeps
 // interface) carry their own types, so no ambient Window-shaped interface is
@@ -158,9 +158,9 @@ interface CorpusTab {
 
 // ---- renderer/geometry.ts — pure column / slider-track / thumbnail math. A
 // real ES module (named exports) now — no ambient Window-shaped interface
-// needed, but CorpusGridMetrics stays (a data shape shared with viewer.ts). ----
+// needed, but HologramGridMetrics stays (a data shape shared with viewer.ts). ----
 // Metrics: W = floored fractional container width, g = gutter px.
-interface CorpusGridMetrics {
+interface HologramGridMetrics {
   W: number;
   g: number;
 }
@@ -170,8 +170,8 @@ interface CorpusGridMetrics {
 
 // ---- renderer/undo.ts — linear tag-edit undo/redo stack. A real ES module
 // (named exports) now — no ambient Window-shaped interface needed, but
-// CorpusUndoRecord stays (a data shape shared with viewer.ts). ----
-interface CorpusUndoRecord {
+// HologramUndoRecord stays (a data shape shared with viewer.ts). ----
+interface HologramUndoRecord {
   captureId?: string;
   image?: string;
   key?: string;
@@ -186,29 +186,29 @@ interface CorpusUndoRecord {
 
 // ---- renderer/folders.ts — library folders store + management modal +
 // library-wide clip set. A real ES module (named exports) now — no ambient
-// CorpusFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
+// HologramFoldersApi/Window-shaped interface needed. The raw createFolderStore factory is
 // shared internally by the library folders store (isLibrary) and, via
-// createPersistedFolderStore's persist/load wiring, the corpusPosterFolderStore()
+// createPersistedFolderStore's persist/load wiring, the hologramPosterFolderStore()
 // factory (used by viewer.js pfStore, no isLibrary). A folder always has an
 // id/name/items; folders additionally carry kind/created and a dynamic
 // saved-search (tree+q). ----
-interface CorpusFolder {
+interface HologramFolder {
   id: string;
   name: string;
   items: string[];
   kind?: 'static' | 'dynamic';
   created?: number | null;
   /** Dynamic folders only: the saved search. The free-text term is a 'text' leaf inside it. */
-  tree?: CorpusQueryGroup | null;
+  tree?: HologramQueryGroup | null;
   [k: string]: any;
 }
-interface CorpusFolderStore {
-  all(): CorpusFolder[];
-  allRaw(): CorpusFolder[];
+interface HologramFolderStore {
+  all(): HologramFolder[];
+  allRaw(): HologramFolder[];
   setAll(list: unknown): void;
-  byId(id: string | null | undefined): CorpusFolder | null;
+  byId(id: string | null | undefined): HologramFolder | null;
   has(id: string | null | undefined, key: string): boolean;
-  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null): CorpusFolder | null;
+  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null): HologramFolder | null;
   remove(id: string | null | undefined): void;
   rename(id: string | null | undefined, name: string | null | undefined): boolean;
   /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
@@ -221,19 +221,19 @@ interface CorpusFolderStore {
   update?(id: string | null | undefined, patch: { tree?: unknown } | null | undefined): boolean;
 }
 /** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
-type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
+type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void> };
 /** folders.ts's management-modal state (FolderManagerModal.tsx via getManager()/subscribeManager()). openId bumps only on openManager() (a fresh modal session), not on list refreshes. */
-interface CorpusFolderManagerModel {
+interface HologramFolderManagerModel {
   openId: number;
-  list: CorpusFolder[];
+  list: HologramFolder[];
 }
 
 // renderer/bridge.ts's makeCallbackBridge factory (shared by the callback-carrying
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
-// its return type is inferred, so no ambient CorpusCallbackBridge/CorpusMakeBridge type.
+// its return type is inferred, so no ambient HologramCallbackBridge/HologramMakeBridge type.
 
 // renderer/store.ts is a real ES module now (Wave12) — get/set/subscribe are
-// imported directly by every consumer; no ambient CorpusStore/Window merge
-// exists anywhere anymore. The old duplicated `interface Window { corpusSelection }`
+// imported directly by every consumer; no ambient HologramStore/Window merge
+// exists anywhere anymore. The old duplicated `interface Window { hologramSelection }`
 // (once the only Window-merge in this file) is gone too — selection.ts is a real
 // ES module now.

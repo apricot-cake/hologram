@@ -85,7 +85,7 @@
       // 無効化はすべて「リポの意図的イディオム/方針との衝突」。正しさ系は全て有効のまま。
       "a11y": {
         // デスクトップ Electron アプリで a11y/キーボード操作は目的に掲げない方針
-        // （メモリ corpus-react-settings-pilot「挙動の堅牢性は目的でない」）。
+        // （メモリ hologram-react-settings-pilot「挙動の堅牢性は目的でない」）。
         "recommended": false
       },
       "style": {

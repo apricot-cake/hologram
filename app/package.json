@@ -1,7 +1,7 @@
 {
-  "name": "corpus-app",
+  "name": "hologram-app",
   "version": "1.1.0",
-  "description": "Corpus desktop viewer",
+  "description": "Hologram desktop viewer",
   "main": "main.mts",
   "author": "apricot-cake",
   "license": "MIT",
@@ -32,8 +32,8 @@
     "vite": "^8.1.0"
   },
   "build": {
-    "appId": "com.corpus.app",
-    "productName": "Corpus",
+    "appId": "com.hologram.app",
+    "productName": "Hologram",
     "directories": {
       "output": "dist"
     },

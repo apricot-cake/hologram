@@ -1,6 +1,6 @@
 'use strict';
 
-// Watch the Corpus save folder and AUTO-VERIFY every new capture against the
+// Watch the Hologram save folder and AUTO-VERIFY every new capture against the
 // platform's public API (re-fetched via extension/metadata.js). Per capture it
 // prints PASS/FAIL with the reasons and a ready-to-paste test-progress row —
 // the human only opens pages and clicks/drags; selection criteria come from

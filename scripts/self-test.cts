@@ -10,7 +10,7 @@
 //      native-messaging framing work (ping + save + sidecar written).
 //   2. config.json parses (reports the resolved save folder).
 //   3. the save folder (or its nearest existing ancestor) is writable.
-//   4. (win32) the native-host MANIFEST under ~/.corpus resolves (launcher exists,
+//   4. (win32) the native-host MANIFEST under ~/.hologram resolves (launcher exists,
 //      allows an extension origin). The HKCU pointer is reported as INFO only — an
 //      in-container `reg query` reads the virtual hive and can't be trusted.
 //   5. the DEPLOYED bridge (configDir/bridge.cts) matches the repo bridge —
@@ -69,13 +69,13 @@ function resolveSaveFolder() {
 // --- check 1: sandbox round-trip (ping + save) ---
 function sandboxRoundTrip() {
   return new Promise<any>((resolve) => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-selftest-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-selftest-'));
     const saveFolder = path.join(tmp, 'saves');
-    fs.mkdirSync(path.join(tmp, 'Corpus'), { recursive: true });
-    fs.writeFileSync(path.join(tmp, 'Corpus', 'config.json'), JSON.stringify({ saveFolder }));
+    fs.mkdirSync(path.join(tmp, 'Hologram'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'Hologram', 'config.json'), JSON.stringify({ saveFolder }));
     const captureId = '1717500000000-beef';
-    // Isolate configDir to the sandbox via CORPUS_CONFIG_DIR.
-    const env = Object.assign({}, process.env, { APPDATA: tmp, CORPUS_CONFIG_DIR: path.join(tmp, 'Corpus') });
+    // Isolate configDir to the sandbox via HOLOGRAM_CONFIG_DIR.
+    const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram') });
     const child = spawn(process.execPath, [REPO_BRIDGE], { env, stdio: ['pipe', 'pipe', 'ignore'] });
     let out = Buffer.alloc(0);
     child.stdout.on('data', (d) => {
@@ -132,12 +132,12 @@ function checkWritable() {
 }
 
 // --- check 4: native host registration (win32) ---
-// Hard-check the MANIFEST FILE under configDir() (~/.corpus), which is NON-virtualized.
+// Hard-check the MANIFEST FILE under configDir() (~/.hologram), which is NON-virtualized.
 // We deliberately do NOT hard-fail on the HKCU pointer: a process running inside the MSIX
 // Claude container reads the VIRTUAL hive (see CLAUDE.md), so a `reg query` verdict here is
 // unreliable — the real Chrome consults the real hive. The HKCU value is reported separately
 // as a soft INFO line (checkRegistryPointer). The authoritative signals for "is capture
-// working" are a real-Chrome capture + ~/.corpus/bridge.log / capture.log.
+// working" are a real-Chrome capture + ~/.hologram/bridge.log / capture.log.
 function checkRegistration() {
   if (process.platform !== 'win32') return { name: 'host registration', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const manifestPath = path.join(configDir(), `${install.HOST_NAME}.json`);
@@ -161,7 +161,7 @@ function checkRegistration() {
 function checkRegistryPointer() {
   if (process.platform !== 'win32') return { name: 'HKCU pointer (info)', ok: true, soft: true, detail: 'skipped (non-win32)' };
   const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${install.HOST_NAME}`;
-  const caveat = 'inside the MSIX Claude container this reads the VIRTUAL hive — NOT proof of the real Chrome state; confirm via a real capture + ~/.corpus/bridge.log';
+  const caveat = 'inside the MSIX Claude container this reads the VIRTUAL hive — NOT proof of the real Chrome state; confirm via a real capture + ~/.hologram/bridge.log';
   try {
     const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8' });
     const m = out.match(/REG_SZ\s+(.+?)\s*$/m);

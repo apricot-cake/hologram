@@ -20,7 +20,7 @@
 //   stickyRecs — Set of captureIds kept visible after a mutation un-matches the filter
 //   sortValue() — the post sort select's current value
 //   shuffleSeed() — the active tab's shuffle seed (only read by the 'random' sort)
-//   searchQuery() — the search-box term (corpusStore-backed)
+//   searchQuery() — the search-box term (hologramStore-backed)
 //   buildUsers() — poster roll-up (users.ts product)
 //   posterQBEval(u) / posterQBTree() — the poster query builder (deferred — later const)
 //   posterSort() / folderSort() — mode sort keys (getters — reassigned lets)
@@ -29,25 +29,25 @@
 import { shuffleRank } from './shuffle.ts';
 
 export interface ListingDeps {
-  allPosts(): CorpusPost[];
-  postsById(): Map<string, CorpusPost>;
-  mediaFilesOf(p: CorpusPost): string[];
-  densityImage(p: CorpusPost, density: string): string;
-  percentileFn(list: CorpusPost[]): (p: CorpusPost) => number;
-  evalNode(n: CorpusQueryNode, item: unknown, predOf: (f: CorpusQueryLeaf) => (item: any) => boolean): boolean;
-  treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQueryLeaf[]): CorpusQueryLeaf[];
-  postPredOf(f: CorpusQueryLeaf): (p: CorpusPost) => boolean;
-  currentTree(): CorpusQueryGroup;
+  allPosts(): HologramPost[];
+  postsById(): Map<string, HologramPost>;
+  mediaFilesOf(p: HologramPost): string[];
+  densityImage(p: HologramPost, density: string): string;
+  percentileFn(list: HologramPost[]): (p: HologramPost) => number;
+  evalNode(n: HologramQueryNode, item: unknown, predOf: (f: HologramQueryLeaf) => (item: any) => boolean): boolean;
+  treeLeaves(n: HologramQueryNode | null | undefined, out?: HologramQueryLeaf[]): HologramQueryLeaf[];
+  postPredOf(f: HologramQueryLeaf): (p: HologramPost) => boolean;
+  currentTree(): HologramQueryGroup;
   stickyRecs: Set<string>;
   sortValue(): string;
   shuffleSeed(): string;
   searchQuery(): string;
-  buildUsers(): CorpusUserAgg[];
-  posterQBEval(u: CorpusUserAgg): boolean;
-  posterQBTree(): CorpusQueryGroup;
+  buildUsers(): HologramUserAgg[];
+  posterQBEval(u: HologramUserAgg): boolean;
+  posterQBTree(): HologramQueryGroup;
   posterSort(): string;
   folderSort(): string;
-  allFolders(): CorpusFolder[];
+  allFolders(): HologramFolder[];
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 export function makeListing(deps: ListingDeps) {
@@ -55,7 +55,7 @@ export function makeListing(deps: ListingDeps) {
 
   // Content gate shared by the post grid and dynamic folders: only records
   // with something to show (image / media / text / title) enter a listing.
-  const hasContent = (p: CorpusPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
+  const hasContent = (p: HologramPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
   function getFilteredPosts() {
     // 統一ビュー: 全アイテム（SNS投稿＋ライブラリ画像）が対象。中身（画像 or 本文）の
@@ -132,7 +132,7 @@ export function makeListing(deps: ListingDeps) {
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
     // Search is kept OUT of the tree (same作法 as the post side).
     if (q) list = list.filter((u) => (u.displayName || '').toLowerCase().includes(q) || (u.screenName || '').toLowerCase().includes(q));
-    const nameOf = (u: CorpusUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
+    const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
     // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
     // query's date leaf (range axis == sort axis), falling back to 最終投稿日 (latest).
@@ -168,11 +168,11 @@ export function makeListing(deps: ListingDeps) {
   function resetFolderCache() {
     _folderRecCache = new Map();
   }
-  function dynamicMatches(coll: CorpusFolder): CorpusPost[] {
+  function dynamicMatches(coll: HologramFolder): HologramPost[] {
     // The whole saved search lives in the condition tree — the free-text term is a
     // 'text' leaf inside it, not a field beside it.
     const tree = coll.tree && Array.isArray(coll.tree.children) ? coll.tree : null;
-    const out: CorpusPost[] = [];
+    const out: HologramPost[] = [];
     for (const p of allPosts()) {
       if (!hasContent(p)) continue; // mirror getFilteredPosts' content gate
       if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
@@ -180,9 +180,9 @@ export function makeListing(deps: ListingDeps) {
     }
     return out;
   }
-  function folderRecords(coll: CorpusFolder): CorpusPost[] {
+  function folderRecords(coll: HologramFolder): HologramPost[] {
     if (_folderRecCache && _folderRecCache.has(coll.id)) return _folderRecCache.get(coll.id);
-    let recs: CorpusPost[];
+    let recs: HologramPost[];
     if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
     else {
       recs = [];
@@ -194,7 +194,7 @@ export function makeListing(deps: ListingDeps) {
     if (_folderRecCache) _folderRecCache.set(coll.id, recs);
     return recs;
   }
-  function folderThumbsFrom(recs: CorpusPost[]) {
+  function folderThumbsFrom(recs: HologramPost[]) {
     const files: string[] = [];
     for (const rec of recs) {
       const f = densityImage(rec, 'card');
@@ -203,12 +203,12 @@ export function makeListing(deps: ListingDeps) {
     }
     return files;
   }
-  function folderItemCount(coll: CorpusFolder) {
+  function folderItemCount(coll: HologramFolder) {
     return folderRecords(coll).length;
   }
   // Small condition chips summarizing a dynamic folder's saved tree. Capped;
   // purely informational (the mock's optional 条件チップ).
-  function folderCondLabels(coll: CorpusFolder) {
+  function folderCondLabels(coll: HologramFolder) {
     const chips: string[] = [];
     try {
       for (const leaf of treeLeaves(coll.tree)) {
@@ -245,7 +245,7 @@ export function makeListing(deps: ListingDeps) {
 // a second implementation. `let` + a setter (not a plain exported mutable
 // object) because ES module named exports can only be reassigned by their own
 // module — an importer's binding updates live once bindNamedPosters runs.
-export let namedPosters: (() => CorpusUserAgg[]) | null = null;
-export function bindNamedPosters(fn: () => CorpusUserAgg[]): void {
+export let namedPosters: (() => HologramUserAgg[]) | null = null;
+export function bindNamedPosters(fn: () => HologramUserAgg[]): void {
   namedPosters = fn;
 }

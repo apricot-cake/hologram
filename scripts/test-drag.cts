@@ -11,10 +11,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-drag-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-drag-'));
 process.env.APPDATA = tmp;
-process.env.CORPUS_CONFIG_DIR = path.join(tmp, 'Corpus'); // isolate configDir to the sandbox
-const configDir = path.join(tmp, 'Corpus');
+process.env.HOLOGRAM_CONFIG_DIR = path.join(tmp, 'Hologram'); // isolate configDir to the sandbox
+const configDir = path.join(tmp, 'Hologram');
 fs.mkdirSync(configDir, { recursive: true });
 const saveFolder = path.join(tmp, 'saves');
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));

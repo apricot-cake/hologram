@@ -68,15 +68,15 @@ const TESTS = [
   'test-archive-zipbomb',
 ];
 
-// Sandbox convention (CLAUDE.md): never let a test see the real ~/.corpus.
-const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-tests-'));
+// Sandbox convention (CLAUDE.md): never let a test see the real ~/.hologram.
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tests-'));
 
 let failed = 0;
 for (const t of TESTS) {
   const r = spawnSync(process.execPath, [path.join(__dirname, `${t}.cts`)], {
     stdio: 'pipe',
     encoding: 'utf8',
-    env: { ...process.env, CORPUS_CONFIG_DIR: sandbox },
+    env: { ...process.env, HOLOGRAM_CONFIG_DIR: sandbox },
   });
   const ok = r.status === 0;
   if (!ok) failed++;

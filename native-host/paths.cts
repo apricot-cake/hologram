@@ -7,10 +7,10 @@
 // resolve the SAME absolute path independently. The Electron app pins this by
 // calling app.setPath('userData', configDir()) at startup.
 //
-// Override order: CORPUS_CONFIG_DIR (explicit) wins, else a per-OS default:
-//   Windows : ~/.corpus      (NOT %APPDATA% — see below)
-//   macOS   : ~/Library/Application Support/Corpus
-//   Linux   : $XDG_CONFIG_HOME/Corpus (or ~/.config/Corpus)
+// Override order: HOLOGRAM_CONFIG_DIR (explicit) wins, else a per-OS default:
+//   Windows : ~/.hologram      (NOT %APPDATA% — see below)
+//   macOS   : ~/Library/Application Support/Hologram
+//   Linux   : $XDG_CONFIG_HOME/Hologram (or ~/.config/Hologram)
 //
 // Why Windows avoids %APPDATA%: when the app (or our tooling) is driven from
 // inside an MSIX-packaged host — e.g. the Claude desktop app — child processes
@@ -18,17 +18,17 @@
 // per-package LocalCache and diverge from what the user's real app/Chrome see
 // (the 2026-06 save-folder divergence). A dotfile under the (non-virtualized)
 // home dir is the SAME real path for every process. Tests isolate by pointing
-// CORPUS_CONFIG_DIR at a sandbox dir.
+// HOLOGRAM_CONFIG_DIR at a sandbox dir.
 
 const path = require('node:path');
 const os = require('node:os');
 
-const APP_NAME = 'Corpus';
+const APP_NAME = 'Hologram';
 
 function configDir(): string {
-  if (process.env.CORPUS_CONFIG_DIR) return process.env.CORPUS_CONFIG_DIR;
+  if (process.env.HOLOGRAM_CONFIG_DIR) return process.env.HOLOGRAM_CONFIG_DIR;
   if (process.platform === 'win32') {
-    return path.join(os.homedir(), '.corpus');
+    return path.join(os.homedir(), '.hologram');
   }
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
@@ -44,9 +44,9 @@ function configDir(): string {
 //
 // Like configDir(), the Windows default is kept OUT of %LOCALAPPDATA% so it isn't
 // subject to MSIX storage virtualization (see above).
-//   Windows : ~/Corpus/library
-//   macOS   : ~/Library/Application Support/Corpus/library
-//   Linux   : $XDG_DATA_HOME/Corpus/library (or ~/.local/share/Corpus/library)
+//   Windows : ~/Hologram/library
+//   macOS   : ~/Library/Application Support/Hologram/library
+//   Linux   : $XDG_DATA_HOME/Hologram/library (or ~/.local/share/Hologram/library)
 function defaultLibraryDir(): string {
   if (process.platform === 'win32') {
     return path.join(os.homedir(), APP_NAME, 'library');

@@ -3,7 +3,7 @@ import { LiquidSquare } from './LiquidSquare';
 import { WORDMARK_BOX, WORDMARK_PATH } from './wordmark';
 
 // Promo end card: ① empty → ② the liquid square enters (slide or fill)
-// → ③ it settles to the left while the "corpus" wordmark unfolds right.
+// → ③ it settles to the left while the "hologram" wordmark unfolds right.
 // The liquid texture keeps flowing for the whole duration.
 
 const BG = '#0e0e14';

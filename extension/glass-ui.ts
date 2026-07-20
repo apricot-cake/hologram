@@ -19,11 +19,11 @@
 //
 // Loaded BEFORE content.js / drag.js in both injection lists (manifest
 // content_scripts and background.js's executeScript) — same isolated world,
-// runs first, so consumers can read window.corpusGlassUi synchronously.
+// runs first, so consumers can read window.hologramGlassUi synchronously.
 // On sites where the manifest already injected this file, every activation
 // re-runs it via executeScript: the guard keeps the live instance.
 (() => {
-  if (window.corpusGlassUi) return;
+  if (window.hologramGlassUi) return;
   const SVGNS = 'http://www.w3.org/2000/svg';
   const ACCENT_TEXT = '#8ad3ec'; // sky-300
   const SPINNER_TRACK = 'rgba(255,255,255,0.22)';
@@ -55,7 +55,7 @@
     return sp;
   }
 
-  window.corpusGlassUi = {
+  window.hologramGlassUi = {
     // Accent steps (app sky ramp). ACCENT_TEXT is --accent-text's dark-theme
     // value (sky-300): accent as FOREGROUND on the dark scrim — the fill-tuned
     // sky steps are too dark to read as text/icon color there.

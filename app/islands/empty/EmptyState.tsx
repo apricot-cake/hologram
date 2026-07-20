@@ -9,7 +9,7 @@ import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/sto
 // us on a language reload.
 //
 // P4-B slice⑩ (post) and slice⑫ (poster) folded BOTH variants into self-derived
-// selectors — corpusStore already carries everything needed reactively — instead
+// selectors — hologramStore already carries everything needed reactively — instead
 // of a viewer push. The old shared push bridge has no callers left anywhere and
 // was deleted.
 const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
@@ -32,7 +32,7 @@ export function EmptyState() {
   const posterGroups = useSyncExternalStore(subPosterGroups, getPosterGroups);
   const allUsersCount = useSyncExternalStore(subAllUsersCount, getAllUsersCount);
   const query = useSyncExternalStore(subSearchQuery, getSearchQuery);
-  let variant: CorpusEmptyVariant | null = null;
+  let variant: HologramEmptyVariant | null = null;
   if (mode === 'posts') {
     // postGroups is undefined before the first renderPosts() ever ran (nothing to
     // show yet), an array while the grid has content (nothing to show), or

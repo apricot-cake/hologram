@@ -44,7 +44,7 @@ assert.ok(ORG_MERGE.includes('tag-types.json'), 'tag-types.json in ORG_MERGE');
 
 // --- importCompleteZip merges tag-types.json ----------------------------------
 (async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-tagtypes-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tagtypes-'));
   const dest = path.join(root, 'lib');
   fs.mkdirSync(dest, { recursive: true });
 

@@ -1,7 +1,7 @@
-// CDP verify harness for the running Corpus Electron app.
+// CDP verify harness for the running Hologram Electron app.
 // The app must already be running with a CDP debug port OUTSIDE the MSIX sandbox. Launch it
-// via the CorpusLaunch scheduled task, whose action carries --remote-debugging-port=9222
-// (see docs/build.md): Start-ScheduledTask -TaskName 'CorpusLaunch'. Do NOT direct-launch
+// via the HologramLaunch scheduled task, whose action carries --remote-debugging-port=9222
+// (see docs/build.md): Start-ScheduledTask -TaskName 'HologramLaunch'. Do NOT direct-launch
 // electron.exe from Claude's shell — that runs IN the MSIX container (HKCU/FS virtualized)
 // and diverges from the real Chrome / real app. Then:
 //   node scripts/cdp-verify.cts eval "<js expr; may return a value or a Promise>"
@@ -39,7 +39,7 @@ public class W{[DllImport("user32.dll")]public static extern bool ShowWindowAsyn
 $p=Get-Process electron -ErrorAction SilentlyContinue|Where-Object{$_.MainWindowHandle -ne 0}|Select-Object -First 1
 if($p){[void][W]::ShowWindowAsync($p.MainWindowHandle, ${cmd}); if(${cmd} -eq 9){[void][W]::SetForegroundWindow($p.MainWindowHandle)}}
 `;
-  const f = path.join(os.tmpdir(), 'corpus-cdp-win.ps1');
+  const f = path.join(os.tmpdir(), 'hologram-cdp-win.ps1');
   fs.writeFileSync(f, ps1, 'utf8');
   try {
     cp.execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore' });

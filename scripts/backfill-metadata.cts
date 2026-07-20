@@ -41,7 +41,7 @@ function saveFolder() {
   } catch {
     /* no config */
   }
-  return path.join(os.homedir(), 'Corpus');
+  return path.join(os.homedir(), 'Hologram');
 }
 
 // DL the author avatar into the shared avatars/ store when the record has an

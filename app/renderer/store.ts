@@ -35,7 +35,7 @@ export function set(key: string, val: unknown) {
   }
 }
 
-export function subscribe(key: string | (() => void), cb?: () => void): CorpusUnsubscribe {
+export function subscribe(key: string | (() => void), cb?: () => void): HologramUnsubscribe {
   if (typeof key === 'function') {
     cb = key;
     allSubs.add(cb);

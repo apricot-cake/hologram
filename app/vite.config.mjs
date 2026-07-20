@@ -9,7 +9,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 // DEV-SERVE Vite config for the renderer's React islands (gives HMR + React Fast
 // Refresh while developing). This is used ONLY when the app is launched with
-// CORPUS_DEV_SERVER set (see main.js). Production loads the Vite lib-mode IIFE
+// HOLOGRAM_DEV_SERVER set (see main.js). Production loads the Vite lib-mode IIFE
 // bundles (npm run build:islands -> islands/build.mjs) via loadFile from the same
 // renderer/islands/<name>.js paths; this config (the apply:'serve' plugin) never
 // runs for the prod build.
@@ -38,9 +38,9 @@ const DEV_CSP = "default-src 'self'; img-src 'self' psimg: data: blob:; media-sr
 // Dev-only HTML rewrite: swap the island IIFE bundles for their .tsx ES-module
 // sources (so Vite can HMR them) and relax the CSP meta. apply:'serve' keeps this
 // out of any future `vite build`.
-function corpusDevHtml() {
+function hologramDevHtml() {
   return {
-    name: 'corpus-dev-html',
+    name: 'hologram-dev-html',
     apply: 'serve',
     transformIndexHtml(html) {
       // Dev serves each island's .tsx as an ES module that imports React straight
@@ -70,5 +70,5 @@ export default defineConfig({
       { find: '@', replacement: path.join(here, 'islands') },
     ],
   },
-  plugins: [react(), tailwindcss(), corpusDevHtml()],
+  plugins: [react(), tailwindcss(), hologramDevHtml()],
 });

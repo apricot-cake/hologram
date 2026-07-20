@@ -4,7 +4,7 @@
 // electron external). .cts because the runtime module format is CJS (same
 // convention as the native-host layer).
 //
-// The exported CorpusPreload type IS the window.corpus contract: the renderer
+// The exported HologramPreload type IS the window.hologram contract: the renderer
 // program aliases it in islands/types/globals.d.ts (via the electron-shim paths
 // mapping — see that file), so the type can never drift from what the bridge
 // actually exposes. This file itself is type-checked against the REAL electron
@@ -94,8 +94,8 @@ const api = {
   },
 };
 
-// The full contextBridge IPC surface (window.corpus) — typeof the implementation,
+// The full contextBridge IPC surface (window.hologram) — typeof the implementation,
 // so there is no hand-maintained mirror to drift.
-export type CorpusPreload = typeof api;
+export type HologramPreload = typeof api;
 
-contextBridge.exposeInMainWorld('corpus', api);
+contextBridge.exposeInMainWorld('hologram', api);

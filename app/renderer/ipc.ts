@@ -1,8 +1,8 @@
-// Thin service seam over the raw preload IPC surface (window.corpus / CorpusPreload).
-// viewer.js is being decomposed away from touching window.corpus directly (最終形B P4
+// Thin service seam over the raw preload IPC surface (window.hologram / HologramPreload).
+// viewer.js is being decomposed away from touching window.hologram directly (最終形B P4
 // 「IPC→service」・BACKLOG「手書き .jsゼロ ＋ React 実プロダクト化」) — this module is
 // the one place that still calls the raw bridge; every other caller goes through here.
-// Each export just forwards to window.corpus, so this slice was a pure rename with zero
+// Each export just forwards to window.hologram, so this slice was a pure rename with zero
 // behavior change. Grouping the calls by domain into the sibling services that already
 // own that logic is the follow-up slice — done so far for tabs (tab-state.js:
 // loadTabs/persistTabs), tags/tag-types/poster-tags (tags.js: loadTagGroups/
@@ -14,17 +14,17 @@
 // (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importPosts/
 // importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
 // onSaveFolderProgress/onPostsChanged) — those domain services call this module
-// rather than window.corpus directly, same as viewer.ts. Still flat here (no clear
+// rather than window.hologram directly, same as viewer.ts. Still flat here (no clear
 // existing/new home decided yet): cross-cutting prefs/config/window-chrome. A real
 // ES module now (named export), imported directly by every caller.
 
-const bridge = () => window.corpus;
+const bridge = () => window.hologram;
 
-// Annotated against the shared CorpusPreload contract (exported by preload.cts
+// Annotated against the shared HologramPreload contract (exported by preload.cts
 // itself — typeof the exposed api — and aliased in islands/types/globals.d.ts) so
 // every forwarding arrow below is contextually typed from the implementation —
 // no per-parameter annotations needed for a pure pass-through layer.
-export const corpusIpc: CorpusPreload = {
+export const hologramIpc: HologramPreload = {
   getConfig: () => bridge().getConfig(),
   setExtensionId: (id) => bridge().setExtensionId(id),
   listPosts: () => bridge().listPosts(),

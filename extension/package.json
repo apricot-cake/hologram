@@ -1,8 +1,8 @@
 {
-  "name": "corpus-extension",
+  "name": "hologram-extension",
   "private": true,
   "version": "1.1.0",
-  "description": "Corpus Chrome extension (MV3) — TypeScript source, built to dist/ for Load unpacked",
+  "description": "Hologram Chrome extension (MV3) — TypeScript source, built to dist/ for Load unpacked",
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit"

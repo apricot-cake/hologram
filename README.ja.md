@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="corpus — スクショで終わらせない。まるごと保存する、あなたのライブラリ。" width="440">
+    <img src="assets/banner-light.svg" alt="hologram — スクショで終わらせない。まるごと保存する、あなたのライブラリ。" width="440">
   </picture>
 </p>
 
@@ -11,9 +11,9 @@
 
 「あの投稿、どこいったっけ」をなくします。気に入ったイラストも、残しておきたいテキストも、ひとつの場所に集めて、整理して、いつでも引き出せます。
 
-いまの Corpus は SNS 投稿の保存がいちばん得意です（X・Bluesky・Misskey・Mastodon・pixiv 対応）。ライブラリ自体は、ウェブのコンテンツ全般を受け入れる設計になっています。
+いまの Hologram は SNS 投稿の保存がいちばん得意です（X・Bluesky・Misskey・Mastodon・pixiv 対応）。ライブラリ自体は、ウェブのコンテンツ全般を受け入れる設計になっています。
 
-Corpus は**無料・オープンソース**（MIT ライセンス）。ライブラリの実体はあなたのフォルダに並ぶ普通のファイルだけ——アカウント登録なし、サーバーなし、囲い込みなし。
+Hologram は**無料・オープンソース**（MIT ライセンス）。ライブラリの実体はあなたのフォルダに並ぶ普通のファイルだけ——アカウント登録なし、サーバーなし、囲い込みなし。
 
 ## できること
 

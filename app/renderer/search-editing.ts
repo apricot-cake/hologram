@@ -19,10 +19,10 @@
 //   afterQueryChange() / renderPosts() / updateSidebarState() — viewer.js
 //     re-render triggers, called after a state transition.
 export interface SearchEditingDeps {
-  getTree(): CorpusQueryGroup;
-  addFilter(leaf: { type: string; [k: string]: any }): CorpusQueryLeaf | null;
-  removeNode(node: CorpusQueryLeaf): void;
-  treeLeaves(tree: CorpusQueryGroup): CorpusQueryLeaf[];
+  getTree(): HologramQueryGroup;
+  addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
+  removeNode(node: HologramQueryLeaf): void;
+  treeLeaves(tree: HologramQueryGroup): HologramQueryLeaf[];
   searchQuery(): string;
   setSearchBoxValue(v: string): void;
   afterQueryChange(): void;
@@ -32,7 +32,7 @@ export interface SearchEditingDeps {
 
 export function makeSearchEditing(deps: SearchEditingDeps) {
   const { getTree, addFilter, removeNode, treeLeaves, searchQuery, setSearchBoxValue, afterQueryChange, renderPosts, updateSidebarState } = deps;
-  let editingTextNode: CorpusQueryLeaf | null = null;
+  let editingTextNode: HologramQueryLeaf | null = null;
 
   function isEditingLeaf(node: unknown) {
     return node === editingTextNode;

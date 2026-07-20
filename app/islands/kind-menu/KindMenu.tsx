@@ -31,7 +31,7 @@ export function KindMenuHost() {
   if (!menu) return null;
 
   const current = menu.rows.find((r) => !r.sep && r.checked);
-  const pick = (row: CorpusKindMenuRow) => {
+  const pick = (row: HologramKindMenuRow) => {
     close();
     menu.onPick(row.kind as string);
   };

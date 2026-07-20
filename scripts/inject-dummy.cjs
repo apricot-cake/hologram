@@ -31,7 +31,7 @@ function resolveFolder() {
   } catch {
     /* no config */
   }
-  return defaultLibraryDir(); // SAME default the app uses (was ~/Corpus, which the app never watches)
+  return defaultLibraryDir(); // SAME default the app uses (was ~/Hologram, which the app never watches)
 }
 
 const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300', mastodon: '#6364ff' };

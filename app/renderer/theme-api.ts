@@ -11,7 +11,7 @@
 // Theme model: we store the PREF (auto/light/dark); the APPLIED value (light/dark) is
 // resolved from it — 'auto' tracks the OS via prefers-color-scheme.
 
-const KEY = 'corpus-theme';
+const KEY = 'hologram-theme';
 let mql: MediaQueryList | null = null;
 try {
   mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
@@ -52,9 +52,9 @@ export function set(p: string, persist?: boolean): string {
   } catch (e) {
     /* ignore */
   }
-  if (persist !== false && window.corpus && window.corpus.setPref) {
+  if (persist !== false && window.hologram && window.hologram.setPref) {
     try {
-      window.corpus.setPref('theme', pref);
+      window.hologram.setPref('theme', pref);
     } catch (e) {
       /* ignore */
     }
@@ -69,7 +69,7 @@ export function resolve(): string {
 // the same sources the pre-paint boot used — main passes config's theme as ?theme=;
 // fall back to the localStorage cache; else 'auto' — then apply (idempotent with the
 // boot's [data-theme] pass; also sets the titlebar overlay, which the boot no longer
-// touches). Preload's window.corpus exists before any page script runs, so no readiness
+// touches). Preload's window.hologram exists before any page script runs, so no readiness
 // gate is needed for the config reconcile.
 let initial: string | null = null;
 try {
@@ -102,8 +102,8 @@ if (mql) {
 
 // Reconcile with config.json once. The old DOMContentLoaded wait existed only for the
 // legacy #themeSelect wiring (removed: the React Appearance section owns the control).
-if (window.corpus && window.corpus.getPrefs) {
-  window.corpus
+if (window.hologram && window.hologram.getPrefs) {
+  window.hologram
     .getPrefs()
     .then(function (p) {
       if (!p || !p.theme) return;

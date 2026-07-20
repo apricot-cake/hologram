@@ -12,27 +12,27 @@
 // closeManager, isManagerOpen, getManager, subscribeManager, managerCreate,
 // managerRename, managerRemove, managerMove, toast, onChange, isLoaded, allFolders,
 // createFolder, updateFolder, renameFolder, removeFolder — plus the
-// corpusPosterFolderStore() factory (orchestrator.ts's poster-folder store).
+// hologramPosterFolderStore() factory (orchestrator.ts's poster-folder store).
 import { notify as uiNotify } from './ui.ts';
-import { corpusI18n } from './i18n.ts';
-import { corpusIpc } from './ipc.ts';
+import { hologramI18n } from './i18n.ts';
+import { hologramIpc } from './ipc.ts';
 import { cloneTree, removeCondsMatching } from './query.ts';
 
 // Folder-list store shared by the library folders (below, isLibrary) and the
-// poster folders (viewer.js, via the corpusPosterFolderStore() factory below, no isLibrary). Owns the
+// poster folders (viewer.js, via the hologramPosterFolderStore() factory below, no isLibrary). Owns the
 // {id,name,items[]} array + id minting + membership toggling. The caller supplies
 // persist() and does its own toast / re-render, since those differ per view. Pure
 // data layer — no DOM.
 // isLibrary (library only) generalizes folders into "folders": each carries
 // kind/created, and dynamic folders carry a saved-search payload (tree + q). The
 // poster store omits isLibrary, so its surface/behavior is exactly as before.
-function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): CorpusFolderStore {
-  let folders: CorpusFolder[] = [];
+function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): HologramFolderStore {
+  let folders: HologramFolder[] = [];
   const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   const allRaw = () => folders;
   const all = () => folders;
   function setAll(list: unknown) {
-    folders = Array.isArray(list) ? (list as CorpusFolder[]) : [];
+    folders = Array.isArray(list) ? (list as HologramFolder[]) : [];
     if (isLibrary) folders = folders.map((f) => ({ ...f, kind: f.kind || 'static', created: typeof f.created === 'number' ? f.created : null, items: Array.isArray(f.items) ? f.items : [] }));
   }
   const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
@@ -43,7 +43,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null) {
     const nm = (name || '').trim();
     if (!nm) return null;
-    const f: CorpusFolder = { id: genId(), name: nm, items: [] };
+    const f: HologramFolder = { id: genId(), name: nm, items: [] };
     if (isLibrary) {
       f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
       f.created = Date.now();
@@ -57,8 +57,8 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   // inside it) onto a dynamic folder; clears it when absent. Static folders never
   // carry one. cloneTree drops the _-prefixed compile memos, so what lands on disk
   // is plain data.
-  function setQuery(f: CorpusFolder, src?: { tree?: unknown } | null) {
-    if (src && src.tree && typeof src.tree === 'object') f.tree = cloneTree(src.tree as CorpusQueryNode);
+  function setQuery(f: HologramFolder, src?: { tree?: unknown } | null) {
+    if (src && src.tree && typeof src.tree === 'object') f.tree = cloneTree(src.tree as HologramQueryNode);
     else delete f.tree;
   }
   // Update a dynamic folder's saved condition in place (= re-save the search).
@@ -164,8 +164,8 @@ function createPersistedFolderStore({
 }: {
   idPrefix: string;
   get: () => Promise<{ folders?: unknown[] } | null>;
-  set: (data: { folders: CorpusFolder[] }) => Promise<unknown>;
-}): CorpusFolderStore & { load: () => Promise<void> } {
+  set: (data: { folders: HologramFolder[] }) => Promise<unknown>;
+}): HologramFolderStore & { load: () => Promise<void> } {
   let loadPromise: Promise<void> | null = null;
   function doPersist() {
     loadPromise = null; // invalidate the load cache so a later load() re-reads disk
@@ -188,11 +188,11 @@ function createPersistedFolderStore({
   }
   return { ...store, load };
 }
-export function corpusPosterFolderStore(): CorpusPersistedFolderStore {
+export function hologramPosterFolderStore(): HologramPersistedFolderStore {
   return createPersistedFolderStore({
     idPrefix: 'pf',
-    get: () => corpusIpc.getPosterFolders(),
-    set: (data) => corpusIpc.setPosterFolders(data),
+    get: () => hologramIpc.getPosterFolders(),
+    set: (data) => hologramIpc.setPosterFolders(data),
   });
 }
 
@@ -212,7 +212,7 @@ let clipSet = new Set<string>();
 // via getManager()/subscribeManager().
 let mgrStore = store;
 let mgrAfter = () => notify('list');
-let mgrModel: CorpusFolderManagerModel | null = null;
+let mgrModel: HologramFolderManagerModel | null = null;
 let mgrSeq = 0;
 const mgrSubs = new Set<() => void>();
 function notifyMgr() {
@@ -230,19 +230,19 @@ const subs: Array<(kind?: string) => void> = [];
 
 // i18n: this module's own toasts (foldAdded/foldRemoved/clipAdded/clipRemoved/
 // clipCleared, fired from business logic below, outside any component render) reuse the
-// renderer's i18n — corpusI18n is a promise from i18n.ts; resolve once and cache
+// renderer's i18n — hologramI18n is a promise from i18n.ts; resolve once and cache
 // getMessage as t(), until then t() echoes the key. The modal's own labels (title,
 // placeholder, rename/delete prompts) are the island's concern — FolderManagerModal.tsx
 // uses the shared islands/_shared/i18n.ts t() directly in JSX.
 let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
-corpusI18n.then((api) => {
+hologramI18n.then((api) => {
   if (api && api.getMessage) t = api.getMessage;
 });
 
 function persist() {
   loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
-  if (corpusIpc && corpusIpc.setFolders)
-    corpusIpc.setFolders({ folders: store.allRaw(), clip: [...clipSet] }).catch(() => {
+  if (hologramIpc && hologramIpc.setFolders)
+    hologramIpc.setFolders({ folders: store.allRaw(), clip: [...clipSet] }).catch(() => {
       /* best-effort */
     });
 }
@@ -258,7 +258,7 @@ function notify(kind?: string) {
 
 async function doLoad() {
   try {
-    const r = corpusIpc && corpusIpc.getFolders ? await corpusIpc.getFolders() : null;
+    const r = hologramIpc && hologramIpc.getFolders ? await hologramIpc.getFolders() : null;
     store.setAll((r && r.folders) || []);
     // activeId is legacy (the old 🔖 target) — ignore it; the old active folder
     // just stays as a normal folder. Clip loads from the persisted `clip` array.
@@ -352,7 +352,7 @@ export function toast(msg: unknown) {
 export function isManagerOpen() {
   return !!mgrModel;
 }
-export function openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null) {
+export function openManager(opts?: { store?: HologramFolderStore; onChange?: () => void } | null) {
   mgrStore = (opts && opts.store) || store;
   mgrAfter = (opts && opts.onChange) || (() => notify('list'));
   mgrModel = { openId: ++mgrSeq, list: managerList() };
@@ -416,7 +416,7 @@ export function all() {
 // --- static (a named set of posts) vs dynamic (a saved search) ---
 // The one place that decides which is which; every surface that has to tell them
 // apart goes through this or the two lists below.
-export const isSavedSearch = (f: CorpusFolder) => f.kind === 'dynamic';
+export const isSavedSearch = (f: HologramFolder) => f.kind === 'dynamic';
 // Only static folders can hold posts, so every surface that offers a folder as a
 // DESTINATION reads staticFolders(): the sidebar flyout rows (facets.ts), the
 // per-post 「フォルダに追加」 menu (post-grid-builder.ts) and the folder manager.

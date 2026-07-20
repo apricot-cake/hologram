@@ -170,7 +170,7 @@ function register(ctx) {
         // it leaves the untagged queue instead of resurfacing every session.
         if ('tagReviewed' in patch) rec.tagReviewed = !!patch.tagReviewed;
       }
-      rec.updatedAt = new Date().toISOString(); // record was modified in Corpus
+      rec.updatedAt = new Date().toISOString(); // record was modified in Hologram
       await writeSidecarAtomic(jsonPath, rec); // tmp+rename: never expose a half-written sidecar to the watcher
       return { ok: true };
     } catch {

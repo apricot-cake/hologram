@@ -1,8 +1,8 @@
-# Privacy Policy — Corpus
+# Privacy Policy — Hologram
 
 ## Data Collection
 
-Corpus does **not** collect, store, or transmit any personal data to us or to any third-party server of ours. All captured images and metadata are saved locally to a folder you choose on your device.
+Hologram does **not** collect, store, or transmit any personal data to us or to any third-party server of ours. All captured images and metadata are saved locally to a folder you choose on your device.
 
 ## External API Requests
 
@@ -20,7 +20,7 @@ Except for the pixiv requests described above, no authentication tokens, cookies
 
 - **activeTab** — Access the current tab only when you activate the extension.
 - **scripting** — Inject the post selection UI into the current page.
-- **nativeMessaging** — Hand each capture to the Corpus desktop app on your device, which writes the image and its metadata to the folder you chose.
+- **nativeMessaging** — Hand each capture to the Hologram desktop app on your device, which writes the image and its metadata to the folder you chose.
 - **storage** — Keep a per-browsing-session count of recent saves (so repeat saves of the same post can be labelled; cleared when the browser closes), and a small local ring buffer of capture diagnostics used only when the desktop app cannot be reached. Both stay on your device.
 - **Host permissions** (`cdn.syndication.twimg.com`, `www.pixiv.net`) — Allow the metadata requests described above.
 

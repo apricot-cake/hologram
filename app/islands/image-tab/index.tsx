@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { corpusImageTabSource } from '../../renderer/image-tab.ts';
+import { hologramImageTabSource } from '../../renderer/image-tab.ts';
 import { get as confirmGet } from '../../renderer/confirm.ts';
 import { isOpen as lightboxIsOpen } from '../../renderer/lightbox.ts';
 import { isOpen as settingsIsOpen } from '../../renderer/settings.ts';
@@ -16,10 +16,10 @@ import { ImageTab } from './ImageTab.tsx';
 // sources), which would trip React's "cached snapshot" tearing check — a plain subscribe→
 // setState effect (same shape as GridMount's sync()) sidesteps that.
 export function ImageTabHost() {
-  const [model, setModel] = useState(() => corpusImageTabSource.get());
+  const [model, setModel] = useState(() => hologramImageTabSource.get());
   useEffect(() => {
-    const sync = () => setModel(corpusImageTabSource.get());
-    const unsub = corpusImageTabSource.subscribe(sync);
+    const sync = () => setModel(hologramImageTabSource.get());
+    const unsub = hologramImageTabSource.subscribe(sync);
     sync(); // catch anything that changed before this effect ran
     return unsub;
   }, []);
@@ -36,7 +36,7 @@ export function ImageTabHost() {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   if (!document.body.classList.contains('image-tab-active')) return;
-  const model = corpusImageTabSource.get();
+  const model = hologramImageTabSource.get();
   if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;

@@ -18,7 +18,7 @@ function dropBefore(row: HTMLElement, clientY: number) {
   return clientY < r.top + r.height / 2;
 }
 
-function FolderManagerBox({ model }: { model: CorpusFolderManagerModel }) {
+function FolderManagerBox({ model }: { model: HologramFolderManagerModel }) {
   const [name, setName] = useState('');
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | null>(null);
@@ -42,11 +42,11 @@ function FolderManagerBox({ model }: { model: CorpusFolderManagerModel }) {
   const doCreate = () => {
     if (managerCreate(name)) setName('');
   };
-  const doRename = (f: CorpusFolder) => {
+  const doRename = (f: HologramFolder) => {
     const nm = window.prompt(t('foldRenamePrompt'), f.name);
     if (nm != null) managerRename(f.id, nm);
   };
-  const doRemove = (f: CorpusFolder) => {
+  const doRemove = (f: HologramFolder) => {
     if (window.confirm(t('foldDeleteConfirm', [f.name]))) managerRemove(f.id);
   };
   const endDrag = () => {

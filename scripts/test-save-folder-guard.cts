@@ -25,7 +25,7 @@ const NO_ENV = {};
 // --- detected providers ------------------------------------------------------
 
 check('OneDrive personal (default layout)', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('OneDrive', 'Corpus-library'), NO_ENV), 'OneDrive');
+  assert.strictEqual(cloudSyncProviderOf(at('OneDrive', 'Hologram-library'), NO_ENV), 'OneDrive');
 });
 
 check('OneDrive work/school (OneDrive - Tenant)', () => {
@@ -33,7 +33,7 @@ check('OneDrive work/school (OneDrive - Tenant)', () => {
 });
 
 check('Dropbox, plain and suffixed', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('Dropbox', 'Corpus-library'), NO_ENV), 'Dropbox');
+  assert.strictEqual(cloudSyncProviderOf(at('Dropbox', 'Hologram-library'), NO_ENV), 'Dropbox');
   assert.strictEqual(cloudSyncProviderOf(at('Dropbox (Personal)', 'lib'), NO_ENV), 'Dropbox');
 });
 
@@ -57,7 +57,7 @@ check('match is case-insensitive', () => {
 });
 
 check('a sync root anywhere up the path counts (not just the leaf)', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('Dropbox', 'a', 'b', 'c', 'Corpus-library'), NO_ENV), 'Dropbox');
+  assert.strictEqual(cloudSyncProviderOf(at('Dropbox', 'a', 'b', 'c', 'Hologram-library'), NO_ENV), 'Dropbox');
 });
 
 // --- env-var detection (a renamed OneDrive folder still exports %OneDrive%) ---
@@ -73,18 +73,18 @@ check('env root matches the root itself', () => {
 });
 
 check('env var pointing elsewhere does not match', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('Corpus', 'library'), { OneDrive: at('CloudStuff') }), null);
+  assert.strictEqual(cloudSyncProviderOf(at('Hologram', 'library'), { OneDrive: at('CloudStuff') }), null);
 });
 
 check('empty/blank env var is ignored (no match on garbage)', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('Corpus', 'library'), { OneDrive: '' }), null);
-  assert.strictEqual(cloudSyncProviderOf(at('Corpus', 'library'), { OneDrive: '   ' }), null);
+  assert.strictEqual(cloudSyncProviderOf(at('Hologram', 'library'), { OneDrive: '' }), null);
+  assert.strictEqual(cloudSyncProviderOf(at('Hologram', 'library'), { OneDrive: '   ' }), null);
 });
 
 // --- quiet on ordinary folders (false positives are the cost here) -----------
 
 check('the default library location is quiet', () => {
-  assert.strictEqual(cloudSyncProviderOf(at('Corpus', 'library'), NO_ENV), null);
+  assert.strictEqual(cloudSyncProviderOf(at('Hologram', 'library'), NO_ENV), null);
 });
 
 check('substring lookalikes do NOT trip it (segment match, not substring)', () => {

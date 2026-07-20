@@ -1,6 +1,6 @@
 // Persistent content script (manifest content_scripts for x / bsky / pixiv).
 // Drag-to-save: when the user starts dragging an image, a drop zone
-// appears; the image is saved to Corpus ONLY if dropped into that zone. Dragging
+// appears; the image is saved to Hologram ONLY if dropped into that zone. Dragging
 // an image anywhere else (to disk, to reorder, etc.) does nothing — no accidental
 // saves. On drop, the background fetches the post metadata and saves the dragged
 // illustration itself (no screenshot) via the native host. Identity extraction is
@@ -27,8 +27,8 @@
 
   const siteConfig = getDragSiteConfig();
   if (!siteConfig) return;
-  if (window.__corpusDragActive) return; // avoid double-binding on re-injection
-  window.__corpusDragActive = true;
+  if (window.__hologramDragActive) return; // avoid double-binding on re-injection
+  window.__hologramDragActive = true;
 
   interface DropZone {
     el: HTMLDivElement;
@@ -43,15 +43,15 @@
   let hideAnim: Animation | null = null; // in-flight exit fade, cancelled if the zone re-shows
   let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
 
-  // i18n: drag toasts share the banner strings. window.corpusI18n is set by the
+  // i18n: drag toasts share the banner strings. window.hologramI18n is set by the
   // i18n.js content script declared BEFORE this one in the same manifest entry
   // (same isolated world, runs first). Resolve once; until then t() echoes the
   // key — overlay text is only set at drag time, long after page load, so the
   // table is populated by the time it's read in practice.
   let t: (key: string, subs?: ReadonlyArray<unknown>) => string = (key) => key;
   let partialSaveText: (reason?: string | null) => string = () => t('bannerSavedNoMeta');
-  if (window.corpusI18n && typeof window.corpusI18n.then === 'function') {
-    window.corpusI18n.then((api) => {
+  if (window.hologramI18n && typeof window.hologramI18n.then === 'function') {
+    window.hologramI18n.then((api) => {
       if (api && api.getMessage) t = api.getMessage;
       if (api && api.partialSaveText) partialSaveText = api.partialSaveText;
     });
@@ -65,7 +65,7 @@
   // state-tinted border/shadow from the previous save is never baked in.
   // See glass-ui.ts for the CSP/Trusted Types constraints that shape how
   // everything is styled and built.
-  const G = window.corpusGlassUi;
+  const G = window.hologramGlassUi;
 
   function ensureOverlay(): DropZone {
     if (zone) return zone;
@@ -74,7 +74,7 @@
     // closure-captured outer variable doesn't cross a function boundary, but a
     // const captured by the same closures narrows fine.
     const el = document.createElement('div');
-    el.id = '__corpusDropZone';
+    el.id = '__hologramDropZone';
     el.style.cssText = [
       'position:fixed',
       'right:24px',
@@ -272,7 +272,7 @@
       setState(z, partial ? 'partial' : ok ? 'ok' : 'fail', text);
       if (ok && !G.REDUCED_MOTION) {
         // Small badge pop so the state flip reads even in peripheral vision
-        // (app corpusBadgePop: .3s on the shared ease-out curve).
+        // (app hologramBadgePop: .3s on the shared ease-out curve).
         z.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: G.EASE_OUT });
       }
       setTimeout(

@@ -4,7 +4,7 @@
 // module (named exports), imported directly by viewer.ts; touches no DOM. Every
 // runtime coupling is INJECTED via makeFacets(deps) — reassigned viewer lets
 // (allPosts / tagGroups) come in as getter functions, and consts declared after
-// the wiring point (posterQB / pfStore / the corpusQuery destructure) as deferred
+// the wiring point (posterQB / pfStore / the hologramQuery destructure) as deferred
 // wrappers — so this file loads under Node too (scripts/test-facets-unit.cts).
 
 // Poster-platform facet sort order (facet rows only — viewer's own PF lists are
@@ -23,23 +23,23 @@ export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 //   posterFolders() — pfStore.all() (wrapped: pfStore is declared later)
 //   buildUsers() — user facet source (cached in viewer)
 export function makeFacets(deps: {
-  getFilteredPosts(): CorpusPost[];
+  getFilteredPosts(): HologramPost[];
   qHasValue(type: string, v: string): boolean;
   posterQHasValue(type: string, v: string): boolean;
-  allPosts(): CorpusPost[];
+  allPosts(): HologramPost[];
   hostOf(url: string | null | undefined): string;
-  userKey(p: CorpusPost): string;
+  userKey(p: HologramPost): string;
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   tagKindOf(tag: string): string | null | undefined;
   tagGroups(): Array<{ id: string; name: string; tags?: string[] }>;
   posterTagsOf(key: string): string[];
-  filteredPosters(): CorpusUserAgg[];
+  filteredPosters(): HologramUserAgg[];
   posterFilterVocab(): string[];
-  namedPosters(): CorpusUserAgg[];
-  posterFolders(): CorpusFolder[];
-  postFolders(): CorpusFolder[];
-  buildUsers(): CorpusUserAgg[];
+  namedPosters(): HologramUserAgg[];
+  posterFolders(): HologramFolder[];
+  postFolders(): HologramFolder[];
+  buildUsers(): HologramUserAgg[];
 }) {
   const { getFilteredPosts, qHasValue, posterQHasValue, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagGroups, posterTagsOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers } = deps;
 
@@ -55,9 +55,9 @@ export function makeFacets(deps: {
   // Overloaded: with no pool, keys off the post population (getFilteredPosts());
   // the poster-scoped rows (poster-tag / poster-work / poster-character /
   // poster-platform / poster-instance / poster-folder) pass filteredPosters()
-  // as `pool` and key off a CorpusUserAgg instead.
-  function facetCounts(keyFn: (p: CorpusPost) => string | string[] | null | undefined): Map<string, number>;
-  function facetCounts<T extends CorpusUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
+  // as `pool` and key off a HologramUserAgg instead.
+  function facetCounts(keyFn: (p: HologramPost) => string | string[] | null | undefined): Map<string, number>;
+  function facetCounts<T extends HologramUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
   function facetCounts(keyFn: (p: any) => string | string[] | null | undefined, pool?: any[]): Map<string, number> {
     const m = new Map<string, number>();
     for (const p of pool || getFilteredPosts()) {
@@ -70,7 +70,7 @@ export function makeFacets(deps: {
     return m;
   }
 
-  function qfValues(cat: string): CorpusQfRow[] {
+  function qfValues(cat: string): HologramQfRow[] {
     // "on" = this value already exists anywhere in the query tree.
     const act = (type: string, v: string): boolean => qHasValue(type, v);
     switch (cat) {
@@ -92,7 +92,7 @@ export function makeFacets(deps: {
         };
         const pcnt = facetCounts((p) => p.platform || '__none');
         const icnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
-        const out: CorpusQfRow[] = [];
+        const out: HologramQfRow[] = [];
         for (const v of PF_ORDER) {
           out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
           if (v === 'misskey' || v === 'mastodon') {
@@ -122,7 +122,7 @@ export function makeFacets(deps: {
       }
       case 'media': {
         const cnt = facetCounts((p) => p.mediaType);
-        const out: CorpusQfRow[] = [
+        const out: HologramQfRow[] = [
           ['image', t('qfImage')],
           ['video', t('qfVideo')],
           ['gif', t('qfGif')],
@@ -205,7 +205,7 @@ export function makeFacets(deps: {
         const groups = tagGroups();
         if (!groups.length) return allTags.map(item).sort(byCount);
         const grouped = new Set<string>();
-        const out: CorpusQfRow[] = [];
+        const out: HologramQfRow[] = [];
         for (const g of groups) {
           const own = (g.tags || []).filter((t) => allTags.includes(t));
           if (!own.length) continue;

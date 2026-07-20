@@ -49,7 +49,7 @@ import { WindowControls } from './WindowControls.tsx';
 // desktop apps don't reshape themselves by width. #259 puts a narrower version of it back,
 // having found what #243 missed: the products it measured against (Lightroom / VS Code /
 // Obsidian) don't auto-reshape BECAUSE they all pair that with a one-key collapse, and
-// Corpus shipped the first half without the second. At half-screen widths — Corpus beside
+// Hologram shipped the first half without the second. At half-screen widths — Hologram beside
 // a browser is a primary way to use it — the two panels take 576px and leave the grid 382.
 //
 // What came back is narrower than what #243 removed, in two ways. The saved preference is

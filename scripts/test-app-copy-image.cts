@@ -17,8 +17,8 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const electronPath = require(path.join(appDir, 'node_modules', 'electron'));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-copyimg-'));
-const configDir = path.join(tmp, 'Corpus');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-copyimg-'));
+const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -32,17 +32,17 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-0002.svg'), '<svg xmlns="http://ww
 // true only for the decodable image; every other case must report failure so the
 // renderer can say so instead of implying a copy that didn't happen.
 const evalJs = `(async () => [
-  await window.corpus.copyImage('dummy-0001.jpg'),
-  await window.corpus.copyImage('dummy-0002.svg'),
-  await window.corpus.copyImage('../Corpus/config.json'),
-  await window.corpus.copyImage('nope.jpg'),
+  await window.hologram.copyImage('dummy-0001.jpg'),
+  await window.hologram.copyImage('dummy-0002.svg'),
+  await window.hologram.copyImage('../Hologram/config.json'),
+  await window.hologram.copyImage('nope.jpg'),
 ].join(','))()`;
 
 const env = Object.assign({}, process.env, {
   APPDATA: tmp,
-  CORPUS_CONFIG_DIR: configDir,
-  CORPUS_SMOKE: '1',
-  CORPUS_SMOKE_EVAL: evalJs,
+  HOLOGRAM_CONFIG_DIR: configDir,
+  HOLOGRAM_SMOKE: '1',
+  HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });

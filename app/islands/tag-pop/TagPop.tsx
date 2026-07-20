@@ -23,7 +23,7 @@ import { Popover, PopoverContent } from '@/components/ui/popover';
 // listener carried.
 const TOGGLE_BUTTONS = '.tag-btn, .poster-tag, .iv-tag-edit-btn, [data-act="tag"]';
 
-function TagPopBody({ model }: { model: CorpusTagPopModel }) {
+function TagPopBody({ model }: { model: HologramTagPopModel }) {
   return (
     <>
       <TagEditor

@@ -1,6 +1,6 @@
 'use strict';
 
-// Corpus native messaging host.
+// Hologram native messaging host.
 //
 // Chrome spawns this process per connection (chrome.runtime.connectNative).
 // It receives a captured post over stdin and writes two files into the user's

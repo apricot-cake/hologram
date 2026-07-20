@@ -32,7 +32,7 @@
     // NodeJS.Timeout, breaking unrelated renderer code. `paths` is TypeScript-only;
     // the runtime import still resolves to the real npm package via Vite/Node.
     // 'electron' gets the same treatment (same node-globals hazard) for preload.cts,
-    // which this program pulls in via globals.d.ts's CorpusPreload import type —
+    // which this program pulls in via globals.d.ts's HologramPreload import type —
     // see islands/types/electron-shim.d.ts.
     // '@/*' → islands/* : shadcn/ui standard import alias; islands/ is this
     // project's equivalent of a conventional src/ (components/ui, lib/utils live

@@ -15,9 +15,9 @@
 // NOTE: opening is a user action only. Selecting a card fills the panel's CONTENT
 // (inspector.ts) but never re-opens a panel the user closed — the same courtesy Eagle /
 // Lightroom / VS Code extend to a dismissed panel.
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
-const KEY = 'corpus-inspector-open';
+const KEY = 'hologram-inspector-open';
 const DEFAULT_OPEN = true;
 
 function readCache(): boolean | null {
@@ -68,7 +68,7 @@ export function setOpen(next: boolean): void {
   open = next;
   writeCache(next);
   try {
-    corpusIpc.setPref('inspectorOpen', next);
+    hologramIpc.setPref('inspectorOpen', next);
   } catch {
     /* ignore */
   }
@@ -83,7 +83,7 @@ export function toggle(): void {
 // Silent when the pref is unset/unreadable: the cached guess already in use stands.
 export async function load(): Promise<void> {
   try {
-    const prefs = corpusIpc.getPrefs ? await corpusIpc.getPrefs() : null;
+    const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
     const saved = prefs ? prefs.inspectorOpen : null;
     if (typeof saved !== 'boolean' || saved === open) return;
     open = saved;

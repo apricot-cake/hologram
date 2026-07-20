@@ -22,14 +22,14 @@ export interface GridCellProps {
   width: number;
 }
 
-const ModelCtx = createContext<CorpusGridModel | null>(null);
+const ModelCtx = createContext<HologramGridModel | null>(null);
 // Cells read the live model through context so a bridge render()/patch() (paint
 // bump → re-render) lets modelOf re-derive clip state (selection/inspected are
-// corpusStore subscriptions inside Cell, not part of this closure-read model).
+// hologramStore subscriptions inside Cell, not part of this closure-read model).
 // Cells mount only inside the provider, so the null default never escapes.
-export const useGridModel = () => useContext(ModelCtx) as CorpusGridModel;
+export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell }: { model: CorpusGridModel; cell: ComponentType<GridCellProps> }) {
+export function VirtualGridHost({ model, cell }: { model: HologramGridModel; cell: ComponentType<GridCellProps> }) {
   const scroller = document.getElementById('mode-post') as HTMLElement; // the app's scroll container (never the window); static HTML, always present
   const containerRef = useRef<HTMLElement | null>(null);
   // offset of the masonry container's top inside the scroller's CONTENT (the
@@ -135,12 +135,12 @@ export function VirtualGridHost({ model, cell }: { model: CorpusGridModel; cell:
 // after a push). flushSync is legal because every bridge push originates outside React.
 // The bridge returns a FRESH model ref on each render/patch ({...model, paint:++}),
 // so setModel always re-renders — paint bumps make visible cells re-read live viewer state
-// (clip via modelOf; selection/inspected are separate corpusStore subscriptions inside
+// (clip via modelOf; selection/inspected are separate hologramStore subscriptions inside
 // Cell); itemsKey changes reset the positioner.
-// bridge only needs get()/subscribe() (CorpusGridSource) — both the post source
+// bridge only needs get()/subscribe() (HologramGridSource) — both the post source
 // (P4-B slice⑩) and the poster source (slice⑫) satisfy it, plus their own
 // configure()/etc. that GridMount never touches.
-export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: CorpusGridSource; containerId: string; hostId: string; renderHost: (model: CorpusGridModel) => ReactNode }) {
+export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: HologramGridSource; containerId: string; hostId: string; renderHost: (model: HologramGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {
     const h = document.createElement('div');
@@ -149,7 +149,7 @@ export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge:
     hostRef.current = h;
   }
   const host = hostRef.current;
-  const [model, setModel] = useState<CorpusGridModel | null>(null);
+  const [model, setModel] = useState<HologramGridModel | null>(null);
 
   useEffect(() => {
     // Attach the host to the container BEFORE rendering into it — masonic measures

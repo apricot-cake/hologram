@@ -12,7 +12,7 @@ Save content you find on the web — image, text, creator, source and all — in
 
 Your own personal content library — every save keeps its creator, context, and source.
 
-Corpus saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them. No more "where did that post go?"
+Hologram saves the posts you come across — not just a screenshot, but the text, author, date, engagement counts, and original URL too — into a library on your own PC, where you can search, tag, and organize them. No more "where did that post go?"
 
 YOUR DATA STAYS WITH YOU
 - Everything is saved to a local folder you choose. No data is collected or sent to any server of ours.
@@ -40,7 +40,7 @@ SUPPORTED PLATFORMS
 X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
 
 REQUIREMENTS
-Saving and browsing require the Corpus desktop app (Windows, free and open source). Install it first, then add this extension.
+Saving and browsing require the Hologram desktop app (Windows, free and open source). Install it first, then add this extension.
 
 PRIVACY
 No data is collected or transmitted to any server of ours. To enrich metadata, read-only requests go directly from your browser to the platform you are viewing (X's syndication API, Bluesky, Misskey, Mastodon, and pixiv — pixiv requests use your own pixiv session so logged-in-only works can be captured; see the privacy policy for details). Everything is saved locally to a folder you choose.

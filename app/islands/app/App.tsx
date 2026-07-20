@@ -47,7 +47,7 @@ import {
 
 // The single React root for the whole renderer — the 最終形B DoD: 島 root 群の1本統合.
 // Islands migrate here from their own createRoot() calls in verifiable batches; each still
-// owns only RENDERING and reads its state from a window.corpus* bridge (orchestrator.ts keeps
+// owns only RENDERING and reads its state from a window.hologram* bridge (orchestrator.ts keeps
 // the logic/state). Container-mounted islands portal into their existing orchestrator-owned
 // static container (unchanged DOM/CSS contract); body-level overlays render as fixed-
 // positioned children of this root. This component is the source of truth for which
@@ -84,7 +84,7 @@ function AppBoot() {
 }
 
 // Shell-level body classes that React owns (orchestrator no longer touches document.body for
-// these). browse-posters is driven by the corpusStore 'browseMode' key (orchestrator sets the
+// these). browse-posters is driven by the hologramStore 'browseMode' key (orchestrator sets the
 // store; the class is a pure derivation). useLayoutEffect toggles it before paint = no
 // flash. (image-tab-active is owned by ImageTabHost from its model; modal-open stays in
 // orchestrator — it observes overlay visibility, a cross-cutting shell concern, not drawing.)
@@ -229,16 +229,16 @@ function TabBarEvents() {
   return null;
 }
 
-// External-store / IPC subscriptions: corpusStore keys (view / browseMode /
+// External-store / IPC subscriptions: hologramStore keys (view / browseMode /
 // posterView / searchQuery), the search-mode toggle, shared folder changes, and the
 // fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
 // for the app's lifetime). The store/search-mode handlers are guard+action logic that
 // still lives in orchestrator.ts, imported directly as live bindings — "cut out and
 // rewire", same as the other App.tsx-level effects and handleFolderChange/
 // handlePostsChanged below (Wave31/V17, extended to the rest of this effect in Wave32 —
-// no bridge needed once orchestrator.ts exports them as real bindings). corpusStore
+// no bridge needed once orchestrator.ts exports them as real bindings). hologramStore
 // subscriptions return an unsubscribe (useSyncExternalStore-compatible) and get one on
-// cleanup; corpusFolders.onChange and corpusPosts.onPostsChanged don't (subs.push / raw
+// cleanup; hologramFolders.onChange and hologramPosts.onPostsChanged don't (subs.push / raw
 // ipcRenderer.on) — harmless, since this effect never actually unmounts in this
 // single-page app.
 function StoreSubscriptions() {
@@ -275,7 +275,7 @@ export function App() {
       <DetailDismiss />
       {/* Tab bar event wiring (click/keydown/contextmenu/etc + Ctrl+T/W/Tab). */}
       <TabBarEvents />
-      {/* External-store / IPC subscriptions (corpusStore keys, qf-pop, search mode,
+      {/* External-store / IPC subscriptions (hologramStore keys, qf-pop, search mode,
           folder changes, posts-changed fs-watch hint). */}
       <StoreSubscriptions />
       {/* The React-owned app shell: tab bar + left nav + content inset + right inspector,

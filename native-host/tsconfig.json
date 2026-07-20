@@ -9,7 +9,7 @@
   // never bundled, never imported by ESM import — only by CommonJS require()
   // (computed-path from app/main.mts, or a relative require() between these
   // files themselves). These files stay .cts (not .mts) — bridge.cts is
-  // deployed by copying the RAW SOURCE into ~/.corpus and executed there by a
+  // deployed by copying the RAW SOURCE into ~/.hologram and executed there by a
   // generated launcher (.bat/.sh), so it must keep working as a plain
   // require()/module.exports CommonJS file with no build step, exactly like it
   // did as bridge.js. Node's type-stripping erases the annotations at runtime
@@ -18,7 +18,7 @@
   // (system Node and Electron 43 are both Node 24).
   //
   // Sibling requires use the explicit .cts extension (require('./paths.cts'),
-  // not require('./paths')) because the deployed copy in ~/.corpus has no
+  // not require('./paths')) because the deployed copy in ~/.hologram has no
   // build step to rewrite specifiers — the extension in the source IS the
   // extension Node resolves at runtime. Plain require() calls aren't
   // cross-file type-checked by tsc (require() types as NodeRequire → any);

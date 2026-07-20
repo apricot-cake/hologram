@@ -47,24 +47,24 @@ function diffValues(name, a, b) {
 }
 
 // ---- 1) renderer MESSAGES (module-private → expose via a guarded source patch).
-// i18n.ts is a real ES module now (named export `corpusI18n`), but MESSAGES itself
+// i18n.ts is a real ES module now (named export `hologramI18n`), but MESSAGES itself
 // stays module-scope (both ja/en tables are needed side by side here, whereas
-// corpusI18n only resolves to ONE locale) — so this still reads the source rather
+// hologramI18n only resolves to ONE locale) — so this still reads the source rather
 // than import()-ing. Simpler than before the conversion, though: we only need the
-// `const MESSAGES = {...}` declaration, not the corpusI18n async IIFE that follows
+// `const MESSAGES = {...}` declaration, not the hologramI18n async IIFE that follows
 // it (which needs window/navigator + is now invalid syntax for indirect eval anyway,
 // since it starts with the `export` keyword) — slice it off before eval, dropping
-// the window/navigator shims entirely. The `import { corpusIpc } from './ipc.ts'`
+// the window/navigator shims entirely. The `import { hologramIpc } from './ipc.ts'`
 // line that now sits just above the cut (Wave13) is ALSO invalid indirect-eval
 // syntax (import declarations are Module-only, same restriction as export) — it's
-// dead weight in this slice anyway (MESSAGES never references corpusIpc), so strip
+// dead weight in this slice anyway (MESSAGES never references hologramIpc), so strip
 // any import lines before eval rather than widen the cut point.
 {
   const fullSrc = stripTS(fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'i18n.ts'), 'utf8'));
-  const EXPORT_LINE = /^export const corpusI18n = /m;
+  const EXPORT_LINE = /^export const hologramI18n = /m;
   const cut = fullSrc.search(EXPORT_LINE);
   if (cut === -1) {
-    fail("renderer/i18n.ts: expected `export const corpusI18n = ` not found — update this test's cut point");
+    fail("renderer/i18n.ts: expected `export const hologramI18n = ` not found — update this test's cut point");
   } else {
     const src = fullSrc.slice(0, cut).replace(/^import .*;$/gm, '');
     const HOOK = /const MESSAGES\s*=\s*\{/;
@@ -73,8 +73,8 @@ function diffValues(name, a, b) {
     } else {
       // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read the module-private MESSAGES table (same pattern as test-search-unit used before its own conversion)
       // biome-ignore lint/style/noCommaOperator: (0, eval) IS the indirect-eval idiom
-      (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__corpusMessages = {'));
-      const M = (globalThis as any).__corpusMessages;
+      (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__hologramMessages = {'));
+      const M = (globalThis as any).__hologramMessages;
       if (!M || !M.ja || !M.en) {
         fail('renderer/i18n.ts: MESSAGES.ja / MESSAGES.en not captured');
       } else {

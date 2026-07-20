@@ -5,14 +5,14 @@
 // delegated click/dblclick/contextmenu on #posterGrid keeps
 // firing. React renders + windows; viewer.js owns posterList, the count badge,
 // the density classes on the container, and every event. The inspected
-// highlight is derived from corpusStore, not modelOf (see below).
+// highlight is derived from hologramStore, not modelOf (see below).
 import type { CSSProperties } from 'react';
 import { useSyncExternalStore } from 'react';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
-// The inspected ring is derived straight from corpusStore's 'inspectedKey'
+// The inspected ring is derived straight from hologramStore's 'inspectedKey'
 // (a real subscription) rather than riding on modelOf's closure-read model —
 // see grid/Grid.tsx's Cell for the post-side twin of this.
 const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
@@ -93,6 +93,6 @@ function PosterCell({ index, data }: GridCellProps) {
   return <PosterCard c={c} tagTitle={model.tagTitle} />;
 }
 
-export function PostersHost({ model }: { model: CorpusGridModel }) {
+export function PostersHost({ model }: { model: HologramGridModel }) {
   return <VirtualGridHost model={model} cell={PosterCell} />;
 }

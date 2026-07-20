@@ -20,12 +20,12 @@ export interface BulkEditBuilderDeps {
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
-  pushUndo(kind: string, records: CorpusUndoRecord[]): void;
+  pushUndo(kind: string, records: HologramUndoRecord[]): void;
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
   keepCurrentVisible(): void;
-  getPostById(id: string): CorpusPost | undefined;
-  selectedRecords(): CorpusPost[];
+  getPostById(id: string): HologramPost | undefined;
+  selectedRecords(): HologramPost[];
 }
 
 export function makeBulkEdit(deps: BulkEditBuilderDeps) {
@@ -46,7 +46,7 @@ export function makeBulkEdit(deps: BulkEditBuilderDeps) {
     tagPopClose();
   }
 
-  function openTagPopForSelection(anchorRect: CorpusAnchorRect) {
+  function openTagPopForSelection(anchorRect: HologramAnchorRect) {
     if (tagPopGet()?.forKey === BULK_FOR_KEY) {
       dismissBulkTagPop(); // re-click "タグを追加" while already open → close
       return;

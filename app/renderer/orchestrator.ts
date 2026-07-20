@@ -26,26 +26,26 @@ import { makeTabLabels } from './tab-state.ts';
 import { getBackup, onBackupStart, onBackupDone } from './backup.ts';
 import { listPostsDelta, importComplete, importPosts } from './posts.ts';
 import { compile as searchCompile } from './search.ts';
-import { corpusI18n } from './i18n.ts';
+import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import * as selection from './selection.ts';
 import { shellReady } from './shell-ready.ts';
-import { corpusPostGridSource, corpusPosterGridSource } from './grid.ts';
+import { hologramPostGridSource, hologramPosterGridSource } from './grid.ts';
 import { qcGlyph, makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
-import { makeGridDensity, bindApplyTileOverlay, type CorpusSizeTrack } from './grid-density-builder.ts';
+import { makeGridDensity, bindApplyTileOverlay, type HologramSizeTrack } from './grid-density-builder.ts';
 import { makeInspector } from './inspector-builder.ts';
 import { makeSelectionBar } from './selection-builder.ts';
 import { makeBulkEdit } from './bulk-edit-builder.ts';
 import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
-import { corpusImageTabSource } from './image-tab.ts';
+import { hologramImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
 // Boot readiness signal + the boot/subscription handlers below: real ES exports now
 // (Wave31/V17) instead of the old shared bridge — App.tsx's AppBoot/
@@ -99,17 +99,17 @@ export let resetPosterFilters: () => void;
 // #selectionBar delegation is gone. tag/folder take the clicked button's rect to anchor
 // their pop/menu against the bar.
 export let selectionSelectAll: () => void;
-export let selectionTag: (anchorRect: CorpusAnchorRect) => void;
-export let selectionFolder: (anchorRect: CorpusAnchorRect) => void;
+export let selectionTag: (anchorRect: HologramAnchorRect) => void;
+export let selectionFolder: (anchorRect: HologramAnchorRect) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
 // Size-slider bindings for the display popover (P2②): read the current view's size track
 // (column-count or px) and apply a slider value. gridDensity owns the geometry math; the
 // popover imports these live bindings and calls them on open / drag / commit.
-export let getPostSizeTrack: () => CorpusSizeTrack | null;
+export let getPostSizeTrack: () => HologramSizeTrack | null;
 export let applyPostSize: (value: number, min: number, max: number, commit: boolean) => void;
-export let getPosterSizeTrack: () => CorpusSizeTrack | null;
+export let getPosterSizeTrack: () => HologramSizeTrack | null;
 export let applyPosterSize: (value: number, min: number, max: number) => void;
 // Re-roll the shuffle order (#118). The 'random' sort is a pure function of a seed,
 // so a new order means a new seed — this replaces it and re-renders. The display
@@ -128,11 +128,11 @@ export let applyFolderFilter: (id: string) => void;
 export let applySavedSearch: (id: string) => void;
 // Save the current post query as a new saved search. Returns the new folder, or null
 // when the name is blank (the store's own rule).
-export let saveCurrentSearch: (name: string) => CorpusFolder | null;
+export let saveCurrentSearch: (name: string) => HologramFolder | null;
 
 // --- Filter bar (redesign §3-2 / P2③) -------------------------------------
 // One value-flyout row (from facets.ts's qfValues) — the structural shape the
-// filterbar island renders. Kept loose ([k]:any) like CorpusQfPopItem: qfValues
+// filterbar island renders. Kept loose ([k]:any) like HologramQfPopItem: qfValues
 // tacks on per-category extras (type/kind/sub/sn/facetDim/ghead/dotTitle).
 export interface FilterRow {
   v?: string;
@@ -223,7 +223,7 @@ export function endFilterEditSession(): void {
   // --- i18n ---
   // Messages live in i18n.js (loaded before this script via index.html).
   // Manifest-level strings come from _locales/*/messages.json via Chrome.
-  const { lang, getMessage } = await corpusI18n;
+  const { lang, getMessage } = await hologramI18n;
   // The shell is React-owned now (AppShell.tsx): its DOM (#postGrid / #posterGrid /
   // #emptyState / #importZipInput / #searchBox / #sortSelect …) is rendered on mount,
   // not present as static index.html markup. Wait for that mount before any of the
@@ -267,17 +267,17 @@ export function endFilterEditSession(): void {
   // Sidebar tooltip + its own <span> label, so the legacy [data-tip]/aria-label
   // written here stacked a SECOND .ui-tip chip on top of it on hover.
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
-  // rendered by the sidebar island, self-deriving from corpusPostSidebarSource (P4-B
+  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource (P4-B
   // slice⑰; renderer/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
-  // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
+  // ⓘ help) are the activebar island now, self-deriving from hologramStore (P4-B slice⑱;
   // renderer/activebar.ts is gone — no bridge left) — no static setText here.
   // Density (post + poster) and the sort labels live in the display popover
   // (islands/shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
   // render from i18n themselves — no static setText here.
   // #posterFilterRows title + row labels are rendered by the poster sidebar island,
-  // self-deriving from corpusPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
+  // self-deriving from hologramPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
   // posterDateClear are the filter-popover React island now — no static labels here.
@@ -286,15 +286,15 @@ export function endFilterEditSession(): void {
   // confirmOpen's config), so no static confirm setText here either.
 
   // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now,
-  // self-deriving from corpusStore + t() (P4-B slice⑱) — no static setText here.
+  // self-deriving from hologramStore + t() (P4-B slice⑱) — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
-  // rendered by the sidebar island, self-deriving from corpusPostSidebarSource — no
+  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource — no
   // static setText here.
   setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
 
   // Post sort's value source is the hidden <select> AppShell renders. The display
   // popover's Select drives it on pick (value + a 'change' event, so the listener far
-  // below still fires) and mirrors the value into corpusStore 'sortPost', which is what
+  // below still fires) and mirrors the value into hologramStore 'sortPost', which is what
   // lets the popover reflect programmatic changes (a tab restore pushes 'sortPost' —
   // see applyState / the tab click handler). Poster sort has no element: the store key
   // IS its single source. Collapsing this stub into the store is #217's follow-up.
@@ -427,7 +427,7 @@ export function endFilterEditSession(): void {
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
-    userKey: (p: CorpusPost) => userKey(p),
+    userKey: (p: HologramPost) => userKey(p),
     t: getMessage,
     PF_NAME,
     tagKindOf,
@@ -464,7 +464,7 @@ export function endFilterEditSession(): void {
 
   // --- Sidebar filter controls ---
   // (#filterRows row labels are rendered by the sidebar island, self-deriving from
-  // corpusPostSidebarSource (P4-B slice⑰). No static setText for プラットフォーム / 投稿 /
+  // hologramPostSidebarSource (P4-B slice⑰). No static setText for プラットフォーム / 投稿 /
   // メディア / 日付 / エンゲージメント here.)
 
   // Sidebar chip toggle (platform, postType, media)
@@ -506,7 +506,7 @@ export function endFilterEditSession(): void {
 
   // Update sidebar state — kept as a thin alias to renderQueryChips (its many call
   // sites keep their name) now that badges/tag-visibility are self-derived by
-  // renderer/sidebar.ts's corpusPostSidebarSource/corpusPosterSidebarSource (P4-B
+  // renderer/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource (P4-B
   // slice⑰; see that file for how postQueryTree/tags/folders/posts-data feed it).
   function updateSidebarState() {
     // (#searchBox's has-value accent is owned by the searchbox island)
@@ -519,9 +519,9 @@ export function endFilterEditSession(): void {
   // permanent sidebar rows for them stretched the column without bound
   // (sub-rows removed 2026-07-03).
   // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
-  // to tags.js (corpusTags wiring above) — the P4 "状態→store" tags slice.
+  // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
-  // renderer/sidebar.ts's sources now (corpusTags.onChange / posts-data.ts's subscribe
+  // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's subscribe
   // — P4-B slice⑰), so a 種別 rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
   // read kindLabel() live too. Mutation + persistence for the kind menu itself
@@ -590,7 +590,7 @@ export function endFilterEditSession(): void {
   // manual-groups.json / ungrouped.json) moved to post-grid-builder.ts along with
   // viewGroups — see postGrid below.
   // postIdKey of the group shown in the inspector (ring marker). Mirrored into
-  // corpusStore so the grid/poster cells derive their own '.inspected' ring via
+  // hologramStore so the grid/poster cells derive their own '.inspected' ring via
   // useSyncExternalStore — no more manual repaint()/pushPosterModel() calls to
   // refresh the ring on open/close (the store notify does that reactively).
   let inspectedKey: string | null = null;
@@ -605,8 +605,8 @@ export function endFilterEditSession(): void {
   // references (declared later via postGrid/posterGrid below) — deferred arrows
   // the same TDZ-safe way every other service wiring in this file already works.
   const gridDensity = makeGridDensity({
-    corpusIpc,
-    corpusPostGridSource,
+    hologramIpc,
+    hologramPostGridSource,
     renderPosts: () => renderPosts(),
     renderPosters: () => renderPosters(),
     getBrowseMode: () => browseMode,
@@ -614,7 +614,7 @@ export function endFilterEditSession(): void {
   const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
   bindApplyTileOverlay(gridDensity.applyTileOverlay);
   // Post-grid selection state (Set + shift-range anchor) lives in
-  // renderer/selection.ts (P4-B slice⑬) — corpusStore's
+  // renderer/selection.ts (P4-B slice⑬) — hologramStore's
   // 'selectedSet' key IS the state; the grid island's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (改訂③: flat conditions you drag into parenthesised
@@ -673,8 +673,8 @@ export function endFilterEditSession(): void {
     // this closure (the makeSearchBox() call below), same forward-reference
     // pattern as postQB/posterQB being referenced from functions defined above
     // their own declarations.
-    onLeafMutated: (node: CorpusQueryLeaf) => searchEditing.onLeafMutated(node),
-    isEditingLeaf: (node: CorpusQueryLeaf) => searchEditing.isEditingLeaf(node),
+    onLeafMutated: (node: HologramQueryLeaf) => searchEditing.onLeafMutated(node),
+    isEditingLeaf: (node: HologramQueryLeaf) => searchEditing.isEditingLeaf(node),
   });
   // Thin module-level wrappers so existing post-side call sites keep their names.
   function currentTree() {
@@ -689,10 +689,10 @@ export function endFilterEditSession(): void {
   function removeFilter(index: number) {
     postQB.removeFilter(index);
   }
-  function removeNode(node: CorpusQueryLeaf) {
+  function removeNode(node: HologramQueryLeaf) {
     postQB.removeNode(node);
   }
-  function removeCondsMatching(pred: (c: CorpusQueryLeaf) => boolean) {
+  function removeCondsMatching(pred: (c: HologramQueryLeaf) => boolean) {
     return postQB.removeCondsMatching(pred);
   }
   function qHasValue(type: string, value: string) {
@@ -850,14 +850,14 @@ export function endFilterEditSession(): void {
     currentTree,
     stickyRecs: postGrid.getStickyRecs(),
     sortValue: () => sortSelect.value,
-    // Shuffle seed (#118) — corpusStore 'shuffleSeed', snapshotted per tab like the
+    // Shuffle seed (#118) — hologramStore 'shuffleSeed', snapshotted per tab like the
     // sort key itself. Only the 'random' sort reads it.
     shuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
     searchQuery: () => searchQuery(),
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
-    // Poster sort's single source is corpusStore 'sortPoster' (the display popover writes it);
+    // Poster sort's single source is hologramStore 'sortPoster' (the display popover writes it);
     // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
     // as the old closure default).
     posterSort: () => (storeGet('sortPoster') as string) || 'count',
@@ -866,12 +866,12 @@ export function endFilterEditSession(): void {
     // is never called here. This getter satisfies its contract with the default
     // (alphabetical) sort — never actually invoked in the current build.
     folderSort: () => 'name',
-    allFolders: () => (CF() ? CF().allFolders() : []) as CorpusFolder[],
+    allFolders: () => (CF() ? CF().allFolders() : []) as HologramFolder[],
     filterLabel,
   });
   // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster
   // source (P4-B スライス⑰) can read the same namedPosters() this orchestrator instance uses
-  // (poster-instance row disclosure) — see the corpusTags.tagKindOf note above for why
+  // (poster-instance row disclosure) — see the hologramTags.tagKindOf note above for why
   // this is a bind, not a reimplementation.
   bindNamedPosters(namedPosters);
 
@@ -879,7 +879,7 @@ export function endFilterEditSession(): void {
   // _lastStickySize) lives in post-grid-builder.ts now; tabsCtl.syncTitleAndPersist()
   // below writes lastRenderedState via postGrid.setLastRenderedState.
   //
-  // Nav history (browser-style back/forward), the corpusStore-backed tabs/
+  // Nav history (browser-style back/forward), the hologramStore-backed tabs/
   // activeTabId/tabEditingId accessors (P4-B slice⑯), and the tab bar CRUD/DOM
   // handlers all moved to tabs-builder.ts — viewer.ts decomposition's V12 slice
   // (Wave26). Image tabs moved to image-tab-builder.ts below — V13/Wave27's
@@ -973,7 +973,7 @@ export function endFilterEditSession(): void {
   // module-scope export assignment for the tab-bar handlers happened at that
   // construction site too.
 
-  // keepCurrentVisible/imgAspect/cardModel/corpusPostGridSource.configure/
+  // keepCurrentVisible/imgAspect/cardModel/hologramPostGridSource.configure/
   // renderPosts all moved to post-grid-builder.ts (postGrid above).
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -1005,7 +1005,7 @@ export function endFilterEditSession(): void {
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
   // onIndexChange/onToggleInspector/onCloseTab are the DI callbacks that replaced
   // image-tab.ts's former dispatch through the old shared bridge (V13/Wave27, §5).
-  corpusImageTabSource.configure({
+  hologramImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
     labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo') },
     onIndexChange: setImageTabIndex,
@@ -1091,7 +1091,7 @@ export function endFilterEditSession(): void {
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); the クリップ
   // + 複数画像 row entries (active state, clip count) are self-derived now by
-  // renderer/sidebar.ts's corpusPostSidebarSource (P4-B slice⑰) — no orchestrator-side
+  // renderer/sidebar.ts's hologramPostSidebarSource (P4-B slice⑰) — no orchestrator-side
   // re-render call needed after a clip/multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
@@ -1232,7 +1232,7 @@ export function endFilterEditSession(): void {
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
   // collapses rapid clicks to a single render.
   let _browseRenderT: any = null;
-  // Density is the display popover's (corpusStore 'view'); the
+  // Density is the display popover's (hologramStore 'view'); the
   // reaction (mirror into currentView, persist, re-render with a view transition)
   // lives in grid-density-builder.ts now (V10/Wave24) — this just bridges React's
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
@@ -1274,7 +1274,7 @@ export function endFilterEditSession(): void {
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
-  // Browse mode is the left sidebar's (corpusStore 'browseMode').
+  // Browse mode is the left sidebar's (hologramStore 'browseMode').
   // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
   // below, so the loop stays one-way (island → store → orchestrator, never back). React owns
@@ -1292,7 +1292,7 @@ export function endFilterEditSession(): void {
   // inspector (poster profile), double-click = jump to that poster's posts.
   // posterList itself is now poster-grid-builder.ts-internal state (exposed via
   // getPosterList) — V6/Wave20.
-  // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in corpusStore
+  // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in hologramStore
   // 'sortPoster' (read via the listing dep getter above); a subscription below
   // re-renders on change.
   // Poster grid density + tile/card size slider (kept SEPARATE from the post-side
@@ -1429,7 +1429,7 @@ export function endFilterEditSession(): void {
   // retired filter-popover's onApply logic). The filterbar island only renders + routes; it
   // never rebuilds this logic. Recomputed per open so counts/vocab/labels stay fresh.
   filterCategories = function (): FilterCat[] {
-    const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as CorpusQfPopItem);
+    const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
     // 種別 dot: a tag row carrying it.kind ('work'/'character') wears the shared category
     // dot — resolve its (possibly custom) label here so the island only draws (this is
     // exactly what renderQfPop did before the flyout was retired).
@@ -1603,7 +1603,7 @@ export function endFilterEditSession(): void {
     const view = facetViewOf(qb.getTree(), opts);
     if (!view) return []; // non-facet persisted tree → no chips (read-only fallback dropped for the trial)
     const out: ActiveFilter[] = [];
-    const emit = (type: string, mode: FacetMode, leaves: CorpusQueryLeaf[]) => {
+    const emit = (type: string, mode: FacetMode, leaves: HologramQueryLeaf[]) => {
       const m = map[type];
       if (!m) return; // legacy standalone types (clip/workspace) carry no chip
       out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
@@ -1619,7 +1619,7 @@ export function endFilterEditSession(): void {
       }
       emit(l.type, 'or', [l]);
     }
-    const excl = new Map<string, CorpusQueryLeaf[]>();
+    const excl = new Map<string, HologramQueryLeaf[]>();
     for (const l of view.excl) {
       const arr = excl.get(l.type) ?? [];
       arr.push(l);
@@ -1629,7 +1629,7 @@ export function endFilterEditSession(): void {
     return out;
   };
 
-  // resetPosterFilters/renderPosters/corpusPosterGridSource.configure/
+  // resetPosterFilters/renderPosters/hologramPosterGridSource.configure/
   // openPosterPosts/jumpToPoster/refreshPosterTagFields/refreshPosterFolderFields/
   // applyPosterTagChange/showPosterDetail all moved to poster-grid-builder.ts
   // (V6/Wave20). resetPosterFilters is read only through the module-scope export
@@ -1670,7 +1670,7 @@ export function endFilterEditSession(): void {
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
-  // Poster-mode sort. Single source = corpusStore 'sortPoster' (the display popover's
+  // Poster-mode sort. Single source = hologramStore 'sortPoster' (the display popover's
   // Select writes it on pick); re-render when it changes — one trigger, no dual source.
   storeSubscribe('sortPoster', () => {
     if (tabsCtl.isRestoring()) return; // applyEntry/initTabs wrote the store — they drive their own render
@@ -1703,7 +1703,7 @@ export function endFilterEditSession(): void {
   // (viewer.ts decomposition's V16 slice, see memory corpus-react-purity-execution-map).
 
   // Load saved view mode and skipDeleteConfirm
-  corpusIpc.getPrefs().then((prefs) => {
+  hologramIpc.getPrefs().then((prefs) => {
     gridDensity.restorePrefs(prefs);
     postGrid.restoreSkipDeleteConfirm(!!prefs.skipDeleteConfirm);
     // Re-render once after applying the saved view mode. Sort is NOT read here anymore
@@ -1713,7 +1713,7 @@ export function endFilterEditSession(): void {
   });
 
   // --- Search value source -----------------------------------------------------
-  // corpusStore 'searchQuery' IS the search value; the searchbox island renders it
+  // hologramStore 'searchQuery' IS the search value; the searchbox island renders it
   // as a controlled Base UI Autocomplete input. The query-tree text-leaf state
   // machine (search-editing.ts, Wave2), the suggestion-pick bridge to the
   // searchbox island (searchbox.ts, Wave5), and the store plumbing/debounced
@@ -1761,7 +1761,7 @@ export function endFilterEditSession(): void {
   };
 
   // --- Import from ZIP ---
-  // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して
+  // 新形式（完全エクスポート: library/ + hologram-export.json）は main 側で展開して
   // ライブラリへ復元（整理情報もマージ）。旧形式（metadata.json + images/）は従来どおり
   // レンダラで読んで importPosts。
   byId('importZipInput').addEventListener('change', async (e) => {
@@ -1771,7 +1771,7 @@ export function endFilterEditSession(): void {
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const zip = await JSZip.loadAsync(buf);
-      const isComplete = !!zip.file('corpus-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
+      const isComplete = !!zip.file('hologram-export.json') || Object.keys(zip.files).some((p) => p.indexOf('library/') === 0);
       if (isComplete) {
         const res = await importComplete(buf);
         await loadPosts();
@@ -1791,7 +1791,7 @@ export function endFilterEditSession(): void {
         return;
       }
       const meta = JSON.parse(await metaEntry.async('string'));
-      const posts: CorpusPost[] = [];
+      const posts: HologramPost[] = [];
       for (const m of Array.isArray(meta) ? meta : []) {
         const f = m.imageFile && zip.file(m.imageFile);
         if (!f) continue;
@@ -1836,12 +1836,12 @@ export function endFilterEditSession(): void {
   // stays the guard + action logic.
   handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c: CorpusQueryLeaf) => c.type === 'folder' && !CF().byId(c.value))) {
+    if (postQB.removeCondsMatching((c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value))) {
       postQB.syncShadow();
       postQB.render();
     }
     // The clip row / sidebar collection state (counts/active) self-derives from the
-    // corpusFolders.onChange subscription in renderer/sidebar.ts (P4-B slice⑰).
+    // hologramFolders.onChange subscription in renderer/sidebar.ts (P4-B slice⑰).
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };
   // Background fs-watch refresh (targeted via the changed-file hint). Registration

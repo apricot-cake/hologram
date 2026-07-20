@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "Corpus",
+    "message": "Hologram",
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
@@ -16,7 +16,7 @@
     "description": "Keyboard command description (Alt+S)"
   },
   "optionsTitle": {
-    "message": "Corpus 設定",
+    "message": "Hologram 設定",
     "description": "Options page document title"
   },
   "optionsOpenDiag": {

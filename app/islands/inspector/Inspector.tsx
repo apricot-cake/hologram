@@ -25,7 +25,7 @@ const Pencil = () => (
 // chips (right-click still opens the kind-menu, a read operation) + a trailing ✎
 // that opens the tag picker pop (Issue #22) anchored to itself. Editing moved OUT
 // of the inspector entirely — see tag-pop.ts / TagPop.tsx.
-function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags: (anchorRect: CorpusAnchorRect) => void }) {
+function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags: (anchorRect: HologramAnchorRect) => void }) {
   return (
     <div className="iv-insp-row iv-tags-row">
       <span className="iv-insp-k">{label}</span>
@@ -58,7 +58,7 @@ function TagsRow({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTag
 
 // Post detail — mirrors the old showDetail() innerHTML build. m carries every field
 // already resolved/localized by viewer.js (dates formatted, MSG strings picked).
-function PostInspector({ m }: { m: CorpusInspectorModel }) {
+function PostInspector({ m }: { m: HologramInspectorModel }) {
   return (
     <>
       <button type="button" className="iv-insp-close" aria-label="閉じる" data-tip="閉じる" onClick={m.onClose}>
@@ -136,7 +136,7 @@ function PostInspector({ m }: { m: CorpusInspectorModel }) {
 }
 
 // Poster detail — mirrors the old showPosterDetail() innerHTML build.
-function PosterInspector({ m }: { m: CorpusInspectorModel }) {
+function PosterInspector({ m }: { m: HologramInspectorModel }) {
   return (
     <>
       <button type="button" className="iv-insp-close" aria-label="閉じる" data-tip="閉じる" onClick={m.onClose}>

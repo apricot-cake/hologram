@@ -1,18 +1,18 @@
 // i18n helper for the Electron viewer (renderer) only.
 // Language resolves from the app's saved preference (config.json `language`, via
-// corpusIpc.getPrefs); 'auto' follows navigator.language (the OS/app
+// hologramIpc.getPrefs); 'auto' follows navigator.language (the OS/app
 // locale). The viewer reloads on change so the new language takes effect.
 //
-// Consumers do: import { corpusI18n } from './i18n.ts'; const { getMessage, lang,
-// resolved } = await corpusI18n; then call getMessage('key', [sub1, sub2]).
+// Consumers do: import { hologramI18n } from './i18n.ts'; const { getMessage, lang,
+// resolved } = await hologramI18n; then call getMessage('key', [sub1, sub2]).
 //
 // Note: the extension's capture banner keeps its OWN copy of strings in the root
 // i18n.js (the extension can't read this file or the app's config), so banner /
 // content-script strings deliberately do NOT live here.
 // Keyed by message id; Record's index signature lets getMessage() below index
 // it with a plain `key: string` (the callers don't all pass literal keys).
-type CorpusMessageTable = Record<string, string>;
-const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
+type HologramMessageTable = Record<string, string>;
+const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
   ja: {
     // viewer: tabs / search / sort
     tabTags: 'ハッシュタグ',
@@ -220,7 +220,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     dataTitle: 'データ',
     saveFolderSubTitle: 'ライブラリの保存先',
     saveFolderChange: '変更',
-    saveFolderHint: '投稿の保存場所。変更すると、選んだフォルダの中に Corpus-library フォルダを作り、既存ライブラリをそこへ移動します（移動完了まで元データを保持＝安全）。',
+    saveFolderHint: '投稿の保存場所。変更すると、選んだフォルダの中に Hologram-library フォルダを作り、既存ライブラリをそこへ移動します（移動完了まで元データを保持＝安全）。',
     saveFolderMoving: '移行中…',
     saveFolderMoved: '保存先を変更しました（$1 件を移動）',
     saveFolderProgressTitle: '移行の進捗',
@@ -600,7 +600,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     dataTitle: 'Data',
     saveFolderSubTitle: 'Library location',
     saveFolderChange: 'Change',
-    saveFolderHint: 'Where posts are stored. Changing it creates a Corpus-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
+    saveFolderHint: 'Where posts are stored. Changing it creates a Hologram-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
     saveFolderMoving: 'Moving…',
     saveFolderMoved: 'Save folder changed ($1 moved)',
     saveFolderProgressTitle: 'Migration progress',
@@ -773,14 +773,14 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
 };
 
 // Placed here (not at file top) so scripts/test-i18n-parity.cts's textual slice —
-// everything before this `export const corpusI18n = ` line — never has to eval an
+// everything before this `export const hologramI18n = ` line — never has to eval an
 // `import` declaration (also invalid for indirect eval, same reason `export` is).
-import { corpusIpc } from './ipc.ts';
+import { hologramIpc } from './ipc.ts';
 
-export const corpusI18n = (async () => {
+export const hologramI18n = (async () => {
   let lang = 'auto';
   try {
-    const prefs = await corpusIpc.getPrefs();
+    const prefs = await hologramIpc.getPrefs();
     lang = prefs.language || 'auto';
   } catch {
     // prefs unavailable — fall back to auto

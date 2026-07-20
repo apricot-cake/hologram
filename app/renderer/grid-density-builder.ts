@@ -8,13 +8,13 @@
 // The size control itself is the React display popover (#154 P2②): it reads
 // computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
 // nothing here touches a slider element. Density (card/tile/list) likewise comes
-// in through the corpusStore 'view'/'posterView' keys.
+// in through the hologramStore 'view'/'posterView' keys.
 import { colsFor, sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 
 export interface GridDensityDeps {
-  corpusIpc: { setPref(key: string, value: unknown): void };
-  corpusPostGridSource: { setLiveColumnWidth(px: number | null): void };
+  hologramIpc: { setPref(key: string, value: unknown): void };
+  hologramPostGridSource: { setLiveColumnWidth(px: number | null): void };
   renderPosts(): void;
   renderPosters(): void;
   getBrowseMode(): string;
@@ -24,7 +24,7 @@ export interface GridDensityDeps {
 // range is COLUMN COUNTS (min = fewest = largest tiles ... max = most = smallest); for the
 // list it is raw thumbnail px. `single` = only one stop is geometrically possible, so the
 // caller hides the control (it would convey nothing).
-export interface CorpusSizeTrack {
+export interface HologramSizeTrack {
   min: number;
   max: number;
   value: number;
@@ -116,21 +116,21 @@ export function makeGridDensity(deps: GridDensityDeps) {
     applyTileLayout();
     if (!commit) {
       // Live re-flow while dragging (masonic recreates its positioner on columnWidth
-      // change) via a deliberate side channel, NOT corpusStore — writing every drag
+      // change) via a deliberate side channel, NOT hologramStore — writing every drag
       // input to the store would recompute+notify on every pointermove for no benefit.
-      if (st.columns) deps.corpusPostGridSource.setLiveColumnWidth(st.get());
+      if (st.columns) deps.hologramPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
-    deps.corpusIpc.setPref(st.pref, st.get());
-    // The settled size mirrors into corpusStore — the post-grid source derives
+    deps.hologramIpc.setPref(st.pref, st.get());
+    // The settled size mirrors into hologramStore — the post-grid source derives
     // columnWidth/itemHeightEstimate from it. Clear the live-drag override so a
     // later VIEW change (which reads a different storeKey) can't see a stale value.
     storeSet(st.storeKey, st.get());
-    deps.corpusPostGridSource.setLiveColumnWidth(null);
+    deps.hologramPostGridSource.setLiveColumnWidth(null);
     deps.renderPosts(); // re-request thumbnails at the new size
   }
 
-  function tileGridMetrics(): CorpusGridMetrics | null {
+  function tileGridMetrics(): HologramGridMetrics | null {
     const grid = document.getElementById('postGrid');
     if (!grid) return null;
     // floor of the FRACTIONAL width: clientWidth rounds up half-pixels, which
@@ -141,12 +141,12 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { W, g: Number.isFinite(gv) ? gv : 8 };
   }
 
-  let _dragMetrics: CorpusGridMetrics | null = null; // grid geometry cached for the duration of one size drag
+  let _dragMetrics: HologramGridMetrics | null = null; // grid geometry cached for the duration of one size drag
 
   // Size-slider track as DATA (the React display popover reads this; the old #tileSlider
   // DOM path is gone). A column-count track for the auto-fill views (one detent = one
   // column, no dead notches) and raw px for the list.
-  function computeSizeTrack(): CorpusSizeTrack | null {
+  function computeSizeTrack(): HologramSizeTrack | null {
     const st = viewSizeState();
     if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
     const m = tileGridMetrics();
@@ -197,7 +197,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // detour) so the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
     tileOverlay = v;
-    deps.corpusIpc.setPref('tileOverlay', tileOverlay);
+    deps.hologramIpc.setPref('tileOverlay', tileOverlay);
     // Class-only: the overlay markup is always in the DOM (.no-overlay just hides it
     // via CSS), so flip the class directly instead of re-grouping + rebuilding the
     // grid (a full renderPosts reloaded every tile image = flicker).
@@ -205,7 +205,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
   }
 
-  // The density buttons live in the display popover (corpusStore 'view'). React
+  // The density buttons live in the display popover (hologramStore 'view'). React
   // owns the active state + glass thumb; this reacts to a view change: mirror it
   // into currentView, persist it, and re-render the grid (deferred past a paint
   // with a view transition, like the old optimistic handler). The idempotent guard
@@ -217,7 +217,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const v = storeGet('view');
     if (v === currentView) return;
     currentView = v;
-    deps.corpusIpc.setPref('viewMode', currentView);
+    deps.hologramIpc.setPref('viewMode', currentView);
     clearTimeout(_densityRenderT);
     _densityRenderT = setTimeout(() => {
       if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(() => deps.renderPosts());
@@ -267,7 +267,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // The slider track maps to COLUMN COUNTS (like the post tile slider), not raw px:
   // the auto-fill minmax(size,1fr) grid stretches columns, so changing the min only
   // moves the layout at column-count thresholds. Right = larger = fewer columns.
-  function posterGridMetrics(): CorpusGridMetrics | null {
+  function posterGridMetrics(): HologramGridMetrics | null {
     const grid = document.getElementById('posterGrid');
     if (!grid) return null;
     const W = Math.floor(grid.getBoundingClientRect().width);
@@ -279,7 +279,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // Poster size-slider track as data (mirrors computeSizeTrack). Null for the list view
   // (no size axis) → the caller hides the control.
-  function computePosterSizeTrack(): CorpusSizeTrack | null {
+  function computePosterSizeTrack(): HologramSizeTrack | null {
     const st = posterSizeState();
     if (!st) return null;
     const m = posterGridMetrics();
@@ -298,14 +298,14 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (!st || !m) return;
     const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
     st.set(size);
-    // Mirror into corpusStore — the poster grid source derives columnWidth from it,
+    // Mirror into hologramStore — the poster grid source derives columnWidth from it,
     // same as the post grid does with cardSize/tileSize.
     storeSet(st.pref, size);
-    deps.corpusIpc.setPref(st.pref, size);
+    deps.hologramIpc.setPref(st.pref, size);
   }
 
   // Poster grid density (card/tile/list) — rendered by the display popover
-  // (corpusStore 'posterView'). React owns the active state + glass thumb; this
+  // (hologramStore 'posterView'). React owns the active state + glass thumb; this
   // reacts to a change: mirror it into posterView, persist it, and re-render the
   // poster grid (deferred past a paint, like the old optimistic handler). The
   // idempotent guard skips the no-op set from restorePrefs. React owns the
@@ -316,12 +316,12 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const v = storeGet('posterView');
     if (v === posterView) return;
     posterView = v;
-    deps.corpusIpc.setPref('posterViewMode', posterView);
+    deps.hologramIpc.setPref('posterViewMode', posterView);
     clearTimeout(_posterDensityRenderT);
     _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
   }
 
-  // Load saved view modes + sizes (called from viewer.ts's corpusIpc.getPrefs().then).
+  // Load saved view modes + sizes (called from viewer.ts's hologramIpc.getPrefs().then).
   function restorePrefs(prefs: { [k: string]: unknown }) {
     if (['card', 'tile', 'list'].includes(prefs.viewMode as string)) {
       currentView = prefs.viewMode as string;
@@ -334,7 +334,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       posterView = prefs.posterViewMode as string;
       storeSet('posterView', posterView);
     }
-    // Poster-grid view sizes mirror into corpusStore (mirrors the post-side treatment below).
+    // Poster-grid view sizes mirror into hologramStore (mirrors the post-side treatment below).
     if (Number.isFinite(prefs.posterTileSize)) {
       posterTileSize = Math.max(PTILE_MIN, Math.min(PTILE_MAX, prefs.posterTileSize as number));
       storeSet('posterTileSize', posterTileSize);
@@ -343,7 +343,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       posterCardSize = Math.max(PCARD_MIN, Math.min(PCARD_MAX, prefs.posterCardSize as number));
       storeSet('posterCardSize', posterCardSize);
     }
-    // Post-grid view sizes also mirror into corpusStore (see setViewSize).
+    // Post-grid view sizes also mirror into hologramStore (see setViewSize).
     if (Number.isFinite(prefs.imageTileSize)) {
       tileSize = Math.max(TILE_MIN, Math.min(TILE_MAX, prefs.imageTileSize as number));
       storeSet('tileSize', tileSize);

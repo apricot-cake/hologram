@@ -1,5 +1,5 @@
 /* ============================================================================
-   Corpus — Design tokens (ported from claude.ai/design "Corpus Design System")
+   Hologram — Design tokens (ported from claude.ai/design "Hologram Design System")
    Monotone cool-slate base + a single restrained indigo accent, full light/dark
    parity via semantic aliases. Components consume the SEMANTIC vars (--bg,
    --surface, --text, --accent, …); primitives (--gray-*, --blue-*) are raw.

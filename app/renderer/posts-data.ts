@@ -11,7 +11,7 @@
 // pre-existing single choke point for every allPosts mutation (see viewer.ts). A
 // real ES module (named exports), imported directly by its consumers
 // (viewer.ts / sidebar.ts / image-tab.ts).
-let posts: CorpusPost[] = [];
+let posts: HologramPost[] = [];
 let generation = 0;
 const subs = new Set<() => void>();
 const notify = () => {
@@ -23,10 +23,10 @@ const notify = () => {
     }
   }
 };
-export function get(): CorpusPost[] {
+export function get(): HologramPost[] {
   return posts;
 }
-export function sync(next: CorpusPost[]): void {
+export function sync(next: HologramPost[]): void {
   posts = next;
   generation++;
   notify();

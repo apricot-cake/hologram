@@ -1,6 +1,6 @@
 'use strict';
 
-// Registers (or removes) the Corpus native messaging host so Chrome/Edge
+// Registers (or removes) the Hologram native messaging host so Chrome/Edge
 // can launch the bridge.
 //
 // Used two ways:
@@ -17,7 +17,7 @@ const { execFileSync } = require('node:child_process');
 
 const { configDir } = require('./paths.cts');
 
-const HOST_NAME = 'com.corpus.host';
+const HOST_NAME = 'com.hologram.host';
 const BRIDGE_PATH = path.join(__dirname, 'bridge.cts');
 const PATHS_PATH = path.join(__dirname, 'paths.cts');
 const MEDIA_DOWNLOAD_PATH = path.join(__dirname, 'media-download.cts');
@@ -69,7 +69,7 @@ function readExtensionId(): string | null {
 }
 
 function launcherPath(): string {
-  return path.join(configDir(), process.platform === 'win32' ? 'corpus-host.bat' : 'corpus-host.sh');
+  return path.join(configDir(), process.platform === 'win32' ? 'hologram-host.bat' : 'hologram-host.sh');
 }
 
 function manifestPath(): string {
@@ -149,7 +149,7 @@ function writeManifest(launcher: string, extensionId: string | null): string {
   }
   const manifest = {
     name: HOST_NAME,
-    description: 'Corpus native messaging host',
+    description: 'Hologram native messaging host',
     path: launcher,
     type: 'stdio',
     allowed_origins: allowedOrigins,
