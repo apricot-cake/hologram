@@ -1,6 +1,5 @@
 // Window-global contracts for the renderer service layer (query/records/facets/
-// cooc/users/tab-state/viewer + store, all .ts, strict-checked — see
-// [[corpus-esm-under-file-protocol]]/backlog memory for the TS-stage history).
+// cooc/users/tab-state/viewer + store, all .ts, strict-checked).
 // This is a GLOBAL script d.ts (no import/export) so the interfaces merge into
 // Window for every file that includes it. As of 2026-07-09 this project is
 // merged into app/tsconfig.json — the same single strict TS program as the
@@ -57,8 +56,7 @@ interface HologramFacetView {
 
 // query.ts's own API surface (emptyTree/evalNode/makePostPredOf/etc.) is a real
 // ES module now — its named exports carry their own types, so no ambient
-// Window-shaped interface is declared for it here anymore (see the
-// corpus-react-purity-execution-map memory for the conversion).
+// Window-shaped interface is declared for it here anymore.
 
 // ---- renderer/records.ts — record shape helpers + grouping. A real ES module
 // (named exports) now; only the HologramPostGroup data shape stays here (shared
@@ -75,7 +73,7 @@ interface HologramPostGroup {
 // anchor (P4-B スライス⑬). hologramStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
 // real ES module (named exports) now — no ambient Window-shaped interface
-// needed (see the corpus-react-purity-execution-map memory for the conversion). ----
+// needed. ----
 
 // ---- renderer/bulk-edit.ts — the bulk "add tags to selection" staging list
 // (records/tags/additive-flag) held while tag-pop is open in mode:'bulk' (Issue
@@ -153,8 +151,7 @@ interface HologramTab {
 // listing.ts's own API surface (makeListing/cloneTree/namedPosters/etc.) is a
 // real ES module now — its named exports (including the exported ListingDeps
 // interface) carry their own types, so no ambient Window-shaped interface is
-// declared for it here anymore (see the corpus-react-purity-execution-map
-// memory for the conversion).
+// declared for it here anymore.
 
 // ---- renderer/geometry.ts — pure column / slider-track / thumbnail math. A
 // real ES module (named exports) now — no ambient Window-shaped interface

@@ -2,11 +2,11 @@
 //
 // The renderer's imperative Esc/dismiss cascades (inspector-builder.ts's
 // handleEscDismissDetail) must defer to an open Select so the first Esc closes
-// only the Select, not the inspector behind it. The zero-tolerance rule
-// (corpus-shadcn-trial-plan §0-0 item 5) forbids sniffing the DOM for
-// `[data-slot="select-content"]` to decide this — the signal has to come from
-// component state instead. components/ui/select.tsx's Select Root wrapper
-// registers/unregisters each mounted instance here.
+// only the Select, not the inspector behind it. The redesign's zero-tolerance
+// rule forbids sniffing the DOM for `[data-slot="select-content"]` to decide
+// this — the signal has to come from component state instead.
+// components/ui/select.tsx's Select Root wrapper registers/unregisters each
+// mounted instance here.
 //
 // Lives with the other renderer state bridges (qf-pop.ts, tag-pop.ts, …) rather
 // than in islands/_shared: the read side is renderer code and the whole thing

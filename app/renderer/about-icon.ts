@@ -85,9 +85,9 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // The WebGL context/program/uniform-location bundle is private to this closure
   // (never exposed past HologramAboutIcon.mount()'s destroy() surface), so `any`
-  // is the pragmatic type — see main.mts's timer-variable precedent in
-  // corpus-typescript-stage1: threading real null-narrowing through every one
-  // of these mutually-recursive closures would be pure ceremony for no callers.
+  // is the pragmatic type — same call as main.mts's timer variables: threading
+  // real null-narrowing through every one of these mutually-recursive closures
+  // would be pure ceremony for no callers.
   let gl: any = null,
     prog: any = null,
     uniforms: any = null;

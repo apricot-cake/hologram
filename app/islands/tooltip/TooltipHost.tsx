@@ -10,7 +10,7 @@ import { getTip, getTipShown, hideTip, showTip, subscribeTip } from '../_shared/
 // Placement: centered above the target, flipped below when there's no room,
 // clamped into the viewport. Measured with offsetWidth/Height (NOT
 // getBoundingClientRect — the pop-in animation scales the element and rect
-// measurements mid-animation are ~4% small; see corpus-design ポップ配置).
+// measurements mid-animation are ~4% small).
 
 function trigOf(t: EventTarget | null): HTMLElement | null {
   return t instanceof Element ? t.closest<HTMLElement>('[data-tip]') : null;

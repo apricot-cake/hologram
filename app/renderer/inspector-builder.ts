@@ -1,10 +1,8 @@
 // Post-inspector (persistent right-column detail panel) builder — extracted from
-// viewer.ts as the viewer.ts decomposition's V7 slice (see memory
-// corpus-react-purity-execution-map, Wave21/V7 "インスペクター"). Mirrors
-// post-grid-builder.ts (V5) / poster-grid-builder.ts (V6): open/close chrome,
-// the always-live inline tag editor (add/toggle/adopt-source-tag + the 同名キャラ
-// homonym check), the group dissolve/regroup buttons shown in the panel, and the
-// Esc/outside-click dismiss guards all move here. inspector.ts (Wave3, the
+// the old viewer.ts monolith. Mirrors post-grid-builder.ts / poster-grid-builder.ts:
+// open/close chrome, the always-live inline tag editor (add/toggle/adopt-source-tag
+// + the 同名キャラ homonym check), the group dissolve/regroup buttons shown in the
+// panel, and the Esc/outside-click dismiss guards all move here. inspector.ts (the
 // open/refresh/close/get/subscribe bridge to the React island) stays untouched —
 // this module is one of its two consumers (Inspector.tsx is the other).
 // inspectedKey/setInspectedKey stay viewer.ts-owned (many not-yet-extracted

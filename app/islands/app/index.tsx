@@ -25,15 +25,14 @@
 //     `hologram-svc:NAME` bare-specifier barrel here — aliased to renderer/NAME.ts by
 //     build.mjs / vite.config.mjs — while each was converted one wave at a time from a
 //     window-IIFE global bridge to a real named export, consumed via a plain relative
-//     import; see the corpus-react-purity-execution-map memory). query/listing/format/
-//     geometry/posts-data/undo/users/ui/search-editing/bulk-edit/confirm/inspector/
-//     kind-menu/menu/edit-overlay/bridge/filter-popover/qf-pop/cooc/facets/about-icon/
-//     searchbox/theme/records/tags/tab-state/trash/backup/posts/search/i18n/folders/
-//     selection/grid/query-chips/sidebar/tabs are all real ES modules now, imported
-//     directly by their consumers — no barrel entry needed, and the hologram-svc alias
-//     itself is gone from build.mjs / vite.config.mjs (V18 item 7). shell.ts — the
-//     last side-effect-only entry (searchMode pref restore) — was deleted with the
-//     search-mode toggle itself (P2④ 単一スマート検索). ---
+//     import). query/listing/format/geometry/posts-data/undo/users/ui/search-editing/
+//     bulk-edit/confirm/inspector/kind-menu/menu/edit-overlay/bridge/filter-popover/
+//     qf-pop/cooc/facets/about-icon/searchbox/theme/records/tags/tab-state/trash/backup/
+//     posts/search/i18n/folders/selection/grid/query-chips/sidebar/tabs are all real ES
+//     modules now, imported directly by their consumers — no barrel entry needed, and
+//     the hologram-svc alias itself is gone from build.mjs / vite.config.mjs
+//     (V18 item 7). shell.ts — the last side-effect-only entry (searchMode pref
+//     restore) — was deleted with the search-mode toggle itself (P2④ 単一スマート検索). ---
 // Tailwind v4 + shadcn/ui theme (islands/globals.css) — imported FIRST so the
 // generated stylesheet (runtime-injected by the lib bundle) precedes any
 // component-level CSS in cascade order.
@@ -45,4 +44,4 @@ import './root.tsx';
 // which is enough to trigger ES module evaluation — the former bare-specifier
 // 'hologram-viewer-bundle' alias + @ts-ignore was a leftover from when this file was a
 // plain window-IIFE with no imports/exports of its own (removed together with the
-// viewer.ts→orchestrator.ts rename; see Wave33 in memory corpus-react-purity-execution-map).
+// viewer.ts→orchestrator.ts rename).

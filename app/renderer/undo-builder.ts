@@ -1,8 +1,6 @@
-// In-session tag-edit Undo/Redo controller — extracted from viewer.ts as the
-// viewer.ts decomposition's V11 slice (see memory
-// corpus-react-purity-execution-map, Wave25/V11 "Undo/Redo"). Mirrors
-// inspector-builder.ts (V7) / poster-grid-builder.ts (V6): the stack semantics
-// (cap / redo discard / prev-next direction) stay in undo.ts (Wave1) untouched
+// In-session tag-edit Undo/Redo controller — extracted from the old viewer.ts
+// monolith. Mirrors inspector-builder.ts / poster-grid-builder.ts: the stack
+// semantics (cap / redo discard / prev-next direction) stay in undo.ts untouched
 // — this module is its consumer, replacing viewer.ts, and owns the
 // viewer-side apply callbacks (re-applying a captured tag list via IPC + grid
 // re-render + inspector refresh) plus the Ctrl+Z/Ctrl+Shift+Z shortcut

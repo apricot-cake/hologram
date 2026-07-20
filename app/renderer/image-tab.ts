@@ -15,9 +15,8 @@
 // event-half pattern — this file only computes, it never mutates tab state.
 // Real ES module (named export `hologramImageTabSource`) — imported directly by
 // image-tab/index.tsx (islands) and viewer.ts (configure). The former dispatch
-// through viewer.ts's old shared bridge was DI'd away in V13/Wave27
-// (image-tab-builder.ts supplies the callbacks) — see memory
-// corpus-react-purity-execution-map §5.
+// through viewer.ts's old shared bridge was DI'd away when image-tab-builder.ts
+// took over supplying the callbacks.
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';

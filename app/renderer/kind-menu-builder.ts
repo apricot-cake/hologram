@@ -1,8 +1,6 @@
-// Tag-kind (種別) menu row/action builder — extracted from viewer.ts as the
-// viewer.ts decomposition's V2 slice (see memory
-// corpus-react-purity-execution-map, Wave16/V2 "タグ種別(kind)メニュー"). The
-// glass popup itself (open/close/get/subscribe) already lives in kind-menu.ts
-// (Wave3) — this module is the view-specific glue that used to live inline in
+// Tag-kind (種別) menu row/action builder — extracted from the old viewer.ts
+// monolith. The glass popup itself (open/close/get/subscribe) already lives in
+// kind-menu.ts — this module is the view-specific glue that used to live inline in
 // viewer.ts: building the work/character/general row model from the current
 // 種別 state and wiring the pick/rename actions to tags.ts's mutators.
 // tagKindOf/kindLabel/t are still owned by viewer.ts's own makeTags()/i18n

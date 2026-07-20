@@ -1,13 +1,12 @@
-// Renamed from viewer.ts (Wave33/V18, 2026-07-11): this file is the app's boot
-// orchestrator — construction + deps-wiring for every V1-V16 controller/builder
-// cluster (see memory corpus-react-purity-execution-map). Kept as its own module
-// by deliberate choice rather than folded into an App.tsx effect (a dedicated
-// bootstrap module is the norm in real React apps). Comments below that say
-// "viewer.ts decomposition" name the historical migration project, not this
-// file's current name — left as-is. Renderer services are migrating off a
-// shared global bridge to real ES modules one wave at a time; the ones
-// imported below are converted, the rest are still read via that bridge at
-// call time.
+// Renamed from viewer.ts (2026-07-11): this file is the app's boot orchestrator
+// — construction + deps-wiring for every controller/builder cluster extracted
+// out of the old monolith. Kept as its own module by deliberate choice rather
+// than folded into an App.tsx effect (a dedicated bootstrap module is the norm
+// in real React apps). Comments below that say "viewer.ts decomposition" name
+// the historical migration project, not this file's current name — left as-is.
+// Renderer services are migrating off a shared global bridge to real ES modules
+// one wave at a time; the ones imported below are converted, the rest are still
+// read via that bridge at call time.
 import JSZip from 'jszip';
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
@@ -62,10 +61,8 @@ export let handlePostsChanged: (names: string[] | null) => Promise<void>;
 
 // Global keyboard/mouse shortcuts, tab-bar events, inspector-dismiss, and store/IPC
 // subscription handlers: the rest of the old shared bridge, converted to real
-// ES exports the same way (Wave32/V17 continued — the roadmap's "Object.assign hits
-// zero when V17 completes" undercounted this cluster; see corpus-react-purity-execution-map
-// memory). Each is assigned once, below, at the same construction site the old
-// Object.assign registration used to sit at.
+// ES exports the same way. Each is assigned once, below, at the same
+// construction site the old Object.assign registration used to sit at.
 export let handleShortcutNavKey: (e: KeyboardEvent) => void;
 export let handleShortcutMouseNav: (e: MouseEvent) => void;
 export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
@@ -1699,8 +1696,7 @@ export function endFilterEditSession(): void {
 
   // Tile overlay/reloadPosts/setSkipDeleteConfirm/confirmClearAll used to bridge
   // through the old shared bridge for the React settings island (Danger.tsx/Data.tsx/
-  // settings/ipc.ts) to reach; those now import the live bindings above directly
-  // (viewer.ts decomposition's V16 slice, see memory corpus-react-purity-execution-map).
+  // settings/ipc.ts) to reach; those now import the live bindings above directly.
 
   // Load saved view mode and skipDeleteConfirm
   hologramIpc.getPrefs().then((prefs) => {

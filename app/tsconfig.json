@@ -4,10 +4,10 @@
   // formerly the separate tsconfig.renderer.json). Both are already strict and
   // both fold into the same Vite bundle (islands/app.js) — the two-tsconfig split
   // was a staging device for gradual TS adoption, not a real architectural
-  // boundary (see 実プロダクト化の残課題 in the corpus-backlog memory). No allowJs/
-  // checkJs: no hand-written .js source remains under either directory (the .js
-  // files present — renderer/theme.js, renderer/islands/*.js — are Vite build
-  // OUTPUT, not source, and untouched by this glob since it only matches .ts/.tsx).
+  // boundary. No allowJs/checkJs: no hand-written .js source remains under
+  // either directory (the .js files present — renderer/theme.js,
+  // renderer/islands/*.js — are Vite build OUTPUT, not source, and untouched by
+  // this glob since it only matches .ts/.tsx).
   // Type-check only (noEmit) — Vite strips types at build; tsc never emits.
   "compilerOptions": {
     "target": "ES2022",

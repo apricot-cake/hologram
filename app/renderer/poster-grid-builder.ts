@@ -1,14 +1,13 @@
-// Poster-view grid/filter/inspector/folder builder — extracted from viewer.ts as the
-// viewer.ts decomposition's V6 slice (see memory corpus-react-purity-execution-map,
-// Wave20/V6 "投稿者ビュー・グリッド・フィルタ・インスペクター・フォルダ"). Mirrors
-// post-grid-builder.ts (V5): the poster grid's cell model + render pipeline, the
-// poster-folder CRUD (the poster-view named-folder store), the poster inspector
-// (recent works + tag/folder editing), and the poster context menu all move here.
+// Poster-view grid/filter/inspector/folder builder — extracted from the old
+// viewer.ts monolith. Mirrors post-grid-builder.ts: the poster grid's cell model
+// + render pipeline, the poster-folder CRUD (the poster-view named-folder
+// store), the poster inspector (recent works + tag/folder editing), and the
+// poster context menu all move here.
 // Density/tile-size state (posterView/posterTileSize/posterCardSize,
-// posterSizeState/posterGridMetrics) stays in viewer.ts — V10 (Wave24) unifies it
-// with the post-grid density state into one shared module.
-// postQB/posterQB instance construction (V1) and the qf-pop/filter-popover bridge
-// wiring (V4) also stay call-site-owned in viewer.ts; this module only takes their
+// posterSizeState/posterGridMetrics) stays in viewer.ts — grid-density-builder.ts
+// later unifies it with the post-grid density state into one shared module.
+// postQB/posterQB instance construction and the qf-pop/filter-popover bridge
+// wiring also stay call-site-owned in viewer.ts; this module only takes their
 // already-built instances' methods as deferred-arrow deps (posterQB is constructed
 // AFTER this builder — it needs pfStore/posterFolderById from here — so every
 // posterQB reference below is wrapped, the same "wrapper only runs at call time"

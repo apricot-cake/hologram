@@ -1,10 +1,9 @@
-// Bulk "add tags to selection" — extracted from viewer.ts as the viewer.ts
-// decomposition's V9 slice (see memory corpus-react-purity-execution-map,
-// Wave23/V9 "一括編集オーバーレイ"). Mirrors inspector-builder.ts's tag-pop
-// wiring (Issue #22): openTagPopForSelection opens the SAME tag-pop singleton in
-// mode:'bulk' instead of the retired edit-overlay.ts modal — records/tags/
-// additive-flag staging (bulk-edit.ts, Wave2) and the onApply persistence/undo
-// flow are unchanged, only the surface they render into moved.
+// Bulk "add tags to selection" — extracted from the old viewer.ts monolith.
+// Mirrors inspector-builder.ts's tag-pop wiring (Issue #22): openTagPopForSelection
+// opens the SAME tag-pop singleton in mode:'bulk' instead of the retired
+// edit-overlay.ts modal — records/tags/additive-flag staging (bulk-edit.ts) and
+// the onApply persistence/undo flow are unchanged, only the surface they render
+// into moved.
 import { open, close, getRecords, getTags, isAdditive, add, remove, toggle } from './bulk-edit.ts';
 import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { updateTags as postsUpdateTags } from './posts.ts';

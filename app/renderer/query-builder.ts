@@ -1,9 +1,8 @@
 // Query-builder instance wiring — the postQB/posterQB construction extracted
-// from viewer.ts as the viewer.ts decomposition's V1 slice (see memory
-// corpus-react-purity-execution-map, Wave15/V1 "クエリビルダー・フィルタ操作").
+// from the old viewer.ts monolith.
 // createQueryBuilder itself (the shared drag-builder engine: tree state,
 // cluster view-model, click/contextmenu dispatch) already lives in
-// query-chips.ts (Wave11) — this module is the view-specific glue that used
+// query-chips.ts — this module is the view-specific glue that used
 // to live inline in viewer.ts: the leaf glyph table, the post/poster
 // predicate construction (query.ts's makePostPredOf/makePosterPredOf, wired
 // to the now-real folders.ts/search.ts/records.ts modules), and the two

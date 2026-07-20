@@ -1,16 +1,14 @@
 // Nav history (browser-style back/forward) + window-tab CRUD/bar interaction —
-// extracted from viewer.ts as the viewer.ts decomposition's V12 slice (see
-// memory corpus-react-purity-execution-map, Wave26/V12 "ナビ履歴・タブ状態
-// スナップショット＋タブバー操作・タブ管理"). Mirrors undo-builder.ts (V11)/
-// selection-builder.ts (V8): the state machines (makeNavHistory / the
-// tabs.json (de)serialization pair) stay in tab-state.ts (Wave7) untouched —
+// extracted from the old viewer.ts monolith. Mirrors undo-builder.ts /
+// selection-builder.ts: the state machines (makeNavHistory / the
+// tabs.json (de)serialization pair) stay in tab-state.ts untouched —
 // this module is their consumer, replacing viewer.ts's inline wiring, plus
 // the hologramStore-backed tabs/activeTabId/tabEditingId accessors (former
 // viewer.ts locals, P4-B slice⑯) and the tab-bar DOM event handlers.
 //
 // The image view cluster (showImageView/hideImageView/openImageEntry/
 // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
-// image-tab-builder.ts (V13/Wave27; #144 reworked the type:'image' TAB into an
+// image-tab-builder.ts (#144 reworked the type:'image' TAB into an
 // 'image' entry on the unified per-tab history). This module takes
 // showImageView/hideImageView as deps (deferred forward references, same
 // shape as undo-builder.ts's showToast/postGrid) and exports enough surface

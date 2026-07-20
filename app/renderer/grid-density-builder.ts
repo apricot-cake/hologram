@@ -1,6 +1,5 @@
 // Display density (card/tile/list) + tile/card/list size slider — extracted
-// from viewer.ts as the viewer.ts decomposition's V10 slice (see memory
-// corpus-react-purity-execution-map, Wave24/V10 "表示密度・タイルサイズスライダー").
+// from the old viewer.ts monolith.
 // The post grid and poster grid each carried their own density + size state
 // (viewSizeState/posterSizeState, tileGridMetrics/posterGridMetrics) driving the
 // SAME geometry.ts math (colsFor/sizeFor/sliderTrack/trackCols) — this module is
@@ -383,8 +382,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
 // applyTileOverlay is bound once at boot (viewer.ts, right after constructing
 // gridDensity) so the settings island (islands/settings/ipc.ts) can flip the
-// tile-overlay pref directly — no shared-bridge detour. See memory
-// corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
+// tile-overlay pref directly — no shared-bridge detour.
 export let applyTileOverlay: ((v: boolean) => void) | null = null;
 export function bindApplyTileOverlay(fn: (v: boolean) => void): void {
   applyTileOverlay = fn;

@@ -1,13 +1,12 @@
-// Card selection + selection-bar bulk actions — extracted from viewer.ts as the
-// viewer.ts decomposition's V8 slice (see memory corpus-react-purity-execution-map,
-// Wave22/V8 "選択・選択バー一括操作"). Mirrors inspector-builder.ts (V7) /
-// post-grid-builder.ts (V5): the pure logic moves here, DOM event registration
-// (addEventListener calls on #postGrid/#selectionBar) stays in viewer.ts, which
-// just wires the returned functions in. selection.ts (Wave10, the hologramStore-backed
-// selectedSet/anchor bridge) stays untouched — this module is one of its consumers
-// (the selection-bar island's own model derivation is the other, unaffected here).
-// タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory (V9/Wave23,
-// re-targeted at tag-pop for Issue #22). It's constructed right after this module
+// Card selection + selection-bar bulk actions — extracted from the old viewer.ts
+// monolith. Mirrors inspector-builder.ts / post-grid-builder.ts: the pure logic
+// moves here, DOM event registration (addEventListener calls on
+// #postGrid/#selectionBar) stays in viewer.ts, which just wires the returned
+// functions in. selection.ts (the hologramStore-backed selectedSet/anchor
+// bridge) stays untouched — this module is one of its consumers (the
+// selection-bar island's own model derivation is the other, unaffected here).
+// タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory
+// (re-targeted at tag-pop for Issue #22). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
 // references in inspector-builder.ts.

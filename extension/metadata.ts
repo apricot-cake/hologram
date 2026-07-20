@@ -59,9 +59,8 @@ interface MediaItem {
 // — under TS strict mode a `return { text: null, ... }` with no explicit
 // return type infers each such field as the literal type `null`, not
 // `string | null`, so every later `rec.text = j.text || null` (a real value)
-// would be a type error. Same pitfall as `let x = null` (see
-// corpus-typescript-stage1 memory), just at a return-position object literal
-// instead of a variable declaration.
+// would be a type error. Same pitfall as `let x = null`, just at a
+// return-position object literal instead of a variable declaration.
 interface PostRecord {
   url: string | null;
   platform: string | null;

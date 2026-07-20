@@ -109,7 +109,7 @@ declare global {
 
   // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
   // A real ES module (named exports) now — no ambient Window-shaped interface
-  // needed (see the corpus-react-purity-execution-map memory for the conversion).
+  // needed.
 
   // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called

@@ -1,13 +1,12 @@
-// Search box wiring — extracted from viewer.ts as the viewer.ts decomposition's
-// V3 slice (see memory corpus-react-purity-execution-map, Wave17/V3 "検索ボックス
-// 連携"). The query-tree text-leaf state machine (search-editing.ts, Wave2) and
-// the suggestion-pick bridge to the searchbox React island (searchbox.ts,
-// Wave5) already exist as real ES modules — this module is the view-specific
-// glue that used to live inline in viewer.ts: the hologramStore 'searchQuery'
-// getter/setter (with the echo guard that tells typing apart from programmatic
-// writes) and the debounced re-render on typing. postQB/browseMode and the
-// render/sidebar callbacks are still owned by viewer.ts, so they're injected
-// as deps — same ctx pattern as query-builder.ts/kind-menu-builder.ts.
+// Search box wiring — extracted from the old viewer.ts monolith. The query-tree
+// text-leaf state machine (search-editing.ts) and the suggestion-pick bridge to
+// the searchbox React island (searchbox.ts) already exist as real ES modules —
+// this module is the view-specific glue that used to live inline in viewer.ts:
+// the hologramStore 'searchQuery' getter/setter (with the echo guard that tells
+// typing apart from programmatic writes) and the debounced re-render on typing.
+// postQB/browseMode and the render/sidebar callbacks are still owned by
+// viewer.ts, so they're injected as deps — same ctx pattern as
+// query-builder.ts/kind-menu-builder.ts.
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
@@ -129,12 +128,11 @@ export function makeSearchBox(deps: SearchBoxDeps) {
 
   // `/` or Ctrl/Cmd+K focuses the search box (standard library-app shortcut).
   // Same guards as Ctrl+A (selection-builder.ts): never steal keys from fields
-  // or open overlays. Extracted from viewer.ts as the viewer.ts decomposition's
-  // V14 slice (Wave28/corpus-react-purity-execution-map) — a scope correction:
-  // the other 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size)
-  // had already been absorbed into their natural domain clusters by V8/V10/
-  // V11/V12, leaving only this searchbox-focus handler unmoved. Registration
-  // lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // or open overlays. Extracted from the old viewer.ts monolith late — the other
+  // 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size) had already
+  // been absorbed into their natural domain clusters, leaving only this
+  // searchbox-focus handler unmoved. Registration lives in the GlobalShortcuts
+  // component (app/islands/app/App.tsx).
   function handleShortcutSearchFocusKey(e: KeyboardEvent) {
     const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
     const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 'k';

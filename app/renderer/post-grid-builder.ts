@@ -1,15 +1,14 @@
-// Post-grid rendering + data-pipeline builder — extracted from viewer.ts as the
-// viewer.ts decomposition's V5 slice (see memory corpus-react-purity-execution-map,
-// Wave19/V5 "投稿グリッド描画・データパイプライン"). This is the allPosts ownership
-// transfer: the authoritative post cache (allPosts/_postsById), the load-posts
-// pipeline, the grouped-render pipeline (renderPosts), the per-image aspect-ratio
-// cache + card-model wiring, the fold/card context menus, and the delete flow all
-// move here. Everything still owned by viewer.ts (density/view state, the
-// inspector, selection, tabs, poster view, boot orchestration) is injected as
-// deps — the same ctx pattern established by query-builder.ts et al. viewGroups/
-// allPosts/manualGroups/ungrouped are exposed only as getters (plus narrow
-// setters where a consumer genuinely reassigns, e.g. groupSelected()) — a
-// module-internal `let` can't be reassigned from outside via ESM exports.
+// Post-grid rendering + data-pipeline builder — extracted from the old viewer.ts
+// monolith. This is the allPosts ownership transfer: the authoritative post
+// cache (allPosts/_postsById), the load-posts pipeline, the grouped-render
+// pipeline (renderPosts), the per-image aspect-ratio cache + card-model wiring,
+// the fold/card context menus, and the delete flow all move here. Everything
+// still owned by viewer.ts (density/view state, the inspector, selection, tabs,
+// poster view, boot orchestration) is injected as deps — the same ctx pattern
+// established by query-builder.ts et al. viewGroups/allPosts/manualGroups/
+// ungrouped are exposed only as getters (plus narrow setters where a consumer
+// genuinely reassigns, e.g. groupSelected()) — a module-internal `let` can't be
+// reassigned from outside via ESM exports.
 import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
@@ -67,8 +66,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
   // owned here since this module is the only reader (requestDeleteGroup below)
   // and the settings island (Danger.tsx) wants a direct live binding instead of
-  // going through the old shared bridge (viewer.ts decomposition's V16 slice, see
-  // memory corpus-react-purity-execution-map).
+  // going through the old shared bridge.
   let skipDeleteConfirm = false;
   function getSkipDeleteConfirm() {
     return skipDeleteConfirm;
@@ -621,7 +619,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
 // loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm are bound
 // once at boot (viewer.ts, right after constructing postGrid) so the settings
 // island (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
-// detour. See memory corpus-react-purity-execution-map's V16 "設定・危険操作ブリッジ".
+// detour.
 export let loadPosts: ((keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>) | null = null;
 export function bindLoadPosts(fn: (keepLimit?: boolean, changedNames?: string[] | null) => Promise<void>): void {
   loadPosts = fn;
