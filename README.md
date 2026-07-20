@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-en-dark.svg">
-    <img src="assets/banner-en-light.svg" alt="hologram — more than screenshots: your whole library" width="440">
+    <img src="assets/banner-en-light.svg" alt="Hologram — more than screenshots: your whole library" width="440">
   </picture>
 </p>
 

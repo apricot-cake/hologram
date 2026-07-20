@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="hologram — スクショで終わらせない。まるごと保存する、あなたのライブラリ。" width="440">
+    <img src="assets/banner-light.svg" alt="Hologram — スクショで終わらせない。まるごと保存する、あなたのライブラリ。" width="440">
   </picture>
 </p>
 
