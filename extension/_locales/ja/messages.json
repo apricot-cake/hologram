@@ -4,7 +4,7 @@
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
-    "message": "ウェブで出会った投稿や作品を、画像・本文・出どころごと自分のPCに保存して検索できるライブラリに。サーバーへの送信は一切ありません。",
+    "message": "ウェブで出会った投稿や作品を、画像・本文・作者・元URLまで自分のPCに保存して検索できるライブラリに。サーバーへの送信は一切ありません。",
     "description": "Extension description shown in Web Store"
   },
   "actionTitle": {

@@ -306,7 +306,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: about / version
     aboutTitle: 'このアプリについて',
     aboutVersion: 'バージョン $1',
-    aboutTagline: '投稿を丸ごと。あなたの SNS ライブラリ。',
+    aboutTagline: 'スクショで終わらせない。まるごと保存する、あなたのライブラリ。',
     aboutLinkRepo: 'GitHub リポジトリ',
     aboutLinkReleases: 'リリースノート',
     aboutLinkLicense: 'ライセンス（MIT）',
@@ -686,7 +686,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: about / version
     aboutTitle: 'About',
     aboutVersion: 'Version $1',
-    aboutTagline: 'Whole posts, saved. Your own SNS library.',
+    aboutTagline: 'More than screenshots — your whole library.',
     aboutLinkRepo: 'GitHub repository',
     aboutLinkReleases: 'Release notes',
     aboutLinkLicense: 'License (MIT)',
