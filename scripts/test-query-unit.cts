@@ -411,6 +411,12 @@ async function main() {
     Q.facetSetNeg(t, d2, false, OPTS);
     assert('facetSetNeg: 戻し先に同値の陽性があれば冗長 leaf は消える', Q.treeLeaves(t).length === 1 && t.children[0] === d1);
   }
+  {
+    const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] };
+    const clean = Q.cloneTree(dirty);
+    assert('cloneTree: 深いコピー', clean !== dirty && clean.children[0] !== dirty.children[0] && clean.children[0].value === 'q');
+    assert('cloneTree: _ 始まりの一時フィールドを全階層で落とす', !('_compiled' in clean) && !('_memo' in clean.children[0]));
+  }
 
   if (failed) {
     console.error(`FAIL test-query-unit: ${failed} assertion(s) red`);

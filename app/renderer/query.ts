@@ -24,6 +24,10 @@ export function treeLeaves(n: CorpusQueryNode | null | undefined, out?: CorpusQu
 export function opposite(op: string): 'and' | 'or' {
   return op === 'and' ? 'or' : 'and';
 }
+// Deep-clone a query tree for persistence, dropping transient memo fields
+// (_compiled…). Every persisted tree — tab snapshots and saved searches alike —
+// goes through this, so a JSON round-trip never resurrects a stale memo.
+export const cloneTree = (tree: CorpusQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
 // Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
 export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): CorpusQueryGroup {
   const root = emptyTree();

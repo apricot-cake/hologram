@@ -16,6 +16,7 @@
 import { notify as uiNotify } from './ui.ts';
 import { corpusI18n } from './i18n.ts';
 import { corpusIpc } from './ipc.ts';
+import { cloneTree, removeCondsMatching } from './query.ts';
 
 // Folder-list store shared by the library folders (below, isLibrary) and the
 // poster folders (viewer.js, via the corpusPosterFolderStore() factory below, no isLibrary). Owns the
@@ -39,37 +40,51 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     const f = byId(id);
     return !!(f && f.items.includes(key));
   };
-  function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null) {
+  function create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null) {
     const nm = (name || '').trim();
     if (!nm) return null;
     const f: CorpusFolder = { id: genId(), name: nm, items: [] };
     if (isLibrary) {
       f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
       f.created = Date.now();
-      if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (tree + free-text)
+      if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (the condition tree)
     }
     folders.push(f);
     persist();
     return f;
   }
-  // Copy a saved-search condition (boolean tree + free-text q) onto a dynamic
-  // folder; clears either when absent. Static folders never carry these.
-  function setQuery(f: CorpusFolder, src?: { tree?: unknown; q?: string } | null) {
-    if (src && src.tree && typeof src.tree === 'object') f.tree = JSON.parse(JSON.stringify(src.tree));
+  // Copy a saved search (the condition tree — the free-text term is a 'text' leaf
+  // inside it) onto a dynamic folder; clears it when absent. Static folders never
+  // carry one. cloneTree drops the _-prefixed compile memos, so what lands on disk
+  // is plain data.
+  function setQuery(f: CorpusFolder, src?: { tree?: unknown } | null) {
+    if (src && src.tree && typeof src.tree === 'object') f.tree = cloneTree(src.tree as CorpusQueryNode);
     else delete f.tree;
-    if (src && typeof src.q === 'string' && src.q) f.q = src.q;
-    else delete f.q;
   }
   // Update a dynamic folder's saved condition in place (= re-save the search).
-  function update(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
+  function update(id: string | null | undefined, patch: { tree?: unknown } | null | undefined) {
     const f = byId(id);
     if (!f || f.kind !== 'dynamic') return false;
     setQuery(f, patch);
     persist();
     return true;
   }
+  // Deleting a folder also has to sweep it out of every saved search: a live query
+  // tree gets its folder leaf cleaned up on delete, but the trees sitting inside
+  // dynamic folders do not — a dangling leaf evaluates false forever, so the saved
+  // search silently goes to zero results. #41's cascade delete passes the whole set
+  // of removed ids for the same reason.
+  function pruneFolderLeaves(ids: Set<string>) {
+    let changed = false;
+    for (const f of folders) {
+      if (f.kind !== 'dynamic' || !f.tree) continue;
+      if (removeCondsMatching(f.tree, (c) => c.type === 'folder' && ids.has(String(c.value)))) changed = true;
+    }
+    return changed;
+  }
   function remove(id: string | null | undefined) {
     folders = folders.filter((f) => f.id !== id);
+    if (isLibrary && id) pruneFolderLeaves(new Set([id]));
     persist();
   }
   function rename(id: string | null | undefined, name: string | null | undefined) {
@@ -85,6 +100,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   function toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null) {
     const f = byId(id);
     if (!f) return null;
+    if (f.kind === 'dynamic') return null; // a saved search has no membership — its contents are the query's answer
     const ids = (Array.isArray(keys) ? keys : [keys]).filter((k): k is string => k != null);
     if (!ids.length) return null;
     const anchor = anchorKey != null ? anchorKey : ids[0];
@@ -388,6 +404,20 @@ export function managerMove(draggedId: string | null | undefined, targetId: stri
 
 export function all() {
   return store.all();
+}
+
+// --- static (a named set of posts) vs dynamic (a saved search) ---
+// Only static folders can hold posts, so every surface that offers a folder as a
+// DESTINATION reads staticFolders(): the sidebar flyout rows (facets.ts), the
+// per-post 「フォルダに追加」 menu (post-grid-builder.ts) and the folder manager.
+// Auditing those three is enough — they are the only callers that enumerate the
+// store to pick a target.
+export function staticFolders() {
+  return store.allRaw().filter((f) => f.kind !== 'dynamic');
+}
+// Saved searches — the sidebar's own 保存した検索 group (never mixed in with folders).
+export function dynamicFolders() {
+  return store.allRaw().filter((f) => f.kind === 'dynamic');
 }
 
 // Folder view (第3モード): expose the store's CRUD so the grid can list every

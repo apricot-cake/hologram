@@ -149,23 +149,15 @@ async function main() {
   assert('poster search matches displayName/screenName (case-folded)', ukeys(api.filteredPosters()) === 'x:1');
   search = '';
 
-  // --- treeWithLegacyQ ------------------------------------------------------
-  const t0 = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'platform', value: 'x' }] };
-  assert('legacy q: empty q passes the tree through untouched', api.treeWithLegacyQ(t0, '') === t0);
-  assert('legacy q: null tree + empty q → null', api.treeWithLegacyQ(null, ' ') === null);
-  let folded = api.treeWithLegacyQ(t0, 'cat');
-  assert('legacy q folds in as a confirmed text leaf', folded !== t0 && folded.children.length === 2 && folded.children[1].type === 'text' && folded.children[1].value === 'cat' && folded.children[1].mode === 'exact');
-  const tText = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'text', value: 'x' }] };
-  assert('legacy q: tree already carrying a text leaf passes through', api.treeWithLegacyQ(tText, 'cat') === tText);
-  folded = api.treeWithLegacyQ(null, 'cat');
-  assert('legacy q: q alone builds a fresh root group', folded && folded.children.length === 1 && folded.children[0].value === 'cat');
-
   // --- dynamicMatches / folderRecords / cache ---------------------------
-  const dynColl = { id: 'c1', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'text', value: 'post' }] }, q: '' };
+  const t0 = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'platform', value: 'x' }] };
+  const dynColl = { id: 'c1', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'text', value: 'post' }] } };
   out = api.dynamicMatches(dynColl);
   assert('dynamicMatches: content gate + tree eval', ids(out) === 'p1,p3');
-  out = api.dynamicMatches({ id: 'c2', kind: 'dynamic', tree: null, q: '' });
+  out = api.dynamicMatches({ id: 'c2', kind: 'dynamic', tree: null });
   assert('dynamicMatches: no tree → every content-bearing post', out.length === 4);
+  out = api.dynamicMatches({ id: 'c2b', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false } });
+  assert('dynamicMatches: childless tree → every content-bearing post', out.length === 4);
 
   const statColl = { id: 'c3', items: ['p2', 'gone', 'p5'] };
   out = api.folderRecords(statColl);
@@ -182,11 +174,11 @@ async function main() {
   assert('folderThumbsFrom skips thumbless records and caps at 4', api.folderThumbsFrom(recs).join(',') === 't1,t2,t3,t4');
   assert('folderItemCount = records length', api.folderItemCount(statColl) === 2);
 
-  const chips = api.folderCondLabels({ id: 'c4', tree: t0, q: 'neko' });
-  assert('folderCondLabels: leaf labels via filterLabel + quoted legacy q', chips.length === 2 && chips[0] === 'platform:x' && chips[1] === '“neko”');
+  const chips = api.folderCondLabels({ id: 'c4', tree: t0 });
+  assert('folderCondLabels: leaf labels via filterLabel', chips.length === 1 && chips[0] === 'platform:x');
   const manyLeaves = { kind: 'group', op: 'and', neg: false, children: [1, 2, 3, 4, 5].map((i) => ({ kind: 'cond', type: 't', value: i })) };
-  assert('folderCondLabels caps at 4 (q dropped when full)', api.folderCondLabels({ id: 'c5', tree: manyLeaves, q: 'x' }).length === 4);
-  assert('folderCondLabels swallows a malformed tree', api.folderCondLabels({ id: 'c6', tree: BAD_TREE, q: 'q' }).join(',') === '“q”');
+  assert('folderCondLabels caps at 4', api.folderCondLabels({ id: 'c5', tree: manyLeaves }).length === 4);
+  assert('folderCondLabels swallows a malformed tree', api.folderCondLabels({ id: 'c6', tree: BAD_TREE }).length === 0);
 
   // --- filteredFolders ---------------------------------------------------
   collections = [
@@ -206,12 +198,6 @@ async function main() {
   assert('collection search matches name (case-folded)', cnames(api.filteredFolders()) === 'Gamma');
   search = '';
   assert('filteredFolders does not mutate the source list order', collections[0].name === 'Beta');
-
-  // --- cloneTree --------------------------------------------------------------
-  const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] };
-  const clean = L.cloneTree(dirty);
-  assert('cloneTree deep-copies', clean !== dirty && clean.children[0] !== dirty.children[0] && clean.children[0].value === 'q');
-  assert('cloneTree drops _-prefixed transients at every depth', !('_compiled' in clean) && !('_memo' in clean.children[0]));
 
   console.log(failed ? `FAILED (${failed})` : 'PASS');
   process.exit(failed ? 1 : 0);

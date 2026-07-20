@@ -19,10 +19,9 @@
 // that still-local code — and for bootApp/postGrid's own deps, both declared
 // elsewhere in viewer.ts — to keep calling into tab state.
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
-import { cloneTree } from './listing.ts';
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
-import { facetTreeFrom } from './query.ts';
+import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { get as storeGet, set as storeSet } from './store.ts';

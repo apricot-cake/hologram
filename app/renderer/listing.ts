@@ -154,16 +154,10 @@ export function makeListing(deps: ListingDeps) {
   function resetFolderCache() {
     _folderRecCache = new Map();
   }
-  // Fold a legacy free-text q into a tree as a confirmed 'text' leaf (pre-text-leaf
-  // saves stored the search term separately in coll.q). Returns the tree to evaluate —
-  // a pass-through when q is empty or the tree already carries a text leaf.
-  function treeWithLegacyQ(tree: CorpusQueryGroup | null | undefined, q: string | null | undefined): CorpusQueryGroup | null {
-    const t = tree && Array.isArray(tree.children) ? tree : null;
-    if (!q || !q.trim() || (t && treeLeaves(t).some((c) => c.type === 'text'))) return t;
-    return { kind: 'group', op: 'and', neg: false, children: [...((t && t.children) || []), { kind: 'cond', type: 'text', value: q.trim(), mode: 'exact' }] };
-  }
   function dynamicMatches(coll: CorpusFolder): CorpusPost[] {
-    const tree = treeWithLegacyQ(coll.tree, coll.q); // text term lives in the tree now (q = legacy only)
+    // The whole saved search lives in the condition tree — the free-text term is a
+    // 'text' leaf inside it, not a field beside it.
+    const tree = coll.tree && Array.isArray(coll.tree.children) ? coll.tree : null;
     const out: CorpusPost[] = [];
     for (const p of allPosts()) {
       if (!hasContent(p)) continue; // mirror getFilteredPosts' content gate
@@ -198,8 +192,8 @@ export function makeListing(deps: ListingDeps) {
   function folderItemCount(coll: CorpusFolder) {
     return folderRecords(coll).length;
   }
-  // Small condition chips under a dynamic card's name (saved tree leaves + the
-  // free-text q). Capped; purely informational (the mock's optional 条件チップ).
+  // Small condition chips summarizing a dynamic folder's saved tree. Capped;
+  // purely informational (the mock's optional 条件チップ).
   function folderCondLabels(coll: CorpusFolder) {
     const chips: string[] = [];
     try {
@@ -210,7 +204,6 @@ export function makeListing(deps: ListingDeps) {
     } catch {
       /* ignore malformed tree */
     }
-    if (coll.q && coll.q.trim() && chips.length < 4) chips.push('“' + coll.q.trim() + '”');
     return chips; // React renders the .folder-cond chips from these labels
   }
   function filteredFolders() {
@@ -228,11 +221,8 @@ export function makeListing(deps: ListingDeps) {
   // namedPosters live binding below (bindNamedPosters), so sidebar.ts — which
   // has no access to this closure — reads the SAME bound instance rather than
   // a second copy that could drift.
-  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, treeWithLegacyQ, dynamicMatches, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, folderCondLabels, filteredFolders };
+  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, dynamicMatches, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, folderCondLabels, filteredFolders };
 }
-
-// Deep-clone a query tree for persistence, dropping transient memo fields (_compiled…).
-export const cloneTree = (tree: CorpusQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
 
 // namedPosters is bound once at boot (viewer.ts, right after its own
 // makeListing() call) via bindNamedPosters — the poster sidebar source needs

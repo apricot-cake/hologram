@@ -149,7 +149,7 @@ function register(ctx) {
 
   // `folders` — the unified container of named folders (formerly "collections").
   // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
-  // a dynamic folder additionally carries a saved-search payload (tree + q).
+  // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
   // <saveFolder>/folders.json:
   //   { folders:[…], clip:[captureId], posterWorkspace:[posterKey] }
   // `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
@@ -166,10 +166,7 @@ function register(ctx) {
               created: typeof c.created === 'number' ? c.created : null,
               items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
             };
-            if (c.kind === 'dynamic') {
-              if (c.tree && typeof c.tree === 'object') (out as any).tree = c.tree; // saved query tree
-              if (typeof c.q === 'string' && c.q) (out as any).q = c.q; // saved free-text search
-            }
+            if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') (out as any).tree = c.tree; // the saved search
             return out;
           })
       : [];

@@ -115,11 +115,9 @@ function mergeFolders(cur, inc) {
       return;
     }
     const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, items: new Set((c.items || []).map(String)) };
-    if (c.kind === 'dynamic') {
-      // saved-search payload rides along (LOCAL-wins, like name/kind)
-      if (c.tree && typeof c.tree === 'object') e.tree = c.tree;
-      if (typeof c.q === 'string' && c.q) e.q = c.q;
-    }
+    // The saved search rides along LOCAL-wins (like name/kind), so importing a ZIP
+    // from another machine never overwrites the condition you edited here.
+    if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') e.tree = c.tree;
     byId.set(c.id, e);
   };
   for (const c of (cur && cur.folders) || []) put(c);
@@ -127,7 +125,6 @@ function mergeFolders(cur, inc) {
   const folders = [...byId.values()].map((c) => {
     const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, items: [...c.items] };
     if (c.tree) o.tree = c.tree;
-    if (c.q) o.q = c.q;
     return o;
   });
   const valid = new Set(folders.map((c) => c.id));

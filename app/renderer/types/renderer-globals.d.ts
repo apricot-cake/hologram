@@ -198,8 +198,8 @@ interface CorpusFolder {
   items: string[];
   kind?: 'static' | 'dynamic';
   created?: number | null;
+  /** Dynamic folders only: the saved search. The free-text term is a 'text' leaf inside it. */
   tree?: CorpusQueryGroup | null;
-  q?: string;
   [k: string]: any;
 }
 interface CorpusFolderStore {
@@ -208,7 +208,7 @@ interface CorpusFolderStore {
   setAll(list: unknown): void;
   byId(id: string | null | undefined): CorpusFolder | null;
   has(id: string | null | undefined, key: string): boolean;
-  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; q?: string } | null): CorpusFolder | null;
+  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null): CorpusFolder | null;
   remove(id: string | null | undefined): void;
   rename(id: string | null | undefined, name: string | null | undefined): boolean;
   /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
@@ -218,7 +218,7 @@ interface CorpusFolderStore {
   /** Drag-reorder: place draggedId before/after targetId; true when the order changed. */
   move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean): boolean;
   /** Present only on the folders store (isLibrary): re-save a dynamic folder's search. */
-  update?(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined): boolean;
+  update?(id: string | null | undefined, patch: { tree?: unknown } | null | undefined): boolean;
 }
 /** A ready-to-use folder store backed by a get/set IPC pair (persist()/load() built in). */
 type CorpusPersistedFolderStore = CorpusFolderStore & { load(): Promise<void> };
