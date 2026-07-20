@@ -32,13 +32,7 @@ export function InspectorToggle() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <button
-              type="button"
-              className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16"
-              aria-label={label}
-              aria-pressed={open}
-              onClick={() => toggle()}
-            >
+            <button type="button" className="inline-grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors duration-75 hover:bg-foreground/8 hover:text-foreground active:bg-foreground/16" aria-label={label} aria-pressed={open} onClick={() => toggle()}>
               <PanelRight className="size-4" />
             </button>
           }
