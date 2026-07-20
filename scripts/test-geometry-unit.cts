@@ -72,7 +72,7 @@ async function main() {
     assert('sliderTrack: 幅狭で single=true', tr.single === true && tr.nBig === tr.nSmall);
   }
 
-  // --- thumbW: 60px バケット量子化＋clamp（psimg キャッシュキーの断片化防止） ---
+  // --- thumbW: 60px バケット量子化＋clamp（asset キャッシュキーの断片化防止） ---
   assert('thumbW: 60の倍数へ切り上げ', G.thumbW(252, 180, 960) === 300);
   assert('thumbW: ちょうど倍数はそのまま', G.thumbW(300, 180, 960) === 300);
   assert('thumbW: min clamp', G.thumbW(10, 180, 960) === 180);

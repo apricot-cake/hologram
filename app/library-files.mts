@@ -1,7 +1,7 @@
 'use strict';
 
 // Which file names the renderer may name, and where they live on disk (#132).
-// The renderer never handles real paths — it sees psimg:// URLs and the bare
+// The renderer never handles real paths — it sees asset:// URLs and the bare
 // sidecar names inside them — so a name carrying a separator or a traversal
 // segment did not come from the library and is refused here. Pulled out as pure
 // functions (like save-folder-guard.mts / backup-guard.mts) so the boundary the

@@ -32,8 +32,8 @@ const ISLAND_SCRIPT = /<script src="islands\/([\w-]+)\.js"><\/script>/g;
 // Dev CSP = the prod meta plus what Vite's dev server needs: inline scripts (the
 // React Refresh preamble Vite injects) and the HMR websocket. The strict prod
 // meta (script-src 'self') is never changed on disk — we only rewrite the served
-// HTML in dev. psimg:/data:/blob: are carried over so local images still load.
-const DEV_CSP = "default-src 'self'; img-src 'self' psimg: data: blob:; media-src 'self' psimg: blob:; " + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " + "connect-src 'self' ws: http://localhost:*; base-uri 'none'; form-action 'none';";
+// HTML in dev. asset:/data:/blob: are carried over so local images still load.
+const DEV_CSP = "default-src 'self'; img-src 'self' asset: data: blob:; media-src 'self' asset: blob:; " + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " + "connect-src 'self' ws: http://localhost:*; base-uri 'none'; form-action 'none';";
 
 // Dev-only HTML rewrite: swap the island IIFE bundles for their .tsx ES-module
 // sources (so Vite can HMR them) and relax the CSP meta. apply:'serve' keeps this

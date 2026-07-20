@@ -499,7 +499,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   // Drag cards out to another app (#132). The browser's own drag must be cancelled
-  // — it would carry the psimg:// thumbnail URL — so main can start an OS drag of
+  // — it would carry the asset:// thumbnail URL — so main can start an OS drag of
   // the ORIGINAL files instead. Registration is the #postGrid dragstart delegate in
   // orchestrator.ts, like every other card gesture.
   function handleCardDragStart(e: DragEvent) {

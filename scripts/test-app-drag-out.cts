@@ -3,7 +3,7 @@
 // Verifies the #postGrid dragstart wiring for drag-out (#132) in a real renderer:
 //
 //  - a drag started on a card image is INTERCEPTED (preventDefault) — otherwise
-//    the browser's own drag runs and carries the psimg:// thumbnail URL instead
+//    the browser's own drag runs and carries the asset:// thumbnail URL instead
 //    of the original files
 //  - a drag NEVER writes the selection, inside it or outside it. Explorer looks
 //    like it selects what you drag, but that's its mousedown; and Hologram's

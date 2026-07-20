@@ -53,7 +53,7 @@ const CONFIG_PATH = path.join(configDir(), 'config.json');
 // Custom scheme to serve images from the (arbitrary) save folder. Lets the
 // renderer lazy-load images by filename without disabling webSecurity or
 // loading every image into JS memory.
-protocol.registerSchemesAsPrivileged([{ scheme: 'psimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 let win: BrowserWindow | null = null;
 
@@ -378,7 +378,7 @@ function mimeForFile(name) {
 
 // Thumbnails: the image-view tile grid downscaled full-resolution originals
 // (multi-MB pixiv/X art) into ~180px cells, which made scrolling stutter as the
-// GPU decoded every full image. Instead serve a resized JPEG via psimg://…?w=N,
+// GPU decoded every full image. Instead serve a resized JPEG via asset://…?w=N,
 // generated once with Electron's built-in nativeImage and cached on disk
 // (keyed by name + mtime + width, so re-migration invalidates it). The
 // full-resolution original is still served when no ?w= is given (lightbox/viewer).
@@ -388,7 +388,7 @@ function thumbCacheDir() {
 }
 
 // nativeImage decode/resize/toJPEG is synchronous and runs on the main process's
-// single JS thread. The tile grid fires many psimg?w= requests at once when first
+// single JS thread. The tile grid fires many asset?w= requests at once when first
 // scrolling into uncached cells; left unbounded they execute back-to-back as one
 // long synchronous burst that starves every other IPC/UI message (first-scroll
 // stutter). Funnel the heavy generation through a small pool that yields to the
@@ -469,7 +469,7 @@ async function getThumbnail(resolved, name, w) {
 }
 
 function registerImageProtocol() {
-  protocol.handle('psimg', async (request) => {
+  protocol.handle('asset', async (request) => {
     try {
       const folder = getSaveFolder();
       if (!folder) return new Response('No save folder', { status: 404 });
@@ -1006,7 +1006,7 @@ const DEV_SERVER_URL = process.env.HOLOGRAM_DEV_SERVER ? (process.env.HOLOGRAM_D
 // file://…, which inherits the same preload and could call destructive IPC
 // (clear-all / import-complete / …). We:
 //   - deny will-navigate to anything other than our own renderer (file://…/
-//     renderer/index.html) or the psimg:// image-viewer scheme. The initial
+//     renderer/index.html) or the asset:// image-viewer scheme. The initial
 //     loadFile/loadURL does NOT fire will-navigate, so this never blocks startup.
 //   - deny window.open / target=_blank entirely; external links are funneled
 //     through the open-external IPC (shell.openExternal), which this leaves intact.
@@ -1020,8 +1020,8 @@ function installNavigationGuards() {
     } catch {
       return false;
     }
-    // The standalone image window lives on the app-controlled psimg:// scheme.
-    if (u.protocol === 'psimg:') return true;
+    // The standalone image window lives on the app-controlled asset:// scheme.
+    if (u.protocol === 'asset:') return true;
     // Dev only: allow navigations within the Vite dev server — its HMR client does
     // a full location.reload() on non-Fast-Refreshable edits, which would otherwise
     // be blocked here. devOrigin is null in prod, so this is a no-op there.

@@ -770,9 +770,9 @@ export function endFilterEditSession(): void {
     compile: searchCompile,
   });
 
-  // --- Image source (served from the save folder via the psimg:// protocol) ---
-  // psimg URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
-  const fileSrc = (file: string, w?: number) => (file ? 'psimg://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
+  // --- Image source (served from the save folder via the asset:// protocol) ---
+  // asset URL for a bare filename; w>0 asks main for a downscaled thumbnail (tiles).
+  const fileSrc = (file: string, w?: number) => (file ? 'asset://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '');
 
   // Record-shape helpers (mediaFilesOf/isScreenshot/captureFile/artworkFile/
   // densityImage), normalization (postIdKey/postKeyOf), grouping (groupRecords)
@@ -994,7 +994,7 @@ export function endFilterEditSession(): void {
   // only resolves a post's gallery items below and hands the FIRST (the thumbnail)
   // to open(). Full paging over every page moved to the image view.
 
-  // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
+  // Lightbox gallery items — built by records.js (makeGallery); the asset URL
   // scheme stays orchestrator-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // renderer/image-tab.ts's pull source reuses the SAME gallery instance —
