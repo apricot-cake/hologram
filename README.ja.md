@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><strong>日本語</strong> ・ <a href="README.md">English</a></p>
+<p align="center"><a href="README.md">English</a> ・ <strong>日本語</strong></p>
 
 ウェブで出会ったコンテンツを、作者・本文・出どころごとまるごと保存して、あとから自由に探せる——**あなただけのコンテンツライブラリ**です。
 
