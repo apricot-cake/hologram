@@ -40,6 +40,7 @@ const SHARED_EXACT = new Set([
   '--scrollbar-w',
   '--activebar-h',
   '--window-controls-w',
+  '--inspector-w',
   '--sidebar-float',
   '--ring',
   '--fg',

@@ -23,6 +23,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { isOpen as inspectorIsOpen, load as inspectorLoad, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
+import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../../renderer/layout-mode.ts';
+import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { cachedOpen, loadOpen, persistOpen } from '../../renderer/sidebar-pref.ts';
 import { signalShellReady } from '../../renderer/shell-ready.ts';
 import { AppToolbar } from './AppToolbar.tsx';
@@ -37,15 +39,22 @@ import { PosterGrid } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
-// #149 + #243: the state is purely the user's saved choice (sidebar-pref.ts). It used to
-// be clamped by a width discipline — below 1024px the column was forced to the icon rail
-// no matter what the user had chosen — but #243 retired automatic reshaping for BOTH side
-// panels: a panel's form follows the user's explicit toggle, not the window size. Desktop
-// DAMs and editors (Eagle / Lightroom / Bridge / Obsidian / VS Code) all work this way;
-// width-driven relayout is the responsive-web idiom, not the desktop one.
+// #149 + #243 + #259: the stored state is purely the user's saved choice (sidebar-pref.ts).
+// #243 removed the old width clamp that forced the rail below 1024px, on the grounds that
+// desktop apps don't reshape themselves by width. #259 puts a narrower version of it back,
+// having found what #243 missed: the products it measured against (Lightroom / VS Code /
+// Obsidian) don't auto-reshape BECAUSE they all pair that with a one-key collapse, and
+// Corpus shipped the first half without the second. At half-screen widths — Corpus beside
+// a browser is a primary way to use it — the two panels take 576px and leave the grid 382.
 //
-// The one automatic behavior left is shadcn's mobile Sheet below 768px (useIsMobile),
-// which is not a reshape of choice but a retreat where no column can physically fit.
+// What came back is narrower than what #243 removed, in two ways. The saved preference is
+// never overwritten by width: it is masked while narrow and comes back untouched. And the
+// user can still expand over the mask (narrowOpen below) — width picks the starting form,
+// it does not lock one in.
+// The inspected card, mirrored into the store by orchestrator.ts on every selection.
+const subInspected = (cb: () => void) => storeSubscribe('inspectedKey', cb);
+const getInspected = () => storeGet('inspectedKey') as string | null | undefined;
+
 function useSidebarOpen(): [boolean, (open: boolean) => void] {
   const [open, setOpen] = useState(() => cachedOpen() ?? true);
   // A user toggle mid-boot must not lose to the reconcile landing a tick later.
@@ -71,6 +80,34 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
   const inspectorOpen = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
+  const wide = useSyncExternalStore(layoutSubscribe, isWideLayout);
+  // Narrow-width sidebar state: transient, so the saved preference survives a trip
+  // through a small window untouched. Reset on every crossing — widening restores the
+  // preference, narrowing starts from the rail again.
+  // Adjusted during render rather than in an effect — React's own pattern for "reset
+  // state when an input changes", and the honest shape here: the reset has nothing to
+  // do with the DOM, so an effect would only add a render showing the stale value.
+  const [narrowOpen, setNarrowOpen] = useState(false);
+  const [prevWide, setPrevWide] = useState(wide);
+  if (prevWide !== wide) {
+    setPrevWide(wide);
+    setNarrowOpen(false);
+  }
+  // At narrow widths the inspector is an overlay that rides on the selection: it appears
+  // when a card is inspected and is waved away by a click on the grid (Esc / × too). A
+  // floating panel with nothing in it would just be a hole in the view, so the #244
+  // placeholder stays a wide-layout affair.
+  const inspectedKey = useSyncExternalStore(subInspected, getInspected);
+  const inspectorVisible = inspectorOpen && (wide || inspectedKey != null);
+  // Published rather than re-derived downstream: the floating selection bar has to hold
+  // back the panel's width while it overlays the grid (as a docked column the panel
+  // narrows the bar's container instead, and the bar needs to do nothing). Deriving this
+  // in one place keeps the three inputs — width, toggle, selection — from being read
+  // twice and drifting.
+  const inspectorOverlay = !wide && inspectorVisible;
+  useEffect(() => {
+    storeSet('inspectorOverlay', inspectorOverlay);
+  }, [inspectorOverlay]);
   // config.json outranks the localStorage cache the panel's first render was guessed from
   // (same two-tier reconcile as the sidebar, but the store owns the state — see
   // inspector-panel.ts for why it has to).
@@ -83,10 +120,24 @@ export function AppShell() {
   useEffect(() => {
     signalShellReady();
   }, []);
+  // The narrow overlay covers the content area, not the tab bar and toolbar above it, so
+  // it needs to know where that area starts. Measured rather than computed: the chip row
+  // appears and disappears with the filter, so the toolbar has no fixed height to add up.
+  // Observing #mode-post catches that for free — the toolbar growing shrinks it.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const sync = () => document.documentElement.style.setProperty('--content-top', `${Math.round(el.getBoundingClientRect().top)}px`);
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    sync();
+    return () => ro.disconnect();
+  }, []);
   return (
     <TooltipProvider delay={0}>
       <div className="flex h-svh flex-col overflow-hidden">
-        <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen} className="min-h-0 flex-1">
+        <SidebarProvider open={wide ? sidebarOpen : narrowOpen} onOpenChange={wide ? setSidebarOpen : setNarrowOpen} className="min-h-0 flex-1">
           <LeftSidebar />
           <SidebarInset className="min-w-0">
             {/* Electron titlebar band, now scoped INTO the content column (Obsidian-type
@@ -110,7 +161,7 @@ export function AppShell() {
             </header>
             <AppToolbar />
             {/* Scroll root for the content area (the page itself never scrolls). */}
-            <div id="mode-post" className="relative min-h-0 flex-1 overflow-y-auto">
+            <div id="mode-post" ref={contentRef} className="relative min-h-0 flex-1 overflow-y-auto">
               <div id="panelPosts" className="tab-panel active">
                 <div id="postGrid" className="post-grid" />
                 <div id="posterGrid" className="poster-grid" />
@@ -133,7 +184,7 @@ export function AppShell() {
           {/* Right inspector. Visibility is the user's own toggle now (#243) — it is no
               longer opened/closed as a side effect of selecting a card, and the content
               (Inspector) shows a placeholder while nothing is selected (#244). */}
-          <aside id="postDetail" className="inspector" hidden={!inspectorOpen}>
+          <aside id="postDetail" className={wide ? 'inspector' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
             {/* The panel's share of the titlebar. It spans the full window height beside
                 the tab band, so its top row is where the pinned inspector toggle and
                 window buttons land — without this strip they sat on the panel's content,

@@ -326,6 +326,10 @@
   /* Scrollbar width — kept in sync with the ::-webkit-scrollbar rule. */
   --scrollbar-w: 10px;
   --tabbar-h: 44px;
+  /* Inspector column width. Read by the panel itself and by anything that has to keep
+     clear of it (the floating selection bar when the panel overlays the grid, #259).
+     One number so the two can't drift — and the hook #30 will turn into a live value. */
+  --inspector-w: 320px;
   /* Width of the app-drawn window controls (WindowControls.tsx): 3 buttons on the Windows
      caption grid, 46px each. The tab strip reserves this on its right so tabs never run
      under them. */

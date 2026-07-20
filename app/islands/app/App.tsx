@@ -30,6 +30,7 @@ import {
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
   handleEscDismissDetail,
+  handleOutsideClickDismissDetail,
   handleTabBarKeydown,
   handleTabBarFocusout,
   handleTabBarClick,
@@ -170,13 +171,19 @@ function GlobalShortcuts() {
 // of this wave), imported directly as a live binding, same "cut out and rewire" as
 // GlobalShortcuts.
 //
-// The outside-click listener that shared this effect is gone with the inspector's
-// slide-over form (#243) — see inspector-builder.ts.
+// The outside-click listener shares this effect again (#259): the inspector has a
+// slide-over form once more at narrow widths, and waving it away with a click on the
+// grid is the whole point of that form. The handler no-ops at wide widths on its own.
 function DetailDismiss() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => handleEscDismissDetail(e);
+    const onClick = (e: MouseEvent) => handleOutsideClickDismissDetail(e);
     document.addEventListener('keydown', onKeydown, true);
-    return () => document.removeEventListener('keydown', onKeydown, true);
+    document.addEventListener('click', onClick, true);
+    return () => {
+      document.removeEventListener('keydown', onKeydown, true);
+      document.removeEventListener('click', onClick, true);
+    };
   }, []);
   return null;
 }

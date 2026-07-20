@@ -353,10 +353,6 @@
     }
     .toolbar select { width: 100%; }
     .toolbar .view-toggle, .toolbar > .chip { align-self: flex-start; }
-    /* The toolbar is split into titled sections (検索/並び順/表示) like the filter
-       sections below; space the controls inside each one. */
-    #postsToolbar .sb-section { padding: 0; margin-bottom: 0; }
-    #postsToolbar .sb-section > * + * { margin-top: 6px; }
     /* 件数はサイドバー左下（設定の歯車の隣）に常駐。subtle だと読めないと
        指摘があったので muted（セカンダリの標準）まで上げる */
     .sidebar-footer .post-count { font-size: 12px; color: var(--text-muted); }
@@ -761,35 +757,12 @@
        beat the [hidden] attribute — so use !important here). */
     body.browse-posters #postGrid { display: none !important; }
     body:not(.browse-posters) #posterGrid { display: none !important; }
-    /* Poster mode hides the post-only chrome (filters/sort/density/active bar +
-       clip row) — only the search box stays useful. */
+    /* Poster mode hides the post-only chrome (filters + active bar). Sort and density
+       moved to the display popover, which is mode-aware in React. */
     body.browse-posters #postActiveBar,
-    body.browse-posters #filterRows,
-    body.browse-posters #tileSizeRow,
-    body.browse-posters #postsToolbar .sb-section:has(#densityToggle),
-    body.browse-posters #postsToolbar .sb-section:has(#sortSelect) { display: none !important; }
+    body.browse-posters #filterRows { display: none !important; }
     /* The poster query bar mirrors #postActiveBar: only shown while browsing posters. */
     body:not(.browse-posters) #posterActiveBar { display: none !important; }
-
-    /* Tile-size ± (shown only in the tile density) */
-    /* Tile size: thin slider, small→large glyphs at the ends */
-    .tile-size { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; }
-    .tile-size .ts-ico { width: 12px; height: 12px; flex-shrink: 0; color: var(--text-subtle); }
-    .tile-size input[type="range"] {
-      flex: 1; min-width: 0; -webkit-appearance: none; appearance: none;
-      height: 14px; margin: 0; background: transparent; cursor: pointer;
-    }
-    .tile-size input[type="range"]::-webkit-slider-runnable-track {
-      height: 3px; border-radius: 2px; background: var(--border-strong);
-    }
-    .tile-size input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
-      background: var(--text-muted); margin-top: -4.5px; transition: background .12s;
-    }
-    .tile-size input[type="range"]:hover::-webkit-slider-thumb,
-    .tile-size input[type="range"]:active::-webkit-slider-thumb { background: var(--accent); }
-    .tile-size input[type="range"]:focus-visible { outline: none; }
-    .tile-size input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring); }
 
     /* --- Post grid --- */
     .post-grid {
@@ -1957,7 +1930,7 @@
        width no longer decides its form. Clicking a card while it is open swaps the
        content (double-click → gallery). */
     .inspector {
-      width: 320px; flex-shrink: 0;
+      width: var(--inspector-w); flex-shrink: 0;
       height: 100%; z-index: 25;
       background: var(--surface); border-left: 1px solid var(--border);
       font-size: 12px;
@@ -1971,6 +1944,26 @@
        what it contributes is the drag region and the reserved height. */
     .inspector-titlebar { height: var(--tabbar-h); flex-shrink: 0; -webkit-app-region: drag; }
     .inspector-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; }
+    /* Narrow widths (#259): the same panel floats over the grid instead of taking a
+       column out of it. --content-top is measured by AppShell (the toolbar's height
+       moves with the filter chip row), so the overlay starts exactly at the content
+       area and leaves the tab bar + toolbar reachable. React owns the width decision —
+       no media query here; layout-mode.ts is the only place the breakpoint lives. */
+    .inspector--overlay {
+      position: fixed; top: var(--content-top, var(--tabbar-h)); right: 0; bottom: 0; height: auto;
+      border-left: 1px solid var(--float-border); box-shadow: var(--shadow-lg);
+      z-index: 9500;   /* over the content, under modals/lightbox (11000+) */
+    }
+    /* The window chrome is pinned over the panel's top only while it reaches the window
+       top — as an overlay it starts below the toolbar, so it hands the strip back. */
+    .inspector--overlay .inspector-titlebar { display: none; }
+    /* Image tab: the inspector is part of the detail view (Eagle-style), so it stays an
+       inline column even when narrow — a slide-over would cover the very image being
+       inspected. Back in flow, it reaches the window top again and needs its strip. */
+    body.image-tab-active .inspector--overlay {
+      position: static; height: 100%; box-shadow: none; border-left: 1px solid var(--border);
+    }
+    body.image-tab-active .inspector--overlay .inspector-titlebar { display: block; }
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: corpusPanelIn var(--dur-panel) var(--ease-out); }
     .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }

@@ -58,6 +58,9 @@ const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
 const getPostGroups = () => storeGet('postGroups') as CorpusPostGroup[] | null | undefined;
 const subBrowseMode = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowseMode = () => storeGet('browseMode') as string | undefined;
+// Derived once by AppShell (width + toggle + selection); read here, not re-derived.
+const subInspectorOverlay = (cb: () => void) => storeSubscribe('inspectorOverlay', cb);
+const getInspectorOverlay = () => !!storeGet('inspectorOverlay');
 // Does the bar's own box still fit the full labels? Watching the element (not the
 // viewport) is what makes this correct when the inspector opens or the sidebar collapses
 // — both change the room available here without the window changing size at all.
@@ -93,6 +96,7 @@ export function FloatingBar() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   const wrapRef = useRef<HTMLDivElement>(null);
   const showFull = useFitsFullLabels(wrapRef);
+  const inspectorOverlay = useSyncExternalStore(subInspectorOverlay, getInspectorOverlay);
 
   const count = selectedSet ? selectedSet.size : 0;
   const shown = count > 0 && mode !== 'posters';
@@ -101,7 +105,15 @@ export function FloatingBar() {
   // Manual grouping needs at least two selected cards (groups).
   const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
   return (
-    <div ref={wrapRef} aria-hidden={!shown} className={cn('pointer-events-none absolute inset-x-0 bottom-6 z-50 flex justify-center px-4 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0')}>
+    <div
+      ref={wrapRef}
+      aria-hidden={!shown}
+      // Hold back the inspector's width while it OVERLAYS the grid (#259). As a docked
+      // column it narrows this bar's container instead, and centering needs no help —
+      // hence the flag rather than "is the inspector open".
+      style={inspectorOverlay ? { paddingRight: 'calc(var(--inspector-w) + 1rem)' } : undefined}
+      className={cn('pointer-events-none absolute inset-x-0 bottom-6 z-50 flex justify-center px-4 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0')}
+    >
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border bg-popover p-1 text-popover-foreground shadow-lg">
         <span className="px-2 text-sm font-medium tabular-nums whitespace-nowrap">{t('selectedCount', [count])}</span>
         <Separator orientation="vertical" className="mx-0.5 h-5" />

@@ -15,6 +15,7 @@ import { userKey } from './query.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
+import { isWide as isWideLayout } from './layout-mode.ts';
 import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
@@ -88,6 +89,31 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // the shell toggle and the panel's own × produce identical results.
   function closeDetail() {
     panelSetOpen(false);
+  }
+
+  // Narrow-width dismissal (#259) — NOT the same act as closing the panel. At narrow
+  // widths the panel is an overlay that rides on the selection, so waving it away means
+  // "nothing is inspected right now", not "I don't want this panel". Flipping the stored
+  // preference here would make the next card click land on a closed panel, which is the
+  // toggle-hunting the issue exists to remove.
+  function dismissDetail() {
+    inspectorClose();
+    deps.setInspectedKey(null);
+  }
+  // Outside-click dismissal for the narrow overlay. Restored from the pre-#243 handler,
+  // with one change: the width test asks layout-mode instead of carrying its own
+  // `max-width` media query, so there is a single place the breakpoint lives.
+  function handleOutsideClickDismissDetail(e: MouseEvent) {
+    if (isWideLayout()) return; // wide = a docked column; nothing to dismiss
+    const insp = byId('postDetail');
+    if (insp.hidden) return;
+    if (insp.contains(e.target as Node | null)) return;
+    if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
+    if (closestOf(e, '.post-card, .tag-btn')) return; // card click = swap to it; 🏷 = tag-pop for it
+    if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
+    e.preventDefault();
+    e.stopPropagation();
+    dismissDetail();
   }
 
   // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
@@ -380,11 +406,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     });
   }
 
-  // Esc leaves the image-tab detail view (Eagle-style). It does NOT touch the inspector:
-  // #244 scoped Esc to transient surfaces (quick view / popovers / modals), because a
-  // persistent panel is not something Esc dismisses in any product that has one — and
-  // #143/#242 already ruled out Esc as a way to clear the selection. Closing the panel is
-  // the toggle, the ×, or #245's bulk shortcut.
+  // Esc leaves the image-tab detail view (Eagle-style), and — since #259 — also waves away
+  // the inspector while it is a narrow-width OVERLAY. It still does not touch the docked
+  // column: #244 scoped Esc to transient surfaces (quick view / popovers / modals) because
+  // a persistent panel is not something Esc dismisses in any product that has one, and
+  // #143/#242 ruled Esc out as a way to clear the selection. Closing the column is the
+  // toggle, the ×, or #245's bulk shortcut. What changed is that the panel now has a
+  // transient form too, and in that form the rule it was exempted from applies.
   //
   // Still registered in CAPTURE phase (from the DetailDismiss component in
   // app/islands/app/App.tsx) so it can check what else is open BEFORE those handlers
@@ -392,8 +420,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // once nothing is left does the detail view close.
   function handleEscDismissDetail(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
-    const inImageTab = deps.imageTabShowing();
-    if (!inImageTab) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (lightboxIsOpen()) return;
@@ -402,13 +428,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;
     if (tagPopGet()) return; // let an open tag-pop take the first Esc
-    if (isAnySelectOpen()) return; // …and an open shadcn Select (SortSelect / filter editors), tracked by state not DOM
-    deps.closeTab(deps.getActiveTabId());
+    if (isAnySelectOpen()) return; // …and an open shadcn Select (display popover / filter editors), tracked by state not DOM
+    if (deps.imageTabShowing()) {
+      deps.closeTab(deps.getActiveTabId());
+      return;
+    }
+    // Narrow overlay only (#259). Something laid OVER the grid is expected to answer Esc,
+    // and the pre-#243 slide-over did. The docked column still does not: #143/#242 ruled
+    // Esc out there, where it would dismiss nothing the user can see covering anything.
+    if (!isWideLayout() && !byId('postDetail').hidden) dismissDetail();
   }
-
-  // The outside-click dismiss that used to live here is gone with the slide-over it served
-  // (#243): an inline column covers nothing, so a click beside it dismisses nothing. The
-  // empty-area gesture is respecified as "clear the selection" and belongs to #242.
 
   return {
     closeDetail,
@@ -416,5 +445,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     persistManual,
     openTagPopForGroup,
     handleEscDismissDetail,
+    handleOutsideClickDismissDetail,
   };
 }

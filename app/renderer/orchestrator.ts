@@ -74,6 +74,9 @@ export let handleShortcutQuickView: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
 export let handleEscDismissDetail: (e: KeyboardEvent) => void;
+// Outside-click dismissal for the narrow overlay (#259). Back after #243 removed it —
+// this time the width test lives in layout-mode.ts, not in the handler's own media query.
+export let handleOutsideClickDismissDetail: (e: MouseEvent) => void;
 export let handleTabBarKeydown: (e: KeyboardEvent) => void;
 export let handleTabBarFocusout: (e: FocusEvent) => void;
 export let handleTabBarClick: (e: MouseEvent) => void;
@@ -264,34 +267,18 @@ export function endFilterEditSession(): void {
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
   // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
   // renderer/activebar.ts is gone — no bridge left) — no static setText here.
-  // segments: icon always, label shown only on the active one (no tooltips —
-  // the active label is the affordance). Labels live in their own span so the
-  // SVG glyph survives.
-  // #densityToggle, #posterDensityToggle and #browseToggle (incl. per-button
-  // tooltips) are rendered by the toolbar island now. The browse toggle's old
-  // CONTAINER title (「…を切替」) is gone — per-segment .ui-tip hints made it
-  // redundant noise on hover (user 2026-07-04).
-  // #sbPosterSortTitle is island-owned now too (toolbar SectionTitle) — no static setText.
+  // Density (post + poster) and the sort labels live in the display popover
+  // (islands/shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
+  // render from i18n themselves — no static setText here.
   // #posterFilterRows title + row labels are rendered by the poster sidebar island,
   // self-deriving from corpusPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
-  // #posterSortSelect option labels are the SortSelect island now (rendered from i18n
-  // keys) — the native <select> stays hidden (.cs-host) as the value source, so writing
-  // its option textContent here was dead (never shown). No static setText.
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
   // posterDateClear are the filter-popover React island now — no static labels here.
   // Settings-modal labels (theme/lang/data/backup/trash/danger/about) live in the React
   // settings island; the confirm modal is the React confirm island (labels come through
   // confirmOpen's config), so no static confirm setText here either.
 
-  // Toolbar section titles (検索 / 並び順 / 表示). The search-mode segment itself
-  // (labels, thumb, on-state) is rendered by the toolbar island; orchestrator only keeps
-  // the hint text + aria-label (see the wiring block below). The view/layout titles
-  // (#sbViewTitle / #sbLayoutTitle / #sbPosterLayoutTitle) are island-owned too now —
-  // they name the current mode/layout from the store (SectionTitle), so orchestrator no
-  // longer writes them (writing here would race the island after a language reload).
-  // #sbSearchTitle / #sbSortTitle are island-owned now too (toolbar SectionTitle) — no
-  // static setText (writing here would race the island after a language reload).
   // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now,
   // self-deriving from corpusStore + t() (P4-B slice⑱) — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
@@ -299,16 +286,13 @@ export function endFilterEditSession(): void {
   // static setText here.
   setAttr('sbTop', 'data-tip', getMessage('sbTopTip')); // #sbTop back-to-top retired in the shell cutover; setAttr no-ops if absent
 
-  // #sortSelect stays the (hidden .cs-host) value source; its option LABELS are rendered
-  // by the SortSelect island from i18n keys, so writing option textContent here was dead.
+  // Post sort's value source is the hidden <select> AppShell renders. The display
+  // popover's Select drives it on pick (value + a 'change' event, so the listener far
+  // below still fires) and mirrors the value into corpusStore 'sortPost', which is what
+  // lets the popover reflect programmatic changes (a tab restore pushes 'sortPost' —
+  // see applyState / the tab click handler). Poster sort has no element: the store key
+  // IS its single source. Collapsing this stub into the store is #217's follow-up.
   const sortSelect = selectById('sortSelect');
-
-  // Custom glass dropdown for the sort selects (#sortSelect / #posterSortSelect /
-  // #collectionSortSelect) is React-owned now — the toolbar island's SortSelect hides
-  // the native <select> (.cs-host), renders the glass trigger + popup, and drives the
-  // select on pick so the change handlers below still fire. The active value is mirrored
-  // into corpusStore ('sortPost' etc.) so the island reflects programmatic changes
-  // (tab restore pushes 'sortPost'; see applyState / the tab click handler).
 
   // --- Query Field ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -865,7 +849,7 @@ export function endFilterEditSession(): void {
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
     posterQBTree: () => posterQB.getTree(),
-    // Poster sort's single source is corpusStore 'sortPoster' (the SortSelect writes it);
+    // Poster sort's single source is corpusStore 'sortPoster' (the display popover writes it);
     // default 'count' when unset (poster sort isn't persisted, so it resets on reload — same
     // as the old closure default).
     posterSort: () => (storeGet('sortPoster') as string) || 'count',
@@ -900,7 +884,7 @@ export function endFilterEditSession(): void {
     getSortValue: () => sortSelect.value,
     setSortValue: (v) => {
       sortSelect.value = v;
-      storeSet('sortPost', sortSelect.value); // mirror into the store so the SortSelect island reflects it
+      storeSet('sortPost', sortSelect.value); // mirror into the store so the display popover reflects it
     },
     getMultiOnly: () => multiOnly,
     setMultiOnly: (v) => {
@@ -1150,6 +1134,7 @@ export function endFilterEditSession(): void {
   });
   const { closeDetail, showDetail, persistManual, openTagPopForGroup } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
+  handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
   // === Selection (click a card to select; the bar appears when 1+ are selected) ===
   // groupSelected needs inspector's persistManual, so this is constructed here
@@ -1235,7 +1220,7 @@ export function endFilterEditSession(): void {
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
   // collapses rapid clicks to a single render.
   let _browseRenderT: any = null;
-  // #densityToggle is rendered by the toolbar island (corpusStore 'view'); the
+  // Density is the display popover's (corpusStore 'view'); the
   // reaction (mirror into currentView, persist, re-render with a view transition)
   // lives in grid-density-builder.ts now (V10/Wave24) — this just bridges React's
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
@@ -1277,7 +1262,7 @@ export function endFilterEditSession(): void {
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
-  // #browseToggle is rendered by the toolbar island (corpusStore 'browseMode').
+  // Browse mode is the left sidebar's (corpusStore 'browseMode').
   // React owns the active state + glass thumb; orchestrator reacts to a mode change by running
   // the heavy switch. The idempotent guard skips the no-op set from the pref restore
   // below, so the loop stays one-way (island → store → orchestrator, never back). React owns
@@ -1290,10 +1275,9 @@ export function endFilterEditSession(): void {
     setBrowseMode(m);
   };
 
-  // The browse toggle is React-owned now (BrowseToggle island); it measures its own glass
-  // thumb via a ResizeObserver on its container, so the sidebar-width changes that grid
-  // renders cause are handled there. Kept as a no-op so the existing call sites
-  // (renderPosts / renderPosters / renderCollections) need no change.
+  // The browse toggle is React-owned (LeftSidebar); it measures its own glass thumb via a
+  // ResizeObserver on its container, so the sidebar-width changes that grid renders cause
+  // are handled there. Kept as a no-op so the existing call sites need no change.
   function syncBrowseBar() {}
 
   // --- Poster grid (投稿者ビュー) ------------------------------------------
@@ -1302,8 +1286,8 @@ export function endFilterEditSession(): void {
   // posterList itself is now poster-grid-builder.ts-internal state (exposed via
   // getPosterList) — V6/Wave20.
   // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in corpusStore
-  // 'sortPoster' now (read via the listing dep getter above); a subscription below
-  // re-renders on change, replacing the old #posterSortSelect DOM-'change' listener.
+  // 'sortPoster' (read via the listing dep getter above); a subscription below
+  // re-renders on change.
   // Poster grid density + tile/card size slider (kept SEPARATE from the post-side
   // currentView — its masonry/tile/list layouts are bound to poster-card markup)
   // lives in grid-density-builder.ts now (V10/Wave24), alongside the post-side
@@ -1680,9 +1664,8 @@ export function endFilterEditSession(): void {
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) showPosterMenu(u, e.clientX, e.clientY);
   });
-  // Poster-mode sort (sidebar). Single source = corpusStore 'sortPoster' (the SortSelect
-  // writes it on pick); re-render when it changes. This replaces the old #posterSortSelect
-  // DOM-'change' listener — the store is now the one trigger (no dual source).
+  // Poster-mode sort. Single source = corpusStore 'sortPoster' (the display popover's
+  // Select writes it on pick); re-render when it changes — one trigger, no dual source.
   storeSubscribe('sortPoster', () => {
     if (tabsCtl.isRestoring()) return; // applyEntry/initTabs wrote the store — they drive their own render
     // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
