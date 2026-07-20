@@ -13,7 +13,7 @@ interface AppInfo {
   node?: string;
 }
 
-const REPO_URL = 'https://github.com/apricot-cake/corpus';
+const REPO_URL = 'https://github.com/apricot-cake/hologram';
 const LINKS = [
   { key: 'aboutLinkRepo', url: REPO_URL },
   { key: 'aboutLinkReleases', url: `${REPO_URL}/releases` },

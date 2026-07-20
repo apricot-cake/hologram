@@ -30,4 +30,4 @@ Captured posts are **not** stored in the browser. Each capture is written to you
 
 ## Contact
 
-For questions or concerns, please open an issue at https://github.com/apricot-cake/corpus/issues.
+For questions or concerns, please open an issue at https://github.com/apricot-cake/hologram/issues.
