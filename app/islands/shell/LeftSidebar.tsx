@@ -19,6 +19,7 @@ import { open as openSettings } from '../../renderer/settings.ts';
 import { all as folderAll, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../../renderer/folders.ts';
 import { cloneTree } from '../../renderer/query.ts';
 import { open as menuOpen } from '../../renderer/menu.ts';
+import { promptName } from '../prompt/Prompt.tsx';
 import { applyFolderFilter, applySavedSearch } from '../../renderer/orchestrator.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
@@ -74,8 +75,7 @@ export function LeftSidebar() {
       if (item.act === 'update') {
         if (updateFolder(f.id, { tree: currentTree })) toast(t('savedSearchUpdated'));
       } else if (item.act === 'rename') {
-        const name = window.prompt(t('saveSearchPrompt'), f.name);
-        if (name !== null) renameFolder(f.id, name);
+        promptName(t('saveSearchPrompt'), f.name, (name) => renameFolder(f.id, name));
       } else if (item.act === 'delete') removeFolder(f.id);
     });
   };

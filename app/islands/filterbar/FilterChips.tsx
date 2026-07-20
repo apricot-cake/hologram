@@ -12,11 +12,12 @@
 // island subscribes to the postQueryTree/posterQueryTree store keys (written on every
 // tree mutation) and recomputes. The editor for a click is looked up from
 // filterCategories() by the chip's `cat` (a fresh read, like the "+ フィルタ" menu).
-import { X } from 'lucide-react';
+import { Bookmark, X } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
-import { type ActiveFilter, activeFilters, type FilterCat, filterCategories } from '../../renderer/orchestrator.ts';
+import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../../renderer/orchestrator.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { CatIcon } from './index.tsx';
+import { promptName } from '../prompt/Prompt.tsx';
 import { FormEditor } from './FormEditor.tsx';
 import { ValueEditor } from './ValueEditor.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -89,6 +90,21 @@ function Chip({ f }: { f: ActiveFilter }) {
   );
 }
 
+// 検索を保存 (#40) — the trailing action of the chip row, Linear's「保存ビュー」position.
+// It rides with the chips: no chips means nothing to save, so the row (and this button)
+// is absent. Post-side only — a saved search is a post query.
+function SaveSearchButton() {
+  // No success toast: the new row appears in the sidebar, and the redesign charter
+  // says a change you can see is not a change to announce.
+  const onClick = () => promptName(t('saveSearchPrompt'), '', (name) => saveCurrentSearch(name));
+  return (
+    <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-muted-foreground text-sm hover:bg-accent hover:text-accent-foreground" onClick={onClick}>
+      <Bookmark className="size-3.5" />
+      {t('saveSearch')}
+    </button>
+  );
+}
+
 export function FilterChips() {
   // Re-render whenever the active query tree (or browse mode) changes; activeFilters()
   // then re-derives the chips from that live tree. The subscription is the whole point
@@ -106,6 +122,7 @@ export function FilterChips() {
         // remount its chip so the values line stays the chip's identity.
         <Chip key={f.cat + ':' + f.mode + ':' + i + ':' + f.values.join(' ')} f={f} />
       ))}
+      {storeGet('browseMode') !== 'posters' && <SaveSearchButton />}
     </div>
   );
 }

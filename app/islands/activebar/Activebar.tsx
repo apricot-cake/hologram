@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { createPortal } from 'react-dom';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/store.ts';
-import { navBack, navForward, resetAllFilters, resetPosterFilters, saveCurrentSearch } from '../../renderer/orchestrator.ts';
+import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../renderer/orchestrator.ts';
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
@@ -109,15 +109,6 @@ export function ActivebarHost() {
     return () => document.removeEventListener('keydown', onKey);
   }, [helpOpen]);
 
-  // Naming prompt: window.prompt is what every other naming flow in the app uses
-  // (folder rename, poster folder, tag kind). No toast on success — the new row
-  // appears in the sidebar, and the redesign charter says a change you can see is
-  // not a change to announce.
-  const onSaveSearch = () => {
-    const name = window.prompt(t('saveSearchPrompt'), '');
-    if (name !== null) saveCurrentSearch(name);
-  };
-
   const postActive = (postTree?.children?.length ?? 0) > 0 || !!search;
   const posterActive = (posterTree?.children?.length ?? 0) > 0 || !!search;
   const postCount = postGroups ? postGroups.length : 0;
@@ -150,11 +141,6 @@ export function ActivebarHost() {
           <span className="post-count" id="postCount">
             {t('postCount', [postCount])}
           </span>
-          {/* 検索を保存 (#40) — only offered while something is actually filtered; saving
-              an empty query would make a saved search that means "everything". */}
-          <button className="sb-reset" id="postSaveSearchBtn" type="button" style={showHide(postActive)} onClick={onSaveSearch}>
-            {t('saveSearch')}
-          </button>
           <button className="sb-reset" id="postResetBtn" type="button" style={showHide(postActive)} onClick={() => resetAllFilters()}>
             {t('reset')}
           </button>

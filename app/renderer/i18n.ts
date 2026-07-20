@@ -151,6 +151,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
     // 保存した検索（#40）— サイドバーのグループ、アクティブバーの保存ボタン。
+    promptOk: 'OK',
     savedSearches: '保存した検索',
     saveSearch: '検索を保存',
     saveSearchPrompt: '保存する検索の名前',
@@ -533,6 +534,7 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     browsePosts: 'Library',
     browsePosters: 'Posters',
     // Saved searches (#40) — the sidebar group + the activebar save button.
+    promptOk: 'OK',
     savedSearches: 'Saved searches',
     saveSearch: 'Save search',
     saveSearchPrompt: 'Name this saved search',

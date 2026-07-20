@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { AppShell } from '../shell/AppShell.tsx';
 import { get as confirmGet, subscribe as confirmSubscribe } from '../../renderer/confirm.ts';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
+import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
@@ -282,6 +283,10 @@ export function App() {
       <KindMenuHost />
       <TagPopHost />
       <ConfirmHost />
+      {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
+          the Electron renderer, so naming flows go through this instead. A shadcn
+          Dialog, so it locks its own scroll and needs no ModalChrome entry. */}
+      <PromptHost />
       <FolderManagerHost />
       <Portal id="lightbox">
         <LightboxHost />

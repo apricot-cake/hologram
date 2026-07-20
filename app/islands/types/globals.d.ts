@@ -389,6 +389,21 @@ declare global {
   interface CorpusConfirmModel extends CorpusConfirmConfig {
     openId: number;
   }
+  // Naming prompt (prompt.ts + PromptHost) — the replacement for window.prompt,
+  // which Electron's renderer refuses ("prompt() is not supported.").
+  interface CorpusPromptConfig {
+    title: string;
+    value?: string; // initial input value (rename passes the current name)
+    placeholder?: string;
+    okLabel: string;
+    cancelLabel: string;
+    /** Called with the trimmed value; never called with an empty one. */
+    onOk(value: string): void;
+    onCancel?(): void;
+  }
+  interface CorpusPromptModel extends CorpusPromptConfig {
+    openId: number;
+  }
   // CorpusConfirm / CorpusEditOverlay (the open/close/get/subscribe APIs)
   // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
   // directly by their consumers.
