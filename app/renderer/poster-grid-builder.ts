@@ -59,7 +59,6 @@ export interface PosterGridBuilderDeps {
   // renderPosters still needs to read it, same as the old code did before this
   // extraction.
   posterView(): string;
-  syncBrowseBar(): void;
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
   // history + persists (#144) — the poster-mode mirror of the post grid's
   // syncTitleAndPersist dep. Not called on keepLimit (in-place) refreshes.
@@ -147,7 +146,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
     // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
     // する（P4-B slice⑱・下の corpusStore.set('posterGroups', …) を購読）。
-    deps.syncBrowseBar(); // keep the ライブラリ/投稿者 toggle's glass thumb measured
     // Density: the classes style the CELLS (descendant selectors); the column
     // layout itself lives in the masonic model (pushPosterModel).
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');

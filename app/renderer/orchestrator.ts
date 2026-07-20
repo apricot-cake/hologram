@@ -803,7 +803,6 @@ export function endFilterEditSession(): void {
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl is constructed below — deferred forward reference
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
     updateSidebarState,
-    syncBrowseBar: () => syncBrowseBar(),
     applyTileLayout: () => gridDensity.applyTileLayout(),
     getBrowseMode: () => browseMode,
     renderPosters: (keepLimit) => renderPosters(keepLimit),
@@ -1275,11 +1274,6 @@ export function endFilterEditSession(): void {
     setBrowseMode(m);
   };
 
-  // The browse toggle is React-owned (LeftSidebar); it measures its own glass thumb via a
-  // ResizeObserver on its container, so the sidebar-width changes that grid renders cause
-  // are handled there. Kept as a no-op so the existing call sites need no change.
-  function syncBrowseBar() {}
-
   // --- Poster grid (投稿者ビュー) ------------------------------------------
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
@@ -1334,7 +1328,6 @@ export function endFilterEditSession(): void {
     closeDetail,
     setInspectedKey,
     posterView: gridDensity.getPosterView,
-    syncBrowseBar,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
   const {

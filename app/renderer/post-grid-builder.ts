@@ -43,7 +43,6 @@ export interface PostGridBuilderDeps {
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
   updateSidebarState(): void;
-  syncBrowseBar(): void;
   applyTileLayout(): void;
   getBrowseMode(): string;
   renderPosters(keepLimit?: boolean): void;
@@ -306,7 +305,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       stickyRecs.clear();
     }
     deps.updateSidebarState();
-    deps.syncBrowseBar(); // keep the ライブラリ/投稿者 toggle's glass thumb measured
     const grid = byId('postGrid');
     const empty = byId('emptyState');
     // Group the filtered records (auto by post URL + manual groups); each group
