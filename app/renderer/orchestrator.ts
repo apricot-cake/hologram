@@ -11,6 +11,7 @@
 import JSZip from 'jszip';
 import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
+import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
 import { sync as syncPostsData } from './posts-data.ts';
 import { makeUndoController } from './undo-builder.ts';
@@ -110,6 +111,11 @@ export let getPostSizeTrack: () => CorpusSizeTrack | null;
 export let applyPostSize: (value: number, min: number, max: number, commit: boolean) => void;
 export let getPosterSizeTrack: () => CorpusSizeTrack | null;
 export let applyPosterSize: (value: number, min: number, max: number) => void;
+// Re-roll the shuffle order (#118). The 'random' sort is a pure function of a seed,
+// so a new order means a new seed — this replaces it and re-renders. The display
+// popover's re-roll button calls it; picking 'random' seeds itself (see the
+// sortSelect change listener).
+export let rerollShuffle: () => void;
 // Apply a library folder as a place filter (redesign §3-1): replace the post query's
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
@@ -844,6 +850,9 @@ export function endFilterEditSession(): void {
     currentTree,
     stickyRecs: postGrid.getStickyRecs(),
     sortValue: () => sortSelect.value,
+    // Shuffle seed (#118) — corpusStore 'shuffleSeed', snapshotted per tab like the
+    // sort key itself. Only the 'random' sort reads it.
+    shuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
     searchQuery: () => searchQuery(),
     buildUsers,
     posterQBEval: (u) => posterQB.eval(u),
@@ -885,6 +894,10 @@ export function endFilterEditSession(): void {
       sortSelect.value = v;
       storeSet('sortPost', sortSelect.value); // mirror into the store so the display popover reflects it
     },
+    // The shuffle seed travels with the sort key in the tab snapshot (#118), so a
+    // restored tab reproduces the order it was showing.
+    getShuffleSeed: () => (storeGet('shuffleSeed') as string) || '',
+    setShuffleSeed: (v) => storeSet('shuffleSeed', v || ''),
     getMultiOnly: () => multiOnly,
     setMultiOnly: (v) => {
       multiOnly = v;
@@ -1734,9 +1747,18 @@ export function endFilterEditSession(): void {
     // Sort lives in the tab state (persisted per tab via renderPosts→persist), not a
     // separate global pref — that double-storage raced on load. renderPosts captures it.
     // A sort change rewrites the current history entry instead of pushing (#144 確定未決2).
+    // Picking 'random' with no seed yet mints one, so the first pick already shuffles
+    // (#118); an existing seed is kept, which is what makes leaving and coming back to
+    // random show the same order until the user re-rolls.
+    if (sortSelect.value === 'random' && !storeGet('shuffleSeed')) storeSet('shuffleSeed', newShuffleSeed());
     tabsCtl.setNavReplaceNext();
     renderPosts();
   });
+  rerollShuffle = () => {
+    storeSet('shuffleSeed', newShuffleSeed());
+    tabsCtl.setNavReplaceNext();
+    renderPosts();
+  };
 
   // --- Import from ZIP ---
   // 新形式（完全エクスポート: library/ + corpus-export.json）は main 側で展開して

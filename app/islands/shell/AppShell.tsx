@@ -214,6 +214,7 @@ export function AppShell() {
         <option value="replies-desc" />
         <option value="captured-desc" />
         <option value="likes-pct" />
+        <option value="random" />
       </select>
       {/* Virtual grids attach to #postGrid / #posterGrid via GridMount's effect — kept
           out of the container so masonic's host-attach + flushSync path is unchanged. */}

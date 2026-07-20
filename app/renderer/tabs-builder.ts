@@ -33,6 +33,8 @@ export interface TabsBuilderDeps {
   postQB: { getTree(): CorpusQueryGroup; setTree(t: CorpusQueryGroup | null | undefined): void; shadow(): CorpusQueryLeaf[] };
   getSortValue(): string;
   setSortValue(v: string): void;
+  getShuffleSeed(): string;
+  setShuffleSeed(v: string): void;
   getMultiOnly(): boolean;
   setMultiOnly(v: boolean): void;
   searchQuery(): string;
@@ -103,6 +105,8 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       tree: cloneTree(deps.postQB.getTree()),
       search: deps.searchQuery(),
       sort: deps.getSortValue(),
+      // Rides along with the sort key so a restored tab reproduces its shuffle (#118).
+      shuffleSeed: deps.getShuffleSeed(),
       multi: deps.getMultiOnly(),
     };
   }
@@ -166,6 +170,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.setSearchBoxValue(s.search);
     deps.rebindEditingTextLeaf(); // resume editing the restored term instead of duplicating it
     deps.setSortValue(s.sort);
+    deps.setShuffleSeed(s.shuffleSeed || ''); // pre-#118 states have none — random then re-seeds on pick
     deps.setMultiOnly(!!s.multi);
     deps.renderQueryChips();
     deps.renderPosts();
@@ -365,7 +370,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       arr.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
     });
     setActiveTabId(id);
-    applyState({ f: [], ops: {}, search: '', sort: deps.getSortValue(), multi: false });
+    applyState({ f: [], ops: {}, search: '', sort: deps.getSortValue(), shuffleSeed: deps.getShuffleSeed(), multi: false });
     nav.adopt(getTabs().find((t) => t.id === id)); // fresh tab → fresh history (seeded with the empty view)
     requestAnimationFrame(() => deps.scrollContentTo(0)); // new tab starts at the top
     persistTabsDebounced();
@@ -482,6 +487,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.setSearchBoxValue(at.state.search || '');
         deps.rebindEditingTextLeaf();
         deps.setSortValue(at.state.sort || 'date-desc');
+        deps.setShuffleSeed(at.state.shuffleSeed || ''); // #118 — restore the shuffle order with its sort
         deps.setMultiOnly(!!at.state.multi);
       }
       nav.adopt(at); // adopt the persisted stack (or seed from the restored view)
