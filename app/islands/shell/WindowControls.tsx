@@ -16,9 +16,10 @@
 //
 // Geometry follows the Windows caption convention: 46x32 buttons, Segoe-style glyphs, and the
 // close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { corpusIpc } from '../../renderer/ipc.ts';
+import { isOpen as inspectorIsOpen, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
 
 function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
@@ -67,6 +68,12 @@ function CloseGlyph() {
 
 export function WindowControls() {
   const maximized = useMaximized();
+  // The strip has to be opaque (it sits above the modal scrim — see below), which means
+  // it also has to match whatever it covers. Pinned to the window's top-right, that is
+  // the tab band normally, but the inspector's titlebar strip whenever the panel is open,
+  // and the two are different tones — hard-coding the band's color left a grey block
+  // floating on the white panel.
+  const overInspector = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
   // app-no-drag: the strip overlaps the tab bar's drag region, which would otherwise swallow
   // the clicks. The tab bar reserves --window-controls-w of right padding so tabs never run
   // under it (index.html).
@@ -85,7 +92,7 @@ export function WindowControls() {
   // area — the strip came out visibly deeper than the page around it. Opaque + one dim of
   // its own reproduces exactly what the page gets.
   return createPortal(
-    <div className="app-no-drag fixed top-0 right-0 z-[13600] flex bg-[var(--tabbar-bg)]">
+    <div className="app-no-drag fixed top-0 right-0 z-[13600] flex" style={{ background: overInspector ? 'var(--surface)' : 'var(--tabbar-bg)' }}>
       <button type="button" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => corpusIpc.windowControl('minimize')}>
         <MinimizeGlyph />
       </button>
