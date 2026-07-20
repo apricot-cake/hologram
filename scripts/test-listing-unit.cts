@@ -38,6 +38,7 @@ async function main() {
   const postsById = new Map(posts.map((p) => [p.captureId, p]));
   let tree: any = { kind: 'group', op: 'and', neg: false, children: [] };
   let sort = 'none';
+  let shuffleSeed = '';
   let search = '';
   const stickyRecs = new Set();
 
@@ -80,6 +81,7 @@ async function main() {
     currentTree: () => tree,
     stickyRecs,
     sortValue: () => sort,
+    shuffleSeed: () => shuffleSeed,
     searchQuery: () => search,
     buildUsers: () => users,
     posterQBEval: (u) => posterEval(u),
@@ -119,6 +121,24 @@ async function main() {
   assert('sort captured-desc uses _capturedMs', ids(api.getFilteredPosts()) === 'p1,p3,p2,p5');
   sort = 'likes-pct';
   assert('sort likes-pct via injected percentileFn', ids(api.getFilteredPosts()) === 'p2,p3,p1,p5');
+
+  // Shuffle (#118): the order is a pure function of (seed, record key) — stable for a
+  // seed, different across seeds, and independent of the input order.
+  sort = 'random';
+  shuffleSeed = 'seed-a';
+  const rndA = ids(api.getFilteredPosts());
+  assert('sort random is stable for one seed', rndA === ids(api.getFilteredPosts()));
+  assert('sort random keeps every record', rndA.split(',').sort().join(',') === 'p1,p2,p3,p5');
+  shuffleSeed = 'seed-b';
+  const rndB = ids(api.getFilteredPosts());
+  assert('sort random reorders on a new seed', rndB !== rndA);
+  shuffleSeed = 'seed-a';
+  assert('sort random reproduces an earlier seed', ids(api.getFilteredPosts()) === rndA);
+  // Re-seeding the source array must not move the result (no in-place shuffle bias).
+  posts.reverse();
+  assert('sort random ignores the input order', ids(api.getFilteredPosts()) === rndA);
+  posts.reverse();
+  shuffleSeed = '';
   sort = 'none';
 
   // --- namedPosters / filteredPosters --------------------------------------

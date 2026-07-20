@@ -13,7 +13,7 @@
 // posters keep their existing 3-way view (card/tile/list) until that axis is
 // re-conceived separately (未決事項E scoped the gallery/list split to the post grid).
 import type { ReactNode } from 'react';
-import { LayoutGrid, List, SlidersHorizontal, Square } from 'lucide-react';
+import { LayoutGrid, List, Shuffle, SlidersHorizontal, Square } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '../_shared/i18n.ts';
 import type { CorpusSizeTrack } from '../../renderer/grid-density-builder.ts';
-import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack } from '../../renderer/orchestrator.ts';
+import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle } from '../../renderer/orchestrator.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 
 const subKey = (key: string) => (cb: () => void) => storeSubscribe(key, cb);
@@ -50,6 +50,7 @@ const SORT_POST = [
   { value: 'replies-desc', key: 'sortReplies' },
   { value: 'captured-desc', key: 'sortCaptured' },
   { value: 'likes-pct', key: 'sortLikesPct' },
+  { value: 'random', key: 'sortRandom' },
 ];
 const SORT_POSTER = [
   { value: 'count', key: 'posterSortCount' },
@@ -182,10 +183,20 @@ function PostControls() {
   }, []);
 
   const sortSel = document.getElementById('sortSelect') as HTMLSelectElement | null;
+  // Random is the one sort with something left to say after it is picked: the order is
+  // seeded, so re-rolling is how you get a different one (#118).
+  const sort = useSyncExternalStore(subKey('sortPost'), () => (storeGet('sortPost') as string) || sortSel?.value || 'date-desc');
   return (
     <>
       <Row label={t('sbSortTitle')}>
-        <SortSelect_ storeKey="sortPost" sel={sortSel} options={SORT_POST} />
+        <div className="flex items-center gap-1">
+          <SortSelect_ storeKey="sortPost" sel={sortSel} options={SORT_POST} />
+          {sort === 'random' && (
+            <Button variant="ghost" size="icon" aria-label={t('sortReroll')} title={t('sortReroll')} onClick={() => rerollShuffle?.()}>
+              <Shuffle />
+            </Button>
+          )}
+        </div>
       </Row>
       <Separator />
       <ToggleGroup className="w-full" variant="outline" spacing={0} value={[layout]} onValueChange={(v) => v.length && setLayout(v[0] as string)} aria-label={t('sbViewTitle')}>

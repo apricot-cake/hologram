@@ -19,12 +19,15 @@
 //   currentTree() — the active tab's boolean query tree (root group)
 //   stickyRecs — Set of captureIds kept visible after a mutation un-matches the filter
 //   sortValue() — the post sort select's current value
+//   shuffleSeed() — the active tab's shuffle seed (only read by the 'random' sort)
 //   searchQuery() — the search-box term (corpusStore-backed)
 //   buildUsers() — poster roll-up (users.ts product)
 //   posterQBEval(u) / posterQBTree() — the poster query builder (deferred — later const)
 //   posterSort() / folderSort() — mode sort keys (getters — reassigned lets)
 //   allFolders() — CF().allFolders() or [] before folders load
 //   filterLabel(f) — leaf pill label (tab-state.ts makeTabLabels product)
+import { shuffleRank } from './shuffle.ts';
+
 export interface ListingDeps {
   allPosts(): CorpusPost[];
   postsById(): Map<string, CorpusPost>;
@@ -37,6 +40,7 @@ export interface ListingDeps {
   currentTree(): CorpusQueryGroup;
   stickyRecs: Set<string>;
   sortValue(): string;
+  shuffleSeed(): string;
   searchQuery(): string;
   buildUsers(): CorpusUserAgg[];
   posterQBEval(u: CorpusUserAgg): boolean;
@@ -47,7 +51,7 @@ export interface ListingDeps {
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 export function makeListing(deps: ListingDeps) {
-  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
+  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
 
   // Content gate shared by the post grid and dynamic folders: only records
   // with something to show (image / media / text / title) enter a listing.
@@ -99,6 +103,16 @@ export function makeListing(deps: ListingDeps) {
       case 'likes-pct': {
         const pct = percentileFn(posts);
         posts.sort((a, b) => pct(b) - pct(a));
+        break;
+      }
+      case 'random': {
+        // Seeded, not shuffled in place: the key is hash(seed | record), so the
+        // order survives re-sorts and restores and ignores the input order (#118).
+        // The record key mirrors records.ts postIdKey — inlined because records.ts
+        // reaches IPC and this module stays pure.
+        const seed = shuffleSeed();
+        const rank = new Map(posts.map((p) => [p, shuffleRank(seed, p.captureId || (p.url || '') + '|' + (p.capturedAt || ''))]));
+        posts.sort((a, b) => (rank.get(a) as number) - (rank.get(b) as number));
         break;
       }
     }
