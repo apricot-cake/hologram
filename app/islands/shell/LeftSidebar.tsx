@@ -5,18 +5,21 @@
 // Linear, not the old facet-row wall.
 //
 // P1 scope: the two browse destinations, the library folders (flat, click = apply
-// the folder as a place filter), and the footer (settings gear + mirror rail). Still
-// to come (P1-3 continuation): folder HIERARCHY + create/rename/delete (#41) and the
-// 保存した検索 group (#40) — the #42 'collection'→'folder' store rename they waited on is done.
-import { Folder, LayoutGrid, Settings, Users } from 'lucide-react';
+// the folder as a place filter), the 保存した検索 group (#40) and the footer (settings
+// gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
+// create/rename/delete (#41).
+import { Folder, LayoutGrid, Search, Settings, Users } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger } from '@/components/ui/sidebar';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
 import { open as openSettings } from '../../renderer/settings.ts';
-import { all as folderAll, load as folderLoad, onChange as folderOnChange } from '../../renderer/folders.ts';
-import { applyFolderFilter } from '../../renderer/orchestrator.ts';
+import { all as folderAll, isSavedSearch, load as folderLoad, onChange as folderOnChange, removeFolder, renameFolder, toast, updateFolder } from '../../renderer/folders.ts';
+import { cloneTree } from '../../renderer/query.ts';
+import { open as menuOpen } from '../../renderer/menu.ts';
+import { applyFolderFilter, applySavedSearch } from '../../renderer/orchestrator.ts';
 
 // browseMode is the single source of truth for the active destination. Writing
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy
@@ -41,10 +44,44 @@ function useFolders(): CorpusFolder[] {
   return list;
 }
 
+// The live post query, mirrored into the store by the query builder on every
+// mutation — the same channel the activebar reads. A saved search is "applied"
+// when the current tree equals the saved one; there is no separate applied-id
+// state to keep in sync, so editing a chip simply stops the row from matching.
+const subPostTree = (cb: () => void) => storeSubscribe('postQueryTree', cb);
+const getPostTree = () => storeGet('postQueryTree') as CorpusQueryGroup | undefined;
+// Compare through the persistence clone so a tree that has been to disk and back
+// compares equal to a freshly built one (the compile memos are the only difference).
+const treeKey = (tree: CorpusQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
+
 export function LeftSidebar() {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   const isPosters = mode === 'posters';
-  const folders = useFolders();
+  const allFolders = useFolders();
+  const folders = allFolders.filter((f) => !isSavedSearch(f));
+  const saved = allFolders.filter(isSavedSearch);
+  const currentTree = useSyncExternalStore(subPostTree, getPostTree);
+  const currentKey = treeKey(currentTree);
+  // Saved searches are managed on their own row, not in the folder manager (which is
+  // about folders: create, drag-reorder, put posts in). Re-saving the condition is the
+  // one action here whose effect is invisible, so it is the one that says anything.
+  const savedSearchMenu = (e: MouseEvent, f: CorpusFolder) => {
+    e.preventDefault();
+    // 条件を更新 is offered only when there IS a filter to capture — re-saving an empty
+    // query would quietly turn the saved search into "everything".
+    const items = [...(currentKey ? [{ label: t('savedSearchUpdate'), act: 'update' }] : []), { label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
+    menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
+      if (item.act === 'update') {
+        if (updateFolder(f.id, { tree: currentTree })) toast(t('savedSearchUpdated'));
+      } else if (item.act === 'rename') {
+        const name = window.prompt(t('saveSearchPrompt'), f.name);
+        if (name !== null) renameFolder(f.id, name);
+      } else if (item.act === 'delete') removeFolder(f.id);
+    });
+  };
+  // Clicking a post-side row while the poster grid is up would otherwise write a
+  // query nobody can see — the destination switches with it.
+  const toPosts = () => storeSet('browseMode', 'posts');
   return (
     <Sidebar collapsible="icon">
       {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at
@@ -82,8 +119,45 @@ export function LeftSidebar() {
                   <SidebarMenuItem key={f.id}>
                     {/* Click = apply this folder as a place filter on the post query
                         (redesign §3-1). Hierarchy + create/rename/delete come with #41. */}
-                    <SidebarMenuButton tooltip={f.name} onClick={() => applyFolderFilter(f.id)}>
+                    <SidebarMenuButton
+                      tooltip={f.name}
+                      onClick={() => {
+                        toPosts();
+                        applyFolderFilter(f.id);
+                      }}
+                    >
                       <Folder />
+                      <span>{f.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {/* 保存した検索 (#40) — its own group, never mixed in with the folders above:
+            a folder is a place you put posts, a saved search is a question you re-ask.
+            Click REPLACES the current query with the saved one, so every condition
+            lands in the chip bar ready to be adjusted. No count badge: a saved search
+            has no cheap size — counting one means scanning the whole library, and a
+            badge on every row would do that on every render. */}
+        {saved.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {saved.map((f) => (
+                  <SidebarMenuItem key={f.id}>
+                    <SidebarMenuButton
+                      tooltip={f.name}
+                      isActive={!!currentKey && currentKey === treeKey(f.tree)}
+                      onContextMenu={(e) => savedSearchMenu(e, f)}
+                      onClick={() => {
+                        toPosts();
+                        applySavedSearch(f.id);
+                      }}
+                    >
+                      <Search />
                       <span>{f.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

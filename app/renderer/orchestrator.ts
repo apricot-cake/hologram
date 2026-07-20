@@ -111,6 +111,15 @@ export let applyPosterSize: (value: number, min: number, max: number) => void;
 // folder facet with the clicked folder, then re-render. The new left sidebar's
 // folder rows call this directly (no qf-pop flyout).
 export let applyFolderFilter: (id: string) => void;
+// Saved searches (#40) are APPLIED, not toggled: clicking one replaces the current
+// tab's whole query with the saved condition, so every condition lands in the chip
+// bar and stays editable. A folder, by contrast, is one leaf among others. Applying
+// rather than nesting is also what keeps a saved search from ever containing another
+// one — there is no query-inside-a-query to guard against a cycle.
+export let applySavedSearch: (id: string) => void;
+// Save the current post query as a new saved search. Returns the new folder, or null
+// when the name is blank (the store's own rule).
+export let saveCurrentSearch: (name: string) => CorpusFolder | null;
 
 // --- Filter bar (redesign §3-2 / P2③) -------------------------------------
 // One value-flyout row (from facets.ts's qfValues) — the structural shape the
@@ -442,7 +451,7 @@ export function endFilterEditSession(): void {
     posterFilterVocab,
     namedPosters: () => namedPosters(),
     posterFolders: () => pfStore.all(),
-    postFolders: () => (CF() ? CF().all() : []), // library folders (folders.json) for the フォルダ flyout
+    postFolders: () => (CF() ? CF().staticFolders() : []), // library folders (folders.json) for the フォルダ flyout — saved searches are not a place to put posts
     // Deferred wrapper: buildUsers becomes a const (users.js wiring) declared
     // after this point — a direct ref here would hit TDZ at wiring time.
     buildUsers: () => buildUsers(),
@@ -712,6 +721,18 @@ export function endFilterEditSession(): void {
     removeCondsMatching((c) => c.type === 'folder');
     addFilter({ type: 'folder', value: id });
   };
+  // Replace the query with a saved one. Same sequence resetAllFilters uses (the tree
+  // is swapped wholesale, so the bound editing leaf has to be forgotten and the box
+  // emptied) — the saved free-text term comes back as a chip, not as box content.
+  applySavedSearch = (id) => {
+    const f = CF() && CF().byId(id);
+    if (!f || f.kind !== 'dynamic') return;
+    postQB.setTree(f.tree || null);
+    searchEditing.clear();
+    setSearchBoxValue('');
+    afterQueryChange();
+  };
+  saveCurrentSearch = (name) => folders.createFolder(name, { kind: 'dynamic', tree: currentTree() });
 
   const CF = () => folders; // shared folder module
 

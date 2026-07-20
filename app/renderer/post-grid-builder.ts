@@ -393,7 +393,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
   // 「フォルダに追加」 button.
   function foldMenuItems(g: CorpusPostGroup) {
-    const list = CF() ? CF().all() : [];
+    const list = CF() ? CF().staticFolders() : []; // destinations only — a saved search holds no posts
     const rep = g.rep.captureId;
     const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as CorpusMenuItem[];
     if (list.length) items.push({ sep: true });

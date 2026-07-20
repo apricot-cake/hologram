@@ -150,14 +150,12 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
-    // Smart-folder foundation (保存した検索・動的フォルダ再導入用・意図的に保持)。
-    // 第3ビューのフォルダ UI 文字列は撤去済み（2026-07-07）。
-    folderSavePrompt: '保存する検索の名前',
-    folderSaved: '検索をフォルダに保存しました',
-    folderSaveEmpty: '保存できる絞り込みがありません',
-    folderDynamicTitle: '動的フォルダ（保存した検索・条件で自動集計）',
-    folderUpdateQuery: '条件を今の絞り込みで更新',
-    folderUpdated: '条件を更新しました',
+    // 保存した検索（#40）— サイドバーのグループ、アクティブバーの保存ボタン。
+    savedSearches: '保存した検索',
+    saveSearch: '検索を保存',
+    saveSearchPrompt: '保存する検索の名前',
+    savedSearchUpdate: '条件を今の絞り込みで更新',
+    savedSearchUpdated: '条件を更新しました',
     posterCount: '$1 人',
     posterPosts: '投稿 $1 件',
     posterViewPosts: 'この投稿者の投稿を見る',
@@ -534,14 +532,12 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: Library/Posters view toggle + poster view
     browsePosts: 'Library',
     browsePosters: 'Posters',
-    // Smart-folder foundation (kept intentionally; the 3rd-view folder UI
-    // strings were removed 2026-07-07).
-    folderSavePrompt: 'Name this saved search',
-    folderSaved: 'Saved as a folder',
-    folderSaveEmpty: 'No active filter to save',
-    folderDynamicTitle: 'Dynamic folder (saved search)',
-    folderUpdateQuery: 'Update from current filter',
-    folderUpdated: 'Condition updated',
+    // Saved searches (#40) — the sidebar group + the activebar save button.
+    savedSearches: 'Saved searches',
+    saveSearch: 'Save search',
+    saveSearchPrompt: 'Name this saved search',
+    savedSearchUpdate: 'Update condition from current filter',
+    savedSearchUpdated: 'Condition updated',
     posterCount: '$1 posters',
     posterPosts: '$1 posts',
     posterViewPosts: "View this poster's posts",

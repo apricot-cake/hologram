@@ -355,7 +355,7 @@ export function isManagerOpen() {
 export function openManager(opts?: { store?: CorpusFolderStore; onChange?: () => void } | null) {
   mgrStore = (opts && opts.store) || store;
   mgrAfter = (opts && opts.onChange) || (() => notify('list'));
-  mgrModel = { openId: ++mgrSeq, list: mgrStore.all() };
+  mgrModel = { openId: ++mgrSeq, list: managerList() };
   notifyMgr();
 }
 export function closeManager() {
@@ -364,9 +364,16 @@ export function closeManager() {
   mgrAfter = () => notify('list');
   notifyMgr();
 }
+// The manager edits folders, not saved searches: it creates them, renames them and
+// drag-reorders them among each other, none of which a saved search participates in
+// (its own rename/delete live on the sidebar row). The filter is a no-op for the
+// poster store, whose folders carry no kind.
+function managerList() {
+  return mgrStore.all().filter((f) => !isSavedSearch(f));
+}
 function refreshManager() {
   if (!mgrModel) return;
-  mgrModel = { ...mgrModel, list: mgrStore.all() };
+  mgrModel = { ...mgrModel, list: managerList() };
   notifyMgr();
 }
 export function getManager() {
@@ -407,17 +414,20 @@ export function all() {
 }
 
 // --- static (a named set of posts) vs dynamic (a saved search) ---
+// The one place that decides which is which; every surface that has to tell them
+// apart goes through this or the two lists below.
+export const isSavedSearch = (f: CorpusFolder) => f.kind === 'dynamic';
 // Only static folders can hold posts, so every surface that offers a folder as a
 // DESTINATION reads staticFolders(): the sidebar flyout rows (facets.ts), the
 // per-post 「フォルダに追加」 menu (post-grid-builder.ts) and the folder manager.
 // Auditing those three is enough — they are the only callers that enumerate the
 // store to pick a target.
 export function staticFolders() {
-  return store.allRaw().filter((f) => f.kind !== 'dynamic');
+  return store.allRaw().filter((f) => !isSavedSearch(f));
 }
 // Saved searches — the sidebar's own 保存した検索 group (never mixed in with folders).
 export function dynamicFolders() {
-  return store.allRaw().filter((f) => f.kind === 'dynamic');
+  return store.allRaw().filter(isSavedSearch);
 }
 
 // Folder view (第3モード): expose the store's CRUD so the grid can list every
