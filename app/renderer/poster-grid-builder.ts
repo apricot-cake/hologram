@@ -4,9 +4,9 @@
 // post-grid-builder.ts (V5): the poster grid's cell model + render pipeline, the
 // poster-folder CRUD (the poster-view named-folder store), the poster inspector
 // (recent works + tag/folder editing), and the poster context menu all move here.
-// Density/tile-size slider state (posterView/posterTileSize/posterCardSize,
-// posterSizeState/posterGridMetrics/refreshPosterSlider) stays in viewer.ts — V10
-// (Wave24) unifies it with the post-grid density slider into one shared module.
+// Density/tile-size state (posterView/posterTileSize/posterCardSize,
+// posterSizeState/posterGridMetrics) stays in viewer.ts — V10 (Wave24) unifies it
+// with the post-grid density state into one shared module.
 // postQB/posterQB instance construction (V1) and the qf-pop/filter-popover bridge
 // wiring (V4) also stay call-site-owned in viewer.ts; this module only takes their
 // already-built instances' methods as deferred-arrow deps (posterQB is constructed
@@ -55,11 +55,10 @@ export interface PosterGridBuilderDeps {
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
   closeDetail(): void;
   setInspectedKey(key: string | null): void;
-  // Density state (posterView) and the tile-size slider (refreshPosterSlider) stay
-  // viewer.ts-owned (V10/Wave24 territory) — renderPosters still needs to read/drive
-  // them, same as the old code did before this extraction.
+  // Density state (posterView) stays viewer.ts-owned (V10/Wave24 territory) —
+  // renderPosters still needs to read it, same as the old code did before this
+  // extraction.
   posterView(): string;
-  refreshPosterSlider(): void;
   syncBrowseBar(): void;
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
   // history + persists (#144) — the poster-mode mirror of the post grid's
@@ -154,9 +153,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');
     grid.classList.toggle('list-view', deps.posterView() === 'list');
     // (The #posterDensityToggle glass thumb is positioned by the toolbar island, not here.)
-    // Size slider: card + tile (auto-fill grids) have a size axis; list (full-width
-    // stack) doesn't. The track maps to column counts so every step reflows.
-    deps.refreshPosterSlider();
     if (posterList.length === 0) {
       empty.style.display = 'block';
       // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'

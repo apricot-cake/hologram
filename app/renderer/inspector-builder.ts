@@ -53,7 +53,6 @@ export interface InspectorBuilderDeps {
   // this module only gets the accessor pair, same shape as posterReturn above.
   getInspectedKey(): string | null;
   setInspectedKey(key: string | null): void;
-  refreshTileSlider(): void;
   getActiveTabId(): string | null;
   closeTab(id: string | null | undefined): void;
   // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer, V13/Wave27) — a
@@ -92,8 +91,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
 
   // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
-  // inspected-card ring can't outlive the panel that explains it. The grid's track is
-  // re-derived either way, since the column's width leaves or returns to the content area.
+  // inspected-card ring can't outlive the panel that explains it. The size track needs no
+  // poke here — the display popover computes it from the live grid width when it opens.
   panelSubscribe(() => {
     const open = panelIsOpen();
     if (!open) {
@@ -101,7 +100,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       deps.setInspectedKey(null); // grid/poster cells clear their own ring reactively (corpusStore subscribe)
     }
     byId('postGrid').classList.toggle('insp-open', open);
-    deps.refreshTileSlider();
   });
   function persistManual() {
     persistManualGroups(deps.getManualGroups());
