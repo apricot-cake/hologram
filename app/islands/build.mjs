@@ -43,7 +43,7 @@ const USE_SYNC_SHIM = path.join(here, '_shared', 'use-sync-external-store-shim.t
 // Array form (order matters: the more specific shim/index.js must precede shim).
 // The former `hologram-svc:NAME` regex (which folded the renderer service layer into
 // this bundle via bare specifiers) is gone — every service, shell.ts included, is
-// now imported by plain relative path (V18 item 7).
+// now imported by plain relative path.
 const USE_SYNC_WITH_SELECTOR_SHIM = path.join(here, '_shared', 'use-sync-external-store-with-selector-shim.ts');
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/with-selector.js', replacement: USE_SYNC_WITH_SELECTOR_SHIM },

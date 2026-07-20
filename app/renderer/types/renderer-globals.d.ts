@@ -70,7 +70,7 @@ interface HologramPostGroup {
 }
 
 // ---- renderer/selection.ts — the post-grid multi-select Set + shift-range
-// anchor (P4-B スライス⑬). hologramStore's 'selectedSet' key IS the state (no
+// anchor. hologramStore's 'selectedSet' key IS the state (no
 // closure copy); the anchor is a private module variable (no subscribers). A
 // real ES module (named exports) now — no ambient Window-shaped interface
 // needed. ----
@@ -177,7 +177,7 @@ interface HologramUndoRecord {
 }
 
 // ---- renderer/search-editing.ts — search box ↔ query-tree text-leaf state
-// machine + suggestion-pick handling (P4-B slice⑨). A real ES module (named
+// machine + suggestion-pick handling. A real ES module (named
 // exports) now — SearchEditingDeps is exported directly from search-editing.ts,
 // no ambient Window-shaped interface needed.
 
@@ -229,7 +229,7 @@ interface HologramFolderManagerModel {
 // popover bridges qf-pop / filter-popover) is a real ES module (named export) now —
 // its return type is inferred, so no ambient HologramCallbackBridge/HologramMakeBridge type.
 
-// renderer/store.ts is a real ES module now (Wave12) — get/set/subscribe are
+// renderer/store.ts is a real ES module now — get/set/subscribe are
 // imported directly by every consumer; no ambient HologramStore/Window merge
 // exists anywhere anymore. The old duplicated `interface Window { hologramSelection }`
 // (once the only Window-merge in this file) is gone too — selection.ts is a real

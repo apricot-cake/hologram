@@ -1,21 +1,21 @@
-// Tab-strip model source (P4-B slice⑯) — converts #tabBarInner off the old push
+// Tab-strip model source — converts #tabBarInner off the old push
 // (viewer.js built a full TabsModel via renderTabs() and pushed it to a shared
 // render bridge from ~15 call sites) to a PULLED source, the
 // same shape as the grid sources (renderer/grid.ts) and the image-tab source
-// (renderer/image-tab.ts, ⑮). viewer.js no longer holds tabs/activeTabId/
+// (renderer/image-tab.ts). viewer.js no longer holds tabs/activeTabId/
 // tabEditingId as closure state — hologramStore's 'tabs'/'activeTabId'/
 // 'tabEditingId' keys ARE the state now (the SAME "single source of truth" move
-// as selectedSet, ⑬); every renderTabs() call site is gone, its notification now
-// automatic through the store subscriptions below.
+// selection.ts made for selectedSet); every renderTabs() call site is gone, its
+// notification now automatic through the store subscriptions below.
 //
 // The ACTIVE tab's title/icon still need the LIVE filter state (not the tab's
 // persisted .state, which only updates on switch-away). postQB.shadow() was
-// deliberately never mirrored to the store (P4-B slice⑧: every read site calls
-// it directly, to avoid a second copy) — this recomputes the same thing from
+// deliberately never mirrored to the store (every read site calls it directly,
+// to avoid a second copy) — this recomputes the same thing from
 // what IS mirrored: query.ts's buildShadow(postQueryTree) is the exact function
 // postQB.shadow() calls internally. searchQuery/sortPost were already mirrored;
-// multiOnly is mirrored for the first time in this slice (viewer.ts, alongside
-// sortPost). allPostsCount (⑩) covers the tab title's item count.
+// multiOnly is mirrored for this source's sake (viewer.ts, alongside
+// sortPost). allPostsCount covers the tab title's item count.
 //
 // tabTitleOf itself stays viewer-constructed (tab-state.ts's makeTabLabels
 // with viewer's t/folderName/etc deps, which this file has no access to) —
@@ -24,8 +24,8 @@
 // sources' modelOf/keyOf/labels/onAspect).
 //
 // Tab bar EVENTS (click/contextmenu/keydown/…) stay wired through TabBarEvents
-// (App.tsx, P4-B slice④), which imports the handlers' live bindings from
-// viewer.ts directly — unchanged by this slice; this file only computes the
+// (App.tsx), which imports the handlers' live bindings from
+// viewer.ts directly — unchanged by this move; this file only computes the
 // model, it never mutates tab state.
 // Plain IIFE on window (like grid.ts / image-tab.ts); loaded BEFORE viewer.js.
 import { buildShadow } from './query.ts';
@@ -70,7 +70,7 @@ function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' {
 }
 
 // Mirrors what postQB.shadow() computes internally, from the SAME mirrored
-// tree (P4-B slice⑦ state-half) — no second shadow copy lives in the store.
+// tree (query-chips.ts's state half) — no second shadow copy lives in the store.
 function liveActiveState() {
   const tree = storeGet('postQueryTree');
   return {

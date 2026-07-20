@@ -2,8 +2,8 @@
 // `.tab-item[data-tab]` (+active/+pinned), `.tab-body > .tab-icon + .tab-title`,
 // optional `.tab-close[data-close]`, and a trailing `.tab-new` — so the delegated
 // handlers on #tabBarInner (click/auxclick/contextmenu/keydown/focusout) keep
-// firing. React renders; hologramStore owns tabs/activeTabId/editingId (P4-B
-// slice⑯), viewer.js owns their mutation + every event. (React also dodges the
+// firing. React renders; hologramStore owns tabs/activeTabId/editingId, viewer.js
+// owns their mutation + every event. (React also dodges the
 // old "a <button> can't contain the .tab-close button" HTML-parser hazard — it
 // builds the DOM via createElement.)
 

@@ -7,8 +7,8 @@ import { ImageTab } from './ImageTab.tsx';
 
 // React-owned image-tab detail view (#imageTabView). viewer.js owns the tab object
 // (type:'image') and its recs/idx; this island PULLS its model from renderer/image-tab.ts
-// instead of being pushed one — P4-B slice⑮ converted this off the old render(model)
-// push (viewer called it from ~8 call sites), the same shape as the grid sources (⑩/⑫).
+// instead of being pushed one — this was converted off the old render(model) push
+// (viewer called it from ~8 call sites), the same shape as the two grid sources.
 // This island still owns zoom/pan (react-zoom-pan-pinch), prev/next painting, and the
 // ←/→ keys while an image tab is the active view.
 

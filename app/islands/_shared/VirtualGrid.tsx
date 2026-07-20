@@ -138,8 +138,8 @@ export function VirtualGridHost({ model, cell }: { model: HologramGridModel; cel
 // (clip via modelOf; selection/inspected are separate hologramStore subscriptions inside
 // Cell); itemsKey changes reset the positioner.
 // bridge only needs get()/subscribe() (HologramGridSource) — both the post source
-// (P4-B slice⑩) and the poster source (slice⑫) satisfy it, plus their own
-// configure()/etc. that GridMount never touches.
+// and the poster source satisfy it, plus their own configure()/etc. that GridMount
+// never touches.
 export function GridMount({ bridge, containerId, hostId, renderHost }: { bridge: HologramGridSource; containerId: string; hostId: string; renderHost: (model: HologramGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {

@@ -192,8 +192,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // Tile overlay lives in the React settings island; this is the apply-and-persist
   // function it calls (islands/settings/ipc.ts's setTileOverlay imports the
-  // `applyTileOverlay` live binding below directly — V16/Wave30, no shared-bridge
-  // detour) so the post grid updates immediately.
+  // `applyTileOverlay` live binding below directly — no shared-bridge detour) so
+  // the post grid updates immediately.
   function applyTileOverlay(v: boolean) {
     tileOverlay = v;
     deps.hologramIpc.setPref('tileOverlay', tileOverlay);

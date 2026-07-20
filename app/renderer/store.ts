@@ -1,8 +1,8 @@
 // Shared renderer state store — a tiny external store both viewer.js (vanilla) and
 // the React islands read/write, so the in-progress React migration has ONE source
 // of truth while ownership of a region moves from viewer.js to React. Generalizes
-// the settings island's makeStore to be key-addressed. A real ES module now
-// (Wave12) — every consumer imports get/set/subscribe directly.
+// the settings island's makeStore to be key-addressed. A real ES module now —
+// every consumer imports get/set/subscribe directly.
 //
 // subscribe(key, cb) is useSyncExternalStore-compatible: it returns an unsubscribe.
 // Pass a function as the first arg to subscribe to ALL changes.

@@ -1,4 +1,4 @@
-// Subscribable posts data service (P4-B slice⑪) — the "allPosts changed" choke
+// Subscribable posts data service — the "allPosts changed" choke
 // point other services/islands can subscribe to, instead of only reaching allPosts
 // via a viewer.js push. allPosts ITSELF stays a viewer.js `let` (44 read sites
 // across the listing/grouping/filter pipeline — a full ownership move is out of

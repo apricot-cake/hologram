@@ -55,7 +55,7 @@ function diffValues(name, a, b) {
 // it (which needs window/navigator + is now invalid syntax for indirect eval anyway,
 // since it starts with the `export` keyword) — slice it off before eval, dropping
 // the window/navigator shims entirely. The `import { hologramIpc } from './ipc.ts'`
-// line that now sits just above the cut (Wave13) is ALSO invalid indirect-eval
+// line that now sits just above the cut is ALSO invalid indirect-eval
 // syntax (import declarations are Module-only, same restriction as export) — it's
 // dead weight in this slice anyway (MESSAGES never references hologramIpc), so strip
 // any import lines before eval rather than widen the cut point.

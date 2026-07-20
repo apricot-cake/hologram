@@ -1,7 +1,7 @@
 // The shared facet-chip query builder (改訂④) —
-// extracted from viewer.js's inline createQueryBuilder (P4-B スライス⑦ event半分).
+// extracted from viewer.js's inline createQueryBuilder (the event half).
 // One instance per bar (posts / posters). Owns the tree state, the cluster
-// view-model derivation, the mutation helpers, AND (since this slice) the
+// view-model derivation, the mutation helpers, AND (since that extraction) the
 // qbNodeMap + click/contextmenu DISPATCH — the query-chips island (React) now
 // derives its display purely by reading a cached model + calling dispatch(),
 // instead of viewer.js pushing a model into the island and delegating raw DOM

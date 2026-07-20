@@ -1,6 +1,6 @@
 // Bulk "add tags to selection" staging list — the single owner of the records/
 // tags/additive-flag staged while the tag-pop is open in mode:'bulk' (Issue #22;
-// P4-B スライス⑭ originally staged this for the now-retired edit-overlay.ts modal
+// this originally staged for the now-retired edit-overlay.ts modal
 // instead). These were previously plain viewer.js closure variables
 // (editingRecords/editTags/editAdditive) reachable only by re-pushing a fresh
 // model — now a dedicated module holds them, addressable directly instead of via

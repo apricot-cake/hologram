@@ -46,8 +46,8 @@ import { hologramImageTabSource } from './image-tab.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 
-// Boot readiness signal + the boot/subscription handlers below: real ES exports now
-// (Wave31/V17) instead of the old shared bridge — App.tsx's AppBoot/
+// Boot readiness signal + the boot/subscription handlers below: real ES exports now,
+// instead of the old shared bridge — App.tsx's AppBoot/
 // StoreSubscriptions import these directly. Declared here, at true module scope, so
 // `export` is legal; each is assigned once by the async IIFE below (viewerReady as
 // its very first synchronous statement, the handlers once everything they close
@@ -264,17 +264,17 @@ export function endFilterEditSession(): void {
   // Sidebar tooltip + its own <span> label, so the legacy [data-tip]/aria-label
   // written here stacked a SECOND .ui-tip chip on top of it on hover.
   // #filterRows row labels + the クリップ row / 空にする button (icon, tip, aria) are
-  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource (P4-B
-  // slice⑰; renderer/sidebar.ts) — no static setText here.
+  // rendered by the sidebar island, self-deriving from hologramPostSidebarSource
+  // (renderer/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
-  // ⓘ help) are the activebar island now, self-deriving from hologramStore (P4-B slice⑱;
-  // renderer/activebar.ts is gone — no bridge left) — no static setText here.
+  // ⓘ help) are the activebar island now, self-deriving from hologramStore
+  // (renderer/activebar.ts is gone — no bridge left) — no static setText here.
   // Density (post + poster) and the sort labels live in the display popover
   // (islands/shell/DisplayMenu.tsx); browse mode is the left sidebar's. All three
   // render from i18n themselves — no static setText here.
   // #posterFilterRows title + row labels are rendered by the poster sidebar island,
-  // self-deriving from hologramPosterSidebarSource (P4-B slice⑰; renderer/sidebar.ts). No
+  // self-deriving from hologramPosterSidebarSource (renderer/sidebar.ts). No
   // static setText here (mirror of the post-side #filterRows note above).
   // posterDateDim options / posterDateDimLabel / posterDateRangeLabel / posterDateApply /
   // posterDateClear are the filter-popover React island now — no static labels here.
@@ -283,7 +283,7 @@ export function endFilterEditSession(): void {
   // confirmOpen's config), so no static confirm setText here either.
 
   // #activebarLabel / #qbEmptyHint / #posterQbEmptyHint are the activebar island now,
-  // self-deriving from hologramStore + t() (P4-B slice⑱) — no static setText here.
+  // self-deriving from hologramStore + t() — no static setText here.
   // #filterRows titles/row names (フィルタ / 作品 / キャラ / タグ / ハッシュタグ …) are
   // rendered by the sidebar island, self-deriving from hologramPostSidebarSource — no
   // static setText here.
@@ -331,14 +331,14 @@ export function endFilterEditSession(): void {
   });
 
   // Leading type glyph for a query-builder chip (qcGlyph, imported above) moved
-  // to query-builder.ts along with the postQB/posterQB instance wiring — Wave15/V1.
+  // to query-builder.ts along with the postQB/posterQB instance wiring.
 
   const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
   // 全フィルタを一括リセット（アクティブフィルタバーの「リセット」）。検索・フォルダ・
   // 日付・エンゲージも含めて消す。afterQueryChange() が sidebar の active 状態も同期。
   // Assigned (not a hoisted declaration) so the module-scope `export let` above is what
-  // gets set — Activebar.tsx imports it directly now (Wave32/V17 continued).
+  // gets set — Activebar.tsx imports it directly now.
   resetAllFilters = function () {
     // No poster bounce anymore (#144 確定未決4: posterReturn 撤去) — a drill-in is a
     // history push now, so "back to the poster grid" is the ← button / Alt+←.
@@ -355,12 +355,12 @@ export function endFilterEditSession(): void {
     afterQueryChange();
   };
   // #postResetBtn / #navBackBtn / #navFwdBtn clicks are wired by the activebar island,
-  // which imports resetAllFilters/navBack/navForward directly (P4-B slice⑱ — no more
-  // pushed model callbacks) — the buttons are React-owned.
+  // which imports resetAllFilters/navBack/navForward directly (no more pushed model
+  // callbacks) — the buttons are React-owned.
   //
   // Back/forward through the per-tab view history (nav's state machine, the Alt+←/→ +
-  // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts —
-  // viewer.ts decomposition's V12 slice (Wave26); tabsCtl is constructed further below
+  // mouse-side-button handlers, and the tab bar/CRUD below) moved to tabs-builder.ts
+  // during the viewer.ts decomposition; tabsCtl is constructed further below
   // (after postQB/postGrid/browseMode/multiOnly are in scope) and its handlers are
   // assigned to the module-scope exports at that construction site.
 
@@ -378,8 +378,8 @@ export function endFilterEditSession(): void {
 
   // --- カテゴリ値フライアウト: サイドバーの行/タググループボタンの横に開く。
   // State (どのカテゴリが開いているか) + row-model building (qfValues — bespoke facet
-  // logic, unchanged) + pick routing moved to qf-pop-builder.ts (viewer.ts
-  // decomposition's V4 slice, Wave18) — the makeQfPop() call lives further down,
+  // logic, unchanged) + pick routing moved to qf-pop-builder.ts during the
+  // viewer.ts decomposition — the makeQfPop() call lives further down,
   // once postQB/posterQB/pfStore/buildUsers all exist (see near posterQB below).
   // Tag vocabulary / 種別 domain (tagKindOf/kindLabel/groupedTagVocab/
   // inspectorTagPickerData/posterTagsOf/posterFilterVocab) moved to tags.ts
@@ -400,15 +400,15 @@ export function endFilterEditSession(): void {
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
-  // Bound onto tags.ts's live bindings so renderer/sidebar.ts's pull sources (P4-B
-  // slice⑰) can read the SAME tagKindOf/posterFilterVocab this orchestrator instance uses —
+  // Bound onto tags.ts's live bindings so renderer/sidebar.ts's pull sources can read
+  // the SAME tagKindOf/posterFilterVocab this orchestrator instance uses —
   // both close over tags.ts's own getTagTypes()/getPosterTags(), so there's no second
   // implementation to drift.
   bindTagKindOf(tagKindOf);
   bindPosterFilterVocab(posterFilterVocab);
   // Shared 種別 (kind) menu (right-click a tag chip in the edit picker /
   // inspector / poster picker) — row model + pick/rename actions moved to
-  // kind-menu-builder.ts (V2 viewer.ts decomposition slice). Wired here (not
+  // kind-menu-builder.ts (a viewer.ts decomposition slice). Wired here (not
   // where it's first used) so tagKindOf/kindLabel/getMessage are all already in
   // scope — no TDZ workaround needed, unlike the old taggingApi indirection.
   const { showKindMenu } = makeKindMenu({ tagKindOf, kindLabel, t: getMessage });
@@ -444,7 +444,7 @@ export function endFilterEditSession(): void {
   // getter wiring as facets above (allPosts is a reassigned let; the getters only
   // run when a picker or homonym check fires).
   const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOf });
-  // onQfPick (value-pick → tree mutation) lives in qf-pop-builder.ts (V4/Wave18),
+  // onQfPick (value-pick → tree mutation) lives in qf-pop-builder.ts,
   // exposed as qfPop.pickValue for the filter bar — see the makeQfPop() call near
   // posterQB below (the flyout render/anchor half retired with its island, P2③).
 
@@ -456,12 +456,12 @@ export function endFilterEditSession(): void {
   // "+ フィルタ" bar's FormEditor now, and editing a chip re-opens it (P2③).
   // The single 'text' leaf bound to the search box (post mode only) is owned by
   // search-editing.ts, wired together with the rest of the search-box plumbing
-  // in search-box-builder.ts now (viewer.ts decomposition's V3 slice, Wave17) —
+  // in search-box-builder.ts now (a viewer.ts decomposition slice) —
   // see the makeSearchBox() call below.
 
   // --- Sidebar filter controls ---
   // (#filterRows row labels are rendered by the sidebar island, self-deriving from
-  // hologramPostSidebarSource (P4-B slice⑰). No static setText for プラットフォーム / 投稿 /
+  // hologramPostSidebarSource. No static setText for プラットフォーム / 投稿 /
   // メディア / 日付 / エンゲージメント here.)
 
   // Sidebar chip toggle (platform, postType, media)
@@ -490,7 +490,7 @@ export function endFilterEditSession(): void {
     // time, so a listener bound at load could miss it. Flips the group-level flag.
     if (closestOf(e, '#multiRow')) {
       multiOnly = !multiOnly;
-      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
+      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly
       renderPosts();
       return;
     }
@@ -503,8 +503,8 @@ export function endFilterEditSession(): void {
 
   // Update sidebar state — kept as a thin alias to renderQueryChips (its many call
   // sites keep their name) now that badges/tag-visibility are self-derived by
-  // renderer/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource (P4-B
-  // slice⑰; see that file for how postQueryTree/tags/folders/posts-data feed it).
+  // renderer/sidebar.ts's hologramPostSidebarSource/hologramPosterSidebarSource
+  // (see that file for how postQueryTree/tags/folders/posts-data feed it).
   function updateSidebarState() {
     // (#searchBox's has-value accent is owned by the searchbox island)
     renderQueryChips(); // 検索/フォルダ等の変化を下部アクティブバーへ即時反映
@@ -518,18 +518,18 @@ export function endFilterEditSession(): void {
   // tagGroups/tagTypes/tagLabels (種別・グループ語彙) + tagKindOf/kindLabel moved
   // to tags.js (hologramTags wiring above) — the P4 "状態→store" tags slice.
   // (Possibly custom) 作品/キャラ names + which tags carry a 種別 are read live by
-  // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's subscribe
-  // — P4-B slice⑰), so a 種別 rename or classification no longer needs an explicit
+  // renderer/sidebar.ts's sources now (hologramTags.onChange / posts-data.ts's
+  // subscribe), so a 種別 rename or classification no longer needs an explicit
   // re-derive here; the rest (palette section headers, kind menu, dot tooltips) already
   // read kindLabel() live too. Mutation + persistence for the kind menu itself
-  // live in kind-menu-builder.ts now (V2 slice); tagsSetTagKind below is only
+  // live in kind-menu-builder.ts now; tagsSetTagKind below is only
   // for maybeDistinguishHomonym's own direct write.
   const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // --- In-session Edit Undo/Redo ---
   // Records tag-edit operations so the user can undo bulk mistakes (Ctrl+Z / Ctrl+Shift+Z).
   // Linear stack, clears on restart. Deletions are NOT included (handled by trash).
   // Stack semantics + the orchestrator-owned apply callbacks/shortcut handler moved to
-  // undo-builder.ts — viewer.ts decomposition's V11 slice (Wave25). Constructed here
+  // undo-builder.ts — a viewer.ts decomposition slice. Constructed here
   // (its original spot) so pushUndo is ready in time for inspector/postGrid/posterGrid's
   // own deps below; postGrid/inspector/posterGrid are all declared later, so their
   // accessors are deferred forward references (same shape as inspector-builder.ts's
@@ -550,7 +550,7 @@ export function endFilterEditSession(): void {
 
   // --- State ---
   // allPosts/_postsById/loadPosts/renderPosts and the render-reuse guard moved to
-  // post-grid-builder.ts (Wave19/V5 "allPosts ownership transfer") — postGrid is
+  // post-grid-builder.ts (the "allPosts ownership transfer") — postGrid is
   // constructed below, after buildUsers/postQB are in scope.
   let browseMode = 'posts'; // 'posts' | 'posters' (what the content area browses) — per-tab now: the tab's current history entry decides (#144 確定未決3)
   let multiOnly = false; // show only items with more than one image
@@ -597,8 +597,8 @@ export function endFilterEditSession(): void {
   }
   storeSet('inspectedKey', null); // establish the initial value (store.get() is undefined otherwise)
   // Display density (card/tile/list) + tile/card/list size slider, for both the
-  // post grid and the poster grid, moved to grid-density-builder.ts — viewer.ts
-  // decomposition's V10 slice (Wave24). renderPosts/renderPosters are forward
+  // post grid and the poster grid, moved to grid-density-builder.ts during the
+  // viewer.ts decomposition. renderPosts/renderPosters are forward
   // references (declared later via postGrid/posterGrid below) — deferred arrows
   // the same TDZ-safe way every other service wiring in this file already works.
   const gridDensity = makeGridDensity({
@@ -611,7 +611,7 @@ export function endFilterEditSession(): void {
   const { tileThumbW, cardThumbW, listThumbW } = gridDensity;
   bindApplyTileOverlay(gridDensity.applyTileOverlay);
   // Post-grid selection state (Set + shift-range anchor) lives in
-  // renderer/selection.ts (P4-B slice⑬) — hologramStore's
+  // renderer/selection.ts — hologramStore's
   // 'selectedSet' key IS the state; the grid island's cells read it reactively.
   // --- Query builder: a boolean condition tree is the single source of truth ---
   // (改訂③: flat conditions you drag into parenthesised
@@ -621,27 +621,27 @@ export function endFilterEditSession(): void {
   // ALWAYS a root group (op 'and' by default). Each instance's `.shadow()` is a
   // derived flat shadow of the leaves (sidebar highlight / row badges / tab
   // title / counts) — postQB.shadow()/posterQB.shadow(), read fresh at each
-  // call site rather than mirrored into a separate module-level global (P4-B
-  // slice⑧; see the syncShadow comment below).
+  // call site rather than mirrored into a separate module-level global (see the
+  // syncShadow comment below).
   // The tree machinery + post-side predicates live in query.ts (imported above)
   // — the first "pure logic → service" extraction of the viewer decomposition.
   // Runtime couplings are injected here: collections/clips resolve through CF()
   // lazily (folders.js registers after this closure is built, and predicates only
   // run post-init), fuzzy text matching through search.ts's compile.
   // The shared facet-chip builder (改訂④) lives in
-  // query-chips.ts (P4-B スライス⑦ event半分): tree state, cluster view-model
+  // query-chips.ts (the event half): tree state, cluster view-model
   // derivation, qbNodeMap, and click/contextmenu dispatch all moved there — the
   // query-chips island reads a cached model + calls dispatch() directly instead
   // of viewer.js pushing a model and delegating raw DOM events. The postQB/
   // posterQB instance construction (predOf/glyph/createQueryBuilder ctx) itself
-  // moved to query-builder.ts (Wave15/V1); orchestrator.ts keeps the orchestration
+  // moved to query-builder.ts; orchestrator.ts keeps the orchestration
   // around a change (onChange/openLeafEditor/onClearSearch) since those still
   // reach into state (renderPosts, searchEditing, popovers) not yet extracted.
   // i18n strings the builder needs for labels/menus — query-builder.ts/
   // query-chips.ts have no access to orchestrator.ts's i18n binding, so getMessage
   // itself is passed in via ctx.t.
 
-  // The post-side builder instance. P4-B slice⑧: badge/tab-title/etc. reads used
+  // The post-side builder instance. Badge/tab-title/etc. reads used
   // to mirror the tree shadow into a module-level `activeFilters` global via an
   // onShadow callback; that global was a pure duplicate of postQB.shadow() (the
   // instance already exposes the same cached array) — every read site now calls
@@ -782,8 +782,8 @@ export function endFilterEditSession(): void {
 
   // --- Post grid: allPosts/_postsById/loadPosts/renderPosts, the render-reuse
   // guard, manualGroups/ungrouped/viewGroups/stickyRecs, the fold/card context
-  // menus, and the delete flow all live in post-grid-builder.ts now (Wave19/V5
-  // "allPosts ownership transfer" — the viewer.ts decomposition's biggest slice).
+  // menus, and the delete flow all live in post-grid-builder.ts now (the "allPosts
+  // ownership transfer" — the viewer.ts decomposition's biggest slice).
   // Everything still owned by this closure (density/view state, the inspector,
   // selection, tabs, poster view, boot orchestration) is injected below; several
   // are forward references (postQB/buildUsers/showDetail/renderPosters/…
@@ -867,7 +867,7 @@ export function endFilterEditSession(): void {
     filterLabel,
   });
   // Bound onto listing.ts's namedPosters live binding so renderer/sidebar.ts's poster
-  // source (P4-B スライス⑰) can read the same namedPosters() this orchestrator instance uses
+  // source can read the same namedPosters() this orchestrator instance uses
   // (poster-instance row disclosure) — see the hologramTags.tagKindOf note above for why
   // this is a bind, not a reimplementation.
   bindNamedPosters(namedPosters);
@@ -877,9 +877,9 @@ export function endFilterEditSession(): void {
   // below writes lastRenderedState via postGrid.setLastRenderedState.
   //
   // Nav history (browser-style back/forward), the hologramStore-backed tabs/
-  // activeTabId/tabEditingId accessors (P4-B slice⑯), and the tab bar CRUD/DOM
-  // handlers all moved to tabs-builder.ts — viewer.ts decomposition's V12 slice
-  // (Wave26). Image tabs moved to image-tab-builder.ts below — V13/Wave27's
+  // activeTabId/tabEditingId accessors, and the tab bar CRUD/DOM
+  // handlers all moved to tabs-builder.ts during the viewer.ts decomposition.
+  // Image tabs moved to image-tab-builder.ts below — that module's
   // scope — and receive tabsCtl's tab-state surface as deferred deps/direct
   // references (imageTabCtl is constructed just below, after tabsCtl).
   const tabsCtl = makeTabsController({
@@ -898,7 +898,7 @@ export function endFilterEditSession(): void {
     getMultiOnly: () => multiOnly,
     setMultiOnly: (v) => {
       multiOnly = v;
-      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly (P4-B slices⑯⑰)
+      storeSet('multiOnly', multiOnly); // mirror into the store — the sidebar/Tabs sources read it directly
     },
     searchQuery: () => searchQuery(), // makeSearchBox() is wired far below — deferred
     setSearchBoxValue: (v) => setSearchBoxValue(v),
@@ -926,8 +926,7 @@ export function endFilterEditSession(): void {
   const { getTabs, mutateTabs, getActiveTabId, setActiveTabId, nav, persistTabsDebounced, saveActiveTabState, closeTab } = tabsCtl;
   // The rest of tabsCtl's surface only ever gets read through the module-scope exports
   // above (App.tsx/Activebar.tsx import those directly) — assigned by property, not
-  // destructured, so there's no local same-named binding shadowing the `export let`s
-  // (Wave32/V17 continued).
+  // destructured, so there's no local same-named binding shadowing the `export let`s.
   navBack = tabsCtl.navBack;
   navForward = tabsCtl.navForward;
   handleShortcutNavKey = tabsCtl.handleShortcutNavKey;
@@ -944,7 +943,7 @@ export function endFilterEditSession(): void {
   // --- Image view ('image' history entries) — fit-to-screen detail view (Eagle 風) ---
   // The view/state cluster (showImageView/hideImageView/openImageEntry/
   // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
-  // image-tab-builder.ts (viewer.ts decomposition's V13 slice, Wave27; #144
+  // image-tab-builder.ts (a viewer.ts decomposition slice; #144
   // reworked the type:'image' TAB into an entry on the unified per-tab history).
   // showDetail/closeDetail (inspector-builder.ts) are declared far below —
   // deferred arrows the same TDZ-safe way postGrid's own showDetail/closeDetail
@@ -998,10 +997,10 @@ export function endFilterEditSession(): void {
   // Lightbox gallery items — built by records.js (makeGallery); the psimg URL
   // scheme stays orchestrator-owned via the injected fileSrc.
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
-  // renderer/image-tab.ts's pull source reuses the SAME gallery instance (P4-B slice⑮) —
+  // renderer/image-tab.ts's pull source reuses the SAME gallery instance —
   // configure() sets it once, same "invariant callbacks set once" shape as the grid sources.
   // onIndexChange/onToggleInspector/onCloseTab are the DI callbacks that replaced
-  // image-tab.ts's former dispatch through the old shared bridge (V13/Wave27, §5).
+  // image-tab.ts's former dispatch through the old shared bridge.
   hologramImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
     labels: { missing: getMessage('imgTabMissing'), closeTab: getMessage('imgTabCloseBtn'), prev: getMessage('lbPrev'), next: getMessage('lbNext'), info: getMessage('tipInfo') },
@@ -1088,7 +1087,7 @@ export function endFilterEditSession(): void {
   // かつ/または expression as the tags.
   // postFolderChips was retired (collections moved to the collections view); the クリップ
   // + 複数画像 row entries (active state, clip count) are self-derived now by
-  // renderer/sidebar.ts's hologramPostSidebarSource (P4-B slice⑰) — no orchestrator-side
+  // renderer/sidebar.ts's hologramPostSidebarSource — no orchestrator-side
   // re-render call needed after a clip/multi/folder mutation.
   // フォルダ管理の起動口はフライアウト下部の qf-pop フッターボタン（onManage→CF().openManager()）に統一。
   // 旧 #postFolderManage ボタンは HTML から撤去済み（デッドリスナーを削除）。
@@ -1102,8 +1101,8 @@ export function endFilterEditSession(): void {
 
   // toggleCardSelection/syncSelectionClasses/selectedRecords/clearSelection/
   // updateSelectionBar/groupSelected/toggleSelectAll/handleShortcutSelectAllKey/
-  // requestDeleteSelected/handleSelectionBarClick moved to selection-builder.ts —
-  // viewer.ts decomposition's V8 slice (Wave22). Constructed below, after the
+  // requestDeleteSelected/handleSelectionBarClick moved to selection-builder.ts
+  // during the viewer.ts decomposition. Constructed below, after the
   // inspector (needs its persistManual) — see selectionCtl.
 
   // requestDeleteGroup/executeDeleteGroup moved to post-grid-builder.ts (postGrid above).
@@ -1111,8 +1110,8 @@ export function endFilterEditSession(): void {
   // === Inspector (ℹ on a card): persistent right column / slide-over ===
   // Open/close chrome, the inline tag editor (add/toggle/adopt-source-tag +
   // homonym check), the group dissolve/regroup buttons, and the Esc/outside-click
-  // dismiss guards moved to inspector-builder.ts — viewer.ts decomposition's V7
-  // slice (Wave21). inspectedKey/setInspectedKey stay here — other not-yet-
+  // dismiss guards moved to inspector-builder.ts during the viewer.ts
+  // decomposition. inspectedKey/setInspectedKey stay here — other not-yet-
   // extracted clusters read/write them too (poster card click below, undo,
   // browse-mode switch) — inspector-builder.ts only gets the accessor pair.
   const inspector = makeInspector({
@@ -1219,11 +1218,11 @@ export function endFilterEditSession(): void {
   // --- Selection (click a card to select; the bar appears when 1+ are selected) ---
   // Wiring (selectionCtl, its listeners, toggleCardSelection/selectedRecords/
   // clearSelection/handleShortcutSelectAllKey) moved up next to the inspector —
-  // see the V8/Wave22 comment there.
+  // see the selection-builder.ts comment there.
 
   // handleShortcutSearchFocusKey (`/` or Ctrl/Cmd+K focuses the search box) moved
-  // to search-box-builder.ts's makeSearchBox() return — viewer.ts decomposition's
-  // V14 slice (Wave28), wired alongside the rest of that factory's output below.
+  // to search-box-builder.ts's makeSearchBox() return during the viewer.ts
+  // decomposition, wired alongside the rest of that factory's output below.
 
   // Deferred-render timers so a view/layout switch paints the segment (thumb + active)
   // FIRST, then runs the heavy grid render past a paint (optimistic UI). clearTimeout
@@ -1231,7 +1230,7 @@ export function endFilterEditSession(): void {
   let _browseRenderT: any = null;
   // Density is the display popover's (hologramStore 'view'); the
   // reaction (mirror into currentView, persist, re-render with a view transition)
-  // lives in grid-density-builder.ts now (V10/Wave24) — this just bridges React's
+  // lives in grid-density-builder.ts now — this just bridges React's
   // subscribe registration (StoreSubscriptions, App.tsx) to it.
   handleViewStoreChange = gridDensity.handleViewStoreChange;
 
@@ -1288,13 +1287,13 @@ export function endFilterEditSession(): void {
   // Cards derived from post author fields (buildUsers — no fetching). Click =
   // inspector (poster profile), double-click = jump to that poster's posts.
   // posterList itself is now poster-grid-builder.ts-internal state (exposed via
-  // getPosterList) — V6/Wave20.
+  // getPosterList).
   // posterSort ('count' | 'name' | 'date-desc' | 'date-asc') lives in hologramStore
   // 'sortPoster' (read via the listing dep getter above); a subscription below
   // re-renders on change.
   // Poster grid density + tile/card size slider (kept SEPARATE from the post-side
   // currentView — its masonry/tile/list layouts are bound to poster-card markup)
-  // lives in grid-density-builder.ts now (V10/Wave24), alongside the post-side
+  // lives in grid-density-builder.ts now, alongside the post-side
   // equivalent above. This just bridges React's subscribe registration
   // (StoreSubscriptions, App.tsx) to it.
   handlePosterViewStoreChange = gridDensity.handlePosterViewStoreChange;
@@ -1304,9 +1303,9 @@ export function endFilterEditSession(): void {
   // Poster grid/filter/inspector/folder cluster (posterWorkGroups, the named
   // poster-folder store, renderPosterFilterRows, renderPosters, openPosterPosts/
   // jumpToPoster, the poster inspector, and the poster context menu) moved to
-  // poster-grid-builder.ts — viewer.ts decomposition's V6 slice (Wave20). Density/
+  // poster-grid-builder.ts during the viewer.ts decomposition. Density/
   // tile-size slider state (posterView etc.) moved to grid-density-builder.ts
-  // (V10/Wave24, above). Wired BEFORE posterQB below (posterQB's construction
+  // (above). Wired BEFORE posterQB below (posterQB's construction
   // needs pfStore/posterFolderById from here as direct values, not deferred
   // arrows) — posterQB itself is only available to this builder as deferred
   // arrows (posterQBGetTree etc.), the mirror image.
@@ -1364,7 +1363,7 @@ export function endFilterEditSession(): void {
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
   // #posterActiveBar; sidebar rows are the entry points (like #filterRows for posts). ---
   // Poster leaf predicate — query.ts's makePosterPredOf (the mirror of postPredOf)
-  // is now called inside query-builder.ts's makePosterQueryBuilder (Wave15/V1);
+  // is now called inside query-builder.ts's makePosterQueryBuilder;
   // posterTagsOf (tags.js) and posterFolderById (pfStore) are passed in as deps,
   // both declared above so a direct ref is TDZ-safe. posterFilterLabel lives in
   // tab-state.js's makeTabLabels (destructured near filterLabel).
@@ -1372,9 +1371,9 @@ export function endFilterEditSession(): void {
   // the filter-popover island (P2③ タスク3); a poster date chip re-opens the filterbar
   // FormEditor now.
   // The poster-side builder instance (predOf/glyph/instance construction moved to
-  // query-builder.ts, Wave15/V1 — see that file's makePosterQueryBuilder).
+  // query-builder.ts — see that file's makePosterQueryBuilder).
   // transient (no tabs / nav history for posters); onChange → renderPosters
-  // (which redraws the rows + bar + grid). P4-B slice⑧: this used to also mirror
+  // (which redraws the rows + bar + grid). This used to also mirror
   // the tree shadow into a module-level `posterShadow` global via onShadow — that
   // global had zero readers (the poster sidebar model read posterQB.shadow()
   // directly, and now renderer/sidebar.ts's source reads the mirrored
@@ -1400,10 +1399,10 @@ export function endFilterEditSession(): void {
 
   // renderPosterFilterRows (the #posterFilterRows model's one orchestrator-side side
   // effect: pruning tag selections whose backing value disappeared) moved to
-  // poster-grid-builder.ts (V6/Wave20) along with the rest of the poster cluster —
+  // poster-grid-builder.ts along with the rest of the poster cluster —
   // destructured from posterGrid above.
 
-  // qf-pop value-pick routing — viewer.ts decomposition's V4 slice (Wave18), now just
+  // qf-pop value-pick routing — a viewer.ts decomposition slice, now just
   // the headless pick router for the filter bar (the value flyout + date/eng popover
   // retired with their islands, P2③ タスク3). Wired here (not where first used) so
   // postQB/posterQB/buildUsers are already real consts — no deferred-getter indirection,
@@ -1628,8 +1627,8 @@ export function endFilterEditSession(): void {
 
   // resetPosterFilters/renderPosters/hologramPosterGridSource.configure/
   // openPosterPosts/jumpToPoster/refreshPosterTagFields/refreshPosterFolderFields/
-  // applyPosterTagChange/showPosterDetail all moved to poster-grid-builder.ts
-  // (V6/Wave20). resetPosterFilters is read only through the module-scope export
+  // applyPosterTagChange/showPosterDetail all moved to poster-grid-builder.ts.
+  // resetPosterFilters is read only through the module-scope export
   // (Activebar.tsx imports it directly) — assigned by property, not destructured above,
   // to avoid shadowing it.
   resetPosterFilters = posterGrid.resetPosterFilters;
@@ -1658,8 +1657,8 @@ export function endFilterEditSession(): void {
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (u) openPosterPosts(u);
   });
-  // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts
-  // (V6/Wave20) — destructured (showPosterMenu) from posterGrid above.
+  // posterMenuItems/onPosterMenuPick/showPosterMenu moved to poster-grid-builder.ts —
+  // destructured (showPosterMenu) from posterGrid above.
   byId('posterGrid').addEventListener('contextmenu', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
@@ -1711,10 +1710,10 @@ export function endFilterEditSession(): void {
   // --- Search value source -----------------------------------------------------
   // hologramStore 'searchQuery' IS the search value; the searchbox island renders it
   // as a controlled Base UI Autocomplete input. The query-tree text-leaf state
-  // machine (search-editing.ts, Wave2), the suggestion-pick bridge to the
-  // searchbox island (searchbox.ts, Wave5), and the store plumbing/debounced
+  // machine (search-editing.ts), the suggestion-pick bridge to the
+  // searchbox island (searchbox.ts), and the store plumbing/debounced
   // re-render around them are wired together in search-box-builder.ts now
-  // (viewer.ts decomposition's V3 slice, Wave17). searchEditing itself stays a
+  // (a viewer.ts decomposition slice). searchEditing itself stays a
   // local const here — resetAllFilters (above) and postQB's onLeafMutated/
   // isEditingLeaf deps still reference it directly.
   const searchBox = makeSearchBox({
@@ -1812,8 +1811,8 @@ export function endFilterEditSession(): void {
 
   // --- Clear data ---
   // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
-  // enable the OK button — moved into post-grid-builder.ts's confirmClearAll (viewer.ts
-  // decomposition's V16 slice) since that's where postGrid.resetAll()/markPostsMutated()
+  // enable the OK button — moved into post-grid-builder.ts's confirmClearAll during the
+  // viewer.ts decomposition, since that's where postGrid.resetAll()/markPostsMutated()
   // already live; the React Danger section imports the confirmClearAll live binding
   // directly now instead of going through the old shared bridge.
 
@@ -1837,7 +1836,7 @@ export function endFilterEditSession(): void {
       postQB.render();
     }
     // The clip row / sidebar collection state (counts/active) self-derives from the
-    // hologramFolders.onChange subscription in renderer/sidebar.ts (P4-B slice⑰).
+    // hologramFolders.onChange subscription in renderer/sidebar.ts.
     if (kind === 'list') renderPosts(true); // folder created/deleted — refresh without anim
   };
   // Background fs-watch refresh (targeted via the changed-file hint). Registration
@@ -1862,7 +1861,7 @@ export function endFilterEditSession(): void {
     postGrid.setManualGroups(await loadManualGroups());
     await loadTags();
     // No sidebar seeding call needed here — renderer/sidebar.ts's sources compute their
-    // model on first get() (P4-B slice⑰), so both columns paint immediately with
+    // model on first get(), so both columns paint immediately with
     // whatever's already loaded and pick up badges/disclosure as data streams in.
     // initTabs adopts the persisted per-tab history and restores the active tab's
     // view state (mode included — #144: the current entry decides, the old

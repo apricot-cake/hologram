@@ -1,4 +1,4 @@
-// Sidebar model sources (P4-B slice⑰) — the two filter-row columns: the POST column
+// Sidebar model sources — the two filter-row columns: the POST column
 // (#filterRows: クリップ / フォルダ / プラットフォーム / … / タグ rows, their badges, the
 // 作品/キャラ progressive-disclosure rows, and the クリップ/複数画像 toggle states) and the
 // POSTER column (#posterFilterRows: プラットフォーム / 作品 / キャラ / タグ / サーバー / 日付
@@ -7,8 +7,8 @@
 // delegated click handlers on each container; the React islands own rendering the rows.
 //
 // Converted from a PUSHED bridge (viewer built a full model incl. labels and called
-// render()/renderPoster()) to a PULLED source, the same shape as the grid (⑩/⑫) /
-// image-tab (⑮) / tabs (⑯) sources: viewer no longer re-derives+pushes a model after
+// render()/renderPoster()) to a PULLED source, the same shape as the grid /
+// image-tab / tabs sources: viewer no longer re-derives+pushes a model after
 // every filter/tag/library mutation — this module derives it fresh on get(), reading
 // hologramStore keys (postQueryTree/posterQueryTree/multiOnly/qfCat) + the tags/folders/
 // posts-data/listing services directly. Labels are NOT part of the model — the islands

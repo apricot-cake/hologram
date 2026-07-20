@@ -7,12 +7,12 @@ import { navBack, navForward, resetAllFilters, resetPosterFilters } from '../../
 
 // The query-builder FRAME islands for #postActiveBar / #posterActiveBar — the chrome
 // AROUND the chips: nav 戻る/進む, the フィルター title, the empty-bar hint, the result
-// count, the リセット button, and the ⓘ help popover. Self-derived (P4-B slice⑱): every
+// count, the リセット button, and the ⓘ help popover. Self-derived: every
 // read-only field comes straight from hologramStore ('postQueryTree'/'posterQueryTree'/
 // 'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/'navCanForward' — all already
 // mirrored there by orchestrator.ts for other consumers) + t(); the 4 actions (nav/reset) import
-// navBack/navForward/resetAllFilters/resetPosterFilters directly (Wave32/V17 continued —
-// the old orchestrator bridge for these is gone). No more pushed model (the old
+// navBack/navForward/resetAllFilters/resetPosterFilters directly from orchestrator.ts —
+// the old orchestrator bridge for these is gone. No more pushed model (the old
 // renderer/activebar.ts bridge is gone too).
 //
 // The chips (#queryChips / #posterQueryChips) are their OWN island (query-chips) and keep

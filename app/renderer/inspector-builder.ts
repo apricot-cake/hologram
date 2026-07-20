@@ -54,7 +54,7 @@ export interface InspectorBuilderDeps {
   setInspectedKey(key: string | null): void;
   getActiveTabId(): string | null;
   closeTab(id: string | null | undefined): void;
-  // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer, V13/Wave27) — a
+  // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer) — a
   // getter since its value changes over the module's lifetime.
   imageTabShowing(): boolean;
 }

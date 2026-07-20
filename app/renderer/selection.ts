@@ -1,5 +1,5 @@
 // Selection state — the post-grid multi-select Set + shift-range anchor, extracted
-// as the single owner (P4-B スライス⑬). hologramStore's 'selectedSet' key IS the
+// as the single owner. hologramStore's 'selectedSet' key IS the
 // state (no separate closure Set to keep in sync): every mutation reads the
 // current Set via store.get('selectedSet'), builds a fresh Set (the
 // store's set() no-ops on === identity, and the grid island's Cell — see

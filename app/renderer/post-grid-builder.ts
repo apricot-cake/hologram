@@ -540,7 +540,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // enable the OK button — a stray click can't wipe everything. The confirm modal is
   // React-owned (confirm.ts / the confirm island); this just opens it with the keyword
   // gate + the wipe as its onOk. Was reached through the old shared bridge — the React
-  // Danger section now imports the confirmClearAll live binding below directly (V16).
+  // Danger section now imports the confirmClearAll live binding below directly.
   function confirmClearAll() {
     confirmOpen({
       message: deps.t('confirmClear'),

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom';
 import { getTip, getTipShown, hideTip, showTip, subscribeTip } from '../_shared/tip.ts';
 
-// TooltipHost — V18 §3: React owns the singleton .ui-tip div (portaled onto
+// TooltipHost — React owns the singleton .ui-tip div (portaled onto
 // document.body, replacing tip.ts's hand-rolled createElement/appendChild host)
 // plus the document-level [data-tip] delegation that used to be wired at module
 // load. tip.ts keeps the store + tipProps(); this island renders whatever it holds.

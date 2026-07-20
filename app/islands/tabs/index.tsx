@@ -3,7 +3,7 @@ import { hologramTabsSource } from '../../renderer/tabs.ts';
 import { Tabs } from './Tabs.tsx';
 
 // Presentational island for the tab strip (#tabBarInner) — lives under the single App
-// root. P4-B slice⑯ converts this off the old push (viewer.js built a TabsModel via
+// root. This was converted off the old push (viewer.js built a TabsModel via
 // renderTabs() and pushed it to a shared render bridge from ~15 call sites) to a
 // PULLED source (renderer/tabs.ts's hologramTabsSource), the same shape as the
 // grid/image-tab sources. viewer.js no longer owns the tabs array/activeTabId/

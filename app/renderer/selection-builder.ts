@@ -29,7 +29,7 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
-  // openTagPopForSelection lives in bulk-edit-builder.ts (V9/Wave23) — a
+  // openTagPopForSelection lives in bulk-edit-builder.ts — a
   // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
   openTagPopForSelection(anchorRect: HologramAnchorRect): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a

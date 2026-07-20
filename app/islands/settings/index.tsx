@@ -3,7 +3,7 @@ import { close as settingsClose, isOpen as settingsIsOpen, open as settingsOpen,
 
 // Settings modal — lives under the single App root now (SettingsHost is portaled into
 // #settingsRoot by app/App.tsx; the actual dialog renders through a Radix portal onto
-// document.body). The open/closed store moved to renderer/settings.ts (V18 §4) so
+// document.body). The open/closed store moved to renderer/settings.ts so
 // orchestrator.ts (the brand-bar gear) and the *-builder.ts Esc/shortcut guards can
 // call open()/close()/isOpen() directly instead of reading a global bridge. React
 // stays the source of truth through useSyncExternalStore, wired below into the OpenStore

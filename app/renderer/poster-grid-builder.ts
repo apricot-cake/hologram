@@ -54,9 +54,9 @@ export interface PosterGridBuilderDeps {
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
   closeDetail(): void;
   setInspectedKey(key: string | null): void;
-  // Density state (posterView) stays viewer.ts-owned (V10/Wave24 territory) —
-  // renderPosters still needs to read it, same as the old code did before this
-  // extraction.
+  // Density state (posterView) stays viewer.ts-owned (grid-density-builder.ts
+  // territory) — renderPosters still needs to read it, same as the old code did
+  // before this extraction.
   posterView(): string;
   // Fresh poster render → tabs-builder records a 'posters' entry on the per-tab
   // history + persists (#144) — the poster-mode mirror of the post grid's
@@ -82,7 +82,7 @@ function monoHue(seed: string): number {
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   const byId = (id: string) => document.getElementById(id) as HTMLElement;
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const GRID_ANIM_MS = 950; // mirrors post-grid-builder.ts's constant (kept in lockstep with that file's own copy — see its Wave19 note on the shared literal)
+  const GRID_ANIM_MS = 950; // mirrors post-grid-builder.ts's constant (kept in lockstep with that file's own copy)
 
   let posterList: HologramUserAgg[] = [];
   function getPosterList() {
@@ -118,7 +118,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // The poster-mode filter-row model (#posterFilterRows: row labels, per-row active-leaf
   // badge counts, 作品/キャラ/タグ/サーバー progressive-disclosure visibility, which flyout
   // row wears .qf-open) is self-derived by renderer/sidebar.ts's
-  // hologramPosterSidebarSource (P4-B slice⑰) — no viewer-side build+push.
+  // hologramPosterSidebarSource — no viewer-side build+push.
   // Poster sidebar filter rows: prune tag selections that no longer have a backing value
   // (poster removed/edited). The rows are React-owned; this is the ONE remaining side
   // effect (the shadow prune) — badges/disclosure/openCat all self-derive from the store.
@@ -128,7 +128,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   }
 
   // Poster query reset — the activebar island's #posterResetBtn calls this directly by
-  // importing the resetPosterFilters live binding from viewer.ts (P4-B slice⑱).
+  // importing the resetPosterFilters live binding from viewer.ts.
   function resetPosterFilters() {
     deps.posterQBResetTree();
     deps.setSearchBoxValue('');
@@ -144,7 +144,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 投稿者モードはクエリバー（postCount の常設先）を隠すので、件数はポスターコントロール
     // 側の #posterCount に出す（バー右端の件数と役割分担）。#posterCount + poster reset/empty
     // frame は activebar 島が 'posterGroups'/'posterQueryTree'/'searchQuery' から自己派生
-    // する（P4-B slice⑱・下の hologramStore.set('posterGroups', …) を購読）。
+    // する（下の hologramStore.set('posterGroups', …) を購読）。
     // Density: the classes style the CELLS (descendant selectors); the column
     // layout itself lives in the masonic model (pushPosterModel).
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');
@@ -152,7 +152,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (posterList.length === 0) {
       empty.style.display = 'block';
       // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'
-      // vs 'filtered' choice (P4-B slice⑫ — mirrors slice⑩'s allPostsCount). Only
+      // vs 'filtered' choice (mirrors the post grid's allPostsCount). Only
       // computed here (buildUsers() is the generation-cached poster roll-up — the
       // OLD code only ever called it in this branch too, so this preserves the
       // same laziness, not a new cost).
@@ -172,8 +172,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (!keepLimit) deps.onPosterRendered(); // per-tab history record + persist (#144 — posters entries ride the same stack)
   }
 
-  // React owns the poster cells (virtualized — hologramPosterGridSource,
-  // P4-B slice⑫); viewer.js keeps posterList, the count badge, the density
+  // React owns the poster cells (virtualized — hologramPosterGridSource);
+  // viewer.js keeps posterList, the count badge, the density
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
   // highlight is NOT part of this model — the island derives its own ring from
   // hologramStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw

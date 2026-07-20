@@ -4,7 +4,7 @@
 // tabs.json (de)serialization pair) stay in tab-state.ts untouched —
 // this module is their consumer, replacing viewer.ts's inline wiring, plus
 // the hologramStore-backed tabs/activeTabId/tabEditingId accessors (former
-// viewer.ts locals, P4-B slice⑯) and the tab-bar DOM event handlers.
+// viewer.ts locals) and the tab-bar DOM event handlers.
 //
 // The image view cluster (showImageView/hideImageView/openImageEntry/
 // setImageTabIndex/toggleImageTabInspector/closeImageTab/addImageTab) lives in
@@ -75,7 +75,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
 
-  // --- hologramStore-backed tab list (tabs/activeTabId/tabEditingId — P4-B slice⑯) ---
+  // --- hologramStore-backed tab list (tabs/activeTabId/tabEditingId) ---
   const getTabs = (): HologramTab[] => storeGet('tabs') || [];
   const setTabs = (arr: HologramTab[]) => storeSet('tabs', arr);
   function mutateTabs(fn: (arr: HologramTab[]) => HologramTab[] | undefined) {
@@ -231,7 +231,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     onChange: updateNavButtons,
   });
   // The nav 戻る/進む disabled state used to be part of a pushed activebar model; the
-  // activebar island now self-derives everything else from hologramStore (P4-B slice⑱), but
+  // activebar island now self-derives everything else from hologramStore, but
   // nav's canBack/canForward live in a closure (the history stack), not the store — so this
   // is the one remaining mirror-on-change (same shape as multiOnly/qfCat elsewhere).
   function updateNavButtons() {
@@ -326,7 +326,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
   }
   // Model derivation (title/icon/editing state) lives in renderer/tabs.ts's
-  // hologramTabsSource (P4-B slice⑯) — it pulls from the SAME hologramStore keys
+  // hologramTabsSource — it pulls from the SAME hologramStore keys
   // every mutation below writes (tabs/activeTabId/tabEditingId, plus
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount for the active
   // tab's derived title), so nothing here builds a model or pushes one. The

@@ -12,7 +12,7 @@
 // tagGroups/posterTags moved here as the service's single source of truth,
 // with mutators (setTagKind/setKindLabel/setTagGroups/setPosterTags/
 // applyPosterTagRecords) that persist to disk and notify subscribers via
-// onChange — the "subscribable tags service" named in the P4-B roadmap.
+// onChange, making this the "subscribable tags service".
 // viewer.js keeps the surrounding business logic (undo recording, inspector
 // refresh, confirm-gated homonym distinction) and calls these mutators
 // instead of mutating the maps itself. Nobody subscribes via onChange yet

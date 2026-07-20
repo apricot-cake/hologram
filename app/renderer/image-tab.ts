@@ -1,10 +1,10 @@
-// Image-tab model source (P4-B slice⑮) — converts #imageTabView off the old push
+// Image-tab model source — converts #imageTabView off the old push
 // (viewer.js built the React model and called render(model) on it from ~8 call
 // sites: showImageTab / hideImageTabView / index step / inspector toggle /
 // library refresh) to a PULLED source, the same shape as the grid sources
-// (renderer/grid.ts, ⑩/⑫). viewer.js writes only the tab IDENTITY into hologramStore's
-// 'activeImageTab' (id/recs/idx — the one slice of tab state migrated ahead of the
-// full tabs→store move in ⑯); get() derives everything else: the gallery items (via
+// (renderer/grid.ts). viewer.js writes only the tab IDENTITY into hologramStore's
+// 'activeImageTab' (id/recs/idx — the one piece of tab state migrated ahead of the
+// full tabs→store move); get() derives everything else: the gallery items (via
 // hologramRecords.imageTabGroup, crossed with posts-data.ts so a deleted post
 // degrades to the missing state live with no viewer push — exactly what
 // posts-data.ts's doc comment anticipated) and inspectorOpen (hologramStore's

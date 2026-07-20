@@ -14,7 +14,7 @@ declare module '*.css' {}
 
 // The former `declare module 'hologram-svc:*'` ambient is gone: the barrel
 // (app/index.tsx) imports the renderer service layer by plain relative path now
-// (V18 item 7 removed the last bare-specifier alias), so tsc resolves the real
+// (the last bare-specifier alias is gone), so tsc resolves the real
 // modules directly. The service .ts files are type-checked in this same program
 // (merged 2026-07-09 into one tsconfig.json), via the `renderer/**/*` include.
 
@@ -22,7 +22,7 @@ declare global {
   type HologramUnsubscribe = () => void;
 
   // ---- renderer/store.ts — key-addressed external store (viewer ⇄ islands). A
-  // real ES module now (Wave12) — get/set/subscribe are imported directly by
+  // real ES module now — get/set/subscribe are imported directly by
   // every consumer; no ambient Window-shaped interface needed here. ----
 
   // ---- renderer/i18n.ts — hologramI18n resolves after prefs are read. Data-shape
@@ -52,7 +52,7 @@ declare global {
   // Sidebar/PosterSidebar import getTagLabels directly, so no ambient partial
   // interface is needed here anymore.
 
-  // ---- orchestrator.ts — its old shared bridge is gone (Wave31/Wave32, V17). Every
+  // ---- orchestrator.ts — its old shared bridge is gone. Every
   // method it used to carry (global shortcuts, inspector-dismiss, tab-bar events,
   // store/IPC subscription handlers, boot, nav/reset) is now a real ES export that
   // App.tsx/Activebar.tsx import directly — no ambient Window-shaped interface
@@ -62,8 +62,8 @@ declare global {
   // directly, so no ambient partial interface is needed here anymore.
 
   // ---- renderer/selection.ts — a real ES module now (named exports); SelectionBar
-  // (P4-B slice⑱) imports isAllSelected/selectedGroups directly instead of
-  // re-deriving allSelected/groupDisabled itself.
+  // imports isAllSelected/selectedGroups directly instead of re-deriving
+  // allSelected/groupDisabled itself.
 
   // ---- preload.cts — the full contextBridge IPC surface (window.hologram). The
   // type is exported by the implementation itself (typeof the exposed api object,
@@ -74,9 +74,9 @@ declare global {
   // electron types. ----
   type HologramPreload = import('../../preload.cts').HologramPreload;
 
-  // ---- renderer/grid.ts — a PULLED model source per virtualized grid (P4-B
-  // slice⑩ post, slice⑫ poster — both converted off the old push bridge; nothing
-  // instantiates a push bridge anymore). viewer.js still builds items/layout
+  // ---- renderer/grid.ts — a PULLED model source per virtualized grid (post and
+  // poster were both converted off the old push bridge; nothing instantiates a
+  // push bridge anymore). viewer.js still builds items/layout
   // inputs, but writes them to hologramStore instead of calling a render()/patch()
   // method — the source derives the model itself. `paint` is internal (bumped on
   // every get() so a fresh object ref reaches React even when field VALUES repeat).
@@ -107,22 +107,22 @@ declare global {
     subscribe(cb: () => void): HologramUnsubscribe;
   }
 
-  // ---- renderer/posts-data.ts — P4-B slice⑪: the "allPosts changed" choke point.
+  // ---- renderer/posts-data.ts — the "allPosts changed" choke point.
   // A real ES module (named exports) now — no ambient Window-shaped interface
   // needed.
 
-  // ---- renderer/image-tab.ts — P4-B slice⑮: converts the image-tab detail view
+  // ---- renderer/image-tab.ts — converts the image-tab detail view
   // (#imageTabView) off the old push (viewer.js built a full model and called
   // render(model) on it from ~8 call sites) to a PULLED source, same shape as
-  // the grid sources (⑩/⑫). viewer.js writes only the tab identity (hologramStore's
-  // 'activeImageTab' — id/recs/idx, the one slice of tab state migrated ahead of
-  // the full tabs→store move in ⑯) + still owns 'inspectedKey' (state→store
+  // the two grid sources. viewer.js writes only the tab identity (hologramStore's
+  // 'activeImageTab' — id/recs/idx, the one piece of tab state migrated ahead of
+  // the full tabs→store move) + still owns 'inspectedKey' (state→store
   // phase); get() crosses both with posts-data.ts (library changes — a deleted
   // post degrades to the missing state live with no viewer push, exactly what
   // the posts-data.ts comment above anticipated). Commands (index step /
   // inspector toggle / close tab) dispatch back to viewer.ts via configure()
-  // callbacks (DI'd off its old shared bridge in V13/Wave27) —
-  // this file only computes, it never mutates tab state. A real ES module
+  // callbacks (DI'd off its old shared bridge when image-tab-builder.ts was
+  // extracted) — this file only computes, it never mutates tab state. A real ES module
   // (named export `hologramImageTabSource`) now — no ambient Window-shaped
   // interface needed for it (HologramImageTabModel stays: the shared data shape
   // between image-tab.ts and this island).
@@ -137,7 +137,7 @@ declare global {
     onCloseTab?(): void;
   }
 
-  // ---- renderer/tabs.ts — P4-B slice⑯: converts the tab strip (#tabBarInner) off
+  // ---- renderer/tabs.ts — converts the tab strip (#tabBarInner) off
   // the old push (viewer.js built a TabsModel via renderTabs() and pushed it to a
   // shared render bridge from ~15 call sites) to a PULLED source, same
   // shape as the grid/image-tab sources. viewer.js no longer owns tabs/
@@ -320,7 +320,7 @@ declare global {
     [extra: string]: any;
   }
 
-  // ---- renderer/sidebar.ts — the two filter-row columns (P4-B slice⑰: converted
+  // ---- renderer/sidebar.ts — the two filter-row columns (converted
   // from a PUSHED bridge — viewer built a full model incl. labels and called
   // render()/renderPoster() — to a PULLED source, same shape as the grid/image-tab/
   // tabs sources. Labels are NOT in the model: the islands resolve their own static
@@ -358,15 +358,15 @@ declare global {
   // deleted — no callers left, same as renderer/empty.ts below). ----
 
   // ---- #emptyState placeholder — viewer keeps the container's show/hide + the
-  // delegated CTA click handler; EmptyState.tsx (P4-B slice⑩/⑫) derives the
+  // delegated CTA click handler; EmptyState.tsx derives the
   // variant itself from hologramStore instead of a pushed bridge (the old
   // renderer/empty.js bridge was deleted — no callers left). ----
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun';
 
   // ---- the query-builder FRAME (#postActiveBar / #posterActiveBar): nav 戻る/進む,
   // フィルター title, empty hint, result count, リセット, and the ⓘ help popover. viewer
-  // keeps only the container reveal + --activebar-h measurement; ActivebarHost (P4-B
-  // slice⑱) derives everything else itself from hologramStore ('postQueryTree'/
+  // keeps only the container reveal + --activebar-h measurement; ActivebarHost
+  // derives everything else itself from hologramStore ('postQueryTree'/
   // 'posterQueryTree'/'searchQuery'/'postGroups'/'posterGroups'/'navCanBack'/
   // 'navCanForward') + t(), and imports navBack/navForward/resetAllFilters/
   // resetPosterFilters directly for the actions (the old renderer/activebar.ts push
@@ -417,7 +417,7 @@ declare global {
     onConfirmText(): void;
   }
 
-  // ---- renderer/settings.ts / renderer/lightbox.ts — real ES modules now (V18 §4),
+  // ---- renderer/settings.ts / renderer/lightbox.ts — real ES modules now,
   // imported directly by their islands and by orchestrator.ts / the *-builder.ts
   // modules — no ambient Window-shaped interface needed.
 

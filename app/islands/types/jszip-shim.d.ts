@@ -1,6 +1,6 @@
 // Minimal type shim for the 'jszip' import in the browser bundle (orchestrator.ts /
-// Data.tsx's ZIP-import handlers), redirected here via tsconfig.json's `paths` (2026-07-11,
-// V18 §7). jszip's own DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
+// Data.tsx's ZIP-import handlers), redirected here via tsconfig.json's `paths`
+// (2026-07-11). jszip's own DefinitelyTyped .d.ts carries `/// <reference types="node" />`,
 // which pulls Node's globals into this browser-only TS program and shadows the DOM lib's
 // setTimeout/setInterval (number) with NodeJS.Timeout — breaking unrelated renderer code
 // that assigns a timer id to a `number`-typed local. Only the surface actually used here

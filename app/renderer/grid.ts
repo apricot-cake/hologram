@@ -10,7 +10,7 @@
 
 import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 //
-// P4-B slice⑩ (post) and slice⑫ (poster) converted both grids from a PUSHED
+// Both grids (post and poster) were converted from a PUSHED
 // bridge (viewer calls render()/patch() with a full model) to a PULLED source
 // (viewer only writes items/layout into hologramStore; the source derives the rest
 // on get()). GridMount (_shared/VirtualGrid.tsx) only ever calls .get()/.subscribe()
@@ -29,7 +29,7 @@ import { get as storeGet, subscribe as storeSubscribe } from './store.ts';
 type PostGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; labels: any; onAspect(cap: string, ar: string): void };
 type PosterGridConfig = { modelOf(item: any, i: number): any; keyOf(item: any, i: number): string | number | null | undefined; tagTitle: string };
 
-// Post grid model source (P4-B slice⑩): items come from hologramStore('postGroups'),
+// Post grid model source: items come from hologramStore('postGroups'),
 // layout is derived from hologramStore('view'/'cardSize'/'tileSize'/'listThumb')
 // using the same formulas renderPosts() used to compute inline. configure() sets
 // the invariant callbacks once (modelOf/keyOf/labels/onAspect never change
@@ -100,7 +100,7 @@ function makePostGridSource() {
 }
 export const hologramPostGridSource = makePostGridSource();
 
-// Poster grid model source (P4-B slice⑫): same shape as the post source, minus
+// Poster grid model source: same shape as the post source, minus
 // onAspect (poster avatars don't report a learned aspect ratio) and minus a
 // live-drag override — the poster size slider already commits hologramIpc.setPref
 // on every 'input' tick (renderer/orchestrator.ts's setupPosterSizeSlider has no

@@ -8,10 +8,9 @@ import { get as storeGet, subscribe as storeSubscribe } from '../../renderer/sto
 // from i18n keys here (the island owns them), so no static text set-up in viewer races
 // us on a language reload.
 //
-// P4-B slice⑩ (post) and slice⑫ (poster) folded BOTH variants into self-derived
-// selectors — hologramStore already carries everything needed reactively — instead
-// of a viewer push. The old shared push bridge has no callers left anywhere and
-// was deleted.
+// BOTH variants (post and poster) are folded into self-derived selectors —
+// hologramStore already carries everything needed reactively — instead of a viewer
+// push. The old shared push bridge has no callers left anywhere and was deleted.
 const subPostGroups = (cb: () => void) => storeSubscribe('postGroups', cb);
 const getPostGroups = () => storeGet('postGroups') as any[] | null | undefined;
 const subAllPostsCount = (cb: () => void) => storeSubscribe('allPostsCount', cb);

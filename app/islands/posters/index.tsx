@@ -4,8 +4,8 @@
 // modelOf), and ALL event delegation on #posterGrid (click → info/tag/open,
 // contextmenu → menu). Host attach/detach + flushSync semantics live in the
 // shared GridMount (_shared/VirtualGrid.tsx). Rendered under the single App root
-// (app/App.tsx renders <PosterGrid/>). P4-B slice⑫: the source is PULLED
-// (hologramStore-derived), not pushed — see renderer/grid.ts.
+// (app/App.tsx renders <PosterGrid/>). The source is PULLED (hologramStore-derived),
+// not pushed — see renderer/grid.ts.
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
 import { hologramPosterGridSource } from '../../renderer/grid.ts';

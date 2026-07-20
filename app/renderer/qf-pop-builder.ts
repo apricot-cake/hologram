@@ -4,8 +4,8 @@
 // add/remove routing that maps a picked value to the right query-builder mutation.
 // The filterbar island (islands/filterbar/ValueEditor) calls pickValue() from its
 // own Popover, so this stays the single source of the "a value was picked → mutate
-// the tree" logic for BOTH the post and poster trees. Extracted from viewer.ts as
-// the decomposition's V4 slice (Wave18); the flyout half retired 2026-07-18.
+// the tree" logic for BOTH the post and poster trees. Extracted from viewer.ts
+// during its decomposition; the flyout half retired 2026-07-18.
 
 export interface QfPopDeps {
   postShadow(): { type: string; value?: string }[];

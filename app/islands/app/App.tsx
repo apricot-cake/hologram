@@ -138,7 +138,7 @@ function ModalChrome() {
 // focus, content-size step). React now owns the DOM listener registration (mounted
 // once for the app's lifetime); each handler's guard + action logic is unchanged and
 // stays in orchestrator.ts, imported directly as a live binding — "cut out and rewire", not
-// reimplemented (Wave32/V17 continued). No boot-readiness guard needed, same reasoning
+// reimplemented. No boot-readiness guard needed, same reasoning
 // as handleFolderChange/handlePostsChanged below: these only ever fire on a real
 // keydown/mouseup, and orchestrator.ts's IIFE assigns the real functions well before a human
 // (or a CDP test) can produce one.
@@ -167,9 +167,9 @@ function GlobalShortcuts() {
 // Esc-priority dismiss for the image-tab detail view. Must run in the CAPTURE phase (ahead
 // of the overlays/popovers it checks for) — a different phase than GlobalShortcuts'
 // bubble-phase keydown, so this stays a separate effect/component rather than merging into
-// it. Handler + guard logic lives in inspector-builder.ts (moved there in Wave21/V7, ahead
-// of this wave), imported directly as a live binding, same "cut out and rewire" as
-// GlobalShortcuts.
+// it. Handler + guard logic lives in inspector-builder.ts (moved there when that module was
+// extracted out of orchestrator.ts), imported directly as a live binding, same "cut out and
+// rewire" as GlobalShortcuts.
 //
 // The outside-click listener shares this effect again (#259): the inspector has a
 // slide-over form once more at narrow widths, and waving it away with a click on the
@@ -235,8 +235,8 @@ function TabBarEvents() {
 // for the app's lifetime). The store/search-mode handlers are guard+action logic that
 // still lives in orchestrator.ts, imported directly as live bindings — "cut out and
 // rewire", same as the other App.tsx-level effects and handleFolderChange/
-// handlePostsChanged below (Wave31/V17, extended to the rest of this effect in Wave32 —
-// no bridge needed once orchestrator.ts exports them as real bindings). hologramStore
+// handlePostsChanged below — no bridge is needed once orchestrator.ts exports them as
+// real bindings. hologramStore
 // subscriptions return an unsubscribe (useSyncExternalStore-compatible) and get one on
 // cleanup; hologramFolders.onChange and hologramPosts.onPostsChanged don't (subs.push / raw
 // ipcRenderer.on) — harmless, since this effect never actually unmounts in this
