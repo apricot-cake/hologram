@@ -14,6 +14,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PanelLeftIcon } from 'lucide-react';
+import type { PanelResize } from '@/shell/use-panel-resize.ts';
 
 // Upstream persists `open` to a sidebar_state cookie for Next.js to read back during SSR.
 // Dropped here (#149): there is no server, and the renderer is a file:// document, where
@@ -187,7 +188,10 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear',
+          // in-data-[resizing]:transition-none (#30) — the 200ms width animation is what
+          // makes the collapse read as one motion, but during a drag it puts the panel
+          // 200ms behind the pointer. AppShell marks the wrapper for the gesture.
+          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear in-data-[resizing=true]:transition-none',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset' ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]' : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon)',
@@ -197,7 +201,7 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex',
+          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear in-data-[resizing=true]:transition-none data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex',
           // Adjust the padding for floating and inset variants.
           variant === 'floating' || variant === 'inset' ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]' : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
           className,
@@ -234,7 +238,21 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
   );
 }
 
-function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
+// FORKED FROM UPSTREAM (#30): the rail gains drag-to-resize.
+//
+// Upstream ships it as a toggle whose cursor is already `w-resize` — it looks like it
+// resizes the sidebar and does not, because shadcn has no resize story for Sidebar at
+// all (three open discussions, no maintainer answer; no official block does it). Pass
+// `resize` (from usePanelResize) and the rail becomes a window splitter instead:
+// drag = resize, double-click = default width. Without the prop it is upstream's
+// toggle, unchanged.
+//
+// The two roles are not combined, because click-to-toggle and double-click-to-reset
+// fight: a double click delivers two clicks first, so the panel would collapse and
+// reopen before the reset lands. Corpus never mounted the rail as a toggle, so there
+// is nothing to keep — collapsing stays with SidebarTrigger and Ctrl+B, and the rail
+// is the resize edge, as it is in VS Code (sash) and Lightroom.
+function SidebarRail({ className, resize, ...props }: React.ComponentProps<'button'> & { resize?: PanelResize }) {
   const { toggleSidebar } = useSidebar();
 
   return (
@@ -243,10 +261,14 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
       data-slot="sidebar-rail"
       aria-label="Toggle Sidebar"
       tabIndex={-1}
-      onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      onClick={resize ? undefined : toggleSidebar}
+      title={resize ? resize.handleProps['aria-label'] : 'Toggle Sidebar'}
+      {...resize?.handleProps}
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2',
+        // `transition-all` animates the collapse; during a drag it would also smooth the
+        // rail's own position, so it would trail the pointer. The wrapper carries
+        // data-resizing for the length of the gesture (AppShell) and takes it off.
+        'absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear in-data-[resizing=true]:transition-none group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
         'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar',
@@ -527,6 +549,9 @@ function SidebarMenuSubButton({
 }
 
 export {
+  // #30 reads the default width from here rather than repeating "16rem": the
+  // double-click reset and the component have to mean the same number.
+  SIDEBAR_WIDTH,
   Sidebar,
   SidebarContent,
   SidebarFooter,

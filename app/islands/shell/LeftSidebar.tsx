@@ -11,7 +11,8 @@
 import { Folder, LayoutGrid, Search, Settings, Users } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
+import type { PanelResize } from './use-panel-resize.ts';
 import { MirrorStatus } from '../mirror/MirrorStatus.tsx';
 import { t } from '../_shared/i18n.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -55,7 +56,7 @@ const getPostTree = () => storeGet('postQueryTree') as CorpusQueryGroup | undefi
 // compares equal to a freshly built one (the compile memos are the only difference).
 const treeKey = (tree: CorpusQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
 
-export function LeftSidebar() {
+export function LeftSidebar({ resize }: { resize?: PanelResize }) {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
   const isPosters = mode === 'posters';
   const allFolders = useFolders();
@@ -186,6 +187,10 @@ export function LeftSidebar() {
           <MirrorStatus />
         </span>
       </SidebarFooter>
+      {/* The column's drag edge (#30). Passed in rather than read from context: only
+          the shell knows whether the sidebar is a column right now or a slide-over,
+          and the handle exists only in the first case. */}
+      {resize && <SidebarRail resize={resize} />}
     </Sidebar>
   );
 }

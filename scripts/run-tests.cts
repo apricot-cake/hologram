@@ -39,6 +39,7 @@ const TESTS = [
   'test-tabstate-unit',
   'test-listing-unit',
   'test-geometry-unit',
+  'test-panelwidth-unit',
   'test-format-unit',
   'test-undo-unit',
   'test-migrate-unit',

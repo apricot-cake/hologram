@@ -19,9 +19,14 @@
 // - The right inspector keeps the legacy #postDetail element: its .inspector CSS
 //   already implements the #143 model (wide = fixed 320px column, narrow = slide-over),
 //   so P1 inherits that behavior; the content is reworked in P2⑦.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import type { CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { SIDEBAR_WIDTH, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { t } from '../_shared/i18n.ts';
+import { InspectorRail } from './InspectorRail.tsx';
+import { type PanelResize, resolveCssLength, usePanelResize } from './use-panel-resize.ts';
+import { LIMITS, type PanelKey, cachedWidth, clampWidth, loadWidth, persistWidth } from '../../renderer/panel-width-pref.ts';
 import { isOpen as inspectorIsOpen, load as inspectorLoad, subscribe as inspectorSubscribe } from '../../renderer/inspector-panel.ts';
 import { isWide as isWideLayout, subscribe as layoutSubscribe } from '../../renderer/layout-mode.ts';
 import { get as storeGet, set as storeSet, subscribe as storeSubscribe } from '../../renderer/store.ts';
@@ -77,8 +82,81 @@ function useSidebarOpen(): [boolean, (open: boolean) => void] {
   return [open, choose];
 }
 
+// A panel's width, on the same two tiers as the open/closed state above (cache first,
+// config.json reconciled a tick later). The default is a thunk rather than a number so
+// it can be measured from the component's own token — see resolveCssLength.
+function usePanelWidth(key: PanelKey, defaultWidth: () => number): { width: number; fallback: number; commit: (px: number) => void } {
+  // Measured once, on first render — before any drag can have written over the token.
+  const [fallback] = useState(defaultWidth);
+  const [width, setWidth] = useState(() => cachedWidth(key) ?? fallback);
+  const resized = useRef(false);
+
+  useEffect(() => {
+    loadWidth(key).then((saved) => {
+      if (saved !== null && !resized.current) setWidth(saved);
+    });
+  }, [key]);
+
+  const commit = useCallback(
+    (px: number) => {
+      resized.current = true;
+      setWidth(px);
+      persistWidth(key, px);
+    },
+    [key],
+  );
+
+  return { width, fallback, commit };
+}
+
+// Wire one panel's width to a handle. `write` is the live channel — the CSS variable
+// the panel's width actually reads — and is called on every frame of a drag, so it must
+// stay off React state (see use-panel-resize).
+function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right', defaultWidth: () => number, write: (px: number) => void, onGesture?: (active: boolean) => void): { width: number; resize: PanelResize } {
+  const { width, fallback, commit } = usePanelWidth(key, defaultWidth);
+  const clamp = useCallback((px: number) => clampWidth(key, px, window.innerWidth), [key]);
+  // The committed width is React's, but the CSS variable is written by hand during a
+  // drag — this puts the two back in step afterwards, and applies a width restored
+  // from config.json at boot. Layout effect, not an effect: a width read from the cache
+  // has to be on the element before the first paint, or boot flashes the default one.
+  useLayoutEffect(() => {
+    write(width);
+  }, [width, write]);
+  const resize = usePanelResize({
+    side,
+    width,
+    min: LIMITS[key].min,
+    max: LIMITS[key].max,
+    label,
+    clamp,
+    onLive: write,
+    onCommit: commit,
+    onReset: () => commit(clamp(fallback)),
+    onGesture,
+  });
+  return { width, resize };
+}
+
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+  // --sidebar-width is set inline on the provider's wrapper (shadcn puts it there), so
+  // that element — not :root — is where a drag writes. --inspector-w is a global token
+  // read by the panel AND by the floating bar that keeps clear of it, so that one stays
+  // on the document element.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const writeSidebarWidth = useCallback((px: number) => {
+    shellRef.current?.style.setProperty('--sidebar-width', `${px}px`);
+  }, []);
+  const markResizing = useCallback((active: boolean) => {
+    if (shellRef.current) shellRef.current.dataset.resizing = String(active);
+  }, []);
+  const writeInspectorWidth = useCallback((px: number) => {
+    document.documentElement.style.setProperty('--inspector-w', `${px}px`);
+  }, []);
+  const sidebar = usePanelWidthResize('sidebarWidth', t('resizeSidebar'), 'left', () => resolveCssLength(SIDEBAR_WIDTH), writeSidebarWidth, markResizing);
+  // The inspector's default is its token's own value, measured before anything here has
+  // had a chance to write over it.
+  const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
   const inspectorOpen = useSyncExternalStore(inspectorSubscribe, inspectorIsOpen);
   const wide = useSyncExternalStore(layoutSubscribe, isWideLayout);
   // Narrow-width sidebar state: transient, so the saved preference survives a trip
@@ -137,8 +215,11 @@ export function AppShell() {
   return (
     <TooltipProvider delay={0}>
       <div className="flex h-svh flex-col overflow-hidden">
-        <SidebarProvider open={wide ? sidebarOpen : narrowOpen} onOpenChange={wide ? setSidebarOpen : setNarrowOpen} className="min-h-0 flex-1">
-          <LeftSidebar />
+        <SidebarProvider ref={shellRef} open={wide ? sidebarOpen : narrowOpen} onOpenChange={wide ? setSidebarOpen : setNarrowOpen} className="min-h-0 flex-1" style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
+          {/* The rail is a resize handle only while the sidebar is a column. Below the
+              breakpoint it is a slide-over whose width is the window's, so there is
+              nothing to drag (#30 v1) — and the rail would sit over the grid. */}
+          <LeftSidebar resize={wide ? sidebar.resize : undefined} />
           <SidebarInset className="min-w-0">
             {/* Electron titlebar band, now scoped INTO the content column (Obsidian-type
                 shell, #154): the sidebar spans full height beside it, so the tab strip no
@@ -184,7 +265,10 @@ export function AppShell() {
           {/* Right inspector. Visibility is the user's own toggle now (#243) — it is no
               longer opened/closed as a side effect of selecting a card, and the content
               (Inspector) shows a placeholder while nothing is selected (#244). */}
-          <aside id="postDetail" className={wide ? 'inspector' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+          <aside id="postDetail" className={wide ? 'inspector relative' : 'inspector inspector--overlay'} hidden={!inspectorVisible}>
+            {/* Drag edge (#30). Wide layout only, for the same reason the sidebar rail
+                is: the narrow form is an overlay pinned to the window edge. */}
+            {wide && <InspectorRail resize={inspector.resize} />}
             {/* The panel's share of the titlebar. It spans the full window height beside
                 the tab band, so its top row is where the pinned inspector toggle and
                 window buttons land — without this strip they sat on the panel's content,
