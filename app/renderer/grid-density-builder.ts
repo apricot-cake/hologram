@@ -205,7 +205,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (grid) grid.classList.toggle('no-overlay', !tileOverlay);
   }
 
-  // #densityToggle is rendered by the toolbar island (corpusStore 'view'). React
+  // The density buttons live in the display popover (corpusStore 'view'). React
   // owns the active state + glass thumb; this reacts to a view change: mirror it
   // into currentView, persist it, and re-render the grid (deferred past a paint
   // with a view transition, like the old optimistic handler). The idempotent guard
@@ -304,7 +304,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.corpusIpc.setPref(st.pref, size);
   }
 
-  // Poster grid density (card/tile/list) — rendered by the toolbar island
+  // Poster grid density (card/tile/list) — rendered by the display popover
   // (corpusStore 'posterView'). React owns the active state + glass thumb; this
   // reacts to a change: mirror it into posterView, persist it, and re-render the
   // poster grid (deferred past a paint, like the old optimistic handler). The
@@ -325,7 +325,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function restorePrefs(prefs: { [k: string]: unknown }) {
     if (['card', 'tile', 'list'].includes(prefs.viewMode as string)) {
       currentView = prefs.viewMode as string;
-      // Push the restored view into the store so the toolbar island renders the right
+      // Push the restored view into the store so the display popover renders the right
       // button active. currentView is already set, so handleViewStoreChange no-ops
       // (idempotent guard) — no double render, no echo.
       storeSet('view', currentView);

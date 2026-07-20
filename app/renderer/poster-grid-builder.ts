@@ -152,7 +152,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // layout itself lives in the masonic model (pushPosterModel).
     grid.classList.toggle('tile-view', deps.posterView() === 'tile');
     grid.classList.toggle('list-view', deps.posterView() === 'list');
-    // (The #posterDensityToggle glass thumb is positioned by the toolbar island, not here.)
     if (posterList.length === 0) {
       empty.style.display = 'block';
       // allUsersCount feeds the EmptyState island's self-derived 'posterFirstRun'

@@ -41,7 +41,7 @@ const subPosterSize = subMany(['posterView', 'posterTileSize', 'posterCardSize']
 const posterSizeSnap = () => `${storeGet('posterView')}|${storeGet('posterTileSize')}|${storeGet('posterCardSize')}`;
 
 // Sort option tables (value = the sort key the listing pipeline reads; key = i18n
-// label). Same tables the retired sidebar SortSelect used.
+// label).
 const SORT_POST = [
   { value: 'date-desc', key: 'sortDateDesc' },
   { value: 'date-asc', key: 'sortDateAsc' },

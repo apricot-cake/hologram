@@ -42,8 +42,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     tagApplyN: '$1 件に適用',
     additiveHint: '既存のタグには足すだけ',
     sbViewTitle: 'ビュー',
-    sbLayoutTitle: 'レイアウト',
-    sbSearchTitle: '検索',
     sbSortTitle: '並び順',
     engParticle: 'が',
     ctxManage: 'フォルダを管理…',
@@ -143,8 +141,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     activebarLabel: 'フィルタ',
     qbEmptyHint: '絞り込みなし — 左のフィルタから追加',
     close: '閉じる',
-    tileSizeTip: 'タイルの大きさ',
-    posterSizeTip: '表示の大きさ',
     postCount: '$1 件ヒット',
 
     // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
@@ -425,8 +421,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     tagApplyN: 'Apply to $1',
     additiveHint: 'Adds to existing tags — nothing is replaced',
     sbViewTitle: 'View',
-    sbLayoutTitle: 'Layout',
-    sbSearchTitle: 'Search',
     sbSortTitle: 'Sort',
     engParticle: '',
     ctxManage: 'Manage folders…',
@@ -526,8 +520,6 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     activebarLabel: 'Filter',
     qbEmptyHint: 'No filters — add from the sidebar',
     close: 'Close',
-    tileSizeTip: 'Tile size',
-    posterSizeTip: 'Card size',
     postCount: '$1 hits',
 
     // viewer: Library/Posters view toggle + poster view

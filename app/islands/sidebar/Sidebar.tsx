@@ -9,7 +9,7 @@ import { Glyph, ICON, ICON_TRASH, Row } from './parts.tsx';
 // derived from corpusStore + the tags/folders/posts-data services — see that file). Row
 // NAMES are resolved here via t() (static i18n keys) or kindLabel() (the user-renamable
 // 作品/キャラ label), not carried in the model — the same "island resolves its own i18n"
-// pattern SortSelect/SectionTitle use. The markup MUST stay a byte-for-byte match of
+// pattern every other island uses. The markup MUST stay a byte-for-byte match of
 // the old static HTML — viewer's delegated #filterRows click handler and the
 // verify/test scripts key off .sb-row / data-qfrow / data-badge / .on, so those
 // selectors and classes are reproduced exactly. Clicks are NOT handled here; they

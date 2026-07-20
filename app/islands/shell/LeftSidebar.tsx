@@ -25,7 +25,7 @@ import { applyFolderFilter, applySavedSearch } from '../../renderer/orchestrator
 // browseMode is the single source of truth for the active destination. Writing
 // the store IS the interface — orchestrator.ts subscribes and runs the heavy
 // switch (handleBrowseModeStoreChange → setBrowseMode); the store.set idempotent
-// guard means no echo loop. Same contract the old BrowseToggle island used.
+// guard means no echo loop.
 const subBrowse = (cb: () => void) => storeSubscribe('browseMode', cb);
 const getBrowse = (): string => (storeGet('browseMode') as string) || 'posts';
 
