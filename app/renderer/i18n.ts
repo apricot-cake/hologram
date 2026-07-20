@@ -148,6 +148,9 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: ライブラリ/投稿者 ビュー切替・投稿者ビュー
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
+    // サイドバー・インスペクタの幅ドラッグ（#30）— つまみの読み上げ名。
+    resizeSidebar: 'サイドバーの幅を変更',
+    resizeInspector: 'インスペクタの幅を変更',
     // 保存した検索（#40）— サイドバーのグループ、アクティブバーの保存ボタン。
     promptOk: 'OK',
     savedSearches: '保存した検索',
@@ -529,6 +532,9 @@ const MESSAGES: { ja: CorpusMessageTable; en: CorpusMessageTable } = {
     // viewer: Library/Posters view toggle + poster view
     browsePosts: 'Library',
     browsePosters: 'Posters',
+    // Sidebar / inspector drag-resize (#30) — the handles' accessible names.
+    resizeSidebar: 'Resize sidebar',
+    resizeInspector: 'Resize inspector',
     // Saved searches (#40) — the sidebar group + the activebar save button.
     promptOk: 'OK',
     savedSearches: 'Saved searches',
