@@ -261,10 +261,6 @@ export function endFilterEditSession(): void {
   // rendered by the sidebar island, self-deriving from corpusPostSidebarSource (P4-B
   // slice⑰; renderer/sidebar.ts) — no static setText here.
   setAttr('contentTop', 'aria-label', getMessage('sbTopTip'));
-  setAttr('tileSlider', 'data-tip', getMessage('tileSizeTip')); // shared glass tooltip (was native title)
-  setAttr('tileSlider', 'aria-label', getMessage('tileSizeTip'));
-  setAttr('posterTileSlider', 'data-tip', getMessage('posterSizeTip'));
-  setAttr('posterTileSlider', 'aria-label', getMessage('posterSizeTip'));
   // #postResetBtn label + the activebar frame (nav / title / empty hint / count / reset /
   // ⓘ help) are the activebar island now, self-deriving from corpusStore (P4-B slice⑱;
   // renderer/activebar.ts is gone — no bridge left) — no static setText here.
@@ -1148,7 +1144,6 @@ export function endFilterEditSession(): void {
     keepCurrentVisible,
     getInspectedKey: () => inspectedKey,
     setInspectedKey,
-    refreshTileSlider: () => gridDensity.refreshTileSlider(),
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
@@ -1313,15 +1308,8 @@ export function endFilterEditSession(): void {
   // currentView — its masonry/tile/list layouts are bound to poster-card markup)
   // lives in grid-density-builder.ts now (V10/Wave24), alongside the post-side
   // equivalent above. This just bridges React's subscribe registration
-  // (StoreSubscriptions, App.tsx) and the slider's DOM 'input' listener to it.
+  // (StoreSubscriptions, App.tsx) to it.
   handlePosterViewStoreChange = gridDensity.handlePosterViewStoreChange;
-  (function setupPosterSizeSlider() {
-    const sl = inputById('posterTileSlider');
-    if (!sl) return;
-    sl.addEventListener('input', () => gridDensity.onPosterSliderInput());
-  })();
-  // The column counts depend on the grid width — re-derive both tracks on resize.
-  window.addEventListener('resize', () => gridDensity.handleWindowResize(), { passive: true });
   // Poster browse filters (platform / tag / instance / folder / date範囲) live
   // in the posterQB query tree (createQueryBuilder + posterPredOf), not separate Sets.
 
@@ -1362,7 +1350,6 @@ export function endFilterEditSession(): void {
     closeDetail,
     setInspectedKey,
     posterView: gridDensity.getPosterView,
-    refreshPosterSlider: gridDensity.refreshPosterSlider,
     syncBrowseBar,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
@@ -1711,15 +1698,7 @@ export function endFilterEditSession(): void {
   // browse view. The old third-mode grid, its context menu, and dynamic collections
   // (saved searches) were removed 2026-07-04 — see the collection sidebar above.
 
-  // View-size slider (post grid) — every density has one; the logic (track math,
-  // mid-drag vs commit) lives in grid-density-builder.ts now, alongside the
-  // poster-side equivalent above. This just wires the #tileSlider DOM events to it.
-  const tileSlider = document.getElementById('tileSlider') as HTMLInputElement | null; // retired UI; hidden #sortSelect stays but the size slider is gone until the display popover (P2②)
-  if (tileSlider) {
-    tileSlider.addEventListener('input', () => gridDensity.onSliderMove(false));
-    tileSlider.addEventListener('change', () => gridDensity.onSliderMove(true));
-  }
-  // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view modes).
+  // Ctrl+- / Ctrl+= step the content size one notch (post densities or the poster grid).
   // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx), which
   // imports this directly.
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;

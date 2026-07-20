@@ -1,17 +1,14 @@
 // Display density (card/tile/list) + tile/card/list size slider — extracted
 // from viewer.ts as the viewer.ts decomposition's V10 slice (see memory
 // corpus-react-purity-execution-map, Wave24/V10 "表示密度・タイルサイズスライダー").
-// The post grid and poster grid each carried their own density + size-slider
-// state (viewSizeState/posterSizeState, refreshTileSlider/refreshPosterSlider,
-// tileGridMetrics/posterGridMetrics) driving the SAME geometry.ts math
-// (colsFor/sizeFor/sliderTrack/trackCols) — this module is the single owner of
-// both, replacing two near-duplicate copies in viewer.ts. Mirrors every other
-// builder in this decomposition: DOM event registration (addEventListener on
-// #tileSlider/#posterTileSlider/window resize) stays in viewer.ts, which just
-// wires the returned handler functions in. #densityToggle/#posterDensityToggle
-// themselves (the card/tile/list buttons) are the DensityToggle island —
-// unaffected, this module only reacts to the corpusStore 'view'/'posterView'
-// keys it writes.
+// The post grid and poster grid each carried their own density + size state
+// (viewSizeState/posterSizeState, tileGridMetrics/posterGridMetrics) driving the
+// SAME geometry.ts math (colsFor/sizeFor/sliderTrack/trackCols) — this module is
+// the single owner of both, replacing two near-duplicate copies in viewer.ts.
+// The size control itself is the React display popover (#154 P2②): it reads
+// computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
+// nothing here touches a slider element. Density (card/tile/list) likewise comes
+// in through the corpusStore 'view'/'posterView' keys.
 import { colsFor, sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { get as storeGet, set as storeSet } from './store.ts';
 
@@ -36,7 +33,6 @@ export interface CorpusSizeTrack {
 }
 
 export function makeGridDensity(deps: GridDensityDeps) {
-  const inputById = (id: string) => document.getElementById(id) as HTMLInputElement;
   const prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // --- Post grid: density + size state ---
@@ -61,19 +57,13 @@ export function makeGridDensity(deps: GridDensityDeps) {
   const cardThumbW = () => thumbW(cardSize * 1.3 * _dpr, 240, 720);
   const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
 
-  function applyTileLayout(syncSlider = true) {
+  function applyTileLayout() {
     const grid = document.getElementById('postGrid');
     if (grid) {
       grid.style.setProperty('--tile-size', tileSize + 'px');
       grid.style.setProperty('--card-size', cardSize + 'px');
       grid.style.setProperty('--list-thumb', listThumb + 'px');
     }
-    const row = document.getElementById('tileSizeRow');
-    if (row) row.style.display = ''; // every density has a size slider now
-    // refreshTileSlider reads getBoundingClientRect; calling it right after the
-    // CSS-var writes above forces a sync reflow. Skip it during a live drag
-    // (syncSlider=false) — the user is already holding the thumb.
-    if (syncSlider) refreshTileSlider();
   }
 
   // View-size slider — every density has one. The auto-fill grids (tile/card)
@@ -123,7 +113,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function setViewSize(px: number, commit = true) {
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
-    applyTileLayout(commit); // mid-drag (!commit): skip the slider re-measure to avoid a forced reflow per input
+    applyTileLayout();
     if (!commit) {
       // Live re-flow while dragging (masonic recreates its positioner on columnWidth
       // change) via a deliberate side channel, NOT corpusStore — writing every drag
@@ -151,58 +141,11 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { W, g: Number.isFinite(gv) ? gv : 8 };
   }
 
-  function refreshTileSlider() {
-    const sl = inputById('tileSlider');
-    if (!sl) return;
-    const st = viewSizeState();
-    if (!st.columns) {
-      // list: direct px track
-      sl.step = '8';
-      sl.min = String(st.min);
-      sl.max = String(st.max);
-      sl.disabled = false;
-      sl.value = String(st.get());
-      return;
-    }
-    const m = tileGridMetrics();
-    if (!m) return;
-    sl.step = '1';
-    // Card view: always allow 1 column — CSS auto-fill handles width naturally.
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentView === 'card' ? { minCols: 1 } : undefined);
-    // Hide the row when only one column count is geometrically possible — the
-    // slider would have a single stop and convey nothing.
-    const sizeRow = document.getElementById('tileSizeRow');
-    if (sizeRow) sizeRow.style.display = tr.single ? 'none' : '';
-    sl.min = String(tr.nBig);
-    sl.max = String(tr.nSmall);
-    sl.disabled = false;
-    sl.value = String(tr.value); // inverted: right = larger
-  }
-
   let _dragMetrics: CorpusGridMetrics | null = null; // grid geometry cached for the duration of one size drag
-  function sliderCols() {
-    const sl = inputById('tileSlider');
-    return trackCols(Number.parseInt(sl.value, 10), Number.parseInt(sl.min, 10), Number.parseInt(sl.max, 10));
-  }
-  function onSliderMove(commit: boolean) {
-    const sl = inputById('tileSlider');
-    if (!viewSizeState().columns) {
-      setViewSize(Number.parseInt(sl.value, 10), commit);
-      return;
-    }
-    // The grid container width and column gap don't change while only --tile-size
-    // does, so measure once at the drag's first input and reuse it. Re-reading
-    // getBoundingClientRect each input would force a reflow against the previous
-    // input's CSS-var write. Cleared on commit (the slider's change event).
-    const m = (!commit && _dragMetrics) || tileGridMetrics();
-    if (!m) return;
-    _dragMetrics = commit ? null : m;
-    setViewSize(sizeFor(sliderCols(), m), commit);
-  }
 
   // Size-slider track as DATA (the React display popover reads this; the old #tileSlider
-  // DOM path is retired). Same math refreshTileSlider used: a column-count track for the
-  // auto-fill views (one detent = one column, no dead notches) and raw px for the list.
+  // DOM path is gone). A column-count track for the auto-fill views (one detent = one
+  // column, no dead notches) and raw px for the list.
   function computeSizeTrack(): CorpusSizeTrack | null {
     const st = viewSizeState();
     if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
@@ -214,8 +157,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   // Apply a slider value (the popover's Slider drives this in place of #tileSlider):
   // mid-drag (commit=false) reuses the cached geometry + updates the live column width;
-  // commit persists + re-requests thumbnails. Mirrors onSliderMove (min/max come from the
-  // track the caller last read, so the column un-inversion matches).
+  // commit persists + re-requests thumbnails. min/max come from the track the caller last
+  // read, so the column un-inversion matches.
   function setSizeFromSlider(value: number, min: number, max: number, commit: boolean) {
     const st = viewSizeState();
     if (!st.columns) {
@@ -228,19 +171,24 @@ export function makeGridDensity(deps: GridDensityDeps) {
     setViewSize(sizeFor(trackCols(value, min, max), m), commit);
   }
 
-  // Ctrl+- / Ctrl+= step the content-size slider one notch (works in all three view
-  // modes). Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
+  // Ctrl+- / Ctrl+= step the content size one notch, on whichever grid is showing
+  // (post densities card/tile/list, or the poster grid). It steps the same track the
+  // display popover's Slider reads — there is no slider element to poke anymore.
+  // Registration lives in the GlobalShortcuts component (app/islands/app/App.tsx).
   function handleShortcutSizeKey(e: KeyboardEvent) {
-    const sl = inputById('tileSlider');
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.key !== '-' && e.key !== '=' && e.key !== '+') return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();
-    if (sl.disabled) return;
-    const step = Number.parseInt(sl.step, 10) || 1;
-    sl.value = String(Math.max(Number.parseInt(sl.min, 10), Math.min(Number.parseInt(sl.max, 10), Number.parseInt(sl.value, 10) + (e.key === '-' ? -step : step))));
-    onSliderMove(true);
+    const posters = deps.getBrowseMode() === 'posters';
+    const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
+    // No size axis here (poster list view), or only one stop is geometrically possible.
+    if (!tr || tr.single) return;
+    const next = Math.max(tr.min, Math.min(tr.max, tr.value + (e.key === '-' ? -tr.step : tr.step)));
+    if (next === tr.value) return;
+    if (posters) setPosterSizeFromSlider(next, tr.min, tr.max);
+    else setSizeFromSlider(next, tr.min, tr.max, true);
   }
 
   // Tile overlay lives in the React settings island; this is the apply-and-persist
@@ -329,43 +277,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { W, g: posterView === 'tile' ? 10 : 14 };
   }
 
-  function refreshPosterSlider() {
-    const sl = inputById('posterTileSlider');
-    const row = document.getElementById('posterTileSizeRow');
-    if (!sl) return;
-    const st = posterSizeState();
-    if (!st) {
-      if (row) row.style.display = 'none';
-      return;
-    }
-    const m = posterGridMetrics();
-    if (!m) return;
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m);
-    if (row) row.style.display = tr.single ? 'none' : 'flex'; // single stop conveys nothing → hide
-    sl.step = '1';
-    sl.min = String(tr.nBig);
-    sl.max = String(tr.nSmall);
-    sl.value = String(tr.value); // inverted: right = larger
-  }
-
-  function onPosterSliderInput() {
-    const sl = inputById('posterTileSlider');
-    const st = posterSizeState();
-    const m = posterGridMetrics();
-    if (!st || !m) return;
-    const n = trackCols(Number.parseInt(sl.value, 10), Number.parseInt(sl.min, 10), Number.parseInt(sl.max, 10)); // un-invert → target column count
-    const size = Math.max(st.min, Math.min(st.max, sizeFor(n, m)));
-    st.set(size);
-    // Mirror into corpusStore — the poster grid source derives columnWidth from it,
-    // same as the post grid does with cardSize/tileSize. Unlike the post slider
-    // there's no separate mid-drag/commit split here (this handler already commits
-    // corpusIpc.setPref on every 'input' tick), so writing the store on every tick
-    // too costs nothing extra — masonic still recreates its positioner on the
-    // resulting columnWidth change either way.
-    storeSet(st.pref, size);
-    deps.corpusIpc.setPref(st.pref, size);
-  }
-
   // Poster size-slider track as data (mirrors computeSizeTrack). Null for the list view
   // (no size axis) → the caller hides the control.
   function computePosterSizeTrack(): CorpusSizeTrack | null {
@@ -377,16 +288,18 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
   }
 
-  // Apply a poster slider value (the popover Slider drives this instead of
-  // #posterTileSlider). The poster grid commits on every tick (no mid-drag/commit split —
-  // masonic recreates its positioner on the columnWidth change either way), mirroring
-  // onPosterSliderInput.
+  // Apply a poster slider value (the popover Slider drives this). The poster grid commits
+  // on every tick — no mid-drag/commit split, since masonic recreates its positioner on
+  // the columnWidth change either way. `value` is inverted (right = larger), so it goes
+  // through trackCols with the min/max of the track the caller last read.
   function setPosterSizeFromSlider(value: number, min: number, max: number) {
     const st = posterSizeState();
     const m = posterGridMetrics();
     if (!st || !m) return;
     const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
     st.set(size);
+    // Mirror into corpusStore — the poster grid source derives columnWidth from it,
+    // same as the post grid does with cardSize/tileSize.
     storeSet(st.pref, size);
     deps.corpusIpc.setPref(st.pref, size);
   }
@@ -406,15 +319,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.corpusIpc.setPref('posterViewMode', posterView);
     clearTimeout(_posterDensityRenderT);
     _posterDensityRenderT = setTimeout(() => deps.renderPosters(), 0);
-  }
-
-  // The column counts depend on the grid width — re-derive both tracks on resize
-  // (poster only while it's the active browse mode, mirroring the original guard).
-  let tileResizeT = 0;
-  function handleWindowResize() {
-    clearTimeout(tileResizeT);
-    tileResizeT = setTimeout(refreshTileSlider, 150);
-    if (deps.getBrowseMode() === 'posters') refreshPosterSlider();
   }
 
   // Load saved view modes + sizes (called from viewer.ts's corpusIpc.getPrefs().then).
@@ -463,18 +367,13 @@ export function makeGridDensity(deps: GridDensityDeps) {
     listThumbW,
     applyTileLayout,
     applyTileOverlay,
-    refreshTileSlider,
-    onSliderMove,
     computeSizeTrack,
     setSizeFromSlider,
     handleShortcutSizeKey,
     handleViewStoreChange,
-    refreshPosterSlider,
-    onPosterSliderInput,
     computePosterSizeTrack,
     setPosterSizeFromSlider,
     handlePosterViewStoreChange,
-    handleWindowResize,
     restorePrefs,
     getCurrentView: () => currentView,
     getTileOverlay: () => tileOverlay,

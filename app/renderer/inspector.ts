@@ -1,8 +1,8 @@
 // Inspector bridge — the imperative→declarative bridge for the persistent right-column
 // inspector panel (#postDetail/#postDetailBox: post detail + poster detail, including the
 // always-live inline tag editor). viewer.ts keeps every business rule (persistence, undo,
-// homonym detection, grouping, poster folders) and the panel's own hidden/insp-open/
-// refreshTileSlider chrome; the React island owns rendering #postDetailBox's content.
+// homonym detection, grouping, poster folders) and the panel's own hidden/insp-open
+// chrome; the React island owns rendering #postDetailBox's content.
 // Kept SEPARATE from corpusStore for the same reason as menu.ts/kind-menu.ts/
 // filter-popover.ts/qf-pop.ts: the model carries CALLBACKS. A real ES module (named
 // exports), imported directly by its consumers (viewer.ts / Inspector.tsx).
