@@ -134,9 +134,18 @@ export function AppShell() {
               longer opened/closed as a side effect of selecting a card, and the content
               (Inspector) shows a placeholder while nothing is selected (#244). */}
           <aside id="postDetail" className="inspector" hidden={!inspectorOpen}>
-            {/* h-full so the empty-state placeholder can center itself in the column
-                (a filled panel just overflows it into the scroll, as before). */}
-            <div id="postDetailBox" className="h-full">
+            {/* The panel's share of the titlebar. It spans the full window height beside
+                the tab band, so its top row is where the pinned inspector toggle and
+                window buttons land — without this strip they sat on the panel's content,
+                which then scrolled underneath them, and the window had no drag region
+                there. Mirrors the sidebar's header row at the opposite corner. */}
+            <div className="inspector-titlebar" />
+            {/* flex:1 (in .inspector-body) gives this a definite height, so the
+                empty-state placeholder can still center itself in what is left of the
+                column; a filled panel just overflows it into the scroll, as before.
+                No h-full here — 100% would resolve against the whole aside and push the
+                body a titlebar's worth past the bottom. */}
+            <div id="postDetailBox" className="inspector-body">
               <Inspector />
             </div>
           </aside>
