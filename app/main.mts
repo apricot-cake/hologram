@@ -178,32 +178,6 @@ function initSaveFolderRedundancy() {
   }
 }
 
-// One-time migration (2026-06-25): configDir moved OUT of %APPDATA% to a
-// non-virtualized home dir (~/.hologram — see native-host/paths.js). Carry the user's
-// existing config.json (+ redundant pointer) over from the old %APPDATA%\Hologram
-// location so settings (saveFolder, extensionId, backup) survive the move. Must run
-// before the first config read. Best-effort + idempotent: skips once the new config
-// exists, and never deletes the old copy (left as a fallback/forensic trail).
-function migrateConfigDirFromAppData() {
-  if (process.platform !== 'win32') return;
-  const oldBase = process.env.APPDATA;
-  if (!oldBase) return;
-  const oldDir = path.join(oldBase, 'Hologram');
-  const newDir = configDir();
-  try {
-    if (path.resolve(oldDir) === path.resolve(newDir)) return; // override points back at old (e.g. tests)
-    if (fs.existsSync(path.join(newDir, 'config.json'))) return; // already migrated / fresh on new
-    if (!fs.existsSync(path.join(oldDir, 'config.json'))) return; // nothing to carry over
-    fs.mkdirSync(newDir, { recursive: true });
-    fs.copyFileSync(path.join(oldDir, 'config.json'), path.join(newDir, 'config.json'));
-    const oldPtr = path.join(oldDir, 'saveFolder.path');
-    if (fs.existsSync(oldPtr)) fs.copyFileSync(oldPtr, path.join(newDir, 'saveFolder.path'));
-    console.log(`Migrated config ${oldDir} -> ${newDir}`);
-  } catch (err) {
-    console.error('Config-dir migration failed (continuing):', err);
-  }
-}
-
 // App-internal metadata files that live in the save folder but are NOT posts.
 // The renderer writes these constantly (tabs.json on every tab switch via
 // persistTabsDebounced, folders/groups/ungrouped on edits), so the watcher must
@@ -1209,9 +1183,6 @@ if (!gotSingleInstanceLock) {
     // icon (not electron.exe's) in dev too. electron-builder sets this for the
     // installed exe; setting it here covers the HologramLaunch dev run.
     app.setAppUserModelId('com.hologram.app');
-    // Carry config over from the old %APPDATA% location now that configDir moved out
-    // of AppData (must run before any config read). 2026-06-25.
-    migrateConfigDirFromAppData();
     // Recover/refresh the redundant save-folder pointer FIRST, so the rest of startup
     // (watcher, listPosts, native host) sees a config repaired from the pointer rather
     // than the empty default when config was truncated. (2026-06-23 incident.)
