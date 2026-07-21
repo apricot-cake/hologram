@@ -278,6 +278,11 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // pull costs a handful of layouts rather than one per click.
   let _zoomNotches = 0;
   let _zoomRaf: any = null;
+  // Did this burst actually move the size? At either end of the track every notch is a
+  // no-op, but the settle below would still commit — and a commit re-renders the grid
+  // and re-requests every thumbnail. That is the visible "refresh" when you keep
+  // scrolling past the limit, so the settle is skipped unless something changed.
+  let _zoomChanged = false;
   let _zoomCursorX = 0;
   let _zoomCursorY = 0;
 
@@ -300,6 +305,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const anchor = zoomAnchorAt(scroller, _zoomCursorX, _zoomCursorY);
     setSizeFromSlider(next, tr.min, tr.max, false);
     restoreZoomAnchor(scroller, anchor);
+    _zoomChanged = true;
   }
 
   function handleZoomWheel(e: WheelEvent) {
@@ -324,6 +330,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
         applyPendingZoom();
       }
       if (deps.getBrowseMode() === 'posters') return; // the poster path commits on every tick
+      if (!_zoomChanged) return; // stuck at an end of the track — nothing to persist or re-render
+      _zoomChanged = false;
       const settled = computeSizeTrack();
       if (!settled) return;
       // The commit re-renders the grid, which moves the anchor card again — so it needs
