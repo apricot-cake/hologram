@@ -163,6 +163,11 @@ export interface FilterCatValues extends FilterCatBase {
   mode(): FacetMode;
   setMode(m: FacetMode): void;
   manage?: () => void;
+  // Folder facet only (#41): 「このフォルダのみ」. A folder condition covers the
+  // subtree by default, and this narrows it to the folder's own posts. It is a
+  // property of the condition, not a mode — hence its own switch rather than a
+  // fourth segment next to どれか/すべて/〜以外.
+  only?: { get(): boolean; set(v: boolean): void };
 }
 // A category whose editor is the date-range form (post date or the 3-dim poster date).
 export interface FilterCatDate extends FilterCatBase {
@@ -1433,7 +1438,7 @@ export function endFilterEditSession(): void {
     // 作品/キャラ kin — they share the one 'tag' leaf type and its single op, so one chip).
     const valuesCat =
       (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
-      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[] }): FilterCatValues => {
+      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
         const mo = modeFor(qb, opts)(type);
         return {
           cat,
@@ -1446,6 +1451,7 @@ export function endFilterEditSession(): void {
           mode: mo.mode,
           setMode: mo.setMode,
           manage: extra?.manage,
+          only: extra?.only,
         };
       };
     // The combined タグ editor values: general tags (already grouped by 用語帳 vocab)
@@ -1509,7 +1515,20 @@ export function endFilterEditSession(): void {
       // The poster-side row below still opens the modal — poster folders have no tree
       // of their own yet, and taking their only management surface away to keep this
       // one symmetric would just delete the feature.
-      vc('folder', getMessage('qfCatFolder'), 'folder', false),
+      vc('folder', getMessage('qfCatFolder'), 'folder', false, {
+        // 「このフォルダのみ」 is one switch for the whole facet, not one per value:
+        // the chip is per-facet, so a per-value flag could not be read back off it.
+        only: {
+          get: () => treeLeaves(postQB.getTree()).some((c) => c.type === 'folder' && c.only),
+          set: (v) => {
+            for (const l of treeLeaves(postQB.getTree()).filter((c) => c.type === 'folder')) {
+              if (v) l.only = true;
+              else delete l.only;
+            }
+            postQB.refresh();
+          },
+        },
+      }),
     ];
     cats.push({
       cat: 'date',
