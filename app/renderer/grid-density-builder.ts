@@ -14,7 +14,7 @@ import { get as storeGet, set as storeSet } from './store.ts';
 export interface GridDensityDeps {
   hologramIpc: { setPref(key: string, value: unknown): void };
   hologramPostGridSource: { setLiveColumnWidth(px: number | null): void };
-  renderPosts(): void;
+  renderPosts(inPlace?: boolean): void;
   renderPosters(): void;
   getBrowseMode(): string;
 }
@@ -139,7 +139,13 @@ export function makeGridDensity(deps: GridDensityDeps) {
     // later VIEW change (which reads a different storeKey) can't see a stale value.
     storeSet(st.storeKey, st.get());
     deps.hologramPostGridSource.setLiveColumnWidth(null);
-    deps.renderPosts(); // re-request thumbnails at the new size
+    // In-place: a size change re-lays out the SAME set of posts. That is what the flag
+    // means here — reuse the grouped set instead of re-filtering ~9k records, and skip
+    // the entrance animation. Without it every notch of the zoom (and every slider
+    // release) replayed the cards' intro, which reads as the grid refreshing under you.
+    // Thumbnails still come back at the new size: the settled size goes into the store
+    // above, and the grid source re-derives each card's model (tileThumbW) from it.
+    deps.renderPosts(true);
   }
 
   function tileGridMetrics(): HologramGridMetrics | null {
