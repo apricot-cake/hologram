@@ -103,6 +103,9 @@ async function main() {
   assert('無関係なフォルダは巻き込まない', F.hasDeep(other.id, 'cap-deep') === false);
   assert('has は従来どおり直下だけを見る', F.has(parent.id, 'cap-deep') === false);
   assert('永続化されるデータに parentId が乗る', !!lastWritten && lastWritten.folders.find((f) => f.id === grand.id).parentId === child.id);
+  // ツリーの外に並ぶ面（カードの「フォルダに追加」・フィルタの値行）はパスで名乗る。
+  assert('pathOf は祖先を辿ってパスにする', F.pathOf(grand.id) === '親 / 子 / 孫');
+  assert('ルート直下はパスも名前だけ', F.pathOf(parent.id) === '親');
 
   // 移動ガード: 自分・自分の子孫の下へは入れない（UI 側の無効化と同じ判断を
   // ストア側にも持たせてある＝二重の歯止め）。

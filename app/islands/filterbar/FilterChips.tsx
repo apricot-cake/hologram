@@ -61,7 +61,7 @@ function Chip({ f }: { f: ActiveFilter }) {
   const word = modeWord(f);
   return (
     <Popover open={open} onOpenChange={handleOpen}>
-      <span className={f.mode === 'exclude' ? 'inline-flex h-7 items-center rounded-md border border-dashed border-border bg-background pr-0.5 pl-1.5 text-sm' : 'inline-flex h-7 items-center rounded-md border border-border bg-background pr-0.5 pl-1.5 text-sm'}>
+      <span data-slot="filter-chip" className={f.mode === 'exclude' ? 'inline-flex h-7 items-center rounded-md border border-dashed border-border bg-background pr-0.5 pl-1.5 text-sm' : 'inline-flex h-7 items-center rounded-md border border-border bg-background pr-0.5 pl-1.5 text-sm'}>
         <PopoverTrigger render={<button type="button" className="flex min-w-0 items-center gap-1" />}>
           <CatIcon cat={f.type} />
           {word ? <span className="shrink-0 text-xs text-muted-foreground">{word}</span> : null}
