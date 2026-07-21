@@ -227,17 +227,25 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return card && key ? { key, top: card.getBoundingClientRect().top } : null;
   }
 
-  // Put the anchor card back where it was. One frame later: the size change re-flows
-  // through the store → grid island → masonic positioner, so the new geometry only
-  // exists after the commit paints. A card virtualized away by the new layout leaves
-  // the scroll alone (better than jumping to a guess).
-  function restoreZoomAnchor(scroller: HTMLElement, a: ZoomAnchor | null) {
+  // Put the anchor card back where it was. Not before the next frame: the size change
+  // re-flows through the store → grid island → masonic positioner, so the new geometry
+  // only exists after that paints. A card virtualized away by the new layout leaves the
+  // scroll alone (better than jumping to a guess).
+  //
+  // Two passes, because one is not enough at settle time: the commit re-renders the grid
+  // (renderPosts) and that lands a frame later still, shifting the card again — measured
+  // at 132px on a 9k-post library, i.e. the live correction held and the settle undid it.
+  // The target is always the ORIGINAL top, so a second pass is idempotent when the first
+  // already landed it.
+  function restoreZoomAnchor(scroller: HTMLElement, a: ZoomAnchor | null, passes = 2) {
     if (!a) return;
     requestAnimationFrame(() => {
       const el = document.querySelector(`.post-card[data-key="${CSS.escape(a.key)}"]`) as HTMLElement | null;
-      if (!el) return;
-      const drift = el.getBoundingClientRect().top - a.top;
-      if (drift) scroller.scrollTop += drift;
+      if (el) {
+        const drift = el.getBoundingClientRect().top - a.top;
+        if (drift) scroller.scrollTop += drift;
+      }
+      if (passes > 1) restoreZoomAnchor(scroller, a, passes - 1);
     });
   }
 
@@ -297,7 +305,14 @@ export function makeGridDensity(deps: GridDensityDeps) {
       }
       if (deps.getBrowseMode() === 'posters') return; // the poster path commits on every tick
       const settled = computeSizeTrack();
-      if (settled) setSizeFromSlider(settled.value, settled.min, settled.max, true);
+      if (!settled) return;
+      // The commit re-renders the grid, which moves the anchor card again — so it needs
+      // the same treatment the live frames got, or the zoom lands somewhere else 150ms
+      // after the user stopped turning.
+      const scroller = document.getElementById('mode-post');
+      const anchor = scroller && zoomAnchorAt(scroller, _zoomCursorX, _zoomCursorY);
+      setSizeFromSlider(settled.value, settled.min, settled.max, true);
+      if (scroller) restoreZoomAnchor(scroller, anchor || null);
     }, 150);
   }
 
