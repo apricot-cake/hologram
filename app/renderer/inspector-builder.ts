@@ -14,7 +14,6 @@ import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { isWide as isWideLayout } from './layout-mode.ts';
-import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -65,9 +64,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const t = e.target as HTMLElement | null;
     return t instanceof Element ? (t.closest(sel) as HTMLElement | null) : null;
   };
-  // Tag labels shared by the always-live inspector TagEditor (showDetail, below)
-  // and the tag-pop opened straight from 🏷 (openTagPopForGroup) — same TagEditor
-  // component, same strings either way.
+  // Strings for the inspector's inline tag field (showDetail, below).
   function tagLabels() {
     return {
       tagsLabel: deps.t('detailTags'),
@@ -108,7 +105,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (insp.hidden) return;
     if (insp.contains(e.target as Node | null)) return;
     if (!closestOf(e, '#mode-post')) return; // sidebar/overlays: leave it open
-    if (closestOf(e, '.post-card, .tag-btn')) return; // card click = swap to it; 🏷 = tag-pop for it
+    if (closestOf(e, '.post-card')) return; // card click = swap the inspector to it
     if (closestOf(e, '.poster-card')) return; // poster click = swap the inspector to it (#143)
     e.preventDefault();
     e.stopPropagation();
@@ -151,11 +148,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.renderPosts(true);
     deps.showToast(deps.t('ungroupDone'));
   }
-  // --- Inspector tag mutations (Issue #22: editing lives in tag-pop now, not the
-  // inspector) --- Source of truth = the records' real tags. Each change saves
-  // immediately and refreshes the inspector's read-only tag row (not a full re-open,
-  // so the image/meta don't flicker) plus, while a tag-pop is open for this same
-  // card, that pop's own model (refreshTagViews, below).
+  // --- Inspector tag mutations (P2⑦: editing is the panel's own inline field) ---
+  // Source of truth = the records' real tags. Each change saves immediately and
+  // refreshes only the panel's tag fields (not a full re-open, so the image/meta
+  // don't flicker and the field keeps focus).
 
   function refreshInspectorTagFields(g: HologramPostGroup | null | undefined) {
     if (!g) return;
@@ -194,23 +190,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.markPostsMutated();
     deps.renderPosts(true);
     const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === deps.getInspectedKey());
-    refreshTagViews(fresh);
-  }
-
-  // Push a mutated group's tags into whichever tag surfaces are showing it: the
-  // inspector's read-only row (refreshInspectorTagFields) and — if tag-pop is
-  // currently open for this SAME group (tagPopGet().forKey match; tag-pop.ts is a
-  // singleton bridge poster-grid-builder.ts's own openTagPopForPoster also opens,
-  // so the live model is the only thing both builders can agree is current) — that
-  // pop's own model. Re-render in place (same openId), not a remount, so the pop's
-  // input text/scroll survive.
-  function refreshTagViews(fresh: HologramPostGroup | null | undefined) {
-    if (!fresh) return;
     refreshInspectorTagFields(fresh);
-    if (tagPopGet()?.forKey === postIdKey(fresh.rep)) {
-      const tags = Array.isArray(fresh.rep.tags) ? fresh.rep.tags : [];
-      tagPopRefresh({ tags, ...deps.inspectorTagPickerData(tags, fresh.records, 'post') });
-    }
   }
 
   // Every tag mutation has to start from the CURRENT group, not the one captured
@@ -223,7 +203,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
 
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
   // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
-  // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
+  // added (only a new tag can be a homonym of a character already in the vocabulary).
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
     const adding = !(freshGroup(g).rep.tags || []).includes(tag);
     await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
@@ -231,11 +211,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
   async function removeInspectorTag(g: HologramPostGroup, tag: string) {
     await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
-  }
-  async function toggleInspectorTag(g: HologramPostGroup, tag: string) {
-    const adding = !(freshGroup(g).rep.tags || []).includes(tag);
-    await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(freshGroup(g), tag);
   }
 
   // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
@@ -263,7 +238,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.showToast(deps.t('homonymDistinguished', [distinguished]));
   }
 
-  function showDetail(g: HologramPostGroup) {
+  // opts.focusTags: open the panel with the caret already in the tag field. It is
+  // the card context menu's タグを編集 route — the replacement for the card's 🏷
+  // button, which used to open a popover of its own (P2⑦). A plain card click must
+  // never take focus, so this is per-open rather than a property of the panel.
+  function showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }) {
     if (!g) return;
     const p = g.rep;
     const eng: string[] = [];
@@ -273,7 +252,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
     if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
     // Source tags (pixiv / SNS hashtags) get their own row. User tags live in the
-    // always-editable chips block (TagEditor) so they aren't repeated here. Source
+    // panel's inline tag field so they aren't repeated here. Source
     // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
@@ -308,6 +287,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         : null;
     inspectorOpen({
       kind: 'post',
+      focusTags: !!(opts && opts.focusTags),
       heading,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
       onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
@@ -326,8 +306,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
       tags: userTags,
       srcTagsView,
-      // Inline tag editing (P2⑦): the picker's own data now rides in the inspector
-      // model instead of being handed to a separate tag-pop.
+      // Inline tag editing (P2⑦): the picker's own data rides in the inspector model.
       ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
@@ -376,52 +355,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.setInspectedKey(postIdKey(p));
   }
 
-  // Tag picker pop (Issue #22) opened straight from a card's 🏷 — a lighter-weight
-  // route to the SAME tag mutations as the always-live inspector editor (single =
-  // immediate save + undo), without opening the full detail panel. Ring-marks the
-  // card via setInspectedKey (same as showDetail) so addInspectorTag/
-  // applyInspectorTagChange's "fresh" re-lookup keeps working unchanged, and so the
-  // grid shows which card is being tag-edited.
-  // Guarded by forKey (not called unconditionally): if a DIFFERENT open() already
-  // superseded this one (poster-grid-builder.ts's openTagPopForPoster opens the
-  // SAME singleton bridge), this dismiss is stale — do nothing, the new owner is
-  // responsible for its own close.
-  function dismissTagPopFor(key: string) {
-    if (tagPopGet()?.forKey !== key) return;
-    tagPopClose();
-    // Only drop the ring if the full inspector isn't ALSO showing this card —
-    // closing the pop shouldn't blank out an independently-open detail panel.
-    if (!panelIsOpen()) deps.setInspectedKey(null);
-  }
-  function openTagPopForGroup(g: HologramPostGroup, anchorRect: HologramAnchorRect) {
-    if (!g) return;
-    const key = postIdKey(g.rep);
-    if (tagPopGet()?.forKey === key) {
-      dismissTagPopFor(key); // re-click the same card's 🏷 → close (ℹ button's toggle shape)
-      return;
-    }
-    deps.setInspectedKey(key);
-    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    tagPopOpen({
-      anchorRect,
-      mode: 'single',
-      forKey: key,
-      tags,
-      ...deps.inspectorTagPickerData(tags, g.records, 'post'),
-      tagLabels: tagLabels(),
-      onTagAdd: (tag: string) => addInspectorTag(g, tag),
-      onTagRemove: (tag: string) => removeInspectorTag(g, tag),
-      onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
-      onTagContextMenu: (tag: string, x: number, y: number) => {
-        deps.showKindMenu(tag, x, y, () => {
-          const g2 = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey());
-          refreshTagViews(g2);
-        });
-      },
-      onDismiss: () => dismissTagPopFor(key),
-    });
-  }
-
   // Esc leaves the image-tab detail view (Eagle-style), and — since #259 — also waves away
   // the inspector while it is a narrow-width OVERLAY. It still does not touch the docked
   // column: #244 scoped Esc to transient surfaces (quick view / popovers / modals) because
@@ -443,7 +376,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (!byId('ivFolderModal').hidden) return;
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;
-    if (tagPopGet()) return; // let an open tag-pop take the first Esc
     if (isAnySelectOpen()) return; // …and an open shadcn Select (display popover / filter editors), tracked by state not DOM
     if (deps.imageTabShowing()) {
       deps.closeTab(deps.getActiveTabId());
@@ -459,7 +391,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     closeDetail,
     showDetail,
     persistManual,
-    openTagPopForGroup,
     handleEscDismissDetail,
     handleOutsideClickDismissDetail,
   };

@@ -5,7 +5,7 @@ import type { KeyboardEvent } from 'react';
 import { setSelectOpen } from '../../renderer/open-select-registry.ts';
 
 // Inline tag editing, in the inspector (P2⑦). Editing used to live in a popover
-// anchored to a ✎ button (tag-pop, Issue #22); it is now part of the panel that
+// anchored to a ✎ / 🏷 button (Issue #22); it is now part of the panel that
 // already shows the card, so tagging is a property edit rather than a mode you
 // enter — the same shape Linear/Notion give a multi-value property.
 //
@@ -43,9 +43,11 @@ export interface TagFieldProps {
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
   onContextMenu: (tag: string, x: number, y: number) => void;
+  /** Put the caret in the field on mount — the card/poster context menu's タグを編集. */
+  autoFocus?: boolean;
 }
 
-export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd, onRemove, onContextMenu }: TagFieldProps) {
+export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
   const [query, setQuery] = useState('');
   const highlightedRef = useRef<string | undefined>(undefined);
   // The popup lies ON the inspector, so Esc has to close it and stop there. The
@@ -53,6 +55,16 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
   // dismisses the panel; without registering, the first Esc would close the whole
   // panel out from under an open tag popup.
   const popupId = useRef(Symbol('inspector-tag-field'));
+  // The タグを編集 route has to land the caret in the field. Focus the node itself
+  // rather than relying on React's autoFocus reaching the <input> through
+  // Combobox.Input — the primitive owns that ref, and whether it forwards the prop
+  // is its business, not a thing this component should assume. Queried out of the
+  // wrapper for the same reason.
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!autoFocus) return;
+    boxRef.current?.querySelector<HTMLInputElement>('[data-slot="tag-input"]')?.focus();
+  }, [autoFocus]);
   useEffect(() => {
     const id = popupId.current;
     return () => setSelectOpen(id, false); // unmounting while open must not leave a phantom
@@ -108,7 +120,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
         highlightedRef.current = it as string | undefined;
       }}
     >
-      <div className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
+      <div ref={boxRef} className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
         {tags.map((tag) => (
           <span
             key={tag}

@@ -8,6 +8,7 @@
 //   - the chip's × removes the tag again, and that persists too
 //   - a source hashtag can be adopted by picking it from the field's popup
 //   - the vocabulary popup offers tags already used elsewhere in the library
+//   - the card context menu's タグを編集 opens the panel with the caret in the field
 //
 // Editing used to live in a popover anchored to a ✎ button (tag-pop, Issue #22);
 // this suite is the behavioural contract for its replacement. Assertions are on
@@ -87,12 +88,26 @@ const evalJs = `(async () => {
 
   await waitFor(() => document.querySelectorAll('#postGrid .post-card').length >= 2);
 
-  // A. selecting a card puts its tags in the field (tag-b already has one)
+  // A. タグを編集 in the card context menu is the route from a card into tagging
+  // since the hover 🏷 (and the popover it opened) went away in P2⑦. It opens the
+  // panel for that card AND puts the caret in the field — otherwise it would just be
+  // an alias for 詳細 and the user would still have to go find the input.
+  cardOf('tag-b').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 }));
+  const menuItems = () => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')];
+  out.menuOpened = await waitFor(() => menuItems().some(r => r.textContent.includes('タグを編集')));
+  const tagItem = menuItems().find(r => r.textContent.includes('タグを編集'));
+  if (tagItem) tagItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  out.menuOpenedPanel = await waitFor(() => !!field() && chips().includes('既存タグ'));
+  await sleep(150);
+  out.tagInputFocused = !!input() && document.activeElement === input();
+  key(document.body, 'Escape'); // dismiss the menu before the rest of the flow
+
+  // B. selecting a card puts its tags in the field (tag-b already has one)
   cardOf('tag-b').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.fieldShown = await waitFor(() => !!field());
   out.chipsForB = chips().join(',');
 
-  // B. free text + Enter adds a tag to the inspected card
+  // C. free text + Enter adds a tag to the inspected card
   cardOf('tag-a').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await waitFor(() => !!field() && chips().length === 0);
   const el = input();
@@ -107,7 +122,7 @@ const evalJs = `(async () => {
   await sleep(120);
   out.inputCleared = (input() || {}).value === '';
 
-  // C. the popup offers the un-adopted source hashtag and the library vocabulary
+  // D. the popup offers the un-adopted source hashtag and the library vocabulary
   const el2 = input();
   el2.focus();
   el2.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -118,12 +133,12 @@ const evalJs = `(async () => {
   out.offersSourceTag = itemTexts().some(t => t.includes('ソースタグ'));
   out.offersVocab = itemTexts().some(t => t.includes('既存タグ'));
 
-  // D. picking the source hashtag adopts it
+  // E. picking the source hashtag adopts it
   const srcItem = [...document.querySelectorAll('[role="option"]')].find(n => n.textContent.trim().includes('ソースタグ'));
   if (srcItem) srcItem.click();
   out.adopted = await waitFor(() => chips().includes('ソースタグ'));
 
-  // E. Esc with the tag popup open must NOT take the inspector with it. The panel's
+  // F. Esc with the tag popup open must NOT take the inspector with it. The panel's
   // Esc handler (inspector-builder) defers while a popup is registered as open; the
   // field registers itself for exactly this. Before it did, this Esc closed the whole
   // panel out from under the open popup.
@@ -195,6 +210,8 @@ child.on('close', () => {
     ['the popup offers vocabulary from elsewhere in the library', r.offersVocab === true],
     ['picking a source hashtag adopts it', r.adopted === true],
     ['Esc with the tag popup open leaves the inspector open', r.popupOpenBeforeEsc === true && r.inspectorSurvivedEsc === true],
+    ['the card context menu offers タグを編集', r.menuOpened === true],
+    ['タグを編集 opens the panel for that card with the caret in the field', r.menuOpenedPanel === true && r.tagInputFocused === true],
     ["the chip's × removes the tag", r.hasRemoveBtn === true && r.chipRemoved === true],
     ['the surviving tag was persisted to the sidecar', persisted.includes('ソースタグ')],
     ['the removed tag is gone from the sidecar', !persisted.includes('新規タグ')],

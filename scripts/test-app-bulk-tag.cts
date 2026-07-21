@@ -14,6 +14,9 @@
 // and "reopened dialog is empty" checks are what that move has to keep true.
 // Assertions are on chips and on disk, not on the Base UI internals.
 //
+// The eval must stay well inside the smoke harness's 9s hard cap (main.mts), which
+// is why the waits here are trimmed to the minimum each step actually needs.
+//
 //   node scripts/test-app-bulk-tag.cts
 
 const { spawn } = require('node:child_process');
@@ -88,7 +91,7 @@ const evalJs = `(async () => {
     const el = input();
     el.focus();
     setInput(el, text);
-    await sleep(80);
+    await sleep(50);
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   };
 
@@ -118,10 +121,9 @@ const evalJs = `(async () => {
 
   // E. reopening starts clean — the staging is the dialog's own state, so it dies
   //    with the dialog rather than surviving in a renderer module
-  await sleep(200);
   barTagBtn().click();
   out.reopened = await waitFor(() => !!dialog());
-  await sleep(150);
+  await sleep(100);
   out.chipsAtReopen = chips().join(',');
 
   // F. Apply writes the staged tag onto every selected record
@@ -130,7 +132,7 @@ const evalJs = `(async () => {
   applyBtn().click();
   out.dialogClosedOnApply = await waitFor(() => !dialog());
 
-  await sleep(500); // let both sidecar writes land before the harness reads them
+  await sleep(400); // let both sidecar writes land before the harness reads them
   out.errors = errors;
   return JSON.stringify(out);
 })()`;

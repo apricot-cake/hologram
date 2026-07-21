@@ -1,7 +1,7 @@
 // Virtualized poster grid — poster cells on the shared VirtualGridHost. Emits
 // the SAME DOM the old flow layout did — `.poster-card[data-index]` (+inspected)
 // with `.poster-av`, `.poster-meta` (.poster-name / .poster-handle /
-// .poster-foot), and the `.poster-tag[data-ptag]` hover button — so the
+// .poster-foot) — so the
 // delegated click/dblclick/contextmenu on #posterGrid keeps
 // firing. React renders + windows; viewer.js owns posterList, the count badge,
 // the density classes on the container, and every event. The inspected
@@ -42,7 +42,7 @@ function TagIcon() {
   );
 }
 
-function PosterCard({ c, tagTitle }: { c: PosterCardModel; tagTitle?: string }) {
+function PosterCard({ c }: { c: PosterCardModel }) {
   return (
     <div
       className={'poster-card' + (c.inspected ? ' inspected' : '')}
@@ -75,11 +75,6 @@ function PosterCard({ c, tagTitle }: { c: PosterCardModel; tagTitle?: string }) 
           <span className="poster-count">{c.countLabel}</span>
         </div>
       </div>
-      {/* Hover action: 🏷 tag. The ℹ button is retired — a plain click shows the
-          poster in the inspector now (#143). */}
-      <button className="poster-tag" data-ptag={c.index} data-tip={tagTitle} aria-label={tagTitle}>
-        <TagIcon />
-      </button>
     </div>
   );
 }
@@ -90,7 +85,7 @@ function PosterCell({ index, data }: GridCellProps) {
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
   const c = model.modelOf(data, index);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
-  return <PosterCard c={c} tagTitle={model.tagTitle} />;
+  return <PosterCard c={c} />;
 }
 
 export function PostersHost({ model }: { model: HologramGridModel }) {

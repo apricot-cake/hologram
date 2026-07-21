@@ -816,7 +816,7 @@ export function endFilterEditSession(): void {
     },
     getInspectedKey: () => inspectedKey,
     closeDetail: () => closeDetail(),
-    showDetail: (g) => showDetail(g),
+    showDetail: (g, opts) => showDetail(g, opts),
     jumpToPoster: (post) => jumpToPoster(post),
     addImageTab: (g) => imageTabCtl.addImageTab(g),
   });
@@ -1013,18 +1013,18 @@ export function endFilterEditSession(): void {
   // shows it in the inspector (Eagle/Explorer 型「シングル＝選択して詳細」); Ctrl
   // adds/removes, Shift range-selects — neither touches the inspector (確定 未決
   //事項2). Double-click opens the image view as an in-tab history destination
-  // (#144). The card's own buttons (🏷/📎) and the expandable post text keep their
+  // (#144). The card's own 📎 button and the expandable post text keep their
   // dedicated handlers, so those regions are skipped here. selectionCtl/showDetail
   // are declared below — safe closure forward-refs (they run only on a real click).
   byId('postGrid').addEventListener('click', (e) => {
-    if (closestOf(e, '.tag-btn, .clip-btn, .text')) return;
+    if (closestOf(e, '.clip-btn, .text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
     if (selectionCtl.clickSelect(card, e) && g) showDetail(g);
   });
   byId('postGrid').addEventListener('dblclick', (e) => {
-    if (closestOf(e, '.tag-btn, .clip-btn, .text')) return;
+    if (closestOf(e, '.clip-btn, .text')) return;
     const card = closestOf(e, '.post-card');
     if (!card) return;
     const g = postGrid.getViewGroups()[Number.parseInt(card.dataset.index ?? '', 10)];
@@ -1140,7 +1140,7 @@ export function endFilterEditSession(): void {
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // primitive read — live, not a snapshot
   });
-  const { closeDetail, showDetail, persistManual, openTagPopForGroup } = inspector;
+  const { closeDetail, showDetail, persistManual } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
   handleOutsideClickDismissDetail = inspector.handleOutsideClickDismissDetail;
 
@@ -1184,16 +1184,6 @@ export function endFilterEditSession(): void {
   selectionGroup = selectionCtl.groupSelected;
   selectionDelete = selectionCtl.requestDeleteSelected;
   selectionClear = selectionCtl.clearSelection;
-
-  // 🏷 button on card → tag picker pop (Issue #22), anchored to the button itself.
-  byId('postGrid').addEventListener('click', (e) => {
-    const btn = closestOf(e, '.tag-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const g = postGrid.getViewGroups()[Number.parseInt(btn.dataset.tagedit ?? '', 10)];
-    if (!g) return;
-    openTagPopForGroup(g, btn.getBoundingClientRect());
-  });
 
   // --- Bulk "add tags to selection" (Dialog — P2⑦) ---
   // The staged tags live in the dialog's own React state; nothing persists until
@@ -1337,25 +1327,8 @@ export function endFilterEditSession(): void {
     posterView: gridDensity.getPosterView,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
   });
-  const {
-    getPosterList,
-    pfStore,
-    posterFolderById,
-    posterFolderHas,
-    createPosterFolder,
-    deletePosterFolder,
-    togglePosterFolderMember,
-    renderPosterFilterRows,
-    renderPosters,
-    openPosterPosts,
-    jumpToPoster,
-    refreshPosterTagFields,
-    refreshPosterFolderFields,
-    applyPosterTagChange,
-    showPosterDetail,
-    openTagPopForPoster,
-    showPosterMenu,
-  } = posterGrid;
+  const { getPosterList, pfStore, posterFolderById, posterFolderHas, createPosterFolder, deletePosterFolder, togglePosterFolderMember, renderPosterFilterRows, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, refreshPosterFolderFields, applyPosterTagChange, showPosterDetail, showPosterMenu } =
+    posterGrid;
   // --- Poster query builder: the SAME drag builder (createQueryBuilder), evaluated
   // against poster (user) objects instead of posts. Leaf types: platform / instance /
   // tag(作品/キャラ含む) / folder / date(範囲). The bar lives in
@@ -1632,24 +1605,18 @@ export function endFilterEditSession(): void {
   resetPosterFilters = posterGrid.resetPosterFilters;
   // Poster card gesture (#143 P2⑥): a plain click shows the poster in the
   // inspector (シングル＝インスペクタ, matching post cards); double-click drills into
-  // their posts (下の dblclick). The ℹ button is retired — the inspector is the
-  // single-click destination now. 🏷 still opens the tag-pop anchored to itself.
+  // their posts (下の dblclick). The ℹ and 🏷 buttons are both retired — the
+  // inspector is the single-click destination, and tagging is its inline field,
+  // reached from the context menu's タグを編集 (P2⑦).
   byId('posterGrid').addEventListener('click', (e) => {
     const card = closestOf(e, '.poster-card');
     if (!card) return;
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];
-    if (!u) return;
-    const tagBtn = closestOf(e, '.poster-tag');
-    if (tagBtn) {
-      openTagPopForPoster(u, tagBtn.getBoundingClientRect());
-      return;
-    }
-    showPosterDetail(u);
+    if (u) showPosterDetail(u);
   });
   // Double-click a poster → drill into that poster's posts (posts mode + user
   // filter). ドリルイン＝#143 確定のダブルクリック割当（#24 の旧「シングル＝切替」を上書き）。
   byId('posterGrid').addEventListener('dblclick', (e) => {
-    if (closestOf(e, '.poster-tag')) return;
     const card = closestOf(e, '.poster-card');
     if (!card) return;
     const u = getPosterList()[Number.parseInt(card.dataset.index ?? '', 10)];

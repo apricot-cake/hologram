@@ -10,7 +10,6 @@ import { FolderManagerHost } from '../folders/FolderManagerModal.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
-import { TagPopHost } from '../tag-pop/TagPop.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
@@ -283,13 +282,12 @@ export function App() {
           with the shell-embedded islands (tabs / grids / inspector / image-tab / search /
           chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
       <AppShell />
-      {/* Body-level overlays. Menus / confirm / tag-pop / toaster / tooltip self-portal onto
+      {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip self-portal onto
           document.body; the lightbox / settings / folder-modal still portal into the three
           overlay containers kept static in index.html (folded into the shell when those
           surfaces are reworked — lightbox P2⑦ / settings P2⑩ / folders P2⑧). */}
       <ContextMenuHost />
       <KindMenuHost />
-      <TagPopHost />
       <ConfirmHost />
       {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
           the Electron renderer, so naming flows go through this instead. A shadcn

@@ -15,7 +15,6 @@
 import { treeLeaves, userKey } from './query.ts';
 import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
-import { open as tagPopOpen, refresh as tagPopRefresh, close as tagPopClose, get as tagPopGet } from './tag-pop.ts';
 import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { captureFile } from './records.ts';
@@ -177,7 +176,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // classes, and #posterGrid's click/contextmenu delegation. The inspected
   // highlight is NOT part of this model — the island derives its own ring from
   // hologramStore's 'inspectedKey' (useSyncExternalStore), keyed off the raw
-  // item's `.key`. modelOf/keyOf/tagTitle never change identity
+  // item's `.key`. modelOf/keyOf never change identity
   // meaningfully between renders, so they're configured ONCE (mirrors the post
   // source's cardModel/cardLabels hoist) instead of rebuilt every renderPosters().
   hologramPosterGridSource.configure({
@@ -197,7 +196,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       };
     },
     keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
-    tagTitle: deps.t('tipTagEdit'),
   });
 
   // Jump from a poster to its posts: posts mode + a single user filter for it.
@@ -233,8 +231,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     showPosterDetail(u);
   }
 
-  // --- Poster inspector tags (Issue #22: editing lives in tag-pop now, not the
-  // inspector) --- Source of truth is posterTags[key] (NOT a post record),
+  // --- Poster inspector tags (P2⑦: editing is the panel's own inline field) ---
+  // Source of truth is posterTags[key] (NOT a post record),
   // persisted to poster-tags.json. Posters carry no source (pixiv/SNS) tags.
   function refreshPosterTagFields(key: string) {
     const tags = deps.posterTagsOf(key);
@@ -244,7 +242,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function refreshPosterFolderFields(key: string) {
     inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
   }
-  // Tag-pop labels — mirrors inspector-builder.ts's own tagLabels() (same strings,
+  // Tag-field labels — mirrors inspector-builder.ts's own tagLabels() (same strings,
   // duplicated rather than shared: two 7-line closures, not worth a module for).
   function tagLabels() {
     return {
@@ -258,12 +256,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       removeTag: deps.t('tagRemove'),
     };
   }
-  // Apply a tag mutation to a poster, persist, and refresh whichever tag surfaces
-  // are showing it: the inspector's read-only row, and — if tag-pop is open for
-  // this SAME poster (tagPopGet().forKey match, same singleton-bridge reasoning as
-  // inspector-builder.ts's refreshTagViews) — that pop's own model. Records the
-  // change on the shared undo stack (type 'poster-tags') so Ctrl+Z works the same
-  // as for posts.
+  // Apply a tag mutation to a poster, persist, and refresh the panel's tag fields.
+  // Records the change on the shared undo stack (type 'poster-tags') so Ctrl+Z
+  // works the same as for posts.
   function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!key) return;
     const prev = deps.posterTagsOf(key);
@@ -274,49 +269,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deps.pushUndo('poster-tags', [{ key, prevTags: prev.slice(), newTags: next.slice() }]);
     setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
-    if (tagPopGet()?.forKey === 'poster:' + key) {
-      const tags = deps.posterTagsOf(key);
-      tagPopRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
-    }
   }
-  // Guarded by forKey (not called unconditionally) — same "stale close" guard as
-  // inspector-builder.ts's dismissTagPopFor: openTagPopForGroup (post) may have
-  // already superseded this pop via the same singleton bridge.
-  function dismissTagPopForPoster(forKey: string) {
-    if (tagPopGet()?.forKey !== forKey) return;
-    tagPopClose();
-    if (byId('postDetail').hidden) deps.setInspectedKey(null);
-  }
-  // Tag picker pop (Issue #22) opened straight from a poster card's 🏷 — mirrors
-  // inspector-builder.ts's openTagPopForGroup, keyed by 'poster:'+key (matching
-  // setInspectedKey's own format below) instead of a post group's key.
-  function openTagPopForPoster(u: HologramUserAgg, anchorRect: HologramAnchorRect) {
-    if (!u) return;
-    const forKey = 'poster:' + u.key;
-    if (tagPopGet()?.forKey === forKey) {
-      dismissTagPopForPoster(forKey); // re-click the same poster's 🏷 → close (ℹ button's toggle shape)
-      return;
-    }
-    deps.setInspectedKey(forKey);
-    const tags = deps.posterTagsOf(u.key);
-    tagPopOpen({
-      anchorRect,
-      mode: 'single',
-      forKey,
-      tags,
-      ...deps.inspectorTagPickerData(tags, [], 'poster'),
-      tagLabels: tagLabels(),
-      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
-      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      onTagToggle: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag])),
-      onTagContextMenu: (tag: string, x: number, y: number) => {
-        deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
-      },
-      onDismiss: () => dismissTagPopForPoster(forKey),
-    });
-  }
-
-  function showPosterDetail(u: HologramUserAgg) {
+  // opts.focusTags: see showDetail in inspector-builder.ts — the poster context
+  // menu's タグを編集, replacing the poster card's own 🏷 button (P2⑦).
+  function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean }) {
     if (!u) return;
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
@@ -336,6 +292,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const tags = deps.posterTagsOf(u.key);
     inspectorOpen({
       kind: 'poster',
+      focusTags: !!(opts && opts.focusTags),
       avatarSrc,
       name,
       screenNameLabel: u.screenName ? '@' + u.screenName : '',
@@ -392,7 +349,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // poster-folders (toggle, stays open). React-owned glass popup via
   // menu.ts; viewer owns the items + actions here.
   function posterMenuItems(u: HologramUserAgg) {
-    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { sep: true }] as HologramMenuItem[];
+    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
     for (const f of pfStore.all()) {
       items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHas(f.id, u.key) });
     }
@@ -402,6 +359,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
     if (item.act === 'posts') {
       openPosterPosts(u);
+      return;
+    } // close
+    if (item.act === 'tags') {
+      showPosterDetail(u, { focusTags: true });
       return;
     } // close
     if (item.act === 'newfolder') {
@@ -438,7 +399,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     refreshPosterFolderFields,
     applyPosterTagChange,
     showPosterDetail,
-    openTagPopForPoster,
     showPosterMenu,
   };
 }
