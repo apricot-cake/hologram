@@ -734,21 +734,6 @@
     .pf-new { display: flex; gap: 6px; margin-top: 8px; }
     .pf-new-input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--field-bg); color: var(--text); font-size: 12.5px; }
     .pf-new-btn { flex: none; }
-    /* Inspector folder chips (toggle membership + ＋ new). */
-    .iv-poster-folders-row .iv-insp-v { width: 100%; }
-    .iv-poster-folder-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .iv-folder-chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--text); cursor: pointer; white-space: nowrap; }
-    .iv-folder-chip:hover { background: var(--chip-bg-hover); }
-    .iv-folder-chip.on { background: var(--accent-subtle); color: var(--text-strong); border-color: var(--accent-soft); }
-    .iv-folder-add { color: var(--text-muted); font-weight: 600; }
-    /* Poster inspector header: bigger avatar + name (reuses .iv-insp-avatar sizing). */
-    .iv-poster-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-right: 20px; }
-    .iv-poster-head .iv-insp-avatar { width: 40px; height: 40px; }
-    .iv-poster-head .iv-poster-name { flex: 1; font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Recent works strip in the poster inspector — preview of who this poster is. */
-    .iv-poster-works { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 12px; }
-    .iv-poster-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; cursor: pointer; background: var(--surface-3); border: 1px solid var(--border-soft); transition: transform .15s; }
-    .iv-poster-thumb:hover { transform: scale(1.04); }
     /* Poster-mode sidebar controls: only while browsing posters. */
     #posterControls, #posterViewSection { display: none; }
     body.browse-posters #posterControls, body.browse-posters #posterViewSection { display: block; }
@@ -1899,30 +1884,6 @@
     .iv-insp-close { float: right; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
     .iv-insp-close:hover { color: var(--fg); }
     .iv-insp-title { font-size: 13px; font-weight: 600; line-height: 1.5; word-break: break-word; margin-bottom: 8px; padding-right: 20px; }
-    .iv-insp-thumb { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; display: block; }
-    .iv-insp-thumb--peek { cursor: zoom-in; }
-    .iv-insp-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); }
-    .iv-insp-k { color: var(--muted); flex: 0 0 72px; }
-    .iv-insp-v { flex: 1; word-break: break-word; }
-    .iv-insp-author { display: flex; align-items: center; gap: 7px; }
-    /* Author name+avatar as a jump-to-poster link (双方向ナビ). Looks like text until
-       hover, where it tints + rings the avatar to read as actionable. */
-    .iv-insp-author-link {
-      display: inline-flex; align-items: center; gap: 7px;
-      border: none; background: none; padding: 0; margin: 0;
-      font: inherit; color: inherit; text-align: left; cursor: pointer;
-      transition: color .12s;
-    }
-    .iv-insp-author-link:hover { color: var(--accent-text); }
-    .iv-insp-author-link:hover .iv-insp-avatar { box-shadow: 0 0 0 2px var(--accent-soft); }
-    .iv-insp-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border-soft); }
-    .iv-insp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .iv-insp-tag { background: var(--hover); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--text-muted); }
-    /* Source-tag chips are buttons: dashed outline signals "click to adopt". */
-    .iv-insp-tag-src { border: 1px dashed var(--border-soft); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; line-height: 1.5; transition: background .12s, color .12s, border-color .12s; }
-    .iv-insp-tag-src:hover { background: var(--hover); color: var(--text); border-color: var(--accent-soft); }
-    .iv-insp-open { display: inline-block; margin-top: 12px; color: var(--accent-text); cursor: pointer; }
-    .iv-insp-open:hover { text-decoration: underline; }
 
     /* Inspector: an inline right column, at every window width (#243). The panel
        used to detach into a fixed slide-over below 1280px; that automatic reshape
@@ -1966,8 +1927,6 @@
     body.image-tab-active .inspector--overlay .inspector-titlebar { display: block; }
     .inspector[hidden] { display: none; }
     .inspector:not([hidden]) { animation: hologramPanelIn var(--dur-panel) var(--ease-out); }
-    .iv-insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; align-items: flex-start; }
-    .iv-insp-actions .iv-insp-open { margin-top: 0; }
     /* Inspector inline tag editor — always shown while the inspector is open: tag
        editing is per-card here, no mode to enter (posts + posters behave the same). */
     .iv-tag-edit, .iv-tag-edit-poster { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }

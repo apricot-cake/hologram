@@ -21,7 +21,7 @@ import { Popover, PopoverContent } from '@/components/ui/popover';
 // shut), so letting the outside-press close first would leave that handler
 // reading a closed bridge and reopening — same exemption the old capture-phase
 // listener carried.
-const TOGGLE_BUTTONS = '.tag-btn, .poster-tag, .iv-tag-edit-btn, [data-act="tag"]';
+const TOGGLE_BUTTONS = '.tag-btn, .poster-tag, [data-slot="inspector-tag-edit"], [data-act="tag"]';
 
 function TagPopBody({ model }: { model: HologramTagPopModel }) {
   return (

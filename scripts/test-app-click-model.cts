@@ -84,13 +84,13 @@ const evalJs = `(async () => {
   // B. plain click = single-select + inspector (post kind, no poster head)
   click(cardOf('dummy-c1'));
   out.inspOpenedB = await waitFor(inspVisible);
-  out.inspIsPost = inspVisible() && !byId('postDetail').querySelector('.iv-poster-head');
+  out.inspIsPost = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-post"]');
   await sleep(60);
   out.selAfterB = selectedKeys().join(',');
 
   // C. inspector preview thumbnail → quick-view lightbox (peek); Esc closes it
-  const thumb = byId('postDetail').querySelector('.iv-insp-thumb');
-  out.thumbPeekable = !!(thumb && thumb.classList.contains('iv-insp-thumb--peek'));
+  const thumb = byId('postDetail').querySelector('[data-slot="inspector-thumb"]');
+  out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
   out.lightboxOpened = await waitFor(() => byId('lightbox') && byId('lightbox').childElementCount > 0);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -125,7 +125,7 @@ const evalJs = `(async () => {
   // F. plain click a poster → poster inspector (has the poster head block)
   document.querySelector('#posterGrid .poster-card')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.inspOpenedF = await waitFor(inspVisible);
-  out.inspIsPoster = inspVisible() && !!byId('postDetail').querySelector('.iv-poster-head');
+  out.inspIsPoster = inspVisible() && !!byId('postDetail').querySelector('[data-slot="inspector-poster"]');
 
   // G. double-click a poster → drill into their posts (browseMode leaves posters)
   dblclick(document.querySelector('#posterGrid .poster-card'));
