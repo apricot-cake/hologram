@@ -8,6 +8,8 @@
 //   - the chip's × removes the tag again, and that persists too
 //   - a source hashtag can be adopted by picking it from the field's popup
 //   - the vocabulary popup offers tags already used elsewhere in the library
+//   - that popup lines up with the whole field, not with the bare input beside
+//     the chips (which shifts right and narrows as chips are added)
 //   - the card context menu's タグを編集 opens the panel with the caret in the field
 //
 // Editing used to live in a popover anchored to a ✎ button (tag-pop, Issue #22);
@@ -130,6 +132,18 @@ const evalJs = `(async () => {
   await sleep(300);
   const itemTexts = () => [...document.querySelectorAll('[role="option"]')].map(n => n.textContent.trim());
   out.popupItems = itemTexts().join('|');
+  // The popup anchors to the field (Combobox.InputGroup), not to the input left of
+  // it. With a chip present the two are far apart, so comparing left edges tells
+  // them apart: the field's edge is where a suggestion list belongs (the same rule
+  // MUI Autocomplete and Ant Design Select follow). Asserted as "closer to the
+  // field than to the input" rather than on exact pixels, which are layout noise.
+  const leftOf = (el) => Math.round(el.getBoundingClientRect().left);
+  const fieldEl = input().closest('[role="group"]');
+  out.anchorField = leftOf(fieldEl);
+  out.anchorInput = leftOf(el2);
+  const popupEl = document.querySelector('[role="option"]').closest('div[class*="bg-popover"]');
+  out.anchorPopup = popupEl ? leftOf(popupEl) : null;
+  out.popupTracksField = out.anchorPopup !== null && Math.abs(out.anchorPopup - out.anchorField) < Math.abs(out.anchorPopup - out.anchorInput);
   out.offersSourceTag = itemTexts().some(t => t.includes('ソースタグ'));
   out.offersVocab = itemTexts().some(t => t.includes('既存タグ'));
 
@@ -208,6 +222,7 @@ child.on('close', () => {
     ['the typed text is cleared after adding', r.inputCleared === true],
     ['the popup offers the un-adopted source hashtag', r.offersSourceTag === true],
     ['the popup offers vocabulary from elsewhere in the library', r.offersVocab === true],
+    ['the popup lines up with the field, not the input beside the chips', r.popupTracksField === true],
     ['picking a source hashtag adopts it', r.adopted === true],
     ['Esc with the tag popup open leaves the inspector open', r.popupOpenBeforeEsc === true && r.inspectorSurvivedEsc === true],
     ['the card context menu offers タグを編集', r.menuOpened === true],

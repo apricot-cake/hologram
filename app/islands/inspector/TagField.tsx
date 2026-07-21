@@ -120,13 +120,33 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
         highlightedRef.current = it as string | undefined;
       }}
     >
-      <div ref={boxRef} className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
+      {/* Combobox.InputGroup, not a plain div: it registers itself as the combobox's
+          anchor, so the suggestion popup lines up with the WHOLE field instead of the
+          bare input left of it — which shifted right and narrowed with every chip
+          added. Anchoring the popup to the box that holds the chips is what Base UI
+          resolves to by default (inputGroupElement ?? inputElement), and matches MUI
+          Autocomplete (popper anchored to inputRoot, width synced) and Ant Design
+          Select (popupMatchSelectWidth). It also makes a press on the box's padding
+          focus the input.
+          The rest of the chips parts (Combobox.Chips/Chip/ChipRemove) stay unused:
+          ChipRemove writes to the primitive's own selection, which is the second copy
+          of the truth this component deliberately does not keep — see onPick. */}
+      <Combobox.InputGroup ref={boxRef} className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
         {tags.map((tag) => (
           <span
             key={tag}
             data-slot="tag-chip"
             data-tag={tag}
             className="inline-flex h-5 items-center gap-1 rounded-4xl bg-secondary px-2 text-xs font-medium text-secondary-foreground"
+            // A press anywhere in the InputGroup focuses the input and opens the
+            // suggestions (Base UI's own behaviour, and what you want from a click on
+            // the box). A right-click is not that press: it is aimed at this chip's
+            // 種別 menu, and letting it through left the suggestion list hanging open
+            // behind that menu. Base UI has no precedent to copy here — its own Chip
+            // carries no button guard, because upstream chips have no context menu.
+            onMouseDown={(e) => {
+              if (e.button !== 0) e.stopPropagation();
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               onContextMenu(tag, e.clientX, e.clientY);
@@ -139,7 +159,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd
           </span>
         ))}
         <Combobox.Input data-slot="tag-input" placeholder={tags.length ? '' : labels.newTagPlaceholder} onKeyDown={onKeyDown} className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" />
-      </div>
+      </Combobox.InputGroup>
       <Combobox.Portal>
         {/* z-[13500]: above the legacy overlay z-scale while @layer-legacy coexistence lasts. */}
         <Combobox.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="isolate z-[13500]">
