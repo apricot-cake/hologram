@@ -237,7 +237,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // inspector) --- Source of truth is posterTags[key] (NOT a post record),
   // persisted to poster-tags.json. Posters carry no source (pixiv/SNS) tags.
   function refreshPosterTagFields(key: string) {
-    inspectorRefresh({ tags: deps.posterTagsOf(key) });
+    const tags = deps.posterTagsOf(key);
+    // Picker data travels with the tags — see the same note in inspector-builder.ts.
+    inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
   }
   function refreshPosterFolderFields(key: string) {
     inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, key) })) });
@@ -253,6 +255,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       noMatch: deps.t('tagPalNoMatch'),
       noVocab: deps.t('tagNoTags'),
       adoptSource: deps.t('editAdoptSource'),
+      removeTag: deps.t('tagRemove'),
     };
   }
   // Apply a tag mutation to a poster, persist, and refresh whichever tag surfaces
@@ -342,6 +345,11 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       joinedLabel: localeDate(u.authorCreatedAt),
       works,
       tags,
+      // Inline tag editing (P2⑦) — same shape as the post inspector.
+      ...deps.inspectorTagPickerData(tags, [], 'poster'),
+      tagLabels: tagLabels(),
+      onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
+      onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
       folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHas(f.id, u.key) })),
       labels: {
         user: deps.t('detailUser'),
@@ -375,7 +383,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
-      onEditTags: (anchorRect: HologramAnchorRect) => openTagPopForPoster(u, anchorRect),
     });
     byId('postDetail').hidden = false;
     deps.setInspectedKey('poster:' + u.key); // post + poster cards clear/set their ring reactively (hologramStore subscribe)

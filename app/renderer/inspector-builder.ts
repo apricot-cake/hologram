@@ -77,6 +77,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       noMatch: deps.t('tagPalNoMatch'),
       noVocab: deps.t('tagNoTags'),
       adoptSource: deps.t('editAdoptSource'),
+      removeTag: deps.t('tagRemove'),
     };
   }
   // === Inspector: the persistent right column ===
@@ -161,7 +162,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
     const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    inspectorRefresh({ tags, srcTagsView });
+    // The picker data is derived from the current tags (co-occurrence tiers, which
+    // source tags are still un-adopted), so it has to travel with them — a refresh
+    // that moved only `tags` would leave the suggestions describing the previous state.
+    inspectorRefresh({ tags, srcTagsView, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
   }
 
   // Apply a tag mutation to every record of the inspected group, persist immediately,
@@ -209,20 +213,29 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     }
   }
 
+  // Every tag mutation has to start from the CURRENT group, not the one captured
+  // when the panel was opened: renderPosts rebuilds the view groups after each
+  // change, so a captured group's records go stale as soon as one edit lands. A
+  // second edit computed from stale tags writes the wrong set — removing a tag
+  // from a card that had gained one in between would drop both, because the stale
+  // `prev` never had the newer tag in it.
+  const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
+
   // Add (typed input / picker click) or toggle (picker click only) a tag on the
   // inspected group, then check for a 同名キャラ homonym ONLY when the tag was newly
   // added (matches the old setupInspectorTagEditor's addTyped / picker-pick handlers).
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
-    const fresh = () => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
-    const adding = !(fresh().rep.tags || []).includes(tag);
-    await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(fresh(), tag);
+    const adding = !(freshGroup(g).rep.tags || []).includes(tag);
+    await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    if (adding) await maybeDistinguishHomonym(freshGroup(g), tag);
+  }
+  async function removeInspectorTag(g: HologramPostGroup, tag: string) {
+    await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
   }
   async function toggleInspectorTag(g: HologramPostGroup, tag: string) {
-    const fresh = () => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === deps.getInspectedKey()) || g;
-    const adding = !(fresh().rep.tags || []).includes(tag);
-    await applyInspectorTagChange(fresh(), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
-    if (adding) await maybeDistinguishHomonym(fresh(), tag);
+    const adding = !(freshGroup(g).rep.tags || []).includes(tag);
+    await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
+    if (adding) await maybeDistinguishHomonym(freshGroup(g), tag);
   }
 
   // When a キャラ tag joins a 作品-bearing card whose 作品 differs from every 作品
@@ -313,6 +326,12 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
       tags: userTags,
       srcTagsView,
+      // Inline tag editing (P2⑦): the picker's own data now rides in the inspector
+      // model instead of being handed to a separate tag-pop.
+      ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
+      tagLabels: tagLabels(),
+      onTagAdd: (tag: string) => addInspectorTag(g, tag),
+      onTagRemove: (tag: string) => removeInspectorTag(g, tag),
       groupBtn,
       labels: {
         platform: deps.t('detailPlatform'),
@@ -346,7 +365,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
           if (g2) refreshInspectorTagFields(g2);
         });
       },
-      onEditTags: (anchorRect: HologramAnchorRect) => openTagPopForGroup(g, anchorRect),
     });
     // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
     // The visibility-linked chrome (insp-open, the tile track) therefore isn't touched
@@ -392,7 +410,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       ...deps.inspectorTagPickerData(tags, g.records, 'post'),
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
-      onTagRemove: (tag: string) => applyInspectorTagChange(g, (prev) => prev.filter((t) => t !== tag)),
+      onTagRemove: (tag: string) => removeInspectorTag(g, tag),
       onTagToggle: (tag: string) => toggleInspectorTag(g, tag),
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => {

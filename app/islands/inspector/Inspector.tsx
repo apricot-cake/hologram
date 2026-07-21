@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { ArrowUpRight, PanelRight, Pencil, Plus, X } from 'lucide-react';
+import { ArrowUpRight, PanelRight, Plus, X } from 'lucide-react';
 import { get, subscribe } from '../../renderer/inspector.ts';
 import { t } from '../_shared/i18n.ts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
 // The panel is a stack of sections divided by Separator rather than one long
@@ -56,38 +57,14 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
   );
 }
 
-// User tags are display-only here (right-click still opens the kind-menu, a read
-// operation) plus a trailing ✎ that opens the tag picker pop anchored to itself.
-// Editing lives outside the inspector — see tag-pop.ts / TagPop.tsx.
-function TagsSection({ tags, label, emptyLabel, editTip, onTagContextMenu, onEditTags }: { tags: string[]; label?: string; emptyLabel?: string; editTip?: string; onTagContextMenu: (tag: string, x: number, y: number) => void; onEditTags: (anchorRect: HologramAnchorRect) => void }) {
+// Tags are edited in place (P2⑦) — the ✎-to-popover route is gone, so this is
+// both the display and the editor. Right-click on a chip still opens the
+// kind-menu.
+function TagsSection({ m }: { m: HologramInspectorModel }) {
   return (
-    <section className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        {/* data-slot is the hook TagPop.tsx exempts from outside-press dismissal, so a
-            re-click here toggles the pop shut instead of closing-then-reopening it. */}
-        <Button data-slot="inspector-tag-edit" variant="ghost" size="icon-xs" className="-mr-1 text-muted-foreground" aria-label={editTip} data-tip={editTip} onClick={(e) => onEditTags((e.currentTarget as HTMLElement).getBoundingClientRect())}>
-          <Pencil aria-hidden="true" />
-        </Button>
-      </div>
-      {tags.length ? (
-        <div className="flex flex-wrap gap-1">
-          {tags.map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onTagContextMenu(tag, e.clientX, e.clientY);
-              }}
-            >
-              {tag}
-            </Badge>
-          ))}
-        </div>
-      ) : (
-        <span className="text-xs text-muted-foreground/70">{emptyLabel}</span>
-      )}
+    <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">{m.labels.tags}</span>
+      <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} />
     </section>
   );
 }
@@ -161,7 +138,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
         </Fields>
       </Divided>
       <Divided>
-        <TagsSection tags={m.tags} label={m.labels.tags} emptyLabel={m.labels.tagsEmpty} editTip={m.labels.editTags} onTagContextMenu={m.onTagContextMenu} onEditTags={m.onEditTags} />
+        <TagsSection m={m} />
       </Divided>
       {m.srcTagsView.length ? (
         <Divided>
@@ -250,7 +227,7 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
         </section>
       </Divided>
       <Divided>
-        <TagsSection tags={m.tags} label={m.labels.tags} emptyLabel={m.labels.tagsEmpty} editTip={m.labels.editTags} onTagContextMenu={m.onTagContextMenu} onEditTags={m.onEditTags} />
+        <TagsSection m={m} />
       </Divided>
       <Divided>
         <div className="flex flex-col items-start gap-0.5">

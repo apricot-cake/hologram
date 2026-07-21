@@ -109,6 +109,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagPalNoMatch: '該当するタグがありません',
     editNoTags: 'まだタグがありません',
     tagAddBtn: '追加',
+    tagRemove: 'タグを外す',
     tagNewName: '新しいタグ',
     tagNoTags: 'タグがまだありません。下の入力欄で作成できます。',
     // タグの種別（用語帳: 作品/キャラ）— Phase 2 ①
@@ -493,6 +494,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagPalNoMatch: 'No matching tags',
     editNoTags: 'No tags yet',
     tagAddBtn: 'Add',
+    tagRemove: 'Remove tag',
     tagNewName: 'New tag',
     tagNoTags: 'No tags yet. Create one in the field below.',
     // tag kind (vocabulary: copyright/character) — Phase 2 ①
