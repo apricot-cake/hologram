@@ -57,16 +57,17 @@ const evalJs = `(async () => {
     grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: true, clientX: r.left + 20, clientY: r.top + 20, bubbles: true, cancelable: true }));
   };
   const start = size();
-  // 下限まで引き切る（トラックの端で止まる＝それ以上は no-op）
+  // 下限まで引き切る（トラックの端で止まる＝それ以上は no-op）。ノッチは1フレームに
+  // まとめて適用されるので、同期読みでは反映前を読む＝確定(150ms)まで待ってから読む。
   for (let i = 0; i < 40; i++) fire(120);
+  await sleep(300);
   const small = size();
   const overviewOn = grid.classList.contains('overview');
-  await sleep(300); // 確定 debounce(150ms) 越え
   const prefs = await window.hologram.getPrefs();
   // 戻す（ズームインは deltaY<0）
   for (let i = 0; i < 3; i++) fire(-120);
-  const back = size();
   await sleep(300);
+  const back = size();
   return [start, small, overviewOn, prefs.imageTileSize, prefs.tileOverlay, back, grid.classList.contains('overview')].join(',');
 })()`;
 

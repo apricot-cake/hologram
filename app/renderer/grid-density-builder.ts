@@ -241,29 +241,61 @@ export function makeGridDensity(deps: GridDensityDeps) {
     });
   }
 
-  function handleZoomWheel(e: WheelEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.deltaY) return;
+  // Applying a size is expensive at overview scale — masonic rebuilds its positioner
+  // over the whole window, and the window is hundreds of cells once the tiles are
+  // small (measured on a 9k-post library: ~50ms per notch at 200px, ~200ms at 48px).
+  // A wheel delivers notches far faster than that, so applying one per event blocks
+  // the main thread for as long as the user keeps turning. Notches are accumulated
+  // and applied ONCE per frame instead: the size still tracks the wheel, but a fast
+  // pull costs a handful of layouts rather than one per click.
+  let _zoomNotches = 0;
+  let _zoomRaf: any = null;
+  let _zoomCursorX = 0;
+  let _zoomCursorY = 0;
+
+  function applyPendingZoom() {
+    _zoomRaf = null;
+    const notches = _zoomNotches;
+    _zoomNotches = 0;
+    if (!notches) return;
     const scroller = document.getElementById('mode-post');
-    if (!scroller || !scroller.contains(e.target as Node)) return;
-    e.preventDefault();
+    if (!scroller) return;
     const posters = deps.getBrowseMode() === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
     if (!tr || tr.single) return;
-    // Wheel up = zoom in = larger tiles = fewer columns; the track is already
-    // inverted that way, so a positive step is simply "bigger".
-    const next = Math.max(tr.min, Math.min(tr.max, tr.value + (e.deltaY < 0 ? tr.step : -tr.step)));
+    const next = Math.max(tr.min, Math.min(tr.max, tr.value + notches * tr.step));
     if (next === tr.value) return;
     if (posters) {
       setPosterSizeFromSlider(next, tr.min, tr.max);
       return;
     }
-    const anchor = zoomAnchorAt(scroller, e.clientX, e.clientY);
-    // Live while the wheel keeps turning (CSS var + column width only), then settle
-    // once — committing per notch would re-request every thumbnail on every click.
+    const anchor = zoomAnchorAt(scroller, _zoomCursorX, _zoomCursorY);
     setSizeFromSlider(next, tr.min, tr.max, false);
     restoreZoomAnchor(scroller, anchor);
+  }
+
+  function handleZoomWheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.deltaY) return;
+    const scroller = document.getElementById('mode-post');
+    if (!scroller || !scroller.contains(e.target as Node)) return;
+    e.preventDefault();
+    // Wheel up = zoom in = larger tiles = fewer columns; the track is already
+    // inverted that way, so a positive step is simply "bigger".
+    _zoomNotches += e.deltaY < 0 ? 1 : -1;
+    _zoomCursorX = e.clientX;
+    _zoomCursorY = e.clientY;
+    if (_zoomRaf == null) _zoomRaf = requestAnimationFrame(applyPendingZoom);
+    // The frames above stay live (CSS var + column width only); the size settles once,
+    // after the wheel stops — committing per notch would re-request every thumbnail on
+    // every click. Flush any notch still waiting for its frame first, or a burst that
+    // ends mid-frame would settle on the size BEFORE its own last notch.
     clearTimeout(_zoomCommitT);
     _zoomCommitT = setTimeout(() => {
+      if (_zoomRaf != null) {
+        cancelAnimationFrame(_zoomRaf);
+        applyPendingZoom();
+      }
+      if (deps.getBrowseMode() === 'posters') return; // the poster path commits on every tick
       const settled = computeSizeTrack();
       if (settled) setSizeFromSlider(settled.value, settled.min, settled.max, true);
     }, 150);
