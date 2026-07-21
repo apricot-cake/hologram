@@ -40,15 +40,24 @@ export function makeGridDensity(deps: GridDensityDeps) {
   let tileSize = 180; // tile view: edge px (pref imageTileSize)
   let cardSize = 280; // card view: min column width px (pref cardSize)
   let listThumb = 88; // list view: thumbnail width px (pref listThumb)
-  const TILE_MIN = 120,
+  // The tile floor is the OVERVIEW zoom (#141): pulled all the way back, a few
+  // hundred thumbnails fit on one screen for visual scanning. It is the end of the
+  // ordinary size axis, not a mode of its own (Explorer / Lightroom / Eagle all put
+  // "smaller" on the same control).
+  const TILE_MIN = 48,
     TILE_MAX = 400;
+  // Below this edge a tile has no room for chrome, so the grid drops to pure
+  // thumbnails (CSS class, see applyTileLayout).
+  const OVERVIEW_MAX = 96;
   const CARD_MIN = 240,
     CARD_MAX = 560;
   const LIST_MIN = 56,
     LIST_MAX = 200;
 
   // Thumbnail width tracks the tile edge so larger tiles stay sharp (60px buckets).
-  const tileThumbW = () => thumbW(tileSize * 1.4, 180, 960);
+  // The floor follows the tile floor down (48*1.4 ≈ 67 → 120 after bucketing); the
+  // thumbnailer serves from 64px, so nothing changes on the main side.
+  const tileThumbW = () => thumbW(tileSize * 1.4, 120, 960);
   // card/list serve a thumbnail too (they used to load the full original —
   // multi-MB pixiv/X art decoded on every scroll and stuttered). DPR-aware, 60px
   // buckets, capped at the thumbnailer's 720px max (main.js getThumbnail).
@@ -62,6 +71,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
       grid.style.setProperty('--tile-size', tileSize + 'px');
       grid.style.setProperty('--card-size', cardSize + 'px');
       grid.style.setProperty('--list-thumb', listThumb + 'px');
+      // Overview zoom: hide the per-tile chrome below OVERVIEW_MAX. A class of its
+      // own, ANDed with .no-overlay in CSS — the 「タイルに情報を表示」 pref keeps
+      // whatever the user set, and comes back when they zoom out of the overview.
+      grid.classList.toggle('overview', currentView === 'tile' && tileSize < OVERVIEW_MAX);
     }
   }
 
@@ -188,6 +201,72 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (next === tr.value) return;
     if (posters) setPosterSizeFromSlider(next, tr.min, tr.max);
     else setSizeFromSlider(next, tr.min, tr.max, true);
+  }
+
+  // Ctrl+wheel steps the same track by one notch (Explorer standard; a trackpad pinch
+  // arrives as a synthetic ctrlKey wheel, so it lands here too). Unlike the keyboard
+  // step this keeps the post under the cursor put — that is the whole point of a
+  // zoom, and without it a pull back to overview sizes throws the user somewhere
+  // else in the library. Registration is non-passive (GlobalShortcuts, App.tsx): the
+  // preventDefault below is what stops Chromium's own page zoom.
+  interface ZoomAnchor {
+    key: string;
+    top: number;
+  }
+  let _zoomCommitT: any = null;
+
+  // The card the cursor points at, plus where it sits on screen right now. Over a
+  // gutter (or past the last row) there is no card under the cursor — the row in the
+  // middle of the viewport stands in, so the view still zooms around something the
+  // user can see rather than around scrollTop 0.
+  function zoomAnchorAt(scroller: HTMLElement, x: number, y: number): ZoomAnchor | null {
+    const pick = (px: number, py: number) => (document.elementFromPoint(px, py) as HTMLElement | null)?.closest('.post-card') as HTMLElement | null;
+    const r = scroller.getBoundingClientRect();
+    const card = pick(x, y) || pick(r.left + r.width / 2, r.top + r.height / 2);
+    const key = card?.dataset.key;
+    return card && key ? { key, top: card.getBoundingClientRect().top } : null;
+  }
+
+  // Put the anchor card back where it was. One frame later: the size change re-flows
+  // through the store → grid island → masonic positioner, so the new geometry only
+  // exists after the commit paints. A card virtualized away by the new layout leaves
+  // the scroll alone (better than jumping to a guess).
+  function restoreZoomAnchor(scroller: HTMLElement, a: ZoomAnchor | null) {
+    if (!a) return;
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`.post-card[data-key="${CSS.escape(a.key)}"]`) as HTMLElement | null;
+      if (!el) return;
+      const drift = el.getBoundingClientRect().top - a.top;
+      if (drift) scroller.scrollTop += drift;
+    });
+  }
+
+  function handleZoomWheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.deltaY) return;
+    const scroller = document.getElementById('mode-post');
+    if (!scroller || !scroller.contains(e.target as Node)) return;
+    e.preventDefault();
+    const posters = deps.getBrowseMode() === 'posters';
+    const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
+    if (!tr || tr.single) return;
+    // Wheel up = zoom in = larger tiles = fewer columns; the track is already
+    // inverted that way, so a positive step is simply "bigger".
+    const next = Math.max(tr.min, Math.min(tr.max, tr.value + (e.deltaY < 0 ? tr.step : -tr.step)));
+    if (next === tr.value) return;
+    if (posters) {
+      setPosterSizeFromSlider(next, tr.min, tr.max);
+      return;
+    }
+    const anchor = zoomAnchorAt(scroller, e.clientX, e.clientY);
+    // Live while the wheel keeps turning (CSS var + column width only), then settle
+    // once — committing per notch would re-request every thumbnail on every click.
+    setSizeFromSlider(next, tr.min, tr.max, false);
+    restoreZoomAnchor(scroller, anchor);
+    clearTimeout(_zoomCommitT);
+    _zoomCommitT = setTimeout(() => {
+      const settled = computeSizeTrack();
+      if (settled) setSizeFromSlider(settled.value, settled.min, settled.max, true);
+    }, 150);
   }
 
   // Tile overlay lives in the React settings island; this is the apply-and-persist
@@ -369,6 +448,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     computeSizeTrack,
     setSizeFromSlider,
     handleShortcutSizeKey,
+    handleZoomWheel,
     handleViewStoreChange,
     computePosterSizeTrack,
     setPosterSizeFromSlider,

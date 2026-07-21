@@ -78,11 +78,32 @@ async function main() {
   assert('thumbW: min clamp', G.thumbW(10, 180, 960) === 180);
   assert('thumbW: max clamp', G.thumbW(5000, 180, 960) === 960);
   // 旧 viewer.js 実装（Math.min(960, Math.max(180, Math.ceil((s*1.4)/60)*60))）との
-  // バイト等価性: 代表値でパリティ確認（tile 既定180・端点）
+  // バイト等価性: 代表値でパリティ確認（tile 既定180・端点）。#141 で tileThumbW の
+  // 下限だけ 180→120 へ下がったので、パリティは「下限に当たらない範囲」の式の話。
   for (const s of [120, 180, 300, 420, 900]) {
     const legacy = Math.min(960, Math.max(180, Math.ceil((s * 1.4) / 60) * 60));
     assert(`thumbW: 旧 tileThumbW とパリティ (size=${s})`, G.thumbW(s * 1.4, 180, 960) === legacy);
   }
+
+  // --- 俯瞰ズーム (#141): tile の下限を 120→48 へ広げた分の退化ガード ---
+  {
+    // 下限48でもトラックは列数レンジとして成立する（single にならず、
+    // 最小側の notch が本当に極小タイルへ届く）
+    const wide = { W: 1280, g: 8 };
+    const tr = G.sliderTrack({ min: 48, max: 400, size: 180 }, wide);
+    assert('俯瞰: min48 でトラックが single にならない', tr.single === false);
+    assert('俯瞰: 最多列は min48 由来', tr.nSmall === G.colsFor(48, wide));
+    // 反転トラックの左端（value=nBig）＝最多列。1280px/gap8 で23列＝縦17行なら
+    // 1画面 約390枚で「全量を視覚走査」が成立する。
+    assert('俯瞰: 最小 notch は20列以上（1画面 数百枚）', G.trackCols(tr.nBig, tr.nBig, tr.nSmall) >= 20);
+    // 端の notch まで往復しても size が退化しない（clamp で潰れると1列に落ちる）
+    const smallest = G.sizeFor(G.trackCols(tr.nBig, tr.nBig, tr.nSmall), wide);
+    assert('俯瞰: 最小 notch の exact-fit が 48〜96px に収まる', smallest >= 48 && smallest < 96);
+  }
+  // サムネ下限は 120（48*1.4≈67 を 60px バケットで丸めた値）。thumbnailer は 64px
+  // から配信するので main 側は無改修。
+  assert('俯瞰: tileThumbW 下限は120', G.thumbW(48 * 1.4, 120, 960) === 120);
+  assert('俯瞰: 既定サイズ180のバケットは不変（300）', G.thumbW(180 * 1.4, 120, 960) === 300);
 
   if (failed) {
     console.error(`\n${failed} assertion(s) failed`);

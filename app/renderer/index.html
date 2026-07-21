@@ -1149,6 +1149,10 @@
     .post-grid.tile-view .card-overlay .ov-likes { flex-shrink: 0; }
     /* tile info overlay is optional (表示 > タイルに情報を表示) */
     .post-grid.tile-view.no-overlay .card-overlay { display: none; }
+    /* overview zoom (#141): at the small end of the size axis a tile is all thumbnail —
+       chrome would cover it. Independent of the pref above (both hide, neither writes). */
+    .post-grid.tile-view.overview .card-overlay,
+    .post-grid.tile-view.overview .card-ntag { display: none; }
     /* the ❤ count on tiles only matters while sorting/filtering by engagement */
     .post-grid.tile-view .card-overlay .ov-likes { display: none; }
     .post-grid.tile-view.show-eng .card-overlay .ov-likes { display: block; }
