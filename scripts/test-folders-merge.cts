@@ -52,11 +52,7 @@ const { importCompleteZip, mergeFolders, mergePosterFolders, mergeManualGroups, 
     // Where a folder sits in the tree is local arrangement, so parentId does not
     // move when a ZIP from another machine names a different parent (#41).
     assert.strictEqual(f1.parentId, 'c-x', 'parentId local-wins on same id');
-    assert.strictEqual(
-      m.folders.find((c) => c.id === 'f-2').parentId,
-      null,
-      'incoming root folder stays at the root',
-    );
+    assert.strictEqual(m.folders.find((c) => c.id === 'f-2').parentId, null, 'incoming root folder stays at the root');
     const d1 = m.folders.find((c) => c.id === 'd-1');
     assert.ok(d1 && d1.kind === 'dynamic' && d1.tree, 'dynamic kind + tree passthrough');
     // invalid activeId on both → null

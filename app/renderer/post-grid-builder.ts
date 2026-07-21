@@ -390,17 +390,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   function foldMenuItems(g: HologramPostGroup) {
     const list = CF() ? CF().staticFolders() : []; // destinations only — a saved search holds no posts
     const rep = g.rep.captureId;
-    const items = list.map((f) => ({ label: f.name, act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as HologramMenuItem[];
-    if (list.length) items.push({ sep: true });
-    items.push({ label: deps.t('ctxManage'), act: 'manage', manage: true });
+    // Nested folders are labelled by their path (#41): out here, away from the tree,
+    // two subfolders called 「資料」 are indistinguishable by name. The checkmark
+    // answers "is it in THIS folder", never "somewhere below it" — you drop a post
+    // into one folder, not into a subtree.
+    const items = list.map((f) => ({ label: CF().pathOf(f.id), act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as HologramMenuItem[];
     return items;
   }
   function onFoldMenuPick(g: HologramPostGroup, item: HologramMenuItem) {
     if (!CF()) return;
-    if (item.act === 'manage') {
-      CF().openManager();
-      return;
-    }
     if (item.act === 'fold') {
       keepCurrentVisible();
       CF().toggleIn(

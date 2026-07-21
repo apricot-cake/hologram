@@ -21,7 +21,14 @@ async function main() {
   // still carries parentId (the field has to be listed in three places to survive
   // a round trip; dropping it anywhere sends the folder silently back to the root).
   let lastWritten: any = null;
-  (globalThis as any).window = { hologram: { setFolders: async (data: any) => ((lastWritten = data), { ok: true }) } };
+  (globalThis as any).window = {
+    hologram: {
+      setFolders: async (data: any) => {
+        lastWritten = data;
+        return { ok: true };
+      },
+    },
+  };
   const F = await load('renderer/folders.ts');
 
   let failed = 0;
@@ -125,7 +132,10 @@ async function main() {
   assert('巻き込まれていないフォルダは残る', F.byId(other.id) !== null);
   const leaves = F.byId(saved.id).tree.children;
   assert('保存した検索から消えたフォルダの葉が掃除される', !leaves.some((c) => c.type === 'folder'));
-  assert('掃除は他の条件を巻き込まない', leaves.some((c) => c.type === 'tag' && c.value === 'keep'));
+  assert(
+    '掃除は他の条件を巻き込まない',
+    leaves.some((c) => c.type === 'tag' && c.value === 'keep'),
+  );
 
   console.log(failed ? `\n${failed} test(s) FAILED` : '\nall folder-nesting tests passed');
   process.exit(failed ? 1 : 0);

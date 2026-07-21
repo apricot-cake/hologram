@@ -209,6 +209,8 @@ interface HologramFolderStore {
   hasDeep(id: string | null | undefined, key: string, only?: boolean): boolean;
   /** Direct children, in sibling order (= array order). */
   childrenOf(id: string | null): HologramFolder[];
+  /** "親 / 子 / 孫" — for surfaces that show a folder outside the tree, where a bare name no longer identifies it. */
+  pathOf(id: string | null | undefined): string;
   /** The folder plus everything under it (empty when id is absent). */
   subtreeIds(id: string | null | undefined): Set<string>;
   /** Move a folder under a new parent (null = root). Refuses itself and its own subtree. */

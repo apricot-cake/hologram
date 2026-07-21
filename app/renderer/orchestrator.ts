@@ -1505,7 +1505,11 @@ export function endFilterEditSession(): void {
       vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
-      vc('folder', getMessage('qfCatFolder'), 'folder', false, { manage: () => folders.openManager() }),
+      // No 「フォルダを管理…」 here: the sidebar tree IS the manager now (#41 / 確定D).
+      // The poster-side row below still opens the modal — poster folders have no tree
+      // of their own yet, and taking their only management surface away to keep this
+      // one symmetric would just delete the feature.
+      vc('folder', getMessage('qfCatFolder'), 'folder', false),
     ];
     cats.push({
       cat: 'date',

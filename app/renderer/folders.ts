@@ -94,6 +94,20 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return false;
   }
+  // "親 / 子 / 孫" — for the surfaces that show a folder OUT of the tree, where the
+  // name alone stopped being an identifier the moment folders could nest (two
+  // 「資料」 under different parents are a normal thing to have).
+  function pathOf(id: string | null | undefined) {
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    let cur = byId(id);
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      parts.unshift(cur.name);
+      cur = byId(cur.parentId);
+    }
+    return parts.join(' / ');
+  }
   // Reparenting refuses to move a folder into itself or into its own subtree —
   // the one write that could turn the array into something that is not a tree.
   // The sidebar disables those drop targets while dragging; this is the guard
@@ -232,6 +246,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     has,
     hasDeep,
     childrenOf,
+    pathOf,
     subtreeIds,
     reparent,
     create,
@@ -373,6 +388,7 @@ export const has = store.has;
 // the per-post 「フォルダに追加」 checkmarks, which answer "is it in THIS one".
 export const hasDeep = store.hasDeep;
 export const childrenOf = store.childrenOf;
+export const pathOf = store.pathOf;
 export const subtreeIds = store.subtreeIds;
 export function reparentFolder(id: string | null | undefined, parentId: string | null) {
   const ok = store.reparent(id, parentId);
