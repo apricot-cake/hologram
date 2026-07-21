@@ -606,7 +606,7 @@ export function endFilterEditSession(): void {
   const gridDensity = makeGridDensity({
     hologramIpc,
     hologramPostGridSource,
-    renderPosts: () => renderPosts(),
+    renderPosts: (inPlace) => renderPosts(inPlace),
     renderPosters: () => renderPosters(),
     getBrowseMode: () => browseMode,
   });
