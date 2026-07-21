@@ -11,6 +11,7 @@ import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
 import { LightboxHost } from '../lightbox/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { TagPopHost } from '../tag-pop/TagPop.tsx';
+import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipHost } from '../tooltip/TooltipHost.tsx';
 import { onPostsChanged } from '../../renderer/posts.ts';
@@ -294,6 +295,10 @@ export function App() {
           the Electron renderer, so naming flows go through this instead. A shadcn
           Dialog, so it locks its own scroll and needs no ModalChrome entry. */}
       <PromptHost />
+      {/* Bulk tagging for the selection (bulk-tag.ts bridge, P2⑦) — the one tagging
+          flow that stages before it writes, so it gets a Dialog rather than the
+          inspector's inline field. */}
+      <BulkTagDialogHost />
       <FolderManagerHost />
       <Portal id="lightbox">
         <LightboxHost />

@@ -5,8 +5,8 @@
 // functions in. selection.ts (the hologramStore-backed selectedSet/anchor
 // bridge) stays untouched — this module is one of its consumers (the
 // selection-bar island's own model derivation is the other, unaffected here).
-// タグを追加 (openTagPopForSelection) is bulk-edit-builder.ts territory
-// (re-targeted at tag-pop for Issue #22). It's constructed right after this module
+// タグを追加 (openBulkTagDialog) is bulk-edit-builder.ts territory
+// (re-targeted at a Dialog in P2⑦). It's constructed right after this module
 // in viewer.ts (needs this module's own selectedRecords), so this module only
 // calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
 // references in inspector-builder.ts.
@@ -29,9 +29,9 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, x: number, y: number): void;
-  // openTagPopForSelection lives in bulk-edit-builder.ts — a
-  // deferred dep, same shape as jumpToPoster/showToast in inspector-builder.ts.
-  openTagPopForSelection(anchorRect: HologramAnchorRect): void;
+  // openBulkTagDialog lives in bulk-edit-builder.ts — a deferred dep, same shape
+  // as jumpToPoster/showToast in inspector-builder.ts.
+  openBulkTagDialog(): void;
   // browseMode is a viewer.ts `let` (read/written outside this cluster too) — a
   // getter since its value changes over the module's lifetime.
   getBrowseMode(): string;
@@ -216,13 +216,13 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
   // exports (onClick → function), so there's no #selectionBar container, no data-act
   // DOM contract, and no delegated dispatcher anymore (redesign §8-1 ゼロ許容). The
-  // pop-anchored actions (tag / folder) take the clicked button's rect so their
-  // pop/menu opens against it (Base UI collision-flips it above the bottom bar).
+  // The one menu-anchored action left (folder) takes the clicked button's rect so
+  // its menu opens against it (Base UI collision-flips it above the bottom bar).
 
-  // タグを追加: open the bulk tag-pop anchored to the button (reworked to an inspector-
-  // inline / Dialog editor in P2⑦; the tag-pop path stands in until then).
-  function tagSelection(anchorRect: HologramAnchorRect) {
-    deps.openTagPopForSelection(anchorRect);
+  // タグを追加: stage tags for the whole selection in a Dialog (P2⑦). Centered and
+  // modal, so unlike the folder menu below it takes no anchor rect.
+  function tagSelection() {
+    deps.openBulkTagDialog();
   }
 
   // フォルダに追加: open the folder picker for the whole selection (you choose the

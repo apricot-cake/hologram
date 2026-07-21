@@ -120,7 +120,7 @@ export function FloatingBar() {
         <Action label={allSelected ? t('deselectAll') : t('selectAll')} title={allSelected ? t('deselectAll') : t('selectAll')} onClick={() => selectionSelectAll()}>
           <ListChecks />
         </Action>
-        <Action label={showFull ? t('tagSelected') : t('selTag')} title={t('tagSelected')} onClick={(e) => selectionTag(e.currentTarget.getBoundingClientRect())}>
+        <Action label={showFull ? t('tagSelected') : t('selTag')} title={t('tagSelected')} onClick={() => selectionTag()}>
           <Tag />
         </Action>
         <Action label={showFull ? t('folderSelected') : t('selFolder')} title={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget.getBoundingClientRect())}>

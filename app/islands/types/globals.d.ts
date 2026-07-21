@@ -404,6 +404,25 @@ declare global {
   interface HologramPromptModel extends HologramPromptConfig {
     openId: number;
   }
+  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "タグを追加" on the selection
+  // bar (P2⑦), the replacement for tag-pop's mode:'bulk'. The staged tags are the
+  // dialog's own React state, so nothing here carries them: the renderer supplies
+  // only what it alone knows (the vocabulary, the kind menu, the write), and gets
+  // the finished list back once, on apply.
+  interface HologramBulkTagConfig {
+    count: number; // selected posts — the apply button and the toast count them
+    tagLabels: Record<string, string>; // TagField's labels bundle
+    labels: { title: string; additiveHint: string; apply: string; cancel: string };
+    /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
+    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
+    /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
+    onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+    /** Persist the staged tags onto the selection. The host closes the dialog first. */
+    onApply(tags: string[]): void;
+  }
+  interface HologramBulkTagModel extends HologramBulkTagConfig {
+    openId: number;
+  }
   // HologramConfirm / HologramEditOverlay (the open/close/get/subscribe APIs)
   // removed — confirm.ts / edit-overlay.ts are real ES modules now, imported
   // directly by their consumers.

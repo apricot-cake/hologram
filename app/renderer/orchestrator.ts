@@ -93,10 +93,10 @@ export let resetAllFilters: () => void;
 export let resetPosterFilters: () => void;
 // Bulk-selection actions for the bottom floating bar (redesign §3-4 / P2⑥). The
 // FloatingBar island calls these directly (onClick → function), so the old data-act
-// #selectionBar delegation is gone. tag/folder take the clicked button's rect to anchor
-// their pop/menu against the bar.
+// #selectionBar delegation is gone. folder takes the clicked button's rect to anchor its
+// menu against the bar; tag opens a centered Dialog and needs none.
 export let selectionSelectAll: () => void;
-export let selectionTag: (anchorRect: HologramAnchorRect) => void;
+export let selectionTag: () => void;
 export let selectionFolder: (anchorRect: HologramAnchorRect) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
@@ -1158,9 +1158,9 @@ export function endFilterEditSession(): void {
     loadPosts,
     persistManual,
     showFoldMenu,
-    // bulkEdit (bulk-edit.ts consumer) is constructed just below — deferred
-    // since it needs this selectionCtl's own selectedRecords.
-    openTagPopForSelection: (anchorRect) => bulkEdit.openTagPopForSelection(anchorRect),
+    // bulkEdit is constructed just below — deferred since it needs this
+    // selectionCtl's own selectedRecords.
+    openBulkTagDialog: () => bulkEdit.openBulkTagDialog(),
     getBrowseMode: () => browseMode, // orchestrator.ts `let`, read live
     copyGroupImage: (g) => postGrid.copyGroupImage(g),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space peek (single image, #143)
@@ -1195,13 +1195,11 @@ export function endFilterEditSession(): void {
     openTagPopForGroup(g, btn.getBoundingClientRect());
   });
 
-  // --- Bulk "add tags to selection" (tag-pop, mode:'bulk' — Issue #22) ---
-  // The staging list itself (selected records / tags-in-progress / additive flag)
-  // lives in bulk-edit.ts — nothing persists until Apply (see
-  // openTagPopForSelection/onApply inside bulk-edit-builder.ts) writes it out.
-  // Constructed here (after selectionCtl above) since groupSelected's sibling
-  // openTagPopForSelection needs this cluster's own selectedRecords — see the
-  // deferred dep on selectionCtl above.
+  // --- Bulk "add tags to selection" (Dialog — P2⑦) ---
+  // The staged tags live in the dialog's own React state; nothing persists until
+  // Apply hands the finished list to bulk-edit-builder.ts. Constructed here (after
+  // selectionCtl above) since openBulkTagDialog needs this cluster's own
+  // selectedRecords — see the deferred dep on selectionCtl above.
   const bulkEdit = makeBulkEdit({
     t: getMessage,
     showToast: notify,
