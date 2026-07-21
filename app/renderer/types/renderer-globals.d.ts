@@ -190,6 +190,8 @@ interface HologramFolder {
   items: string[];
   kind?: 'static' | 'dynamic';
   created?: number | null;
+  /** Static folders only: the parent folder's id (#41). Absent/null = a root folder. */
+  parentId?: string | null;
   /** Dynamic folders only: the saved search. The free-text term is a 'text' leaf inside it. */
   tree?: HologramQueryGroup | null;
   [k: string]: any;
@@ -200,8 +202,17 @@ interface HologramFolderStore {
   setAll(list: unknown): void;
   byId(id: string | null | undefined): HologramFolder | null;
   has(id: string | null | undefined, key: string): boolean;
-  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown } | null): HologramFolder | null;
-  remove(id: string | null | undefined): void;
+  create(name: string | null | undefined, opts?: { kind?: string; tree?: unknown; parentId?: string | null } | null): HologramFolder | null;
+  /** Deletes the folder and (library store) its whole subtree. Returns every id removed. */
+  remove(id: string | null | undefined): Set<string>;
+  /** Membership including descendants; `only` restricts it to the folder's own items (#41). */
+  hasDeep(id: string | null | undefined, key: string, only?: boolean): boolean;
+  /** Direct children, in sibling order (= array order). */
+  childrenOf(id: string | null): HologramFolder[];
+  /** The folder plus everything under it (empty when id is absent). */
+  subtreeIds(id: string | null | undefined): Set<string>;
+  /** Move a folder under a new parent (null = root). Refuses itself and its own subtree. */
+  reparent(id: string | null | undefined, parentId: string | null): boolean;
   rename(id: string | null | undefined, name: string | null | undefined): boolean;
   /** Toggle one key or a whole group in the folder; anchorKey decides the resulting state. Returns the action or null. */
   toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): 'added' | 'removed' | null;

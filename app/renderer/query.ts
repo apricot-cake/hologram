@@ -372,7 +372,8 @@ export function normalizeTree(node: any): any {
 //   isInFolder(id, captureId) / isClipped(captureId) — folders.ts state
 //   fuzzyCompile(q) → matcher(string)=>bool, or null to fall back to exact
 export function makePostPredOf(deps: {
-  isInFolder(id: string, captureId: string): boolean;
+  /** `only` = the leaf's 「このフォルダのみ」 flag; without it a folder stands for its subtree (#41). */
+  isInFolder(id: string, captureId: string, only?: boolean): boolean;
   isClipped(captureId: string): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
@@ -396,8 +397,12 @@ export function makePostPredOf(deps: {
         return (p) => (p.tags || []).includes(f.value);
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
+      // A folder leaf means the folder AND everything nested under it; `only`
+      // narrows it to the folder's own posts (#41). The flag is absent by
+      // default, so every tree written before nesting keeps meaning what it
+      // meant when nothing had children.
       case 'folder':
-        return (p) => deps.isInFolder(f.value, p.captureId);
+        return (p) => deps.isInFolder(f.value, p.captureId, f.only);
       case 'clip':
         return (p) => deps.isClipped(p.captureId);
       case 'workspace':

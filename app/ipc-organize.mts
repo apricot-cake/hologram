@@ -10,6 +10,16 @@
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normFolders } from './lib-folder-tree.mts';
+
+// `folders` — the unified container of named folders (formerly "collections").
+// Each folder is { id, name, kind:'static'|'dynamic', created, parentId, items:[captureId] };
+// a dynamic folder additionally carries a saved search (`tree`), and holds no items.
+// <saveFolder>/folders.json:
+//   { folders:[…], clip:[captureId], posterWorkspace:[posterKey] }
+// `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
+// (the old 🔖 one-click target); the renderer no longer writes it, so it settles to null.
+// The shape + the parent-edge repair live in lib-folder-tree.mts (pure, unit-tested).
 
 function register(ctx) {
   const { getSaveFolder, readOrgJsonSync, writeOrgJsonSync } = ctx;
@@ -147,30 +157,6 @@ function register(ctx) {
     }
   });
 
-  // `folders` — the unified container of named folders (formerly "collections").
-  // Each folder is { id, name, kind:'static'|'dynamic', created, items:[captureId] };
-  // a dynamic folder additionally carries a saved search (`tree`), and holds no items.
-  // <saveFolder>/folders.json:
-  //   { folders:[…], clip:[captureId], posterWorkspace:[posterKey] }
-  // `clip` is the library-wide ephemeral flag set (the 📎 tray). `activeId` is legacy
-  // (the old 🔖 one-click target); the renderer no longer writes it, so it settles to null.
-  function normFolders(arr) {
-    return Array.isArray(arr)
-      ? arr
-          .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string')
-          .map((c) => {
-            const out = {
-              id: c.id,
-              name: c.name,
-              kind: c.kind === 'dynamic' ? 'dynamic' : 'static',
-              created: typeof c.created === 'number' ? c.created : null,
-              items: Array.isArray(c.items) ? [...new Set(c.items.map(String))] : [],
-            };
-            if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') (out as any).tree = c.tree; // the saved search
-            return out;
-          })
-      : [];
-  }
   ipcMain.handle('get-folders', () => {
     const folder = getSaveFolder();
     const empty = { folders: [], activeId: null, clip: [], posterWorkspace: [] };

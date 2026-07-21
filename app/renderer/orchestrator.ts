@@ -8,7 +8,7 @@
 // one wave at a time; the ones imported below are converted, the rest are still
 // read via that bridge at call time.
 import JSZip from 'jszip';
-import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, textHaystackOf, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate, compactDate, formatDate } from './format.ts';
@@ -1801,9 +1801,34 @@ export function endFilterEditSession(): void {
   // stays the guard + action logic.
   handleFolderChange = function (kind?: string) {
     // 絞り込み中のフォルダが削除されたらそのフィルタを除去（一覧が原因不明に空になるのを防ぐ）。
-    if (postQB.removeCondsMatching((c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value))) {
+    const dangling = (c: HologramQueryLeaf) => c.type === 'folder' && !CF().byId(c.value);
+    if (postQB.removeCondsMatching(dangling)) {
       postQB.syncShadow();
       postQB.render();
+    }
+    // Folder leaves live in three places, and a delete that reaches only some of
+    // them is invisible until the day it isn't: the live tree (above), the saved
+    // searches (folders.ts sweeps its own on delete) and the OTHER tabs' saved
+    // state (here). A tab nobody has switched to yet keeps its tree in memory, so
+    // a leaf naming a deleted folder would sit there until the tab is opened and
+    // then answer zero — with nothing on screen to say why. Cascade delete (#41)
+    // makes that likelier, since one click can retire a whole subtree.
+    if (kind === 'list') {
+      const activeId = tabsCtl.getActiveTabId();
+      let swept = false;
+      for (const t of tabsCtl.getTabs()) {
+        if (t.id === activeId) continue; // the live tree above IS this tab's state
+        const st = t.state as { tree?: HologramQueryGroup; f?: HologramQueryLeaf[] } | undefined;
+        if (!st) continue;
+        if (st.tree && removeCondsMatchingIn(st.tree, dangling)) swept = true;
+        // The title shadow is a separate copy of the leaves — left alone, the tab
+        // keeps its name from a folder that is gone.
+        if (Array.isArray(st.f) && st.f.some(dangling)) {
+          st.f = st.f.filter((c) => !dangling(c));
+          swept = true;
+        }
+      }
+      if (swept) tabsCtl.persistTabsNow();
     }
     // The clip row / sidebar collection state (counts/active) self-derives from the
     // hologramFolders.onChange subscription in renderer/sidebar.ts.

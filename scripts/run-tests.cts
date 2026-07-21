@@ -48,6 +48,7 @@ const TESTS = [
   'test-backup-guard',
   'test-config-recovery',
   'test-folders-merge',
+  'test-folder-nesting',
   'test-tag-types',
   'test-token-parity',
   'test-contrast-parity',
