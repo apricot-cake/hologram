@@ -1180,6 +1180,13 @@ function createWindow(show = true) {
 // and quits once the renderer has loaded. Run with HOLOGRAM_SMOKE=1.
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
 
+// Sandbox verify instance (scripts/sandbox-app.cts): a visible, persistent
+// second instance on an isolated HOLOGRAM_CONFIG_DIR. Unlike SMOKE it stays
+// interactive, but like SMOKE it must never touch machine-shared state — host
+// registration would point the real Chrome's HKCU manifest entry at the
+// sandbox config dir and break real captures.
+const SANDBOX = process.env.HOLOGRAM_SANDBOX === '1';
+
 // Single instance: a second launch focuses the existing window instead of
 // opening a duplicate (which would fight over the shared userData/cache).
 // Skipped under SMOKE so isolated headless test runs never block each other.
@@ -1217,9 +1224,9 @@ if (!gotSingleInstanceLock) {
     } catch {
       /* ignore */
     }
-    // Dev server runs (HOLOGRAM_DEV_SERVER) never capture, so skip host registration —
+    // Dev server and sandbox runs never capture, so skip host registration —
     // no HKCU writes and no native-host copy into the shared ~/.hologram.
-    if (!SMOKE && !DEV_SERVER_URL) ensureHostRegistered();
+    if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
     registerImageProtocol();
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
