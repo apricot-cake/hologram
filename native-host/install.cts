@@ -18,31 +18,32 @@ const { execFileSync } = require('node:child_process');
 const { configDir } = require('./paths.cts');
 
 const HOST_NAME = 'com.hologram.host';
-const BRIDGE_PATH = path.join(__dirname, 'bridge.cts');
-const PATHS_PATH = path.join(__dirname, 'paths.cts');
-const MEDIA_DOWNLOAD_PATH = path.join(__dirname, 'media-download.cts');
-// Shared save-folder resolution (config → redundant pointer → default), required
-// by bridge.cts so the host and app resolve the save folder identically. Deployed
-// alongside the bridge — see deployBridge().
-const CONFIG_RECOVERY_PATH = path.join(__dirname, 'config-recovery.cts');
+// The bundle (bridge.cts + its local modules in one file), not the sources —
+// built by app/islands/build.mjs. See deployBridge().
+const BRIDGE_PATH = path.join(__dirname, 'dist', 'bridge.js');
+const DEPLOYED_BRIDGE = 'bridge.js';
 
 // Copy the bridge into the (ASCII) config dir and run it from there. The repo
 // may live under a non-ASCII path (e.g. Japanese folders); cmd.exe reads .bat
 // files in the OEM code page and would mangle a non-ASCII path, so the launcher
-// must reference an ASCII location only. Re-run install after editing bridge.cts.
+// must reference an ASCII location only.
+//
+// What gets deployed is the BUNDLE: one file with no runtime module resolution
+// left. Deploying the raw sources instead meant listing every module bridge.cts
+// require()s here, and a module added upstream but missed in that list crashed
+// the spawned host on startup ("Error when communicating with the native
+// messaging host") with no further hint. One file has no list to fall out of
+// sync, and lets the host use npm deps (nothing outside node builtins could be
+// copied by hand). Re-run the build, then install, after editing any host source.
 function deployBridge(): string {
+  if (!fs.existsSync(BRIDGE_PATH)) {
+    // Loud and actionable: a missing bundle otherwise surfaces much later as the
+    // same opaque Chrome-side error this bundling was meant to retire.
+    throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run build:islands" in app/ first.`);
+  }
   fs.mkdirSync(configDir(), { recursive: true });
-  const destBridge = path.join(configDir(), 'bridge.cts');
+  const destBridge = path.join(configDir(), DEPLOYED_BRIDGE);
   fs.copyFileSync(BRIDGE_PATH, destBridge);
-  fs.copyFileSync(PATHS_PATH, path.join(configDir(), 'paths.cts'));
-  // bridge.cts runs from the ASCII config dir, so EVERY local module it require()s
-  // must be deployed alongside it — a missing one makes the spawned host crash on
-  // startup ("Error when communicating with the native messaging host"), with no
-  // hint. Keep this in lockstep with bridge.cts's require()s: paths, media-download,
-  // config-recovery (the last lets the bridge recover the save folder from the
-  // redundant pointer exactly like the app, instead of silently defaulting).
-  fs.copyFileSync(MEDIA_DOWNLOAD_PATH, path.join(configDir(), 'media-download.cts'));
-  fs.copyFileSync(CONFIG_RECOVERY_PATH, path.join(configDir(), 'config-recovery.cts'));
   return destBridge;
 }
 
@@ -279,7 +280,7 @@ function uninstall(): void {
   // uninstall. Clearing the stale manifest also matters because app/main.mts
   // gates registration on existsSync(manifestPath()); a leftover manifest would
   // make a later launch skip re-registering with stale allowed_origins.
-  const leftovers = [path.join(configDir(), 'bridge.cts'), path.join(configDir(), 'paths.cts'), path.join(configDir(), 'media-download.cts'), path.join(configDir(), 'config-recovery.cts'), launcherPath(), manifestPath()];
+  const leftovers = [path.join(configDir(), DEPLOYED_BRIDGE), launcherPath(), manifestPath()];
   for (const f of leftovers) {
     try {
       fs.unlinkSync(f);
@@ -289,7 +290,13 @@ function uninstall(): void {
   }
 }
 
-module.exports = { install, uninstall, updateAllowedOrigin, readExtensionId, HOST_NAME, BRIDGE_PATH, launcherPath, manifestPath };
+// Where deployBridge() puts the bundle. Exported so diagnostics (scripts/self-test)
+// check the file the launcher actually runs, not a path they spell out themselves.
+function deployedBridgePath(): string {
+  return path.join(configDir(), DEPLOYED_BRIDGE);
+}
+
+module.exports = { install, uninstall, updateAllowedOrigin, readExtensionId, HOST_NAME, BRIDGE_PATH, deployedBridgePath, launcherPath, manifestPath };
 
 if (require.main === module) {
   if (process.argv[2] === 'uninstall') {

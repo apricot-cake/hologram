@@ -13,10 +13,10 @@
 //   4. (win32) the native-host MANIFEST under ~/.hologram resolves (launcher exists,
 //      allows an extension origin). The HKCU pointer is reported as INFO only — an
 //      in-container `reg query` reads the virtual hive and can't be trusted.
-//   5. the DEPLOYED bridge (configDir/bridge.cts) matches the repo bridge —
-//      install COPIES bridge.cts into the ASCII config dir, so a bridge edit does
-//      nothing until you re-run install. A stale copy is the #1 "my fix didn't
-//      take" trap.
+//   5. the DEPLOYED bridge (configDir/bridge.js) matches the built bundle —
+//      install COPIES the bundle into the ASCII config dir, so a host edit does
+//      nothing until you re-build AND re-run install. A stale copy is the #1
+//      "my fix didn't take" trap.
 //
 // PASS/FAIL are hard; INFO/WARN never fail the suite.
 
@@ -28,7 +28,9 @@ const path = require('node:path');
 const { configDir, defaultLibraryDir } = require('../native-host/paths.cts');
 const install = require('../native-host/install.cts');
 
-const REPO_BRIDGE = path.join(__dirname, '..', 'native-host', 'bridge.cts');
+// The built bundle, which is what install deploys — comparing against bridge.cts
+// would report a false STALE for every build (the deployed file is bundled output).
+const REPO_BRIDGE = install.BRIDGE_PATH;
 
 // Minimal valid 1x1 JPEG (shared with test-bridge.cts).
 const JPEG_B64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
@@ -174,22 +176,25 @@ function checkRegistryPointer() {
 
 // --- check 5: deployed bridge freshness ---
 function checkDeployedBridge() {
-  const deployed = path.join(configDir(), 'bridge.cts');
+  const deployed = install.deployedBridgePath();
   if (!fs.existsSync(deployed)) {
     return { name: 'deployed bridge', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` };
   }
+  if (!fs.existsSync(REPO_BRIDGE)) {
+    return { name: 'deployed bridge', ok: false, detail: `no bundle to compare against (${REPO_BRIDGE}) — run "npm run build:islands" in app/` };
+  }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
-  return same ? { name: 'deployed bridge', ok: true, detail: 'matches repo' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from repo native-host/bridge.cts. Re-run: node native-host/install.cts' };
+  return same ? { name: 'deployed bridge', ok: true, detail: 'matches the built bundle' } : { name: 'deployed bridge', ok: false, detail: 'STALE — differs from native-host/dist/bridge.js. Re-build, then re-run: node native-host/install.cts' };
 }
 
 // --- check: the DEPLOYED bridge actually runs (not just matches by content) ---
-// Spawns configDir/bridge.cts exactly as Chrome's launcher would and pings it.
-// Catches a deployed copy that crashes on startup — e.g. a local require()
-// (./media-download.cts) whose file wasn't deployed alongside bridge.cts. A
-// content match can't catch this; only running it can.
+// Spawns the deployed bundle exactly as Chrome's launcher would and pings it.
+// Catches a deployed copy that crashes on startup — a content match can't, only
+// running it can. (Before bundling, the classic cause was a local require() whose
+// file wasn't copied alongside the bridge; the bundle has no such requires left.)
 function deployedBridgePing() {
   return new Promise<any>((resolve) => {
-    const deployed = path.join(configDir(), 'bridge.cts');
+    const deployed = install.deployedBridgePath();
     if (!fs.existsSync(deployed)) {
       resolve({ name: 'deployed bridge runs', ok: false, detail: `missing (${deployed}) — run: node native-host/install.cts` });
       return;
